@@ -6,25 +6,60 @@ Build AI agents the same way you build user interfaces. Plue lets you compose co
 
 ```tsx
 import { useState } from 'react'
-import { Claude, Phase, Step } from 'plue'
+import { renderPlan, executePlan, Claude, Phase, Step, Subagent } from 'plue'
 
-function CodeReviewAgent({ pr }) {
-  const [review, setReview] = useState(null)
+function ResearchAgent({ topic }) {
+  const [phase, setPhase] = useState<'research' | 'analyze' | 'write'>('research')
+  const [sources, setSources] = useState([])
+  const [analysis, setAnalysis] = useState(null)
 
-  if (!review) {
+  if (phase === 'research') {
     return (
-      <Claude tools={[github, filesystem]} onFinished={setReview}>
-        <Phase name="review">
-          <Step>Check out PR #{pr} and read the changes</Step>
-          <Step>Analyze for bugs, security issues, and style</Step>
-          <Step>Write a detailed review with inline comments</Step>
+      <Claude tools={[webSearch]} onFinished={(result) => {
+        setSources(result.sources)
+        setPhase('analyze')
+      }}>
+        <Phase name="research">
+          <Step>Search for recent articles about {topic}</Step>
+          <Step>Find at least 5 credible sources</Step>
+          <Step>Extract key claims from each source</Step>
         </Phase>
       </Claude>
     )
   }
 
-  return <Claude>Summarize this review: {JSON.stringify(review)}</Claude>
+  if (phase === 'analyze') {
+    return (
+      <>
+        {sources.map((source, i) => (
+          <Subagent key={i} name={`analyzer-${i}`}>
+            <Claude onFinished={(result) => setAnalysis(prev => [...(prev || []), result])}>
+              Analyze source {i + 1}: {source.url}
+              Identify: main argument, evidence quality, potential biases
+            </Claude>
+          </Subagent>
+        ))}
+        {analysis?.length === sources.length && setPhase('write')}
+      </>
+    )
+  }
+
+  return (
+    <Claude tools={[filesystem]} onFinished={console.log}>
+      <Phase name="write">
+        Write a research report synthesizing these analyses: {JSON.stringify(analysis)}
+        Save to output/report.md
+      </Phase>
+    </Claude>
+  )
 }
+
+// Preview the plan
+const xml = await renderPlan(<ResearchAgent topic="quantum computing" />)
+console.log(xml)
+
+// Execute it
+const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 ```
 
 ## Why Plue?
