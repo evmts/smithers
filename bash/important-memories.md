@@ -47,14 +47,14 @@ This file contains important learnings, decisions, and context from previous Ral
 - This could prevent tool-related flows from working with MCP servers
 - **Solution**: Added `sampling: { tools: {} }` to capabilities to properly advertise tool support
 - Affected file: `src/mcp/manager.ts:68-73`
-- Commit: [pending]
+- Commit: 0b75ffb
 
 ### Documentation Fix - Init Command (2026-01-05 - FIXED)
 - **Problem**: `docs/cli/init.mdx` showed `tsconfig.json` with `"jsxImportSource": "react"` but didn't include `react` in dependencies
 - Would cause runtime errors when JSX runtime tried to resolve
 - **Solution**: Added `react: "^19.0.0"` to dependencies section and updated `@types/react` to `^19.0.0`
 - Affected file: `docs/cli/init.mdx:52-60`
-- Commit: [pending]
+- Commit: 0b75ffb
 
 ## Project History
 
