@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'bun:test'
+import './setup.ts'
 import { useState } from 'react'
 import { renderPlan, executePlan, Claude, Phase, Step, Persona } from '../src/index.js'
 

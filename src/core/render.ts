@@ -3,7 +3,7 @@ import type { PluNode, PluRoot } from './types.js'
 import { createPluRoot } from '../reconciler/index.js'
 
 /**
- * Create a Plue root for rendering
+ * Create a Smithers root for rendering
  */
 export function createRoot(): PluRoot {
   return createPluRoot()

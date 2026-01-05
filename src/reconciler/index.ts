@@ -21,7 +21,7 @@ const scheduleImmediate: (callback: VoidFn) => void =
 reconciler.injectIntoDevTools({
   bundleType: 1, // 0 for PROD, 1 for DEV
   version: '0.1.0',
-  rendererPackageName: 'plue',
+  rendererPackageName: 'smithers',
 })
 
 // Export utility functions for forcing synchronous updates
@@ -57,8 +57,13 @@ export const waitForCommit = async (): Promise<void> => {
   await new Promise<void>((resolve) => scheduleImmediate(resolve))
 }
 
+export const waitForStateUpdates = async (): Promise<void> => {
+  await new Promise<void>((resolve) => scheduleImmediate(resolve))
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+}
+
 /**
- * Create a Plue root for rendering React elements
+ * Create a Smithers root for rendering React elements
  *
  * @example
  * ```tsx

@@ -46,6 +46,23 @@ export interface Tool {
 }
 
 /**
+ * Streaming chunk from Claude API
+ */
+export interface StreamChunk {
+  type: 'text' | 'tool_use' | 'message_start' | 'message_delta' | 'content_block_start' | 'content_block_delta' | 'content_block_stop'
+  text?: string
+  tool_use?: {
+    id: string
+    name: string
+    input: unknown
+  }
+  delta?: {
+    text?: string
+    stop_reason?: string
+  }
+}
+
+/**
  * Props for the Claude component
  */
 export interface ClaudeProps {
@@ -53,6 +70,14 @@ export interface ClaudeProps {
   onFinished?: (output: unknown) => void
   onError?: (error: Error) => void
   children?: ReactNode
+  /** System prompt for the conversation */
+  system?: string
+  /** Maximum number of tool execution iterations (default: 10) */
+  maxToolIterations?: number
+  /** Enable streaming mode */
+  stream?: boolean
+  /** Callback for streaming chunks */
+  onStream?: (chunk: StreamChunk) => void
   [key: string]: unknown // Pass-through to SDK
 }
 

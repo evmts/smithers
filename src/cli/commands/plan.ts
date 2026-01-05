@@ -6,6 +6,7 @@ import * as path from 'path'
 
 import { renderPlan } from '../../core/render.js'
 import { displayPlan, displayError, info } from '../display.js'
+import { loadAgentFile } from '../loader.js'
 
 export const planCommand = new Command('plan')
   .description('Render and display the XML plan without executing')
@@ -42,13 +43,17 @@ async function plan(file: string, options: PlanOptions): Promise<void> {
 
   info(`Loading agent from ${pc.cyan(file)}`)
 
-  // STUB: Load and compile the agent file
+  // Load and compile the agent file
   const spinner = ora('Compiling agent...').start()
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  spinner.succeed('Agent compiled')
 
-  // STUB: Create a placeholder element
-  const element = null as any
+  let element
+  try {
+    element = await loadAgentFile(filePath)
+    spinner.succeed('Agent compiled')
+  } catch (error) {
+    spinner.fail('Failed to compile agent')
+    throw error
+  }
 
   // Render the plan
   const planSpinner = ora('Rendering plan...').start()

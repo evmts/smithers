@@ -57,6 +57,7 @@ interface ExecutionState {
 | `src/core/types.ts` | All TypeScript interfaces |
 | `src/core/render.ts` | `renderPlan()`, `createRoot()`, `serialize()` |
 | `src/core/execute.ts` | `executePlan()`, Ralph Wiggum loop logic |
+| `src/core/claude-executor.ts` | Claude SDK wrapper (real + mock execution) |
 | `src/reconciler/host-config.ts` | React Reconciler host config |
 | `src/reconciler/index.ts` | `createPluRoot()` - React reconciler setup |
 | `src/components/index.ts` | Component definitions (Claude, Subagent, etc.) |
@@ -122,8 +123,8 @@ The code has workarounds for React 19's async rendering model:
 
 **TODOs:**
 1. ~~Project rename: "plue" -> "smithers"~~ (DONE)
-2. Real Claude SDK integration (replace mock execution)
-3. Real MCP server connection
+2. Tool-use execution loop + MCP wiring in Claude executor
+3. Streaming + retries + configuration surface
 4. Sophisticated examples in `examples/` folder
 5. MDX/TSX loading in CLI
 6. Mintlify docs setup

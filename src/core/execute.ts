@@ -8,7 +8,7 @@ import type {
   Tool,
 } from './types.js'
 import { createRoot } from './render.js'
-import { runWithSyncUpdates, waitForCommit } from '../reconciler/index.js'
+import { runWithSyncUpdates, waitForStateUpdates } from '../reconciler/index.js'
 import { executeWithClaude } from './claude-executor.js'
 
 /**
@@ -201,7 +201,7 @@ export async function executePlan(
         if (verbose) {
           console.log(`[Frame ${frameNumber}] Callback invoked, waiting for state updates to propagate`)
         }
-        await waitForCommit()
+        await waitForStateUpdates()
 
         // Don't call root.render() here - just let the main loop handle it
         // Breaking here will cause the loop to continue to the next frame
@@ -451,12 +451,26 @@ export async function executeNode(
   try {
     let output: string
 
-    // Check if we should use mock mode (for testing)
-    // Mock mode is enabled if SMITHERS_MOCK_MODE env var is set to "true"
-    // or if the node has a _mockMode prop set to true
-    const useMockMode =
+    // Check if we should use mock mode (for testing or when no API key is available)
+    // Mock mode is enabled if:
+    // - SMITHERS_MOCK_MODE is "true"
+    // - node.props._mockMode is true
+    // - No API key is present and SMITHERS_REAL_MODE is not set
+    const apiKeyAvailable = Boolean(process.env.ANTHROPIC_API_KEY)
+    const explicitMock =
       process.env.SMITHERS_MOCK_MODE === 'true' ||
       node.props._mockMode === true
+    const explicitReal =
+      process.env.SMITHERS_MOCK_MODE === 'false' ||
+      process.env.SMITHERS_REAL_MODE === 'true'
+
+    const useMockMode = explicitMock || (!explicitReal && !apiKeyAvailable)
+
+    if (!apiKeyAvailable && explicitReal) {
+      throw new Error(
+        'ANTHROPIC_API_KEY not found. Set it in your environment or disable SMITHERS_REAL_MODE.'
+      )
+    }
 
     if (useMockMode) {
       // Use mock executor for testing
@@ -537,15 +551,16 @@ async function executeMock(node: PluNode): Promise<string> {
   if (hasJsonIndicator) {
     // Try to extract JSON from the prompt if it contains a JSON object
     // Look for patterns like JSON.stringify({ ... }) or just { ... }
-    const jsonStringifyMatch = promptText.match(/JSON\.stringify\((\{[^}]*\})\)/)
+    const jsonStringifyMatch = promptText.match(/JSON\.stringify\((\{.*?\})\)/)
     if (jsonStringifyMatch) {
       // Return the JSON object that was stringified
       mockOutput = jsonStringifyMatch[1]
     } else {
       // Look for a JSON object directly in the prompt
-      const jsonObjectMatch = promptText.match(/\{[^}]*\}/)
-      if (jsonObjectMatch) {
-        mockOutput = jsonObjectMatch[0]
+      // Use a more robust approach to find JSON objects that handles nested structures
+      const extracted = extractJsonFromText(promptText)
+      if (extracted) {
+        mockOutput = extracted
       } else {
         // Infer what kind of JSON to return based on prompt content
         if (promptText.toLowerCase().includes('subtask')) {
@@ -566,6 +581,62 @@ async function executeMock(node: PluNode): Promise<string> {
   }
 
   return mockOutput
+}
+
+/**
+ * Extract a JSON object from text by finding matching braces
+ * This handles nested structures properly
+ */
+function extractJsonFromText(text: string): string | null {
+  const startIndex = text.indexOf('{')
+  if (startIndex === -1) {
+    return null
+  }
+
+  let braceCount = 0
+  let inString = false
+  let escapeNext = false
+
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i]
+
+    if (escapeNext) {
+      escapeNext = false
+      continue
+    }
+
+    if (char === '\\') {
+      escapeNext = true
+      continue
+    }
+
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        braceCount++
+      } else if (char === '}') {
+        braceCount--
+        if (braceCount === 0) {
+          // Found matching closing brace
+          const jsonStr = text.substring(startIndex, i + 1)
+          // Validate it's actual JSON
+          try {
+            JSON.parse(jsonStr)
+            return jsonStr
+          } catch {
+            // Not valid JSON, continue searching
+            continue
+          }
+        }
+      }
+    }
+  }
+
+  return null
 }
 
 /**

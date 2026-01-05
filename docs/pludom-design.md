@@ -58,7 +58,7 @@ const hostConfig = {
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                      PluDom Renderer                         │
-│  react-reconciler + Plue Host Config → PluNode Tree         │
+│  react-reconciler + Smithers Host Config → PluNode Tree     │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -390,8 +390,8 @@ export async function executeNode(
 ### Next (Priority Order)
 
 1. **Claude SDK integration**
-   - Replace executor mock with real Claude calls
-   - Wire MCP tools to Claude SDK sessions
+   - Harden Claude executor (config, retries, streaming)
+   - Implement tool-use execution loop + MCP wiring
 
 2. **Execution semantics**
    - Implement `<Task>` and `<Stop>` components
@@ -420,6 +420,7 @@ src/
   core/
     render.ts           # Tree → XML conversion
     execute.ts          # Ralph Wiggum loop
+    claude-executor.ts  # Claude SDK wrapper
     types.ts            # Core types
   reconciler/
     host-config.ts      # react-reconciler host config

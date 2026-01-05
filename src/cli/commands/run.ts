@@ -8,6 +8,7 @@ import { renderPlan } from '../../core/render.js'
 import { executePlan } from '../../core/execute.js'
 import { displayPlan, displayResult, displayError, info, success, warn } from '../display.js'
 import { promptApproval } from '../prompt.js'
+import { loadAgentFile } from '../loader.js'
 
 export const runCommand = new Command('run')
   .description('Run an agent from an MDX/TSX file')
@@ -72,20 +73,17 @@ async function run(file: string, options: RunOptions): Promise<void> {
 
   info(`Loading agent from ${pc.cyan(file)}`)
 
-  // STUB: Load and compile the agent file
-  // In real implementation, this would:
-  // 1. Compile MDX/TSX using esbuild or Vite
-  // 2. Import the compiled module
-  // 3. Get the default export (React element)
+  // Load and compile the agent file
   const spinner = ora('Compiling agent...').start()
 
-  // Simulate compilation
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  spinner.succeed('Agent compiled')
-
-  // STUB: Create a placeholder element
-  // In real implementation: const element = await import(compiledPath).default
-  const element = null as any // Placeholder
+  let element
+  try {
+    element = await loadAgentFile(filePath)
+    spinner.succeed('Agent compiled')
+  } catch (error) {
+    spinner.fail('Failed to compile agent')
+    throw error
+  }
 
   // Render the plan
   const planSpinner = ora('Rendering plan...').start()

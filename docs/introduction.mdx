@@ -1,0 +1,115 @@
+---
+title: Introduction
+description: Build AI agents the way you build user interfaces - with React
+---
+
+# Welcome to Smithers
+
+Smithers is a declarative framework for building AI agents using React and JSX. Build complex agent workflows from simple, reusable components - the same way you build user interfaces.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running with your first agent in minutes
+  </Card>
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts/ralph-wiggum-loop">
+    Understand the execution model and mental framework
+  </Card>
+  <Card title="Components" icon="cube" href="/components/claude">
+    Explore the component API reference
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/code-review">
+    Learn from real-world agent examples
+  </Card>
+</CardGroup>
+
+## Why Smithers?
+
+**Agents are just UIs for LLMs.** The same problems you solved with React for user interfaces - composition, state management, conditional rendering - apply to agent orchestration. Smithers brings the React mental model to AI agents.
+
+| Without Smithers | With Smithers |
+|------------------|---------------|
+| Imperative chains of API calls | Declarative component trees |
+| Scattered state across functions | Centralized React state |
+| Copy-paste prompt templates | Reusable, composable components |
+| Hard to visualize agent flow | Preview the plan before execution |
+| Manual parallel orchestration | `<Subagent parallel>` |
+
+## A Quick Example
+
+```tsx
+import { create } from 'zustand'
+import { Claude, Phase, Step } from 'smithers'
+
+// Define agent state with Zustand
+const useAgentStore = create((set) => ({
+  phase: 'research' as 'research' | 'write',
+  findings: null,
+  setFindings: (findings) => set({ findings, phase: 'write' }),
+}))
+
+function ResearchAgent({ topic }) {
+  const { phase, findings, setFindings } = useAgentStore()
+
+  if (phase === 'research') {
+    return (
+      <Claude tools={[webSearch]} onFinished={setFindings}>
+        <Phase name="research">
+          <Step>Search for recent articles about {topic}</Step>
+          <Step>Find at least 5 credible sources</Step>
+        </Phase>
+      </Claude>
+    )
+  }
+
+  return (
+    <Claude tools={[filesystem]}>
+      <Phase name="write">
+        Write a research report synthesizing: {JSON.stringify(findings)}
+        Save to output/report.md
+      </Phase>
+    </Claude>
+  )
+}
+```
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="JSX Renders to XML" icon="code">
+    Components produce XML plans that Claude executes. Preview before running.
+  </Card>
+  <Card title="React State Drives Behavior" icon="arrows-spin">
+    Use Zustand or useState to control agent flow. State changes trigger re-renders.
+  </Card>
+  <Card title="Composable Components" icon="puzzle-piece">
+    Build reusable personas, constraints, and output formats. Mix and match.
+  </Card>
+  <Card title="Parallel Execution" icon="layer-group">
+    Run multiple agents concurrently with the Subagent component.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+Smithers uses a custom React renderer (like react-dom, but for AI agents):
+
+1. **Render**: Your JSX components render to an internal tree
+2. **Serialize**: The tree is converted to an XML plan
+3. **Preview**: You see the plan before execution (unless `--auto-approve`)
+4. **Execute**: `<Claude>` nodes are executed via the Claude API
+5. **Update**: `onFinished` callbacks update React state
+6. **Loop**: State changes trigger re-render, back to step 1
+7. **Complete**: When no pending `<Claude>` nodes remain, execution finishes
+
+This "render loop" model means your agent's behavior emerges from your React component logic - conditionals, state machines, composition - all the patterns you already know.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Install Smithers" icon="download" href="/quickstart">
+    Set up your environment and create your first agent
+  </Card>
+  <Card title="Understand the Loop" icon="rotate" href="/concepts/ralph-wiggum-loop">
+    Learn about the Ralph Wiggum execution model
+  </Card>
+</CardGroup>

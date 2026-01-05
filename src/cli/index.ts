@@ -9,7 +9,7 @@ import { initCommand } from './commands/init.js'
 const VERSION = '0.1.0'
 
 const program = new Command()
-  .name('plue')
+  .name('smithers')
   .description('React-based AI agent framework')
   .version(VERSION, '-V, --version', 'Print version')
 
@@ -29,11 +29,11 @@ program.addHelpText(
   'after',
   `
 ${pc.bold('Examples:')}
-  ${pc.dim('$')} plue run agent.mdx           ${pc.dim('# Run an agent')}
-  ${pc.dim('$')} plue run agent.mdx --yes     ${pc.dim('# Auto-approve execution')}
-  ${pc.dim('$')} plue plan agent.mdx          ${pc.dim('# Show plan without executing')}
-  ${pc.dim('$')} plue init my-agent           ${pc.dim('# Initialize a new project')}
-  ${pc.dim('$')} plue init . --template research
+  ${pc.dim('$')} smithers run agent.mdx           ${pc.dim('# Run an agent')}
+  ${pc.dim('$')} smithers run agent.mdx --yes     ${pc.dim('# Auto-approve execution')}
+  ${pc.dim('$')} smithers plan agent.mdx          ${pc.dim('# Show plan without executing')}
+  ${pc.dim('$')} smithers init my-agent           ${pc.dim('# Initialize a new project')}
+  ${pc.dim('$')} smithers init . --template research
 `
 )
 

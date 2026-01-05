@@ -6,7 +6,7 @@ import * as path from 'path'
 import { displayError, info, success, warn } from '../display.js'
 
 export const initCommand = new Command('init')
-  .description('Initialize a new Plue project')
+  .description('Initialize a new Smithers project')
   .argument('[dir]', 'Directory to initialize', '.')
   .option('--template <name>', 'Use a starter template', 'hello-world')
   .action(async (dir: string, options) => {
@@ -154,7 +154,7 @@ async function init(dir: string, options: InitOptions): Promise<void> {
     )
   }
 
-  info(`Initializing Plue project with ${pc.cyan(options.template)} template`)
+  info(`Initializing Smithers project with ${pc.cyan(options.template)} template`)
 
   // Create directory if needed
   if (!fs.existsSync(targetDir)) {
@@ -192,11 +192,11 @@ async function init(dir: string, options: InitOptions): Promise<void> {
       version: '0.1.0',
       type: 'module',
       scripts: {
-        start: 'plue run agent.mdx',
-        plan: 'plue plan agent.mdx',
+        start: 'smithers run agent.mdx',
+        plan: 'smithers plan agent.mdx',
       },
       dependencies: {
-        plue: '^0.1.0',
+        smithers: '^0.1.0',
         react: '^19.0.0',
       },
     }

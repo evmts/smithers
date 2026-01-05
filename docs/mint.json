@@ -1,0 +1,104 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Smithers",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#6366F1",
+    "light": "#818CF8",
+    "dark": "#4F46E5",
+    "anchors": {
+      "from": "#6366F1",
+      "to": "#A855F7"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "GitHub",
+      "url": "https://github.com/smithers-ai/smithers"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Get Started",
+    "url": "/quickstart"
+  },
+  "tabs": [
+    {
+      "name": "Docs",
+      "url": "/"
+    },
+    {
+      "name": "API Reference",
+      "url": "/api-reference"
+    },
+    {
+      "name": "Examples",
+      "url": "/examples"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "GitHub",
+      "icon": "github",
+      "url": "https://github.com/smithers-ai/smithers"
+    },
+    {
+      "name": "Community",
+      "icon": "discord",
+      "url": "https://discord.gg/smithers"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": ["introduction", "quickstart"]
+    },
+    {
+      "group": "Core Concepts",
+      "pages": [
+        "concepts/ralph-wiggum-loop",
+        "concepts/state-management"
+      ]
+    },
+    {
+      "group": "Components",
+      "pages": [
+        "components/claude",
+        "components/subagent",
+        "components/phase-step",
+        "components/prompt-structure"
+      ]
+    },
+    {
+      "group": "CLI",
+      "pages": [
+        "cli/run",
+        "cli/plan",
+        "cli/init"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "api-reference/render-plan",
+        "api-reference/execute-plan",
+        "api-reference/types"
+      ]
+    },
+    {
+      "group": "Examples",
+      "pages": [
+        "examples/code-review",
+        "examples/multi-agent",
+        "examples/data-pipeline"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/smithers-ai/smithers",
+    "twitter": "https://twitter.com/smithers_ai"
+  }
+}

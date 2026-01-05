@@ -2,7 +2,7 @@
 
 ## MDX Entry Points
 
-Plue agents are MDX files—Markdown with JSX support. The entry point is always an `.mdx` file:
+Smithers agents are MDX files—Markdown with JSX support. The entry point is always an `.mdx` file:
 
 ```mdx
 import { Claude, Phase } from 'smithers'
@@ -18,7 +18,7 @@ MDX lets you mix prose with components naturally.
 
 ## JSX Renders to XML
 
-When you write JSX components, Plue renders them to XML. This XML becomes the "plan" sent to Claude:
+When you write JSX components, Smithers renders them to XML. This XML becomes the "plan" sent to Claude:
 
 ```tsx
 <Claude>
@@ -42,7 +42,7 @@ Renders to:
 
 ## React State
 
-Plue uses real React. State management works exactly as you'd expect:
+Smithers uses real React. State management works exactly as you'd expect:
 
 ```tsx
 function MyAgent() {
@@ -76,7 +76,7 @@ This simple loop handles complex multi-step tasks through iterative refinement.
 
 ## Plans and Approval
 
-Before execution, Plue shows the rendered XML plan (Terraform-style):
+Before execution, Smithers shows the rendered XML plan (Terraform-style):
 
 ```
 Plan:
@@ -102,4 +102,4 @@ Tools passed to `<Claude>` automatically connect as MCP (Model Context Protocol)
 </Claude>
 ```
 
-No manual MCP configuration needed—Plue handles the wiring.
+No manual MCP configuration needed—Smithers handles the wiring.

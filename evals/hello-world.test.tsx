@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'bun:test'
+import './setup.ts'
 import { renderPlan, executePlan, Claude } from '../src/index.js'
 
 describe('hello-world', () => {

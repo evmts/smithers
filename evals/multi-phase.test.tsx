@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'bun:test'
+import './setup.ts'
 import { create } from 'zustand'
 import { renderPlan, executePlan, Claude, Phase, Step } from '../src/index.js'
 

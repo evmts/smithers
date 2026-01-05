@@ -5,17 +5,45 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "bin": {
     "smithers": "dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target node",
     "dev": "bun run src/cli/index.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "bun run build && changeset publish"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/williamcory/smithers.git"
+  },
+  "homepage": "https://github.com/williamcory/smithers#readme",
+  "bugs": {
+    "url": "https://github.com/williamcory/smithers/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "@mdx-js/mdx": "^3.1.1",
+    "@modelcontextprotocol/sdk": "^1.25.1",
     "commander": "^12.1.0",
     "ora": "^8.1.1",
     "picocolors": "^1.1.1",
@@ -23,6 +51,8 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
     "@types/bun": "latest",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.7",

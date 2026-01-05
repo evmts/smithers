@@ -21,6 +21,13 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Fix needed**: Use safe/stable serializer with try/catch and fall back to string tags for unsupported types
 - Affected file: `src/core/execute.ts:401`
 
+### Mock Executor JSON Detection (2026-01-05 - FIXED)
+- **Problem**: Mock executor's regex for extracting JSON from prompts couldn't handle nested structures (arrays, nested objects)
+- The regex `/\{[^}]*\}/` would stop at the first `}` character, even if it was inside a nested array like `{"issues":[]}`
+- **Solution**: Implemented `extractJsonFromText()` helper that properly handles brace matching, string escaping, and validates JSON
+- Affected file: `src/core/execute.ts:590-640`
+- All 17/17 tests now pass
+
 ## Project History
 
 - Originally named "Plue", renamed to "Smithers" on 2026-01-05

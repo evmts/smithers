@@ -30,7 +30,8 @@ Read these files to understand the project:
 
 - Core renderer + executor exist and tests pass
 - `renderPlan()`/`executePlan()` are async (React 19 reconciler)
-- Executor currently uses a mock Claude response
+- Claude executor exists; tool-use loop is not implemented yet
+- Evals run in mock mode via `SMITHERS_MOCK_MODE`
 - CLI commands are stubbed (run/plan/init) and approval UX is minimal
 
 ## Priority Order (Top → Bottom)

@@ -7,6 +7,7 @@
     "strict": true,
     "skipLibCheck": true,
     "declaration": true,
+    "declarationDir": "./dist",
     "outDir": "dist",
     "jsx": "react-jsx",
     "jsxImportSource": "react",
@@ -14,7 +15,7 @@
     "lib": ["ESNext"],
     "resolveJsonModule": true,
     "paths": {
-      "plue": ["./src/index.ts"]
+      "smithers": ["./src/index.ts"]
     }
   },
   "include": ["src/**/*", "evals/**/*.tsx"],
