@@ -56,6 +56,15 @@ This file contains important learnings, decisions, and context from previous Ral
 - Affected file: `docs/cli/init.mdx:52-60`
 - Commit: 0b75ffb
 
+### Execution Robustness Fixes (2026-01-05 - FIXED)
+- **Fixed 4 issues from Codex reviews**:
+  1. MCP capabilities mismatch - removed `sampling.tools` since client doesn't implement sampling handler
+  2. ContentHash safety - ensure contentHash is always set when saving execution state (fallback to compute)
+  3. Streaming implementation - use proper Anthropic SDK streaming API (`client.messages.stream()`) with `text` and `streamEvent` handlers
+  4. Safe serialization - added `safeStringify()` helper for tool results to handle BigInt, circular refs, etc.
+- All issues were preventing potential runtime failures or misleading behavior
+- Commit: 3c9fc96
+
 ## Project History
 
 - Originally named "Plue", renamed to "Smithers" on 2026-01-05
