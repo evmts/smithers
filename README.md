@@ -5,27 +5,29 @@
 Build AI agents the same way you build user interfaces. Plue lets you compose complex agent workflows from simple, reusable components using JSX—with React state driving behavior, conditional rendering controlling flow, and TypeScript keeping everything type-safe.
 
 ```tsx
-import { useState, useEffect } from 'react'
+import { create } from 'zustand'
 import { renderPlan, executePlan, Claude, Phase, Step, Subagent } from 'plue'
 
-function ResearchAgent({ topic }) {
-  const [phase, setPhase] = useState<'research' | 'analyze' | 'write'>('research')
-  const [sources, setSources] = useState([])
-  const [analyses, setAnalyses] = useState<Record<string, any>>({})
+// Define agent state with Zustand
+const useResearchStore = create((set, get) => ({
+  phase: 'research' as 'research' | 'analyze' | 'write',
+  sources: [] as { id: string; url: string }[],
+  analyses: {} as Record<string, any>,
 
-  // Transition to write phase when all analyses complete
-  useEffect(() => {
-    if (sources.length > 0 && Object.keys(analyses).length === sources.length) {
-      setPhase('write')
-    }
-  }, [analyses, sources.length])
+  setSources: (sources) => set({ sources, phase: 'analyze' }),
+  addAnalysis: (id, result) => {
+    const analyses = { ...get().analyses, [id]: result }
+    const allDone = Object.keys(analyses).length === get().sources.length
+    set({ analyses, phase: allDone ? 'write' : 'analyze' })
+  },
+}))
+
+function ResearchAgent({ topic }) {
+  const { phase, sources, analyses, setSources, addAnalysis } = useResearchStore()
 
   if (phase === 'research') {
     return (
-      <Claude tools={[webSearch]} onFinished={(result) => {
-        setSources(result.sources)
-        setPhase('analyze')
-      }}>
+      <Claude tools={[webSearch]} onFinished={(result) => setSources(result.sources)}>
         <Phase name="research">
           <Step>Search for recent articles about {topic}</Step>
           <Step>Find at least 5 credible sources</Step>
@@ -39,7 +41,7 @@ function ResearchAgent({ topic }) {
       <>
         {sources.map((source) => (
           <Subagent key={source.id} name={`analyzer-${source.id}`}>
-            <Claude onFinished={(result) => setAnalyses(prev => ({ ...prev, [source.id]: result }))}>
+            <Claude onFinished={(result) => addAnalysis(source.id, result)}>
               Analyze: {source.url}
               Identify: main argument, evidence quality, potential biases
             </Claude>
@@ -189,22 +191,24 @@ Renders to:
 
 ### State Drives Behavior
 
-Use React state to control what your agent does. When state changes, the component re-renders with a new plan.
+Use Zustand (or any React state) to control what your agent does. When state changes, the component re-renders with a new plan.
 
 ```tsx
+import { create } from 'zustand'
+
+const useAgentStore = create((set) => ({
+  phase: 'research',
+  findings: null,
+  setFindings: (findings) => set({ findings, phase: 'synthesize' }),
+  complete: () => set({ phase: 'done' }),
+}))
+
 function ResearchAgent({ topic }) {
-  const [phase, setPhase] = useState('research')
-  const [findings, setFindings] = useState(null)
+  const { phase, findings, setFindings, complete } = useAgentStore()
 
   if (phase === 'research') {
     return (
-      <Claude
-        tools={[webSearch]}
-        onFinished={(result) => {
-          setFindings(result)
-          setPhase('synthesize')
-        }}
-      >
+      <Claude tools={[webSearch]} onFinished={setFindings}>
         Research {topic}. Find 5 authoritative sources.
       </Claude>
     )
@@ -212,7 +216,7 @@ function ResearchAgent({ topic }) {
 
   if (phase === 'synthesize') {
     return (
-      <Claude onFinished={() => setPhase('done')}>
+      <Claude onFinished={complete}>
         Synthesize these findings into a report: {JSON.stringify(findings)}
       </Claude>
     )
@@ -222,7 +226,7 @@ function ResearchAgent({ topic }) {
 }
 ```
 
-The agent automatically progresses through phases as `onFinished` callbacks update state.
+The agent automatically progresses through phases as `onFinished` callbacks update state. Zustand ensures no stale closures—the store always has the latest state.
 
 ### Composition
 
