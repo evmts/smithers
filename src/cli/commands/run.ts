@@ -52,15 +52,15 @@ async function run(file: string, options: RunOptions): Promise<void> {
     throw new Error(`Path is not a file: ${filePath}`)
   }
 
-  // Validate numeric options
-  const maxFrames = parseInt(options.maxFrames, 10)
-  const timeout = parseInt(options.timeout, 10)
+  // Validate numeric options (strict integer validation)
+  const maxFrames = Number(options.maxFrames)
+  const timeout = Number(options.timeout)
 
-  if (isNaN(maxFrames) || maxFrames <= 0) {
+  if (!Number.isInteger(maxFrames) || maxFrames <= 0) {
     throw new Error(`Invalid --max-frames value: ${options.maxFrames}. Must be a positive integer.`)
   }
 
-  if (isNaN(timeout) || timeout <= 0) {
+  if (!Number.isInteger(timeout) || timeout <= 0) {
     throw new Error(`Invalid --timeout value: ${options.timeout}. Must be a positive integer.`)
   }
 
