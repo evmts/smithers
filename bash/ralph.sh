@@ -32,7 +32,8 @@ echo "Press Ctrl+C to stop the loop"
 echo ""
 
 # The prompt that guides each iteration
-read -r -d '' RALPH_PROMPT << 'PROMPT_EOF'
+# Note: read returns 1 at EOF, so we use || true to prevent set -e from aborting
+read -r -d '' RALPH_PROMPT << 'PROMPT_EOF' || true
 You are a senior software engineer working on Plue, a React-based framework for composable AI agent prompts. Your goal is to incrementally productionize this project to shipping quality.
 
 ## Your Mission
