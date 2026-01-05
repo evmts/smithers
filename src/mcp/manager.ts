@@ -65,9 +65,7 @@ export class MCPManager {
         version: '1.0.0',
       },
       {
-        capabilities: {
-          tools: {},
-        },
+        capabilities: {},
       }
     )
 
@@ -240,15 +238,16 @@ export class MCPManager {
 
       // Handle the result format
       if ('content' in result && Array.isArray(result.content)) {
+        const isError = 'isError' in result && typeof result.isError === 'boolean' ? result.isError : false
         return {
-          success: !result.isError,
+          success: !isError,
           content: result.content.map((item) => ({
             type: item.type as 'text' | 'image' | 'resource',
             text: 'text' in item ? item.text : undefined,
             data: 'data' in item ? item.data : undefined,
             mimeType: 'mimeType' in item ? item.mimeType : undefined,
           })),
-          isError: result.isError,
+          isError,
         }
       }
 
