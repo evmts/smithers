@@ -1,0 +1,62 @@
+import { useState } from 'react'
+import { Claude, Phase, Step } from 'plue'
+import { webSearch, fileSystem } from './tools'
+
+# Research Agent
+
+export function ResearchAgent({ topic }) {
+  const [phase, setPhase] = useState('gather')
+  const [sources, setSources] = useState([])
+  const [analysis, setAnalysis] = useState(null)
+
+  if (phase === 'gather') {
+    return (
+      <Claude
+        tools={[webSearch]}
+        onFinished={(result) => {
+          setSources(result.sources)
+          setPhase('analyze')
+        }}
+      >
+        <Phase name="gather">
+          <Step>Search for recent papers and articles about: {topic}</Step>
+          <Step>Collect at least 5 high-quality sources</Step>
+          <Step>Extract key findings from each source</Step>
+        </Phase>
+      </Claude>
+    )
+  }
+
+  if (phase === 'analyze') {
+    return (
+      <Claude
+        onFinished={(result) => {
+          setAnalysis(result)
+          setPhase('report')
+        }}
+      >
+        <Phase name="analyze">
+          Analyze these sources and identify:
+          - Common themes
+          - Contradictions
+          - Knowledge gaps
+
+          Sources: {JSON.stringify(sources)}
+        </Phase>
+      </Claude>
+    )
+  }
+
+  return (
+    <Claude tools={[fileSystem]} onFinished={() => setPhase('done')}>
+      <Phase name="report">
+        Write a research report based on this analysis:
+        {JSON.stringify(analysis)}
+
+        Save the report to `output/report.md`.
+      </Phase>
+    </Claude>
+  )
+}
+
+<ResearchAgent topic="large language model agents" />

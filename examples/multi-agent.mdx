@@ -1,0 +1,107 @@
+import { useState } from 'react'
+import { Claude, Phase, Step, Persona } from 'plue'
+import { fileSystem, runTests } from './tools'
+
+# Multi-Agent Development Team
+
+export function Architect({ task, onPlan }) {
+  return (
+    <Claude onFinished={onPlan}>
+      <Persona role="software architect">
+        You design clean, maintainable systems.
+      </Persona>
+
+      <Phase name="plan">
+        <Step>Analyze the requirements</Step>
+        <Step>Break down into subtasks</Step>
+        <Step>Define interfaces between components</Step>
+      </Phase>
+
+      Task: {task}
+
+      Return a JSON array of subtasks, each with: name, description, dependencies.
+    </Claude>
+  )
+}
+
+export function Developer({ subtask, onComplete }) {
+  return (
+    <Claude tools={[fileSystem]} onFinished={onComplete}>
+      <Persona role="senior developer">
+        You write clean, tested code.
+      </Persona>
+
+      <Phase name="implement">
+        <Step>Read existing code for context</Step>
+        <Step>Implement the feature</Step>
+        <Step>Write unit tests</Step>
+      </Phase>
+
+      Subtask: {subtask.name}
+      Description: {subtask.description}
+    </Claude>
+  )
+}
+
+export function Reviewer({ onApprove }) {
+  return (
+    <Claude tools={[fileSystem, runTests]} onFinished={onApprove}>
+      <Persona role="tech lead">
+        You ensure code quality and correctness.
+      </Persona>
+
+      <Phase name="review">
+        <Step>Run the test suite</Step>
+        <Step>Review code changes</Step>
+        <Step>Check for edge cases</Step>
+      </Phase>
+
+      Review all changes and approve if tests pass and code is clean.
+    </Claude>
+  )
+}
+
+export function DevTeam({ task }) {
+  const [stage, setStage] = useState('planning')
+  const [plan, setPlan] = useState(null)
+  const [completed, setCompleted] = useState([])
+
+  if (stage === 'planning') {
+    return (
+      <Architect
+        task={task}
+        onPlan={(p) => {
+          setPlan(p)
+          setStage('implementing')
+        }}
+      />
+    )
+  }
+
+  if (stage === 'implementing') {
+    const remaining = plan.subtasks.filter(
+      (s) => !completed.includes(s.name)
+    )
+
+    if (remaining.length === 0) {
+      setStage('reviewing')
+      return null
+    }
+
+    const next = remaining[0]
+    return (
+      <Developer
+        subtask={next}
+        onComplete={() => setCompleted([...completed, next.name])}
+      />
+    )
+  }
+
+  return (
+    <Reviewer
+      onApprove={() => setStage('done')}
+    />
+  )
+}
+
+<DevTeam task="Add user authentication with email/password login" />
