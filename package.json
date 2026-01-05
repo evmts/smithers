@@ -16,16 +16,19 @@
   },
   "dependencies": {
     "commander": "^12.1.0",
+    "ora": "^8.1.1",
     "picocolors": "^1.1.1",
-    "ora": "^8.1.1"
+    "react-reconciler": "^0.33.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^22.10.2",
+    "@types/react": "^19.2.7",
+    "@types/react-reconciler": "^0.32.3",
     "typescript": "^5.7.2"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "react": "^19.2.3"
   },
   "keywords": [
     "ai",

@@ -116,6 +116,7 @@ export interface ExecutionResult {
   frames: number
   totalDuration: number
   history: FrameResult[]
+  mcpServers?: string[] // List of MCP servers that were connected
 }
 
 /**

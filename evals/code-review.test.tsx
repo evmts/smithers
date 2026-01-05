@@ -1,6 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { renderPlan, executePlan } from 'plue'
-import { Claude, Phase, Step, Constraints, OutputFormat } from 'plue/components'
+import { renderPlan, executePlan, Claude, Phase, Step, Constraints, OutputFormat } from 'plue'
 
 describe('code-review', () => {
   const mockFileSystem = {
@@ -53,7 +52,7 @@ describe('code-review', () => {
     )
 
     const result = await executePlan(<CodeReview />)
-    const output = JSON.parse(result.output)
+    const output = JSON.parse(result.output as string)
 
     expect(output).toHaveProperty('issues')
     expect(output).toHaveProperty('summary')

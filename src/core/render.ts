@@ -1,55 +1,23 @@
 import type { ReactElement } from 'react'
 import type { PluNode, PluRoot } from './types.js'
+import { createPluRoot } from '../reconciler/index.js'
 
 /**
  * Create a Plue root for rendering
- *
- * STUB: Will be implemented with react-reconciler
  */
 export function createRoot(): PluRoot {
-  let tree: PluNode | null = null
-
-  return {
-    render(element: ReactElement): PluNode {
-      // STUB: This will use react-reconciler to build the tree
-      console.log('[STUB] createRoot.render() called')
-
-      // For now, create a placeholder tree
-      tree = {
-        type: 'ROOT',
-        props: {},
-        children: [],
-        parent: null,
-      }
-
-      return tree
-    },
-
-    unmount(): void {
-      tree = null
-    },
-
-    getTree(): PluNode | null {
-      return tree
-    },
-  }
+  return createPluRoot()
 }
 
 /**
  * Render a React element to an XML plan string
- *
- * STUB: Will be implemented with react-reconciler + serializer
  */
 export async function renderPlan(element: ReactElement): Promise<string> {
-  console.log('[STUB] renderPlan() called')
-
-  // STUB: Return example XML
-  return `<claude>
-  <phase name="example">
-    <step>This is a stub plan</step>
-    <step>Actual rendering will use react-reconciler</step>
-  </phase>
-</claude>`
+  const root = createRoot()
+  const tree = root.render(element)
+  const xml = serialize(tree)
+  root.unmount()
+  return xml
 }
 
 /**

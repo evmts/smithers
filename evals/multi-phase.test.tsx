@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { useState } from 'react'
-import { renderPlan, executePlan } from 'plue'
-import { Claude, Phase, Step } from 'plue/components'
+import { renderPlan, executePlan, Claude, Phase, Step } from 'plue'
 
 describe('multi-phase', () => {
   test('renders different plans based on state', async () => {

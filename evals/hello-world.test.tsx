@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { renderPlan } from 'plue'
+import { renderPlan, executePlan, Claude } from 'plue'
 
 describe('hello-world', () => {
   test('renders basic Claude component to XML', async () => {

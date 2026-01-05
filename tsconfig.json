@@ -8,13 +8,15 @@
     "skipLibCheck": true,
     "declaration": true,
     "outDir": "dist",
-    "rootDir": "src",
     "jsx": "react-jsx",
     "jsxImportSource": "react",
     "types": ["bun-types"],
     "lib": ["ESNext"],
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "paths": {
+      "plue": ["./src/index.ts"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "evals/**/*.tsx"],
   "exclude": ["node_modules", "dist"]
 }

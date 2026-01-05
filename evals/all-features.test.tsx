@@ -1,14 +1,15 @@
 import { describe, test, expect } from 'bun:test'
 import { useState } from 'react'
-import { renderPlan, executePlan } from 'plue'
 import {
+  renderPlan,
+  executePlan,
   Claude,
   Phase,
   Step,
   Persona,
   Constraints,
   OutputFormat,
-} from 'plue/components'
+} from 'plue'
 
 /**
  * Comprehensive eval that tests ALL Plue features in a single complex scenario:
@@ -54,7 +55,7 @@ describe('all-features', () => {
     )
   }
 
-  function JsonResponse({ schema }: { schema: object }) {
+  function JsonResponse({ schema }: { schema: Record<string, unknown> }) {
     return (
       <OutputFormat schema={schema}>
         Return valid JSON matching the schema.
@@ -94,7 +95,7 @@ describe('all-features', () => {
     )
   }
 
-  function ReportWriter({ analysis, onComplete }: { analysis: any; onComplete: (report: string) => void }) {
+  function ReportWriter({ analysis, onComplete }: { analysis: any; onComplete: (report: unknown) => void }) {
     return (
       <Claude
         tools={[fileSystem]}
@@ -253,7 +254,7 @@ describe('all-features', () => {
     }
 
     // Mock a failure scenario
-    await executePlan(<FailingAgent />, { simulateError: true })
+    await executePlan(<FailingAgent />)
 
     expect(errorCaught).toBe(true)
   })
