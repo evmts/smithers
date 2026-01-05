@@ -147,10 +147,11 @@ while true; do
     echo ""
 
     # Run Claude Code with the prompt
-    # Using --yes to auto-approve safe operations
+    # -p: print mode (non-interactive)
+    # --dangerously-skip-permissions: bypass permission prompts for autonomous operation
     # Disable set -e temporarily to capture exit code without aborting
     set +e
-    claude --yes --print "$RALPH_PROMPT"
+    claude -p --dangerously-skip-permissions "$RALPH_PROMPT"
     EXIT_CODE=$?
     set -e
 
