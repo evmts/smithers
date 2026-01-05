@@ -123,7 +123,7 @@ export interface ExecutionResult {
  * Plue root container for React reconciler
  */
 export interface PluRoot {
-  render(element: ReactElement): PluNode
+  render(element: ReactElement): Promise<PluNode>
   unmount(): void
   getTree(): PluNode | null
 }

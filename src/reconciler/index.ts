@@ -15,6 +15,17 @@ reconciler.injectIntoDevTools({
   rendererPackageName: 'plue',
 })
 
+// Export utility functions for forcing synchronous updates
+export const flushSyncWork = () => {
+  const fn = (reconciler as any).flushSyncWork
+  if (fn) fn()
+}
+
+export const flushPassiveEffects = () => {
+  const fn = (reconciler as any).flushPassiveEffects
+  if (fn) fn()
+}
+
 /**
  * Create a Plue root for rendering React elements
  *
@@ -57,20 +68,42 @@ export function createPluRoot(): PluRoot {
   )
 
   return {
-    render(element: ReactElement): PluNode {
-      // Update the container with the element synchronously
+    async render(element: ReactElement): Promise<PluNode> {
+      // Try updateContainerSync first (React 19+)
       const updateContainerSync = (reconciler as any).updateContainerSync
+
       if (updateContainerSync) {
-        updateContainerSync(element, container, null, () => {})
+        // Use updateContainerSync for rendering
+        // Note: Even though it's called "Sync", the commit phase is still async
+        updateContainerSync(element, container)
       } else {
+        // Fallback: use regular updateContainer
         reconciler.updateContainer(element, container, null, () => {})
+
+        const flushSyncWork = (reconciler as any).flushSyncWork
+        const flushPassiveEffects = (reconciler as any).flushPassiveEffects
+
+        if (flushSyncWork) {
+          flushSyncWork()
+        }
+
+        if (flushPassiveEffects) {
+          flushPassiveEffects()
+        }
       }
 
-      // Force flush any pending work to ensure synchronous rendering
-      const flushSyncWork = (reconciler as any).flushSyncWork
-      if (flushSyncWork) {
-        flushSyncWork()
-      }
+      // The React reconciler commits work asynchronously in microtasks/timers
+      // We need to wait for the commit phase to complete
+      // Try multiple strategies to ensure the work is done:
+
+      // 1. Process immediate microtasks
+      await new Promise((resolve) => setImmediate(resolve))
+
+      // 2. Wait a bit more for async work (React 19 schedules work in timers)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      // 3. One final microtask to catch any stragglers
+      await new Promise((resolve) => setImmediate(resolve))
 
       return rootNode
     },

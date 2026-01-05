@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { cloneElement } from 'react'
 import type {
   ExecuteOptions,
   ExecutionResult,
@@ -7,6 +8,7 @@ import type {
   Tool,
 } from './types.js'
 import { createRoot, renderPlan } from './render.js'
+import { flushSyncWork, flushPassiveEffects } from '../reconciler/index.js'
 
 /**
  * Execute a plan using the Ralph Wiggum loop
@@ -48,8 +50,17 @@ export async function executePlan(
     frameNumber++
     const frameStart = Date.now()
 
+    if (verbose) {
+      console.log(`[Frame ${frameNumber}] Rendering element...`)
+    }
+
     // Render the current state to a tree
-    const tree = root.render(element)
+    const tree = await root.render(element)
+
+    if (verbose) {
+      const firstChild = tree.children[0]
+      console.log(`[Frame ${frameNumber}] Tree root has ${tree.children.length} children, first child type: ${firstChild?.type}`)
+    }
 
     // Find nodes that need execution
     const pendingNodes = findPendingExecutables(tree)
@@ -144,6 +155,27 @@ export async function executePlan(
       onFrame(frameResult)
     }
 
+    // If state changed, we need to let React process the updates
+    // Keep rendering until the tree stabilizes
+    if (stateChanged) {
+      // Flush any pending work from state updates
+      flushSyncWork()
+      flushPassiveEffects()
+
+      // Wait for React to process state updates
+      // We need to give React's scheduler time to process the setState calls
+      await new Promise((resolve) => setImmediate(resolve))
+
+      // Do a few more renders to let state propagate
+      // This is a workaround for React 19's async state updates
+      for (let i = 0; i < 3; i++) {
+        await root.render(element)
+        flushSyncWork()
+        flushPassiveEffects()
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+    }
+
     // If no state changes and no more pending nodes, we're done
     if (!stateChanged && pendingNodes.length === toExecute.length) {
       if (verbose) {
@@ -220,7 +252,8 @@ export async function executeNode(node: PluNode): Promise<void> {
       promptText.includes('JSON.stringify') ||
       promptText.match(/\{[^}]*\}/) !== null || // Contains a JSON object
       node.props.outputFormat ||
-      hasChildOfType(node, 'output-format')
+      hasChildOfType(node, 'output-format') ||
+      promptText.toLowerCase().includes('return') // "Return a plan", "Return exactly:", etc.
 
     if (hasJsonIndicator) {
       // Try to extract JSON from the prompt if it contains a JSON object
@@ -235,25 +268,46 @@ export async function executeNode(node: PluNode): Promise<void> {
         if (jsonObjectMatch) {
           mockOutput = jsonObjectMatch[0]
         } else {
-          // Default JSON response
-          mockOutput = JSON.stringify({
-            issues: [],
-            summary: 'No issues found',
-            status: 'complete',
-          })
+          // Infer what kind of JSON to return based on prompt content
+          if (promptText.toLowerCase().includes('subtask')) {
+            mockOutput = JSON.stringify({
+              subtasks: ['task1', 'task2'],
+            })
+          } else {
+            // Default JSON response
+            mockOutput = JSON.stringify({
+              issues: [],
+              summary: 'No issues found',
+              status: 'complete',
+              result: 'success',
+            })
+          }
         }
       }
     }
 
+    // Store the raw output
     node._execution = {
       status: 'complete',
       result: mockOutput,
     }
 
-    // Call onFinished if present
+    // Call onFinished if present - parse JSON if applicable
     const onFinished = node.props.onFinished as ((output: unknown) => void) | undefined
     if (onFinished) {
-      onFinished(mockOutput)
+      let outputToPass: unknown = mockOutput
+
+      // Try to parse JSON for onFinished callback
+      if (typeof mockOutput === 'string') {
+        try {
+          outputToPass = JSON.parse(mockOutput)
+        } catch {
+          // Not JSON, pass as string
+          outputToPass = mockOutput
+        }
+      }
+
+      onFinished(outputToPass)
     }
   } catch (error) {
     node._execution = {

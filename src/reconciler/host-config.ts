@@ -164,6 +164,10 @@ export const hostConfig = {
     internalHandle: unknown
   ): void {
     instance.props = { ...nextProps }
+    // Clear execution status on update - this is a new render
+    if (instance._execution) {
+      delete instance._execution
+    }
   },
 
   /**

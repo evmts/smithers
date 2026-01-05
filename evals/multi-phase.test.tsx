@@ -42,11 +42,15 @@ describe('multi-phase', () => {
     function MultiPhaseAgent() {
       const [phase, setPhase] = useState('phase1')
 
+      console.log(`[TEST] Render: phase = ${phase}`)
       phases.push(phase)
 
       if (phase === 'phase1') {
         return (
-          <Claude onFinished={() => setPhase('phase2')}>
+          <Claude onFinished={() => {
+            console.log('[TEST] onFinished for phase1, calling setPhase("phase2")')
+            setPhase('phase2')
+          }}>
             <Phase name="phase1">First phase</Phase>
           </Claude>
         )
@@ -54,20 +58,27 @@ describe('multi-phase', () => {
 
       if (phase === 'phase2') {
         return (
-          <Claude onFinished={() => setPhase('phase3')}>
+          <Claude onFinished={() => {
+            console.log('[TEST] onFinished for phase2, calling setPhase("phase3")')
+            setPhase('phase3')
+          }}>
             <Phase name="phase2">Second phase</Phase>
           </Claude>
         )
       }
 
       return (
-        <Claude onFinished={() => setPhase('done')}>
+        <Claude onFinished={() => {
+          console.log('[TEST] onFinished for phase3')
+          setPhase('done')
+        }}>
           <Phase name="phase3">Final phase</Phase>
         </Claude>
       )
     }
 
-    await executePlan(<MultiPhaseAgent />)
+    console.log('[TEST] Starting executePlan')
+    await executePlan(<MultiPhaseAgent />, { verbose: true })
 
     expect(phases).toContain('phase1')
     expect(phases).toContain('phase2')

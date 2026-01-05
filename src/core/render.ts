@@ -14,7 +14,7 @@ export function createRoot(): PluRoot {
  */
 export async function renderPlan(element: ReactElement): Promise<string> {
   const root = createRoot()
-  const tree = root.render(element)
+  const tree = await root.render(element)
   const xml = serialize(tree)
   root.unmount()
   return xml

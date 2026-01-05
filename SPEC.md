@@ -57,6 +57,7 @@ Plue is a React-based framework for authoring composable, reusable AI agent prom
 | `<Subagent>` | Parallel execution boundary |
 | `<Phase>` | Defines a phase in multi-phase plans |
 | `<Step>` | Defines a step within a phase |
+| `<Task>` | Trackable task with `done` prop for completion state |
 
 ### Semantic Components
 | Component | Purpose |
