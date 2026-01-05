@@ -32,3 +32,16 @@ export type {
   ExecutionResult,
   FrameResult,
 } from './core/types.js'
+
+// MCP (Model Context Protocol) integration
+export { MCPManager, MCPPresets, createMCPConfigs } from './mcp/index.js'
+export type {
+  MCPServerConfig,
+  MCPStdioConfig,
+  MCPHttpConfig,
+  MCPTransportType,
+  MCPConnection,
+  MCPConnectionStatus,
+  MCPTool,
+  MCPToolResult,
+} from './mcp/index.js'
