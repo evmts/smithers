@@ -30,9 +30,14 @@ async function plan(file: string, options: PlanOptions): Promise<void> {
   // Resolve file path
   const filePath = path.resolve(process.cwd(), file)
 
-  // Check file exists
+  // Check file exists and is a file (not directory)
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`)
+  }
+
+  const stat = fs.statSync(filePath)
+  if (!stat.isFile()) {
+    throw new Error(`Path is not a file: ${filePath}`)
   }
 
   info(`Loading agent from ${pc.cyan(file)}`)

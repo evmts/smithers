@@ -1,7 +1,7 @@
 import * as readline from 'readline'
 import pc from 'picocolors'
 
-export type ApprovalChoice = 'yes' | 'no' | 'edit'
+export type ApprovalChoice = 'yes' | 'no'
 
 /**
  * Prompt user for plan approval (Terraform-style)
@@ -16,7 +16,7 @@ export async function promptApproval(): Promise<ApprovalChoice> {
     console.log()
     console.log(
       pc.bold('Do you want to execute this plan?'),
-      pc.dim('(y)es / (n)o / (e)dit')
+      pc.dim('(y)es / (n)o')
     )
 
     rl.question(pc.cyan('> '), (answer) => {
@@ -26,8 +26,6 @@ export async function promptApproval(): Promise<ApprovalChoice> {
 
       if (normalized === 'y' || normalized === 'yes') {
         resolve('yes')
-      } else if (normalized === 'e' || normalized === 'edit') {
-        resolve('edit')
       } else {
         resolve('no')
       }
@@ -53,13 +51,3 @@ export async function confirm(message: string): Promise<boolean> {
   })
 }
 
-/**
- * Open plan in editor for editing
- *
- * STUB: Will open $EDITOR with the plan file
- */
-export async function editPlan(plan: string): Promise<string> {
-  // STUB: For now, just return the original plan
-  console.log(pc.yellow('Edit mode not yet implemented'))
-  return plan
-}

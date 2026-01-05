@@ -7,13 +7,12 @@ import * as path from 'path'
 import { renderPlan } from '../../core/render.js'
 import { executePlan } from '../../core/execute.js'
 import { displayPlan, displayResult, displayError, info, success, warn } from '../display.js'
-import { promptApproval, editPlan } from '../prompt.js'
+import { promptApproval } from '../prompt.js'
 
 export const runCommand = new Command('run')
   .description('Run an agent from an MDX/TSX file')
   .argument('<file>', 'Path to the agent file (.mdx or .tsx)')
   .option('-y, --yes', 'Skip plan approval (auto-approve)')
-  .option('-w, --watch', 'Re-run on file changes')
   .option('-v, --verbose', 'Show detailed execution logs')
   .option('--dry-run', 'Show plan and exit without executing')
   .option('--max-frames <n>', 'Maximum execution frames', '100')
@@ -31,7 +30,6 @@ export const runCommand = new Command('run')
 
 interface RunOptions {
   yes?: boolean
-  watch?: boolean
   verbose?: boolean
   dryRun?: boolean
   maxFrames: string
@@ -44,9 +42,26 @@ async function run(file: string, options: RunOptions): Promise<void> {
   // Resolve file path
   const filePath = path.resolve(process.cwd(), file)
 
-  // Check file exists
+  // Check file exists and is a file (not directory)
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`)
+  }
+
+  const stat = fs.statSync(filePath)
+  if (!stat.isFile()) {
+    throw new Error(`Path is not a file: ${filePath}`)
+  }
+
+  // Validate numeric options
+  const maxFrames = parseInt(options.maxFrames, 10)
+  const timeout = parseInt(options.timeout, 10)
+
+  if (isNaN(maxFrames) || maxFrames <= 0) {
+    throw new Error(`Invalid --max-frames value: ${options.maxFrames}. Must be a positive integer.`)
+  }
+
+  if (isNaN(timeout) || timeout <= 0) {
+    throw new Error(`Invalid --timeout value: ${options.timeout}. Must be a positive integer.`)
   }
 
   // Check file extension
@@ -88,20 +103,11 @@ async function run(file: string, options: RunOptions): Promise<void> {
 
   // Get approval (unless auto-approved)
   if (!options.yes) {
-    let approved = false
+    const choice = await promptApproval()
 
-    while (!approved) {
-      const choice = await promptApproval()
-
-      if (choice === 'yes') {
-        approved = true
-      } else if (choice === 'edit') {
-        // TODO: Edit plan and re-render
-        await editPlan(plan)
-      } else {
-        info('Execution cancelled')
-        return
-      }
+    if (choice !== 'yes') {
+      info('Execution cancelled')
+      return
     }
   }
 
@@ -110,8 +116,8 @@ async function run(file: string, options: RunOptions): Promise<void> {
   const execSpinner = ora('Executing plan...').start()
 
   const result = await executePlan(element, {
-    maxFrames: parseInt(options.maxFrames, 10),
-    timeout: parseInt(options.timeout, 10) * 1000,
+    maxFrames,
+    timeout: timeout * 1000,
     verbose: options.verbose,
     onFrame: (frame) => {
       if (options.verbose) {
