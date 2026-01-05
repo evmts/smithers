@@ -1,4 +1,5 @@
 import type { ReactElement, ReactNode } from 'react'
+import type { MCPServerConfig } from '../mcp/types.js'
 
 /**
  * Internal node representation for the Smithers renderer
@@ -78,6 +79,8 @@ export interface ClaudeProps {
   stream?: boolean
   /** Callback for streaming chunks */
   onStream?: (chunk: StreamChunk) => void
+  /** MCP servers to connect to for additional tools */
+  mcpServers?: MCPServerConfig[]
   [key: string]: unknown // Pass-through to SDK
 }
 
