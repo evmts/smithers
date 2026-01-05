@@ -1,6 +1,11 @@
 # Plue
 
-React-based framework for composable, reusable AI agent prompts. Write prompts in JSX/MDX, render to XML plans, execute with Claude.
+Framework for composable, reusable, evolvable AI agent prompts. 
+
+- Write prompts in JSX/MDX 
+- render to XML plans.
+- Allow plan to evolve in real time as it ralphs
+- Use entire TypeScript and React ecosystem
 
 ## Install
 
@@ -22,6 +27,8 @@ import { Claude } from 'plue'
 </Claude>
 ```
 
+This agent.mdx file represents your entrypoint. [Ralph](https://ghuntley.com/ralph/) will act as the runtime rerunning this entrypoint file everytime.
+
 Run it:
 
 ```bash
@@ -35,6 +42,10 @@ plue run agent.mdx
 - **React state** - Standard React state drives dynamic plan updates
 - **Ralph Wiggum loop** - Agent runs repeatedly on the plan until completion
 
+## Don't write Smithers code!
+
+Prompt the plan! Consider using your favorite coding harness like claude code to implement the plan using smithers. You can then tell claude code to sleep for 5 minutes at a time and deliver you an easy to read report of what happened every 5 minutes.
+
 ## API
 
 ### `renderPlan()`
@@ -47,9 +58,11 @@ import { renderPlan } from 'plue'
 const plan = await renderPlan(<MyAgent />)
 ```
 
+This is what is happening when you call plue run.
+
 ### `<Claude>`
 
-Wraps Claude Code SDK:
+Wraps Claude Code SDK as a React Component:
 
 ```tsx
 <Claude
@@ -62,6 +75,22 @@ Wraps Claude Code SDK:
 ```
 
 Props pass through to Claude Code SDK. Tools auto-connect as MCP servers.
+
+Render more JSX if you want Claude ralph subagents
+
+```tsx
+<Claude
+  tools={[fileTool, searchTool]}
+  onFinished={(output) => setState(output)}
+  onError={(err) => handleError(err)}
+>
+  <Step>
+     <Claude>
+        Do step 1
+     </Claude>
+  </Step>
+</Claude>
+```
 
 ### `<Phase>`
 
@@ -87,6 +116,28 @@ Defines a step within a phase:
   <Step>Write the new feature</Step>
   <Step>Run tests</Step>
 </Phase>
+```
+
+### `RunInParallel`
+
+Runs a series of steps in parallel.
+
+```tsx
+<Phase name="implementation">
+  <RunInParallel>
+    <Step>Read the existing code</Step>
+    <Step>Write the new feature</Step>
+  </RunInParallel>
+  <Step>Run tests</Step>
+</Phase>
+```
+
+### `Human`
+
+Stops execution of the closest parent ralph until a human intervenes
+
+```tsx
+{needsHumanReview && <Human>Please review the progress so far</Human>}
 ```
 
 ## CLI
