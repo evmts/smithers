@@ -33,13 +33,16 @@ function ResearchAgent({ topic }) {
       <>
         {sources.map((source, i) => (
           <Subagent key={i} name={`analyzer-${i}`}>
-            <Claude onFinished={(result) => setAnalysis(prev => [...(prev || []), result])}>
+            <Claude onFinished={(result) => {
+              const updated = [...(analysis || []), result]
+              setAnalysis(updated)
+              if (updated.length === sources.length) setPhase('write')
+            }}>
               Analyze source {i + 1}: {source.url}
               Identify: main argument, evidence quality, potential biases
             </Claude>
           </Subagent>
         ))}
-        {analysis?.length === sources.length && setPhase('write')}
       </>
     )
   }
