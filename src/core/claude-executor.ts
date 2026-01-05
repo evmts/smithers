@@ -34,6 +34,31 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Safely stringify a value, handling circular references, BigInt, and other edge cases
+ *
+ * @param value The value to stringify
+ * @returns A JSON string or a fallback string representation
+ */
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, (_, val) => {
+      // Handle BigInt by converting to string
+      if (typeof val === 'bigint') {
+        return val.toString()
+      }
+      return val
+    })
+  } catch (error) {
+    // Handle circular references or other stringification errors
+    if (error instanceof TypeError && error.message.includes('circular')) {
+      return '[Circular reference detected]'
+    }
+    // Fallback for any other error
+    return String(value)
+  }
+}
+
+/**
  * Execute an API call with exponential backoff retry for rate limits
  */
 async function withRetry<T>(
@@ -151,46 +176,67 @@ export async function executeWithClaude(
     iteration++
 
     try {
-      // Create the message with retry for rate limits
-      const response = await withRetry(() =>
-        client.messages.create({
-          model,
-          max_tokens: maxTokens,
-          messages,
-          ...(system ? { system } : {}),
-          ...(tools.length > 0 ? { tools } : {}),
-        })
-      )
+      let response: Anthropic.Message
 
-      // Extract text content from response
+      // Use streaming API if enabled, otherwise use standard API
+      if (streamEnabled && onStream) {
+        // Use streaming API with proper event handling
+        response = await withRetry(async () => {
+          const stream = client.messages.stream({
+            model,
+            max_tokens: maxTokens,
+            messages,
+            ...(system ? { system } : {}),
+            ...(tools.length > 0 ? { tools } : {}),
+          })
+
+          // Handle text deltas as they arrive
+          stream.on('text', (text) => {
+            onStream({
+              type: 'text',
+              text,
+            })
+          })
+
+          // Handle tool use via streamEvent to access full content block
+          stream.on('streamEvent', (event) => {
+            if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
+              onStream({
+                type: 'tool_use',
+                tool_use: {
+                  id: event.content_block.id,
+                  name: event.content_block.name,
+                  input: event.content_block.input,
+                },
+              })
+            }
+          })
+
+          // Wait for final message
+          return await stream.finalMessage()
+        })
+      } else {
+        // Use non-streaming API for better performance when streaming not needed
+        response = await withRetry(() =>
+          client.messages.create({
+            model,
+            max_tokens: maxTokens,
+            messages,
+            ...(system ? { system } : {}),
+            ...(tools.length > 0 ? { tools } : {}),
+          })
+        )
+      }
+
+      // Extract text content and tool use blocks from response
       let textResult = ''
       const toolUseBlocks: Anthropic.ToolUseBlock[] = []
 
       for (const block of response.content) {
         if (block.type === 'text') {
           textResult += block.text
-
-          // Stream text content if streaming is enabled
-          if (streamEnabled && onStream) {
-            onStream({
-              type: 'text',
-              text: block.text,
-            })
-          }
         } else if (block.type === 'tool_use') {
           toolUseBlocks.push(block)
-
-          // Stream tool use if streaming is enabled
-          if (streamEnabled && onStream) {
-            onStream({
-              type: 'tool_use',
-              tool_use: {
-                id: block.id,
-                name: block.name,
-                input: block.input,
-              },
-            })
-          }
         }
       }
 
@@ -233,9 +279,9 @@ export async function executeWithClaude(
           // Execute the tool
           const result = await tool.execute(toolBlock.input)
 
-          // Convert result to string
+          // Convert result to string with safe serialization
           const resultStr =
-            typeof result === 'string' ? result : JSON.stringify(result)
+            typeof result === 'string' ? result : safeStringify(result)
 
           toolResults.push({
             type: 'tool_result',

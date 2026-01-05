@@ -332,8 +332,12 @@ function saveExecutionState(tree: PluNode, storage: Map<string, ExecutionState>)
 
     if ((node.type === 'claude' || node.type === 'subagent') && node._execution) {
       // Use stable node path as key to avoid collisions between identical nodes
-      // Store contentHash inside the execution state for change detection
-      storage.set(nodePath, node._execution)
+      // Ensure contentHash is always set for change detection
+      const stateToSave: ExecutionState = {
+        ...node._execution,
+        contentHash: node._execution.contentHash ?? computeContentHash(node),
+      }
+      storage.set(nodePath, stateToSave)
     }
 
     node.children.forEach((child, i) => walk(child, [...path, `${node.type}[${i}]`]))

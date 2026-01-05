@@ -58,19 +58,16 @@ export class MCPManager {
       return
     }
 
-    // Create client with tool support capabilities
-    // The sampling.tools capability indicates that the client supports tool use
+    // Create client without sampling capabilities
+    // MCP servers in Smithers only need to provide tools, not perform sampling
+    // The Claude executor handles LLM calls, not the MCP client
     const client = new Client(
       {
         name: 'smithers-mcp-client',
         version: '1.0.0',
       },
       {
-        capabilities: {
-          sampling: {
-            tools: {},
-          },
-        },
+        capabilities: {},
       }
     )
 
