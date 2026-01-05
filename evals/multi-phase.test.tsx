@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { create } from 'zustand'
-import { renderPlan, executePlan, Claude, Phase, Step } from 'plue'
+import { renderPlan, executePlan, Claude, Phase, Step } from '../src/index.js'
 
 describe('multi-phase', () => {
   test('renders different plans based on props', async () => {

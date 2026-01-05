@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { renderPlan, executePlan, Claude } from 'plue'
+import { renderPlan, executePlan, Claude } from '../src/index.js'
 
 describe('hello-world', () => {
   test('renders basic Claude component to XML', async () => {
@@ -19,13 +19,13 @@ describe('hello-world', () => {
   test('executes and returns a greeting', async () => {
     const HelloWorld = () => (
       <Claude>
-        Say exactly: "Hello, I am Plue!"
+        Say exactly: "Hello, I am Smithers!"
       </Claude>
     )
 
     const result = await executePlan(<HelloWorld />)
 
     expect(result.output).toContain('Hello')
-    expect(result.output).toContain('Plue')
+    expect(result.output).toContain('Smithers')
   })
 })

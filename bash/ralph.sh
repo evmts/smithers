@@ -45,7 +45,7 @@ while true; do
         RALPH_PROMPT=$(cat "$PROJECT_DIR/bash/ralph-prompt.md")
     else
         echo -e "${YELLOW}Warning: ralph-prompt.md not found, using fallback${NC}"
-        RALPH_PROMPT="You are a senior software engineer. Read SPEC.md and continue productionizing Smithers."
+        RALPH_PROMPT="You are a senior software engineer. Read SPEC.md and continue productionizing Plue."
     fi
 
     echo -e "${YELLOW}Starting Claude Code...${NC}"

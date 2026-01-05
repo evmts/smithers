@@ -25,7 +25,7 @@ export async function renderPlan(element: ReactElement): Promise<string> {
  */
 export function serialize(node: PluNode): string {
   if (node.type === 'TEXT') {
-    return String(node.props.value ?? '')
+    return escapeXml(String(node.props.value ?? ''))
   }
 
   if (node.type === 'ROOT') {

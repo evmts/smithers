@@ -9,10 +9,10 @@ import {
   Persona,
   Constraints,
   OutputFormat,
-} from 'plue'
+} from '../src/index.js'
 
 /**
- * Comprehensive eval that tests ALL Plue features in a single complex scenario:
+ * Comprehensive eval that tests ALL Smithers features in a single complex scenario:
  * - MDX/JSX rendering to XML
  * - Claude component with tools
  * - Persona, Constraints, OutputFormat components

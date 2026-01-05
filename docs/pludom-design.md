@@ -346,7 +346,7 @@ interface ExecutionResult {
 
 ```typescript
 interface PluRoot {
-  render(element: ReactElement): PluNode
+  render(element: ReactElement): Promise<PluNode>
   unmount(): void
 }
 
@@ -357,63 +357,58 @@ export function serialize(node: PluNode): string
 export function findPendingExecutables(tree: PluNode): PluNode[]
 
 // Execute a single node
-export async function executeNode(node: PluNode): Promise<void>
+export async function executeNode(
+  node: PluNode,
+  onFinished?: (output: unknown) => void,
+  onError?: (error: Error) => void
+): Promise<void>
 ```
 
 ---
 
-## Implementation Plan
+## Implementation Plan (Current)
 
-### Phase 1: Core Renderer
+### Completed
 
-1. **Host Config** (`src/reconciler/host-config.ts`)
-   - Implement all required host config methods
-   - Create PluNode instances
-   - Handle tree mutations
+1. **Core renderer + reconciler** (`src/reconciler/*`)
+   - Mutation host config
+   - React 19 async commit handling
 
-2. **Reconciler** (`src/reconciler/index.ts`)
-   - Initialize react-reconciler with host config
-   - Export createRoot, render functions
+2. **Core API** (`src/core/*`)
+   - `renderPlan()` + `serialize()` for XML plans
+   - `executePlan()` Ralph Wiggum loop with state-aware re-renders
 
-3. **Serializer** (`src/serializer.ts`)
-   - Walk PluNode tree
-   - Output XML string
-   - Handle props → attributes conversion
-   - Handle special cases (tools, schema)
-
-### Phase 2: Components
-
-4. **Host Components** (`src/components/index.ts`)
+3. **Components** (`src/components/index.ts`)
    - Claude, Subagent, Phase, Step, Persona, Constraints, OutputFormat
-   - TypeScript interfaces for props
-   - JSDoc documentation
 
-### Phase 3: Executor
+4. **CLI skeleton** (`src/cli/*`)
+   - `smithers run`, `smithers plan`, `smithers init` commands
 
-5. **Executor** (`src/executor/index.ts`)
-   - Ralph Wiggum loop implementation
-   - Frame management
-   - Parallel execution for Subagent
+5. **Evals** (`evals/*`)
+   - End-to-end coverage for major features
 
-6. **Claude Integration** (`src/executor/claude.ts`)
-   - Claude SDK wrapper
-   - MCP server connection for tools
-   - Response parsing
+### Next (Priority Order)
 
-### Phase 4: CLI
+1. **Claude SDK integration**
+   - Replace executor mock with real Claude calls
+   - Wire MCP tools to Claude SDK sessions
 
-7. **CLI** (`src/cli/index.ts`)
-   - `plue run agent.mdx`
-   - Terraform-style plan display
-   - Approval prompt
-   - `--auto-approve` flag
+2. **Execution semantics**
+   - Implement `<Task>` and `<Stop>` components
+   - Ensure loop respects stop signals and task completion
 
-### Phase 5: MDX Support
+3. **CLI plan approval UX**
+   - Terraform-style plan display + approval prompt
+   - `--auto-approve` flow wired to executor
 
-8. **Vite Plugin** (`src/vite-plugin/index.ts`)
-   - MDX compilation
-   - Import Plue components
-   - Hot reload support
+4. **MDX entrypoint**
+   - MDX compilation pipeline
+   - CLI support for `.mdx` entry files
+
+5. **Quality + packaging**
+   - CLI integration tests
+   - Typecheck + coverage targets
+   - npm publishing workflow (changesets + CI)
 
 ---
 
@@ -422,24 +417,20 @@ export async function executeNode(node: PluNode): Promise<void>
 ```
 src/
   index.ts              # Main exports
+  core/
+    render.ts           # Tree → XML conversion
+    execute.ts          # Ralph Wiggum loop
+    types.ts            # Core types
   reconciler/
     host-config.ts      # react-reconciler host config
     index.ts            # Reconciler setup
   components/
     index.ts            # All component exports
-    types.ts            # TypeScript interfaces
-  serializer/
-    index.ts            # Tree → XML conversion
-  executor/
-    index.ts            # Ralph Wiggum loop
-    claude.ts           # Claude SDK integration
-    frame.ts            # Frame management
   cli/
     index.ts            # CLI entry point
+    commands/           # run/plan/init
     display.ts          # Plan display
     prompt.ts           # User approval
-  vite-plugin/
-    index.ts            # MDX support
 ```
 
 ---

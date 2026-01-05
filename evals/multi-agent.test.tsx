@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { useState } from 'react'
-import { renderPlan, executePlan, Claude, Phase, Step, Persona } from 'plue'
+import { renderPlan, executePlan, Claude, Phase, Step, Persona } from '../src/index.js'
 
 describe('multi-agent', () => {
   test('renders nested Claude components', async () => {

@@ -459,7 +459,7 @@ export async function executeNode(
       throw new Error('Simulated failure for testing')
     }
 
-    let mockOutput: string = 'Hello, I am Plue! A React-based framework for AI agent prompts.'
+    let mockOutput: string = 'Hello, I am Smithers! A React-based framework for AI agent prompts.'
 
     // Check if we should return JSON
     // Look for JSON keywords, JSON objects (curly braces), or outputFormat/output-format children

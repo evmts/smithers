@@ -1,12 +1,12 @@
-# Plue
+# Smithers
 
 **A declarative framework for building AI agents in React.**
 
-Build AI agents the same way you build user interfaces. Plue lets you compose complex agent workflows from simple, reusable components using JSX—with React state driving behavior, conditional rendering controlling flow, and TypeScript keeping everything type-safe.
+Build AI agents the same way you build user interfaces. Smithers lets you compose complex agent workflows from simple, reusable components using JSX—with React state driving behavior, conditional rendering controlling flow, and TypeScript keeping everything type-safe.
 
 ```tsx
 import { create } from 'zustand'
-import { renderPlan, executePlan, Claude, Phase, Step, Subagent } from 'plue'
+import { renderPlan, executePlan, Claude, Phase, Step, Subagent } from 'smithers'
 
 // Define agent state with Zustand
 const useResearchStore = create((set, get) => ({
@@ -69,11 +69,11 @@ console.log(xml)
 const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 ```
 
-## Why Plue?
+## Why Smithers?
 
-**Agents are just UIs for LLMs.** The same problems you solved with React for user interfaces—composition, state management, conditional rendering—apply to agent orchestration. Plue brings the React mental model to AI agents.
+**Agents are just UIs for LLMs.** The same problems you solved with React for user interfaces—composition, state management, conditional rendering—apply to agent orchestration. Smithers brings the React mental model to AI agents.
 
-| Without Plue | With Plue |
+| Without Smithers | With Smithers |
 |--------------|-----------|
 | Imperative chains of API calls | Declarative component trees |
 | Scattered state across functions | Centralized React state |
@@ -84,9 +84,9 @@ const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 ## Install
 
 ```bash
-npm install plue
+npm install smithers
 # or
-bun add plue
+bun add smithers
 ```
 
 ## Quick Start
@@ -96,7 +96,7 @@ bun add plue
 Create `review-agent.tsx`:
 
 ```tsx
-import { Claude, Constraints, OutputFormat } from 'plue'
+import { Claude, Constraints, OutputFormat } from 'smithers'
 
 export function ReviewAgent({ files }) {
   return (
@@ -121,15 +121,15 @@ export function ReviewAgent({ files }) {
 
 ```bash
 # Preview the plan first (Terraform-style)
-plue run review-agent.tsx --props '{"files": ["src/auth.ts"]}'
+smithers run review-agent.tsx --props '{"files": ["src/auth.ts"]}'
 
 # Or auto-approve and execute immediately
-plue run review-agent.tsx --props '{"files": ["src/auth.ts"]}' --auto-approve
+smithers run review-agent.tsx --props '{"files": ["src/auth.ts"]}' --auto-approve
 ```
 
 ### 3. See the plan
 
-Plue shows you exactly what the agent will do before executing:
+Smithers shows you exactly what the agent will do before executing:
 
 ```
 ┌─ Plan ─────────────────────────────────────────────────────┐
@@ -157,7 +157,7 @@ Plue shows you exactly what the agent will do before executing:
 
 ### Components Are Prompts
 
-Every Plue component renders to part of a prompt. The `<Claude>` component marks execution boundaries—everything inside becomes the prompt sent to Claude.
+Every Smithers component renders to part of a prompt. The `<Claude>` component marks execution boundaries—everything inside becomes the prompt sent to Claude.
 
 ```tsx
 <Claude>
@@ -516,12 +516,12 @@ function WritingAssistant({ assignment }) {
 
 ## CLI Reference
 
-### `plue run`
+### `smithers run`
 
 Execute an agent file.
 
 ```bash
-plue run <file> [options]
+smithers run <file> [options]
 
 Options:
   --props, -p <json>     Props to pass to the component
@@ -536,39 +536,39 @@ Examples:
 
 ```bash
 # Run with props
-plue run agent.tsx --props '{"repo": "my-org/my-repo"}'
+smithers run agent.tsx --props '{"repo": "my-org/my-repo"}'
 
 # Auto-approve for CI/CD
-plue run agent.tsx -y
+smithers run agent.tsx -y
 
 # Debug mode
-plue run agent.tsx --verbose
+smithers run agent.tsx --verbose
 
 # Save output
-plue run agent.tsx -o result.json
+smithers run agent.tsx -o result.json
 ```
 
-### `plue plan`
+### `smithers plan`
 
 Preview the plan without executing.
 
 ```bash
-plue plan <file> [options]
+smithers plan <file> [options]
 
 Options:
   --props, -p <json>     Props to pass to the component
   --output, -o <file>    Write plan XML to file
 ```
 
-### `plue init`
+### `smithers init`
 
-Scaffold a new Plue project.
+Scaffold a new Smithers project.
 
 ```bash
-plue init [directory]
+smithers init [directory]
 
 Creates:
-  - package.json with plue dependency
+  - package.json with smithers dependency
   - tsconfig.json configured for JSX
   - src/agent.tsx starter template
   - .env.example for API keys
@@ -679,10 +679,10 @@ Specify expected response structure.
 
 ## Programmatic API
 
-Use Plue in your own applications:
+Use Smithers in your own applications:
 
 ```tsx
-import { renderPlan, executePlan, Claude } from 'plue'
+import { renderPlan, executePlan, Claude } from 'smithers'
 
 // Just render to XML (no execution)
 const xml = await renderPlan(<MyAgent topic="AI safety" />)
@@ -713,7 +713,7 @@ Write agents in MDX for a documentation-friendly format:
 name: Code Review Agent
 ---
 
-import { Claude, Constraints } from 'plue'
+import { Claude, Constraints } from 'smithers'
 import { github } from './tools'
 
 # Code Review Agent
@@ -736,12 +736,12 @@ This agent.mdx file represents your entrypoint. [Ralph](https://ghuntley.com/ral
 Run it:
 
 ```bash
-plue run review.mdx --props '{"repo": "acme/api", "pr": 123}'
+smithers run review.mdx --props '{"repo": "acme/api", "pr": 123}'
 ```
 
 ## TypeScript
 
-Plue is written in TypeScript and exports full type definitions:
+Smithers is written in TypeScript and exports full type definitions:
 
 ```tsx
 import type {
@@ -749,7 +749,7 @@ import type {
   SubagentProps,
   ExecutionResult,
   Tool,
-} from 'plue'
+} from 'smithers'
 
 // Define typed tools
 const searchTool: Tool = {
@@ -777,7 +777,7 @@ function MyAgent({ topic, maxResults = 10 }: MyAgentProps) {
 
 ## How It Works
 
-Plue uses a custom React renderer (like react-dom, but for AI agents):
+Smithers uses a custom React renderer (like react-dom, but for AI agents):
 
 1. **Render**: Your JSX components render to an internal tree
 2. **Serialize**: The tree is converted to an XML plan

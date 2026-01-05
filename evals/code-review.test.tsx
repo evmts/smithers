@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { renderPlan, executePlan, Claude, Phase, Step, Constraints, OutputFormat } from 'plue'
+import { renderPlan, executePlan, Claude, Phase, Step, Constraints, OutputFormat } from '../src/index.js'
 
 describe('code-review', () => {
   const mockFileSystem = {

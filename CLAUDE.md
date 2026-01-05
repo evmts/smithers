@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Plue** (being renamed to **Smithers**) is a React-based framework for authoring composable AI agent prompts using JSX. It brings the React mental model to AI agent orchestration.
+**Smithers** (formerly **Plue**) is a React-based framework for authoring composable AI agent prompts using JSX. It brings the React mental model to AI agent orchestration.
 
 **Core Value Proposition:**
 - Build AI agents the same way you build UIs
@@ -121,7 +121,7 @@ The code has workarounds for React 19's async rendering model:
 - Execution with mocks
 
 **TODOs:**
-1. Project rename: "plue" -> "smithers"
+1. ~~Project rename: "plue" -> "smithers"~~ (DONE)
 2. Real Claude SDK integration (replace mock execution)
 3. Real MCP server connection
 4. Sophisticated examples in `examples/` folder

@@ -5,7 +5,7 @@
 Plue agents are MDX files—Markdown with JSX support. The entry point is always an `.mdx` file:
 
 ```mdx
-import { Claude, Phase } from 'plue'
+import { Claude, Phase } from 'smithers'
 
 # Research Agent
 

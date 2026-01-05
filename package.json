@@ -1,12 +1,12 @@
 {
-  "name": "plue",
+  "name": "smithers",
   "version": "0.1.0",
   "description": "React-based framework for composable AI agent prompts",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "plue": "dist/cli/index.js"
+    "smithers": "dist/cli/index.js"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target node",

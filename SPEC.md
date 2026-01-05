@@ -1,7 +1,5 @@
 # Smithers - Product Specification
 
-> **Note:** This project is being renamed from "Plue" to "Smithers". All references to "plue" should be updated to "smithers".
-
 ## Overview
 
 Smithers is a React-based framework for authoring composable, reusable AI agent prompts. It uses JSX/MDX to define prompts that render to XML plans, executed via a "Ralph Wiggum" loop (repeated agent invocations on the same plan until completion).
@@ -20,12 +18,12 @@ Smithers is a React-based framework for authoring composable, reusable AI agent 
 ### Runtime & Build
 - **Runtime**: Bun
 - **Provider**: Claude (via Claude Code SDK)
-- **Testing**: Bun test / Vitest
+- **Testing**: Bun test
 - **TypeScript**: Strict mode
 
 ### Documentation
-- **Platform**: Mintlify
-- **Structure**:
+- **Current**: README.md + `docs/` markdown
+- **Future**: Mintlify once APIs stabilize
   - Getting started guide
   - Core concepts explanation
   - Component API reference
@@ -53,6 +51,7 @@ Smithers is a React-based framework for authoring composable, reusable AI agent 
 ## Components
 
 ### Core Components
+Planned components that are not implemented yet are still listed here for completeness (e.g., `<Task>`, `<Stop>`).
 | Component | Purpose |
 |-----------|---------|
 | `<Claude>` | Wraps Claude Code SDK, main execution unit |
@@ -72,9 +71,9 @@ Smithers is a React-based framework for authoring composable, reusable AI agent 
 ## CLI Commands
 
 ```
-plue run <file>     Run an agent with plan approval
-plue plan <file>    Show the XML plan without executing
-plue init           Initialize a new agent project
+smithers run <file>     Run an agent with plan approval
+smithers plan <file>    Show the XML plan without executing
+smithers init           Initialize a new agent project
 ```
 
 ## Examples

@@ -24,7 +24,13 @@ function MyAgent() {
 
 const root = createRoot()
 
-console.log('\n=== Render 1 ===')
-const element = <MyAgent />
-const tree1 = root.render(element)
-console.log('Tree:', serialize(tree1))
+async function main() {
+  console.log('\n=== Render 1 ===')
+  const element = <MyAgent />
+  const tree1 = await root.render(element)
+  console.log('Tree:', serialize(tree1))
+}
+
+main().catch((error) => {
+  console.error('[debug-state] Error:', error)
+})
