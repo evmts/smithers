@@ -1,0 +1,41 @@
+{
+  "name": "plue",
+  "version": "0.1.0",
+  "description": "React-based framework for composable AI agent prompts",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "plue": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target node",
+    "dev": "bun run src/cli/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "picocolors": "^1.1.1",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "react",
+    "jsx",
+    "mdx",
+    "llm",
+    "claude"
+  ],
+  "author": "",
+  "license": "MIT"
+}
