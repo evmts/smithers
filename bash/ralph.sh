@@ -147,9 +147,11 @@ while true; do
 
     # Run Claude Code with the prompt
     # Using --yes to auto-approve safe operations
+    # Disable set -e temporarily to capture exit code without aborting
+    set +e
     claude --yes --print "$RALPH_PROMPT"
-
     EXIT_CODE=$?
+    set -e
 
     echo ""
     echo -e "${BLUE}--------------------------------${NC}"
