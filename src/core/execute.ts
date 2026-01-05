@@ -10,6 +10,8 @@ import type {
 import { createRoot } from './render.js'
 import { runWithSyncUpdates, waitForStateUpdates } from '../reconciler/index.js'
 import { executeWithClaude } from './claude-executor.js'
+import { MCPManager } from '../mcp/manager.js'
+import type { MCPServerConfig } from '../mcp/types.js'
 
 /**
  * Wrapper component that passes through children
@@ -52,6 +54,9 @@ export async function executePlan(
 
   // Create root once and reuse it - this preserves React state (useState, etc.)
   const root = createRoot()
+
+  // Initialize MCP manager for tool discovery
+  const mcpManager = new MCPManager()
 
   let frameNumber = 0
   let finalOutput: unknown = null
@@ -179,16 +184,16 @@ export async function executePlan(
           }
         : undefined
 
-      await executeNode(claudeNode, wrappedCallback, wrappedError)
+      await executeNode(claudeNode, mcpManager, wrappedCallback, wrappedError)
 
       if (!originalCallback && claudeNode._execution?.result) {
         finalOutput = claudeNode._execution.result
       }
 
       // Track MCP servers
-      if (claudeNode.props.tools && Array.isArray(claudeNode.props.tools)) {
-        for (const tool of claudeNode.props.tools as Tool[]) {
-          mcpServers.add(tool.name)
+      if (claudeNode.props.mcpServers && Array.isArray(claudeNode.props.mcpServers)) {
+        for (const config of claudeNode.props.mcpServers as MCPServerConfig[]) {
+          mcpServers.add(config.name)
         }
       }
 
@@ -247,16 +252,16 @@ export async function executePlan(
               }
             : undefined
 
-          await executeNode(node, wrappedCallback, wrappedError)
+          await executeNode(node, mcpManager, wrappedCallback, wrappedError)
 
           if (!originalCallback && node._execution?.result) {
             finalOutput = node._execution.result
           }
 
           // Track MCP servers
-          if (node.props.tools && Array.isArray(node.props.tools)) {
-            for (const tool of node.props.tools as Tool[]) {
-              mcpServers.add(tool.name)
+          if (node.props.mcpServers && Array.isArray(node.props.mcpServers)) {
+            for (const config of node.props.mcpServers as MCPServerConfig[]) {
+              mcpServers.add(config.name)
             }
           }
 
@@ -309,6 +314,9 @@ export async function executePlan(
 
   // Unmount the root after we're done
   root.unmount()
+
+  // Disconnect all MCP servers
+  await mcpManager.disconnectAll()
 
   if (frameNumber >= maxFrames) {
     throw new Error(`Max frames (${maxFrames}) reached`)
@@ -465,16 +473,77 @@ function safeStringify(value: unknown): string {
 }
 
 /**
+ * Prepare tools for a node by connecting to MCP servers and merging with inline tools
+ *
+ * @param node The node to prepare tools for
+ * @param mcpManager The MCP manager instance
+ * @returns Combined array of tools from MCP servers and inline tools
+ */
+async function prepareTools(node: PluNode, mcpManager: MCPManager): Promise<Tool[]> {
+  const tools: Tool[] = []
+
+  // Connect to MCP servers if specified
+  const mcpServerConfigs = node.props.mcpServers as MCPServerConfig[] | undefined
+  if (mcpServerConfigs && mcpServerConfigs.length > 0) {
+    // Connect to all MCP servers
+    await Promise.all(
+      mcpServerConfigs.map(async (config) => {
+        try {
+          await mcpManager.connect(config)
+        } catch (error) {
+          console.warn(`Failed to connect to MCP server "${config.name}":`, error)
+        }
+      })
+    )
+
+    // Get all tools from connected MCP servers and convert to Smithers Tool format
+    const mcpTools = mcpManager.getAllTools()
+    for (const mcpTool of mcpTools) {
+      tools.push({
+        name: mcpTool.name,
+        description: mcpTool.description || '',
+        input_schema: mcpTool.inputSchema,
+        execute: async (args: unknown) => {
+          // Call the MCP tool through the manager
+          const result = await mcpManager.callTool(
+            mcpTool.name,
+            args as Record<string, unknown>
+          )
+
+          if (!result.success) {
+            throw new Error(result.error || 'Tool execution failed')
+          }
+
+          // Return the first text content, or empty string if no content
+          const textContent = result.content?.find((c) => c.type === 'text')
+          return textContent?.text || ''
+        },
+      })
+    }
+  }
+
+  // Add inline tools from the tools prop
+  const inlineTools = node.props.tools as Tool[] | undefined
+  if (inlineTools) {
+    tools.push(...inlineTools)
+  }
+
+  return tools
+}
+
+/**
  * Execute a single node
  *
  * Calls the Claude API via the Anthropic SDK, or uses mock mode for testing.
  *
  * @param node The node to execute
+ * @param mcpManager The MCP manager instance
  * @param onFinishedOverride Optional callback to use instead of node.props.onFinished
  * @param onErrorOverride Optional callback to use instead of node.props.onError
  */
 export async function executeNode(
   node: PluNode,
+  mcpManager: MCPManager,
   onFinishedOverride?: (output: unknown) => void,
   onErrorOverride?: (error: Error) => void
 ): Promise<void> {
@@ -514,12 +583,15 @@ export async function executeNode(
       )
     }
 
+    // Prepare tools by connecting to MCP servers and merging with inline tools
+    const preparedTools = await prepareTools(node, mcpManager)
+
     if (useMockMode) {
       // Use mock executor for testing
       output = await executeMock(node)
     } else {
-      // Use real Claude SDK
-      output = await executeWithClaude(node)
+      // Use real Claude SDK with prepared tools
+      output = await executeWithClaude(node, {}, preparedTools)
     }
 
     // Store the raw output

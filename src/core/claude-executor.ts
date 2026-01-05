@@ -109,6 +109,7 @@ async function withRetry<T>(
  *
  * @param node The node to execute (claude or subagent type)
  * @param config Optional configuration for the Claude client
+ * @param toolsOverride Optional tools to use instead of node.props.tools
  * @returns The text response from Claude
  * @throws {Error} If ANTHROPIC_API_KEY is not found in config or environment
  * @throws {RateLimitError} If rate limit is exceeded after retries
@@ -124,7 +125,8 @@ async function withRetry<T>(
  */
 export async function executeWithClaude(
   node: PluNode,
-  config: ClaudeConfig = {}
+  config: ClaudeConfig = {},
+  toolsOverride?: Tool[]
 ): Promise<string> {
   // Get API key from config or environment
   const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY
@@ -156,7 +158,8 @@ export async function executeWithClaude(
   const onStream = node.props.onStream as ((chunk: StreamChunk) => void) | undefined
 
   // Convert tools to Anthropic format and build tool lookup map
-  const toolDefs = node.props.tools as Tool[] | undefined
+  // Use toolsOverride if provided, otherwise fall back to node.props.tools
+  const toolDefs = toolsOverride || (node.props.tools as Tool[] | undefined)
   const tools = convertTools(toolDefs)
   const toolMap = buildToolMap(toolDefs)
 
