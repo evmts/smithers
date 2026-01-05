@@ -1,0 +1,325 @@
+---
+title: State Management
+description: Using Zustand for robust agent state management
+---
+
+# State Management
+
+Smithers uses real React, which means you can use any React state management solution. However, we strongly recommend **Zustand** for agent workflows.
+
+## Why Zustand?
+
+<AccordionGroup>
+  <Accordion title="No stale closures">
+    Zustand's `get()` always returns the latest state. With `useState`, callbacks captured in closures can reference stale values.
+  </Accordion>
+  <Accordion title="Works outside React">
+    Access and update state from anywhere - callbacks, utilities, or even other modules.
+  </Accordion>
+  <Accordion title="Simple API">
+    No providers, no context, no boilerplate. Just create a store and use it.
+  </Accordion>
+  <Accordion title="DevTools support">
+    Built-in support for Redux DevTools for debugging complex state flows.
+  </Accordion>
+</AccordionGroup>
+
+## Basic Pattern
+
+```tsx
+import { create } from 'zustand'
+import { Claude, Phase, Step } from 'smithers'
+
+// Define your store
+const useAgentStore = create((set, get) => ({
+  // State
+  phase: 'research' as 'research' | 'analyze' | 'write',
+  findings: null as any,
+  analysis: null as any,
+
+  // Actions
+  setFindings: (findings) => set({ findings, phase: 'analyze' }),
+  setAnalysis: (analysis) => set({ analysis, phase: 'write' }),
+  reset: () => set({ phase: 'research', findings: null, analysis: null }),
+}))
+
+function ResearchAgent({ topic }) {
+  const { phase, findings, analysis, setFindings, setAnalysis } = useAgentStore()
+
+  if (phase === 'research') {
+    return (
+      <Claude tools={[webSearch]} onFinished={setFindings}>
+        <Phase name="research">
+          <Step>Search for information about {topic}</Step>
+          <Step>Collect at least 5 sources</Step>
+        </Phase>
+      </Claude>
+    )
+  }
+
+  if (phase === 'analyze') {
+    return (
+      <Claude onFinished={setAnalysis}>
+        <Phase name="analyze">
+          Analyze these findings: {JSON.stringify(findings)}
+          Identify key themes and insights.
+        </Phase>
+      </Claude>
+    )
+  }
+
+  return (
+    <Claude tools={[filesystem]}>
+      <Phase name="write">
+        Write a comprehensive report based on:
+        - Findings: {JSON.stringify(findings)}
+        - Analysis: {JSON.stringify(analysis)}
+        Save to output/report.md
+      </Phase>
+    </Claude>
+  )
+}
+```
+
+## The Stale Closure Problem
+
+Here's why Zustand matters. Consider this `useState` example:
+
+```tsx
+// PROBLEMATIC: useState with closures
+function BadExample() {
+  const [results, setResults] = useState({})
+  const [topics] = useState(['AI', 'ML', 'DL'])
+
+  return (
+    <>
+      {topics.map(topic => (
+        <Subagent key={topic}>
+          <Claude onFinished={(data) => {
+            // BUG: `results` is always {} because this closure
+            // captured the initial value
+            setResults({ ...results, [topic]: data })
+          }}>
+            Research {topic}
+          </Claude>
+        </Subagent>
+      ))}
+    </>
+  )
+}
+```
+
+When all three subagents complete, each callback has `results = {}`, so only the last one wins.
+
+```tsx
+// CORRECT: Zustand solution
+const useStore = create((set) => ({
+  results: {},
+  addResult: (topic, data) => set((state) => ({
+    results: { ...state.results, [topic]: data }
+  })),
+}))
+
+function GoodExample() {
+  const { results, addResult } = useStore()
+  const topics = ['AI', 'ML', 'DL']
+
+  return (
+    <>
+      {topics.map(topic => (
+        <Subagent key={topic}>
+          <Claude onFinished={(data) => addResult(topic, data)}>
+            Research {topic}
+          </Claude>
+        </Subagent>
+      ))}
+    </>
+  )
+}
+```
+
+Zustand's updater function always receives the latest state.
+
+## Complex State Machines
+
+For agents with complex flows, model explicit state machines:
+
+```tsx
+const useWorkflowStore = create((set, get) => ({
+  // State machine
+  status: 'idle' as 'idle' | 'planning' | 'executing' | 'reviewing' | 'complete' | 'error',
+
+  // Data at each stage
+  plan: null as any,
+  results: [] as any[],
+  review: null as any,
+  error: null as Error | null,
+
+  // Transitions
+  startPlanning: () => set({ status: 'planning' }),
+
+  finishPlanning: (plan) => set({
+    plan,
+    status: 'executing',
+  }),
+
+  addResult: (result) => {
+    const results = [...get().results, result]
+    const allDone = results.length === get().plan.tasks.length
+    set({
+      results,
+      status: allDone ? 'reviewing' : 'executing',
+    })
+  },
+
+  finishReview: (review) => set({
+    review,
+    status: 'complete',
+  }),
+
+  handleError: (error) => set({
+    error,
+    status: 'error',
+  }),
+
+  reset: () => set({
+    status: 'idle',
+    plan: null,
+    results: [],
+    review: null,
+    error: null,
+  }),
+}))
+```
+
+## Computed Values
+
+Use selectors for derived state:
+
+```tsx
+const useStore = create((set, get) => ({
+  tasks: [] as Task[],
+  completedIds: new Set<string>(),
+
+  // Actions
+  addTask: (task) => set((s) => ({ tasks: [...s.tasks, task] })),
+  completeTask: (id) => set((s) => ({
+    completedIds: new Set([...s.completedIds, id])
+  })),
+}))
+
+// Selectors (computed values)
+const selectPendingTasks = (state) =>
+  state.tasks.filter(t => !state.completedIds.has(t.id))
+
+const selectProgress = (state) =>
+  state.tasks.length > 0
+    ? state.completedIds.size / state.tasks.length
+    : 0
+
+// Usage in component
+function TaskAgent() {
+  const pendingTasks = useStore(selectPendingTasks)
+  const progress = useStore(selectProgress)
+
+  // ...
+}
+```
+
+## Persisting State
+
+For long-running agents, persist state to resume after interruption:
+
+```tsx
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+const useAgentStore = create(
+  persist(
+    (set, get) => ({
+      phase: 'start',
+      data: {},
+      // ... actions
+    }),
+    {
+      name: 'agent-state', // localStorage key
+    }
+  )
+)
+```
+
+## Multiple Stores
+
+For complex agents, split state into focused stores:
+
+```tsx
+// Research data
+const useResearchStore = create((set) => ({
+  sources: [],
+  addSource: (source) => set((s) => ({ sources: [...s.sources, source] })),
+}))
+
+// Execution progress
+const useProgressStore = create((set) => ({
+  currentPhase: 'init',
+  completedSteps: 0,
+  setPhase: (phase) => set({ currentPhase: phase }),
+  incrementSteps: () => set((s) => ({ completedSteps: s.completedSteps + 1 })),
+}))
+
+// Error handling
+const useErrorStore = create((set) => ({
+  errors: [],
+  addError: (error) => set((s) => ({ errors: [...s.errors, error] })),
+  clearErrors: () => set({ errors: [] }),
+}))
+```
+
+## Debugging with DevTools
+
+Enable Redux DevTools for state inspection:
+
+```tsx
+import { create } from 'zustand'
+import { devtools } from 'zustand/middleware'
+
+const useAgentStore = create(
+  devtools(
+    (set) => ({
+      phase: 'init',
+      setPhase: (phase) => set({ phase }, false, 'setPhase'),
+    }),
+    { name: 'AgentStore' }
+  )
+)
+```
+
+Open Redux DevTools in your browser to see state changes in real-time.
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Zustand over useState" icon="check">
+    Avoid stale closure bugs with Zustand's functional updates
+  </Card>
+  <Card title="Model explicit phases" icon="diagram-project">
+    Use a `phase` or `status` field to drive conditional rendering
+  </Card>
+  <Card title="Colocate related state" icon="layer-group">
+    Keep related data and actions in the same store
+  </Card>
+  <Card title="Use selectors" icon="filter">
+    Derive computed values with selector functions
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Claude Component" icon="cube" href="/components/claude">
+    Learn how to use onFinished callbacks effectively
+  </Card>
+  <Card title="Multi-Agent Example" icon="users" href="/examples/multi-agent">
+    See state management in a real multi-agent workflow
+  </Card>
+</CardGroup>
