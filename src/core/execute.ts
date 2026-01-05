@@ -9,6 +9,7 @@ import type {
 } from './types.js'
 import { createRoot } from './render.js'
 import { runWithSyncUpdates, waitForCommit } from '../reconciler/index.js'
+import { executeWithClaude } from './claude-executor.js'
 
 /**
  * Wrapper component that passes through children
@@ -424,8 +425,7 @@ function computeContentHash(node: PluNode): string {
 /**
  * Execute a single node
  *
- * STUB: Will call Claude SDK in a future implementation
- * For now, returns a mock response based on the prompt
+ * Calls the Claude API via the Anthropic SDK, or uses mock mode for testing.
  *
  * @param node The node to execute
  * @param onFinishedOverride Optional callback to use instead of node.props.onFinished
@@ -444,84 +444,47 @@ export async function executeNode(
     contentHash,
   }
 
-  // Check for onError callback to simulate error handling
+  // Check for onError callback
   const onError =
     onErrorOverride || (node.props.onError as ((error: Error) => void) | undefined)
 
   try {
-    // STUB: Create a mock response based on the prompt content
-    // In the real implementation, this will call the Claude SDK
-    const promptText = extractTextContent(node)
+    let output: string
 
-    // Simulate intentional failures for testing
-    if (promptText.toLowerCase().includes('fail intentionally') ||
-        promptText.toLowerCase().includes('will fail')) {
-      throw new Error('Simulated failure for testing')
-    }
+    // Check if we should use mock mode (for testing)
+    // Mock mode is enabled if SMITHERS_MOCK_MODE env var is set to "true"
+    // or if the node has a _mockMode prop set to true
+    const useMockMode =
+      process.env.SMITHERS_MOCK_MODE === 'true' ||
+      node.props._mockMode === true
 
-    let mockOutput: string = 'Hello, I am Smithers! A React-based framework for AI agent prompts.'
-
-    // Check if we should return JSON
-    // Look for JSON keywords, JSON objects (curly braces), or outputFormat/output-format children
-    const hasJsonIndicator =
-      promptText.includes('JSON') ||
-      promptText.includes('json') ||
-      promptText.includes('JSON.stringify') ||
-      promptText.match(/\{[^}]*\}/) !== null || // Contains a JSON object
-      node.props.outputFormat ||
-      hasChildOfType(node, 'output-format') ||
-      promptText.toLowerCase().includes('return') // "Return a plan", "Return exactly:", etc.
-
-    if (hasJsonIndicator) {
-      // Try to extract JSON from the prompt if it contains a JSON object
-      // Look for patterns like JSON.stringify({ ... }) or just { ... }
-      const jsonStringifyMatch = promptText.match(/JSON\.stringify\((\{[^}]*\})\)/)
-      if (jsonStringifyMatch) {
-        // Return the JSON object that was stringified
-        mockOutput = jsonStringifyMatch[1]
-      } else {
-        // Look for a JSON object directly in the prompt
-        const jsonObjectMatch = promptText.match(/\{[^}]*\}/)
-        if (jsonObjectMatch) {
-          mockOutput = jsonObjectMatch[0]
-        } else {
-          // Infer what kind of JSON to return based on prompt content
-          if (promptText.toLowerCase().includes('subtask')) {
-            mockOutput = JSON.stringify({
-              subtasks: ['task1', 'task2'],
-            })
-          } else {
-            // Default JSON response
-            mockOutput = JSON.stringify({
-              issues: [],
-              summary: 'No issues found',
-              status: 'complete',
-              result: 'success',
-            })
-          }
-        }
-      }
+    if (useMockMode) {
+      // Use mock executor for testing
+      output = await executeMock(node)
+    } else {
+      // Use real Claude SDK
+      output = await executeWithClaude(node)
     }
 
     // Store the raw output
     node._execution = {
       status: 'complete',
-      result: mockOutput,
+      result: output,
       contentHash,
     }
 
     // Use override callback if provided, otherwise use node's callback
     const onFinished = onFinishedOverride || (node.props.onFinished as ((output: unknown) => void) | undefined)
     if (onFinished) {
-      let outputToPass: unknown = mockOutput
+      let outputToPass: unknown = output
 
       // Try to parse JSON for onFinished callback
-      if (typeof mockOutput === 'string') {
+      if (typeof output === 'string') {
         try {
-          outputToPass = JSON.parse(mockOutput)
+          outputToPass = JSON.parse(output)
         } catch {
           // Not JSON, pass as string
-          outputToPass = mockOutput
+          outputToPass = output
         }
       }
 
@@ -540,6 +503,69 @@ export async function executeNode(
       throw error
     }
   }
+}
+
+/**
+ * Execute a node in mock mode (for testing)
+ *
+ * Returns a mock response based on the prompt content
+ */
+async function executeMock(node: PluNode): Promise<string> {
+  const promptText = extractTextContent(node)
+
+  // Simulate intentional failures for testing
+  if (
+    promptText.toLowerCase().includes('fail intentionally') ||
+    promptText.toLowerCase().includes('will fail')
+  ) {
+    throw new Error('Simulated failure for testing')
+  }
+
+  let mockOutput: string = 'Hello, I am Smithers! A React-based framework for AI agent prompts.'
+
+  // Check if we should return JSON
+  // Look for JSON keywords, JSON objects (curly braces), or outputFormat/output-format children
+  const hasJsonIndicator =
+    promptText.includes('JSON') ||
+    promptText.includes('json') ||
+    promptText.includes('JSON.stringify') ||
+    promptText.match(/\{[^}]*\}/) !== null || // Contains a JSON object
+    node.props.outputFormat ||
+    hasChildOfType(node, 'output-format') ||
+    promptText.toLowerCase().includes('return') // "Return a plan", "Return exactly:", etc.
+
+  if (hasJsonIndicator) {
+    // Try to extract JSON from the prompt if it contains a JSON object
+    // Look for patterns like JSON.stringify({ ... }) or just { ... }
+    const jsonStringifyMatch = promptText.match(/JSON\.stringify\((\{[^}]*\})\)/)
+    if (jsonStringifyMatch) {
+      // Return the JSON object that was stringified
+      mockOutput = jsonStringifyMatch[1]
+    } else {
+      // Look for a JSON object directly in the prompt
+      const jsonObjectMatch = promptText.match(/\{[^}]*\}/)
+      if (jsonObjectMatch) {
+        mockOutput = jsonObjectMatch[0]
+      } else {
+        // Infer what kind of JSON to return based on prompt content
+        if (promptText.toLowerCase().includes('subtask')) {
+          mockOutput = JSON.stringify({
+            subtasks: ['task1', 'task2'],
+          })
+        } else {
+          // Default JSON response
+          mockOutput = JSON.stringify({
+            issues: [],
+            summary: 'No issues found',
+            status: 'complete',
+            result: 'success',
+          })
+        }
+      }
+    }
+  }
+
+  return mockOutput
 }
 
 /**

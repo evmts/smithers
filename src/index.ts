@@ -1,6 +1,7 @@
 // Core rendering and execution
 export { renderPlan, createRoot, serialize } from './core/render.js'
 export { executePlan, executeNode, findPendingExecutables } from './core/execute.js'
+export { executeWithClaude, type ClaudeConfig } from './core/claude-executor.js'
 
 // Components
 export {
