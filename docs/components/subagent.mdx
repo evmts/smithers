@@ -1,0 +1,316 @@
+---
+title: Subagent Component
+description: Parallel execution boundaries for concurrent agent workflows
+---
+
+# Subagent Component
+
+The `<Subagent>` component creates a parallel execution boundary. Multiple subagents run concurrently within the same frame, enabling efficient multi-agent workflows.
+
+## Basic Usage
+
+```tsx
+import { Claude, Subagent } from 'smithers'
+
+function ParallelResearch({ topics }) {
+  return (
+    <>
+      {topics.map(topic => (
+        <Subagent key={topic} name={`researcher-${topic}`}>
+          <Claude tools={[webSearch]}>
+            Research: {topic}
+          </Claude>
+        </Subagent>
+      ))}
+    </>
+  )
+}
+```
+
+All three subagents execute simultaneously, not sequentially.
+
+## Props
+
+<ParamField path="name" type="string">
+  Identifier for the subagent. Used in logs and debugging output.
+
+  ```tsx
+  <Subagent name="data-fetcher">
+    <Claude>Fetch the data...</Claude>
+  </Subagent>
+  ```
+</ParamField>
+
+<ParamField path="parallel" type="boolean" default="true">
+  Whether this subagent runs concurrently with siblings. Set to `false` for sequential execution within a group.
+
+  ```tsx
+  <Subagent name="step-1" parallel={false}>
+    <Claude>First step...</Claude>
+  </Subagent>
+  <Subagent name="step-2" parallel={false}>
+    <Claude>Second step (waits for step-1)...</Claude>
+  </Subagent>
+  ```
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  The content to execute. Typically contains a `<Claude>` component.
+</ParamField>
+
+## Parallel Execution Pattern
+
+The most common use case is running multiple agents in parallel and collecting results:
+
+```tsx
+import { create } from 'zustand'
+
+const useStore = create((set, get) => ({
+  results: {} as Record<string, any>,
+  addResult: (key: string, value: any) => set((s) => ({
+    results: { ...s.results, [key]: value }
+  })),
+}))
+
+function ParallelAnalysis({ files }) {
+  const { results, addResult } = useStore()
+  const pendingFiles = files.filter(f => !results[f])
+
+  // Phase 1: Analyze all files in parallel
+  if (pendingFiles.length > 0) {
+    return (
+      <>
+        {pendingFiles.map(file => (
+          <Subagent key={file} name={`analyzer-${file}`}>
+            <Claude
+              tools={[filesystem]}
+              onFinished={(analysis) => addResult(file, analysis)}
+            >
+              Analyze the file: {file}
+              Identify potential issues and improvements.
+            </Claude>
+          </Subagent>
+        ))}
+      </>
+    )
+  }
+
+  // Phase 2: Synthesize results (runs after all parallel work completes)
+  return (
+    <Claude>
+      Synthesize these analyses into a comprehensive report:
+      {JSON.stringify(results)}
+    </Claude>
+  )
+}
+```
+
+## Execution Flow
+
+Within a single frame, Smithers executes:
+
+1. The first sequential `<Claude>` node (if any)
+2. All `<Subagent>` nodes in parallel
+3. Waits for all to complete before the next frame
+
+```tsx
+// Execution order visualization
+<>
+  <Claude>Sequential 1</Claude>     {/* Runs first */}
+  <Claude>Sequential 2</Claude>     {/* Runs second */}
+
+  <Subagent name="a">
+    <Claude>Parallel A</Claude>     {/* Runs with Sequential 1 */}
+  </Subagent>
+
+  <Subagent name="b">
+    <Claude>Parallel B</Claude>     {/* Runs with Sequential 1 */}
+  </Subagent>
+</>
+```
+
+## Multi-Agent Team Pattern
+
+Create specialized agents that work together:
+
+```tsx
+function FeatureTeam({ feature }) {
+  const [plan, setPlan] = useState(null)
+  const [implementations, setImplementations] = useState({})
+
+  // Phase 1: Architect creates the plan
+  if (!plan) {
+    return (
+      <Claude onFinished={setPlan}>
+        <Persona role="Software Architect" />
+        Design an implementation plan for: {feature}
+        Break into independent subtasks for parallel work.
+
+        <OutputFormat schema={{
+          subtasks: [{ id: 'string', description: 'string', dependencies: 'string[]' }]
+        }} />
+      </Claude>
+    )
+  }
+
+  // Phase 2: Developers implement in parallel
+  const pendingTasks = plan.subtasks.filter(t => !implementations[t.id])
+
+  if (pendingTasks.length > 0) {
+    return (
+      <>
+        {pendingTasks.map(task => (
+          <Subagent key={task.id} name={`dev-${task.id}`}>
+            <Claude
+              tools={[filesystem, terminal]}
+              onFinished={(code) => {
+                setImplementations(prev => ({ ...prev, [task.id]: code }))
+              }}
+            >
+              <Persona role="Senior Developer" />
+              Implement: {task.description}
+              Write clean, tested code.
+            </Claude>
+          </Subagent>
+        ))}
+      </>
+    )
+  }
+
+  // Phase 3: Integration review
+  return (
+    <Claude tools={[filesystem, terminal]}>
+      <Persona role="Tech Lead" />
+      Review and integrate these implementations:
+      {JSON.stringify(implementations)}
+      Ensure tests pass and code is consistent.
+    </Claude>
+  )
+}
+```
+
+## Nested Subagents
+
+Subagents can contain other subagents for hierarchical workflows:
+
+```tsx
+function ResearchDepartment({ topics }) {
+  return (
+    <>
+      {topics.map(topic => (
+        <Subagent key={topic} name={`team-${topic}`}>
+          {/* Each team has multiple researchers */}
+          <Subagent name={`${topic}-primary`}>
+            <Claude tools={[webSearch]}>
+              Primary research on {topic}
+            </Claude>
+          </Subagent>
+
+          <Subagent name={`${topic}-secondary`}>
+            <Claude tools={[webSearch]}>
+              Find counterarguments and alternative views on {topic}
+            </Claude>
+          </Subagent>
+        </Subagent>
+      ))}
+    </>
+  )
+}
+```
+
+## Error Handling in Parallel
+
+Handle errors from individual subagents:
+
+```tsx
+function ResilientParallel({ tasks }) {
+  const [results, setResults] = useState({})
+  const [errors, setErrors] = useState({})
+
+  const pending = tasks.filter(t => !results[t.id] && !errors[t.id])
+
+  if (pending.length > 0) {
+    return (
+      <>
+        {pending.map(task => (
+          <Subagent key={task.id} name={`worker-${task.id}`}>
+            <Claude
+              onFinished={(result) => {
+                setResults(prev => ({ ...prev, [task.id]: result }))
+              }}
+              onError={(error) => {
+                setErrors(prev => ({ ...prev, [task.id]: error }))
+              }}
+            >
+              Process: {task.description}
+            </Claude>
+          </Subagent>
+        ))}
+      </>
+    )
+  }
+
+  // Handle partial success
+  const successCount = Object.keys(results).length
+  const errorCount = Object.keys(errors).length
+
+  return (
+    <Claude>
+      {successCount} tasks succeeded, {errorCount} failed.
+
+      Successful results: {JSON.stringify(results)}
+
+      Failed tasks: {Object.entries(errors).map(([id, err]) =>
+        `${id}: ${err.message}`
+      ).join('\n')}
+
+      Create a summary handling partial success appropriately.
+    </Claude>
+  )
+}
+```
+
+## Performance Considerations
+
+<AccordionGroup>
+  <Accordion title="Optimal parallelism">
+    Group independent work into subagents. Dependent tasks should be sequential.
+  </Accordion>
+  <Accordion title="Resource limits">
+    Too many parallel subagents may hit API rate limits. Consider batching large workloads.
+  </Accordion>
+  <Accordion title="Memory usage">
+    Each subagent maintains its own context. Very large parallel workloads may consume significant memory.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use meaningful names" icon="tag">
+    Names appear in logs and help debug complex workflows
+  </Card>
+  <Card title="Handle partial failures" icon="shield">
+    Use onError to gracefully handle individual subagent failures
+  </Card>
+  <Card title="Collect results with Zustand" icon="database">
+    Avoid stale closure issues when aggregating parallel results
+  </Card>
+  <Card title="Batch large workloads" icon="layer-group">
+    Split very large parallel jobs into batches to avoid rate limits
+  </Card>
+</CardGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Claude Component" icon="cube" href="/components/claude">
+    The core execution component used inside subagents
+  </Card>
+  <Card title="Ralph Wiggum Loop" icon="rotate" href="/concepts/ralph-wiggum-loop">
+    Understand how parallel execution fits in the frame model
+  </Card>
+  <Card title="State Management" icon="database" href="/concepts/state-management">
+    Best practices for managing parallel state with Zustand
+  </Card>
+</CardGroup>
