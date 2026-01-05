@@ -1,0 +1,373 @@
+---
+title: TypeScript Types
+description: Complete type definitions for Smithers
+---
+
+# TypeScript Types
+
+Smithers is written in TypeScript and exports comprehensive type definitions.
+
+## Component Props
+
+### ClaudeProps
+
+Props for the `<Claude>` component.
+
+```typescript
+interface ClaudeProps<T = any> {
+  /** Tools to make available as MCP servers */
+  tools?: Tool[]
+
+  /** Called when Claude completes successfully */
+  onFinished?: (output: T) => void
+
+  /** Called when execution fails */
+  onError?: (error: Error) => void
+
+  /** Override the Claude model */
+  model?: string
+
+  /** Prompt content */
+  children: ReactNode
+}
+```
+
+### SubagentProps
+
+Props for the `<Subagent>` component.
+
+```typescript
+interface SubagentProps {
+  /** Identifier for logging and debugging */
+  name?: string
+
+  /** Run concurrently with siblings (default: true) */
+  parallel?: boolean
+
+  /** Content to execute */
+  children: ReactNode
+}
+```
+
+### PhaseProps
+
+Props for the `<Phase>` component.
+
+```typescript
+interface PhaseProps {
+  /** Phase identifier */
+  name: string
+
+  /** Phase content */
+  children: ReactNode
+}
+```
+
+### StepProps
+
+Props for the `<Step>` component.
+
+```typescript
+interface StepProps {
+  /** Step description */
+  children: ReactNode
+}
+```
+
+### PersonaProps
+
+Props for the `<Persona>` component.
+
+```typescript
+interface PersonaProps {
+  /** Role or title */
+  role: string
+
+  /** Additional persona details */
+  children?: ReactNode
+}
+```
+
+### ConstraintsProps
+
+Props for the `<Constraints>` component.
+
+```typescript
+interface ConstraintsProps {
+  /** Constraint rules */
+  children: ReactNode
+}
+```
+
+### OutputFormatProps
+
+Props for the `<OutputFormat>` component.
+
+```typescript
+interface OutputFormatProps {
+  /** JSON Schema for expected output */
+  schema?: JSONSchema
+
+  /** Human-readable format description */
+  children?: ReactNode
+}
+```
+
+## Tool Types
+
+```typescript
+interface Tool {
+  /** Unique tool identifier */
+  name: string
+
+  /** Human-readable description */
+  description: string
+
+  /** Parameter definitions */
+  parameters?: Record<string, ToolParameter>
+}
+
+interface ToolParameter {
+  /** Parameter type */
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array'
+
+  /** Whether the parameter is required */
+  required?: boolean
+
+  /** Default value */
+  default?: any
+
+  /** Description for Claude */
+  description?: string
+
+  /** Enum of allowed values */
+  enum?: string[]
+}
+```
+
+## Execution Types
+
+### ExecuteOptions
+
+Options for `executePlan`.
+
+```typescript
+interface ExecuteOptions {
+  /** Skip plan approval prompts */
+  autoApprove?: boolean
+
+  /** Maximum frames before terminating (default: 100) */
+  maxFrames?: number
+
+  /** Total timeout in milliseconds */
+  timeout?: number
+
+  /** Called before each frame with the plan XML */
+  onPlan?: (xml: string, frame: number) => void
+
+  /** Called after each frame completes */
+  onFrame?: (result: FrameResult) => void
+}
+```
+
+### ExecutionResult
+
+Result returned by `executePlan`.
+
+```typescript
+interface ExecutionResult<T = any> {
+  /** Final output from the last Claude call */
+  output: T
+
+  /** Total number of frames executed */
+  frames: number
+
+  /** Detailed history of each frame */
+  history: FrameHistory[]
+}
+```
+
+### FrameResult
+
+Information about a completed frame.
+
+```typescript
+interface FrameResult {
+  /** Frame number (1-indexed) */
+  frame: number
+
+  /** Names of executed nodes */
+  executedNodes: string[]
+
+  /** Frame duration in milliseconds */
+  duration: number
+}
+```
+
+### FrameHistory
+
+Historical record of a frame.
+
+```typescript
+interface FrameHistory {
+  /** Frame number (1-indexed) */
+  frame: number
+
+  /** XML plan for this frame */
+  plan: string
+
+  /** Names of executed nodes */
+  executedNodes: string[]
+
+  /** Frame duration in milliseconds */
+  duration: number
+}
+```
+
+## Internal Types
+
+These types are used internally but exported for advanced use cases.
+
+### PluNode
+
+Internal node representation.
+
+```typescript
+interface PluNode {
+  /** Node type: 'claude', 'subagent', 'phase', etc. */
+  type: string
+
+  /** Component props */
+  props: Record<string, any>
+
+  /** Child nodes */
+  children: PluNode[]
+
+  /** Parent reference */
+  parent: PluNode | null
+
+  /** Execution state */
+  _execution?: {
+    status: 'pending' | 'running' | 'complete' | 'error'
+    result?: any
+    error?: Error
+  }
+}
+```
+
+### PluRoot
+
+Root container for the renderer.
+
+```typescript
+interface PluRoot {
+  /** Render a React element to PluNode tree */
+  render(element: ReactElement): Promise<PluNode>
+
+  /** Clean up the root */
+  unmount(): void
+}
+```
+
+## Usage Examples
+
+### Typed Agent Component
+
+```tsx
+import type { ClaudeProps, Tool } from 'smithers'
+
+interface AnalysisResult {
+  summary: string
+  score: number
+  issues: Array<{ severity: string; message: string }>
+}
+
+interface AnalyzerProps {
+  code: string
+  strict?: boolean
+}
+
+function Analyzer({ code, strict = false }: AnalyzerProps) {
+  const handleResult = (result: AnalysisResult) => {
+    if (result.score < 0.5) {
+      console.warn('Low quality score:', result.score)
+    }
+  }
+
+  return (
+    <Claude<AnalysisResult>
+      tools={[filesystem]}
+      onFinished={handleResult}
+    >
+      Analyze this code: {code}
+      {strict && <Constraints>Apply strict standards</Constraints>}
+    </Claude>
+  )
+}
+```
+
+### Typed Tool Definition
+
+```tsx
+import type { Tool } from 'smithers'
+
+const searchTool: Tool = {
+  name: 'web-search',
+  description: 'Search the web for information',
+  parameters: {
+    query: {
+      type: 'string',
+      required: true,
+      description: 'Search query',
+    },
+    limit: {
+      type: 'number',
+      default: 10,
+      description: 'Maximum results',
+    },
+  },
+}
+```
+
+### Typed Execution
+
+```tsx
+import { executePlan } from 'smithers'
+import type { ExecutionResult, ExecuteOptions } from 'smithers'
+
+interface ReportOutput {
+  title: string
+  sections: string[]
+}
+
+const options: ExecuteOptions = {
+  autoApprove: true,
+  maxFrames: 20,
+  onFrame: (result) => {
+    console.log(`Frame ${result.frame}: ${result.executedNodes.length} nodes`)
+  },
+}
+
+const result: ExecutionResult<ReportOutput> = await executePlan(
+  <ReportAgent topic="AI" />,
+  options
+)
+
+console.log(result.output.title)
+console.log(result.output.sections.length)
+```
+
+## JSX Types
+
+Smithers extends React's JSX types. Import the type definitions:
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "types": ["smithers/jsx"]
+  }
+}
+```
+
+This enables proper type checking for Smithers components in JSX.
