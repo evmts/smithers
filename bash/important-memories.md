@@ -81,11 +81,27 @@ This file contains important learnings, decisions, and context from previous Ral
 - MDX and TSX/JSX file loading
 - All known bugs fixed (execution state keying, content hashing, ESM compatibility, MCP types)
 
+### MCP Integration (2026-01-05 - IMPLEMENTED)
+- **Feature**: MCP (Model Context Protocol) server integration allows agents to connect to MCP servers and use their tools
+- **Implementation**:
+  - Added `MCPManager` initialization in `executePlan()`
+  - Created `prepareTools()` helper to connect to MCP servers and merge with inline tools
+  - Updated `executeWithClaude()` to accept `toolsOverride` parameter
+  - Convert MCP tools to Smithers Tool format with execute wrappers
+  - Clean up MCP connections when execution completes
+- **Important**: Tools are passed via `toolsOverride` parameter instead of mutating `node.props.tools` to prevent contentHash changes that would trigger infinite re-execution
+- **Known Issues** (from Codex review f8588ee):
+  1. MCPManager is shared across all nodes - tools from earlier nodes leak into later nodes without `mcpServers` prop
+  2. Tool name collisions between inline tools and MCP tools are not handled - silent shadowing occurs
+  3. Mock mode doesn't use prepared tools (acceptable for testing but inconsistent)
+- Commit: f8588ee
+
 ## What's Next (Priority Order)
 
-1. **Runtime Integration** (Highest Priority)
-   - Wire MCP servers into Claude executor (connect mcpServers prop to MCPManager)
-   - Add configuration surface for retries, timeouts, streaming
+1. **Runtime Integration Fixes** (Highest Priority)
+   - Fix MCP tool scoping - prevent tool leakage between nodes
+   - Add tool name collision detection and warnings
+   - Add configuration surface for retries, timeouts, streaming in ClaudeProps
    - Test real Claude API execution (not just mocks)
 
 2. **Execution Semantics**
