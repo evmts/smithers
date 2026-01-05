@@ -5,13 +5,20 @@
 Build AI agents the same way you build user interfaces. Plue lets you compose complex agent workflows from simple, reusable components using JSX—with React state driving behavior, conditional rendering controlling flow, and TypeScript keeping everything type-safe.
 
 ```tsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { renderPlan, executePlan, Claude, Phase, Step, Subagent } from 'plue'
 
 function ResearchAgent({ topic }) {
   const [phase, setPhase] = useState<'research' | 'analyze' | 'write'>('research')
   const [sources, setSources] = useState([])
-  const [analysis, setAnalysis] = useState(null)
+  const [analyses, setAnalyses] = useState<Record<string, any>>({})
+
+  // Transition to write phase when all analyses complete
+  useEffect(() => {
+    if (sources.length > 0 && Object.keys(analyses).length === sources.length) {
+      setPhase('write')
+    }
+  }, [analyses, sources.length])
 
   if (phase === 'research') {
     return (
@@ -22,7 +29,6 @@ function ResearchAgent({ topic }) {
         <Phase name="research">
           <Step>Search for recent articles about {topic}</Step>
           <Step>Find at least 5 credible sources</Step>
-          <Step>Extract key claims from each source</Step>
         </Phase>
       </Claude>
     )
@@ -31,14 +37,10 @@ function ResearchAgent({ topic }) {
   if (phase === 'analyze') {
     return (
       <>
-        {sources.map((source, i) => (
-          <Subagent key={i} name={`analyzer-${i}`}>
-            <Claude onFinished={(result) => {
-              const updated = [...(analysis || []), result]
-              setAnalysis(updated)
-              if (updated.length === sources.length) setPhase('write')
-            }}>
-              Analyze source {i + 1}: {source.url}
+        {sources.map((source) => (
+          <Subagent key={source.id} name={`analyzer-${source.id}`}>
+            <Claude onFinished={(result) => setAnalyses(prev => ({ ...prev, [source.id]: result }))}>
+              Analyze: {source.url}
               Identify: main argument, evidence quality, potential biases
             </Claude>
           </Subagent>
@@ -48,20 +50,20 @@ function ResearchAgent({ topic }) {
   }
 
   return (
-    <Claude tools={[filesystem]} onFinished={console.log}>
+    <Claude tools={[filesystem]}>
       <Phase name="write">
-        Write a research report synthesizing these analyses: {JSON.stringify(analysis)}
+        Write a research report synthesizing: {JSON.stringify(Object.values(analyses))}
         Save to output/report.md
       </Phase>
     </Claude>
   )
 }
 
-// Preview the plan
+// Preview the XML plan
 const xml = await renderPlan(<ResearchAgent topic="quantum computing" />)
 console.log(xml)
 
-// Execute it
+// Execute the agent
 const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 ```
 
