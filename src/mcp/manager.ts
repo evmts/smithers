@@ -58,14 +58,19 @@ export class MCPManager {
       return
     }
 
-    // Create client
+    // Create client with tool support capabilities
+    // The sampling.tools capability indicates that the client supports tool use
     const client = new Client(
       {
         name: 'smithers-mcp-client',
         version: '1.0.0',
       },
       {
-        capabilities: {},
+        capabilities: {
+          sampling: {
+            tools: {},
+          },
+        },
       }
     )
 
