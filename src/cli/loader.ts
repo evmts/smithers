@@ -7,7 +7,26 @@ import * as runtime from 'react/jsx-runtime'
 import React from 'react'
 
 // Import smithers components to make them available to MDX files
-import * as smithersComponents from '../index.js'
+import {
+  Claude,
+  Subagent,
+  Phase,
+  Step,
+  Persona,
+  Constraints,
+  OutputFormat,
+} from '../components/index.js'
+
+// MDX components (only actual React components, not utilities/types)
+const mdxComponents = {
+  Claude,
+  Subagent,
+  Phase,
+  Step,
+  Persona,
+  Constraints,
+  OutputFormat,
+}
 
 export interface LoadOptions {
   /**
@@ -97,8 +116,8 @@ export async function loadMdxFile(
       // Convert file path to file URL for proper baseUrl
       baseUrl: options.baseUrl || pathToFileURL(filePath).href,
       development: false,
-      // Provide smithers components to MDX
-      useMDXComponents: () => smithersComponents,
+      // Provide smithers components to MDX (only actual React components)
+      useMDXComponents: () => mdxComponents,
     })
 
     return module as LoadedModule
