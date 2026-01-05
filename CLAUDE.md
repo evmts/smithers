@@ -28,3 +28,17 @@ git log --show-notes
 - Makes it possible to understand design decisions months later
 - Creates a searchable history of product decisions
 - Helps onboard new contributors with full context
+
+## Post-Commit Hook
+
+A Codex review hook runs after each commit. It:
+- Reviews the commit with Codex
+- Only saves reviews with actionable feedback (skips LGTM)
+- Saves reviews to `reviews/` directory
+- Auto-commits the review
+
+To install hook on clone:
+```bash
+cp hooks/post-commit .git/hooks/
+chmod +x .git/hooks/post-commit
+```
