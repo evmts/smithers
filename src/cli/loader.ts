@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import * as fs from 'fs'
 import * as path from 'path'
+import { pathToFileURL } from 'url'
 import { evaluate } from '@mdx-js/mdx'
 import * as runtime from 'react/jsx-runtime'
 import React from 'react'
@@ -65,8 +66,10 @@ export async function loadAgentFile(
  */
 export async function loadTsxFile(filePath: string): Promise<LoadedModule> {
   try {
-    // Use Bun's native import which handles TypeScript/JSX natively
-    const module = await import(filePath)
+    // Convert file path to file URL for proper ESM import
+    // This handles paths with spaces and ensures Node ESM compatibility
+    const fileUrl = pathToFileURL(filePath).href
+    const module = await import(fileUrl)
     return module
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -91,7 +94,8 @@ export async function loadMdxFile(
     // Evaluate the MDX content with React runtime and smithers components
     const module = await evaluate(content, {
       ...runtime,
-      baseUrl: options.baseUrl || `file://${filePath}`,
+      // Convert file path to file URL for proper baseUrl
+      baseUrl: options.baseUrl || pathToFileURL(filePath).href,
       development: false,
       // Provide smithers components to MDX
       useMDXComponents: () => smithersComponents,
