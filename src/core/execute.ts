@@ -331,9 +331,9 @@ function saveExecutionState(tree: PluNode, storage: Map<string, ExecutionState>)
     const nodePath = [...path, node.type].join('/')
 
     if ((node.type === 'claude' || node.type === 'subagent') && node._execution) {
-      // Use content hash as key for more stable tracking
-      const key = node._execution.contentHash || nodePath
-      storage.set(key, node._execution)
+      // Use stable node path as key to avoid collisions between identical nodes
+      // Store contentHash inside the execution state for change detection
+      storage.set(nodePath, node._execution)
     }
 
     node.children.forEach((child, i) => walk(child, [...path, `${node.type}[${i}]`]))
@@ -346,17 +346,23 @@ function saveExecutionState(tree: PluNode, storage: Map<string, ExecutionState>)
  * Restore execution state from external storage to a tree
  */
 function restoreExecutionState(tree: PluNode, storage: Map<string, ExecutionState>): void {
-  function walk(node: PluNode) {
+  function walk(node: PluNode, path: string[] = []) {
+    const nodePath = [...path, node.type].join('/')
+
     if (node.type === 'claude' || node.type === 'subagent') {
-      // Try to find execution state by content hash
-      const contentHash = computeContentHash(node)
-      const savedState = storage.get(contentHash)
+      // Try to find execution state by stable node path
+      const savedState = storage.get(nodePath)
       if (savedState) {
-        node._execution = savedState
+        // Verify content hasn't changed by comparing hashes
+        const currentHash = computeContentHash(node)
+        if (savedState.contentHash === currentHash) {
+          node._execution = savedState
+        }
+        // If content changed, don't restore - let it execute again
       }
     }
 
-    node.children.forEach(child => walk(child))
+    node.children.forEach((child, i) => walk(child, [...path, `${node.type}[${i}]`]))
   }
 
   walk(tree)
@@ -406,7 +412,7 @@ function computeContentHash(node: PluNode): string {
   // Add props (excluding functions and React internals)
   for (const [key, value] of Object.entries(node.props)) {
     if (typeof value !== 'function' && key !== 'children' && !key.startsWith('_')) {
-      parts.push(`${key}:${JSON.stringify(value)}`)
+      parts.push(`${key}:${safeStringify(value)}`)
     }
   }
 
@@ -420,6 +426,38 @@ function computeContentHash(node: PluNode): string {
   }
 
   return parts.join('|')
+}
+
+/**
+ * Safely stringify a value for hashing, handling edge cases
+ */
+function safeStringify(value: unknown): string {
+  try {
+    // Handle primitives directly
+    if (value === null || value === undefined) {
+      return String(value)
+    }
+
+    // Handle BigInt
+    if (typeof value === 'bigint') {
+      return `bigint:${value.toString()}`
+    }
+
+    // Handle symbols
+    if (typeof value === 'symbol') {
+      return `symbol:${value.toString()}`
+    }
+
+    // Try JSON.stringify for objects/arrays
+    if (typeof value === 'object') {
+      return JSON.stringify(value)
+    }
+
+    return String(value)
+  } catch (error) {
+    // Fallback for circular refs or other errors
+    return `[unstringifiable:${typeof value}]`
+  }
 }
 
 /**
