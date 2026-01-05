@@ -205,10 +205,33 @@ function convertTools(tools: Tool[] | undefined): Anthropic.Tool[] {
       console.warn(
         `Tool "${tool.name}": parameters field is deprecated. Use input_schema instead.`
       )
+
+      // Extract properties and required fields from old format
+      // Old format: { paramName: { type: '...', required: true }, ... }
+      const properties: Record<string, unknown> = {}
+      const required: string[] = []
+
+      for (const [key, value] of Object.entries(tool.parameters)) {
+        if (value && typeof value === 'object') {
+          const paramDef = value as Record<string, unknown>
+
+          // Extract required flag and remove it from the property definition
+          if (paramDef.required === true) {
+            required.push(key)
+          }
+
+          // Copy property definition without the 'required' field
+          const { required: _, ...propertySchema } = paramDef
+          properties[key] = propertySchema
+        } else {
+          properties[key] = value
+        }
+      }
+
       inputSchema = {
         type: 'object' as const,
-        properties: tool.parameters,
-        required: [],
+        properties,
+        required,
       }
     }
 
