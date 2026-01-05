@@ -39,6 +39,8 @@ export interface Tool {
   description: string
   /** JSON Schema defining the tool's input parameters */
   input_schema?: ToolInputSchema
+  /** @deprecated Use input_schema instead. Kept for backward compatibility. */
+  parameters?: Record<string, unknown>
   /** Optional function to execute the tool (for MCP integration) */
   execute?: (args: unknown) => Promise<unknown>
 }

@@ -186,7 +186,8 @@ function getChildrenText(node: PluNode): string {
  * Convert Smithers Tool definitions to Anthropic tool format
  *
  * Transforms Smithers tool definitions into the format expected by the
- * Anthropic API. The tool.input_schema should already be a valid JSON Schema.
+ * Anthropic API. Supports both input_schema (preferred) and the deprecated
+ * parameters field for backward compatibility.
  *
  * @param tools Array of Smithers Tool definitions, or undefined
  * @returns Array of Anthropic.Tool objects for the API
@@ -196,13 +197,34 @@ function convertTools(tools: Tool[] | undefined): Anthropic.Tool[] {
     return []
   }
 
-  return tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.input_schema || {
-      type: 'object' as const,
-      properties: {},
-      required: [],
-    },
-  }))
+  return tools.map((tool) => {
+    let inputSchema = tool.input_schema
+
+    // Backward compatibility: convert deprecated parameters field to input_schema
+    if (!inputSchema && tool.parameters) {
+      console.warn(
+        `Tool "${tool.name}": parameters field is deprecated. Use input_schema instead.`
+      )
+      inputSchema = {
+        type: 'object' as const,
+        properties: tool.parameters,
+        required: [],
+      }
+    }
+
+    // Default to empty schema if neither is provided
+    if (!inputSchema) {
+      inputSchema = {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      }
+    }
+
+    return {
+      name: tool.name,
+      description: tool.description,
+      input_schema: inputSchema,
+    }
+  })
 }
