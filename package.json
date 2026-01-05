@@ -18,7 +18,8 @@
     "commander": "^12.1.0",
     "ora": "^8.1.1",
     "picocolors": "^1.1.1",
-    "react-reconciler": "^0.33.0"
+    "react-reconciler": "^0.33.0",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@types/bun": "latest",

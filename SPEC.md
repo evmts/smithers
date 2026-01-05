@@ -1,8 +1,10 @@
-# Plue - Product Specification
+# Smithers - Product Specification
+
+> **Note:** This project is being renamed from "Plue" to "Smithers". All references to "plue" should be updated to "smithers".
 
 ## Overview
 
-Plue is a React-based framework for authoring composable, reusable AI agent prompts. It uses JSX/MDX to define prompts that render to XML plans, executed via a "Ralph Wiggum" loop (repeated agent invocations on the same plan until completion).
+Smithers is a React-based framework for authoring composable, reusable AI agent prompts. It uses JSX/MDX to define prompts that render to XML plans, executed via a "Ralph Wiggum" loop (repeated agent invocations on the same plan until completion).
 
 ## Core Concepts
 
@@ -58,6 +60,7 @@ Plue is a React-based framework for authoring composable, reusable AI agent prom
 | `<Phase>` | Defines a phase in multi-phase plans |
 | `<Step>` | Defines a step within a phase |
 | `<Task>` | Trackable task with `done` prop for completion state |
+| `<Stop>` | Signals the Ralph loop to stop after current agents complete |
 
 ### Semantic Components
 | Component | Purpose |

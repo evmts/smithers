@@ -1,14 +1,25 @@
-import type { ReactElement } from 'react'
-import { cloneElement } from 'react'
+import { cloneElement, createElement, type ReactElement } from 'react'
 import type {
   ExecuteOptions,
   ExecutionResult,
+  ExecutionState,
   FrameResult,
   PluNode,
   Tool,
 } from './types.js'
-import { createRoot, renderPlan } from './render.js'
-import { flushSyncWork, flushPassiveEffects } from '../reconciler/index.js'
+import { createRoot } from './render.js'
+import { runWithSyncUpdates, waitForCommit } from '../reconciler/index.js'
+
+/**
+ * Wrapper component that passes through children
+ * We clone the child element to force React to re-evaluate it on every render
+ * This ensures useState updates are properly processed
+ */
+function RenderFrame({ children, frameCount }: { children: ReactElement; frameCount: number }) {
+  // Clone the element to create a new reference, forcing React to re-evaluate
+  // But DON'T change the key - that would remount and lose state
+  return cloneElement(children)
+}
 
 /**
  * Execute a plan using the Ralph Wiggum loop
@@ -34,6 +45,11 @@ export async function executePlan(
 
   const history: FrameResult[] = []
   const startTime = Date.now()
+
+  // We'll track execution state externally to persist across renders
+  const executionState = new Map<string, ExecutionState>()
+
+  // Create root once and reuse it - this preserves React state (useState, etc.)
   const root = createRoot()
 
   let frameNumber = 0
@@ -54,12 +70,32 @@ export async function executePlan(
       console.log(`[Frame ${frameNumber}] Rendering element...`)
     }
 
-    // Render the current state to a tree
-    const tree = await root.render(element)
+    // Wrap element in RenderFrame with changing frameCount prop
+    // This forces React to recognize this as a new render cycle while preserving state
+    const wrapped = createElement(RenderFrame, { frameCount: frameNumber, children: element })
+    const tree = await root.render(wrapped)
+
+    if (verbose) {
+      console.log(`[Frame ${frameNumber}] Raw tree structure:`)
+      console.log(`[Frame ${frameNumber}]   root.type: ${tree.type}`)
+      console.log(`[Frame ${frameNumber}]   root.children.length: ${tree.children.length}`)
+      if (tree.children.length > 0) {
+        const firstChild = tree.children[0]
+        console.log(`[Frame ${frameNumber}]   first child.type: ${firstChild.type}`)
+        console.log(`[Frame ${frameNumber}]   first child.children.length: ${firstChild.children.length}`)
+        if (firstChild.children.length > 0) {
+          console.log(`[Frame ${frameNumber}]   first grandchild.type: ${firstChild.children[0].type}`)
+        }
+      }
+    }
+
+    // Restore execution state from previous frames
+    // This allows us to preserve execution status across re-renders
+    restoreExecutionState(tree, executionState)
 
     if (verbose) {
       const firstChild = tree.children[0]
-      console.log(`[Frame ${frameNumber}] Tree root has ${tree.children.length} children, first child type: ${firstChild?.type}`)
+      console.log(`[Frame ${frameNumber}] After restore, first child type: ${firstChild?.type}`)
     }
 
     // Find nodes that need execution
@@ -67,6 +103,11 @@ export async function executePlan(
 
     if (verbose) {
       console.log(`[Frame ${frameNumber}] Found ${pendingNodes.length} pending nodes`)
+      for (const node of pendingNodes) {
+        const contentHash = computeContentHash(node)
+        console.log(`[Frame ${frameNumber}]   - ${node.type}, onFinished: ${node.props.onFinished}, typeof: ${typeof node.props.onFinished}, _execution: ${node._execution?.status || 'none'}, hash: ${contentHash.substring(0, 20)}...`)
+        console.log(`[Frame ${frameNumber}]     props keys: ${Object.keys(node.props).join(', ')}`)
+      }
     }
 
     // If no nodes to execute, we're done
@@ -77,69 +118,151 @@ export async function executePlan(
       break
     }
 
-    // Serialize to XML for logging
-    const plan = await renderPlan(element)
+    // Serialize the current tree to XML for logging
+    // Don't call renderPlan() as it would create a new root and re-render
+    const { serialize } = await import('./render.js')
+    const plan = serialize(tree)
 
     if (onPlan) {
       onPlan(plan, frameNumber)
     }
 
-    // Execute pending nodes
-    // Sequential: execute claude nodes one at a time
-    // Parallel: execute all subagent nodes concurrently
+    // Execute ALL pending nodes in this frame
+    // Strategy:
+    // - Execute ALL claude nodes (they run sequentially, one per iteration)
+    // - Execute ALL subagent nodes in parallel
+    // This ensures we don't loop forever when there are multiple static claude nodes
     const claudeNodes = pendingNodes.filter((n) => n.type === 'claude')
     const subagentNodes = pendingNodes.filter((n) => n.type === 'subagent')
 
     const executedNodeTypes: string[] = []
     let stateChanged = false
+    let shouldRerender = false
 
-    // Execute first claude node (if any) and all subagents in parallel
-    const toExecute = [
-      ...(claudeNodes.length > 0 ? [claudeNodes[0]] : []),
-      ...subagentNodes,
-    ]
+    // For Claude nodes: execute them one at a time, checking for state changes
+    // after each one. If state changes, break and re-render.
+    for (const claudeNode of claudeNodes) {
+      if (verbose) {
+        console.log(`[Frame ${frameNumber}] Executing claude node`)
+      }
 
-    if (verbose && toExecute.length > 0) {
-      console.log(`[Frame ${frameNumber}] Executing ${toExecute.map((n) => n.type).join(', ')}`)
+      const originalCallback = claudeNode.props.onFinished
+      const originalError = claudeNode.props.onError
+      let callbackInvoked = false
+
+      const wrappedCallback = originalCallback
+        ? (output: unknown) => {
+            if (verbose) {
+              console.log(`[Frame ${frameNumber}] onFinished called, marking stateChanged=true`)
+            }
+            callbackInvoked = true
+            stateChanged = true
+            finalOutput = output
+            runWithSyncUpdates(() => {
+              ;(originalCallback as (output: unknown) => void)(output)
+            })
+          }
+        : undefined
+
+      const wrappedError = originalError
+        ? (error: Error) => {
+            if (verbose) {
+              console.log(`[Frame ${frameNumber}] onError called, marking stateChanged=true`)
+            }
+            callbackInvoked = true
+            stateChanged = true
+            finalOutput = error
+            runWithSyncUpdates(() => {
+              ;(originalError as (error: Error) => void)(error)
+            })
+          }
+        : undefined
+
+      await executeNode(claudeNode, wrappedCallback, wrappedError)
+
+      if (!originalCallback && claudeNode._execution?.result) {
+        finalOutput = claudeNode._execution.result
+      }
+
+      // Track MCP servers
+      if (claudeNode.props.tools && Array.isArray(claudeNode.props.tools)) {
+        for (const tool of claudeNode.props.tools as Tool[]) {
+          mcpServers.add(tool.name)
+        }
+      }
+
+      executedNodeTypes.push('claude')
+
+      // If this node's callback was called and likely changed state,
+      // wait for state updates to propagate, then break and re-render
+      if (callbackInvoked) {
+        shouldRerender = true
+        if (verbose) {
+          console.log(`[Frame ${frameNumber}] Callback invoked, waiting for state updates to propagate`)
+        }
+        await waitForCommit()
+
+        // Don't call root.render() here - just let the main loop handle it
+        // Breaking here will cause the loop to continue to the next frame
+        // where root.render() will be called with a new frameCount, triggering React to process useState updates
+        break
+      }
     }
 
-    // Track if any onFinished callbacks were called (indicates state change)
-    const originalCallbacks = toExecute.map((node) => node.props.onFinished)
-    const wrappedNodes = toExecute.map((node, i) => {
-      const originalOnFinished = originalCallbacks[i]
-      if (originalOnFinished) {
-        node.props.onFinished = (output: unknown) => {
-          stateChanged = true
-          // Store the output from the last/only node
-          finalOutput = output
-          ;(originalOnFinished as (output: unknown) => void)(output)
-        }
-      } else {
-        // Even if no onFinished callback, capture the execution result
-        const originalExecute = executeNode
-        return node
+    // Execute all subagent nodes in parallel
+    if (subagentNodes.length > 0 && !shouldRerender) {
+      if (verbose) {
+        console.log(`[Frame ${frameNumber}] Executing ${subagentNodes.length} subagent nodes in parallel`)
       }
-      return node
-    })
 
-    // Execute nodes and capture results
-    await Promise.all(
-      wrappedNodes.map(async (node) => {
-        await executeNode(node)
-        // If no onFinished, still capture the result
-        if (!node.props.onFinished && node._execution?.result) {
-          finalOutput = node._execution.result
-        }
-        // Track MCP servers from tools
-        if (node.props.tools && Array.isArray(node.props.tools)) {
-          for (const tool of node.props.tools as Tool[]) {
-            mcpServers.add(tool.name)
+      await Promise.all(
+        subagentNodes.map(async (node) => {
+          const originalCallback = node.props.onFinished
+          const originalError = node.props.onError
+
+          const wrappedCallback = originalCallback
+            ? (output: unknown) => {
+                if (verbose) {
+                  console.log(`[Frame ${frameNumber}] Subagent onFinished called`)
+                }
+                stateChanged = true
+                finalOutput = output
+                runWithSyncUpdates(() => {
+                  ;(originalCallback as (output: unknown) => void)(output)
+                })
+              }
+            : undefined
+
+          const wrappedError = originalError
+            ? (error: Error) => {
+                if (verbose) {
+                  console.log(`[Frame ${frameNumber}] Subagent onError called`)
+                }
+                stateChanged = true
+                finalOutput = error
+                runWithSyncUpdates(() => {
+                  ;(originalError as (error: Error) => void)(error)
+                })
+              }
+            : undefined
+
+          await executeNode(node, wrappedCallback, wrappedError)
+
+          if (!originalCallback && node._execution?.result) {
+            finalOutput = node._execution.result
           }
-        }
-      })
-    )
 
-    executedNodeTypes.push(...toExecute.map((n) => n.type))
+          // Track MCP servers
+          if (node.props.tools && Array.isArray(node.props.tools)) {
+            for (const tool of node.props.tools as Tool[]) {
+              mcpServers.add(tool.name)
+            }
+          }
+
+          executedNodeTypes.push('subagent')
+        })
+      )
+    }
 
     const frameResult: FrameResult = {
       frame: frameNumber,
@@ -155,36 +278,35 @@ export async function executePlan(
       onFrame(frameResult)
     }
 
-    // If state changed, we need to let React process the updates
-    // Keep rendering until the tree stabilizes
-    if (stateChanged) {
-      // Flush any pending work from state updates
-      flushSyncWork()
-      flushPassiveEffects()
-
-      // Wait for React to process state updates
-      // We need to give React's scheduler time to process the setState calls
-      await new Promise((resolve) => setImmediate(resolve))
-
-      // Do a few more renders to let state propagate
-      // This is a workaround for React 19's async state updates
-      for (let i = 0; i < 3; i++) {
-        await root.render(element)
-        flushSyncWork()
-        flushPassiveEffects()
-        await new Promise((resolve) => setImmediate(resolve))
+    // If no state changes detected, check if there are still more pending nodes
+    // If yes, continue to execute them in the next iteration of the loop
+    // If no, we're done
+    if (!stateChanged) {
+      // Re-check for pending nodes after execution
+      const remainingPending = findPendingExecutables(tree)
+      if (remainingPending.length === 0) {
+        if (verbose) {
+          console.log(`[Frame ${frameNumber}] No state changes and no remaining nodes, execution complete`)
+        }
+        break
+      } else {
+        if (verbose) {
+          console.log(`[Frame ${frameNumber}] No state changes but ${remainingPending.length} nodes still pending, continuing`)
+        }
+        // Continue to next iteration to execute remaining nodes
       }
-    }
-
-    // If no state changes and no more pending nodes, we're done
-    if (!stateChanged && pendingNodes.length === toExecute.length) {
+    } else {
+      // If state changed, continue to next frame to re-render
       if (verbose) {
-        console.log(`[Frame ${frameNumber}] No state changes, execution complete`)
+        console.log(`[Frame ${frameNumber}] State changed, will continue to next frame`)
       }
-      break
     }
+
+    // Save execution state for next frame
+    saveExecutionState(tree, executionState)
   }
 
+  // Unmount the root after we're done
   root.unmount()
 
   if (frameNumber >= maxFrames) {
@@ -201,17 +323,67 @@ export async function executePlan(
 }
 
 /**
+ * Save execution state from a tree to external storage
+ */
+function saveExecutionState(tree: PluNode, storage: Map<string, ExecutionState>): void {
+  function walk(node: PluNode, path: string[] = []) {
+    const nodePath = [...path, node.type].join('/')
+
+    if ((node.type === 'claude' || node.type === 'subagent') && node._execution) {
+      // Use content hash as key for more stable tracking
+      const key = node._execution.contentHash || nodePath
+      storage.set(key, node._execution)
+    }
+
+    node.children.forEach((child, i) => walk(child, [...path, `${node.type}[${i}]`]))
+  }
+
+  walk(tree)
+}
+
+/**
+ * Restore execution state from external storage to a tree
+ */
+function restoreExecutionState(tree: PluNode, storage: Map<string, ExecutionState>): void {
+  function walk(node: PluNode) {
+    if (node.type === 'claude' || node.type === 'subagent') {
+      // Try to find execution state by content hash
+      const contentHash = computeContentHash(node)
+      const savedState = storage.get(contentHash)
+      if (savedState) {
+        node._execution = savedState
+      }
+    }
+
+    node.children.forEach(child => walk(child))
+  }
+
+  walk(tree)
+}
+
+/**
  * Find nodes that are ready for execution
  */
 export function findPendingExecutables(tree: PluNode): PluNode[] {
   const executables: PluNode[] = []
 
   function walk(node: PluNode) {
-    if (
-      (node.type === 'claude' || node.type === 'subagent') &&
-      (!node._execution || node._execution.status === 'pending')
-    ) {
-      executables.push(node)
+    if (node.type === 'claude' || node.type === 'subagent') {
+      // A node is pending if:
+      // 1. It has no execution status, OR
+      // 2. Its execution status is explicitly 'pending', OR
+      // 3. Its content has changed since last execution (detect by comparing children)
+      if (!node._execution || node._execution.status === 'pending') {
+        executables.push(node)
+      } else if (node._execution.status === 'complete' || node._execution.status === 'error') {
+        // Check if content changed by computing a simple hash of children
+        const currentContentHash = computeContentHash(node)
+        if (node._execution.contentHash !== currentContentHash) {
+          // Content changed, need to re-execute
+          delete node._execution
+          executables.push(node)
+        }
+      }
     }
 
     for (const child of node.children) {
@@ -224,23 +396,68 @@ export function findPendingExecutables(tree: PluNode): PluNode[] {
 }
 
 /**
+ * Compute a simple hash of a node's content for change detection
+ */
+function computeContentHash(node: PluNode): string {
+  // Hash based on: node type, props (excluding functions), and children structure
+  const parts: string[] = [node.type]
+
+  // Add props (excluding functions and React internals)
+  for (const [key, value] of Object.entries(node.props)) {
+    if (typeof value !== 'function' && key !== 'children' && !key.startsWith('_')) {
+      parts.push(`${key}:${JSON.stringify(value)}`)
+    }
+  }
+
+  // Add children (recursively)
+  for (const child of node.children) {
+    if (child.type === 'TEXT') {
+      parts.push(`text:${child.props.value}`)
+    } else {
+      parts.push(computeContentHash(child))
+    }
+  }
+
+  return parts.join('|')
+}
+
+/**
  * Execute a single node
  *
  * STUB: Will call Claude SDK in a future implementation
  * For now, returns a mock response based on the prompt
+ *
+ * @param node The node to execute
+ * @param onFinishedOverride Optional callback to use instead of node.props.onFinished
+ * @param onErrorOverride Optional callback to use instead of node.props.onError
  */
-export async function executeNode(node: PluNode): Promise<void> {
+export async function executeNode(
+  node: PluNode,
+  onFinishedOverride?: (output: unknown) => void,
+  onErrorOverride?: (error: Error) => void
+): Promise<void> {
+  // Compute content hash for change detection
+  const contentHash = computeContentHash(node)
+
   node._execution = {
     status: 'running',
+    contentHash,
   }
 
   // Check for onError callback to simulate error handling
-  const onError = node.props.onError as ((error: Error) => void) | undefined
+  const onError =
+    onErrorOverride || (node.props.onError as ((error: Error) => void) | undefined)
 
   try {
     // STUB: Create a mock response based on the prompt content
     // In the real implementation, this will call the Claude SDK
     const promptText = extractTextContent(node)
+
+    // Simulate intentional failures for testing
+    if (promptText.toLowerCase().includes('fail intentionally') ||
+        promptText.toLowerCase().includes('will fail')) {
+      throw new Error('Simulated failure for testing')
+    }
 
     let mockOutput: string = 'Hello, I am Plue! A React-based framework for AI agent prompts.'
 
@@ -290,10 +507,11 @@ export async function executeNode(node: PluNode): Promise<void> {
     node._execution = {
       status: 'complete',
       result: mockOutput,
+      contentHash,
     }
 
-    // Call onFinished if present - parse JSON if applicable
-    const onFinished = node.props.onFinished as ((output: unknown) => void) | undefined
+    // Use override callback if provided, otherwise use node's callback
+    const onFinished = onFinishedOverride || (node.props.onFinished as ((output: unknown) => void) | undefined)
     if (onFinished) {
       let outputToPass: unknown = mockOutput
 
@@ -313,6 +531,7 @@ export async function executeNode(node: PluNode): Promise<void> {
     node._execution = {
       status: 'error',
       error: error as Error,
+      contentHash,
     }
 
     if (onError) {

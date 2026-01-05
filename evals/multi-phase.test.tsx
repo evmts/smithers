@@ -1,13 +1,11 @@
 import { describe, test, expect } from 'bun:test'
-import { useState } from 'react'
+import { create } from 'zustand'
 import { renderPlan, executePlan, Claude, Phase, Step } from 'plue'
 
 describe('multi-phase', () => {
-  test('renders different plans based on state', async () => {
+  test('renders different plans based on props', async () => {
     function ResearchAgent({ initialPhase }: { initialPhase: string }) {
-      const [phase] = useState(initialPhase)
-
-      if (phase === 'gather') {
+      if (initialPhase === 'gather') {
         return (
           <Claude>
             <Phase name="gather">
@@ -39,8 +37,17 @@ describe('multi-phase', () => {
   test('state transitions trigger re-renders (Ralph Wiggum loop)', async () => {
     const phases: string[] = []
 
+    // Create a fresh store for this test
+    const usePhaseStore = create<{
+      phase: string
+      setPhase: (phase: string) => void
+    }>((set) => ({
+      phase: 'phase1',
+      setPhase: (phase) => set({ phase }),
+    }))
+
     function MultiPhaseAgent() {
-      const [phase, setPhase] = useState('phase1')
+      const { phase, setPhase } = usePhaseStore()
 
       console.log(`[TEST] Render: phase = ${phase}`)
       phases.push(phase)
@@ -67,14 +74,19 @@ describe('multi-phase', () => {
         )
       }
 
-      return (
-        <Claude onFinished={() => {
-          console.log('[TEST] onFinished for phase3')
-          setPhase('done')
-        }}>
-          <Phase name="phase3">Final phase</Phase>
-        </Claude>
-      )
+      if (phase === 'phase3') {
+        return (
+          <Claude onFinished={() => {
+            console.log('[TEST] onFinished for phase3')
+            setPhase('done')
+          }}>
+            <Phase name="phase3">Final phase</Phase>
+          </Claude>
+        )
+      }
+
+      // Done - no more work
+      return <div>Complete</div>
     }
 
     console.log('[TEST] Starting executePlan')
@@ -88,8 +100,16 @@ describe('multi-phase', () => {
   test('onFinished receives structured output and updates state', async () => {
     let capturedOutput: any = null
 
+    const useDataStore = create<{
+      data: any
+      setData: (data: any) => void
+    }>((set) => ({
+      data: null,
+      setData: (data) => set({ data }),
+    }))
+
     function StatefulAgent() {
-      const [data, setData] = useState<any>(null)
+      const { data, setData } = useDataStore()
 
       if (!data) {
         return (

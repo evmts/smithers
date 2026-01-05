@@ -1,5 +1,136 @@
 # Claude Code Guidelines
 
+## Project Overview
+
+**Plue** (being renamed to **Smithers**) is a React-based framework for authoring composable AI agent prompts using JSX. It brings the React mental model to AI agent orchestration.
+
+**Core Value Proposition:**
+- Build AI agents the same way you build UIs
+- Declarative component-based architecture using JSX
+- React state management drives agent behavior
+- Render to XML plans before execution (Terraform-style approval workflow)
+- Multi-phase execution with state transitions (the "Ralph Wiggum loop")
+
+## Architecture
+
+### The Ralph Wiggum Loop
+
+The execution model that drives everything:
+1. Render JSX component tree to internal `PluNode` representation
+2. Serialize tree to XML plan
+3. Optionally show plan for approval
+4. Execute `<Claude>` and `<Subagent>` nodes
+5. `onFinished` callbacks update React state (Zustand, useState, etc.)
+6. State changes trigger re-render, back to step 1
+7. Loop until no pending nodes remain
+
+### Custom React Reconciler
+
+- Uses `react-reconciler` to build a custom renderer (like react-dom, but for agents)
+- **Host Config** (`src/reconciler/host-config.ts`): Defines how React manages the custom `PluNode` tree
+- **Mutation-based**: Nodes modified in-place rather than persistent copies
+- **Synchronous rendering with React 19**: Uses `updateContainerSync()` for deterministic behavior
+
+### Key Data Structures
+
+```typescript
+interface PluNode {
+  type: string                      // 'claude', 'subagent', 'phase', 'step', etc.
+  props: Record<string, unknown>    // Component props
+  children: PluNode[]               // Child nodes
+  parent: PluNode | null            // Parent reference
+  _execution?: ExecutionState       // Execution status and result
+}
+
+interface ExecutionState {
+  status: 'pending' | 'running' | 'complete' | 'error'
+  result?: unknown
+  error?: Error
+  contentHash?: string              // For change detection
+}
+```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/core/types.ts` | All TypeScript interfaces |
+| `src/core/render.ts` | `renderPlan()`, `createRoot()`, `serialize()` |
+| `src/core/execute.ts` | `executePlan()`, Ralph Wiggum loop logic |
+| `src/reconciler/host-config.ts` | React Reconciler host config |
+| `src/reconciler/index.ts` | `createPluRoot()` - React reconciler setup |
+| `src/components/index.ts` | Component definitions (Claude, Subagent, etc.) |
+
+## Components
+
+| Component | Purpose | Key Props |
+|-----------|---------|-----------|
+| `<Claude>` | Main execution unit | `tools`, `onFinished`, `onError` |
+| `<Subagent>` | Parallel execution boundary | `name`, `parallel` |
+| `<Phase>` | Semantic phase grouping | `name` |
+| `<Step>` | Individual step within a phase | none |
+| `<Persona>` | Define agent role/expertise | `role` |
+| `<Constraints>` | Behavioral boundaries | none |
+| `<OutputFormat>` | Expected output structure | `schema` |
+
+## State Management Pattern
+
+**Recommended**: Zustand with `create()` hook (no stale closures, always gets latest state):
+
+```typescript
+const useStore = create((set, get) => ({
+  phase: 'phase1',
+  setPhase: (phase) => set({ phase }),
+}))
+```
+
+## Testing
+
+- **Test runner**: Bun (`bun test`)
+- **Tests located**: `evals/` directory
+- **Key test files**:
+  - `hello-world.test.tsx` - Basic rendering and execution
+  - `multi-agent.test.tsx` - Nested agents and state coordination
+  - `multi-phase.test.tsx` - Ralph loop with Zustand state transitions
+  - `code-review.test.tsx` - Tool integration and MCP servers
+  - `all-features.test.tsx` - Comprehensive feature test
+
+## Development Commands
+
+```bash
+bun test              # Run all tests
+bun run build         # Build the project
+bun run lint          # Run linting
+```
+
+## React 19 Workarounds
+
+The code has workarounds for React 19's async rendering model:
+- `updateContainerSync()` for synchronous rendering
+- Extracting `pendingProps` from fiber objects in `commitUpdate()`
+- Multiple `setImmediate()` and `setTimeout()` calls to wait for async commit phase
+- Flush synchronous and passive effects explicitly
+
+## Current Development State
+
+**Working:**
+- React reconciler (with async rendering fixes)
+- Ralph Wiggum loop
+- Component definitions
+- Rendering to XML
+- Execution with mocks
+
+**TODOs:**
+1. Project rename: "plue" -> "smithers"
+2. Real Claude SDK integration (replace mock execution)
+3. Real MCP server connection
+4. Sophisticated examples in `examples/` folder
+5. MDX/TSX loading in CLI
+6. Mintlify docs setup
+7. npm publishing with changesets
+
+---
+
 ## Git Commit Convention
 
 Every commit MUST have a git note attached containing comprehensive context from the conversation that led to the commit. This should include:

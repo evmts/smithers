@@ -8,6 +8,15 @@ import type { PluNode, PluRoot } from '../core/types.js'
  */
 const reconciler = ReactReconciler(hostConfig as any)
 
+type VoidFn = () => void
+
+const scheduleImmediate: (callback: VoidFn) => void =
+  typeof setImmediate === 'function'
+    ? setImmediate
+    : (callback) => {
+        setTimeout(callback, 0)
+      }
+
 // Inject into DevTools for debugging (optional but helpful)
 reconciler.injectIntoDevTools({
   bundleType: 1, // 0 for PROD, 1 for DEV
@@ -24,6 +33,28 @@ export const flushSyncWork = () => {
 export const flushPassiveEffects = () => {
   const fn = (reconciler as any).flushPassiveEffects
   if (fn) fn()
+}
+
+export const runWithSyncUpdates = (fn: VoidFn): void => {
+  const flushSyncFromReconciler = (reconciler as any).flushSyncFromReconciler
+  if (typeof flushSyncFromReconciler === 'function') {
+    flushSyncFromReconciler(fn)
+    return
+  }
+
+  const batchedUpdates = (reconciler as any).batchedUpdates
+  if (typeof batchedUpdates === 'function') {
+    batchedUpdates(fn)
+    return
+  }
+
+  fn()
+}
+
+export const waitForCommit = async (): Promise<void> => {
+  await new Promise<void>((resolve) => scheduleImmediate(resolve))
+  await new Promise<void>((resolve) => setTimeout(resolve, 10))
+  await new Promise<void>((resolve) => scheduleImmediate(resolve))
 }
 
 /**
@@ -73,37 +104,36 @@ export function createPluRoot(): PluRoot {
       const updateContainerSync = (reconciler as any).updateContainerSync
 
       if (updateContainerSync) {
-        // Use updateContainerSync for rendering
-        // Note: Even though it's called "Sync", the commit phase is still async
+        // Use updateContainerSync for synchronous rendering
         updateContainerSync(element, container)
       } else {
         // Fallback: use regular updateContainer
         reconciler.updateContainer(element, container, null, () => {})
+      }
 
-        const flushSyncWork = (reconciler as any).flushSyncWork
-        const flushPassiveEffects = (reconciler as any).flushPassiveEffects
+      // Flush any synchronous work
+      const flushSyncWork = (reconciler as any).flushSyncWork
+      const flushPassiveEffects = (reconciler as any).flushPassiveEffects
 
-        if (flushSyncWork) {
+      if (flushSyncWork) {
+        try {
           flushSyncWork()
-        }
-
-        if (flushPassiveEffects) {
-          flushPassiveEffects()
+        } catch (e) {
+          // Ignore flush errors
         }
       }
 
-      // The React reconciler commits work asynchronously in microtasks/timers
-      // We need to wait for the commit phase to complete
-      // Try multiple strategies to ensure the work is done:
+      if (flushPassiveEffects) {
+        try {
+          flushPassiveEffects()
+        } catch (e) {
+          // Ignore flush errors
+        }
+      }
 
-      // 1. Process immediate microtasks
-      await new Promise((resolve) => setImmediate(resolve))
-
-      // 2. Wait a bit more for async work (React 19 schedules work in timers)
-      await new Promise((resolve) => setTimeout(resolve, 10))
-
-      // 3. One final microtask to catch any stragglers
-      await new Promise((resolve) => setImmediate(resolve))
+      // Wait for React's async commit phase
+      // React 19 schedules work asynchronously even with updateContainerSync
+      await waitForCommit()
 
       return rootNode
     },

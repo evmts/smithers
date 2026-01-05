@@ -15,6 +15,7 @@ export interface ExecutionState {
   status: 'pending' | 'running' | 'complete' | 'error'
   result?: unknown
   error?: Error
+  contentHash?: string // Hash of node content for change detection
 }
 
 /**

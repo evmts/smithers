@@ -75,6 +75,8 @@ describe('multi-agent', () => {
       const [subtasks, setSubtasks] = useState<string[]>([])
       const [completed, setCompleted] = useState<string[]>([])
 
+      console.log(`[TEST] DevTeam render: stage=${stage}, subtasks=${subtasks.length}, completed=${completed.length}`)
+
       if (stage === 'planning') {
         return (
           <Architect
@@ -104,7 +106,7 @@ describe('multi-agent', () => {
       return null
     }
 
-    await executePlan(<DevTeam />)
+    await executePlan(<DevTeam />, { verbose: true })
 
     expect(executionOrder[0]).toBe('architect')
     expect(executionOrder).toContain('developer:task1')

@@ -145,9 +145,50 @@ export const hostConfig = {
     rootContainer: PluNode,
     hostContext: unknown
   ): null | Record<string, unknown> {
-    // Simple approach: if props changed, return newProps as the update payload
-    if (JSON.stringify(oldProps) !== JSON.stringify(newProps)) {
-      return newProps
+    const isVerbose = process.env.VERBOSE_RECONCILER === 'true'
+    if (isVerbose) {
+      console.log(`[HOST_CONFIG] prepareUpdate for type="${type}"`)
+      console.log(`[HOST_CONFIG]   instance.type:`, instance.type)
+      console.log(`[HOST_CONFIG]   oldProps keys:`, Object.keys(oldProps))
+      console.log(`[HOST_CONFIG]   newProps typeof:`, typeof newProps)
+      console.log(`[HOST_CONFIG]   newProps keys:`, Object.keys(newProps).slice(0, 10))
+      console.log(`[HOST_CONFIG]   newProps.pendingProps:`, (newProps as any).pendingProps)
+    }
+
+    // React 19 sometimes passes the fiber object as newProps
+    // Check if newProps looks like a fiber and extract pendingProps if so
+    let actualNewProps = newProps
+    if ((newProps as any).pendingProps !== undefined) {
+      actualNewProps = (newProps as any).pendingProps
+      if (isVerbose) {
+        console.log(`[HOST_CONFIG]   extracted pendingProps keys:`, Object.keys(actualNewProps))
+      }
+    }
+
+    // Check if any props changed (including functions)
+    const oldKeys = Object.keys(oldProps)
+    const newKeys = Object.keys(actualNewProps)
+
+    // If key count differs, props changed
+    if (oldKeys.length !== newKeys.length) {
+      if (isVerbose) {
+        console.log(`[HOST_CONFIG]   props changed (different key count)`)
+      }
+      return actualNewProps
+    }
+
+    // Check each prop for changes
+    for (const key of newKeys) {
+      if (oldProps[key] !== actualNewProps[key]) {
+        if (isVerbose) {
+          console.log(`[HOST_CONFIG]   props changed (key "${key}" changed)`)
+        }
+        return actualNewProps
+      }
+    }
+
+    if (isVerbose) {
+      console.log(`[HOST_CONFIG]   no props changed`)
     }
     return null
   },
@@ -163,11 +204,29 @@ export const hostConfig = {
     nextProps: Record<string, unknown>,
     internalHandle: unknown
   ): void {
-    instance.props = { ...nextProps }
-    // Clear execution status on update - this is a new render
-    if (instance._execution) {
-      delete instance._execution
+    // DEBUG: Log what we're receiving
+    const isVerbose = process.env.VERBOSE_RECONCILER === 'true'
+    if (isVerbose) {
+      console.log(`[HOST_CONFIG] commitUpdate for ${type}`)
+      console.log(`[HOST_CONFIG]   updatePayload keys:`, Object.keys(updatePayload))
+      console.log(`[HOST_CONFIG]   nextProps keys:`, Object.keys(nextProps).slice(0, 5))
+      console.log(`[HOST_CONFIG]   nextProps.pendingProps:`, (nextProps as any).pendingProps)
     }
+
+    // React 19 passes the fiber as nextProps
+    // Extract the actual props from fiber.pendingProps
+    let actualProps = updatePayload
+    if ((nextProps as any).pendingProps !== undefined) {
+      actualProps = (nextProps as any).pendingProps
+      if (isVerbose) {
+        console.log(`[HOST_CONFIG]   using pendingProps, keys:`, Object.keys(actualProps))
+      }
+    }
+
+    instance.props = { ...actualProps }
+
+    // Don't clear execution status - let the execution loop handle it
+    // via content hashing and external state tracking
   },
 
   /**
