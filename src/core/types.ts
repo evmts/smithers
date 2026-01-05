@@ -1,7 +1,7 @@
 import type { ReactElement, ReactNode } from 'react'
 
 /**
- * Internal node representation for the Plue renderer
+ * Internal node representation for the Smithers renderer
  */
 export interface PluNode {
   type: string
@@ -19,12 +19,27 @@ export interface ExecutionState {
 }
 
 /**
+ * JSON Schema for tool input parameters
+ */
+export interface ToolInputSchema {
+  type: 'object'
+  properties?: Record<string, unknown>
+  required?: string[]
+  [key: string]: unknown
+}
+
+/**
  * Tool definition for Claude agents
+ *
+ * Tools are passed to Claude and can be invoked during execution.
+ * The input_schema should be a valid JSON Schema object.
  */
 export interface Tool {
   name: string
   description: string
-  parameters?: Record<string, unknown>
+  /** JSON Schema defining the tool's input parameters */
+  input_schema?: ToolInputSchema
+  /** Optional function to execute the tool (for MCP integration) */
   execute?: (args: unknown) => Promise<unknown>
 }
 
@@ -121,7 +136,7 @@ export interface ExecutionResult {
 }
 
 /**
- * Plue root container for React reconciler
+ * Smithers root container for React reconciler
  */
 export interface PluRoot {
   render(element: ReactElement): Promise<PluNode>

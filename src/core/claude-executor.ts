@@ -161,8 +161,9 @@ function serializeNodeToPrompt(node: PluNode): string {
 /**
  * Extract text content from a node's children
  *
- * Recursively traverses the node tree and collects all text content,
- * including from TEXT nodes and the children prop.
+ * Recursively traverses the node tree and collects all text content from TEXT nodes.
+ * The reconciler automatically creates TEXT nodes for string children, so we don't
+ * need to check props.children separately.
  *
  * @param node The node to extract text from
  * @returns Combined text content from all children
@@ -178,11 +179,6 @@ function getChildrenText(node: PluNode): string {
     }
   }
 
-  // Also include children prop if it's a string
-  if (typeof node.props.children === 'string') {
-    parts.push(node.props.children)
-  }
-
   return parts.join('\n')
 }
 
@@ -190,7 +186,7 @@ function getChildrenText(node: PluNode): string {
  * Convert Smithers Tool definitions to Anthropic tool format
  *
  * Transforms Smithers tool definitions into the format expected by the
- * Anthropic API, including name, description, and JSON schema.
+ * Anthropic API. The tool.input_schema should already be a valid JSON Schema.
  *
  * @param tools Array of Smithers Tool definitions, or undefined
  * @returns Array of Anthropic.Tool objects for the API
@@ -203,12 +199,10 @@ function convertTools(tools: Tool[] | undefined): Anthropic.Tool[] {
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    input_schema: {
-      type: 'object',
-      properties: tool.parameters || {},
-      required: Object.keys(tool.parameters || {}).filter(
-        (key) => (tool.parameters?.[key] as any)?.required === true
-      ),
+    input_schema: tool.input_schema || {
+      type: 'object' as const,
+      properties: {},
+      required: [],
     },
   }))
 }

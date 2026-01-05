@@ -20,6 +20,7 @@ export type {
   PluRoot,
   ExecutionState,
   Tool,
+  ToolInputSchema,
   ClaudeProps,
   SubagentProps,
   PhaseProps,
