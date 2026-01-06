@@ -14,6 +14,7 @@ import type {
   OutputProps,
   OutputFormatProps,
   FileProps,
+  WorktreeProps,
 } from '../core/types.js'
 
 /**
@@ -272,6 +273,36 @@ export function File(props: FileProps): ReactElement {
   return createElement('file', props)
 }
 
+/**
+ * Enables parallel agent isolation using git worktrees
+ *
+ * The Worktree component creates a git worktree at the specified path,
+ * allowing child agents to work in an isolated filesystem. This prevents
+ * conflicts when multiple agents modify the same files.
+ *
+ * @example
+ * ```tsx
+ * <Worktree path="./worktrees/feature-a" branch="feature-a">
+ *   <Claude>Implement authentication feature</Claude>
+ * </Worktree>
+ * ```
+ *
+ * @example With parallel execution
+ * ```tsx
+ * <Subagent parallel>
+ *   <Worktree path="./worktrees/feature-a" branch="feature-a">
+ *     <Claude>Implement feature A</Claude>
+ *   </Worktree>
+ *   <Worktree path="./worktrees/feature-b" branch="feature-b">
+ *     <Claude>Implement feature B</Claude>
+ *   </Worktree>
+ * </Subagent>
+ * ```
+ */
+export function Worktree(props: WorktreeProps): ReactElement {
+  return createElement('worktree', props)
+}
+
 // Re-export types
 export type {
   ClaudeProps,
@@ -288,4 +319,5 @@ export type {
   OutputProps,
   OutputFormatProps,
   FileProps,
+  WorktreeProps,
 }

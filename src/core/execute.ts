@@ -89,6 +89,7 @@ export async function executePlan(
   let frameNumber = 0
   let finalOutput: unknown = null
   const mcpServers = new Set<string>()
+  let tree: SmithersNode
 
   // Ralph Wiggum loop: keep rendering and executing until done
   while (frameNumber < maxFrames) {
@@ -110,7 +111,7 @@ export async function executePlan(
     // Wrap element in RenderFrame with changing frameCount prop
     // This forces React to recognize this as a new render cycle while preserving state
     const wrapped = createElement(RenderFrame, { frameCount: frameNumber, children: element })
-    const tree = await root.render(wrapped)
+    tree = await root.render(wrapped)
 
     // Emit frame:render event with optional tree snapshot
     debugCollector.emit({
@@ -141,6 +142,44 @@ export async function executePlan(
     if (verbose) {
       const firstChild = tree.children[0]
       console.log(`[Frame ${frameNumber}] After restore, first child type: ${firstChild?.type}`)
+    }
+
+    // Execute Worktree nodes FIRST - setup git worktrees before any other operations
+    const pendingWorktreeNodes = findPendingWorktreeNodes(tree)
+    if (pendingWorktreeNodes.length > 0) {
+      if (verbose) {
+        console.log(`[Frame ${frameNumber}] Found ${pendingWorktreeNodes.length} pending worktree nodes`)
+      }
+
+      for (const worktreeNode of pendingWorktreeNodes) {
+        const nodePath = getNodePath(worktreeNode)
+
+        debugCollector.emit({
+          type: 'node:execute:start',
+          nodePath,
+          nodeType: 'worktree',
+          contentHash: computeContentHash(worktreeNode),
+        })
+
+        const execStart = Date.now()
+        await executeWorktreeNode(worktreeNode, mockMode)
+
+        debugCollector.emit({
+          type: 'node:execute:end',
+          nodePath,
+          nodeType: 'worktree',
+          duration: Date.now() - execStart,
+          status: worktreeNode._execution?.status === 'error' ? 'error' : 'complete',
+          result: worktreeNode._execution?.result,
+          error: worktreeNode._execution?.error?.message,
+        })
+
+        // If onCreated callback triggered state change, we need to re-render
+        const onCreated = worktreeNode.props.onCreated
+        if (onCreated && worktreeNode._execution?.status === 'complete') {
+          await waitForStateUpdates()
+        }
+      }
     }
 
     // Execute File nodes BEFORE checking for Stop
@@ -538,6 +577,13 @@ export async function executePlan(
           }
         : undefined
 
+      // Inject worktree path if this node is inside a Worktree component
+      const worktreePath = getWorktreePath(claudeNode)
+      if (worktreePath && !claudeNode.props.cwd) {
+        // Set cwd to worktree path if not already set
+        claudeNode.props.cwd = worktreePath
+      }
+
       // Emit node:execute:start
       const execStart = Date.now()
       debugCollector.emit({
@@ -656,6 +702,13 @@ export async function executePlan(
               }
             : undefined
 
+          // Inject worktree path if this node is inside a Worktree component
+          const worktreePath = getWorktreePath(node)
+          if (worktreePath && !node.props.cwd) {
+            // Set cwd to worktree path if not already set
+            node.props.cwd = worktreePath
+          }
+
           // Emit node:execute:start
           const execStart = Date.now()
           debugCollector.emit({
@@ -762,6 +815,22 @@ export async function executePlan(
   if (frameNumber >= maxFrames) {
     debugCollector.emit({ type: 'loop:terminated', reason: 'max_frames' })
     throw new Error(`Max frames (${maxFrames}) reached`)
+  }
+
+  // Clean up all worktrees that were created during execution
+  const allWorktreeNodes: SmithersNode[] = []
+  function collectWorktrees(node: SmithersNode) {
+    if (node.type === 'worktree') {
+      allWorktreeNodes.push(node)
+    }
+    for (const child of node.children) {
+      collectWorktrees(child)
+    }
+  }
+  collectWorktrees(tree)
+
+  for (const worktreeNode of allWorktreeNodes) {
+    await cleanupWorktreeNode(worktreeNode, mockMode)
   }
 
   return {
@@ -1014,6 +1083,218 @@ export async function executeFileNode(
       onError(error as Error)
     }
   }
+}
+
+/**
+ * Find worktree nodes that need to be set up
+ */
+export function findPendingWorktreeNodes(tree: SmithersNode): SmithersNode[] {
+  const worktreeNodes: SmithersNode[] = []
+
+  function walk(node: SmithersNode) {
+    if (node.type === 'worktree') {
+      if (!node._execution || node._execution.status === 'pending') {
+        worktreeNodes.push(node)
+      }
+    }
+
+    for (const child of node.children) {
+      walk(child)
+    }
+  }
+
+  walk(tree)
+  return worktreeNodes
+}
+
+/**
+ * Execute a Worktree node - create/setup git worktree
+ */
+export async function executeWorktreeNode(
+  node: SmithersNode,
+  mockMode: boolean = false
+): Promise<void> {
+  const path = node.props.path as string
+  const branch = node.props.branch as string | undefined
+  const baseBranch = node.props.baseBranch as string | undefined
+  const cleanup = node.props.cleanup !== false // defaults to true
+  const onCreated = node.props.onCreated as ((path: string, branch?: string) => void) | undefined
+  const onError = node.props.onError as ((error: Error) => void) | undefined
+
+  // Compute content hash for change detection
+  const contentHash = computeContentHash(node)
+
+  node._execution = {
+    status: 'running',
+    contentHash,
+  }
+
+  try {
+    // In mock mode, skip actual git operations
+    if (mockMode) {
+      node._execution = {
+        status: 'complete',
+        result: { path, branch, cleanup },
+        contentHash,
+      }
+
+      if (onCreated) {
+        onCreated(path, branch)
+      }
+      return
+    }
+
+    // Import child_process dynamically
+    const { execSync } = await import('child_process')
+    const pathModule = await import('path')
+    const { existsSync } = await import('fs')
+
+    // Resolve absolute path
+    const absolutePath = pathModule.resolve(path)
+
+    // Check if we're in a git repository
+    try {
+      execSync('git rev-parse --git-dir', { stdio: 'ignore' })
+    } catch {
+      throw new Error('Worktree component requires a git repository')
+    }
+
+    // Check if worktree already exists
+    if (existsSync(absolutePath)) {
+      // Check if it's already a worktree for this path
+      try {
+        const worktrees = execSync('git worktree list --porcelain', { encoding: 'utf-8' })
+        const isWorktree = worktrees.includes(`worktree ${absolutePath}`)
+
+        if (!isWorktree) {
+          throw new Error(`Path ${absolutePath} already exists and is not a git worktree`)
+        }
+
+        // Worktree exists, reuse it
+        node._execution = {
+          status: 'complete',
+          result: { path: absolutePath, branch, cleanup, reused: true },
+          contentHash,
+        }
+
+        if (onCreated) {
+          onCreated(absolutePath, branch)
+        }
+        return
+      } catch (error) {
+        // If git worktree list fails or path doesn't match, treat as error
+        if (error instanceof Error && error.message.includes('already exists')) {
+          throw error
+        }
+        throw new Error(`Path ${absolutePath} already exists and is not a git worktree`)
+      }
+    }
+
+    // Create the worktree
+    let cmd = `git worktree add "${absolutePath}"`
+
+    if (branch) {
+      // Check if branch exists
+      const branchExists = execSync(`git show-ref --verify --quiet refs/heads/${branch}; echo $?`, {
+        encoding: 'utf-8'
+      }).trim() === '0'
+
+      if (branchExists) {
+        // Use existing branch
+        cmd += ` ${branch}`
+      } else {
+        // Create new branch
+        cmd += ` -b ${branch}`
+        if (baseBranch) {
+          cmd += ` ${baseBranch}`
+        }
+      }
+    }
+
+    execSync(cmd, { stdio: 'pipe' })
+
+    node._execution = {
+      status: 'complete',
+      result: { path: absolutePath, branch, cleanup, created: true },
+      contentHash,
+    }
+
+    if (onCreated) {
+      onCreated(absolutePath, branch)
+    }
+  } catch (error) {
+    node._execution = {
+      status: 'error',
+      error: error as Error,
+      contentHash,
+    }
+
+    if (onError) {
+      onError(error as Error)
+    }
+  }
+}
+
+/**
+ * Clean up a Worktree node - remove git worktree
+ */
+export async function cleanupWorktreeNode(
+  node: SmithersNode,
+  mockMode: boolean = false
+): Promise<void> {
+  const cleanup = node.props.cleanup !== false // defaults to true
+  const onCleanup = node.props.onCleanup as ((path: string) => void) | undefined
+
+  // Skip if cleanup is disabled or node wasn't successfully created
+  if (!cleanup || !node._execution || node._execution.status !== 'complete') {
+    return
+  }
+
+  const result = node._execution.result as { path: string; reused?: boolean } | undefined
+  if (!result || result.reused) {
+    // Don't clean up reused worktrees
+    return
+  }
+
+  try {
+    // In mock mode, skip actual git operations
+    if (mockMode) {
+      if (onCleanup) {
+        onCleanup(result.path)
+      }
+      return
+    }
+
+    // Import child_process dynamically
+    const { execSync } = await import('child_process')
+
+    // Remove the worktree
+    execSync(`git worktree remove "${result.path}" --force`, { stdio: 'pipe' })
+
+    if (onCleanup) {
+      onCleanup(result.path)
+    }
+  } catch (error) {
+    // Log cleanup errors but don't throw - execution is already complete
+    console.error(`Failed to cleanup worktree at ${result.path}:`, error)
+  }
+}
+
+/**
+ * Find the worktree path for a node by walking up the tree
+ */
+export function getWorktreePath(node: SmithersNode): string | null {
+  let current: SmithersNode | null = node
+
+  while (current) {
+    if (current.type === 'worktree' && current._execution?.status === 'complete') {
+      const result = current._execution.result as { path: string } | undefined
+      return result?.path || null
+    }
+    current = current.parent
+  }
+
+  return null
 }
 
 /**

@@ -1,6 +1,19 @@
 // Core rendering and execution
 export { renderPlan, createRoot, serialize } from './core/render.js'
-export { executePlan, executeNode, findPendingExecutables, findStopNode, findHumanNode, findPendingFileNodes, executeFileNode, type ExecuteNodeResult } from './core/execute.js'
+export {
+  executePlan,
+  executeNode,
+  findPendingExecutables,
+  findStopNode,
+  findHumanNode,
+  findPendingFileNodes,
+  executeFileNode,
+  findPendingWorktreeNodes,
+  executeWorktreeNode,
+  cleanupWorktreeNode,
+  getWorktreePath,
+  type ExecuteNodeResult,
+} from './core/execute.js'
 export {
   executeWithClaude,
   createExecutionError,
@@ -25,6 +38,7 @@ export {
   Output,
   OutputFormat,
   File,
+  Worktree,
 } from './components/index.js'
 
 // Claude Agent SDK executor
@@ -73,6 +87,7 @@ export type {
   OutputProps,
   OutputFormatProps,
   FileProps,
+  WorktreeProps,
   ExecuteOptions,
   ExecutionResult,
   FrameResult,

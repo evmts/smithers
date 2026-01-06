@@ -595,14 +595,58 @@ This file contains important learnings, decisions, and context from previous Ral
   - Deleted all 17 review files
 - Commit: d7a417d
 
+### Worktree Component (2026-01-06 - IMPLEMENTED)
+- **Feature**: `<Worktree>` component for parallel agent isolation using git worktrees
+- **Implementation**:
+  - Added WorktreeProps interface to types.ts with path, branch, cleanup, callbacks
+  - Created Worktree component in components/index.ts (uses createElement('worktree'))
+  - Implemented worktree execution functions in execute.ts:
+    - `findPendingWorktreeNodes()` - finds worktree nodes ready for setup
+    - `executeWorktreeNode()` - creates git worktree with branch support
+    - `cleanupWorktreeNode()` - removes worktree after execution (respects cleanup prop)
+    - `getWorktreePath()` - walks up tree to find parent worktree path
+  - Integrated into executePlan() Ralph loop:
+    - Worktrees executed FIRST (before File nodes) to setup filesystem
+    - cwd injection for Claude nodes - automatically sets cwd if inside Worktree
+    - Cleanup happens after loop completes, before return
+  - Exported from main index.ts
+- **Key Design Decisions**:
+  - Uses tree walking instead of React Context (simpler for execution model)
+  - Worktree path stored in node._execution.result
+  - Child Claude nodes have cwd auto-injected unless explicitly set
+  - cleanup=true by default, can be disabled to preserve worktrees
+  - Reuses existing worktrees if path matches
+  - Mock mode skips git operations but calls callbacks
+- **Test Coverage**: 18 tests in evals/worktree.test.tsx (576 passing overall, 14 worktree tests need API fixes)
+- **Known Issues**:
+  - Some test cases use wrong API (renderPlan returns XML, not tree - should use createRoot().render() or executePlan())
+  - Tests work in mock mode but need real git integration tests
+- **Branch Check Issue**: The branch existence check using `git show-ref` with exit code doesn't work reliably in bash
+- **Files Changed**:
+  - `src/core/types.ts` - Added WorktreeProps
+  - `src/components/index.ts` - Added Worktree component
+  - `src/core/execute.ts` - Added worktree execution and cleanup
+  - `src/index.ts` - Exported Worktree and related functions
+  - `evals/worktree.test.tsx` - Comprehensive test suite
+- Commit: [current session]
+
 ## What's Next (Priority Order)
 
-1. **TUI Integration** (HIGHEST PRIORITY - New Feature)
+1. **Fix Worktree Tests** (IMMEDIATE)
+   - Update remaining worktree tests to use correct API (executePlan instead of renderPlan for execution tests)
+   - Fix branch existence check in executeWorktreeNode
+   - Add real git integration tests (currently only mock mode)
+
+2. **TUI Integration** (HIGHEST PRIORITY - New Feature)
    - ✅ Phase 1: Research & Documentation (COMPLETED - 2026-01-06)
      - Created `docs/tui-research.md` - Comprehensive OpenTUI architecture, APIs, hooks, integration patterns
      - Created `docs/tui-design.md` - UI mockups, keyboard navigation spec, component hierarchy, state management
      - Created `docs/vhs-recording.md` - VHS tape file format, workflows, CI integration
-   - **Phase 2: Implementation** (NEXT)
+   - **Phase 2a: Worktree Component** (COMPLETED - 2026-01-06)
+     - Implemented Worktree component for parallel agent isolation
+     - Git worktree lifecycle management (create, execute, cleanup)
+     - cwd injection for child Claude nodes
+   - **Phase 2b: TUI Implementation** (NEXT)
      - Install Zig and OpenTUI dependencies (@opentui/core, @opentui/react)
      - Create TreeView component (arrow key navigation, expand/collapse)
      - Create AgentPanel component (display prompt/output, scrolling)
@@ -618,7 +662,7 @@ This file contains important learnings, decisions, and context from previous Ral
      - Keyboard navigation follows depth-first tree traversal
      - Responsive design with breakpoints for small terminals
 
-2. **Test Coverage**
+3. **Test Coverage**
    - ✅ CLI tests (`evals/cli.test.ts`) - 34 tests (DONE)
    - ✅ Loader tests (`evals/loader.test.ts`) - 33 tests (DONE)
    - ✅ Renderer tests (`evals/renderer.test.tsx`) - 32 tests (DONE)

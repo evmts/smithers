@@ -404,6 +404,32 @@ export interface FileProps {
 }
 
 /**
+ * Props for the Worktree component
+ *
+ * The Worktree component enables parallel agent isolation by running agents
+ * in git worktrees. Each worktree has an isolated filesystem, preventing
+ * conflicts when multiple agents modify the same files.
+ */
+export interface WorktreeProps {
+  /** Path where the worktree will be created */
+  path: string
+  /** Optional branch name. If provided, creates a new branch */
+  branch?: string
+  /** Whether to clean up worktree after execution (default: true) */
+  cleanup?: boolean
+  /** Optional base branch to create new branch from (default: current branch) */
+  baseBranch?: string
+  /** Callback invoked when worktree is created */
+  onCreated?: (path: string, branch?: string) => void
+  /** Callback invoked if worktree creation fails */
+  onError?: (error: Error) => void
+  /** Callback invoked when worktree is removed */
+  onCleanup?: (path: string) => void
+  /** React children (typically Claude/ClaudeApi components) */
+  children?: ReactNode
+}
+
+/**
  * Props for the ClaudeCli component
  *
  * The ClaudeCli component executes prompts using the Claude CLI (`claude` command)
