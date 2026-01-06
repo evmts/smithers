@@ -21,7 +21,7 @@ Thank you for your interest in contributing to Smithers! This document provides 
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/williamcory/smithers.git
+   git clone https://github.com/evmts/smithers.git
    cd smithers
    ```
 

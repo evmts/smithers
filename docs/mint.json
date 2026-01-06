@@ -18,7 +18,7 @@
   "topbarLinks": [
     {
       "name": "GitHub",
-      "url": "https://github.com/smithers-ai/smithers"
+      "url": "https://github.com/evmts/smithers"
     }
   ],
   "topbarCtaButton": {
@@ -43,12 +43,7 @@
     {
       "name": "GitHub",
       "icon": "github",
-      "url": "https://github.com/smithers-ai/smithers"
-    },
-    {
-      "name": "Community",
-      "icon": "discord",
-      "url": "https://discord.gg/smithers"
+      "url": "https://github.com/evmts/smithers"
     }
   ],
   "navigation": [
@@ -106,7 +101,7 @@
     }
   ],
   "footerSocials": {
-    "github": "https://github.com/smithers-ai/smithers",
+    "github": "https://github.com/evmts/smithers",
     "twitter": "https://twitter.com/smithers_ai"
   }
 }
