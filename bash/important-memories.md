@@ -188,13 +188,59 @@ This file contains important learnings, decisions, and context from previous Ral
   - Commander.js shows help for unknown commands (exit 0) rather than erroring
 - **Total Test Count**: 88 passing tests (51 previous + 34 new CLI tests + 3 other new tests)
 - **Note**: 1 pre-existing test failure in `evals/subagent-scheduling.test.tsx` unrelated to CLI work
+- Commit: 01ca917
+
+### Loader Test Coverage (2026-01-05 - IMPLEMENTED)
+- **Feature**: Comprehensive loader tests for MDX/TSX file loading
+- **Implementation**:
+  - Created `evals/loader.test.ts` with 33 tests covering all loader functionality
+  - Created 15 test fixtures in `evals/fixtures/loader/` (MDX and TSX files)
+  - **MDX Loading Tests** (6 tests):
+    - Basic MDX with Claude component
+    - Multi-component MDX
+    - MDX with imports and expressions
+    - MDX syntax error handling with line/column info
+    - Undefined component error handling
+  - **TSX/JSX Loading Tests** (10 tests):
+    - Direct element export
+    - Component function export
+    - Components with hooks (useState)
+    - Components with props
+    - Syntax error handling with code frames
+    - Missing module error handling
+    - Missing default export detection
+    - Invalid export type detection
+    - Component returning null (valid case)
+  - **Error Formatting Tests** (4 tests):
+    - LoaderError, SyntaxLoadError, ExportError, InvalidElementError format methods
+  - **File Resolution Tests** (4 tests):
+    - Relative and absolute paths
+    - File not found errors
+    - Unsupported extension errors
+  - **extractElement Tests** (6 tests):
+    - Valid React element extraction
+    - Component function calling
+    - Props passing
+    - Element cloning
+    - Export error handling
+  - **Edge Cases** (3 tests):
+    - Empty MDX files
+    - Files with special characters in path
+    - loadMdxFile and loadTsxFile return types
+- **Key Learnings**:
+  - MDX evaluate() returns a module with `default` as a component function, not a direct element
+  - extractElement properly handles both direct elements and component functions
+  - Bun tree-shakes unused imports, so missing import tests need to handle success case
+  - React element `type` is the component function, not a string when using custom components
+  - Component returning null is valid - extractElement creates a React element wrapping it
+- **Total Test Count**: 121 passing tests (88 previous + 33 new loader tests)
 - Commit: [current]
 
 ## What's Next (Priority Order)
 
 1. **Test Coverage** (Highest Priority)
    - ✅ CLI tests (`evals/cli.test.ts`) - 34 tests (DONE)
-   - Add Loader tests (`evals/loader.test.ts`) - MDX/TSX loading, error handling
+   - ✅ Loader tests (`evals/loader.test.ts`) - 33 tests (DONE)
    - Add MCP integration tests (`evals/mcp.test.ts`) - server management, tool integration
    - Add Renderer tests (`evals/renderer.test.ts`) - renderPlan(), serialize()
    - Add Executor tests (`evals/executor.test.ts`) - Ralph loop, state management
