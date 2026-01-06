@@ -207,6 +207,23 @@ export interface StopProps {
 }
 
 /**
+ * Props for the Human component
+ *
+ * The Human component pauses execution and waits for human approval/input.
+ * When encountered during execution, it displays a prompt to the user
+ * and waits for their confirmation before continuing.
+ */
+export interface HumanProps {
+  /** Optional message to display to the user */
+  message?: string
+  /** Optional callback when user approves */
+  onApprove?: () => void
+  /** Optional callback when user rejects */
+  onReject?: () => void
+  children?: ReactNode
+}
+
+/**
  * Options for executing a plan
  */
 export interface ExecuteOptions {
@@ -222,6 +239,14 @@ export interface ExecuteOptions {
   maxTokens?: number
   onPlan?: (xml: string, frame: number) => void
   onFrame?: (frame: FrameResult) => void
+  /**
+   * Custom prompt function for Human component approval.
+   * If not provided, Human nodes will automatically approve in non-interactive contexts.
+   * @param message - The message to display to the user
+   * @param content - The content from the Human component's children
+   * @returns Promise<boolean> - true if approved, false if rejected
+   */
+  onHumanPrompt?: (message: string, content: string) => Promise<boolean>
 }
 
 /**

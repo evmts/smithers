@@ -45,6 +45,7 @@ export async function executePlan(
     verbose = false,
     onPlan,
     onFrame,
+    onHumanPrompt,
   } = options
 
   const history: FrameResult[] = []
@@ -113,6 +114,59 @@ export async function executePlan(
         console.log(`[Frame ${frameNumber}] Stop node detected${reason ? `: ${reason}` : ''}, halting execution`)
       }
       break
+    }
+
+    // Check for Human node - if present, wait for human approval
+    const humanNode = findHumanNode(tree)
+    if (humanNode) {
+      const message = (humanNode.props.message as string | undefined) || 'Human approval required to continue'
+      const content = extractTextContent(humanNode)
+
+      if (verbose) {
+        console.log(`[Frame ${frameNumber}] Human node detected: ${message}`)
+      }
+
+      // If onHumanPrompt callback is provided, use it; otherwise auto-approve
+      let approved = true
+      if (onHumanPrompt) {
+        approved = await onHumanPrompt(message, content)
+      }
+
+      if (approved) {
+        // Call onApprove callback if provided
+        const onApprove = humanNode.props.onApprove as (() => void) | undefined
+        if (onApprove) {
+          if (verbose) {
+            console.log(`[Frame ${frameNumber}] Human approved, calling onApprove callback`)
+          }
+          runWithSyncUpdates(() => {
+            onApprove()
+          })
+          await waitForStateUpdates()
+          // Continue to next frame to re-render with updated state
+          continue
+        }
+        // If no callback, just continue execution (fall through to normal execution)
+      } else {
+        // Call onReject callback if provided
+        const onReject = humanNode.props.onReject as (() => void) | undefined
+        if (onReject) {
+          if (verbose) {
+            console.log(`[Frame ${frameNumber}] Human rejected, calling onReject callback`)
+          }
+          runWithSyncUpdates(() => {
+            onReject()
+          })
+          await waitForStateUpdates()
+          // Continue to next frame to re-render with updated state
+          continue
+        }
+        // If rejected and no callback, halt execution
+        if (verbose) {
+          console.log(`[Frame ${frameNumber}] Human approval rejected, halting execution`)
+        }
+        break
+      }
     }
 
     // Find nodes that need execution
@@ -402,6 +456,33 @@ function restoreExecutionState(tree: PluNode, storage: Map<string, ExecutionStat
 export function findStopNode(tree: PluNode): PluNode | null {
   function walk(node: PluNode): PluNode | null {
     if (node.type === 'stop') {
+      return node
+    }
+
+    for (const child of node.children) {
+      const found = walk(child)
+      if (found) {
+        return found
+      }
+    }
+
+    return null
+  }
+
+  return walk(tree)
+}
+
+/**
+ * Check if a Human node exists in the tree
+ *
+ * The Human component pauses execution and waits for human approval/input.
+ * When encountered, execution should prompt the user before continuing.
+ *
+ * @returns The Human node if found, or null if no Human node exists
+ */
+export function findHumanNode(tree: PluNode): PluNode | null {
+  function walk(node: PluNode): PluNode | null {
+    if (node.type === 'human') {
       return node
     }
 
@@ -852,16 +933,12 @@ function extractTextContent(node: PluNode): string {
   let text = ''
 
   if (node.type === 'TEXT') {
-    return String(node.props.value ?? '')
+    return String(node.props.children ?? node.props.value ?? '')
   }
 
+  // Recursively extract from children nodes
   for (const child of node.children) {
     text += extractTextContent(child)
-  }
-
-  // Also include children prop if it's a string
-  if (typeof node.props.children === 'string') {
-    text += node.props.children
   }
 
   return text

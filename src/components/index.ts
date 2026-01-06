@@ -9,6 +9,7 @@ import type {
   OutputFormatProps,
   TaskProps,
   StopProps,
+  HumanProps,
 } from '../core/types.js'
 
 /**
@@ -138,6 +139,26 @@ export function Stop(props: StopProps): ReactElement {
   return createElement('stop', props)
 }
 
+/**
+ * Pauses execution and waits for human approval/input
+ *
+ * When a Human component is rendered in the tree, the execution loop
+ * will pause and prompt the user for approval before continuing.
+ * This is useful for requiring manual review at critical points.
+ *
+ * @example
+ * ```tsx
+ * {needsReview && (
+ *   <Human message="Review the changes before deploying">
+ *     The following changes will be deployed to production...
+ *   </Human>
+ * )}
+ * ```
+ */
+export function Human(props: HumanProps): ReactElement {
+  return createElement('human', props)
+}
+
 // Re-export types
 export type {
   ClaudeProps,
@@ -149,4 +170,5 @@ export type {
   OutputFormatProps,
   TaskProps,
   StopProps,
+  HumanProps,
 }

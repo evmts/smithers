@@ -1,6 +1,6 @@
 // Core rendering and execution
 export { renderPlan, createRoot, serialize } from './core/render.js'
-export { executePlan, executeNode, findPendingExecutables, findStopNode } from './core/execute.js'
+export { executePlan, executeNode, findPendingExecutables, findStopNode, findHumanNode } from './core/execute.js'
 export {
   executeWithClaude,
   createExecutionError,
@@ -20,6 +20,7 @@ export {
   OutputFormat,
   Task,
   Stop,
+  Human,
 } from './components/index.js'
 
 // Types
@@ -41,6 +42,7 @@ export type {
   OutputFormatProps,
   TaskProps,
   StopProps,
+  HumanProps,
   ExecuteOptions,
   ExecutionResult,
   FrameResult,

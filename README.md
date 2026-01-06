@@ -632,11 +632,39 @@ Runs a series of steps in parallel:
 
 ### `<Human>`
 
-Stops execution of the closest parent ralph until a human intervenes:
+Pauses execution and waits for human approval before continuing. Useful for requiring manual review at critical checkpoints.
 
 ```tsx
-{needsHumanReview && <Human>Please review the progress so far</Human>}
+function DeploymentAgent() {
+  const [approved, setApproved] = useState(false)
+
+  if (!approved) {
+    return (
+      <Human
+        message="Review changes before deployment"
+        onApprove={() => setApproved(true)}
+        onReject={() => console.log('Deployment cancelled')}
+      >
+        The following changes will be deployed to production:
+        - Update user authentication flow
+        - Add new API endpoints
+      </Human>
+    )
+  }
+
+  return (
+    <Claude>Deploy the changes to production</Claude>
+  )
+}
 ```
+
+**Props:**
+- `message?: string` - Message to display to the user (default: "Human approval required to continue")
+- `onApprove?: () => void` - Callback when user approves (typically updates state to remove the Human node)
+- `onReject?: () => void` - Callback when user rejects (if not provided, execution halts)
+- `children?: ReactNode` - Content to display for review
+
+**Note:** The `<Human>` component requires an `onHumanPrompt` callback in `executePlan()` options for interactive prompting. Without it, the component auto-approves (useful for testing).
 
 ### `<Persona>`
 
