@@ -1133,28 +1133,24 @@ export async function executeNode(
   try {
     let output: string
 
-    // Check if we should use mock mode (for testing or when no API key is available)
-    // Mock mode is enabled if:
+    // Check if we should use mock mode (for testing only)
+    // Mock mode must be explicitly enabled via:
     // - SMITHERS_MOCK_MODE is "true"
+    // - mockMode: true in execution options
     // - node.props._mockMode is true
-    // - No API key is present and SMITHERS_REAL_MODE is not set
     const apiKeyAvailable = Boolean(process.env.ANTHROPIC_API_KEY)
     const mockOverride = executionOptions?.mockMode
     const explicitMock =
       mockOverride === true ||
       process.env.SMITHERS_MOCK_MODE === 'true' ||
       node.props._mockMode === true
-    const explicitReal =
-      mockOverride === true
-        ? false
-        : process.env.SMITHERS_MOCK_MODE === 'false' ||
-          process.env.SMITHERS_REAL_MODE === 'true'
 
-    const useMockMode = explicitMock || (!explicitReal && !apiKeyAvailable)
+    const useMockMode = explicitMock
 
-    if (!apiKeyAvailable && explicitReal) {
+    // Require API key if not in mock mode
+    if (!apiKeyAvailable && !explicitMock) {
       throw new Error(
-        'ANTHROPIC_API_KEY not found. Set it in your environment or disable SMITHERS_REAL_MODE.'
+        'ANTHROPIC_API_KEY not found. Set it in your environment or enable mock mode with SMITHERS_MOCK_MODE=true.'
       )
     }
 
