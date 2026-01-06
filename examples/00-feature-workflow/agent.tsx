@@ -425,16 +425,16 @@ function PlanReviewPhase() {
       Summary: {initialPlan?.summary}
 
       Steps:
-      {initialPlan?.steps?.map((s, i) => `${i + 1}. ${s.description}`).join('\n')}
+      {initialPlan?.steps?.map((s, i) => `${i + 1}. ${s.description}`)?.join('\n')}
 
       Test Cases ({initialPlan?.testCases?.length}):
-      {initialPlan?.testCases?.map((t) => `- ${t.name}${t.edgeCase ? ' (edge case)' : ''}`).join('\n')}
+      {initialPlan?.testCases?.map((t) => `- ${t.name}${t.edgeCase ? ' (edge case)' : ''}`)?.join('\n')}
 
       APIs:
-      {initialPlan?.apis?.map((a) => `- ${a.name}: ${a.signature}`).join('\n')}
+      {initialPlan?.apis?.map((a) => `- ${a.name}: ${a.signature}`)?.join('\n')}
 
       Risks:
-      {initialPlan?.risks?.map((r) => `- ${r}`).join('\n')}
+      {initialPlan?.risks?.map((r) => `- ${r}`)?.join('\n')}
     </Human>
   )
 }
@@ -586,16 +586,16 @@ function RefinedPlanReviewPhase() {
       Summary: {refinedPlan?.summary}
 
       Steps:
-      {refinedPlan?.steps?.map((s, i) => `${i + 1}. ${s.description}`).join('\n')}
+      {refinedPlan?.steps?.map((s, i) => `${i + 1}. ${s.description}`)?.join('\n')}
 
       Test Cases ({refinedPlan?.testCases?.length}):
-      {refinedPlan?.testCases?.map((t) => `- ${t.name}: ${t.description}${t.edgeCase ? ' (EDGE CASE)' : ''}`).join('\n')}
+      {refinedPlan?.testCases?.map((t) => `- ${t.name}: ${t.description}${t.edgeCase ? ' (EDGE CASE)' : ''}`)?.join('\n')}
 
       APIs:
-      {refinedPlan?.apis?.map((a) => `- ${a.name}\n  ${a.signature}\n  ${a.description}`).join('\n\n')}
+      {refinedPlan?.apis?.map((a) => `- ${a.name}\n  ${a.signature}\n  ${a.description}`)?.join('\n\n')}
 
       Risks:
-      {refinedPlan?.risks?.map((r) => `- ${r}`).join('\n')}
+      {refinedPlan?.risks?.map((r) => `- ${r}`)?.join('\n')}
     </Human>
   )
 }
