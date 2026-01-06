@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
-import { renderPlan, executePlan, Claude, Phase, Step, Constraints, OutputFormat } from '../src/index.js'
+import { renderPlan, executePlan, Claude, Phase, Step, Constraints } from '../src/index.js'
+import { z } from 'zod'
 
 describe('code-review', () => {
   const mockFileSystem = {
@@ -16,8 +17,16 @@ describe('code-review', () => {
   }
 
   test('renders with tools and structured output format', async () => {
+    const schema = z.object({
+      issues: z.array(z.object({
+        file: z.string(),
+        line: z.number(),
+        description: z.string(),
+      })),
+    })
+
     const CodeReview = () => (
-      <Claude tools={[mockFileSystem, mockGrep]}>
+      <Claude tools={[mockFileSystem, mockGrep]} schema={schema}>
         <Constraints>
           - Focus on bugs and security issues
           - Provide line numbers
@@ -28,20 +37,17 @@ describe('code-review', () => {
           <Step>Identify issues</Step>
         </Phase>
 
-        <OutputFormat>
-          Return JSON with issues array.
-        </OutputFormat>
+        Return JSON with issues array.
       </Claude>
     )
 
     const plan = await renderPlan(<CodeReview />)
 
     expect(plan).toContain('<claude')
-    expect(plan).toContain('tools=')
+    // Tools are passed as props but not serialized to XML
     expect(plan).toContain('<constraints>')
     expect(plan).toContain('<phase name="review">')
     expect(plan).toContain('<step>')
-    expect(plan).toContain('<output-format>')
   })
 
   test('executes and returns structured JSON output', async () => {

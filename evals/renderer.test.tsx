@@ -9,7 +9,6 @@ import {
   Step,
   Persona,
   Constraints,
-  OutputFormat,
   Subagent,
 } from '../src/index.js'
 import type { SmithersNode } from '../src/core/types.js'
@@ -325,16 +324,16 @@ describe('serialize()', () => {
 
   test('serializes object props as JSON', () => {
     const node: SmithersNode = {
-      type: 'output-format',
-      props: { schema: { type: 'object', properties: { name: { type: 'string' } } } },
+      type: 'claude',
+      props: { agents: { reviewer: { description: 'reviews code', prompt: 'review this' } } },
       children: [],
       parent: null,
     }
 
     const xml = serialize(node)
-    expect(xml).toContain('schema=')
-    expect(xml).toContain('type')
-    expect(xml).toContain('object')
+    expect(xml).toContain('agents=')
+    expect(xml).toContain('reviewer')
+    expect(xml).toContain('description')
   })
 })
 

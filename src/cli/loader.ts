@@ -14,7 +14,6 @@ import {
   Step,
   Persona,
   Constraints,
-  OutputFormat,
 } from '../components/index.js'
 
 // MDX components (only actual React components, not utilities/types)
@@ -25,7 +24,6 @@ const mdxComponents = {
   Step,
   Persona,
   Constraints,
-  OutputFormat,
 }
 
 /**
@@ -592,7 +590,7 @@ function getMdxErrorSuggestions(message: string, ruleId?: string): string[] {
   // Component usage
   if (lowerMessage.includes('undefined') || lowerMessage.includes('is not defined')) {
     suggestions.push('Check component names are spelled correctly')
-    suggestions.push('Available components: Claude, Subagent, Phase, Step, Persona, Constraints, OutputFormat')
+    suggestions.push('Available components: Claude, Subagent, Phase, Step, Persona, Constraints')
   }
 
   // Add generic suggestions if no specific ones matched

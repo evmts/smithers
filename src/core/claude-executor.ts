@@ -635,15 +635,6 @@ function serializeNodeToPrompt(node: SmithersNode): string {
       parts.push('</constraints>')
       break
 
-    case 'output-format':
-      parts.push('<output-format>')
-      if (node.props.schema) {
-        parts.push(`Schema: ${JSON.stringify(node.props.schema)}`)
-      }
-      parts.push(getChildrenText(node))
-      parts.push('</output-format>')
-      break
-
     case 'phase':
       parts.push(`<phase name="${node.props.name}">`)
       parts.push(getChildrenText(node))

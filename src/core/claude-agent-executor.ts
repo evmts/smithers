@@ -9,6 +9,7 @@
  */
 
 import { query, type Options, type SDKMessage, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk'
+import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { SmithersNode, ClaudeProps, ExecutionError } from './types.js'
 import {
   separatePromptAndPlan,
@@ -91,8 +92,12 @@ function buildOptions(props: ClaudeProps): Options {
   if (props.agents) {
     options.agents = props.agents
   }
-  if (props.outputFormat) {
-    options.outputFormat = props.outputFormat
+  if (props.schema) {
+    const jsonSchema = zodToJsonSchema(props.schema)
+    options.outputFormat = {
+      type: 'json_schema',
+      schema: jsonSchema as Record<string, unknown>,
+    }
   }
   if (props.resume) {
     options.resume = props.resume

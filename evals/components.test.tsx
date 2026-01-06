@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test'
 import './setup.ts'
 import { create } from 'zustand'
+import { z } from 'zod'
 import {
   renderPlan,
   executePlan,
@@ -11,7 +12,6 @@ import {
   Step,
   Persona,
   Constraints,
-  OutputFormat,
   Task,
   Stop,
   Human,
@@ -22,11 +22,11 @@ import type { Tool } from '../src/core/types.js'
  * Component Behavior Tests
  *
  * Tests individual component behaviors in isolation and integration:
- * - Claude: Rendering, callbacks, tool integration
+ * - Claude: Rendering, callbacks, tool integration, schema-based output
  * - ClaudeApi: Alternative API executor
  * - Subagent: Parallel execution boundaries
  * - Phase/Step: Semantic markers
- * - Persona/Constraints/OutputFormat: Prompt structuring
+ * - Persona/Constraints: Prompt structuring
  * - Task: Completion tracking
  * - Stop/Human: Control flow
  */
@@ -435,65 +435,47 @@ describe('Constraints component', () => {
   })
 })
 
-describe('OutputFormat component', () => {
-  it('schema prop serialized', async () => {
-    const schema = {
-      type: 'object',
-      properties: {
-        status: { type: 'string' },
-        count: { type: 'number' },
-      },
-    }
+describe('Claude schema prop', () => {
+  it('zod schema enables structured output', async () => {
+    const schema = z.object({
+      status: z.string(),
+      count: z.number(),
+    })
 
-    const plan = await renderPlan(
-      <OutputFormat schema={schema}>
-        Return JSON matching the schema
-      </OutputFormat>
-    )
-
-    expect(plan).toContain('<output-format')
-    expect(plan).toContain('schema=')
-  })
-
-  it('guides structured output parsing', async () => {
-    let parsedOutput: any = null
+    let parsedOutput: z.infer<typeof schema> | null = null
 
     await executePlan(
-      <Claude onFinished={(output) => { parsedOutput = output }}>
-        <OutputFormat schema={{ result: 'string', success: 'boolean' }}>
-          Test output
-        </OutputFormat>
+      <Claude
+        schema={schema}
+        onFinished={(output) => { parsedOutput = output }}
+      >
+        Return JSON matching the schema
       </Claude>
     )
 
-    // OutputFormat component guides the structure, onFinished receives the output
     expect(parsedOutput).toBeDefined()
   })
 
   it('works with complex nested schemas', async () => {
-    const complexSchema = {
-      type: 'object',
-      properties: {
-        users: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              age: { type: 'number' },
-            },
-          },
-        },
-      },
-    }
+    const complexSchema = z.object({
+      users: z.array(z.object({
+        name: z.string(),
+        age: z.number(),
+      })),
+    })
 
-    const plan = await renderPlan(
-      <OutputFormat schema={complexSchema}>
+    let parsedOutput: z.infer<typeof complexSchema> | null = null
+
+    await executePlan(
+      <Claude
+        schema={complexSchema}
+        onFinished={(output) => { parsedOutput = output }}
+      >
         Return user data
-      </OutputFormat>
+      </Claude>
     )
 
-    expect(plan).toContain('<output-format')
+    expect(parsedOutput).toBeDefined()
   })
 })
 
@@ -710,9 +692,11 @@ describe('Human component', () => {
 
 describe('Component composition', () => {
   it('all components work together', async () => {
+    const schema = z.object({ result: z.string() })
+
     function ComplexAgent() {
       return (
-        <Claude>
+        <Claude schema={schema}>
           <Persona role="expert">You are an expert</Persona>
           <Constraints>Be concise</Constraints>
           <Phase name="main">
@@ -720,9 +704,7 @@ describe('Component composition', () => {
             <Step>Second step</Step>
             <Task done={false}>Task 1</Task>
           </Phase>
-          <OutputFormat schema={{ result: 'string' }}>
-            Return structured output
-          </OutputFormat>
+          Return structured output
         </Claude>
       )
     }
@@ -734,7 +716,6 @@ describe('Component composition', () => {
     expect(plan).toContain('<phase')
     expect(plan).toContain('<step>')
     expect(plan).toContain('<task')
-    expect(plan).toContain('<output-format')
   })
 
   it('nested components maintain structure', async () => {

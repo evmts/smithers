@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
 import { useState } from 'react'
+import { z } from 'zod'
 import {
   renderPlan,
   executePlan,
@@ -9,21 +10,20 @@ import {
   Step,
   Persona,
   Constraints,
-  OutputFormat,
 } from '../src/index.js'
 
 /**
  * Comprehensive eval that tests ALL Smithers features in a single complex scenario:
  * - MDX/JSX rendering to XML
- * - Claude component with tools
- * - Persona, Constraints, OutputFormat components
+ * - Claude component with tools and schema
+ * - Persona, Constraints components
  * - Phase and Step components
  * - React state management
  * - Multi-phase transitions (Ralph Wiggum loop)
  * - Nested/composed agents
  * - onFinished and onError callbacks
  * - MCP server tool integration
- * - Structured output parsing
+ * - Structured output parsing via Zod schema
  */
 describe('all-features', () => {
   // Mock tools
@@ -56,34 +56,32 @@ describe('all-features', () => {
     )
   }
 
-  function JsonResponse({ schema }: { schema: Record<string, unknown> }) {
-    return (
-      <OutputFormat schema={schema}>
-        Return valid JSON matching the schema.
-      </OutputFormat>
-    )
-  }
-
   // Sub-agents for orchestration
   function Researcher({ topic, onComplete }: { topic: string; onComplete: (findings: any) => void }) {
+    const schema = z.object({ findings: z.array(z.string()) })
     return (
       <Claude
         tools={[webSearch]}
         onFinished={onComplete}
+        schema={schema}
       >
         <Persona role="researcher" />
         <Phase name="research">
           <Step>Search for information about: {topic}</Step>
           <Step>Compile key findings</Step>
         </Phase>
-        <JsonResponse schema={{ findings: 'string[]' }} />
+        Return valid JSON matching the schema.
       </Claude>
     )
   }
 
   function Analyzer({ findings, onComplete }: { findings: string[]; onComplete: (analysis: any) => void }) {
+    const schema = z.object({
+      vulnerabilities: z.array(z.object({ name: z.string(), severity: z.string() })),
+      riskLevel: z.string(),
+    })
     return (
-      <Claude onFinished={onComplete}>
+      <Claude onFinished={onComplete} schema={schema}>
         <SecurityExpert>
           <Phase name="analyze">
             <Step>Review findings for security implications</Step>
@@ -91,7 +89,7 @@ describe('all-features', () => {
           </Phase>
           Findings: {JSON.stringify(findings)}
         </SecurityExpert>
-        <JsonResponse schema={{ vulnerabilities: 'object[]', riskLevel: 'string' }} />
+        Return valid JSON matching the schema.
       </Claude>
     )
   }
@@ -173,8 +171,7 @@ describe('all-features', () => {
     // Check Claude component
     expect(plan).toContain('<claude')
 
-    // Check tools integration
-    expect(plan).toContain('tools=')
+    // Tools are passed as props but not serialized to XML
 
     // Check Persona
     expect(plan).toContain('<persona')
@@ -183,9 +180,6 @@ describe('all-features', () => {
     // Check Phase and Step
     expect(plan).toContain('<phase name="research">')
     expect(plan).toContain('<step>')
-
-    // Check OutputFormat
-    expect(plan).toContain('<output-format')
   })
 
   test('executes multi-phase workflow end-to-end', async () => {
@@ -280,16 +274,20 @@ describe('all-features', () => {
   test('structured output is parsed correctly', async () => {
     let parsedOutput: any = null
 
+    const schema = z.object({
+      status: z.string(),
+      items: z.array(z.number()),
+    })
+
     function StructuredAgent() {
       return (
         <Claude
+          schema={schema}
           onFinished={(output) => {
             parsedOutput = output
           }}
         >
-          <OutputFormat schema={{ status: 'string', items: 'array' }}>
-            Return: {JSON.stringify({ status: 'complete', items: [1, 2, 3] })}
-          </OutputFormat>
+          Return: {JSON.stringify({ status: 'complete', items: [1, 2, 3] })}
         </Claude>
       )
     }
@@ -302,15 +300,17 @@ describe('all-features', () => {
   })
 
   test('composed reusable components work together', async () => {
+    const schema = z.object({ vulnerabilities: z.array(z.string()) })
+
     function ComposedAgent() {
       return (
-        <Claude tools={[fileSystem]}>
+        <Claude tools={[fileSystem]} schema={schema}>
           <SecurityExpert>
             <Phase name="audit">
               <Step>Scan for vulnerabilities</Step>
               <Step>Generate report</Step>
             </Phase>
-            <JsonResponse schema={{ vulnerabilities: 'array' }} />
+            Return valid JSON matching the schema.
           </SecurityExpert>
         </Claude>
       )
@@ -322,6 +322,5 @@ describe('all-features', () => {
     expect(plan).toContain('security expert')
     expect(plan).toContain('<constraints>')
     expect(plan).toContain('<phase name="audit">')
-    expect(plan).toContain('<output-format')
   })
 })

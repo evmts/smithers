@@ -1,6 +1,7 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test'
 import './setup.ts'
-import { renderPlan, executePlan, ClaudeCli, Persona, Constraints, OutputFormat } from '../src/index.js'
+import { z } from 'zod'
+import { renderPlan, executePlan, ClaudeCli, Persona, Constraints } from '../src/index.js'
 
 describe('ClaudeCli component', () => {
   describe('rendering', () => {
@@ -84,8 +85,15 @@ describe('ClaudeCli component', () => {
     })
 
     test('renders with nested prompt components', async () => {
+      const schema = z.object({
+        issues: z.array(z.object({
+          file: z.string(),
+          description: z.string(),
+        })),
+      })
+
       const StructuredAgent = () => (
-        <ClaudeCli>
+        <ClaudeCli schema={schema}>
           <Persona role="Senior Engineer">
             You have 10 years of experience.
           </Persona>
@@ -95,11 +103,7 @@ describe('ClaudeCli component', () => {
             - Suggest concrete fixes
           </Constraints>
 
-          Analyze the codebase.
-
-          <OutputFormat>
-            Return a JSON object with issues.
-          </OutputFormat>
+          Analyze the codebase. Return a JSON object with issues.
         </ClaudeCli>
       )
 
@@ -108,7 +112,6 @@ describe('ClaudeCli component', () => {
       expect(plan).toContain('<claude-cli>')
       expect(plan).toContain('<persona role="Senior Engineer">')
       expect(plan).toContain('<constraints>')
-      expect(plan).toContain('<output-format>')
       expect(plan).toContain('Analyze the codebase.')
     })
   })

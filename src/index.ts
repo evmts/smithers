@@ -1,6 +1,6 @@
 // Core rendering and execution
 export { renderPlan, createRoot, serialize } from './core/render.js'
-export { executePlan, executeNode, findPendingExecutables, findStopNode, findHumanNode } from './core/execute.js'
+export { executePlan, executeNode, findPendingExecutables, findStopNode, findHumanNode, findPendingFileNodes, executeFileNode } from './core/execute.js'
 export {
   executeWithClaude,
   createExecutionError,
@@ -19,10 +19,12 @@ export {
   Step,
   Persona,
   Constraints,
-  OutputFormat,
   Task,
   Stop,
   Human,
+  Output,
+  OutputFormat,
+  File,
 } from './components/index.js'
 
 // Claude Agent SDK executor
@@ -65,10 +67,12 @@ export type {
   StepProps,
   PersonaProps,
   ConstraintsProps,
-  OutputFormatProps,
   TaskProps,
   StopProps,
   HumanProps,
+  OutputProps,
+  OutputFormatProps,
+  FileProps,
   ExecuteOptions,
   ExecutionResult,
   FrameResult,

@@ -1,4 +1,5 @@
 import type { ReactElement, ReactNode } from 'react'
+import type { ZodType } from 'zod'
 import type { MCPServerConfig } from '../mcp/types.js'
 import type { DebugOptions } from '../debug/types.js'
 
@@ -144,15 +145,28 @@ export interface JsonSchemaOutputFormat {
 }
 
 /**
+ * Props for the OutputFormat component
+ *
+ * Specifies the expected output structure for an agent response.
+ */
+export interface OutputFormatProps {
+  /** JSON Schema defining the expected output structure */
+  schema?: Record<string, unknown>
+  children?: ReactNode
+}
+
+/**
  * Props for the Claude component (uses Claude Agent SDK)
  *
  * The Claude component executes prompts using the Claude Agent SDK,
  * which provides built-in tools for file operations, bash commands,
  * web search, and more.
+ *
+ * @typeParam T - Zod schema type for structured output inference
  */
-export interface ClaudeProps {
-  /** Callback invoked when execution completes */
-  onFinished?: (output: unknown) => void
+export interface ClaudeProps<T extends ZodType = ZodType> {
+  /** Callback invoked when execution completes. Output is typed if schema is provided. */
+  onFinished?: (output: T extends ZodType<infer U> ? U : unknown) => void
   /** Callback invoked if execution fails */
   onError?: (error: Error | ExecutionError) => void
   /** The prompt content */
@@ -208,8 +222,8 @@ export interface ClaudeProps {
   mcpServers?: Record<string, MCPServerConfig>
   /** Custom subagent definitions */
   agents?: Record<string, AgentDefinition>
-  /** Output format for structured responses */
-  outputFormat?: JsonSchemaOutputFormat
+  /** Zod schema for structured output. The onFinished callback will receive typed output. */
+  schema?: T
   /** Session ID to resume */
   resume?: string
   /** Additional directories Claude can access */
@@ -230,10 +244,13 @@ export interface ClaudeProps {
  *
  * The ClaudeApi component executes prompts using the Anthropic API SDK,
  * giving you direct control over API calls with per-token billing.
+ *
+ * @typeParam T - Zod schema type for structured output inference
  */
-export interface ClaudeApiProps {
+export interface ClaudeApiProps<T extends ZodType = ZodType> {
   tools?: Tool[]
-  onFinished?: (output: unknown) => void
+  /** Callback invoked when execution completes. Output is typed if schema is provided. */
+  onFinished?: (output: T extends ZodType<infer U> ? U : unknown) => void
   /** Enhanced error callback with detailed error context */
   onError?: (error: Error | ExecutionError) => void
   /** Callback for partial tool results when some tools fail but execution continues */
@@ -253,6 +270,8 @@ export interface ClaudeApiProps {
   retries?: number
   /** Tool retry configuration for failed tool executions */
   toolRetry?: ToolRetryOptions
+  /** Zod schema for structured output. The onFinished callback will receive typed output. */
+  schema?: T
   [key: string]: unknown // Pass-through to SDK
 }
 
@@ -299,13 +318,6 @@ export interface ConstraintsProps {
   children?: ReactNode
 }
 
-/**
- * Props for the OutputFormat component
- */
-export interface OutputFormatProps {
-  schema?: Record<string, unknown>
-  children?: ReactNode
-}
 
 /**
  * Props for the Task component
@@ -343,6 +355,46 @@ export interface HumanProps {
   /** Optional callback when user rejects */
   onReject?: () => void
   children?: ReactNode
+}
+
+/**
+ * Props for the Output component
+ *
+ * The Output component renders content to the terminal during execution
+ * or changes the final rendered output. It's useful for displaying progress,
+ * results, or status messages without requiring a Claude execution.
+ */
+export interface OutputProps {
+  /** The format of the output content */
+  format?: 'text' | 'json' | 'markdown'
+  /** Optional label to prefix the output */
+  label?: string
+  /** The content to output */
+  children?: ReactNode
+}
+
+/**
+ * Props for the File component
+ *
+ * The File component writes or updates files during agent execution.
+ * It allows agents to produce file artifacts without requiring Claude tool calls,
+ * making file operations explicit and declarative in agent workflows.
+ */
+export interface FileProps {
+  /** The file path to write to. Can be absolute or relative to the working directory. */
+  path: string
+  /** How to write the content. 'write' overwrites, 'append' adds to end. */
+  mode?: 'write' | 'append'
+  /** The file encoding to use */
+  encoding?: BufferEncoding
+  /** Callback invoked after the file is successfully written */
+  onWritten?: (path: string) => void
+  /** Callback invoked if writing fails */
+  onError?: (error: Error) => void
+  /** The content to write to the file */
+  children?: ReactNode
+  /** Internal: enable mock mode (no actual writes) */
+  _mockMode?: boolean
 }
 
 /**

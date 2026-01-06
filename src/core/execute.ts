@@ -136,6 +136,49 @@ export async function executePlan(
       console.log(`[Frame ${frameNumber}] After restore, first child type: ${firstChild?.type}`)
     }
 
+    // Execute File nodes BEFORE checking for Stop
+    // This ensures files are written even when Stop is in the tree
+    const pendingFileNodes = findPendingFileNodes(tree)
+    if (pendingFileNodes.length > 0) {
+      if (verbose) {
+        console.log(`[Frame ${frameNumber}] Found ${pendingFileNodes.length} pending file nodes`)
+      }
+
+      // File writes should NOT be affected by Claude mock mode
+      // Only skip writes if explicitly set on the File component itself
+      const useFileMockMode = false
+
+      for (const fileNode of pendingFileNodes) {
+        const nodePath = getNodePath(fileNode)
+
+        debugCollector.emit({
+          type: 'node:execute:start',
+          nodePath,
+          nodeType: 'file',
+          contentHash: computeContentHash(fileNode),
+        })
+
+        const execStart = Date.now()
+        await executeFileNode(fileNode, useFileMockMode)
+
+        debugCollector.emit({
+          type: 'node:execute:end',
+          nodePath,
+          nodeType: 'file',
+          duration: Date.now() - execStart,
+          status: fileNode._execution?.status === 'error' ? 'error' : 'complete',
+          result: fileNode._execution?.result,
+          error: fileNode._execution?.error?.message,
+        })
+
+        // If onWritten callback triggered state change, we need to re-render
+        const onWritten = fileNode.props.onWritten
+        if (onWritten && fileNode._execution?.status === 'complete') {
+          await waitForStateUpdates()
+        }
+      }
+    }
+
     // Check for Stop node - if present, halt the loop
     const stopNode = findStopNode(tree)
     if (stopNode) {
@@ -786,6 +829,107 @@ function getExecutionLabel(node: SmithersNode): string {
 }
 
 /**
+ * Find pending File nodes that need to be written
+ */
+export function findPendingFileNodes(tree: SmithersNode): SmithersNode[] {
+  const fileNodes: SmithersNode[] = []
+
+  function walk(node: SmithersNode) {
+    if (node.type === 'file') {
+      if (!node._execution || node._execution.status === 'pending') {
+        fileNodes.push(node)
+      }
+    }
+
+    for (const child of node.children) {
+      walk(child)
+    }
+  }
+
+  walk(tree)
+  return fileNodes
+}
+
+/**
+ * Execute a File node - write content to disk
+ */
+export async function executeFileNode(
+  node: SmithersNode,
+  mockMode: boolean = false
+): Promise<void> {
+  const path = node.props.path as string
+  const mode = (node.props.mode as 'write' | 'append') || 'write'
+  const encoding = (node.props.encoding as BufferEncoding) || 'utf-8'
+  const onWritten = node.props.onWritten as ((path: string) => void) | undefined
+  const onError = node.props.onError as ((error: Error) => void) | undefined
+  const nodeMockMode = node.props._mockMode === true
+
+  // Compute content hash for change detection
+  const contentHash = computeContentHash(node)
+
+  node._execution = {
+    status: 'running',
+    contentHash,
+  }
+
+  try {
+    // Extract text content from children
+    const content = extractTextContent(node)
+
+    // In mock mode, skip actual file writes
+    if (mockMode || nodeMockMode) {
+      node._execution = {
+        status: 'complete',
+        result: `[mock] Would write to ${path}`,
+        contentHash,
+      }
+
+      if (onWritten) {
+        onWritten(path)
+      }
+      return
+    }
+
+    // Import fs dynamically to avoid bundling issues
+    const { writeFileSync, appendFileSync, mkdirSync, existsSync } = await import('fs')
+    const { dirname } = await import('path')
+
+    // Create parent directories if needed
+    const dir = dirname(path)
+    if (dir && !existsSync(dir)) {
+      mkdirSync(dir, { recursive: true })
+    }
+
+    // Write or append to file
+    if (mode === 'append') {
+      appendFileSync(path, content, { encoding })
+    } else {
+      writeFileSync(path, content, { encoding })
+    }
+
+    node._execution = {
+      status: 'complete',
+      result: path,
+      contentHash,
+    }
+
+    if (onWritten) {
+      onWritten(path)
+    }
+  } catch (error) {
+    node._execution = {
+      status: 'error',
+      error: error as Error,
+      contentHash,
+    }
+
+    if (onError) {
+      onError(error as Error)
+    }
+  }
+}
+
+/**
  * Find nodes that are ready for execution
  */
 export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
@@ -1134,14 +1278,13 @@ async function executeMock(node: SmithersNode): Promise<string> {
   let mockOutput: string = 'Hello, I am Smithers! A React-based framework for AI agent prompts.'
 
   // Check if we should return JSON
-  // Look for JSON keywords, JSON objects (curly braces), or outputFormat/output-format children
+  // Look for JSON keywords, JSON objects (curly braces), or schema prop
   const hasJsonIndicator =
     promptText.includes('JSON') ||
     promptText.includes('json') ||
     promptText.includes('JSON.stringify') ||
     promptText.match(/\{[^}]*\}/) !== null || // Contains a JSON object
-    node.props.outputFormat ||
-    hasChildOfType(node, 'output-format') ||
+    node.props.schema ||
     promptText.toLowerCase().includes('return') // "Return a plan", "Return exactly:", etc.
 
   if (hasJsonIndicator) {

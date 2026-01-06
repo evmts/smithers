@@ -167,17 +167,6 @@ function extractTextContent(node: SmithersNode): string {
         parts.push('</constraints>')
         break
 
-      case 'output-format':
-        parts.push('<output-format>')
-        if (n.props.schema) {
-          parts.push(`Schema: ${JSON.stringify(n.props.schema)}`)
-        }
-        for (const child of n.children) {
-          walk(child)
-        }
-        parts.push('</output-format>')
-        break
-
       case 'phase':
         parts.push(`<phase name="${n.props.name}">`)
         for (const child of n.children) {

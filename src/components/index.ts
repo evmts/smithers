@@ -8,10 +8,12 @@ import type {
   StepProps,
   PersonaProps,
   ConstraintsProps,
-  OutputFormatProps,
   TaskProps,
   StopProps,
   HumanProps,
+  OutputProps,
+  OutputFormatProps,
+  FileProps,
 } from '../core/types.js'
 
 /**
@@ -158,20 +160,6 @@ export function Constraints(props: ConstraintsProps): ReactElement {
 }
 
 /**
- * Expected output format specification
- *
- * @example
- * ```tsx
- * <OutputFormat schema={{ type: 'object', properties: { summary: { type: 'string' } } }}>
- *   Return a JSON object with a "summary" field.
- * </OutputFormat>
- * ```
- */
-export function OutputFormat(props: OutputFormatProps): ReactElement {
-  return createElement('output-format', props)
-}
-
-/**
  * Trackable task with completion state
  *
  * @example
@@ -220,6 +208,70 @@ export function Human(props: HumanProps): ReactElement {
   return createElement('human', props)
 }
 
+/**
+ * Renders output to the terminal or changes the rendered output
+ *
+ * The Output component displays content during execution without triggering
+ * Claude API calls. Useful for progress updates, status messages, and results.
+ *
+ * @example
+ * ```tsx
+ * <Output label="Status">Processing complete!</Output>
+ *
+ * <Output format="json">
+ *   {JSON.stringify({ status: 'complete' })}
+ * </Output>
+ * ```
+ */
+export function Output(props: OutputProps): ReactElement {
+  return createElement('output', props)
+}
+
+/**
+ * Specifies the expected output format/structure for an agent response
+ *
+ * Use this component to instruct the agent on the expected output format.
+ * Can include a JSON schema for structured output validation.
+ *
+ * @example
+ * ```tsx
+ * <OutputFormat schema={{
+ *   type: 'object',
+ *   properties: {
+ *     summary: { type: 'string' },
+ *     items: { type: 'array' }
+ *   }
+ * }}>
+ *   Return a JSON object with summary and items fields.
+ * </OutputFormat>
+ * ```
+ */
+export function OutputFormat(props: OutputFormatProps): ReactElement {
+  return createElement('output-format', props)
+}
+
+/**
+ * Writes or updates files during agent execution
+ *
+ * The File component writes content to files without requiring Claude tool calls,
+ * making file operations explicit and declarative in agent workflows.
+ *
+ * @example
+ * ```tsx
+ * <File path="output/report.md">
+ *   # Analysis Report
+ *   {content}
+ * </File>
+ *
+ * <File path="log.txt" mode="append">
+ *   Log entry
+ * </File>
+ * ```
+ */
+export function File(props: FileProps): ReactElement {
+  return createElement('file', props)
+}
+
 // Re-export types
 export type {
   ClaudeProps,
@@ -230,8 +282,10 @@ export type {
   StepProps,
   PersonaProps,
   ConstraintsProps,
-  OutputFormatProps,
   TaskProps,
   StopProps,
   HumanProps,
+  OutputProps,
+  OutputFormatProps,
+  FileProps,
 }
