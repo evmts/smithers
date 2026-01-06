@@ -57,22 +57,71 @@ interface ExecutionState {
 | `src/core/types.ts` | All TypeScript interfaces |
 | `src/core/render.ts` | `renderPlan()`, `createRoot()`, `serialize()` |
 | `src/core/execute.ts` | `executePlan()`, Ralph Wiggum loop logic |
-| `src/core/claude-executor.ts` | Claude SDK wrapper (real + mock execution) |
+| `src/core/claude-agent-executor.ts` | Claude Agent SDK executor (built-in tools) |
+| `src/core/claude-executor.ts` | Anthropic API SDK executor (custom tools) |
 | `src/reconciler/host-config.ts` | React Reconciler host config |
 | `src/reconciler/index.ts` | `createSmithersRoot()` - React reconciler setup |
-| `src/components/index.ts` | Component definitions (Claude, Subagent, etc.) |
+| `src/components/index.ts` | Component definitions (Claude, ClaudeApi, etc.) |
+| `src/debug/` | Debug observability (events, formatters, collector) |
 
 ## Components
 
+### Agent Components
+
+| Component | SDK | Purpose |
+|-----------|-----|---------|
+| `<Claude>` | Agent SDK | Main execution unit with built-in tools (Read, Edit, Bash, etc.) |
+| `<ClaudeApi>` | API SDK | Direct API access for custom tool implementations |
+
+#### `<Claude>` (Agent SDK) - Default
+
+Uses the Claude Agent SDK with built-in tools. The SDK handles tool execution automatically.
+
+```tsx
+<Claude
+  allowedTools={['Read', 'Edit', 'Bash', 'Glob', 'Grep']}
+  permissionMode="acceptEdits"  // 'default' | 'acceptEdits' | 'bypassPermissions'
+  maxTurns={10}
+  systemPrompt="You are a helpful assistant"
+  agents={{
+    'code-reviewer': {
+      description: 'Reviews code for quality',
+      prompt: 'You are a code reviewer...',
+      tools: ['Read', 'Glob', 'Grep']
+    }
+  }}
+  onFinished={(result) => setResult(result)}
+>
+  Fix the bug in auth.py
+</Claude>
+```
+
+#### `<ClaudeApi>` (API SDK) - Direct API Access
+
+Uses the Anthropic API SDK directly. You provide custom tool implementations.
+
+```tsx
+<ClaudeApi
+  tools={[myCustomTool]}
+  system="You are a helpful assistant"
+  onFinished={(result) => setResult(result)}
+>
+  Analyze this data
+</ClaudeApi>
+```
+
+### Structural Components
+
 | Component | Purpose | Key Props |
 |-----------|---------|-----------|
-| `<Claude>` | Main execution unit | `tools`, `onFinished`, `onError` |
 | `<Subagent>` | Parallel execution boundary | `name`, `parallel` |
 | `<Phase>` | Semantic phase grouping | `name` |
 | `<Step>` | Individual step within a phase | none |
 | `<Persona>` | Define agent role/expertise | `role` |
 | `<Constraints>` | Behavioral boundaries | none |
 | `<OutputFormat>` | Expected output structure | `schema` |
+| `<Human>` | Require human approval | `message`, `onApprove`, `onReject` |
+| `<Stop>` | Halt execution loop | `reason` |
 
 ## State Management Pattern
 
