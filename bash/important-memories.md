@@ -439,6 +439,50 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Total Test Count**: 573 passing tests (all tests pass)
 - Commits: 0a4d52f, ec3f2d5
 
+### Codex Review Fixes (2026-01-06 - COMPLETED)
+- **Feature**: Addressed 9 issues from Codex reviews
+- **Implementation**:
+  1. VHS command typo (96e400b): Fixed `Watch+Screen` → `Wait+Screen` in docs
+  2. onHumanPrompt callback signature (6715f54):
+     - Always build HumanPromptInfo with all information
+     - Detect callback type by parameter count (.length >= 2 for legacy)
+     - Pass correct arguments based on callback signature
+     - Updated tests to use proper 2-parameter legacy callbacks
+  3. Workflow-output tools flag (d601df6):
+     - Pass onValueSet callback to generateWorkflowTools
+     - Set workflowValuesSet=true when workflow values are set via tools
+  4. zodSchemaToToolSchema undefined handling (d601df6):
+     - Guard against undefined schema in generateWorkflowTools
+  5. ClaudeProvider rate limit type casting (5c12ec1):
+     - Only call onRateLimited for actual rate limit types (rpm/itpm/otpm)
+     - Skip queue_full and timeout error types
+  6. UsageTracker interval leak (5c12ec1):
+     - Track budgetCheckInterval in class field
+     - Clear interval in resume() method to prevent leaks
+  7. ClaudeProvider prop reactivity (5c12ec1):
+     - Add useEffect to update rate limiter when rateLimit prop changes
+     - Add useEffect to update usage tracker when usageLimit prop changes
+  8. Workflow store.values stale reference (2e0fc09):
+     - Use getter for store.values instead of fixed field
+     - Values now always reflect current state after setValue calls
+- **Key Learnings**:
+  - Function.length detection is reliable for callback type detection (legacy vs enhanced)
+  - React hooks (useEffect) can properly update external instances like rate limiters
+  - Getters are cleaner than updating object references for computed properties
+  - Always clear intervals in cleanup/resume paths to prevent memory leaks
+- **Files Changed**:
+  - `docs/vhs-recording.md` - Fixed VHS command typo
+  - `src/core/execute.ts` - Fixed onHumanPrompt signature handling, workflow tools flag
+  - `src/context/claude-provider.tsx` - Fixed rate limit type casting, prop reactivity
+  - `src/context/usage-tracker.ts` - Fixed interval leak
+  - `src/workflow/create-workflow.tsx` - Fixed store.values stale reference
+  - Test files updated to use proper callback signatures
+- **Total Test Count**: 573 passing tests (all tests pass)
+- **New Codex Review** (9c996a7): Identified 2 potential issues for future consideration
+  - Backward-compat risk with single-arg legacy callbacks (not officially supported by types)
+  - Rate/usage limit removal (undefined) doesn't disable existing limiters
+- Commit: 9c996a7
+
 ## What's Next (Priority Order)
 
 1. **TUI Integration** (HIGHEST PRIORITY - New Feature)
