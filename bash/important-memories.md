@@ -483,6 +483,20 @@ This file contains important learnings, decisions, and context from previous Ral
   2. ✅ Rate/usage limit prop removal handling - Fixed in commit 0d5fc51. When props become undefined, limiters are now updated to Infinity values to effectively disable them without ref cleanup.
 - Commit: 9c996a7, 0d5fc51
 
+### Codex Review Cleanup (2026-01-06 - COMPLETED)
+- **Feature**: Addressed multiple Codex review issues
+- **Implementation**:
+  1. Fixed optional chaining crashes in examples - Changed `array?.map(...)?.join()` to `(array ?? []).map(...).join()`
+  2. Added detailed OutputFormat items types in docs - Full property specifications for steps, testCases, apis arrays
+  3. Fixed feature workflow phase count mismatch - Added missing phases (plan-review, refined-review, test-verify) to README
+  4. Removed 8 outdated Codex reviews that had already been addressed
+- **Result**: All tests passing (573), documentation accurate and complete
+- **Files Changed**:
+  - `examples/00-feature-workflow/agent.tsx` - Fixed optional chaining
+  - `docs/examples/feature-workflow.mdx` - Added OutputFormat details
+  - `examples/README.md` - Added missing phases, updated count to 12
+- Commit: 5a53824, 5a65335, 803b570
+
 ## What's Next (Priority Order)
 
 1. **TUI Integration** (HIGHEST PRIORITY - New Feature)
