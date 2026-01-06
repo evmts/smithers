@@ -68,7 +68,7 @@ function FeatureWorkflow({ prompt }) {
 
 Concepts demonstrated:
 - Human-in-the-loop approval gates
-- 12-phase workflow with state machine
+- 9-phase workflow with state machine
 - Extended thinking for deep analysis
 - POC-driven plan refinement
 - TDD flow (types → tests fail → implementation passes)
