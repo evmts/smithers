@@ -530,6 +530,38 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Deleted 17 resolved review files**
 - Commit: 000641e
 
+### Codex Review Cleanup Session 2 (2026-01-06 - COMPLETED)
+- **Feature**: Addressed 4 Codex review issues from batch analysis
+- **Implementation**:
+  1. **Mock Executor JSON.parse Crash** (000641e):
+     - extractJsonFromPrompt now validates JSON before returning from JSON.stringify(...) branch
+     - Added try-catch safety layer when parsing extracted JSON at call site
+     - Prevents crash when regex captures JavaScript object literal instead of valid JSON
+  2. **Nested Execution Docs Mismatches** (2f95a92):
+     - Removed non-existent delegateExecution/planInstructions props from API docs
+     - Fixed type names: RenderNodeToolInput/Result → RenderNodeResult (actual implementation)
+     - Updated path generation example to show per-type indexing with typeIndices map
+     - Added clarification that TEXT nodes are excluded from path generation
+  3. **State Management Docs Issues** (3f5c114, 46b3762):
+     - Added functional update pattern example for useState (setResults(prev => ...))
+     - Fixed null check in addResult: `plan && results.length === plan.tasks.length`
+     - Shows proper useState pattern before explaining why Zustand is still better
+  4. **Reviews Assessed as Already Correct**:
+     - 008714d (MCP capabilities): Empty `capabilities: {}` is correct - client doesn't implement sampling
+     - 44e19ec (CONTRIBUTING.md): Repository name is correct (evmts/smithers), hooks file exists
+- **Key Learnings**:
+  - Regex `.+?` is non-greedy but stops at first match, can't handle nested structures
+  - JSON.stringify(...) in prompts captures JS literals, not JSON strings
+  - MCP ClientCapabilities are about what client can do (sampling), not what server provides (tools)
+  - Zustand's `get()` must be called inside updater, not captured before
+- **Result**: All 573 tests passing, 6 reviews resolved, 17 remaining
+- **Files Changed**:
+  - `src/core/claude-agent-executor.ts` - extractJsonFromPrompt validation
+  - `docs/nested-claude-execution.md` - API reference corrections
+  - `docs/concepts/state-management.mdx` - useState functional update example, null check
+- **Deleted Reviews**: 000641e, 2f95a92, 3f5c114, 46b3762, 008714d, 44e19ec
+- Commit: 32d6d67
+
 ## What's Next (Priority Order)
 
 1. **TUI Integration** (HIGHEST PRIORITY - New Feature)
