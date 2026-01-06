@@ -617,18 +617,47 @@ This file contains important learnings, decisions, and context from previous Ral
   - cleanup=true by default, can be disabled to preserve worktrees
   - Reuses existing worktrees if path matches
   - Mock mode skips git operations but calls callbacks
-- **Test Coverage**: 18 tests in evals/worktree.test.tsx (576 passing overall, 14 worktree tests need API fixes)
+- **Test Coverage**: 18 tests in evals/worktree.test.tsx (577 passing overall, 13 worktree tests need API fixes)
 - **Known Issues**:
   - Some test cases use wrong API (renderPlan returns XML, not tree - should use createRoot().render() or executePlan())
   - Tests work in mock mode but need real git integration tests
-- **Branch Check Issue**: The branch existence check using `git show-ref` with exit code doesn't work reliably in bash
 - **Files Changed**:
   - `src/core/types.ts` - Added WorktreeProps
   - `src/components/index.ts` - Added Worktree component
   - `src/core/execute.ts` - Added worktree execution and cleanup
   - `src/index.ts` - Exported Worktree and related functions
   - `evals/worktree.test.tsx` - Comprehensive test suite
-- Commit: [current session]
+- Commit: 9fa1591
+
+### Worktree Security Fixes (2026-01-06 - FIXED)
+- **Problem**: Codex review 9fa1591 identified 4 critical security and correctness issues
+- **Issues & Fixes**:
+  1. **Command Injection Prevention** (b6d3bcf, ce572a2, 31eafd1):
+     - Replaced all `execSync()` calls with `execFileSync()` (prevents shell interpretation)
+     - Added `validateBranchName()` to sanitize branch/baseBranch inputs
+     - Regex validation allows: alphanumeric, dash, underscore, slash, dot
+     - Explicitly rejects: names starting with dash, patterns like `..`, `@{`, `~`
+     - Uses `--` separator before positional arguments to prevent option injection
+     - Command structure: `git worktree add -b <branch> -- <path> [<start-point>]`
+  2. **Worktree Failure Blocking** (b6d3bcf):
+     - Updated `getWorktreePath()` to throw error when parent worktree failed
+     - Prevents child agents from silently falling back to main repo
+     - Clear error message with original failure reason
+  3. **Branch Verification on Reuse** (b6d3bcf):
+     - When reusing existing worktree, verify branch matches expected
+     - Uses `git branch --show-current` to check actual worktree branch
+     - Throws error if branch mismatch detected
+  4. **Mock Mode Cleanup Behavior** (b6d3bcf):
+     - Fixed `cleanupWorktreeNode()` to NOT call `onCleanup` in mock mode
+     - Only real cleanup operations trigger the callback
+     - Aligns behavior with test expectations
+- **Additional Fixes**:
+  - Extracted `mockMode` from ExecuteOptions in `executePlan()` function (b6d3bcf)
+  - Fixed "mockMode is not defined" error
+- **Security Impact**: Prevents arbitrary command execution via branch names and ensures worktree failures don't silently degrade to main repo execution
+- **Files Changed**: `src/core/execute.ts`
+- **Codex Reviews**: 9fa1591, b6d3bcf (addressed), ce572a2 (addressed)
+- Commits: b6d3bcf, ce572a2, 31eafd1
 
 ## What's Next (Priority Order)
 
