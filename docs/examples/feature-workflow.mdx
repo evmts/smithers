@@ -213,10 +213,10 @@ function PlanningPhase() {
       Research: {JSON.stringify(fileResearch, null, 2)}
       <OutputFormat schema={{
         summary: { type: 'string' },
-        steps: { type: 'array' },
-        testCases: { type: 'array' },
-        apis: { type: 'array' },
-        risks: { type: 'array' },
+        steps: { type: 'array', items: { type: 'object' } },
+        testCases: { type: 'array', items: { type: 'object' } },
+        apis: { type: 'array', items: { type: 'object' } },
+        risks: { type: 'array', items: { type: 'string' } },
       }}>
         Return a JSON implementation plan.
       </OutputFormat>
@@ -301,10 +301,10 @@ function POCAnalysisPhase() {
         analysis: { type: 'string' },
         refinedPlan: { type: 'object', properties: {
           summary: { type: 'string' },
-          steps: { type: 'array' },
-          testCases: { type: 'array' },
-          apis: { type: 'array' },
-          risks: { type: 'array' }
+          steps: { type: 'array', items: { type: 'object' } },
+          testCases: { type: 'array', items: { type: 'object' } },
+          apis: { type: 'array', items: { type: 'object' } },
+          risks: { type: 'array', items: { type: 'string' } }
         }}
       }}>
         Return a JSON object with analysis and refined plan.
