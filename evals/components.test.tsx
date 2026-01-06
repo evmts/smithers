@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'bun:test'
 import './setup.ts'
-import { useState } from 'react'
 import { create } from 'zustand'
 import {
   renderPlan,
@@ -179,8 +178,6 @@ describe('Subagent component', () => {
   })
 
   it('parallel=true enables concurrent execution', async () => {
-    const executionOrder: string[] = []
-
     const useStore = create<{ order: string[]; add: (item: string) => void }>((set) => ({
       order: [],
       add: (item) => set((state) => ({ order: [...state.order, item] })),
@@ -210,8 +207,6 @@ describe('Subagent component', () => {
   })
 
   it('parallel=false executes children sequentially', async () => {
-    const executionOrder: string[] = []
-
     const useStore = create<{ order: string[]; add: (item: string) => void }>((set) => ({
       order: [],
       add: (item) => set((state) => ({ order: [...state.order, item] })),
