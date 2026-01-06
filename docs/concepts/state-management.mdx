@@ -112,6 +112,31 @@ function BadExample() {
 When all three subagents complete, each callback has `results = {}`, so only the last one wins.
 
 ```tsx
+// BETTER: useState with functional update
+function BetterExample() {
+  const [results, setResults] = useState({})
+  const [topics] = useState(['AI', 'ML', 'DL'])
+
+  return (
+    <>
+      {topics.map(topic => (
+        <Subagent key={topic}>
+          <Claude onFinished={(data) => {
+            // Use functional update to get latest state
+            setResults(prev => ({ ...prev, [topic]: data }))
+          }}>
+            Research {topic}
+          </Claude>
+        </Subagent>
+      ))}
+    </>
+  )
+}
+```
+
+This works, but Zustand is still cleaner for complex agent workflows:
+
+```tsx
 // CORRECT: Zustand solution
 const useStore = create((set) => ({
   results: {},
@@ -164,8 +189,9 @@ const useWorkflowStore = create((set, get) => ({
   }),
 
   addResult: (result) => {
-    const results = [...get().results, result]
-    const allDone = results.length === get().plan.tasks.length
+    const { results: currentResults, plan } = get()
+    const results = [...currentResults, result]
+    const allDone = plan && results.length === plan.tasks.length
     set({
       results,
       status: allDone ? 'reviewing' : 'executing',

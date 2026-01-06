@@ -270,14 +270,19 @@ export async function executeAgentMock(node: SmithersNode): Promise<AgentExecuti
   // Check this BEFORE plan detection so structured output tests work with plans
   const jsonString = extractJsonFromPrompt(fullTextContent)
   if (jsonString) {
-    const parsedJson = JSON.parse(jsonString)
-    return {
-      success: true,
-      result: jsonString, // Keep result as JSON string for backward compatibility
-      structuredOutput: parsedJson, // Set structuredOutput as parsed object
-      numTurns: 1,
-      totalCostUsd: 0,
-      durationMs: 10,
+    try {
+      const parsedJson = JSON.parse(jsonString)
+      return {
+        success: true,
+        result: jsonString, // Keep result as JSON string for backward compatibility
+        structuredOutput: parsedJson, // Set structuredOutput as parsed object
+        numTurns: 1,
+        totalCostUsd: 0,
+        durationMs: 10,
+      }
+    } catch {
+      // JSON parsing failed - fall through to normal mock response
+      // This is an extra safety layer in case extractJsonFromPrompt returns invalid JSON
     }
   }
 
@@ -319,7 +324,14 @@ function extractJsonFromPrompt(text: string): string | null {
   // First try to find JSON.stringify(...) calls
   const jsonStringifyMatch = text.match(/JSON\.stringify\((.+?)\)/)
   if (jsonStringifyMatch) {
-    return jsonStringifyMatch[1]
+    // The captured content might be a JS object literal, not valid JSON
+    // Try to parse it and return null if it fails
+    try {
+      JSON.parse(jsonStringifyMatch[1])
+      return jsonStringifyMatch[1]
+    } catch {
+      // Not valid JSON, fall through to try raw JSON extraction
+    }
   }
 
   // Try to find raw JSON objects

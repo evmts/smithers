@@ -194,36 +194,26 @@ function SmartRefactorer() {
 5. Claude can choose to fix some or all, in any order
 6. When `<Stop>` renders, execution halts
 
-## API Changes
+## API Reference
 
-### ClaudeProps Updates
+### Nested Execution Detection
 
-```typescript
-interface ClaudeProps {
-  // ... existing props
+Nested execution is automatically enabled when a `<Claude>` component has JSX children (not just text). The executor detects this using the `hasPlan()` function and automatically:
 
-  /**
-   * When true, Claude controls child execution via render_node tool
-   * Default: automatically enabled when children contain JSX
-   */
-  delegateExecution?: boolean
+1. Separates prompt text from JSX plan nodes
+2. Generates unique paths for each node
+3. Adds the `render_node` tool to Claude's available tools
+4. Includes plan XML in the system prompt
 
-  /**
-   * Custom instructions for how Claude should handle the plan
-   * Appended to the default system prompt about plans
-   */
-  planInstructions?: string
-}
-```
+No additional props are needed - this is enabled transparently when your component has JSX children.
 
-### New Types
+### Types
 
 ```typescript
-interface RenderNodeToolInput {
-  node_path: string
-}
-
-interface RenderNodeToolResult {
+/**
+ * Result from executing a node via render_node tool
+ */
+interface RenderNodeResult {
   success: boolean
   result?: unknown
   error?: string
@@ -231,6 +221,9 @@ interface RenderNodeToolResult {
   node_path: string
 }
 ```
+
+The `render_node` tool accepts a single parameter:
+- `node_path` (string): The hierarchical path to the node (e.g., "phase[0]/claude[1]")
 
 ## Implementation Considerations
 
@@ -261,24 +254,44 @@ function separatePromptAndPlan(node: SmithersNode): {
 
 ### Node Path Generation
 
-Each node in the plan gets a unique path for identification:
+Each node in the plan gets a unique path for identification. Paths are indexed **per type**, not globally:
 
 ```typescript
 function generateNodePaths(nodes: SmithersNode[], prefix = ''): Map<string, SmithersNode> {
   const paths = new Map<string, SmithersNode>()
 
-  nodes.forEach((node, index) => {
-    const path = prefix ? `${prefix}/${node.type}[${index}]` : `${node.type}[${index}]`
+  // Group nodes by type to generate correct indices
+  const typeIndices = new Map<string, number>()
+
+  for (const node of nodes) {
+    // Get the current index for this type
+    const typeIndex = typeIndices.get(node.type) ?? 0
+    typeIndices.set(node.type, typeIndex + 1)
+
+    // Build the path
+    const path = prefix
+      ? `${prefix}/${node.type}[${typeIndex}]`
+      : `${node.type}[${typeIndex}]`
+
     paths.set(path, node)
 
-    // Recurse for children
-    const childPaths = generateNodePaths(node.children, path)
-    childPaths.forEach((n, p) => paths.set(p, n))
-  })
+    // Recurse for children (excluding TEXT nodes)
+    const childNodes = node.children.filter((c) => c.type !== 'TEXT')
+    if (childNodes.length > 0) {
+      const childPaths = generateNodePaths(childNodes, path)
+      childPaths.forEach((n, p) => paths.set(p, n))
+    }
+  }
 
   return paths
 }
 ```
+
+**Example:** If you have `<phase><claude/><step/><claude/></phase>`, the paths are:
+- `phase[0]` - the phase
+- `phase[0]/claude[0]` - first claude
+- `phase[0]/step[0]` - the step
+- `phase[0]/claude[1]` - second claude (indexed per type, not globally)
 
 ### Plan Serialization with Paths
 
