@@ -1,6 +1,7 @@
 import { createElement, type ReactElement, type ReactNode } from 'react'
 import type {
   ClaudeProps,
+  ClaudeCliProps,
   SubagentProps,
   PhaseProps,
   StepProps,
@@ -24,6 +25,24 @@ import type {
  */
 export function Claude(props: ClaudeProps): ReactElement {
   return createElement('claude', props)
+}
+
+/**
+ * CLI-based agent component - uses Claude CLI instead of SDK
+ *
+ * Uses your Claude Code subscription instead of API credits.
+ * Simpler than <Claude> - no custom tools, streaming, or MCP configuration.
+ * The CLI handles its own tool execution loop.
+ *
+ * @example
+ * ```tsx
+ * <ClaudeCli model="opus" onFinished={setResult}>
+ *   Analyze the codebase and summarize the architecture.
+ * </ClaudeCli>
+ * ```
+ */
+export function ClaudeCli(props: ClaudeCliProps): ReactElement {
+  return createElement('claude-cli', props)
 }
 
 /**
@@ -170,6 +189,7 @@ export function Human(props: HumanProps): ReactElement {
 // Re-export types
 export type {
   ClaudeProps,
+  ClaudeCliProps,
   SubagentProps,
   PhaseProps,
   StepProps,

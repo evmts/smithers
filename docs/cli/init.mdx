@@ -29,113 +29,40 @@ smithers init [directory]
 
 ```
 my-agent-project/
-  package.json         # Dependencies configured
-  tsconfig.json        # TypeScript with JSX support
-  .env.example         # API key template
-  .gitignore           # Standard ignores
-  src/
-    agent.tsx          # Starter agent template
-    tools.ts           # Example tool definitions
+  agent.mdx        # Starter agent template (based on --template)
+  package.json     # Dependencies configured (if missing)
+```
+
+### agent.mdx
+
+```mdx
+import { Claude } from 'smithers'
+
+# Hello World Agent
+
+<Claude>
+  You are a friendly assistant. Say hello and introduce yourself in one sentence.
+</Claude>
 ```
 
 ### package.json
 
+`smithers init` creates a minimal `package.json` if one does not exist:
+
 ```json
 {
   "name": "my-agent-project",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "smithers run src/agent.tsx",
-    "plan": "smithers plan src/agent.tsx",
-    "build": "tsc"
+    "start": "smithers run agent.mdx",
+    "plan": "smithers plan agent.mdx"
   },
   "dependencies": {
-    "smithers": "^1.0.0",
-    "react": "^19.0.0",
-    "zustand": "^4.5.0"
-  },
-  "devDependencies": {
-    "@types/react": "^19.0.0",
-    "typescript": "^5.3.0"
+    "smithers": "^0.1.0",
+    "react": "^19.0.0"
   }
 }
-```
-
-### tsconfig.json
-
-```json
-{
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "types": ["smithers/jsx"]
-  },
-  "include": ["src/**/*"]
-}
-```
-
-### src/agent.tsx
-
-```tsx
-import { create } from 'zustand'
-import { Claude, Phase, Step, Constraints } from 'smithers'
-
-// Agent state management
-const useAgentStore = create((set) => ({
-  phase: 'analyze' as 'analyze' | 'report',
-  findings: null as any,
-  setFindings: (findings: any) => set({ findings, phase: 'report' }),
-}))
-
-// Main agent component
-export function Agent({ target }: { target: string }) {
-  const { phase, findings, setFindings } = useAgentStore()
-
-  if (phase === 'analyze') {
-    return (
-      <Claude onFinished={setFindings}>
-        <Constraints>
-          - Be thorough but concise
-          - Focus on actionable insights
-        </Constraints>
-
-        <Phase name="analysis">
-          <Step>Analyze {target}</Step>
-          <Step>Identify key patterns</Step>
-          <Step>Note any issues or improvements</Step>
-        </Phase>
-      </Claude>
-    )
-  }
-
-  return (
-    <Claude>
-      <Phase name="report">
-        Generate a summary report based on:
-        {JSON.stringify(findings)}
-      </Phase>
-    </Claude>
-  )
-}
-```
-
-### .env.example
-
-```bash
-# Required: Your Anthropic API key
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Optional: Default model
-SMITHERS_MODEL=claude-sonnet-4-20250514
-
-# Optional: Auto-approve plans (for CI/CD)
-SMITHERS_AUTO_APPROVE=false
 ```
 
 ## Examples
@@ -179,36 +106,32 @@ After running `smithers init`:
 
   <Step title="Configure API key">
     ```bash
-    cp .env.example .env
-    # Edit .env and add your ANTHROPIC_API_KEY
+    # Add your API key to a .env file
+    echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
     ```
   </Step>
 
   <Step title="Preview the starter agent">
     ```bash
-    npm run plan -- --props '{"target": "my-codebase"}'
+    npm run plan
     ```
   </Step>
 
   <Step title="Run the agent">
     ```bash
-    npm run dev -- --props '{"target": "my-codebase"}'
+    npm run start
     ```
   </Step>
 </Steps>
 
 ## Project Variants
 
-<Info>
-  Coming soon: Template variants for common use cases.
-</Info>
-
-Future versions will support:
+Choose a starter template with `--template`:
 
 ```bash
-smithers init --template code-review
+smithers init --template hello-world
 smithers init --template research
-smithers init --template data-pipeline
+smithers init --template multi-agent
 ```
 
 ## Related Commands

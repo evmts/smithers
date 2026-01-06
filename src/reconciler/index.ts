@@ -1,7 +1,7 @@
 import ReactReconciler from 'react-reconciler'
 import type { ReactElement } from 'react'
 import { hostConfig } from './host-config.js'
-import type { PluNode, PluRoot } from '../core/types.js'
+import type { SmithersNode, SmithersRoot } from '../core/types.js'
 
 /**
  * Create the reconciler with our host config
@@ -67,14 +67,14 @@ export const waitForStateUpdates = async (): Promise<void> => {
  *
  * @example
  * ```tsx
- * const root = createPluRoot()
+ * const root = createSmithersRoot()
  * const tree = root.render(<MyAgent />)
  * const xml = serialize(tree)
  * ```
  */
-export function createPluRoot(): PluRoot {
+export function createSmithersRoot(): SmithersRoot {
   // Create root container node
-  const rootNode: PluNode = {
+  const rootNode: SmithersNode = {
     type: 'ROOT',
     props: {},
     children: [],
@@ -104,7 +104,7 @@ export function createPluRoot(): PluRoot {
   )
 
   return {
-    async render(element: ReactElement): Promise<PluNode> {
+    async render(element: ReactElement): Promise<SmithersNode> {
       // Try updateContainerSync first (React 19+)
       const updateContainerSync = (reconciler as any).updateContainerSync
 
@@ -148,7 +148,7 @@ export function createPluRoot(): PluRoot {
       reconciler.updateContainer(null, container, null, () => {})
     },
 
-    getTree(): PluNode | null {
+    getTree(): SmithersNode | null {
       return rootNode
     },
   }

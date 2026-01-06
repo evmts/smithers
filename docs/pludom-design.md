@@ -58,12 +58,12 @@ const hostConfig = {
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                      PluDom Renderer                         │
-│  react-reconciler + Smithers Host Config → PluNode Tree     │
+│  react-reconciler + Smithers Host Config → SmithersNode Tree     │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                       Serializer                             │
-│  PluNode Tree → XML String (the "plan")                     │
+│  SmithersNode Tree → XML String (the "plan")                     │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -77,11 +77,11 @@ const hostConfig = {
 ### Internal Node Representation
 
 ```typescript
-interface PluNode {
+interface SmithersNode {
   type: string                    // 'claude', 'phase', 'step', 'TEXT', etc.
   props: Record<string, any>      // Component props
-  children: PluNode[]             // Child nodes
-  parent: PluNode | null          // Parent reference
+  children: SmithersNode[]             // Child nodes
+  parent: SmithersNode | null          // Parent reference
 
   // Execution state (used by executor)
   _execution?: {
@@ -264,10 +264,10 @@ Named after the simple, iterative approach: run the agent, get result, repeat.
 
 ```typescript
 async function executePlan(element: ReactElement): Promise<any> {
-  const root = createPluRoot()
+  const root = createSmithersRoot()
 
   while (true) {
-    // 1. Render JSX to PluNode tree
+    // 1. Render JSX to SmithersNode tree
     const tree = render(element, root)
 
     // 2. Serialize to XML plan
@@ -303,7 +303,7 @@ async function executePlan(element: ReactElement): Promise<any> {
 
 Each "frame" is one iteration of the loop:
 
-1. **Render**: Current state → JSX → PluNode tree → XML
+1. **Render**: Current state → JSX → SmithersNode tree → XML
 2. **Display**: Show plan to user (Terraform-style approval)
 3. **Execute**: Run pending `<Claude>` / `<Subagent>` nodes
 4. **Update**: `onFinished` callbacks update React state
@@ -327,7 +327,7 @@ export async function executePlan(
 ): Promise<ExecutionResult>
 
 // Create a root for manual control
-export function createRoot(): PluRoot
+export function createRoot(): SmithersRoot
 
 interface ExecuteOptions {
   autoApprove?: boolean      // Skip Terraform-style approval
@@ -345,20 +345,20 @@ interface ExecutionResult {
 ### Low-Level API
 
 ```typescript
-interface PluRoot {
-  render(element: ReactElement): Promise<PluNode>
+interface SmithersRoot {
+  render(element: ReactElement): Promise<SmithersNode>
   unmount(): void
 }
 
 // Serialize tree to XML
-export function serialize(node: PluNode): string
+export function serialize(node: SmithersNode): string
 
 // Find nodes ready for execution
-export function findPendingExecutables(tree: PluNode): PluNode[]
+export function findPendingExecutables(tree: SmithersNode): SmithersNode[]
 
 // Execute a single node
 export async function executeNode(
-  node: PluNode,
+  node: SmithersNode,
   onFinished?: (output: unknown) => void,
   onError?: (error: Error) => void
 ): Promise<void>

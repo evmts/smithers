@@ -220,6 +220,10 @@ export interface LoadOptions {
    * Base URL for resolving imports in MDX files
    */
   baseUrl?: string
+  /**
+   * Props to pass to the default export component
+   */
+  props?: Record<string, unknown>
 }
 
 export interface LoadedModule {
@@ -276,7 +280,7 @@ export async function loadAgentFile(
     )
   }
 
-  return extractElement(module, absolutePath)
+  return extractElement(module, absolutePath, options.props)
 }
 
 /**
@@ -605,8 +609,13 @@ function getMdxErrorSuggestions(message: string, ruleId?: string): string[] {
  * Extract a React element from a loaded module
  * Handles both direct element exports and component exports
  */
-export function extractElement(module: LoadedModule, filePath: string): ReactElement {
+export function extractElement(
+  module: LoadedModule,
+  filePath: string,
+  props?: Record<string, unknown>
+): ReactElement {
   const defaultExport = module.default
+  const hasProps = props !== undefined && Object.keys(props).length > 0
 
   // Get available exports for error messages
   const availableExports = Object.keys(module).filter(k => k !== '__esModule')
@@ -635,13 +644,19 @@ export function extractElement(module: LoadedModule, filePath: string): ReactEle
 
   // If it's already a React element, validate and return it
   if (React.isValidElement(defaultExport)) {
+    if (hasProps) {
+      return React.cloneElement(defaultExport, props)
+    }
     return defaultExport
   }
 
   // If it's a function (component), try to call it to get the element
   if (typeof defaultExport === 'function') {
     try {
-      const element = React.createElement(defaultExport as React.ComponentType)
+      const element = React.createElement(
+        defaultExport as React.ComponentType,
+        hasProps ? props : undefined
+      )
 
       // Validate the created element
       if (!React.isValidElement(element)) {

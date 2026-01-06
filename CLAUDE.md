@@ -16,7 +16,7 @@
 ### The Ralph Wiggum Loop
 
 The execution model that drives everything:
-1. Render JSX component tree to internal `PluNode` representation
+1. Render JSX component tree to internal `SmithersNode` representation
 2. Serialize tree to XML plan
 3. Optionally show plan for approval
 4. Execute `<Claude>` and `<Subagent>` nodes
@@ -27,18 +27,18 @@ The execution model that drives everything:
 ### Custom React Reconciler
 
 - Uses `react-reconciler` to build a custom renderer (like react-dom, but for agents)
-- **Host Config** (`src/reconciler/host-config.ts`): Defines how React manages the custom `PluNode` tree
+- **Host Config** (`src/reconciler/host-config.ts`): Defines how React manages the custom `SmithersNode` tree
 - **Mutation-based**: Nodes modified in-place rather than persistent copies
 - **Synchronous rendering with React 19**: Uses `updateContainerSync()` for deterministic behavior
 
 ### Key Data Structures
 
 ```typescript
-interface PluNode {
+interface SmithersNode {
   type: string                      // 'claude', 'subagent', 'phase', 'step', etc.
   props: Record<string, unknown>    // Component props
-  children: PluNode[]               // Child nodes
-  parent: PluNode | null            // Parent reference
+  children: SmithersNode[]               // Child nodes
+  parent: SmithersNode | null            // Parent reference
   _execution?: ExecutionState       // Execution status and result
 }
 
@@ -59,7 +59,7 @@ interface ExecutionState {
 | `src/core/execute.ts` | `executePlan()`, Ralph Wiggum loop logic |
 | `src/core/claude-executor.ts` | Claude SDK wrapper (real + mock execution) |
 | `src/reconciler/host-config.ts` | React Reconciler host config |
-| `src/reconciler/index.ts` | `createPluRoot()` - React reconciler setup |
+| `src/reconciler/index.ts` | `createSmithersRoot()` - React reconciler setup |
 | `src/components/index.ts` | Component definitions (Claude, Subagent, etc.) |
 
 ## Components

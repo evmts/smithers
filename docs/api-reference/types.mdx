@@ -15,20 +15,61 @@ Props for the `<Claude>` component.
 
 ```typescript
 interface ClaudeProps<T = any> {
-  /** Tools to make available as MCP servers */
+  /** Tools to make available */
   tools?: Tool[]
 
   /** Called when Claude completes successfully */
   onFinished?: (output: T) => void
 
   /** Called when execution fails */
-  onError?: (error: Error) => void
+  onError?: (error: Error | ExecutionError) => void
+
+  /** Called when a tool fails (when continueOnToolFailure is enabled) */
+  onToolError?: (toolName: string, error: Error, input: unknown) => void
 
   /** Override the Claude model */
   model?: string
 
+  /** System prompt for the conversation */
+  system?: string
+
+  /** Maximum number of tool execution iterations (default: 10) */
+  maxToolIterations?: number
+
+  /** Enable streaming mode */
+  stream?: boolean
+
+  /** Callback for streaming chunks */
+  onStream?: (chunk: StreamChunk) => void
+
+  /** MCP servers to connect to for additional tools */
+  mcpServers?: MCPServerConfig[]
+
+  /** Number of retries for Claude API calls (default: 3) */
+  retries?: number
+
+  /** Tool retry configuration for failed tool executions */
+  toolRetry?: ToolRetryOptions
+
   /** Prompt content */
   children: ReactNode
+}
+
+interface ToolRetryOptions {
+  /** Maximum number of retries for a failed tool (default: 2) */
+  maxRetries?: number
+
+  /** Base delay in ms between retries (default: 500) */
+  baseDelayMs?: number
+
+  /** Whether to use exponential backoff (default: true) */
+  exponentialBackoff?: boolean
+
+  /** Tool names to skip on failure (continue with other tools) */
+  skipOnFailure?: string[]
+
+  /** Whether to continue execution if some tools fail (default: false) */
+  continueOnToolFailure?: boolean
 }
 ```
 
@@ -58,6 +99,9 @@ interface PhaseProps {
   /** Phase identifier */
   name: string
 
+  /** Mark phase as already completed (skipped by Ralph loop) */
+  completed?: boolean
+
   /** Phase content */
   children: ReactNode
 }
@@ -69,6 +113,9 @@ Props for the `<Step>` component.
 
 ```typescript
 interface StepProps {
+  /** Mark step as already completed (skipped by Ralph loop) */
+  completed?: boolean
+
   /** Step description */
   children: ReactNode
 }
@@ -123,25 +170,45 @@ interface Tool {
   /** Human-readable description */
   description: string
 
-  /** Parameter definitions */
-  parameters?: Record<string, ToolParameter>
+  /** JSON Schema defining the tool's input parameters */
+  input_schema?: ToolInputSchema
+
+  /** Optional function to execute the tool (for MCP integration) */
+  execute?: (args: unknown) => Promise<unknown>
 }
 
-interface ToolParameter {
-  /** Parameter type */
-  type: 'string' | 'number' | 'boolean' | 'object' | 'array'
+interface ToolInputSchema {
+  type: 'object'
+  properties?: Record<string, unknown>
+  required?: string[]
+  [key: string]: unknown
+}
+```
 
-  /** Whether the parameter is required */
-  required?: boolean
+Example tool definition:
 
-  /** Default value */
-  default?: any
-
-  /** Description for Claude */
-  description?: string
-
-  /** Enum of allowed values */
-  enum?: string[]
+```typescript
+const searchTool: Tool = {
+  name: 'web-search',
+  description: 'Search the web for information',
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Search query',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum results',
+      },
+    },
+    required: ['query'],
+  },
+  execute: async (args) => {
+    // Implementation
+    return { results: [] }
+  },
 }
 ```
 
@@ -162,11 +229,35 @@ interface ExecuteOptions {
   /** Total timeout in milliseconds */
   timeout?: number
 
+  /** Show detailed execution logs */
+  verbose?: boolean
+
+  /** Enable mock mode (no real API calls) */
+  mockMode?: boolean
+
+  /** Override the Claude model */
+  model?: string
+
+  /** Maximum tokens for Claude responses */
+  maxTokens?: number
+
   /** Called before each frame with the plan XML */
   onPlan?: (xml: string, frame: number) => void
 
   /** Called after each frame completes */
   onFrame?: (result: FrameResult) => void
+
+  /**
+   * Custom prompt function for Human component approval.
+   * If not provided, Human nodes will automatically approve.
+   * @param message - The message to display to the user
+   * @param content - The content from the Human component's children
+   * @returns Promise<boolean> - true if approved, false if rejected
+   */
+  onHumanPrompt?: (message: string, content: string) => Promise<boolean>
+
+  /** Debug observability options */
+  debug?: DebugOptions
 }
 ```
 
@@ -182,8 +273,14 @@ interface ExecutionResult<T = any> {
   /** Total number of frames executed */
   frames: number
 
+  /** Total duration in milliseconds */
+  totalDuration: number
+
   /** Detailed history of each frame */
-  history: FrameHistory[]
+  history: FrameResult[]
+
+  /** List of MCP servers that were connected */
+  mcpServers?: string[]
 }
 ```
 
@@ -196,28 +293,14 @@ interface FrameResult {
   /** Frame number (1-indexed) */
   frame: number
 
-  /** Names of executed nodes */
-  executedNodes: string[]
-
-  /** Frame duration in milliseconds */
-  duration: number
-}
-```
-
-### FrameHistory
-
-Historical record of a frame.
-
-```typescript
-interface FrameHistory {
-  /** Frame number (1-indexed) */
-  frame: number
-
   /** XML plan for this frame */
   plan: string
 
   /** Names of executed nodes */
   executedNodes: string[]
+
+  /** Whether state changes occurred */
+  stateChanges: boolean
 
   /** Frame duration in milliseconds */
   duration: number
@@ -228,12 +311,12 @@ interface FrameHistory {
 
 These types are used internally but exported for advanced use cases.
 
-### PluNode
+### SmithersNode
 
 Internal node representation.
 
 ```typescript
-interface PluNode {
+interface SmithersNode {
   /** Node type: 'claude', 'subagent', 'phase', etc. */
   type: string
 
@@ -241,31 +324,38 @@ interface PluNode {
   props: Record<string, any>
 
   /** Child nodes */
-  children: PluNode[]
+  children: SmithersNode[]
 
   /** Parent reference */
-  parent: PluNode | null
+  parent: SmithersNode | null
 
   /** Execution state */
-  _execution?: {
-    status: 'pending' | 'running' | 'complete' | 'error'
-    result?: any
-    error?: Error
-  }
+  _execution?: ExecutionState
+}
+
+interface ExecutionState {
+  status: 'pending' | 'running' | 'complete' | 'error'
+  result?: any
+  error?: Error
+  /** Hash of node content for change detection */
+  contentHash?: string
 }
 ```
 
-### PluRoot
+### SmithersRoot
 
 Root container for the renderer.
 
 ```typescript
-interface PluRoot {
-  /** Render a React element to PluNode tree */
-  render(element: ReactElement): Promise<PluNode>
+interface SmithersRoot {
+  /** Render a React element to SmithersNode tree */
+  render(element: ReactElement): Promise<SmithersNode>
 
   /** Clean up the root */
   unmount(): void
+
+  /** Get the current tree (may be null if unmounted) */
+  getTree(): SmithersNode | null
 }
 ```
 
@@ -314,17 +404,19 @@ import type { Tool } from 'smithers'
 const searchTool: Tool = {
   name: 'web-search',
   description: 'Search the web for information',
-  parameters: {
-    query: {
-      type: 'string',
-      required: true,
-      description: 'Search query',
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Search query',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum results',
+      },
     },
-    limit: {
-      type: 'number',
-      default: 10,
-      description: 'Maximum results',
-    },
+    required: ['query'],
   },
 }
 ```

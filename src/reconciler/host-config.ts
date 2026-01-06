@@ -1,9 +1,9 @@
-import type { PluNode } from '../core/types.js'
+import type { SmithersNode } from '../core/types.js'
 
 /**
  * React Reconciler Host Config for PluDom
  *
- * This config tells React how to manage our custom PluNode tree.
+ * This config tells React how to manage our custom SmithersNode tree.
  * We use mutation mode (supportsMutation: true) where nodes are modified in place.
  */
 
@@ -26,11 +26,11 @@ export const hostConfig = {
   createInstance(
     type: string,
     props: Record<string, unknown>,
-    rootContainer: PluNode,
+    rootContainer: SmithersNode,
     hostContext: unknown,
     internalHandle: unknown
-  ): PluNode {
-    const node: PluNode = {
+  ): SmithersNode {
+    const node: SmithersNode = {
       type,
       props: { ...props },
       children: [],
@@ -44,10 +44,10 @@ export const hostConfig = {
    */
   createTextInstance(
     text: string,
-    rootContainer: PluNode,
+    rootContainer: SmithersNode,
     hostContext: unknown,
     internalHandle: unknown
-  ): PluNode {
+  ): SmithersNode {
     return {
       type: 'TEXT',
       props: { value: text },
@@ -63,7 +63,7 @@ export const hostConfig = {
   /**
    * Append a child to a parent during initial render
    */
-  appendInitialChild(parent: PluNode, child: PluNode): void {
+  appendInitialChild(parent: SmithersNode, child: SmithersNode): void {
     child.parent = parent
     parent.children.push(child)
   },
@@ -72,10 +72,10 @@ export const hostConfig = {
    * Called after instance is created but before children are appended
    */
   finalizeInitialChildren(
-    instance: PluNode,
+    instance: SmithersNode,
     type: string,
     props: Record<string, unknown>,
-    rootContainer: PluNode,
+    rootContainer: SmithersNode,
     hostContext: unknown
   ): boolean {
     // Return true if we need commitMount to be called (we don't)
@@ -89,7 +89,7 @@ export const hostConfig = {
   /**
    * Append a child to a parent during updates
    */
-  appendChild(parent: PluNode, child: PluNode): void {
+  appendChild(parent: SmithersNode, child: SmithersNode): void {
     child.parent = parent
     parent.children.push(child)
   },
@@ -97,7 +97,7 @@ export const hostConfig = {
   /**
    * Insert a child before another child
    */
-  insertBefore(parent: PluNode, child: PluNode, beforeChild: PluNode): void {
+  insertBefore(parent: SmithersNode, child: SmithersNode, beforeChild: SmithersNode): void {
     child.parent = parent
     const index = parent.children.indexOf(beforeChild)
     if (index !== -1) {
@@ -110,7 +110,7 @@ export const hostConfig = {
   /**
    * Remove a child from its parent
    */
-  removeChild(parent: PluNode, child: PluNode): void {
+  removeChild(parent: SmithersNode, child: SmithersNode): void {
     const index = parent.children.indexOf(child)
     if (index !== -1) {
       parent.children.splice(index, 1)
@@ -121,7 +121,7 @@ export const hostConfig = {
   /**
    * Remove a child from a container (root level)
    */
-  removeChildFromContainer(container: PluNode, child: PluNode): void {
+  removeChildFromContainer(container: SmithersNode, child: SmithersNode): void {
     const index = container.children.indexOf(child)
     if (index !== -1) {
       container.children.splice(index, 1)
@@ -138,11 +138,11 @@ export const hostConfig = {
    * Returns null if no update needed, otherwise returns an update payload
    */
   prepareUpdate(
-    instance: PluNode,
+    instance: SmithersNode,
     type: string,
     oldProps: Record<string, unknown>,
     newProps: Record<string, unknown>,
-    rootContainer: PluNode,
+    rootContainer: SmithersNode,
     hostContext: unknown
   ): null | Record<string, unknown> {
     const isVerbose = process.env.VERBOSE_RECONCILER === 'true'
@@ -197,7 +197,7 @@ export const hostConfig = {
    * Commit the update to the instance
    */
   commitUpdate(
-    instance: PluNode,
+    instance: SmithersNode,
     updatePayload: Record<string, unknown>,
     type: string,
     prevProps: Record<string, unknown>,
@@ -232,7 +232,7 @@ export const hostConfig = {
   /**
    * Update text content
    */
-  commitTextUpdate(textInstance: PluNode, oldText: string, newText: string): void {
+  commitTextUpdate(textInstance: SmithersNode, oldText: string, newText: string): void {
     textInstance.props.value = newText
   },
 
@@ -243,21 +243,21 @@ export const hostConfig = {
   /**
    * Called before commit phase
    */
-  prepareForCommit(containerInfo: PluNode): Record<string, unknown> | null {
+  prepareForCommit(containerInfo: SmithersNode): Record<string, unknown> | null {
     return null
   },
 
   /**
    * Called after commit phase completes
    */
-  resetAfterCommit(containerInfo: PluNode): void {
+  resetAfterCommit(containerInfo: SmithersNode): void {
     // Nothing to do
   },
 
   /**
    * Get the root container info
    */
-  getRootHostContext(rootContainer: PluNode): unknown {
+  getRootHostContext(rootContainer: SmithersNode): unknown {
     return {}
   },
 
@@ -267,7 +267,7 @@ export const hostConfig = {
   getChildHostContext(
     parentHostContext: unknown,
     type: string,
-    rootContainer: PluNode
+    rootContainer: SmithersNode
   ): unknown {
     return parentHostContext
   },
@@ -286,14 +286,14 @@ export const hostConfig = {
   /**
    * Clear container before mounting
    */
-  clearContainer(container: PluNode): void {
+  clearContainer(container: SmithersNode): void {
     container.children = []
   },
 
   /**
    * Append child to container
    */
-  appendChildToContainer(container: PluNode, child: PluNode): void {
+  appendChildToContainer(container: SmithersNode, child: SmithersNode): void {
     child.parent = container
     container.children.push(child)
   },
@@ -302,9 +302,9 @@ export const hostConfig = {
    * Insert in container before child
    */
   insertInContainerBefore(
-    container: PluNode,
-    child: PluNode,
-    beforeChild: PluNode
+    container: SmithersNode,
+    child: SmithersNode,
+    beforeChild: SmithersNode
   ): void {
     child.parent = container
     const index = container.children.indexOf(beforeChild)
@@ -361,7 +361,7 @@ export const hostConfig = {
   // Public Instances (for refs)
   // ====================
 
-  getPublicInstance(instance: PluNode): PluNode {
+  getPublicInstance(instance: SmithersNode): SmithersNode {
     return instance
   },
 
@@ -369,7 +369,7 @@ export const hostConfig = {
   // Prepare Portal Mount
   // ====================
 
-  preparePortalMount(containerInfo: PluNode): void {
+  preparePortalMount(containerInfo: SmithersNode): void {
     // Not supporting portals yet
   },
 
@@ -377,26 +377,26 @@ export const hostConfig = {
   // Unused (but required by type)
   // ====================
 
-  hideInstance(instance: PluNode): void {
+  hideInstance(instance: SmithersNode): void {
     // Not implementing visibility
   },
 
-  unhideInstance(instance: PluNode, props: Record<string, unknown>): void {
+  unhideInstance(instance: SmithersNode, props: Record<string, unknown>): void {
     // Not implementing visibility
   },
 
-  hideTextInstance(textInstance: PluNode): void {
+  hideTextInstance(textInstance: SmithersNode): void {
     // Not implementing visibility
   },
 
-  unhideTextInstance(textInstance: PluNode, text: string): void {
+  unhideTextInstance(textInstance: SmithersNode, text: string): void {
     // Not implementing visibility
   },
 
   /**
    * Detach deleted instance
    */
-  detachDeletedInstance(node: PluNode): void {
+  detachDeletedInstance(node: SmithersNode): void {
     // Nothing to do
   },
 
@@ -431,21 +431,21 @@ export const hostConfig = {
   /**
    * Prepare scope update
    */
-  prepareScopeUpdate(scopeInstance: unknown, instance: PluNode): void {
+  prepareScopeUpdate(scopeInstance: unknown, instance: SmithersNode): void {
     // Nothing to do
   },
 
   /**
    * Get instance from scope
    */
-  getInstanceFromScope(scopeInstance: unknown): PluNode | null {
+  getInstanceFromScope(scopeInstance: unknown): SmithersNode | null {
     return null
   },
 
   /**
    * Get instance from node
    */
-  getInstanceFromNode(node: unknown): PluNode | null {
+  getInstanceFromNode(node: unknown): SmithersNode | null {
     return null
   },
 

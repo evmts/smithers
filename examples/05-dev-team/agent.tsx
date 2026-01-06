@@ -45,7 +45,7 @@ interface DevTeamState {
   reviewResult: {
     approved: boolean
     notes: string[]
-    requiredChanges: string[]
+    requiredChanges: { subtaskId: string; change: string }[]
   } | null
 
   // Actions
@@ -68,7 +68,19 @@ const useDevTeam = create<DevTeamState>((set, get) => ({
   currentSubtask: null,
   reviewResult: null,
 
-  setPlan: (plan) => set({ plan }),
+  setPlan: (plan) => {
+    const normalized = plan
+      ? {
+          ...plan,
+          subtasks: plan.subtasks.map((subtask) => ({
+            ...subtask,
+            status: 'pending',
+          })),
+        }
+      : null
+
+    set({ plan: normalized })
+  },
 
   startSubtask: (id) => {
     set((state) => ({

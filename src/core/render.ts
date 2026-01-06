@@ -1,12 +1,12 @@
 import type { ReactElement } from 'react'
-import type { PluNode, PluRoot } from './types.js'
-import { createPluRoot } from '../reconciler/index.js'
+import type { SmithersNode, SmithersRoot } from './types.js'
+import { createSmithersRoot } from '../reconciler/index.js'
 
 /**
  * Create a Smithers root for rendering
  */
-export function createRoot(): PluRoot {
-  return createPluRoot()
+export function createRoot(): SmithersRoot {
+  return createSmithersRoot()
 }
 
 /**
@@ -21,9 +21,9 @@ export async function renderPlan(element: ReactElement): Promise<string> {
 }
 
 /**
- * Serialize a PluNode tree to XML string
+ * Serialize a SmithersNode tree to XML string
  */
-export function serialize(node: PluNode): string {
+export function serialize(node: SmithersNode): string {
   if (node.type === 'TEXT') {
     return escapeXml(String(node.props.value ?? ''))
   }

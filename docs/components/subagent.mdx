@@ -109,8 +109,8 @@ function ParallelAnalysis({ files }) {
 
 Within a single frame, Smithers executes:
 
-1. The first sequential `<Claude>` node (if any)
-2. All `<Subagent>` nodes in parallel
+1. Sequential `<Claude>` nodes in render order
+2. `<Subagent>` nodes in parallel **after** sequential execution (if no state change interrupts the frame)
 3. Waits for all to complete before the next frame
 
 ```tsx
@@ -120,11 +120,11 @@ Within a single frame, Smithers executes:
   <Claude>Sequential 2</Claude>     {/* Runs second */}
 
   <Subagent name="a">
-    <Claude>Parallel A</Claude>     {/* Runs with Sequential 1 */}
+    <Claude>Parallel A</Claude>     {/* Runs after sequential nodes */}
   </Subagent>
 
   <Subagent name="b">
-    <Claude>Parallel B</Claude>     {/* Runs with Sequential 1 */}
+    <Claude>Parallel B</Claude>     {/* Runs after sequential nodes */}
   </Subagent>
 </>
 ```

@@ -30,6 +30,10 @@ function executePlan(
     autoApprove?: boolean      // Skip plan approval prompts
     maxFrames?: number         // Maximum iterations (default: 100)
     timeout?: number           // Total timeout in milliseconds
+    verbose?: boolean          // Show detailed execution logs
+    mockMode?: boolean         // Enable mock mode (no real API calls)
+    model?: string             // Override the Claude model
+    maxTokens?: number         // Maximum tokens for Claude responses
     onPlan?: (xml: string, frame: number) => void  // Called before each frame
     onFrame?: (result: FrameResult) => void        // Called after each frame
   }
@@ -180,7 +184,7 @@ result.history.forEach((frame, i) => {
 
 Each frame in the Ralph Wiggum loop:
 
-1. **Render**: React components render to PluNode tree
+1. **Render**: React components render to SmithersNode tree
 2. **Serialize**: Tree converts to XML plan
 3. **Callback**: `onPlan` called with XML and frame number
 4. **Execute**: Pending `<Claude>` nodes are executed

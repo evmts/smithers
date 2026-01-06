@@ -22,7 +22,7 @@ export interface SmithersConfig {
   maxFrames?: number
 
   /**
-   * Timeout per frame in seconds
+   * Total execution timeout in milliseconds
    */
   timeout?: number
 

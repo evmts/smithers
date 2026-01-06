@@ -5,14 +5,17 @@ import type {
   ExecutionResult,
   ExecutionState,
   FrameResult,
-  PluNode,
+  SmithersNode,
   Tool,
 } from './types.js'
 import { createRoot } from './render.js'
 import { runWithSyncUpdates, waitForStateUpdates } from '../reconciler/index.js'
 import { executeWithClaude, createExecutionError, getNodePath } from './claude-executor.js'
+import { executeWithClaudeCli } from './claude-cli-executor.js'
 import { MCPManager } from '../mcp/manager.js'
 import type { MCPServerConfig } from '../mcp/types.js'
+import { DebugCollector } from '../debug/collector.js'
+import type { ExecutionStatus } from '../debug/types.js'
 
 /**
  * Wrapper component that passes through children
@@ -46,7 +49,11 @@ export async function executePlan(
     onPlan,
     onFrame,
     onHumanPrompt,
+    debug,
   } = options
+
+  // Initialize debug collector
+  const debugCollector = new DebugCollector(debug)
 
   const history: FrameResult[] = []
   const startTime = Date.now()
@@ -72,11 +79,14 @@ export async function executePlan(
   while (frameNumber < maxFrames) {
     // Check timeout
     if (Date.now() - startTime > timeout) {
+      debugCollector.emit({ type: 'loop:terminated', reason: 'timeout' })
       throw new Error(`Execution timeout after ${timeout}ms`)
     }
 
     frameNumber++
     const frameStart = Date.now()
+    debugCollector.setFrame(frameNumber)
+    debugCollector.emit({ type: 'frame:start' })
 
     if (verbose) {
       console.log(`[Frame ${frameNumber}] Rendering element...`)
@@ -86,6 +96,14 @@ export async function executePlan(
     // This forces React to recognize this as a new render cycle while preserving state
     const wrapped = createElement(RenderFrame, { frameCount: frameNumber, children: element })
     const tree = await root.render(wrapped)
+
+    // Emit frame:render event with optional tree snapshot
+    debugCollector.emit({
+      type: 'frame:render',
+      treeSnapshot: debugCollector.includeTreeSnapshots
+        ? debugCollector.createTreeSnapshot(tree)
+        : undefined,
+    })
 
     if (verbose) {
       console.log(`[Frame ${frameNumber}] Raw tree structure:`)
@@ -114,9 +132,11 @@ export async function executePlan(
     const stopNode = findStopNode(tree)
     if (stopNode) {
       const reason = stopNode.props.reason as string | undefined
+      debugCollector.emit({ type: 'control:stop', reason })
       if (verbose) {
         console.log(`[Frame ${frameNumber}] Stop node detected${reason ? `: ${reason}` : ''}, halting execution`)
       }
+      debugCollector.emit({ type: 'loop:terminated', reason: 'stop_node' })
       break
     }
 
@@ -139,6 +159,13 @@ export async function executePlan(
         const message = (humanNode.props.message as string | undefined) || 'Human approval required to continue'
         const content = extractTextContent(humanNode)
 
+        debugCollector.emit({
+          type: 'control:human',
+          message,
+          nodePath: humanNodePath,
+          approved: undefined, // Will be updated after decision
+        })
+
         if (verbose) {
           console.log(`[Frame ${frameNumber}] Human node detected: ${message}`)
         }
@@ -153,9 +180,21 @@ export async function executePlan(
           // Mark this Human node as approved
           approvedHumanNodes.add(humanNodeKey)
 
+          debugCollector.emit({
+            type: 'control:human',
+            message,
+            nodePath: humanNodePath,
+            approved: true,
+          })
+
           // Call onApprove callback if provided
           const onApprove = humanNode.props.onApprove as (() => void) | undefined
           if (onApprove) {
+            debugCollector.emit({
+              type: 'callback:invoked',
+              callbackName: 'onApprove',
+              nodePath: humanNodePath,
+            })
             if (verbose) {
               console.log(`[Frame ${frameNumber}] Human approved, calling onApprove callback`)
             }
@@ -169,9 +208,21 @@ export async function executePlan(
           // If no callback, fall through to continue execution
           // The approval is tracked, so we won't prompt again
         } else {
+          debugCollector.emit({
+            type: 'control:human',
+            message,
+            nodePath: humanNodePath,
+            approved: false,
+          })
+
           // Call onReject callback if provided
           const onReject = humanNode.props.onReject as (() => void) | undefined
           if (onReject) {
+            debugCollector.emit({
+              type: 'callback:invoked',
+              callbackName: 'onReject',
+              nodePath: humanNodePath,
+            })
             if (verbose) {
               console.log(`[Frame ${frameNumber}] Human rejected, calling onReject callback`)
             }
@@ -186,6 +237,7 @@ export async function executePlan(
           if (verbose) {
             console.log(`[Frame ${frameNumber}] Human approval rejected, halting execution`)
           }
+          debugCollector.emit({ type: 'loop:terminated', reason: 'human_rejected' })
           break
         }
       }
@@ -193,6 +245,18 @@ export async function executePlan(
 
     // Find nodes that need execution
     const pendingNodes = findPendingExecutables(tree)
+
+    // Emit node:found events for each pending node
+    for (const node of pendingNodes) {
+      const contentHash = computeContentHash(node)
+      debugCollector.emit({
+        type: 'node:found',
+        nodePath: getNodePath(node),
+        nodeType: node.type,
+        contentHash,
+        status: (node._execution?.status || 'pending') as ExecutionStatus,
+      })
+    }
 
     if (verbose) {
       console.log(`[Frame ${frameNumber}] Found ${pendingNodes.length} pending nodes`)
@@ -210,6 +274,7 @@ export async function executePlan(
       if (verbose) {
         console.log(`[Frame ${frameNumber}] No more pending nodes, execution complete`)
       }
+      debugCollector.emit({ type: 'loop:terminated', reason: 'no_pending_nodes' })
       break
     }
 
@@ -224,11 +289,24 @@ export async function executePlan(
 
     // Execute ALL pending nodes in this frame
     // Strategy:
-    // - Execute ALL claude nodes (they run sequentially, one per iteration)
-    // - Execute ALL subagent nodes in parallel
+    // - Execute claude nodes (top-level or subagent.parallel=false) sequentially
+    // - Execute claude nodes under subagent.parallel=true in parallel
     // This ensures we don't loop forever when there are multiple static claude nodes
-    const claudeNodes = pendingNodes.filter((n) => n.type === 'claude')
-    const subagentNodes = pendingNodes.filter((n) => n.type === 'subagent')
+    const sequentialNodes: SmithersNode[] = []
+    const parallelNodes: SmithersNode[] = []
+
+    for (const node of pendingNodes) {
+      const subagent = findAncestorSubagent(node)
+      if (subagent) {
+        if (subagent.props.parallel === false) {
+          sequentialNodes.push(node)
+        } else {
+          parallelNodes.push(node)
+        }
+      } else {
+        sequentialNodes.push(node)
+      }
+    }
 
     const executedNodeTypes: string[] = []
     let stateChanged = false
@@ -236,7 +314,10 @@ export async function executePlan(
 
     // For Claude nodes: execute them one at a time, checking for state changes
     // after each one. If state changes, break and re-render.
-    for (const claudeNode of claudeNodes) {
+    for (const claudeNode of sequentialNodes) {
+      const nodePath = getNodePath(claudeNode)
+      const nodeContentHash = computeContentHash(claudeNode)
+
       if (verbose) {
         console.log(`[Frame ${frameNumber}] Executing claude node`)
       }
@@ -244,6 +325,7 @@ export async function executePlan(
       const originalCallback = claudeNode.props.onFinished
       const originalError = claudeNode.props.onError
       let callbackInvoked = false
+      let callbackName: 'onFinished' | 'onError' | undefined
 
       const wrappedCallback = originalCallback
         ? (output: unknown) => {
@@ -251,8 +333,20 @@ export async function executePlan(
               console.log(`[Frame ${frameNumber}] onFinished called, marking stateChanged=true`)
             }
             callbackInvoked = true
+            callbackName = 'onFinished'
             stateChanged = true
             finalOutput = output
+            debugCollector.emit({
+              type: 'callback:invoked',
+              callbackName: 'onFinished',
+              nodePath,
+            })
+            debugCollector.emit({
+              type: 'state:change',
+              source: 'callback',
+              nodePath,
+              callbackName: 'onFinished',
+            })
             runWithSyncUpdates(() => {
               ;(originalCallback as (output: unknown) => void)(output)
             })
@@ -265,15 +359,47 @@ export async function executePlan(
               console.log(`[Frame ${frameNumber}] onError called, marking stateChanged=true`)
             }
             callbackInvoked = true
+            callbackName = 'onError'
             stateChanged = true
             finalOutput = error
+            debugCollector.emit({
+              type: 'callback:invoked',
+              callbackName: 'onError',
+              nodePath,
+            })
+            debugCollector.emit({
+              type: 'state:change',
+              source: 'callback',
+              nodePath,
+              callbackName: 'onError',
+            })
             runWithSyncUpdates(() => {
               ;(originalError as (error: Error) => void)(error)
             })
           }
         : undefined
 
-      await executeNode(claudeNode, mcpManager, wrappedCallback, wrappedError)
+      // Emit node:execute:start
+      const execStart = Date.now()
+      debugCollector.emit({
+        type: 'node:execute:start',
+        nodePath,
+        nodeType: claudeNode.type,
+        contentHash: nodeContentHash,
+      })
+
+      await executeNode(claudeNode, mcpManager, wrappedCallback, wrappedError, options)
+
+      // Emit node:execute:end
+      debugCollector.emit({
+        type: 'node:execute:end',
+        nodePath,
+        nodeType: claudeNode.type,
+        duration: Date.now() - execStart,
+        status: claudeNode._execution?.status === 'error' ? 'error' : 'complete',
+        result: claudeNode._execution?.result,
+        error: claudeNode._execution?.error?.message,
+      })
 
       if (!originalCallback && claudeNode._execution?.result) {
         finalOutput = claudeNode._execution.result
@@ -286,7 +412,7 @@ export async function executePlan(
         }
       }
 
-      executedNodeTypes.push('claude')
+      executedNodeTypes.push(getExecutionLabel(claudeNode))
 
       // If this node's callback was called and likely changed state,
       // wait for state updates to propagate, then break and re-render
@@ -305,13 +431,15 @@ export async function executePlan(
     }
 
     // Execute all subagent nodes in parallel
-    if (subagentNodes.length > 0 && !shouldRerender) {
+    if (parallelNodes.length > 0 && !shouldRerender) {
       if (verbose) {
-        console.log(`[Frame ${frameNumber}] Executing ${subagentNodes.length} subagent nodes in parallel`)
+        console.log(`[Frame ${frameNumber}] Executing ${parallelNodes.length} subagent nodes in parallel`)
       }
 
       await Promise.all(
-        subagentNodes.map(async (node) => {
+        parallelNodes.map(async (node) => {
+          const nodePath = getNodePath(node)
+          const nodeContentHash = computeContentHash(node)
           const originalCallback = node.props.onFinished
           const originalError = node.props.onError
 
@@ -322,6 +450,17 @@ export async function executePlan(
                 }
                 stateChanged = true
                 finalOutput = output
+                debugCollector.emit({
+                  type: 'callback:invoked',
+                  callbackName: 'onFinished',
+                  nodePath,
+                })
+                debugCollector.emit({
+                  type: 'state:change',
+                  source: 'callback',
+                  nodePath,
+                  callbackName: 'onFinished',
+                })
                 runWithSyncUpdates(() => {
                   ;(originalCallback as (output: unknown) => void)(output)
                 })
@@ -335,13 +474,44 @@ export async function executePlan(
                 }
                 stateChanged = true
                 finalOutput = error
+                debugCollector.emit({
+                  type: 'callback:invoked',
+                  callbackName: 'onError',
+                  nodePath,
+                })
+                debugCollector.emit({
+                  type: 'state:change',
+                  source: 'callback',
+                  nodePath,
+                  callbackName: 'onError',
+                })
                 runWithSyncUpdates(() => {
                   ;(originalError as (error: Error) => void)(error)
                 })
               }
             : undefined
 
-          await executeNode(node, mcpManager, wrappedCallback, wrappedError)
+          // Emit node:execute:start
+          const execStart = Date.now()
+          debugCollector.emit({
+            type: 'node:execute:start',
+            nodePath,
+            nodeType: node.type,
+            contentHash: nodeContentHash,
+          })
+
+          await executeNode(node, mcpManager, wrappedCallback, wrappedError, options)
+
+          // Emit node:execute:end
+          debugCollector.emit({
+            type: 'node:execute:end',
+            nodePath,
+            nodeType: node.type,
+            duration: Date.now() - execStart,
+            status: node._execution?.status === 'error' ? 'error' : 'complete',
+            result: node._execution?.result,
+            error: node._execution?.error?.message,
+          })
 
           if (!originalCallback && node._execution?.result) {
             finalOutput = node._execution.result
@@ -354,10 +524,18 @@ export async function executePlan(
             }
           }
 
-          executedNodeTypes.push('subagent')
+          executedNodeTypes.push(getExecutionLabel(node))
         })
       )
     }
+
+    // Emit frame:end event
+    debugCollector.emit({
+      type: 'frame:end',
+      duration: Date.now() - frameStart,
+      stateChanged,
+      executedNodes: executedNodeTypes,
+    })
 
     const frameResult: FrameResult = {
       frame: frameNumber,
@@ -383,6 +561,7 @@ export async function executePlan(
         if (verbose) {
           console.log(`[Frame ${frameNumber}] No state changes and no remaining nodes, execution complete`)
         }
+        debugCollector.emit({ type: 'loop:terminated', reason: 'no_pending_nodes' })
         break
       } else {
         if (verbose) {
@@ -408,6 +587,7 @@ export async function executePlan(
   await mcpManager.disconnectAll()
 
   if (frameNumber >= maxFrames) {
+    debugCollector.emit({ type: 'loop:terminated', reason: 'max_frames' })
     throw new Error(`Max frames (${maxFrames}) reached`)
   }
 
@@ -423,11 +603,11 @@ export async function executePlan(
 /**
  * Save execution state from a tree to external storage
  */
-function saveExecutionState(tree: PluNode, storage: Map<string, ExecutionState>): void {
-  function walk(node: PluNode, path: string[] = []) {
+function saveExecutionState(tree: SmithersNode, storage: Map<string, ExecutionState>): void {
+  function walk(node: SmithersNode, path: string[] = []) {
     const nodePath = [...path, node.type].join('/')
 
-    if ((node.type === 'claude' || node.type === 'subagent') && node._execution) {
+    if ((node.type === 'claude' || node.type === 'claude-cli' || node.type === 'subagent') && node._execution) {
       // Use stable node path as key to avoid collisions between identical nodes
       // Ensure contentHash is always set for change detection
       const stateToSave: ExecutionState = {
@@ -446,11 +626,11 @@ function saveExecutionState(tree: PluNode, storage: Map<string, ExecutionState>)
 /**
  * Restore execution state from external storage to a tree
  */
-function restoreExecutionState(tree: PluNode, storage: Map<string, ExecutionState>): void {
-  function walk(node: PluNode, path: string[] = []) {
+function restoreExecutionState(tree: SmithersNode, storage: Map<string, ExecutionState>): void {
+  function walk(node: SmithersNode, path: string[] = []) {
     const nodePath = [...path, node.type].join('/')
 
-    if (node.type === 'claude' || node.type === 'subagent') {
+    if (node.type === 'claude' || node.type === 'claude-cli') {
       // Try to find execution state by stable node path
       const savedState = storage.get(nodePath)
       if (savedState) {
@@ -473,12 +653,12 @@ function restoreExecutionState(tree: PluNode, storage: Map<string, ExecutionStat
  * Check if a Stop node exists in the tree
  *
  * The Stop component signals the Ralph Wiggum loop to halt execution
- * after all currently running agents complete.
+ * before starting any new agent executions.
  *
  * @returns The Stop node if found, or null if no Stop node exists
  */
-export function findStopNode(tree: PluNode): PluNode | null {
-  function walk(node: PluNode): PluNode | null {
+export function findStopNode(tree: SmithersNode): SmithersNode | null {
+  function walk(node: SmithersNode): SmithersNode | null {
     if (node.type === 'stop') {
       return node
     }
@@ -504,8 +684,8 @@ export function findStopNode(tree: PluNode): PluNode | null {
  *
  * @returns The Human node if found, or null if no Human node exists
  */
-export function findHumanNode(tree: PluNode): PluNode | null {
-  function walk(node: PluNode): PluNode | null {
+export function findHumanNode(tree: SmithersNode): SmithersNode | null {
+  function walk(node: SmithersNode): SmithersNode | null {
     if (node.type === 'human') {
       return node
     }
@@ -523,14 +703,33 @@ export function findHumanNode(tree: PluNode): PluNode | null {
   return walk(tree)
 }
 
+function findAncestorSubagent(node: SmithersNode): SmithersNode | null {
+  let current = node.parent
+  while (current) {
+    if (current.type === 'subagent') {
+      return current
+    }
+    current = current.parent
+  }
+  return null
+}
+
+function getExecutionLabel(node: SmithersNode): string {
+  if (findAncestorSubagent(node)) {
+    return 'subagent'
+  }
+  return node.type === 'claude-cli' ? 'claude-cli' : 'claude'
+}
+
 /**
  * Find nodes that are ready for execution
  */
-export function findPendingExecutables(tree: PluNode): PluNode[] {
-  const executables: PluNode[] = []
+export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
+  const executables: SmithersNode[] = []
 
-  function walk(node: PluNode) {
-    if (node.type === 'claude' || node.type === 'subagent') {
+  function walk(node: SmithersNode) {
+    // Check for both 'claude' and 'claude-cli' node types
+    if (node.type === 'claude' || node.type === 'claude-cli') {
       // A node is pending if:
       // 1. It has no execution status, OR
       // 2. Its execution status is explicitly 'pending', OR
@@ -560,7 +759,7 @@ export function findPendingExecutables(tree: PluNode): PluNode[] {
 /**
  * Compute a simple hash of a node's content for change detection
  */
-function computeContentHash(node: PluNode): string {
+function computeContentHash(node: SmithersNode): string {
   // Hash based on: node type, props (excluding functions), and children structure
   const parts: string[] = [node.type]
 
@@ -622,7 +821,7 @@ function safeStringify(value: unknown): string {
  * @param mcpManager The MCP manager instance
  * @returns Combined array of tools from MCP servers and inline tools
  */
-async function prepareTools(node: PluNode, mcpManager: MCPManager): Promise<Tool[]> {
+async function prepareTools(node: SmithersNode, mcpManager: MCPManager): Promise<Tool[]> {
   const tools: Tool[] = []
 
   // Connect to MCP servers if specified
@@ -705,10 +904,11 @@ async function prepareTools(node: PluNode, mcpManager: MCPManager): Promise<Tool
  * @param onErrorOverride Optional callback to use instead of node.props.onError
  */
 export async function executeNode(
-  node: PluNode,
+  node: SmithersNode,
   mcpManager: MCPManager,
   onFinishedOverride?: (output: unknown) => void,
-  onErrorOverride?: (error: Error) => void
+  onErrorOverride?: (error: Error) => void,
+  executionOptions?: ExecuteOptions
 ): Promise<void> {
   // Compute content hash for change detection
   const contentHash = computeContentHash(node)
@@ -731,12 +931,16 @@ export async function executeNode(
     // - node.props._mockMode is true
     // - No API key is present and SMITHERS_REAL_MODE is not set
     const apiKeyAvailable = Boolean(process.env.ANTHROPIC_API_KEY)
+    const mockOverride = executionOptions?.mockMode
     const explicitMock =
+      mockOverride === true ||
       process.env.SMITHERS_MOCK_MODE === 'true' ||
       node.props._mockMode === true
     const explicitReal =
-      process.env.SMITHERS_MOCK_MODE === 'false' ||
-      process.env.SMITHERS_REAL_MODE === 'true'
+      mockOverride === true
+        ? false
+        : process.env.SMITHERS_MOCK_MODE === 'false' ||
+          process.env.SMITHERS_REAL_MODE === 'true'
 
     const useMockMode = explicitMock || (!explicitReal && !apiKeyAvailable)
 
@@ -746,15 +950,33 @@ export async function executeNode(
       )
     }
 
-    // Prepare tools by connecting to MCP servers and merging with inline tools
-    const preparedTools = await prepareTools(node, mcpManager)
-
-    if (useMockMode) {
-      // Use mock executor for testing
-      output = await executeMock(node)
+    // Handle claude-cli nodes separately - they use the CLI executor
+    if (node.type === 'claude-cli') {
+      if (useMockMode) {
+        // Use mock executor for testing
+        output = await executeMock(node)
+      } else {
+        // Use Claude CLI executor
+        output = await executeWithClaudeCli(node)
+      }
     } else {
-      // Use real Claude SDK with prepared tools
-      output = await executeWithClaude(node, {}, preparedTools)
+      // Standard claude nodes - prepare tools and use SDK
+      const preparedTools = await prepareTools(node, mcpManager)
+
+      if (useMockMode) {
+        // Use mock executor for testing
+        output = await executeMock(node)
+      } else {
+        // Use real Claude SDK with prepared tools
+        output = await executeWithClaude(
+          node,
+          {
+            model: executionOptions?.model,
+            maxTokens: executionOptions?.maxTokens,
+          },
+          preparedTools
+        )
+      }
     }
 
     // Store the raw output
@@ -816,7 +1038,7 @@ export async function executeNode(
  *
  * Returns a mock response based on the prompt content
  */
-async function executeMock(node: PluNode): Promise<string> {
+async function executeMock(node: SmithersNode): Promise<string> {
   const promptText = extractTextContent(node)
 
   // Simulate intentional failures for testing
@@ -938,7 +1160,7 @@ function extractJsonFromText(text: string): string | null {
 /**
  * Check if a node has a child of a specific type
  */
-function hasChildOfType(node: PluNode, type: string): boolean {
+function hasChildOfType(node: SmithersNode, type: string): boolean {
   for (const child of node.children) {
     if (child.type === type) {
       return true
@@ -953,7 +1175,7 @@ function hasChildOfType(node: PluNode, type: string): boolean {
 /**
  * Extract text content from a node's children
  */
-function extractTextContent(node: PluNode): string {
+function extractTextContent(node: SmithersNode): string {
   let text = ''
 
   if (node.type === 'TEXT') {

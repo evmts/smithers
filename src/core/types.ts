@@ -1,14 +1,18 @@
 import type { ReactElement, ReactNode } from 'react'
 import type { MCPServerConfig } from '../mcp/types.js'
+import type { DebugOptions } from '../debug/types.js'
+
+// Re-export DebugOptions for convenience
+export type { DebugOptions } from '../debug/types.js'
 
 /**
  * Internal node representation for the Smithers renderer
  */
-export interface PluNode {
+export interface SmithersNode {
   type: string
   props: Record<string, unknown>
-  children: PluNode[]
-  parent: PluNode | null
+  children: SmithersNode[]
+  parent: SmithersNode | null
   _execution?: ExecutionState
 }
 
@@ -202,7 +206,7 @@ export interface TaskProps {
  * Props for the Stop component
  *
  * The Stop component signals the Ralph Wiggum loop to halt execution
- * after all currently running agents complete.
+ * before starting any new agent executions.
  */
 export interface StopProps {
   /** Optional reason for stopping execution */
@@ -224,6 +228,32 @@ export interface HumanProps {
   onApprove?: () => void
   /** Optional callback when user rejects */
   onReject?: () => void
+  children?: ReactNode
+}
+
+/**
+ * Props for the ClaudeCli component
+ *
+ * The ClaudeCli component executes prompts using the Claude CLI (`claude` command)
+ * instead of the Anthropic SDK. This allows using your Claude Code subscription
+ * for agent workflows, avoiding per-token API costs.
+ */
+export interface ClaudeCliProps {
+  /** Callback invoked when CLI completes execution */
+  onFinished?: (output: string) => void
+  /** Callback invoked if execution fails */
+  onError?: (error: Error) => void
+  /** Override the Claude model to use (maps to --model flag) */
+  model?: string
+  /** Working directory for the CLI command */
+  cwd?: string
+  /** List of tools the CLI is allowed to use (maps to --allowedTools flag) */
+  allowedTools?: string[]
+  /** Maximum number of agentic turns (maps to --max-turns flag) */
+  maxTurns?: number
+  /** System prompt to use (maps to --system-prompt flag) */
+  systemPrompt?: string
+  /** The prompt content */
   children?: ReactNode
 }
 
@@ -251,6 +281,12 @@ export interface ExecuteOptions {
    * @returns Promise<boolean> - true if approved, false if rejected
    */
   onHumanPrompt?: (message: string, content: string) => Promise<boolean>
+  /**
+   * Debug observability options.
+   * When enabled, emits structured events throughout the Ralph Wiggum loop
+   * for monitoring, testing, and debugging purposes.
+   */
+  debug?: DebugOptions
 }
 
 /**
@@ -278,8 +314,8 @@ export interface ExecutionResult {
 /**
  * Smithers root container for React reconciler
  */
-export interface PluRoot {
-  render(element: ReactElement): Promise<PluNode>
+export interface SmithersRoot {
+  render(element: ReactElement): Promise<SmithersNode>
   unmount(): void
-  getTree(): PluNode | null
+  getTree(): SmithersNode | null
 }

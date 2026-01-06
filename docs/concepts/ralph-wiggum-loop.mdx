@@ -14,7 +14,7 @@ Each iteration of the loop is called a "frame". Here's what happens in each fram
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  1. RENDER                                                  │
-│     JSX Components → PluNode Tree → XML Plan                │
+│     JSX Components → SmithersNode Tree → XML Plan                │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -186,8 +186,8 @@ Once all results are in, the conditional renders the synthesis phase:
 Within a single frame:
 
 1. **Sequential `<Claude>` nodes**: Execute one at a time, in render order
-2. **`<Subagent>` nodes**: Execute in parallel with each other
-3. **Mixed**: The first sequential `<Claude>` runs concurrently with all `<Subagent>` nodes
+2. **`<Subagent>` nodes**: Execute in parallel with each other after sequential nodes finish
+3. **Mixed**: If a sequential node triggers a state change, subagents wait until the next frame
 
 ```tsx
 // Frame execution order:
@@ -195,10 +195,10 @@ Within a single frame:
   <Claude>Task 1</Claude>           {/* Runs first */}
   <Claude>Task 2</Claude>           {/* Runs second (after Task 1) */}
   <Subagent name="a">
-    <Claude>Parallel A</Claude>     {/* Runs with Task 1 */}
+    <Claude>Parallel A</Claude>     {/* Runs after sequential nodes */}
   </Subagent>
   <Subagent name="b">
-    <Claude>Parallel B</Claude>     {/* Runs with Task 1 */}
+    <Claude>Parallel B</Claude>     {/* Runs after sequential nodes */}
   </Subagent>
 </>
 ```

@@ -568,10 +568,8 @@ Scaffold a new Smithers project.
 smithers init [directory]
 
 Creates:
-  - package.json with smithers dependency
-  - tsconfig.json configured for JSX
-  - src/agent.tsx starter template
-  - .env.example for API keys
+  - agent.mdx starter template (based on `--template`)
+  - package.json with smithers dependency (if missing)
 ```
 
 ## Components

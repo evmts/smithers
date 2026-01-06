@@ -12,6 +12,7 @@ export {
 // Components
 export {
   Claude,
+  ClaudeCli,
   Subagent,
   Phase,
   Step,
@@ -23,10 +24,13 @@ export {
   Human,
 } from './components/index.js'
 
+// Claude CLI executor
+export { executeWithClaudeCli } from './core/claude-cli-executor.js'
+
 // Types
 export type {
-  PluNode,
-  PluRoot,
+  SmithersNode,
+  SmithersRoot,
   ExecutionState,
   ExecutionError,
   Tool,
@@ -34,6 +38,7 @@ export type {
   ToolRetryOptions,
   ToolExecutionResult,
   ClaudeProps,
+  ClaudeCliProps,
   SubagentProps,
   PhaseProps,
   StepProps,
@@ -77,3 +82,33 @@ export {
   InvalidElementError,
 } from './cli/loader.js'
 export type { LoadOptions, LoadedModule } from './cli/loader.js'
+
+// Debug observability
+export { DebugCollector } from './debug/collector.js'
+export {
+  formatAsCompact,
+  formatAsJson,
+  formatAsPrettyTerminal,
+  formatTreeAsAscii,
+  formatByFrame,
+} from './debug/formatters.js'
+export type {
+  DebugOptions,
+  SmithersDebugEvent,
+  SmithersDebugEventType,
+  PluNodeSnapshot,
+  DebugSummary,
+  TimelineEntry,
+  ExecutionStatus,
+  FrameStartEvent,
+  FrameEndEvent,
+  FrameRenderEvent,
+  NodeFoundEvent,
+  NodeExecuteStartEvent,
+  NodeExecuteEndEvent,
+  CallbackInvokedEvent,
+  StateChangeEvent,
+  StopNodeDetectedEvent,
+  HumanNodeDetectedEvent,
+  LoopTerminatedEvent,
+} from './debug/types.js'

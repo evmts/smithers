@@ -7,12 +7,14 @@ import * as path from 'path'
 import { renderPlan } from '../../core/render.js'
 import { displayPlan, displayError, info } from '../display.js'
 import { loadAgentFile } from '../loader.js'
+import { parseProps } from '../props.js'
 
 export const planCommand = new Command('plan')
   .description('Render and display the XML plan without executing')
   .argument('<file>', 'Path to the agent file (.mdx or .tsx)')
   .option('--json', 'Output plan as JSON instead of XML')
   .option('-o, --output <file>', 'Write plan to file')
+  .option('-p, --props <json>', 'JSON string of props to pass to the agent')
   .action(async (file: string, options) => {
     try {
       await plan(file, options)
@@ -25,6 +27,7 @@ export const planCommand = new Command('plan')
 interface PlanOptions {
   json?: boolean
   output?: string
+  props?: string
 }
 
 async function plan(file: string, options: PlanOptions): Promise<void> {
@@ -47,8 +50,9 @@ async function plan(file: string, options: PlanOptions): Promise<void> {
   const spinner = ora('Compiling agent...').start()
 
   let element
+  const props = parseProps(options.props)
   try {
-    element = await loadAgentFile(filePath)
+    element = await loadAgentFile(filePath, { props })
     spinner.succeed('Agent compiled')
   } catch (error) {
     spinner.fail('Failed to compile agent')

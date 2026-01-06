@@ -6,6 +6,7 @@
  *
  * Run with: bun run examples/04-parallel-research/agent.tsx
  */
+import { useEffect } from 'react'
 import { create } from 'zustand'
 import {
   executePlan,
@@ -35,6 +36,7 @@ interface ParallelResearchState {
   finalReport: string | null
 
   initTopics: (topics: string[]) => void
+  startTopic: (topic: string) => void
   updateTopic: (topic: string, data: Partial<TopicResearch>) => void
   setFinalReport: (report: string) => void
   nextPhase: () => void
@@ -58,6 +60,15 @@ const useStore = create<ParallelResearchState>((set, get) => ({
         summary: '',
       })),
     }),
+
+  startTopic: (topic) =>
+    set((state) => ({
+      topics: state.topics.map((t) =>
+        t.topic === topic && t.status === 'pending'
+          ? { ...t, status: 'in_progress' }
+          : t
+      ),
+    })),
 
   updateTopic: (topic, data) =>
     set((state) => ({
@@ -116,7 +127,11 @@ const webSearchTool: Tool = {
  * Individual topic researcher - runs in parallel with other researchers
  */
 function TopicResearcher({ topic }: { topic: string }) {
-  const { updateTopic, nextPhase } = useStore()
+  const { startTopic, updateTopic, nextPhase } = useStore()
+
+  useEffect(() => {
+    startTopic(topic)
+  }, [startTopic, topic])
 
   return (
     <Subagent name={`researcher-${topic.replace(/\s+/g, '-').toLowerCase()}`} parallel>
@@ -210,13 +225,7 @@ function ParallelResearchAgent({ topics }: { topics: string[] }) {
       const pendingTopics = topicState.filter((t) => t.status === 'pending')
 
       if (pendingTopics.length === 0) {
-        // Check if we should move to synthesize
-        const allComplete = topicState.every((t) => t.status === 'complete')
-        if (allComplete) {
-          useStore.getState().nextPhase()
-          return null
-        }
-        // Still waiting for in-progress topics
+        // Still waiting for in-progress topics or phase transition
         return null
       }
 

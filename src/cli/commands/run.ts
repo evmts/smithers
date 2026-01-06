@@ -10,17 +10,20 @@ import { displayPlan, displayResult, displayError, info, success, warn } from '.
 import { promptApproval } from '../prompt.js'
 import { loadAgentFile } from '../loader.js'
 import { loadConfig, mergeOptions, getConfigPath, type SmithersConfig } from '../config.js'
+import { parseProps } from '../props.js'
 
 export const runCommand = new Command('run')
   .description('Run an agent from an MDX/TSX file')
   .argument('<file>', 'Path to the agent file (.mdx or .tsx)')
   .option('-y, --yes', 'Skip plan approval (auto-approve)')
+  .option('--auto-approve', 'Alias for --yes')
   .option('-v, --verbose', 'Show detailed execution logs')
   .option('--dry-run', 'Show plan and exit without executing')
   .option('--max-frames <n>', 'Maximum execution frames')
-  .option('--timeout <secs>', 'Timeout per frame in seconds')
+  .option('--timeout <ms>', 'Total execution timeout in milliseconds')
   .option('-o, --output <file>', 'Write final result to file')
   .option('--json', 'Output results as JSON')
+  .option('-p, --props <json>', 'JSON string of props to pass to the agent')
   .option('--model <model>', 'Claude model to use')
   .option('--max-tokens <n>', 'Maximum tokens for Claude responses')
   .option('--mock', 'Enable mock mode (no real API calls)')
@@ -42,9 +45,11 @@ interface RunOptions {
   timeout?: string
   output?: string
   json?: boolean
+  props?: string
   model?: string
   maxTokens?: string
   mock?: boolean
+  autoApprove?: boolean
   config?: string
 }
 
@@ -82,7 +87,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
   // Merge CLI options with config (CLI takes precedence)
   // Convert CLI string options to numbers for merging
   const cliOptions: Partial<SmithersConfig> = {
-    autoApprove: options.yes,
+    autoApprove: options.yes || options.autoApprove,
     mockMode: options.mock,
     verbose: options.verbose,
     model: options.model,
@@ -117,7 +122,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
 
   // Apply defaults after merging
   const maxFrames = merged.maxFrames ?? 100
-  const timeout = merged.timeout ?? 300
+  const timeout = merged.timeout ?? 300000
   const verbose = merged.verbose ?? false
   const autoApprove = merged.autoApprove ?? false
   const mockMode = merged.mockMode ?? false
@@ -134,8 +139,9 @@ async function run(file: string, options: RunOptions): Promise<void> {
   const spinner = ora('Compiling agent...').start()
 
   let element
+  const props = parseProps(options.props)
   try {
-    element = await loadAgentFile(filePath)
+    element = await loadAgentFile(filePath, { props })
     spinner.succeed('Agent compiled')
   } catch (error) {
     spinner.fail('Failed to compile agent')
@@ -177,7 +183,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
 
   const result = await executePlan(element, {
     maxFrames,
-    timeout: timeout * 1000,
+    timeout,
     verbose,
     mockMode,
     model: merged.model,

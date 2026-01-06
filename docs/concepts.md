@@ -87,10 +87,10 @@ Plan:
   </phase>
 </claude>
 
-Proceed? [y/n/edit]
+Proceed? [y/n]
 ```
 
-Users can approve, edit, or cancel. Use `--auto-approve` to skip.
+Users can approve or cancel. Use `--auto-approve` to skip.
 
 ## Tools as MCP Servers
 
