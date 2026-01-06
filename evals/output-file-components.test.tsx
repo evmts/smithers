@@ -414,7 +414,7 @@ describe('File component', () => {
         )
       }
 
-      await executePlan(<FileAgent />, { mockMode: true })
+      await executePlan(<FileAgent />)
 
       expect(useStore.getState().error).toBe(true)
       expect(errorCaught).not.toBeNull()
