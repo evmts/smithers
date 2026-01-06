@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { FC, ReactNode } from 'react'
 import type { z, ZodObject, ZodRawShape } from 'zod'
 
 /**
@@ -60,7 +60,7 @@ export interface Workflow<T extends ZodRawShape> {
   /** The original Zod schema */
   schema: ZodObject<T>
   /** Context provider component */
-  Provider: React.FC<{ children: ReactNode }>
+  Provider: FC<{ children: ReactNode }>
   /**
    * Hook to subscribe to a specific workflow value
    * @param name Field name from the schema
@@ -79,7 +79,7 @@ export interface Workflow<T extends ZodRawShape> {
    * Component to define an agent output field
    * Generates a tool for Claude to set the value
    */
-  Output: React.FC<WorkflowOutputProps<T>>
+  Output: FC<WorkflowOutputProps<T>>
 }
 
 /**
