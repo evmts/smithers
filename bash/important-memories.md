@@ -478,10 +478,10 @@ This file contains important learnings, decisions, and context from previous Ral
   - `src/workflow/create-workflow.tsx` - Fixed store.values stale reference
   - Test files updated to use proper callback signatures
 - **Total Test Count**: 573 passing tests (all tests pass)
-- **New Codex Review** (9c996a7): Identified 2 potential issues for future consideration
-  - Backward-compat risk with single-arg legacy callbacks (not officially supported by types)
-  - Rate/usage limit removal (undefined) doesn't disable existing limiters
-- Commit: 9c996a7
+- **Codex Review 9c996a7** (ADDRESSED - 2026-01-06):
+  1. ✅ onHumanPrompt backward compatibility - Determined to be non-issue. TypeScript types guide users correctly, and `.length >= 2` detection works for all properly typed callbacks. Only edge case would be default params on legacy callback, which is unusual and not supported by types.
+  2. ✅ Rate/usage limit prop removal handling - Fixed in commit 0d5fc51. When props become undefined, limiters are now updated to Infinity values to effectively disable them without ref cleanup.
+- Commit: 9c996a7, 0d5fc51
 
 ## What's Next (Priority Order)
 
