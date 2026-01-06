@@ -1,27 +1,13 @@
 ---
-title: Phase & Step Components
-description: Organize multi-step prompts with semantic structure
+title: Phase Component
+description: Define a named phase in a multi-step workflow
 ---
 
-# Phase & Step Components
+# Phase Component
 
-The `<Phase>` and `<Step>` components provide semantic organization for multi-step agent plans. They help structure complex prompts and make plans more readable.
+The `<Phase>` component defines a named phase in a multi-step workflow. It provides semantic organization for complex agent plans and makes prompts more readable.
 
-## Phase Component
-
-Defines a named phase in a multi-step workflow.
-
-### Props
-
-<ParamField path="name" type="string" required>
-  Identifier for the phase. Appears in the rendered XML and execution logs.
-</ParamField>
-
-<ParamField path="children" type="ReactNode" required>
-  The content of the phase - typically `<Step>` components or plain text.
-</ParamField>
-
-### Usage
+## Basic Usage
 
 ```tsx
 import { Claude, Phase, Step } from 'smithers'
@@ -73,26 +59,25 @@ Renders to:
 </claude>
 ```
 
-## Step Component
+## Props
 
-Defines an individual step within a phase or directly inside a Claude component.
-
-### Props
-
-<ParamField path="children" type="ReactNode" required>
-  The step description.
+<ParamField path="name" type="string" required>
+  Identifier for the phase. Appears in the rendered XML and execution logs.
 </ParamField>
 
-### Usage
+<ParamField path="completed" type="boolean" default="false">
+  Mark the phase as already completed. Completed phases are skipped by the Ralph loop.
 
-```tsx
-<Phase name="implementation">
-  <Step>Read existing tests to understand expected behavior</Step>
-  <Step>Implement the new feature following project conventions</Step>
-  <Step>Write unit tests for the implementation</Step>
-  <Step>Update documentation if needed</Step>
-</Phase>
-```
+  ```tsx
+  <Phase name="research" completed>
+    Already completed research...
+  </Phase>
+  ```
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  The content of the phase - typically `<Step>` components or plain text.
+</ParamField>
 
 ## Conditional Phases
 
@@ -121,31 +106,6 @@ function FlexibleAgent({ includeReview, includeDocs, task }) {
           <Step>Update README if needed</Step>
         </Phase>
       )}
-    </Claude>
-  )
-}
-```
-
-## Dynamic Steps
-
-Generate steps dynamically from data:
-
-```tsx
-function FileProcessor({ files }) {
-  return (
-    <Claude tools={[filesystem]}>
-      <Phase name="process">
-        {files.map((file, i) => (
-          <Step key={file}>
-            {i + 1}. Process {file} and extract metadata
-          </Step>
-        ))}
-      </Phase>
-
-      <Phase name="aggregate">
-        <Step>Combine all extracted metadata</Step>
-        <Step>Generate summary report</Step>
-      </Phase>
     </Claude>
   )
 }
@@ -185,23 +145,6 @@ Combine steps with prose:
   Pay special attention to any user input handling.
 </Phase>
 ```
-
-## Semantic Benefits
-
-<CardGroup cols={2}>
-  <Card title="Clarity for Claude" icon="brain">
-    Phases and steps help Claude understand the expected workflow structure
-  </Card>
-  <Card title="Readable plans" icon="eye">
-    The XML output is easy to review and understand
-  </Card>
-  <Card title="Composability" icon="puzzle-piece">
-    Create reusable phase components for common patterns
-  </Card>
-  <Card title="Debugging" icon="bug">
-    Phase names appear in logs, making it easier to track progress
-  </Card>
-</CardGroup>
 
 ## Reusable Phase Components
 
@@ -244,13 +187,33 @@ function SecureFeature({ feature }) {
 }
 ```
 
+## Semantic Benefits
+
+<CardGroup cols={2}>
+  <Card title="Clarity for Claude" icon="brain">
+    Phases help Claude understand the expected workflow structure
+  </Card>
+  <Card title="Readable plans" icon="eye">
+    The XML output is easy to review and understand
+  </Card>
+  <Card title="Composability" icon="puzzle-piece">
+    Create reusable phase components for common patterns
+  </Card>
+  <Card title="Debugging" icon="bug">
+    Phase names appear in logs, making it easier to track progress
+  </Card>
+</CardGroup>
+
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Claude Component" icon="cube" href="/components/claude">
-    The container for phases and steps
+  <Card title="Step" icon="list" href="/components/step">
+    Define individual steps within a phase
   </Card>
-  <Card title="Prompt Structure" icon="list" href="/components/prompt-structure">
-    Other semantic components (Persona, Constraints, OutputFormat)
+  <Card title="Claude" icon="cube" href="/components/claude">
+    The container for phases
+  </Card>
+  <Card title="Ralph Wiggum Loop" icon="rotate" href="/concepts/ralph-wiggum-loop">
+    Understand the execution model
   </Card>
 </CardGroup>

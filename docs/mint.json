@@ -70,9 +70,16 @@
       "group": "Components",
       "pages": [
         "components/claude",
+        "components/claude-api",
         "components/subagent",
-        "components/phase-step",
-        "components/prompt-structure"
+        "components/phase",
+        "components/step",
+        "components/persona",
+        "components/constraints",
+        "components/output-format",
+        "components/task",
+        "components/human",
+        "components/stop"
       ]
     },
     {
