@@ -40,8 +40,13 @@ export function separatePromptAndPlan(node: SmithersNode): PromptAndPlan {
     }
   }
 
+  // Join text nodes and trim only if there are no JSX children
+  // This preserves author-intended whitespace when text is mixed with JSX
+  const joinedPrompt = promptParts.join('')
+  const prompt = plan.length === 0 ? joinedPrompt.trim() : joinedPrompt
+
   return {
-    prompt: promptParts.join('').trim(),
+    prompt,
     plan,
   }
 }
@@ -191,31 +196,32 @@ export function serializePlanWithPaths(
 
     const attrStr = attrs.join(' ')
 
-    // Get children content
-    const textContent = getTextContent(node)
-    const childNodes = node.children.filter((c) => c.type !== 'TEXT')
-
-    if (childNodes.length === 0 && textContent) {
-      // Self-contained node with text content
-      lines.push(`${indentStr}<${node.type} ${attrStr}>`)
-      lines.push(`${indentStr}  ${escapeXml(textContent.trim())}`)
-      lines.push(`${indentStr}</${node.type}>`)
-    } else if (childNodes.length === 0) {
+    // Check if node has any children
+    if (node.children.length === 0) {
       // Empty node
       lines.push(`${indentStr}<${node.type} ${attrStr} />`)
     } else {
-      // Node with children
+      // Node with children - process them in order to preserve text/element ordering
       lines.push(`${indentStr}<${node.type} ${attrStr}>`)
 
-      // Add text content if any
-      if (textContent.trim()) {
-        lines.push(`${indentStr}  ${escapeXml(textContent.trim())}`)
-      }
+      // Iterate through children in order, emitting TEXT nodes inline
+      const childIndent = indent + 1
+      const childIndentStr = '  '.repeat(childIndent)
 
-      // Add child nodes
-      const childXml = serializePlanWithPaths(childNodes, path, indent + 1)
-      if (childXml) {
-        lines.push(childXml)
+      for (const child of node.children) {
+        if (child.type === 'TEXT') {
+          // Emit text content inline
+          const textValue = (child.props.value as string) ?? ''
+          if (textValue) {
+            lines.push(`${childIndentStr}${escapeXml(textValue)}`)
+          }
+        } else {
+          // Recursively serialize element nodes
+          const childXml = serializePlanWithPaths([child], path, childIndent)
+          if (childXml) {
+            lines.push(childXml)
+          }
+        }
       }
 
       lines.push(`${indentStr}</${node.type}>`)

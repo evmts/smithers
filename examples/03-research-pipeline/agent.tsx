@@ -113,7 +113,9 @@ const fileSystemTool: Tool = {
   },
   execute: async (args: unknown) => {
     const { path, content } = args as { path: string; content: string }
+    // Mock implementation - in production, this would write to the filesystem
     console.log(`[Tool] Would save to ${path}: ${content.slice(0, 100)}...`)
+    // In production: await fs.promises.writeFile(path, content, 'utf-8')
     return { success: true, path }
   },
 }
@@ -230,6 +232,12 @@ function ReportPhase({ topic }: { topic: string }) {
         <Step>Discuss implications and recommendations</Step>
         <Step>Save the report to output/research-report.md</Step>
       </Phase>
+
+      <OutputFormat schema={{
+        report: { type: 'string', description: 'The complete research report' },
+      }}>
+        Return a JSON object with a "report" field containing the full markdown report.
+      </OutputFormat>
 
       Topic: {topic}
 

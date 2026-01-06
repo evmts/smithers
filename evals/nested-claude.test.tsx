@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import React, { useState } from 'react'
 import {
   executePlan,
@@ -15,10 +15,23 @@ import {
 } from '../src/core/nested-execution.js'
 import { createRoot, serialize } from '../src/core/render.js'
 
-// Set mock mode for testing
-process.env.SMITHERS_MOCK_MODE = 'true'
-
 describe('Nested Claude Execution', () => {
+  let originalMockMode: string | undefined
+
+  beforeAll(() => {
+    // Save original env and set mock mode for testing
+    originalMockMode = process.env.SMITHERS_MOCK_MODE
+    process.env.SMITHERS_MOCK_MODE = 'true'
+  })
+
+  afterAll(() => {
+    // Restore original env
+    if (originalMockMode === undefined) {
+      delete process.env.SMITHERS_MOCK_MODE
+    } else {
+      process.env.SMITHERS_MOCK_MODE = originalMockMode
+    }
+  })
   describe('separatePromptAndPlan', () => {
     test('extracts text nodes as prompt', async () => {
       function TestComponent() {
@@ -30,16 +43,19 @@ describe('Nested Claude Execution', () => {
       }
 
       const root = createRoot()
-      const tree = await root.render(<TestComponent />)
-      root.unmount()
+      try {
+        const tree = await root.render(<TestComponent />)
 
-      // Find the claude node
-      const claudeNode = tree.children[0]
-      expect(claudeNode.type).toBe('claude')
+        // Find the claude node
+        const claudeNode = tree.children[0]
+        expect(claudeNode.type).toBe('claude')
 
-      const { prompt, plan } = separatePromptAndPlan(claudeNode)
-      expect(prompt).toBe('This is the prompt text.')
-      expect(plan).toHaveLength(0)
+        const { prompt, plan } = separatePromptAndPlan(claudeNode)
+        expect(prompt).toBe('This is the prompt text.')
+        expect(plan).toHaveLength(0)
+      } finally {
+        root.unmount()
+      }
     })
 
     test('extracts JSX elements as plan', async () => {

@@ -8,6 +8,32 @@ import { $ } from 'bun'
 setDefaultTimeout(15000)
 
 /**
+ * Helper function to extract JSON from CLI output
+ * Tries to find the last valid JSON object in the output, which is more robust
+ * than greedy regex matching that can capture extra braces from log lines.
+ */
+function extractJsonFromOutput(output: string): unknown {
+  const lines = output.split('\n').reverse()
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('{')) {
+      try {
+        return JSON.parse(trimmed)
+      } catch {
+        // Not valid JSON, try next line
+        continue
+      }
+    }
+  }
+  // Fallback: try to parse the entire output
+  const jsonMatch = output.match(/\{[\s\S]*\}/)
+  if (jsonMatch) {
+    return JSON.parse(jsonMatch[0])
+  }
+  throw new Error('No valid JSON found in output')
+}
+
+/**
  * CLI Integration Tests
  *
  * Tests all CLI commands (init, plan, run) with various options and error conditions.
@@ -230,13 +256,10 @@ export default (
       expect(result.exitCode).toBe(0)
       const output = result.stdout.toString()
 
-      // Find JSON in output (may have info lines before it)
-      const jsonMatch = output.match(/\{[\s\S]*\}/)
-      expect(jsonMatch).toBeTruthy()
-
-      const parsed = JSON.parse(jsonMatch![0])
+      // Extract JSON robustly (may have info lines before it)
+      const parsed = extractJsonFromOutput(output)
       expect(parsed).toHaveProperty('xml')
-      expect(parsed.xml).toContain('<claude>')
+      expect((parsed as any).xml).toContain('<claude>')
     })
 
     it('--output writes to file', async () => {
@@ -377,7 +400,8 @@ const MyAgent = <Claude>Test</Claude>
       expect(result.exitCode).toBe(0)
       expect(result.stdout.toString()).toContain('<claude>')
       expect(result.stdout.toString()).toContain('Dry run')
-      expect(result.stdout.toString()).not.toContain('Execution complete')
+      // Use case-insensitive check to match actual "Execution Complete" output
+      expect(result.stdout.toString().toLowerCase()).not.toContain('execution complete')
     })
 
     it('--verbose shows detailed logs', async () => {
@@ -540,11 +564,8 @@ const MyAgent = <Claude>Test</Claude>
       expect(result.exitCode).toBe(0)
       const output = result.stdout.toString()
 
-      // Find JSON in output (may have info lines before it)
-      const jsonMatch = output.match(/\{[\s\S]*\}/)
-      expect(jsonMatch).toBeTruthy()
-
-      const parsed = JSON.parse(jsonMatch![0])
+      // Extract JSON robustly (may have info lines before it)
+      const parsed = extractJsonFromOutput(output)
       expect(parsed).toHaveProperty('frames')
       expect(parsed).toHaveProperty('output')
     })

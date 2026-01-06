@@ -101,8 +101,10 @@ const useWorkflowStore = create((set, get) => ({
   prompt: '',
   initialPlan: null,
   refinedPlan: null,
+  setPhase: (phase: WorkflowPhase) => set({ phase }),
+  setPrompt: (prompt: string) => set({ prompt }),
   nextPhase: () => {
-    const phases = ['prompt-input', 'research', 'planning', 'plan-review', 'poc', 'poc-analysis', 'refined-review', 'api-impl', 'test-impl', 'test-verify', 'implementation', 'done']
+    const phases: WorkflowPhase[] = ['prompt-input', 'research', 'planning', 'plan-review', 'poc', 'poc-analysis', 'refined-review', 'api-impl', 'test-impl', 'test-verify', 'implementation', 'done']
     const idx = phases.indexOf(get().phase)
     if (idx < phases.length - 1) set({ phase: phases[idx + 1] })
   },

@@ -78,7 +78,7 @@ function buildOptions(props: ClaudeProps): Options {
   if (props.permissionMode) {
     options.permissionMode = props.permissionMode
   }
-  if (props.allowDangerouslySkipPermissions) {
+  if (props.allowDangerouslySkipPermissions !== undefined) {
     options.allowDangerouslySkipPermissions = props.allowDangerouslySkipPermissions
   }
 
@@ -198,9 +198,11 @@ export async function executeWithAgentSdk(
     const queryIterator = query({ prompt, options })
 
     // Iterate through all messages
+    let hasResult = false
     for await (const message of queryIterator) {
       // Check for result message (final message)
       if (message.type === 'result') {
+        hasResult = true
         const resultMsg = message as SDKResultMessage
         result.numTurns = resultMsg.num_turns
         result.totalCostUsd = resultMsg.total_cost_usd
@@ -222,6 +224,11 @@ export async function executeWithAgentSdk(
           }
         }
       }
+    }
+
+    // If no result message was received, throw an error
+    if (!hasResult) {
+      throw new Error('Agent SDK stream completed without yielding a result message')
     }
 
     return result
@@ -261,11 +268,13 @@ export async function executeAgentMock(node: SmithersNode): Promise<AgentExecuti
 
   // Test helper: Extract JSON from prompt for structured output testing
   // Check this BEFORE plan detection so structured output tests work with plans
-  const jsonMatch = extractJsonFromPrompt(fullTextContent)
-  if (jsonMatch) {
+  const jsonString = extractJsonFromPrompt(fullTextContent)
+  if (jsonString) {
+    const parsedJson = JSON.parse(jsonString)
     return {
       success: true,
-      result: jsonMatch,
+      result: jsonString, // Keep result as JSON string for backward compatibility
+      structuredOutput: parsedJson, // Set structuredOutput as parsed object
       numTurns: 1,
       totalCostUsd: 0,
       durationMs: 10,

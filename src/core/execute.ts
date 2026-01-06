@@ -424,7 +424,11 @@ export async function executePlan(
             ? serializePlanWithPaths(planNodes)
             : plan // Fallback to full serialization
 
-          const executablePaths = getExecutableNodePaths(planNodes)
+          // Compute executable paths from the same source as planXml
+          // When planNodes is empty, use pendingNodes to get accurate paths
+          const executablePaths = planNodes.length > 0
+            ? getExecutableNodePaths(planNodes)
+            : pendingNodes.map(node => getNodePath(node))
 
           const planInfo: PlanInfo = {
             planXml,
@@ -1305,21 +1309,26 @@ export async function executeNode(
     } | undefined
 
     // Check if we should use mock mode (for testing only)
-    // Mock mode must be explicitly enabled via:
-    // - SMITHERS_MOCK_MODE is "true"
-    // - mockMode: true in execution options
-    // - node.props._mockMode is true
+    // mockMode option overrides environment variable in both directions:
+    // - mockMode: true forces mock mode
+    // - mockMode: false forces real mode (ignores SMITHERS_MOCK_MODE env var)
+    // - mockMode: undefined uses environment variable + node props
     const apiKeyAvailable = Boolean(process.env.ANTHROPIC_API_KEY || providerContext?.apiKey)
     const mockOverride = executionOptions?.mockMode
-    const explicitMock =
-      mockOverride === true ||
-      process.env.SMITHERS_MOCK_MODE === 'true' ||
-      node.props._mockMode === true
 
-    const useMockMode = explicitMock
+    let useMockMode: boolean
+    if (mockOverride !== undefined) {
+      // Explicit override from options
+      useMockMode = mockOverride
+    } else {
+      // Check environment variable and node props
+      useMockMode =
+        process.env.SMITHERS_MOCK_MODE === 'true' ||
+        node.props._mockMode === true
+    }
 
     // Require API key if not in mock mode
-    if (!apiKeyAvailable && !explicitMock) {
+    if (!apiKeyAvailable && !useMockMode) {
       throw new Error(
         'ANTHROPIC_API_KEY not found. Set it in your environment or enable mock mode with SMITHERS_MOCK_MODE=true.'
       )
@@ -1415,8 +1424,9 @@ export async function executeNode(
       } else {
         const nodePath = getNodePath(node)
         const agentResult = await executeWithAgentSdk(node, nodePath)
-        if (!agentResult.success && agentResult.error) {
-          throw new Error(agentResult.error)
+        if (!agentResult.success) {
+          const errorMessage = agentResult.error || 'Agent execution failed without error message'
+          throw new Error(errorMessage)
         }
         // Prefer structured output if available, otherwise use result string
         output = agentResult.structuredOutput !== undefined

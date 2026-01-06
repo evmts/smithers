@@ -15,10 +15,20 @@ docs/
 │   └── state-management.mdx     # Zustand integration
 │
 ├── components/                  # Component reference
-│   ├── claude.mdx               # Claude component
+│   ├── claude.mdx               # Claude component (Agent SDK)
+│   ├── claude-api.mdx           # ClaudeApi component (API SDK)
+│   ├── claude-cli.mdx           # ClaudeCli component (CLI wrapper)
 │   ├── subagent.mdx             # Subagent component
-│   ├── phase-step.mdx           # Phase and Step
-│   └── prompt-structure.mdx     # Persona, Constraints, OutputFormat
+│   ├── phase.mdx                # Phase component
+│   ├── step.mdx                 # Step component
+│   ├── persona.mdx              # Persona component
+│   ├── constraints.mdx          # Constraints component
+│   ├── output-format.mdx        # OutputFormat component
+│   ├── human.mdx                # Human component
+│   ├── stop.mdx                 # Stop component
+│   ├── task.mdx                 # Task component
+│   ├── output.mdx               # Output component
+│   └── file.mdx                 # File component
 │
 ├── cli/                         # CLI documentation
 │   ├── run.mdx                  # smithers run command
