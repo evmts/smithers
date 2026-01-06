@@ -181,6 +181,15 @@ function ResearchPhase() {
         - Focus on understanding, not implementing
         - Be thorough - gather context before acting
       </Constraints>
+      <OutputFormat schema={{
+        files: { type: 'array', items: { type: 'object', properties: {
+          path: { type: 'string' },
+          relevance: { type: 'string' },
+          summary: { type: 'string' }
+        }}}
+      }}>
+        Return a JSON object with discovered files.
+      </OutputFormat>
       Feature to implement: {prompt}
     </Claude>
   )
@@ -253,6 +262,14 @@ function POCPhase() {
         - This is throwaway code to inform the plan
         - Document discoveries and suggestions
       </Constraints>
+      <OutputFormat schema={{
+        working: { type: 'boolean' },
+        implementation: { type: 'string' },
+        discoveries: { type: 'array', items: { type: 'string' } },
+        suggestions: { type: 'array', items: { type: 'string' } }
+      }}>
+        Return a JSON object with POC results.
+      </OutputFormat>
       Feature: {prompt}
       Plan: {JSON.stringify(initialPlan, null, 2)}
     </Claude>
@@ -280,6 +297,18 @@ function POCAnalysisPhase() {
         <Step>Add additional test cases</Step>
         <Step>Refine API designs</Step>
       </Phase>
+      <OutputFormat schema={{
+        analysis: { type: 'string' },
+        refinedPlan: { type: 'object', properties: {
+          summary: { type: 'string' },
+          steps: { type: 'array' },
+          testCases: { type: 'array' },
+          apis: { type: 'array' },
+          risks: { type: 'array' }
+        }}
+      }}>
+        Return a JSON object with analysis and refined plan.
+      </OutputFormat>
       Original plan: {JSON.stringify(initialPlan, null, 2)}
       POC results: {JSON.stringify(pocResult, null, 2)}
     </Claude>
