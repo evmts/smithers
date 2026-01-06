@@ -145,6 +145,27 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Next Step**: Run these tests manually with a real API key to verify functionality
 - Commit: 0a191b7
 
+### Human Component (2026-01-05 - IMPLEMENTED)
+- **Feature**: `<Human>` component for interactive approval points
+- **Implementation**:
+  - Pauses execution and waits for human approval before continuing
+  - Props: message, onApprove, onReject, children
+  - Integrates with `executePlan` via `onHumanPrompt` callback option
+  - Auto-approves when no `onHumanPrompt` provided (useful for testing)
+  - Tracks approved Human nodes using path:contentHash key to prevent infinite loops
+  - Falls through to continue execution after approval if no onApprove callback
+- **Key Design Decisions**:
+  - Uses path + contentHash as unique key (not just path) to distinguish different Human nodes at same tree position
+  - Skip already-approved Human nodes to avoid re-prompting
+  - Check for unapproved Human nodes before exiting loop (prevents premature exit)
+- **Tests**: 7 comprehensive tests in `evals/human-component.test.tsx`
+  - Auto-approval, custom prompts, approval/rejection flows
+  - Sequential Human nodes, infinite loop prevention
+  - All 51 tests passing (44 existing + 7 new)
+- **Documentation**: Updated README.md with detailed examples and prop documentation
+- **Known Limitation** (from Codex review fbc5b57): `findHumanNode` returns first Human node in tree. If that node is approved but stays in tree (no onApprove), later Human nodes won't be found. Consider passing approvedHumanNodes into walk to find first *unapproved* node.
+- Commits: d3913f6, fbc5b57
+
 ## What's Next (Priority Order)
 
 1. **Runtime Integration** (Highest Priority)
@@ -160,14 +181,15 @@ This file contains important learnings, decisions, and context from previous Ral
 2. **Execution Semantics**
    - ✅ Implement `<Task>` component with `done` prop (DONE)
    - ✅ Implement `<Stop>` component to signal Ralph loop termination (DONE)
-   - Ensure onError callbacks can trigger re-rendering and recovery
-   - Add Human component for interactive approval points
+   - ✅ Ensure onError callbacks can trigger re-rendering and recovery (DONE - tested in evals/error-recovery.test.tsx)
+   - ✅ Add Human component for interactive approval points (DONE - Commits d3913f6, fbc5b57)
 
 3. **CLI UX + MDX**
-   - Implement Terraform-style plan display with syntax highlighting
-   - Add approval prompt with edit capability
-   - Wire `--auto-approve`/`--plan` flags to executor options
-   - Test MDX entrypoint end-to-end
+   - ✅ Implement Terraform-style plan display with syntax highlighting (DONE - in src/cli/display.ts)
+   - ✅ Add approval prompt (DONE - in src/cli/prompt.ts)
+   - ✅ Wire `--auto-approve`/`--plan` flags to executor options (DONE - in src/cli/commands/run.ts)
+   - ✅ Test MDX entrypoint end-to-end (DONE - loader supports .mdx, .tsx, .jsx files)
+   - Future: Add edit capability to approval prompt
 
 4. **Examples + Documentation**
    - Create/update examples to showcase MCP integration
