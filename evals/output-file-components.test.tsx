@@ -99,7 +99,8 @@ describe('Output component', () => {
           <Claude onFinished={() => { claudeExecuted = true }}>
             Some prompt
           </Claude>
-        </>
+        </>,
+        { mockMode: true }
       )
 
       // Claude should execute, but Output doesn't block or trigger it
@@ -131,7 +132,7 @@ describe('Output component', () => {
         )
       }
 
-      await executePlan(<OutputAgent />)
+      await executePlan(<OutputAgent />, { mockMode: true })
 
       expect(useStore.getState().phase).toBe('complete')
     })
@@ -461,7 +462,7 @@ describe('File component', () => {
         )
       }
 
-      await executePlan(<AgentWithFile />)
+      await executePlan(<AgentWithFile />, { mockMode: true })
 
       expect(existsSync(filePath)).toBe(true)
       const content = readFileSync(filePath, 'utf-8')
@@ -612,7 +613,7 @@ describe('Output and File together', () => {
       )
     }
 
-    await executePlan(<WorkflowAgent />)
+    await executePlan(<WorkflowAgent />, { mockMode: true })
 
     expect(useStore.getState().step).toBe(3)
     expect(existsSync(filePath)).toBe(true)
