@@ -59,7 +59,7 @@ describe('human-component', () => {
       )
     }
 
-    await executePlan(<AgentWithHuman />)
+    await executePlan(<AgentWithHuman />, { mockMode: true })
 
     // Without onHumanPrompt, it auto-approves
     expect(executionLog).toContain('start-phase-complete')
@@ -111,6 +111,7 @@ describe('human-component', () => {
     }
 
     await executePlan(<AgentWithHuman />, {
+      mockMode: true,
       onHumanPrompt: async (message, content) => {
         promptCalled = true
         capturedMessage = message
@@ -168,6 +169,7 @@ describe('human-component', () => {
     }
 
     await executePlan(<AgentWithHuman />, {
+      mockMode: true,
       onHumanPrompt: async () => {
         return false // Reject
       },
@@ -214,6 +216,7 @@ describe('human-component', () => {
     }
 
     await executePlan(<AgentWithHuman />, {
+      mockMode: true,
       onHumanPrompt: async () => false, // Reject
     })
 
@@ -239,6 +242,7 @@ describe('human-component', () => {
     }
 
     await executePlan(<AgentWithHuman />, {
+      mockMode: true,
       onHumanPrompt: async (message) => {
         capturedMessage = message
         return true
@@ -286,6 +290,7 @@ describe('human-component', () => {
     }
 
     await executePlan(<AgentWithMultipleReviews />, {
+      mockMode: true,
       onHumanPrompt: async () => true,
     })
 
@@ -312,6 +317,7 @@ describe('human-component', () => {
     }
 
     await executePlan(<AgentWithPersistentHuman />, {
+      mockMode: true,
       onHumanPrompt: async () => {
         promptCount++
         return true
@@ -343,6 +349,7 @@ describe('human-component', () => {
     }
 
     await executePlan(<AgentWithMultiplePersistentHumans />, {
+      mockMode: true,
       onHumanPrompt: async (message) => {
         prompts.push(message)
         return true
