@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { PluNode, Tool, StreamChunk, ToolRetryOptions, ExecutionError, ToolExecutionResult } from './types.js'
+import type { SmithersNode, Tool, StreamChunk, ToolRetryOptions, ExecutionError, ToolExecutionResult } from './types.js'
 
 /**
  * Configuration for Claude API client
@@ -156,12 +156,13 @@ async function executeToolWithRetry(
 /**
  * Get node path for error context
  */
-export function getNodePath(node: PluNode): string {
+export function getNodePath(node: SmithersNode): string {
   const parts: string[] = []
-  let current: PluNode | null = node
+  let current: SmithersNode | null = node
 
   while (current) {
-    const name = current.props.name ? `[name="${current.props.name}"]` : ''
+    // Use != null to check for both null and undefined, allowing empty strings through
+    const name = current.props.name != null ? `[name="${current.props.name}"]` : ''
     parts.unshift(`${current.type}${name}`)
     current = current.parent
   }
@@ -260,7 +261,7 @@ async function withRetry<T>(
  * ```
  */
 export async function executeWithClaude(
-  node: PluNode,
+  node: SmithersNode,
   config: ClaudeConfig = {},
   toolsOverride?: Tool[]
 ): Promise<string> {
@@ -556,7 +557,7 @@ export async function executeWithClaude(
  * @param node The node to extract system message from
  * @returns The system message string, or undefined if none found
  */
-function extractSystemMessage(node: PluNode): string | undefined {
+function extractSystemMessage(node: SmithersNode): string | undefined {
   // First check for explicit system prop
   if (node.props.system && typeof node.props.system === 'string') {
     return node.props.system
@@ -565,7 +566,7 @@ function extractSystemMessage(node: PluNode): string | undefined {
   // Look for Persona children
   const personaParts: string[] = []
 
-  function findPersonaNodes(n: PluNode): void {
+  function findPersonaNodes(n: SmithersNode): void {
     if (n.type === 'persona') {
       const role = n.props.role as string | undefined
       const content = getChildrenText(n)
@@ -617,7 +618,7 @@ function buildToolMap(tools: Tool[] | undefined): Map<string, Tool> {
  * @param node The node to serialize
  * @returns The prompt string with XML tags for semantic components
  */
-function serializeNodeToPrompt(node: PluNode): string {
+function serializeNodeToPrompt(node: SmithersNode): string {
   const parts: string[] = []
 
   // Handle different node types
@@ -681,7 +682,7 @@ function serializeNodeToPrompt(node: PluNode): string {
  * @param node The node to extract text from
  * @returns Combined text content from all children
  */
-function getChildrenText(node: PluNode): string {
+function getChildrenText(node: SmithersNode): string {
   const parts: string[] = []
 
   for (const child of node.children) {
