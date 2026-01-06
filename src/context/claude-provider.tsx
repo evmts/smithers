@@ -210,15 +210,39 @@ export function ClaudeProvider({
 
   // Update rate limiter config when rateLimit prop changes
   useEffect(() => {
-    if (rateLimiterRef.current && rateLimit) {
-      rateLimiterRef.current.updateConfig(rateLimit)
+    if (rateLimiterRef.current) {
+      if (rateLimit) {
+        // Update with new config
+        rateLimiterRef.current.updateConfig(rateLimit)
+      } else {
+        // Disable by setting infinite limits
+        rateLimiterRef.current.updateConfig({
+          rpm: Infinity,
+          itpm: Infinity,
+          otpm: Infinity,
+          maxQueueSize: Infinity,
+          queueTimeout: Infinity,
+        })
+      }
     }
   }, [rateLimit])
 
   // Update usage tracker limits when usageLimit prop changes
   useEffect(() => {
-    if (usageTrackerRef.current && usageLimit) {
-      usageTrackerRef.current.updateLimits(usageLimit)
+    if (usageTrackerRef.current) {
+      if (usageLimit) {
+        // Update with new limits
+        usageTrackerRef.current.updateLimits(usageLimit)
+      } else {
+        // Disable by setting infinite limits
+        usageTrackerRef.current.updateLimits({
+          maxCostUsd: Infinity,
+          maxTotalTokens: Infinity,
+          maxInputTokens: Infinity,
+          maxOutputTokens: Infinity,
+          window: 'total', // Use 'total' window when disabling
+        })
+      }
     }
   }, [usageLimit])
 
