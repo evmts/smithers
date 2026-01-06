@@ -5,6 +5,8 @@ import type {
   ExecutionResult,
   ExecutionState,
   FrameResult,
+  HumanPromptInfo,
+  HumanPromptResponse,
   PlanInfo,
   SmithersNode,
   Tool,
@@ -23,6 +25,11 @@ import { MCPManager } from '../mcp/manager.js'
 import type { MCPServerConfig } from '../mcp/types.js'
 import { DebugCollector } from '../debug/collector.js'
 import type { ExecutionStatus } from '../debug/types.js'
+import {
+  findWorkflowOutputs,
+  zodSchemaToToolSchema,
+  getWorkflowStoreFromTree,
+} from '../workflow/helpers.js'
 
 /**
  * Wrapper component that passes through children
@@ -207,6 +214,10 @@ export async function executePlan(
         const message = (humanNode.props.message as string | undefined) || 'Human approval required to continue'
         const content = extractTextContent(humanNode)
 
+        // Check for workflow-output children
+        const humanOutputs = findWorkflowOutputs(humanNode)
+        const hasWorkflowOutputs = humanOutputs.length > 0
+
         debugCollector.emit({
           type: 'control:human',
           message,
@@ -216,17 +227,63 @@ export async function executePlan(
 
         if (verbose) {
           console.log(`[Frame ${frameNumber}] Human node detected: ${message}`)
+          if (hasWorkflowOutputs) {
+            console.log(`[Frame ${frameNumber}] Human node has ${humanOutputs.length} workflow outputs`)
+          }
         }
 
         // If onHumanPrompt callback is provided, use it; otherwise auto-approve
         let approved = true
+        let workflowValues: Record<string, unknown> | undefined
+
         if (onHumanPrompt) {
-          approved = await onHumanPrompt(message, content)
+          // Build HumanPromptInfo for enhanced callback support
+          const promptInfo: HumanPromptInfo = {
+            message,
+            content,
+            outputs: humanOutputs.map((o) => ({
+              name: o.props.name as string,
+              description: o.props.description as string | undefined,
+              schema: o.props.schema ? zodSchemaToToolSchema(o.props.schema) : undefined,
+            })),
+          }
+
+          // Call the onHumanPrompt callback
+          // It could return boolean (legacy) or HumanPromptResponse (enhanced)
+          const result = await (onHumanPrompt as (
+            arg1: string | HumanPromptInfo,
+            arg2?: string
+          ) => Promise<boolean | HumanPromptResponse>)(
+            hasWorkflowOutputs ? promptInfo : message,
+            hasWorkflowOutputs ? undefined : content
+          )
+
+          if (typeof result === 'boolean') {
+            // Legacy callback: returns boolean
+            approved = result
+          } else {
+            // Enhanced callback: returns HumanPromptResponse
+            approved = result.approved
+            workflowValues = result.values
+          }
         }
 
         if (approved) {
           // Mark this Human node as approved
           approvedHumanNodes.add(humanNodeKey)
+
+          // Set workflow values from human response
+          if (workflowValues && hasWorkflowOutputs) {
+            const store = getWorkflowStoreFromTree(humanNode)
+            if (store) {
+              for (const [name, value] of Object.entries(workflowValues)) {
+                store.setValue(name, value)
+              }
+              if (verbose) {
+                console.log(`[Frame ${frameNumber}] Set ${Object.keys(workflowValues).length} workflow values from human response`)
+              }
+            }
+          }
 
           debugCollector.emit({
             type: 'control:human',
@@ -475,7 +532,7 @@ export async function executePlan(
         contentHash: nodeContentHash,
       })
 
-      await executeNode(claudeNode, mcpManager, wrappedCallback, wrappedError, options)
+      const nodeResult = await executeNode(claudeNode, mcpManager, wrappedCallback, wrappedError, options)
 
       // Emit node:execute:end
       debugCollector.emit({
@@ -501,12 +558,18 @@ export async function executePlan(
 
       executedNodeTypes.push(getExecutionLabel(claudeNode))
 
-      // If this node's callback was called and likely changed state,
+      // If this node's callback was called or workflow values were set,
       // wait for state updates to propagate, then break and re-render
-      if (callbackInvoked) {
+      if (callbackInvoked || nodeResult.workflowValuesSet) {
         shouldRerender = true
+        stateChanged = stateChanged || nodeResult.workflowValuesSet
         if (verbose) {
-          console.log(`[Frame ${frameNumber}] Callback invoked, waiting for state updates to propagate`)
+          if (callbackInvoked) {
+            console.log(`[Frame ${frameNumber}] Callback invoked, waiting for state updates to propagate`)
+          }
+          if (nodeResult.workflowValuesSet) {
+            console.log(`[Frame ${frameNumber}] Workflow values set, waiting for state updates to propagate`)
+          }
         }
         await waitForStateUpdates()
 
@@ -587,7 +650,7 @@ export async function executePlan(
             contentHash: nodeContentHash,
           })
 
-          await executeNode(node, mcpManager, wrappedCallback, wrappedError, options)
+          const nodeResult = await executeNode(node, mcpManager, wrappedCallback, wrappedError, options)
 
           // Emit node:execute:end
           debugCollector.emit({
@@ -599,6 +662,14 @@ export async function executePlan(
             result: node._execution?.result,
             error: node._execution?.error?.message,
           })
+
+          // Mark state as changed if workflow values were set
+          if (nodeResult.workflowValuesSet) {
+            stateChanged = true
+            if (verbose) {
+              console.log(`[Frame ${frameNumber}] Subagent set workflow values`)
+            }
+          }
 
           if (!originalCallback && node._execution?.result) {
             finalOutput = node._execution.result
@@ -1102,6 +1173,71 @@ async function prepareTools(node: SmithersNode, mcpManager: MCPManager): Promise
 }
 
 /**
+ * Generate workflow tools from workflow-output children of a node
+ *
+ * For each workflow-output node found, creates a tool that sets the
+ * corresponding value in the workflow store.
+ *
+ * @param node The node to search for workflow outputs
+ * @returns Array of tools for setting workflow values
+ */
+function generateWorkflowTools(node: SmithersNode): Tool[] {
+  const outputNodes = findWorkflowOutputs(node)
+  const tools: Tool[] = []
+
+  for (const output of outputNodes) {
+    const name = output.props.name as string
+    const description = (output.props.description as string) || `Set the value of ${name}`
+    const schema = output.props.schema
+    const workflowId = output.props._workflowId as string | undefined
+
+    // Convert Zod schema to JSON Schema for the tool
+    const inputSchema = zodSchemaToToolSchema(schema)
+
+    tools.push({
+      name: `set_${name}`,
+      description,
+      input_schema: inputSchema as Tool['input_schema'],
+      execute: async (input: unknown) => {
+        // Find the workflow store from the tree, matching the workflow ID
+        const store = getWorkflowStoreFromTree(node, workflowId)
+        if (store) {
+          // Extract value from input (tools always receive { value: ... })
+          const value =
+            typeof input === 'object' && input !== null && 'value' in input
+              ? (input as { value: unknown }).value
+              : input
+          store.setValue(name, value)
+          return `Successfully set ${name}`
+        }
+        return `Warning: No workflow store found for ${name}`
+      },
+    })
+  }
+
+  return tools
+}
+
+/**
+ * Default token estimation function
+ * Uses simple heuristics: ~4 chars per token for input, fixed estimate for output
+ */
+function defaultEstimateTokens(prompt: string): { inputTokens: number; outputTokens: number } {
+  return {
+    inputTokens: Math.ceil(prompt.length / 4),
+    outputTokens: 1000, // Conservative estimate
+  }
+}
+
+/**
+ * Result of executing a node
+ */
+export interface ExecuteNodeResult {
+  /** Whether workflow values were set during execution */
+  workflowValuesSet: boolean
+}
+
+/**
  * Execute a single node
  *
  * Calls the Claude API via the Anthropic SDK, or uses mock mode for testing.
@@ -1110,6 +1246,7 @@ async function prepareTools(node: SmithersNode, mcpManager: MCPManager): Promise
  * @param mcpManager The MCP manager instance
  * @param onFinishedOverride Optional callback to use instead of node.props.onFinished
  * @param onErrorOverride Optional callback to use instead of node.props.onError
+ * @returns ExecuteNodeResult indicating what happened during execution
  */
 export async function executeNode(
   node: SmithersNode,
@@ -1117,7 +1254,7 @@ export async function executeNode(
   onFinishedOverride?: (output: unknown) => void,
   onErrorOverride?: (error: Error) => void,
   executionOptions?: ExecuteOptions
-): Promise<void> {
+): Promise<ExecuteNodeResult> {
   // Compute content hash for change detection
   const contentHash = computeContentHash(node)
 
@@ -1130,15 +1267,29 @@ export async function executeNode(
   const onError =
     onErrorOverride || (node.props.onError as ((error: Error) => void) | undefined)
 
+  // Get provider context for rate limiting and usage tracking
+  const providerContext = executionOptions?.providerContext
+
+  // Track whether workflow values were set during execution
+  let workflowValuesSet = false
+
   try {
     let output: string
+    // Track usage for reporting (populated by executors that support it)
+    let usageInfo: {
+      inputTokens?: number
+      outputTokens?: number
+      cacheReadTokens?: number
+      cacheCreationTokens?: number
+      costUsd?: number
+    } | undefined
 
     // Check if we should use mock mode (for testing only)
     // Mock mode must be explicitly enabled via:
     // - SMITHERS_MOCK_MODE is "true"
     // - mockMode: true in execution options
     // - node.props._mockMode is true
-    const apiKeyAvailable = Boolean(process.env.ANTHROPIC_API_KEY)
+    const apiKeyAvailable = Boolean(process.env.ANTHROPIC_API_KEY || providerContext?.apiKey)
     const mockOverride = executionOptions?.mockMode
     const explicitMock =
       mockOverride === true ||
@@ -1154,6 +1305,24 @@ export async function executeNode(
       )
     }
 
+    // Provider context integration: Check budget and acquire rate limit
+    if (providerContext && !useMockMode) {
+      // Check budget before execution
+      const budgetCheck = providerContext.checkBudget()
+      if (!budgetCheck.allowed) {
+        // Pause and wait for budget to become available
+        await providerContext.waitForBudget()
+      }
+
+      // Estimate tokens for rate limiting
+      const promptText = extractTextContent(node)
+      const estimator = providerContext.estimateTokens ?? defaultEstimateTokens
+      const tokenEstimate = estimator(promptText)
+
+      // Acquire rate limit permission (may queue if limited)
+      await providerContext.acquireRateLimit(tokenEstimate)
+    }
+
     // Route to appropriate executor based on node type
     if (node.type === 'claude-cli') {
       // Deprecated CLI executor
@@ -1166,8 +1335,27 @@ export async function executeNode(
       // API SDK executor (direct Anthropic API calls)
       const preparedTools = await prepareTools(node, mcpManager)
 
+      // Add workflow output tools if the node has workflow-output children
+      const workflowTools = generateWorkflowTools(node)
+      const allTools = [...preparedTools, ...workflowTools]
+
       if (useMockMode) {
         output = await executeMock(node)
+        // In mock mode, simulate setting workflow values
+        // Use findWorkflowOutputs to get the original output nodes with workflow IDs
+        const outputNodes = findWorkflowOutputs(node)
+        if (outputNodes.length > 0) {
+          for (const outputNode of outputNodes) {
+            const fieldName = outputNode.props.name as string
+            const outputWorkflowId = outputNode.props._workflowId as string | undefined
+            const store = getWorkflowStoreFromTree(node, outputWorkflowId)
+            if (store) {
+              // Set a mock value
+              store.setValue(fieldName, `[mock value for ${fieldName}]`)
+              workflowValuesSet = true
+            }
+          }
+        }
       } else {
         output = await executeWithClaude(
           node,
@@ -1175,8 +1363,10 @@ export async function executeNode(
             model: executionOptions?.model,
             maxTokens: executionOptions?.maxTokens,
           },
-          preparedTools
+          allTools
         )
+        // Note: executeWithClaude doesn't currently return usage info
+        // This could be enhanced in a future update
       }
     } else {
       // Default: Agent SDK executor (node.type === 'claude')
@@ -1184,6 +1374,21 @@ export async function executeNode(
       if (useMockMode) {
         const mockResult = await executeAgentMock(node)
         output = mockResult.result || ''
+        // In mock mode, simulate setting workflow values for Agent SDK too
+        // Use findWorkflowOutputs to get the original output nodes with workflow IDs
+        const outputNodes = findWorkflowOutputs(node)
+        if (outputNodes.length > 0) {
+          for (const outputNode of outputNodes) {
+            const fieldName = outputNode.props.name as string
+            const outputWorkflowId = outputNode.props._workflowId as string | undefined
+            const store = getWorkflowStoreFromTree(node, outputWorkflowId)
+            if (store) {
+              // Set a mock value
+              store.setValue(fieldName, `[mock value for ${fieldName}]`)
+              workflowValuesSet = true
+            }
+          }
+        }
       } else {
         const nodePath = getNodePath(node)
         const agentResult = await executeWithAgentSdk(node, nodePath)
@@ -1194,7 +1399,31 @@ export async function executeNode(
         output = agentResult.structuredOutput !== undefined
           ? JSON.stringify(agentResult.structuredOutput)
           : (agentResult.result || '')
+
+        // Capture usage info from Agent SDK result
+        if (agentResult.totalCostUsd !== undefined) {
+          usageInfo = {
+            costUsd: agentResult.totalCostUsd,
+            // Note: Agent SDK doesn't expose token counts directly
+            // We use a rough estimate based on cost and model pricing
+            inputTokens: undefined,
+            outputTokens: undefined,
+          }
+        }
       }
+    }
+
+    // Report usage to provider context (if available and not mock mode)
+    if (providerContext && usageInfo && !useMockMode) {
+      const model = (node.props.model as string) ?? executionOptions?.model
+      providerContext.reportUsage({
+        inputTokens: usageInfo.inputTokens ?? 0,
+        outputTokens: usageInfo.outputTokens ?? 0,
+        cacheReadTokens: usageInfo.cacheReadTokens,
+        cacheCreationTokens: usageInfo.cacheCreationTokens,
+        costUsd: usageInfo.costUsd,
+        model,
+      })
     }
 
     // Store the raw output
@@ -1221,6 +1450,8 @@ export async function executeNode(
 
       onFinished(outputToPass)
     }
+
+    return { workflowValuesSet }
   } catch (error) {
     // Enhance error with context if it's not already an ExecutionError
     let enhancedError: Error | ExecutionError = error as Error
@@ -1245,6 +1476,7 @@ export async function executeNode(
 
     if (onError) {
       onError(enhancedError)
+      return { workflowValuesSet }
     } else {
       throw enhancedError
     }
