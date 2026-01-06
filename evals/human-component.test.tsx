@@ -291,4 +291,35 @@ describe('human-component', () => {
 
     expect(approvals).toEqual(['first', 'second'])
   })
+
+  test('Human node without onApprove callback does not cause infinite loop', async () => {
+    let promptCount = 0
+    const executionLog: string[] = []
+
+    function AgentWithPersistentHuman() {
+      // Human node stays in the tree but should only prompt once
+      return (
+        <>
+          <Human message="One-time approval">
+            This Human node has no onApprove callback, so it stays in the tree.
+            But it should only prompt once.
+          </Human>
+          <Claude onFinished={() => executionLog.push('claude-executed')}>
+            This should execute after Human approval
+          </Claude>
+        </>
+      )
+    }
+
+    await executePlan(<AgentWithPersistentHuman />, {
+      onHumanPrompt: async () => {
+        promptCount++
+        return true
+      },
+    })
+
+    // Should only prompt once, not loop infinitely
+    expect(promptCount).toBe(1)
+    expect(executionLog).toContain('claude-executed')
+  })
 })

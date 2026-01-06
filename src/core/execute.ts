@@ -54,6 +54,10 @@ export async function executePlan(
   // We'll track execution state externally to persist across renders
   const executionState = new Map<string, ExecutionState>()
 
+  // Track which Human nodes have been approved (by node path)
+  // This prevents infinite prompting when a Human node has no onApprove callback
+  const approvedHumanNodes = new Set<string>()
+
   // Create root once and reuse it - this preserves React state (useState, etc.)
   const root = createRoot()
 
@@ -119,53 +123,71 @@ export async function executePlan(
     // Check for Human node - if present, wait for human approval
     const humanNode = findHumanNode(tree)
     if (humanNode) {
-      const message = (humanNode.props.message as string | undefined) || 'Human approval required to continue'
-      const content = extractTextContent(humanNode)
+      // Use a combination of path and content hash to uniquely identify this Human node
+      // This allows different Human nodes at the same tree position to be treated separately
+      const humanNodePath = getNodePath(humanNode)
+      const humanContentHash = computeContentHash(humanNode)
+      const humanNodeKey = `${humanNodePath}:${humanContentHash}`
 
-      if (verbose) {
-        console.log(`[Frame ${frameNumber}] Human node detected: ${message}`)
-      }
-
-      // If onHumanPrompt callback is provided, use it; otherwise auto-approve
-      let approved = true
-      if (onHumanPrompt) {
-        approved = await onHumanPrompt(message, content)
-      }
-
-      if (approved) {
-        // Call onApprove callback if provided
-        const onApprove = humanNode.props.onApprove as (() => void) | undefined
-        if (onApprove) {
-          if (verbose) {
-            console.log(`[Frame ${frameNumber}] Human approved, calling onApprove callback`)
-          }
-          runWithSyncUpdates(() => {
-            onApprove()
-          })
-          await waitForStateUpdates()
-          // Continue to next frame to re-render with updated state
-          continue
-        }
-        // If no callback, just continue execution (fall through to normal execution)
-      } else {
-        // Call onReject callback if provided
-        const onReject = humanNode.props.onReject as (() => void) | undefined
-        if (onReject) {
-          if (verbose) {
-            console.log(`[Frame ${frameNumber}] Human rejected, calling onReject callback`)
-          }
-          runWithSyncUpdates(() => {
-            onReject()
-          })
-          await waitForStateUpdates()
-          // Continue to next frame to re-render with updated state
-          continue
-        }
-        // If rejected and no callback, halt execution
+      // Skip if this Human node was already approved in a previous frame
+      if (approvedHumanNodes.has(humanNodeKey)) {
         if (verbose) {
-          console.log(`[Frame ${frameNumber}] Human approval rejected, halting execution`)
+          console.log(`[Frame ${frameNumber}] Human node already approved, skipping`)
         }
-        break
+        // Fall through to continue normal execution
+      } else {
+        const message = (humanNode.props.message as string | undefined) || 'Human approval required to continue'
+        const content = extractTextContent(humanNode)
+
+        if (verbose) {
+          console.log(`[Frame ${frameNumber}] Human node detected: ${message}`)
+        }
+
+        // If onHumanPrompt callback is provided, use it; otherwise auto-approve
+        let approved = true
+        if (onHumanPrompt) {
+          approved = await onHumanPrompt(message, content)
+        }
+
+        if (approved) {
+          // Mark this Human node as approved
+          approvedHumanNodes.add(humanNodeKey)
+
+          // Call onApprove callback if provided
+          const onApprove = humanNode.props.onApprove as (() => void) | undefined
+          if (onApprove) {
+            if (verbose) {
+              console.log(`[Frame ${frameNumber}] Human approved, calling onApprove callback`)
+            }
+            runWithSyncUpdates(() => {
+              onApprove()
+            })
+            await waitForStateUpdates()
+            // Continue to next frame to re-render with updated state
+            continue
+          }
+          // If no callback, fall through to continue execution
+          // The approval is tracked, so we won't prompt again
+        } else {
+          // Call onReject callback if provided
+          const onReject = humanNode.props.onReject as (() => void) | undefined
+          if (onReject) {
+            if (verbose) {
+              console.log(`[Frame ${frameNumber}] Human rejected, calling onReject callback`)
+            }
+            runWithSyncUpdates(() => {
+              onReject()
+            })
+            await waitForStateUpdates()
+            // Continue to next frame to re-render with updated state
+            continue
+          }
+          // If rejected and no callback, halt execution
+          if (verbose) {
+            console.log(`[Frame ${frameNumber}] Human approval rejected, halting execution`)
+          }
+          break
+        }
       }
     }
 
@@ -182,7 +204,9 @@ export async function executePlan(
     }
 
     // If no nodes to execute, we're done
-    if (pendingNodes.length === 0) {
+    // BUT: if there's an unapproved Human node, we need to keep looping
+    const hasUnapprovedHuman = humanNode && !approvedHumanNodes.has(`${getNodePath(humanNode)}:${computeContentHash(humanNode)}`)
+    if (pendingNodes.length === 0 && !hasUnapprovedHuman) {
       if (verbose) {
         console.log(`[Frame ${frameNumber}] No more pending nodes, execution complete`)
       }

@@ -152,6 +152,8 @@ export interface SubagentProps {
  */
 export interface PhaseProps {
   name: string
+  /** Mark phase as already completed (skipped by Ralph loop) */
+  completed?: boolean
   children?: ReactNode
 }
 
@@ -159,6 +161,8 @@ export interface PhaseProps {
  * Props for the Step component
  */
 export interface StepProps {
+  /** Mark step as already completed (skipped by Ralph loop) */
+  completed?: boolean
   children?: ReactNode
 }
 

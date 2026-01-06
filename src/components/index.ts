@@ -49,6 +49,11 @@ export function Subagent(props: SubagentProps): ReactElement {
  *   <Step>Search for sources</Step>
  *   <Step>Extract key findings</Step>
  * </Phase>
+ *
+ * // Mark phase as already completed (skipped by Ralph loop)
+ * <Phase name="research" completed>
+ *   ...
+ * </Phase>
  * ```
  */
 export function Phase(props: PhaseProps): ReactElement {
@@ -61,6 +66,9 @@ export function Phase(props: PhaseProps): ReactElement {
  * @example
  * ```tsx
  * <Step>Read the existing code</Step>
+ *
+ * // Mark step as already completed (skipped by Ralph loop)
+ * <Step completed>Already done this step</Step>
  * ```
  */
 export function Step(props: StepProps): ReactElement {
