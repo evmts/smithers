@@ -414,7 +414,28 @@ This file contains important learnings, decisions, and context from previous Ral
 
 ## What's Next (Priority Order)
 
-1. **Test Coverage** (Highest Priority)
+1. **TUI Integration** (HIGHEST PRIORITY - New Feature)
+   - ✅ Phase 1: Research & Documentation (COMPLETED - 2026-01-06)
+     - Created `docs/tui-research.md` - Comprehensive OpenTUI architecture, APIs, hooks, integration patterns
+     - Created `docs/tui-design.md` - UI mockups, keyboard navigation spec, component hierarchy, state management
+     - Created `docs/vhs-recording.md` - VHS tape file format, workflows, CI integration
+   - **Phase 2: Implementation** (NEXT)
+     - Install Zig and OpenTUI dependencies (@opentui/core, @opentui/react)
+     - Create TreeView component (arrow key navigation, expand/collapse)
+     - Create AgentPanel component (display prompt/output, scrolling)
+     - Create Layout component (split pane, responsive sizing)
+     - Integrate with executePlan() via onFrameUpdate callback
+   - **Phase 3: VHS Demo Recording**
+     - Create demos/ directory with .tape files
+     - Record basic execution, agent details, multi-phase, error recovery demos
+     - Set up GitHub Action for automated regeneration
+   - **Key Design Decisions:**
+     - TUI is read-only observer of execution (doesn't modify tree)
+     - Uses onFrameUpdate callback from executePlan() for real-time updates
+     - Keyboard navigation follows depth-first tree traversal
+     - Responsive design with breakpoints for small terminals
+
+2. **Test Coverage**
    - ✅ CLI tests (`evals/cli.test.ts`) - 34 tests (DONE)
    - ✅ Loader tests (`evals/loader.test.ts`) - 33 tests (DONE)
    - ✅ Renderer tests (`evals/renderer.test.tsx`) - 32 tests (DONE)
@@ -423,17 +444,18 @@ This file contains important learnings, decisions, and context from previous Ral
    - **Total**: 528 passing tests across 29 test files
    - Note: MCP tests already exist (`mcp-manager.test.ts`, `mcp-presets.test.ts`)
    - Note: Most executor behavior already tested in `multi-phase.test.tsx`, `multi-agent.test.tsx`, `subagent-scheduling.test.tsx`, `execute-helpers.test.ts`, etc.
+   - Remaining: TUI tests (`evals/tui.test.ts`) once TUI is implemented
    - Remaining: Integration tests (`evals/integration.test.ts`) if needed for full workflows
-   - See Test Matrix in CLAUDE.md for full coverage targets
 
-2. **Examples + Documentation**
+3. **Examples + Documentation**
    - Create/update examples to showcase MCP integration
    - Add multi-agent orchestration example
    - Document MCP server configuration patterns
    - Set up Mintlify docs
    - Keep docs aligned with API changes
+   - Add TUI demos to README
 
-3. **Release Readiness**
+4. **Release Readiness**
    - Add changesets for all recent changes
    - Set up CI workflows (tests, typecheck, lint)
    - Create npm publish pipeline
