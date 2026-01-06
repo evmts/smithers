@@ -1,0 +1,353 @@
+---
+title: File Component
+description: Write or update files during agent execution
+---
+
+# File Component
+
+The `<File>` component writes or updates files during agent execution. It allows agents to produce file artifacts without requiring Claude tool calls, making file operations explicit and declarative in your agent workflows.
+
+## Basic Usage
+
+```tsx
+import { File } from 'smithers'
+
+<File path="output/report.md">
+  # Analysis Report
+
+  This is the generated report content.
+</File>
+```
+
+## Props
+
+<ParamField path="path" type="string" required>
+  The file path to write to. Can be absolute or relative to the working directory.
+
+  ```tsx
+  <File path="./output/results.json">
+    {JSON.stringify(data)}
+  </File>
+  ```
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  The content to write to the file.
+</ParamField>
+
+<ParamField path="mode" type="'write' | 'append'" default="write">
+  How to write the content. `write` overwrites the file, `append` adds to the end.
+
+  ```tsx
+  <File path="log.txt" mode="append">
+    [{new Date().toISOString()}] Task completed
+  </File>
+  ```
+</ParamField>
+
+<ParamField path="encoding" type="string" default="utf-8">
+  The file encoding to use.
+
+  ```tsx
+  <File path="output.txt" encoding="utf-8">
+    Content here
+  </File>
+  ```
+</ParamField>
+
+<ParamField path="onWritten" type="(path: string) => void">
+  Callback invoked after the file is successfully written.
+
+  ```tsx
+  <File
+    path="report.md"
+    onWritten={(path) => console.log(`Wrote ${path}`)}
+  >
+    Report content
+  </File>
+  ```
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Callback invoked if writing fails.
+
+  ```tsx
+  <File
+    path="/protected/file.txt"
+    onError={(err) => console.error('Write failed:', err)}
+  >
+    Content
+  </File>
+  ```
+</ParamField>
+
+## Use Cases
+
+### Generating Reports
+
+Write analysis results to a file:
+
+```tsx
+function ReportAgent({ codebase }) {
+  const [analysis, setAnalysis] = useState(null)
+
+  if (!analysis) {
+    return (
+      <Claude onFinished={setAnalysis} tools={[filesystem]}>
+        Analyze {codebase} for code quality issues
+      </Claude>
+    )
+  }
+
+  return (
+    <>
+      <File path="reports/analysis.md">
+        # Code Quality Report
+
+        ## Summary
+        {analysis.summary}
+
+        ## Issues Found
+        {analysis.issues.map(issue =>
+          `- **${issue.severity}**: ${issue.message} (${issue.file}:${issue.line})`
+        ).join('\n')}
+
+        ## Recommendations
+        {analysis.recommendations.join('\n')}
+      </File>
+      <Output>Report written to reports/analysis.md</Output>
+      <Stop reason="Report generated" />
+    </>
+  )
+}
+```
+
+### Writing JSON Data
+
+Save structured data:
+
+```tsx
+function DataExportAgent({ query }) {
+  const [data, setData] = useState(null)
+
+  if (!data) {
+    return (
+      <Claude onFinished={setData}>
+        Query the database: {query}
+      </Claude>
+    )
+  }
+
+  return (
+    <File path="export/data.json">
+      {JSON.stringify(data, null, 2)}
+    </File>
+  )
+}
+```
+
+### Appending to Logs
+
+Add entries to a log file:
+
+```tsx
+function LoggingAgent({ task }) {
+  const [result, setResult] = useState(null)
+
+  return (
+    <>
+      <File path="execution.log" mode="append">
+        [{new Date().toISOString()}] Starting: {task}
+      </File>
+
+      <Claude onFinished={setResult}>
+        Execute: {task}
+      </Claude>
+
+      {result && (
+        <File path="execution.log" mode="append">
+          [{new Date().toISOString()}] Completed: {task} - {result.status}
+        </File>
+      )}
+    </>
+  )
+}
+```
+
+### Multiple File Output
+
+Generate multiple files from a single workflow:
+
+```tsx
+function DocumentationAgent({ modules }) {
+  const [docs, setDocs] = useState(null)
+
+  if (!docs) {
+    return (
+      <Claude onFinished={setDocs}>
+        Generate documentation for: {modules.join(', ')}
+      </Claude>
+    )
+  }
+
+  return (
+    <>
+      {docs.modules.map(mod => (
+        <File key={mod.name} path={`docs/${mod.name}.md`}>
+          # {mod.name}
+
+          {mod.description}
+
+          ## API
+          {mod.api}
+        </File>
+      ))}
+
+      <File path="docs/index.md">
+        # Documentation Index
+
+        {docs.modules.map(mod =>
+          `- [${mod.name}](./${mod.name}.md)`
+        ).join('\n')}
+      </File>
+
+      <Output>Generated {docs.modules.length + 1} documentation files</Output>
+    </>
+  )
+}
+```
+
+### Conditional File Writing
+
+Write files based on conditions:
+
+```tsx
+function ConfigAgent({ environment, settings }) {
+  return (
+    <>
+      <File path={`config/${environment}.json`}>
+        {JSON.stringify(settings, null, 2)}
+      </File>
+
+      {environment === 'production' && (
+        <File path="config/backup.json">
+          {JSON.stringify({ ...settings, backup: true }, null, 2)}
+        </File>
+      )}
+    </>
+  )
+}
+```
+
+## Combining with Other Components
+
+File works well with Claude and control flow:
+
+```tsx
+function BuildAgent({ project }) {
+  const [phase, setPhase] = useState('analyze')
+  const [artifacts, setArtifacts] = useState({})
+
+  if (phase === 'analyze') {
+    return (
+      <Claude onFinished={(a) => { setArtifacts(a); setPhase('generate') }}>
+        Analyze {project} and determine what files to generate
+      </Claude>
+    )
+  }
+
+  if (phase === 'generate') {
+    return (
+      <>
+        {artifacts.files.map(file => (
+          <File
+            key={file.path}
+            path={file.path}
+            onWritten={() => console.log(`Generated: ${file.path}`)}
+          >
+            {file.content}
+          </File>
+        ))}
+
+        <Human
+          message="Review generated files before finalizing"
+          onApprove={() => setPhase('complete')}
+        >
+          Generated {artifacts.files.length} files
+        </Human>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <Output>Build complete! Generated {artifacts.files.length} files.</Output>
+      <Stop reason="Build complete" />
+    </>
+  )
+}
+```
+
+## Behavior
+
+- File components are executed during the Ralph Wiggum loop
+- Files are written after any preceding Claude executions complete
+- If the parent directory doesn't exist, it will be created
+- File writes are atomic - content is fully written or not at all
+- In mock mode, file writes are simulated (no actual disk writes)
+
+## Error Handling
+
+Handle file write errors gracefully:
+
+```tsx
+function SafeFileWriter({ path, content }) {
+  const [error, setError] = useState(null)
+
+  if (error) {
+    return (
+      <>
+        <Output label="Error">Failed to write {path}: {error.message}</Output>
+        <Stop reason="File write failed" />
+      </>
+    )
+  }
+
+  return (
+    <File path={path} onError={setError}>
+      {content}
+    </File>
+  )
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use descriptive paths" icon="folder">
+    Organize files in meaningful directories (reports/, output/, etc.)
+  </Card>
+  <Card title="Handle errors" icon="shield">
+    Always provide onError handlers for critical file operations
+  </Card>
+  <Card title="Use appropriate modes" icon="pen">
+    Use append for logs, write for regeneratable content
+  </Card>
+  <Card title="Combine with Output" icon="terminal">
+    Inform users when files are written
+  </Card>
+</CardGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Output" icon="terminal" href="/components/output">
+    Display content without writing files
+  </Card>
+  <Card title="Claude" icon="cube" href="/components/claude">
+    Generate file content with AI
+  </Card>
+  <Card title="Human" icon="user" href="/components/human">
+    Review files before writing
+  </Card>
+</CardGroup>

@@ -1,0 +1,245 @@
+---
+title: Output Component
+description: Render output to the terminal or change the rendered output
+---
+
+# Output Component
+
+The `<Output>` component renders content to the terminal during execution or changes the final rendered output. It's useful for displaying progress, results, or status messages without requiring a Claude execution.
+
+## Basic Usage
+
+```tsx
+import { Output } from 'smithers'
+
+<Output>
+  Processing complete! Found 42 files.
+</Output>
+```
+
+## Props
+
+<ParamField path="children" type="ReactNode" required>
+  The content to output. Can be plain text, markdown, or nested components.
+</ParamField>
+
+<ParamField path="format" type="'text' | 'json' | 'markdown'" default="text">
+  The format of the output content.
+
+  ```tsx
+  <Output format="json">
+    {JSON.stringify({ status: 'complete', count: 42 })}
+  </Output>
+  ```
+</ParamField>
+
+<ParamField path="label" type="string">
+  Optional label to prefix the output.
+
+  ```tsx
+  <Output label="Result">
+    Analysis complete
+  </Output>
+  // Renders: [Result] Analysis complete
+  ```
+</ParamField>
+
+## Use Cases
+
+### Displaying Results
+
+Show results between agent phases:
+
+```tsx
+function AnalysisAgent({ files }) {
+  const [result, setResult] = useState(null)
+
+  if (!result) {
+    return (
+      <Claude onFinished={setResult} tools={[filesystem]}>
+        Analyze {files.length} files for issues
+      </Claude>
+    )
+  }
+
+  return (
+    <>
+      <Output format="markdown">
+        ## Analysis Complete
+
+        Found {result.issues.length} issues across {files.length} files.
+
+        ### Summary
+        - Critical: {result.critical}
+        - Warnings: {result.warnings}
+      </Output>
+      <Stop reason="Analysis complete" />
+    </>
+  )
+}
+```
+
+### Progress Updates
+
+Show progress during multi-phase workflows:
+
+```tsx
+function MultiPhaseAgent() {
+  const [phase, setPhase] = useState('research')
+  const [data, setData] = useState(null)
+
+  if (phase === 'research') {
+    return (
+      <Claude onFinished={(d) => { setData(d); setPhase('report') }}>
+        Research the topic
+      </Claude>
+    )
+  }
+
+  if (phase === 'report') {
+    return (
+      <>
+        <Output label="Phase 1">Research complete, generating report...</Output>
+        <Claude onFinished={() => setPhase('done')}>
+          Generate report from: {JSON.stringify(data)}
+        </Claude>
+      </>
+    )
+  }
+
+  return <Output>All phases complete!</Output>
+}
+```
+
+### JSON Output
+
+Output structured data:
+
+```tsx
+<Output format="json">
+  {JSON.stringify({
+    status: 'success',
+    files_processed: 42,
+    errors: [],
+    timestamp: new Date().toISOString()
+  }, null, 2)}
+</Output>
+```
+
+### Conditional Output
+
+Show output based on conditions:
+
+```tsx
+function StatusAgent({ verbose }) {
+  const [status, setStatus] = useState(null)
+
+  return (
+    <>
+      <Claude onFinished={setStatus}>Check system status</Claude>
+
+      {status && (
+        <>
+          <Output>Status: {status.health}</Output>
+          {verbose && (
+            <Output format="json">{JSON.stringify(status.details)}</Output>
+          )}
+        </>
+      )}
+    </>
+  )
+}
+```
+
+## Combining with Other Components
+
+Output works well with control flow components:
+
+```tsx
+function WorkflowAgent({ task }) {
+  const [step, setStep] = useState(1)
+  const [results, setResults] = useState({})
+
+  if (step === 1) {
+    return (
+      <Claude onFinished={(r) => { setResults({ step1: r }); setStep(2) }}>
+        Analyze: {task}
+      </Claude>
+    )
+  }
+
+  if (step === 2) {
+    return (
+      <>
+        <Output label="Step 1 Complete">
+          Analysis found {results.step1?.issues || 0} issues
+        </Output>
+        <Human
+          message="Continue to step 2?"
+          onApprove={() => setStep(3)}
+        >
+          {JSON.stringify(results.step1, null, 2)}
+        </Human>
+      </>
+    )
+  }
+
+  if (step === 3) {
+    return (
+      <Claude onFinished={(r) => { setResults({ ...results, step2: r }); setStep(4) }}>
+        Fix the issues from: {JSON.stringify(results.step1)}
+      </Claude>
+    )
+  }
+
+  return (
+    <>
+      <Output format="markdown">
+        ## Workflow Complete
+
+        - Step 1: {results.step1?.summary}
+        - Step 2: {results.step2?.summary}
+      </Output>
+      <Stop reason="Workflow complete" />
+    </>
+  )
+}
+```
+
+## Behavior
+
+- Output components are rendered but do not trigger Claude execution
+- Multiple Output components are displayed in order
+- Output content is included in the serialized XML plan
+- In CLI mode, output is printed to stdout
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use for status updates" icon="info">
+    Show progress between phases without requiring Claude calls
+  </Card>
+  <Card title="Format appropriately" icon="code">
+    Use JSON format for structured data, markdown for rich text
+  </Card>
+  <Card title="Add labels for clarity" icon="tag">
+    Labels help distinguish different outputs in complex workflows
+  </Card>
+  <Card title="Keep output concise" icon="compress">
+    Avoid overwhelming users with too much output
+  </Card>
+</CardGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="File" icon="file" href="/components/file">
+    Write content to files
+  </Card>
+  <Card title="Stop" icon="stop" href="/components/stop">
+    Halt execution after output
+  </Card>
+  <Card title="Human" icon="user" href="/components/human">
+    Pause for human review of output
+  </Card>
+</CardGroup>

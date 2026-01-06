@@ -79,7 +79,9 @@
         "components/output-format",
         "components/task",
         "components/human",
-        "components/stop"
+        "components/stop",
+        "components/output",
+        "components/file"
       ]
     },
     {
