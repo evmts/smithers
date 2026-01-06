@@ -31,16 +31,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/williamcory/smithers.git"
+    "url": "https://github.com/evmts/smithers.git"
   },
-  "homepage": "https://github.com/williamcory/smithers#readme",
+  "homepage": "https://github.com/evmts/smithers#readme",
   "bugs": {
-    "url": "https://github.com/williamcory/smithers/issues"
+    "url": "https://github.com/evmts/smithers/issues"
   },
   "publishConfig": {
     "access": "public"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
     "@anthropic-ai/sdk": "^0.71.2",
     "@mdx-js/mdx": "^3.1.1",
     "@modelcontextprotocol/sdk": "^1.25.1",
