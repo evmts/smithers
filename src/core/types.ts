@@ -2,9 +2,13 @@ import type { ReactElement, ReactNode } from 'react'
 import type { ZodType } from 'zod'
 import type { MCPServerConfig } from '../mcp/types.js'
 import type { DebugOptions } from '../debug/types.js'
+import type { HumanPromptInfo, HumanPromptResponse } from '../workflow/types.js'
 
 // Re-export DebugOptions for convenience
 export type { DebugOptions } from '../debug/types.js'
+
+// Re-export workflow types for convenience
+export type { HumanPromptInfo, HumanPromptResponse } from '../workflow/types.js'
 
 /**
  * Internal node representation for the Smithers renderer
@@ -438,6 +442,32 @@ export interface PlanInfo {
 }
 
 /**
+ * Provider context for rate limiting and usage tracking
+ * This is passed through from ClaudeProvider to executors
+ */
+export interface ProviderContext {
+  /** Acquire rate limit permission before making a request */
+  acquireRateLimit: (estimate: { inputTokens: number; outputTokens: number }) => Promise<void>
+  /** Report actual usage after a request completes */
+  reportUsage: (usage: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens?: number
+    cacheCreationTokens?: number
+    costUsd?: number
+    model?: string
+  }) => void
+  /** Check if within budget limits */
+  checkBudget: () => { allowed: boolean; reason?: string }
+  /** Wait for budget to become available (pause-and-wait behavior) */
+  waitForBudget: () => Promise<void>
+  /** Custom token estimation function */
+  estimateTokens?: (prompt: string) => { inputTokens: number; outputTokens: number }
+  /** API key from provider */
+  apiKey?: string
+}
+
+/**
  * Options for executing a plan
  */
 export interface ExecuteOptions {
@@ -456,11 +486,17 @@ export interface ExecuteOptions {
   /**
    * Custom prompt function for Human component approval.
    * If not provided, Human nodes will automatically approve in non-interactive contexts.
-   * @param message - The message to display to the user
-   * @param content - The content from the Human component's children
-   * @returns Promise<boolean> - true if approved, false if rejected
+   *
+   * Supports two signatures:
+   * - Legacy: `(message: string, content: string) => Promise<boolean>`
+   * - Enhanced: `(info: HumanPromptInfo) => Promise<HumanPromptResponse>`
+   *
+   * The enhanced signature supports workflow outputs, allowing humans to
+   * provide typed values through the Human component.
    */
-  onHumanPrompt?: (message: string, content: string) => Promise<boolean>
+  onHumanPrompt?:
+    | ((message: string, content: string) => Promise<boolean>)
+    | ((info: HumanPromptInfo) => Promise<HumanPromptResponse>)
   /**
    * Callback invoked at the start of each frame when there's a top-level plan.
    * This is called after rendering but before executing any nodes.
@@ -478,6 +514,11 @@ export interface ExecuteOptions {
    * for monitoring, testing, and debugging purposes.
    */
   debug?: DebugOptions
+  /**
+   * Provider context for rate limiting and usage tracking.
+   * This is typically injected by ClaudeProvider.
+   */
+  providerContext?: ProviderContext
 }
 
 /**
