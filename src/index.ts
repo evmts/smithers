@@ -12,6 +12,7 @@ export {
 // Components
 export {
   Claude,
+  ClaudeApi,
   ClaudeCli,
   Subagent,
   Phase,
@@ -24,8 +25,24 @@ export {
   Human,
 } from './components/index.js'
 
-// Claude CLI executor
+// Claude Agent SDK executor
+export { executeWithAgentSdk, executeAgentMock } from './core/claude-agent-executor.js'
+
+// Claude CLI executor (deprecated)
 export { executeWithClaudeCli } from './core/claude-cli-executor.js'
+
+// Nested execution utilities
+export {
+  separatePromptAndPlan,
+  hasPlan,
+  generateNodePaths,
+  findNodeByPath,
+  getExecutableNodePaths,
+  serializePlanWithPaths,
+  createRenderNodeTool,
+  buildPlanSystemPrompt,
+} from './core/nested-execution.js'
+export type { PromptAndPlan, RenderNodeResult } from './core/nested-execution.js'
 
 // Types
 export type {
@@ -38,7 +55,11 @@ export type {
   ToolRetryOptions,
   ToolExecutionResult,
   ClaudeProps,
+  ClaudeApiProps,
   ClaudeCliProps,
+  PermissionMode,
+  AgentDefinition,
+  JsonSchemaOutputFormat,
   SubagentProps,
   PhaseProps,
   StepProps,
@@ -51,6 +72,7 @@ export type {
   ExecuteOptions,
   ExecutionResult,
   FrameResult,
+  PlanInfo,
 } from './core/types.js'
 
 // MCP (Model Context Protocol) integration

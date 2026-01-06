@@ -5,6 +5,7 @@ import type {
   ExecutionResult,
   ExecutionState,
   FrameResult,
+  PlanInfo,
   SmithersNode,
   Tool,
 } from './types.js'
@@ -12,6 +13,12 @@ import { createRoot } from './render.js'
 import { runWithSyncUpdates, waitForStateUpdates } from '../reconciler/index.js'
 import { executeWithClaude, createExecutionError, getNodePath } from './claude-executor.js'
 import { executeWithClaudeCli } from './claude-cli-executor.js'
+import { executeWithAgentSdk, executeAgentMock } from './claude-agent-executor.js'
+import {
+  separatePromptAndPlan,
+  serializePlanWithPaths,
+  getExecutableNodePaths,
+} from './nested-execution.js'
 import { MCPManager } from '../mcp/manager.js'
 import type { MCPServerConfig } from '../mcp/types.js'
 import { DebugCollector } from '../debug/collector.js'
@@ -49,6 +56,7 @@ export async function executePlan(
     onPlan,
     onFrame,
     onHumanPrompt,
+    onPlanWithPrompt,
     debug,
   } = options
 
@@ -141,7 +149,8 @@ export async function executePlan(
     }
 
     // Check for Human node - if present, wait for human approval
-    const humanNode = findHumanNode(tree)
+    // Pass approvedHumanNodes to find the first *unapproved* Human node
+    const humanNode = findHumanNode(tree, approvedHumanNodes)
     if (humanNode) {
       // Use a combination of path and content hash to uniquely identify this Human node
       // This allows different Human nodes at the same tree position to be treated separately
@@ -149,13 +158,9 @@ export async function executePlan(
       const humanContentHash = computeContentHash(humanNode)
       const humanNodeKey = `${humanNodePath}:${humanContentHash}`
 
-      // Skip if this Human node was already approved in a previous frame
-      if (approvedHumanNodes.has(humanNodeKey)) {
-        if (verbose) {
-          console.log(`[Frame ${frameNumber}] Human node already approved, skipping`)
-        }
-        // Fall through to continue normal execution
-      } else {
+      // If we found a Human node from findHumanNode with approvedHumanNodes passed,
+      // it's guaranteed to be unapproved, so we can proceed directly
+      {
         const message = (humanNode.props.message as string | undefined) || 'Human approval required to continue'
         const content = extractTextContent(humanNode)
 
@@ -204,9 +209,14 @@ export async function executePlan(
             await waitForStateUpdates()
             // Continue to next frame to re-render with updated state
             continue
+          } else {
+            // No onApprove callback, but approval is tracked.
+            // Continue to next frame to check for more Human nodes or pending executables
+            if (verbose) {
+              console.log(`[Frame ${frameNumber}] Human approved without callback, continuing to next frame`)
+            }
+            continue
           }
-          // If no callback, fall through to continue execution
-          // The approval is tracked, so we won't prompt again
         } else {
           debugCollector.emit({
             type: 'control:human',
@@ -269,7 +279,8 @@ export async function executePlan(
 
     // If no nodes to execute, we're done
     // BUT: if there's an unapproved Human node, we need to keep looping
-    const hasUnapprovedHuman = humanNode && !approvedHumanNodes.has(`${getNodePath(humanNode)}:${computeContentHash(humanNode)}`)
+    // Since findHumanNode now filters by approvedHumanNodes, humanNode is already unapproved if it exists
+    const hasUnapprovedHuman = humanNode !== null
     if (pendingNodes.length === 0 && !hasUnapprovedHuman) {
       if (verbose) {
         console.log(`[Frame ${frameNumber}] No more pending nodes, execution complete`)
@@ -285,6 +296,39 @@ export async function executePlan(
 
     if (onPlan) {
       onPlan(plan, frameNumber)
+    }
+
+    // Call onPlanWithPrompt if provided
+    // This shows Claude the plan + any top-level prompt before execution
+    if (onPlanWithPrompt && pendingNodes.length > 0) {
+      // Extract top-level prompt and plan from the tree
+      // The root is typically a wrapper, so look at its first meaningful child
+      const rootChild = tree.children[0]
+      if (rootChild) {
+        const { prompt, plan: planNodes } = separatePromptAndPlan(rootChild)
+
+        // Only call if there's something meaningful to show
+        if (planNodes.length > 0 || prompt) {
+          const planXml = planNodes.length > 0
+            ? serializePlanWithPaths(planNodes)
+            : plan // Fallback to full serialization
+
+          const executablePaths = getExecutableNodePaths(planNodes)
+
+          const planInfo: PlanInfo = {
+            planXml,
+            prompt,
+            executablePaths,
+            frame: frameNumber,
+          }
+
+          if (verbose) {
+            console.log(`[Frame ${frameNumber}] Calling onPlanWithPrompt with ${executablePaths.length} executable nodes`)
+          }
+
+          await onPlanWithPrompt(planInfo)
+        }
+      }
     }
 
     // Execute ALL pending nodes in this frame
@@ -682,12 +726,30 @@ export function findStopNode(tree: SmithersNode): SmithersNode | null {
  * The Human component pauses execution and waits for human approval/input.
  * When encountered, execution should prompt the user before continuing.
  *
- * @returns The Human node if found, or null if no Human node exists
+ * @param tree The tree to search
+ * @param approvedHumanNodes Optional set of approved Human node keys (path:hash) to skip
+ * @returns The first unapproved Human node if found, or null if no unapproved Human node exists
  */
-export function findHumanNode(tree: SmithersNode): SmithersNode | null {
+export function findHumanNode(tree: SmithersNode, approvedHumanNodes?: Set<string>): SmithersNode | null {
   function walk(node: SmithersNode): SmithersNode | null {
     if (node.type === 'human') {
-      return node
+      // If approvedHumanNodes is provided, check if this node is already approved
+      if (approvedHumanNodes) {
+        const humanNodePath = getNodePath(node)
+        const humanContentHash = computeContentHash(node)
+        const humanNodeKey = `${humanNodePath}:${humanContentHash}`
+
+        if (approvedHumanNodes.has(humanNodeKey)) {
+          // This Human node is already approved, continue searching for others
+          // Don't return, keep walking
+        } else {
+          // Found an unapproved Human node
+          return node
+        }
+      } else {
+        // No filtering, return the first Human node we find
+        return node
+      }
     }
 
     for (const child of node.children) {
@@ -718,7 +780,9 @@ function getExecutionLabel(node: SmithersNode): string {
   if (findAncestorSubagent(node)) {
     return 'subagent'
   }
-  return node.type === 'claude-cli' ? 'claude-cli' : 'claude'
+  if (node.type === 'claude-cli') return 'claude-cli'
+  if (node.type === 'claude-api') return 'claude-api'
+  return 'claude'
 }
 
 /**
@@ -728,8 +792,8 @@ export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
   const executables: SmithersNode[] = []
 
   function walk(node: SmithersNode) {
-    // Check for both 'claude' and 'claude-cli' node types
-    if (node.type === 'claude' || node.type === 'claude-cli') {
+    // Check for 'claude' (Agent SDK), 'claude-api' (API SDK), and 'claude-cli' (deprecated CLI) node types
+    if (node.type === 'claude' || node.type === 'claude-api' || node.type === 'claude-cli') {
       // A node is pending if:
       // 1. It has no execution status, OR
       // 2. Its execution status is explicitly 'pending', OR
@@ -950,24 +1014,21 @@ export async function executeNode(
       )
     }
 
-    // Handle claude-cli nodes separately - they use the CLI executor
+    // Route to appropriate executor based on node type
     if (node.type === 'claude-cli') {
+      // Deprecated CLI executor
       if (useMockMode) {
-        // Use mock executor for testing
         output = await executeMock(node)
       } else {
-        // Use Claude CLI executor
         output = await executeWithClaudeCli(node)
       }
-    } else {
-      // Standard claude nodes - prepare tools and use SDK
+    } else if (node.type === 'claude-api') {
+      // API SDK executor (direct Anthropic API calls)
       const preparedTools = await prepareTools(node, mcpManager)
 
       if (useMockMode) {
-        // Use mock executor for testing
         output = await executeMock(node)
       } else {
-        // Use real Claude SDK with prepared tools
         output = await executeWithClaude(
           node,
           {
@@ -976,6 +1037,23 @@ export async function executeNode(
           },
           preparedTools
         )
+      }
+    } else {
+      // Default: Agent SDK executor (node.type === 'claude')
+      // Uses Claude Agent SDK with built-in tools
+      if (useMockMode) {
+        const mockResult = await executeAgentMock(node)
+        output = mockResult.result || ''
+      } else {
+        const nodePath = getNodePath(node)
+        const agentResult = await executeWithAgentSdk(node, nodePath)
+        if (!agentResult.success && agentResult.error) {
+          throw new Error(agentResult.error)
+        }
+        // Prefer structured output if available, otherwise use result string
+        output = agentResult.structuredOutput !== undefined
+          ? JSON.stringify(agentResult.structuredOutput)
+          : (agentResult.result || '')
       }
     }
 
