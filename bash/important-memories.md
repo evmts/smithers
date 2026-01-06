@@ -374,6 +374,44 @@ This file contains important learnings, decisions, and context from previous Ral
   - `evals/human-component.test.tsx` - Added test case
 - Commit: [current session]
 
+### Edge Case Test Coverage (2026-01-06 - IMPLEMENTED)
+- **Feature**: Comprehensive test suite for extreme scenarios and boundary conditions
+- **Implementation**:
+  - Created `evals/edge-cases.test.tsx` with 29 tests
+  - **Empty/Null Scenarios** (5 tests):
+    - Null components, empty children, undefined props
+    - Agent with no Claude nodes completes immediately
+  - **Limits** (6 tests):
+    - Deep nesting (15+ levels), wide trees (120+ siblings)
+    - Long prompts (150k+ chars)
+    - Many execution frames with maxFrames limit
+  - **Unicode and Special Characters** (4 tests):
+    - Unicode/emoji in prompts
+    - Special XML char escaping
+    - Newlines/tabs preservation
+  - **Error Scenarios** (4 tests):
+    - BigInt and circular references in props handled gracefully
+    - maxFrames prevents infinite loops
+  - **Memory/Performance** (2 tests):
+    - Many Claude nodes complete without memory issues
+    - Complex nested rendering
+  - **Subagent Behavior** (3 tests):
+    - Empty subagents, text-only content, deep nesting
+  - **Prop Types** (7 tests):
+    - Boolean false, numeric zero, empty strings
+    - Functions, arrays, objects preserved correctly
+- **Key Learnings**:
+  - TEXT nodes use `props.value`, not `props.text`
+  - useState doesn't work in executePlan context - use Zustand instead
+  - maxFrames throws error when exceeded, need to test with .rejects.toThrow()
+  - Callbacks on multiple sibling Claude nodes all execute in same frame
+  - Many test scenarios are already covered by existing multi-phase and multi-agent tests
+- **Total Test Count**: 528 passing tests (499 previous + 29 new edge case tests)
+- **Files Changed**:
+  - `evals/edge-cases.test.tsx` - New comprehensive test suite
+  - Also includes unrelated docs changes (component documentation split/reorganization)
+- Commit: d26aac5
+
 ## What's Next (Priority Order)
 
 1. **Test Coverage** (Highest Priority)
@@ -381,10 +419,11 @@ This file contains important learnings, decisions, and context from previous Ral
    - ✅ Loader tests (`evals/loader.test.ts`) - 33 tests (DONE)
    - ✅ Renderer tests (`evals/renderer.test.tsx`) - 32 tests (DONE)
    - ✅ Component tests (`evals/components.test.tsx`) - 44 tests (DONE)
-   - Add Executor tests (`evals/executor.test.ts`) - Ralph loop edge cases (most already covered in existing tests)
-   - Add Edge case tests (`evals/edge-cases.test.ts`) - limits, error scenarios
+   - ✅ Edge case tests (`evals/edge-cases.test.tsx`) - 29 tests (DONE)
+   - **Total**: 528 passing tests across 29 test files
    - Note: MCP tests already exist (`mcp-manager.test.ts`, `mcp-presets.test.ts`)
    - Note: Most executor behavior already tested in `multi-phase.test.tsx`, `multi-agent.test.tsx`, `subagent-scheduling.test.tsx`, `execute-helpers.test.ts`, etc.
+   - Remaining: Integration tests (`evals/integration.test.ts`) if needed for full workflows
    - See Test Matrix in CLAUDE.md for full coverage targets
 
 2. **Examples + Documentation**
