@@ -93,9 +93,11 @@ This file contains important learnings, decisions, and context from previous Ral
 - **FIXED** (2026-01-05):
   1. ✅ MCP tool scoping fixed - now uses `getToolsForServer()` instead of `getAllTools()` to prevent tool leakage (Commit 9ef5d50)
   2. ✅ Tool name collision detection added - warns when MCP and inline tools have same name (Commit 9ef5d50)
-  3. ✅ Tool deduplication implemented - removes MCP tool when inline tool has same name, ensuring only one definition is sent to API (Commit [current])
+  3. ✅ Tool deduplication improved - removes ALL MCP tools with same name when inline tool collides (Commit 127ec43, 44d1642)
+     - Previously only removed first matching MCP tool, leaving duplicates if multiple MCP servers exposed same tool
+     - Now iterates backwards through tools array and removes all matches
   4. Mock mode doesn't use prepared tools (acceptable for testing but inconsistent)
-- Commit: f8588ee, 9ef5d50
+- Commit: f8588ee, 9ef5d50, 127ec43, 44d1642
 
 ### Configuration System (2026-01-05 - IMPLEMENTED + IMPROVED)
 - **Feature**: CLI configuration file support for persistent settings
@@ -134,9 +136,10 @@ This file contains important learnings, decisions, and context from previous Ral
 1. **Runtime Integration** (Highest Priority)
    - ✅ Fix MCP tool scoping - prevent tool leakage between nodes (DONE)
    - ✅ Add tool name collision detection and warnings (DONE)
+   - ✅ Add tool deduplication for multiple MCP servers with same tool name (DONE - Commit 44d1642)
    - ✅ Add configuration system with file support (DONE)
-   - Add retry logic for failed API calls (types already in place)
-   - Add tool retry configuration (types already in place)
+   - ✅ API retry logic with exponential backoff (DONE - Already implemented in claude-executor.ts)
+   - ✅ Tool retry configuration with configurable retries, delays, and skip-on-failure (DONE - Already implemented)
    - Test real Claude API execution (not just mocks)
 
 2. **Execution Semantics**
