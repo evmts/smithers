@@ -794,6 +794,7 @@ This "render loop" model means your agent's behavior emerges from your React com
 - [Core Concepts](./docs/concepts.md) - Deep dive into the mental model
 - [Component Reference](./docs/components.md) - Full API documentation
 - [Examples](./examples) - More complete examples
+- [Manual Tests](./manual-tests) - Real API integration tests
 
 ## Contributing
 

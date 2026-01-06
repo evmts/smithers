@@ -131,6 +131,20 @@ This file contains important learnings, decisions, and context from previous Ral
   - Ready for future iteration tracking features
 - Commit: 9ef5d50
 
+### Manual Test Suite (2026-01-05 - IMPLEMENTED)
+- **Feature**: Manual test scripts for real Claude API execution
+- **Implementation**:
+  - Created `manual-tests/` directory with 3 comprehensive tests
+  - Test 1 (01-basic-execution.tsx): Basic text generation without tools
+  - Test 2 (02-with-tools.tsx): Tool calling and agentic loop with calculator tool
+  - Test 3 (03-multi-phase.tsx): Multi-phase agent with Zustand state management
+  - Each test includes clear progress logging, plan display, and success/failure reporting
+  - Tests require ANTHROPIC_API_KEY and make real API calls
+  - Documented in `manual-tests/README.md` with troubleshooting guide
+- **Purpose**: Verify real API integration works end-to-end, separate from mocked unit tests
+- **Next Step**: Run these tests manually with a real API key to verify functionality
+- Commit: 0a191b7
+
 ## What's Next (Priority Order)
 
 1. **Runtime Integration** (Highest Priority)
@@ -140,7 +154,8 @@ This file contains important learnings, decisions, and context from previous Ral
    - ✅ Add configuration system with file support (DONE)
    - ✅ API retry logic with exponential backoff (DONE - Already implemented in claude-executor.ts)
    - ✅ Tool retry configuration with configurable retries, delays, and skip-on-failure (DONE - Already implemented)
-   - Test real Claude API execution (not just mocks)
+   - ✅ Manual test suite created (DONE - Commit 0a191b7)
+   - Test real Claude API execution manually (run tests in manual-tests/ with API key)
 
 2. **Execution Semantics**
    - ✅ Implement `<Task>` component with `done` prop (DONE)
