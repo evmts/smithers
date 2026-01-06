@@ -281,16 +281,81 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Total Test Count**: 433 passing tests (401 previous + 32 new renderer tests)
 - Commit: c6a4681
 
+### Component Test Coverage (2026-01-05 - IMPLEMENTED)
+- **Feature**: Comprehensive test coverage for all Smithers components
+- **Implementation**:
+  - Created `evals/components.test.tsx` with 44 tests covering all components
+  - **Claude Component Tests** (7 tests):
+    - Renders children as prompt content
+    - Tools prop passed to executor
+    - onFinished callback receives result
+    - onError callback definition
+    - System message setting
+    - Multiple callbacks coexist
+    - MCP server integration
+  - **ClaudeApi Component Tests** (2 tests):
+    - Renders as claude-api type
+    - Supports tools like Claude
+  - **Subagent Component Tests** (4 tests):
+    - Name prop in XML
+    - Parallel execution (parallel=true)
+    - Sequential execution (parallel=false)
+    - Nested subagents
+  - **Phase Component Tests** (4 tests):
+    - Name prop in XML
+    - Children rendering
+    - Works without name
+    - Nested phases
+  - **Step Component Tests** (3 tests):
+    - Children as step content
+    - Multiple steps
+    - Complex children
+  - **Persona Component Tests** (4 tests):
+    - Role prop rendering
+    - Multiple personas combined
+    - Persona without role
+    - System message extraction
+  - **Constraints Component Tests** (3 tests):
+    - Children as constraints
+    - Inside Claude component
+    - Multiple constraint blocks
+  - **OutputFormat Component Tests** (3 tests):
+    - Schema prop serialization
+    - Structured output parsing
+    - Complex nested schemas
+  - **Task Component Tests** (3 tests):
+    - Renders with done prop
+    - Tracks completion state
+    - Integrates with execution flow
+  - **Stop Component Tests** (4 tests):
+    - Reason prop in output
+    - Halts Ralph loop
+    - Conditional rendering
+    - Stop without reason
+  - **Human Component Tests** (4 tests):
+    - Pauses for approval
+    - Auto-approval behavior
+    - onApprove callback
+    - onReject callback
+  - **Component Composition Tests** (3 tests):
+    - All components together
+    - Nested structure maintenance
+    - Conditional components
+- **Total Test Count**: 477 passing tests (433 previous + 44 new component tests)
+- **Note**: Some pre-existing test failures in all-features.test.tsx and code-review.test.tsx remain (related to mock executor behavior with JSON parsing)
+- Commit: [current session]
+
 ## What's Next (Priority Order)
 
 1. **Test Coverage** (Highest Priority)
    - ✅ CLI tests (`evals/cli.test.ts`) - 34 tests (DONE)
    - ✅ Loader tests (`evals/loader.test.ts`) - 33 tests (DONE)
    - ✅ Renderer tests (`evals/renderer.test.tsx`) - 32 tests (DONE)
-   - Add Executor tests (`evals/executor.test.ts`) - Ralph loop edge cases, state management
-   - Add Component tests (`evals/components.test.ts`) - Persona, Constraints, OutputFormat behaviors
+   - ✅ Component tests (`evals/components.test.tsx`) - 44 tests (DONE)
+   - Add Executor tests (`evals/executor.test.ts`) - Ralph loop edge cases (most already covered in existing tests)
    - Add Edge case tests (`evals/edge-cases.test.ts`) - limits, error scenarios
    - Note: MCP tests already exist (`mcp-manager.test.ts`, `mcp-presets.test.ts`)
+   - Note: Most executor behavior already tested in `multi-phase.test.tsx`, `multi-agent.test.tsx`, `subagent-scheduling.test.tsx`, `execute-helpers.test.ts`, etc.
    - See Test Matrix in CLAUDE.md for full coverage targets
 
 2. **Examples + Documentation**
