@@ -1153,9 +1153,17 @@ export async function executeWorktreeNode(
     // Validate branch names to prevent command injection
     const validateBranchName = (name: string) => {
       // Git branch names cannot contain: space, ~, ^, :, ?, *, [, \, .., @{, consecutive dots
-      // For safety, we only allow alphanumeric, dash, underscore, slash (for branch hierarchies)
-      if (!/^[a-zA-Z0-9_\-/]+$/.test(name)) {
-        throw new Error(`Invalid branch name: ${name}. Only alphanumeric characters, dash, underscore, and slash are allowed.`)
+      // For safety, we allow alphanumeric, dash, underscore, slash, dot
+      // But reject names that start with dash (option injection) or contain dangerous patterns
+      if (name.startsWith('-')) {
+        throw new Error(`Invalid branch name: ${name}. Branch names cannot start with dash.`)
+      }
+      if (!/^[a-zA-Z0-9_\-/.]+$/.test(name)) {
+        throw new Error(`Invalid branch name: ${name}. Only alphanumeric characters, dash, underscore, slash, and dot are allowed.`)
+      }
+      // Reject dangerous patterns like .., @{, etc.
+      if (name.includes('..') || name.includes('@{') || name.includes('~')) {
+        throw new Error(`Invalid branch name: ${name}. Cannot contain .., @{, or ~ patterns.`)
       }
     }
 
@@ -1232,13 +1240,14 @@ export async function executeWorktreeNode(
       }
 
       if (branchExists) {
-        // Use existing branch
-        args.push(branch)
+        // Use existing branch (add -- separator to prevent option injection)
+        args.push('--', branch)
       } else {
         // Create new branch
         args.push('-b', branch)
         if (baseBranch) {
-          args.push(baseBranch)
+          // Add -- separator before baseBranch to prevent option injection
+          args.push('--', baseBranch)
         }
       }
     }
