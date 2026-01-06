@@ -1,6 +1,7 @@
 import { createElement, type ReactElement, type ReactNode } from 'react'
 import type {
   ClaudeProps,
+  ClaudeApiProps,
   ClaudeCliProps,
   SubagentProps,
   PhaseProps,
@@ -14,12 +15,37 @@ import type {
 } from '../core/types.js'
 
 /**
- * Main agent component - wraps Claude SDK
+ * Main agent component - uses Claude Agent SDK
+ *
+ * Executes prompts using the Claude Agent SDK, which provides built-in tools
+ * for file operations (Read, Write, Edit), bash commands, web search, and more.
+ * The SDK handles the tool execution loop automatically.
  *
  * @example
  * ```tsx
- * <Claude tools={[fileTool]} onFinished={setResult}>
- *   Analyze the codebase.
+ * <Claude
+ *   allowedTools={['Read', 'Edit', 'Bash']}
+ *   permissionMode="acceptEdits"
+ *   onFinished={setResult}
+ * >
+ *   Fix the bug in auth.py
+ * </Claude>
+ * ```
+ *
+ * @example With custom agents
+ * ```tsx
+ * <Claude
+ *   allowedTools={['Read', 'Glob', 'Grep', 'Task']}
+ *   agents={{
+ *     'code-reviewer': {
+ *       description: 'Reviews code for quality and security',
+ *       prompt: 'You are a code reviewer...',
+ *       tools: ['Read', 'Glob', 'Grep']
+ *     }
+ *   }}
+ *   onFinished={setResult}
+ * >
+ *   Use the code-reviewer agent to review this codebase
  * </Claude>
  * ```
  */
@@ -28,18 +54,26 @@ export function Claude(props: ClaudeProps): ReactElement {
 }
 
 /**
- * CLI-based agent component - uses Claude CLI instead of SDK
+ * API-based agent component - uses Anthropic API SDK directly
  *
- * Uses your Claude Code subscription instead of API credits.
- * Simpler than <Claude> - no custom tools, streaming, or MCP configuration.
- * The CLI handles its own tool execution loop.
+ * Executes prompts using the Anthropic API SDK, giving you direct control
+ * over API calls with per-token billing. Requires custom tool implementations.
  *
  * @example
  * ```tsx
- * <ClaudeCli model="opus" onFinished={setResult}>
- *   Analyze the codebase and summarize the architecture.
- * </ClaudeCli>
+ * <ClaudeApi tools={[fileTool, searchTool]} onFinished={setResult}>
+ *   Analyze the codebase.
+ * </ClaudeApi>
  * ```
+ */
+export function ClaudeApi(props: ClaudeApiProps): ReactElement {
+  return createElement('claude-api', props)
+}
+
+/**
+ * @deprecated Use <Claude> instead. ClaudeCli will be removed in a future version.
+ *
+ * CLI-based agent component - uses Claude CLI instead of SDK
  */
 export function ClaudeCli(props: ClaudeCliProps): ReactElement {
   return createElement('claude-cli', props)
@@ -189,6 +223,7 @@ export function Human(props: HumanProps): ReactElement {
 // Re-export types
 export type {
   ClaudeProps,
+  ClaudeApiProps,
   ClaudeCliProps,
   SubagentProps,
   PhaseProps,

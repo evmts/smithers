@@ -322,4 +322,36 @@ describe('human-component', () => {
     expect(promptCount).toBe(1)
     expect(executionLog).toContain('claude-executed')
   })
+
+  test('Multiple Human nodes without onApprove callbacks are all prompted', async () => {
+    const prompts: string[] = []
+
+    function AgentWithMultiplePersistentHumans() {
+      // Two Human nodes, both stay in tree (no onApprove)
+      // Both should be prompted in sequence
+      return (
+        <>
+          <Human message="First checkpoint">
+            First Human node stays in tree
+          </Human>
+          <Human message="Second checkpoint">
+            Second Human node should still be prompted
+          </Human>
+          <Claude>Work to do</Claude>
+        </>
+      )
+    }
+
+    await executePlan(<AgentWithMultiplePersistentHumans />, {
+      onHumanPrompt: async (message) => {
+        prompts.push(message)
+        return true
+      },
+    })
+
+    // Both Human nodes should be prompted
+    expect(prompts).toHaveLength(2)
+    expect(prompts).toContain('First checkpoint')
+    expect(prompts).toContain('Second checkpoint')
+  })
 })

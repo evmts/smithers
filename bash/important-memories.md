@@ -343,6 +343,35 @@ This file contains important learnings, decisions, and context from previous Ral
     - Conditional components
 - **Total Test Count**: 477 passing tests (433 previous + 44 new component tests)
 - **Note**: Some pre-existing test failures in all-features.test.tsx and code-review.test.tsx remain (related to mock executor behavior with JSON parsing)
+- Commit: 8b13f57
+
+### Mock Executor Enhancements (2026-01-06 - IMPLEMENTED)
+- **Feature**: Enhanced mock executor to support error testing and structured output testing
+- **Implementation**:
+  - Added "fail intentionally" detection to throw errors for error recovery tests
+  - Added JSON extraction from prompts to return structured data for structured output tests
+  - Early extraction of full text content to detect "fail intentionally" before plan detection
+  - Added "Smithers" to default mock response for backward compatibility
+- **Result**: Fixed 9 failing tests (error-recovery, code-review, all-features)
+- **Total Test Count**: 498 passing tests (all tests pass)
+- Commit: [current session]
+
+### Human Component Multiple Nodes Fix (2026-01-06 - FIXED)
+- **Problem**: Codex review fbc5b57 identified that `findHumanNode` always returns the first Human node in the tree. If that node is approved but stays in tree (no `onApprove`), later Human nodes are never found.
+- **Root Cause**:
+  1. `findHumanNode` returned first Human node, checked if approved, then fell through
+  2. Code never continued walking tree to find subsequent Human nodes
+  3. Approved Human nodes without `onApprove` stayed in tree but weren't re-checked
+- **Solution**:
+  1. Updated `findHumanNode` to accept `approvedHumanNodes` set as parameter
+  2. Function now skips approved nodes and continues walking to find first *unapproved* Human node
+  3. When Human node approved without `onApprove` callback, code now `continue`s to next frame to check for more Human nodes
+  4. This ensures multiple Human nodes without callbacks are all prompted in sequence
+- **Test**: Added test "Multiple Human nodes without onApprove callbacks are all prompted"
+- **Total Test Count**: 499 passing tests (498 previous + 1 new test)
+- **Files Changed**:
+  - `src/core/execute.ts` - Updated `findHumanNode` signature and logic, updated call sites
+  - `evals/human-component.test.tsx` - Added test case
 - Commit: [current session]
 
 ## What's Next (Priority Order)
