@@ -376,7 +376,7 @@ describe('Node Path Edge Cases', () => {
   })
 
   it('handles various node types', () => {
-    const nodeTypes = ['persona', 'constraints', 'output-format', 'task', 'human', 'stop']
+    const nodeTypes = ['persona', 'constraints', 'task', 'human', 'stop']
 
     for (const type of nodeTypes) {
       const node = createNodeChain([{ type: 'ROOT' }, { type, name: 'test' }])

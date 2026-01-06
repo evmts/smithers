@@ -79,7 +79,7 @@ describe('hostConfig', () => {
 
     it('works for all component types', () => {
       const root = createRootNode()
-      const types = ['claude', 'subagent', 'phase', 'step', 'persona', 'constraints', 'output-format']
+      const types = ['claude', 'subagent', 'phase', 'step', 'persona', 'constraints']
 
       for (const type of types) {
         const node = hostConfig.createInstance(type, {}, root, {}, {})
