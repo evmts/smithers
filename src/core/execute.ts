@@ -60,6 +60,7 @@ export async function executePlan(
     maxFrames = 100,
     timeout = 300000,
     verbose = false,
+    mockMode = false,
     onPlan,
     onFrame,
     onHumanPrompt,
@@ -1145,16 +1146,28 @@ export async function executeWorktreeNode(
     }
 
     // Import child_process dynamically
-    const { execSync } = await import('child_process')
+    const { execFileSync } = await import('child_process')
     const pathModule = await import('path')
     const { existsSync } = await import('fs')
+
+    // Validate branch names to prevent command injection
+    const validateBranchName = (name: string) => {
+      // Git branch names cannot contain: space, ~, ^, :, ?, *, [, \, .., @{, consecutive dots
+      // For safety, we only allow alphanumeric, dash, underscore, slash (for branch hierarchies)
+      if (!/^[a-zA-Z0-9_\-/]+$/.test(name)) {
+        throw new Error(`Invalid branch name: ${name}. Only alphanumeric characters, dash, underscore, and slash are allowed.`)
+      }
+    }
+
+    if (branch) validateBranchName(branch)
+    if (baseBranch) validateBranchName(baseBranch)
 
     // Resolve absolute path
     const absolutePath = pathModule.resolve(path)
 
     // Check if we're in a git repository
     try {
-      execSync('git rev-parse --git-dir', { stdio: 'ignore' })
+      execFileSync('git', ['rev-parse', '--git-dir'], { stdio: 'ignore' })
     } catch {
       throw new Error('Worktree component requires a git repository')
     }
@@ -1163,11 +1176,22 @@ export async function executeWorktreeNode(
     if (existsSync(absolutePath)) {
       // Check if it's already a worktree for this path
       try {
-        const worktrees = execSync('git worktree list --porcelain', { encoding: 'utf-8' })
+        const worktrees = execFileSync('git', ['worktree', 'list', '--porcelain'], { encoding: 'utf-8' })
         const isWorktree = worktrees.includes(`worktree ${absolutePath}`)
 
         if (!isWorktree) {
           throw new Error(`Path ${absolutePath} already exists and is not a git worktree`)
+        }
+
+        // Verify the worktree is on the correct branch (if specified)
+        if (branch) {
+          const currentBranch = execFileSync('git', ['-C', absolutePath, 'branch', '--show-current'], {
+            encoding: 'utf-8'
+          }).trim()
+
+          if (currentBranch !== branch) {
+            throw new Error(`Worktree at ${absolutePath} is on branch "${currentBranch}" but expected "${branch}"`)
+          }
         }
 
         // Worktree exists, reuse it
@@ -1186,32 +1210,40 @@ export async function executeWorktreeNode(
         if (error instanceof Error && error.message.includes('already exists')) {
           throw error
         }
+        // Re-throw branch mismatch errors
+        if (error instanceof Error && error.message.includes('expected')) {
+          throw error
+        }
         throw new Error(`Path ${absolutePath} already exists and is not a git worktree`)
       }
     }
 
-    // Create the worktree
-    let cmd = `git worktree add "${absolutePath}"`
+    // Create the worktree using execFileSync with array args (prevents injection)
+    const args = ['worktree', 'add', absolutePath]
 
     if (branch) {
       // Check if branch exists
-      const branchExists = execSync(`git show-ref --verify --quiet refs/heads/${branch}; echo $?`, {
-        encoding: 'utf-8'
-      }).trim() === '0'
+      let branchExists = false
+      try {
+        execFileSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { stdio: 'ignore' })
+        branchExists = true
+      } catch {
+        branchExists = false
+      }
 
       if (branchExists) {
         // Use existing branch
-        cmd += ` ${branch}`
+        args.push(branch)
       } else {
         // Create new branch
-        cmd += ` -b ${branch}`
+        args.push('-b', branch)
         if (baseBranch) {
-          cmd += ` ${baseBranch}`
+          args.push(baseBranch)
         }
       }
     }
 
-    execSync(cmd, { stdio: 'pipe' })
+    execFileSync('git', args, { stdio: 'pipe' })
 
     node._execution = {
       status: 'complete',
@@ -1257,19 +1289,17 @@ export async function cleanupWorktreeNode(
   }
 
   try {
-    // In mock mode, skip actual git operations
+    // In mock mode, skip actual git operations but don't call onCleanup
+    // (onCleanup is only called when real cleanup happens)
     if (mockMode) {
-      if (onCleanup) {
-        onCleanup(result.path)
-      }
       return
     }
 
     // Import child_process dynamically
-    const { execSync } = await import('child_process')
+    const { execFileSync } = await import('child_process')
 
-    // Remove the worktree
-    execSync(`git worktree remove "${result.path}" --force`, { stdio: 'pipe' })
+    // Remove the worktree using execFileSync (prevents injection)
+    execFileSync('git', ['worktree', 'remove', result.path, '--force'], { stdio: 'pipe' })
 
     if (onCleanup) {
       onCleanup(result.path)
@@ -1282,14 +1312,22 @@ export async function cleanupWorktreeNode(
 
 /**
  * Find the worktree path for a node by walking up the tree
+ * Throws if a parent worktree failed (to block child execution)
  */
 export function getWorktreePath(node: SmithersNode): string | null {
   let current: SmithersNode | null = node
 
   while (current) {
-    if (current.type === 'worktree' && current._execution?.status === 'complete') {
-      const result = current._execution.result as { path: string } | undefined
-      return result?.path || null
+    if (current.type === 'worktree') {
+      if (current._execution?.status === 'error') {
+        // Parent worktree failed - block child execution
+        const error = current._execution.error || new Error('Worktree setup failed')
+        throw new Error(`Cannot execute agent: parent worktree failed (${error.message})`)
+      }
+      if (current._execution?.status === 'complete') {
+        const result = current._execution.result as { path: string } | undefined
+        return result?.path || null
+      }
     }
     current = current.parent
   }
