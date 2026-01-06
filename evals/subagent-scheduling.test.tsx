@@ -47,7 +47,7 @@ describe('subagent scheduling', () => {
       )
     }
 
-    const result = await executePlan(<SequentialAgent />, { maxFrames: 5 })
+    const result = await executePlan(<SequentialAgent />, { mockMode: true, maxFrames: 5 })
 
     expect(useStore.getState().count).toBe(2)
     expect(result.frames).toBe(3)

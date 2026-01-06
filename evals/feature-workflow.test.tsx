@@ -432,6 +432,7 @@ describe('feature-workflow', () => {
     }
 
     await executePlan(<FeatureWorkflow prompt="Add feature X" />, {
+      mockMode: true,
       onHumanPrompt: async (message) => {
         humanPrompts.push(message)
         return true // Auto-approve
@@ -498,6 +499,7 @@ describe('feature-workflow', () => {
     }
 
     await executePlan(<CancellableWorkflow />, {
+      mockMode: true,
       onHumanPrompt: async () => false, // Reject
     })
 
@@ -583,6 +585,7 @@ describe('feature-workflow', () => {
     }
 
     await executePlan(<AccumulatingWorkflow />, {
+      mockMode: true,
       onHumanPrompt: async () => true,
     })
 
@@ -693,7 +696,7 @@ describe('feature-workflow', () => {
       }
     }
 
-    await executePlan(<TDDWorkflow />)
+    await executePlan(<TDDWorkflow />, { mockMode: true })
 
     // Verify TDD phases executed in correct order
     expect(phaseLog.indexOf('api-impl')).toBeLessThan(phaseLog.indexOf('test-impl'))
