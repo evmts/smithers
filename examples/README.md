@@ -45,17 +45,34 @@ function FeatureWorkflow({ prompt }) {
     case 'planning':
       return <Claude onFinished={(plan) => { setState({ plan }); nextPhase() }}>Create implementation plan...</Claude>
 
+    case 'plan-review':
+      return (
+        <Human message="Review plan" onApprove={() => nextPhase()} onReject={() => setPhase('planning')}>
+          {JSON.stringify(plan, null, 2)}
+        </Human>
+      )
+
     case 'poc':
       return <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>Build POC...</Claude>
 
     case 'poc-analysis':
       return <Claude maxThinkingTokens={16000} onFinished={() => nextPhase()}>Deep analysis with extended thinking...</Claude>
 
+    case 'refined-review':
+      return (
+        <Human message="Review refined plan" onApprove={() => nextPhase()} onReject={() => setPhase('poc-analysis')}>
+          {JSON.stringify(refinedPlan, null, 2)}
+        </Human>
+      )
+
     case 'api-impl':
       return <Claude onFinished={() => nextPhase()}>Implement types (throw not implemented)...</Claude>
 
     case 'test-impl':
       return <Claude onFinished={() => nextPhase()}>Write tests (should fail)...</Claude>
+
+    case 'test-verify':
+      return <Claude allowedTools={['Bash']} onFinished={() => nextPhase()}>Run tests to verify they fail...</Claude>
 
     case 'implementation':
       return <Claude onFinished={() => nextPhase()}>Implement until tests pass...</Claude>
@@ -68,7 +85,7 @@ function FeatureWorkflow({ prompt }) {
 
 Concepts demonstrated:
 - Human-in-the-loop approval gates
-- 9-phase workflow with state machine
+- 12-phase workflow with state machine
 - Extended thinking for deep analysis
 - POC-driven plan refinement
 - TDD flow (types → tests fail → implementation passes)

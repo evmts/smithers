@@ -213,9 +213,24 @@ function PlanningPhase() {
       Research: {JSON.stringify(fileResearch, null, 2)}
       <OutputFormat schema={{
         summary: { type: 'string' },
-        steps: { type: 'array', items: { type: 'object' } },
-        testCases: { type: 'array', items: { type: 'object' } },
-        apis: { type: 'array', items: { type: 'object' } },
+        steps: { type: 'array', items: { type: 'object', properties: {
+          step: { type: 'number' },
+          description: { type: 'string' },
+          files: { type: 'array', items: { type: 'string' } },
+          dependencies: { type: 'array', items: { type: 'string' } }
+        }}},
+        testCases: { type: 'array', items: { type: 'object', properties: {
+          name: { type: 'string' },
+          description: { type: 'string' },
+          inputs: { type: 'string' },
+          expectedOutput: { type: 'string' },
+          edgeCase: { type: 'boolean' }
+        }}},
+        apis: { type: 'array', items: { type: 'object', properties: {
+          name: { type: 'string' },
+          signature: { type: 'string' },
+          description: { type: 'string' }
+        }}},
         risks: { type: 'array', items: { type: 'string' } },
       }}>
         Return a JSON implementation plan.
@@ -301,9 +316,24 @@ function POCAnalysisPhase() {
         analysis: { type: 'string' },
         refinedPlan: { type: 'object', properties: {
           summary: { type: 'string' },
-          steps: { type: 'array', items: { type: 'object' } },
-          testCases: { type: 'array', items: { type: 'object' } },
-          apis: { type: 'array', items: { type: 'object' } },
+          steps: { type: 'array', items: { type: 'object', properties: {
+            step: { type: 'number' },
+            description: { type: 'string' },
+            files: { type: 'array', items: { type: 'string' } },
+            dependencies: { type: 'array', items: { type: 'string' } }
+          }}},
+          testCases: { type: 'array', items: { type: 'object', properties: {
+            name: { type: 'string' },
+            description: { type: 'string' },
+            inputs: { type: 'string' },
+            expectedOutput: { type: 'string' },
+            edgeCase: { type: 'boolean' }
+          }}},
+          apis: { type: 'array', items: { type: 'object', properties: {
+            name: { type: 'string' },
+            signature: { type: 'string' },
+            description: { type: 'string' }
+          }}},
           risks: { type: 'array', items: { type: 'string' } }
         }}
       }}>
