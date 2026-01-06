@@ -1227,7 +1227,9 @@ export async function executeWorktreeNode(
     }
 
     // Create the worktree using execFileSync with array args (prevents injection)
-    const args = ['worktree', 'add', absolutePath]
+    // Build args carefully: git worktree add [options] <path> [<commit-ish>]
+    // The -- separator must come before the first positional argument (path)
+    const args: string[] = ['worktree', 'add']
 
     if (branch) {
       // Check if branch exists
@@ -1240,16 +1242,18 @@ export async function executeWorktreeNode(
       }
 
       if (branchExists) {
-        // Use existing branch (add -- separator to prevent option injection)
-        args.push('--', branch)
+        // Use existing branch: git worktree add -- <path> <branch>
+        args.push('--', absolutePath, branch)
       } else {
-        // Create new branch
-        args.push('-b', branch)
+        // Create new branch: git worktree add -b <branch> -- <path> [<start-point>]
+        args.push('-b', branch, '--', absolutePath)
         if (baseBranch) {
-          // Add -- separator before baseBranch to prevent option injection
-          args.push('--', baseBranch)
+          args.push(baseBranch)
         }
       }
+    } else {
+      // No branch specified: git worktree add -- <path>
+      args.push('--', absolutePath)
     }
 
     execFileSync('git', args, { stdio: 'pipe' })
