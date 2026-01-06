@@ -142,6 +142,11 @@ This file contains important learnings, decisions, and context from previous Ral
   - Tests require ANTHROPIC_API_KEY and make real API calls
   - Documented in `manual-tests/README.md` with troubleshooting guide
 - **Purpose**: Verify real API integration works end-to-end, separate from mocked unit tests
+- **Manual tests verified as ready to run** (2026-01-05):
+  - All imports resolve correctly (Claude, Phase, Step, renderPlan, executePlan, Tool, zustand)
+  - API key validation present in all tests
+  - Error handling with try/catch blocks present
+  - Correct Smithers API usage verified
 - **Next Step**: Run these tests manually with a real API key to verify functionality
 - Commit: 0a191b7
 
@@ -166,38 +171,45 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Known Limitation** (from Codex review fbc5b57): `findHumanNode` returns first Human node in tree. If that node is approved but stays in tree (no onApprove), later Human nodes won't be found. Consider passing approvedHumanNodes into walk to find first *unapproved* node.
 - Commits: d3913f6, fbc5b57
 
+### CLI Test Coverage (2026-01-05 - IMPLEMENTED)
+- **Feature**: Comprehensive CLI integration tests covering all commands and options
+- **Implementation**:
+  - Created `evals/cli.test.ts` with 34 tests covering init, plan, and run commands
+  - Tests command parsing (--help, --version, unknown commands/options)
+  - Tests init command (templates, directory creation, package.json generation)
+  - Tests plan command (MDX/TSX rendering, JSON output, file output, error cases)
+  - Tests run command (mock mode, all CLI flags, config files, output formats)
+  - All 34 tests passing
+  - Test timeout increased to 15s for slow CLI integration tests
+- **Key Learnings**:
+  - TSX test files must import from absolute source paths during testing (can't use 'smithers' package name)
+  - CLI output format is "Execution Complete" (capital C) not "execution complete"
+  - JSON output may have info lines before actual JSON, need to parse with regex
+  - Commander.js shows help for unknown commands (exit 0) rather than erroring
+- **Total Test Count**: 88 passing tests (51 previous + 34 new CLI tests + 3 other new tests)
+- **Note**: 1 pre-existing test failure in `evals/subagent-scheduling.test.tsx` unrelated to CLI work
+- Commit: [current]
+
 ## What's Next (Priority Order)
 
-1. **Runtime Integration** (Highest Priority)
-   - ✅ Fix MCP tool scoping - prevent tool leakage between nodes (DONE)
-   - ✅ Add tool name collision detection and warnings (DONE)
-   - ✅ Add tool deduplication for multiple MCP servers with same tool name (DONE - Commit 44d1642)
-   - ✅ Add configuration system with file support (DONE)
-   - ✅ API retry logic with exponential backoff (DONE - Already implemented in claude-executor.ts)
-   - ✅ Tool retry configuration with configurable retries, delays, and skip-on-failure (DONE - Already implemented)
-   - ✅ Manual test suite created (DONE - Commit 0a191b7)
-   - Test real Claude API execution manually (run tests in manual-tests/ with API key)
+1. **Test Coverage** (Highest Priority)
+   - ✅ CLI tests (`evals/cli.test.ts`) - 34 tests (DONE)
+   - Add Loader tests (`evals/loader.test.ts`) - MDX/TSX loading, error handling
+   - Add MCP integration tests (`evals/mcp.test.ts`) - server management, tool integration
+   - Add Renderer tests (`evals/renderer.test.ts`) - renderPlan(), serialize()
+   - Add Executor tests (`evals/executor.test.ts`) - Ralph loop, state management
+   - Add Component tests (`evals/components.test.ts`) - all component behaviors
+   - Add Edge case tests (`evals/edge-cases.test.ts`)
+   - See Test Matrix in CLAUDE.md for full coverage targets
 
-2. **Execution Semantics**
-   - ✅ Implement `<Task>` component with `done` prop (DONE)
-   - ✅ Implement `<Stop>` component to signal Ralph loop termination (DONE)
-   - ✅ Ensure onError callbacks can trigger re-rendering and recovery (DONE - tested in evals/error-recovery.test.tsx)
-   - ✅ Add Human component for interactive approval points (DONE - Commits d3913f6, fbc5b57)
-
-3. **CLI UX + MDX**
-   - ✅ Implement Terraform-style plan display with syntax highlighting (DONE - in src/cli/display.ts)
-   - ✅ Add approval prompt (DONE - in src/cli/prompt.ts)
-   - ✅ Wire `--auto-approve`/`--plan` flags to executor options (DONE - in src/cli/commands/run.ts)
-   - ✅ Test MDX entrypoint end-to-end (DONE - loader supports .mdx, .tsx, .jsx files)
-   - Future: Add edit capability to approval prompt
-
-4. **Examples + Documentation**
+2. **Examples + Documentation**
    - Create/update examples to showcase MCP integration
    - Add multi-agent orchestration example
    - Document MCP server configuration patterns
+   - Set up Mintlify docs
    - Keep docs aligned with API changes
 
-5. **Release Readiness**
+3. **Release Readiness**
    - Add changesets for all recent changes
    - Set up CI workflows (tests, typecheck, lint)
    - Create npm publish pipeline
