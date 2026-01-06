@@ -391,6 +391,8 @@ export interface FileProps {
   mode?: 'write' | 'append'
   /** The file encoding to use */
   encoding?: BufferEncoding
+  /** Whether to create parent directories if they don't exist. Defaults to true. */
+  createDirs?: boolean
   /** Callback invoked after the file is successfully written */
   onWritten?: (path: string) => void
   /** Callback invoked if writing fails */

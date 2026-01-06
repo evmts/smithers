@@ -40,6 +40,7 @@ Read these files to understand the project:
 - Terraform-style plan display and approval prompt
 
 **Remaining:**
+- **TUI Integration (NEW - Highest Priority)**
 - Examples directory needs sophisticated demos
 - Mintlify docs not set up
 - npm not yet published (changesets configured)
@@ -47,19 +48,224 @@ Read these files to understand the project:
 
 ## Priority Order (Top → Bottom)
 
-### 1. Test Coverage (Highest Priority)
+### 1. TUI Integration (HIGHEST PRIORITY - New Feature)
+
+**Goal:** Build an interactive terminal UI for the Ralph Wiggum loop using OpenTUI.
+
+**Phase 1: Research & Documentation (START HERE)**
+Before writing any code, create comprehensive documentation:
+
+1. Create `docs/tui-research.md` documenting:
+   - OpenTUI architecture (core + React reconciler)
+   - How @opentui/react works (useRenderer, useKeyboard, useTerminalDimensions)
+   - Integration patterns with existing React reconciler
+   - Performance considerations (sub-millisecond frame times)
+   - Dependencies: Zig (required for build), @opentui/core, @opentui/react
+
+2. Create `docs/tui-design.md` with:
+   - UI mockups (ASCII art) for the tree view
+   - Keyboard navigation spec (arrow keys, enter to drill down)
+   - Agent output panel design
+   - State management approach (how TUI state integrates with Ralph loop)
+   - Component hierarchy
+
+3. Create `docs/vhs-recording.md` documenting:
+   - VHS tape file format and commands
+   - Recording workflows for demos
+   - CI integration with vhs-action
+
+**Phase 2: Implementation**
+After research docs are approved, implement:
+
+**2a. Worktree Component (Parallel Agent Isolation)**
+Create `<Worktree>` component that runs agents in git worktrees:
+
+```tsx
+<Worktree path="./worktrees/feature-a" branch="feature-a">
+  <Claude>Implement feature A</Claude>
+</Worktree>
+```
+
+1. Create `src/components/Worktree.tsx`:
+   - Props: `path` (worktree location), `branch` (optional, creates new branch)
+   - Creates git worktree at path before execution
+   - Sets cwd for all child Claude/ClaudeApi components
+   - Cleans up worktree on completion (optional `cleanup` prop)
+
+2. Document in `docs/worktree-design.md`:
+   - Use case: parallel agents working on different features
+   - Git worktree lifecycle management
+   - Error handling (worktree already exists, not in git repo)
+   - Integration with Ralph loop
+
+3. Implementation details:
+   - `git worktree add <path> -b <branch>` to create
+   - `git worktree remove <path>` to cleanup
+   - Pass modified `cwd` through React context to child Claude nodes
+
+**2b. TUI Components**
+
+1. **Tree View Component** (`src/tui/TreeView.tsx`)
+   - Render SmithersNode tree as navigable TUI
+   - Arrow key navigation (up/down to move, right to expand, left to collapse)
+   - Highlight current selection
+   - Show execution status icons (pending/running/complete/error)
+
+2. **Agent Detail Panel** (`src/tui/AgentPanel.tsx`)
+   - Press Enter on a Claude node to view details
+   - Show agent's prompt/output
+   - Streaming output display
+   - Back navigation (Escape or Backspace)
+
+3. **Layout Component** (`src/tui/Layout.tsx`)
+   - Split pane: tree on left, detail on right
+   - Responsive to terminal size (useTerminalDimensions)
+   - Status bar at bottom (frame count, elapsed time)
+
+4. **Integration with Ralph Loop**
+   - Hook into executePlan() to update TUI on each frame
+   - Real-time status updates during execution
+   - Pause/resume capability from TUI
+
+**Phase 3: VHS Demo Recording**
+1. Create `demos/` directory with .tape files
+2. Record key workflows:
+   - Basic agent execution
+   - Multi-phase workflow
+   - Error recovery
+   - Tree navigation
+
+**Phase 4: Interactive CLI Commands**
+Add Claude Code-style slash commands to the CLI for real-time control:
+
+1. Document in `docs/cli-commands.md`:
+   - `/pause` - Pause the Ralph loop
+   - `/resume` - Resume execution
+   - `/status` - Show current execution state
+   - `/tree` - Show the current SmithersNode tree
+   - `/focus <path>` - Focus on a specific node
+   - `/skip` - Skip current pending node
+   - `/inject <prompt>` - Inject additional context into next execution
+   - `/abort` - Abort current execution
+
+2. Implementation in `src/cli/interactive.ts`:
+   - Use readline or similar for command input during execution
+   - Parse `/` prefixed commands
+   - Integrate with executePlan() control flow
+   - Display command help with `/help`
+
+**Phase 5: GitHub Action**
+Design and implement a GitHub Action for running Smithers agents in CI/CD:
+
+1. Create `docs/github-action-design.md`:
+   - Action inputs (agent file, config, mock mode, API key secret)
+   - Action outputs (result JSON, artifacts)
+   - Example workflows
+   - Security considerations (API key handling)
+
+2. Implement action in `.github/actions/smithers-run/`:
+   ```yaml
+   # Example usage:
+   - uses: smithers-ai/smithers-action@v1
+     with:
+       agent: ./agents/deploy-review.tsx
+       config: ./smithers.config.ts
+       mock: false
+     env:
+       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+   ```
+
+3. Action features:
+   - Run any .mdx/.tsx agent file
+   - Output results as job summary
+   - Artifact upload for agent outputs
+   - Configurable approval gates (for Human component)
+   - Integration with VHS for GIF generation of runs
+
+**Key Resources:**
+- OpenTUI: https://github.com/sst/opentui
+- @opentui/react: https://www.npmjs.com/package/@opentui/react
+- VHS: https://github.com/charmbracelet/vhs
+- VHS GitHub Action: https://github.com/charmbracelet/vhs-action
+
+**Technical Notes:**
+- OpenTUI uses react-reconciler (same as our SmithersNode renderer)
+- Need Zig installed for building OpenTUI native layer
+- VHS requires ttyd and ffmpeg on PATH
+- OpenTUI hooks: useRenderer, useKeyboard, useTerminalDimensions, useOnResize
+
+### 2. Test Coverage
 - Add CLI tests (`evals/cli.test.ts`)
 - Add loader tests (`evals/loader.test.ts`)
 - Add MCP integration tests (`evals/mcp.test.ts`)
 - See Test Matrix section for full list
 
-### 2. Examples + Documentation
-- Add sophisticated examples in `examples/` folder
-- Multi-agent orchestration example
-- Tool-using research pipeline example
-- Set up Mintlify docs
+### 3. Examples + Documentation (COMPREHENSIVE)
+The `examples/` directory needs rich, real-world examples:
 
-### 3. Release Readiness
+**Basic Examples:**
+- `examples/hello-world/` - Simplest possible agent
+- `examples/file-processor/` - Read files, transform, write output
+- `examples/git-helper/` - Common git operations
+
+**Intermediate Examples:**
+- `examples/code-reviewer/` - Review PRs with structured feedback
+- `examples/research-pipeline/` - Multi-phase research with citations
+- `examples/test-generator/` - Generate tests for existing code
+
+**Advanced Examples:**
+- `examples/multi-agent-orchestrator/` - Coordinator + worker agents
+- `examples/parallel-worktrees/` - Multiple agents in git worktrees
+- `examples/human-in-loop/` - Approval gates with Human component
+- `examples/mcp-integration/` - Using MCP servers for external tools
+- `examples/rate-limited-batch/` - Processing many items with ClaudeProvider
+
+**Each example must have:**
+- `README.md` explaining the use case
+- `agent.tsx` or `agent.mdx` - the main agent file
+- `smithers.config.ts` - configuration
+- Sample input/output data where applicable
+
+**Mintlify Docs:**
+- Set up mintlify.json
+- API reference auto-generated from JSDoc
+- Interactive examples with CodeSandbox embeds
+
+### 3.5. API Documentation (CRITICAL)
+**Every API and functionality MUST be properly documented:**
+
+1. **Component Reference** (`docs/components/`):
+   - `claude.md` - Claude component with all props
+   - `claude-api.md` - ClaudeApi component with all props
+   - `claude-provider.md` - Provider with rate limiting, usage tracking
+   - `subagent.md` - Subagent orchestration
+   - `phase.md` / `step.md` - Structural components
+   - `worktree.md` - Git worktree isolation
+   - `human.md` - Human-in-the-loop approval
+   - `stop.md` - Execution control
+   - `output.md` / `file.md` - Output components
+
+2. **Core API** (`docs/api/`):
+   - `render-plan.md` - Rendering JSX to SmithersNode
+   - `execute-plan.md` - Ralph Wiggum loop execution
+   - `serialize.md` - XML serialization
+   - `types.md` - All TypeScript interfaces
+
+3. **Guides** (`docs/guides/`):
+   - `getting-started.md` - Quick start tutorial
+   - `state-management.md` - Using Zustand/useState
+   - `mcp-integration.md` - MCP server setup
+   - `rate-limiting.md` - ClaudeProvider configuration
+   - `error-handling.md` - Error recovery patterns
+   - `testing.md` - Testing agents with mock mode
+
+4. **Documentation Standards**:
+   - Every public export must have JSDoc
+   - Every component prop must be documented
+   - Include code examples for every API
+   - Cross-reference related concepts
+
+### 4. Release Readiness
 - CI workflows for tests
 - npm publish pipeline
 - CONTRIBUTING + LICENSE
@@ -81,11 +287,23 @@ Read these files to understand the project:
 ## What to Do Now
 
 1. Read `bash/important-memories.md` for context from previous sessions.
-2. Assess the current state and identify the highest priority gap.
-3. Pick ONE task and complete it fully.
-4. Commit your changes with a clear message.
-5. Update `bash/important-memories.md` with any important learnings.
-6. Report what you accomplished and what should be done next.
+2. **Check and respond to Codex reviews in `reviews/`** - Address any actionable feedback.
+3. Assess the current state and identify the highest priority gap.
+4. Pick ONE task and complete it fully.
+5. Commit your changes with a clear message.
+6. Update `bash/important-memories.md` with any important learnings.
+7. Report what you accomplished and what should be done next.
+
+### Responding to Codex Reviews
+
+The `reviews/` directory contains automated code reviews from Codex. For each review:
+1. Read the review file (e.g., `reviews/abc1234.md`)
+2. Identify actionable feedback (ignore simple "LGTM" reviews)
+3. If there's actionable feedback:
+   - Create a fix for the issue
+   - Commit the fix with message referencing the review
+   - Delete the review file after addressing it
+4. Track addressed reviews in `bash/important-memories.md`
 
 ## Quality Checklist
 
@@ -368,7 +586,64 @@ This section defines comprehensive test coverage targets. Tests should be added 
 - [ ] Circular state dependencies
 - [ ] Memory pressure (many large results)
 
-#### 9. Integration Tests (`evals/integration.test.ts`)
+#### 9. Worktree Tests (`evals/worktree.test.ts`)
+
+**Worktree creation:**
+- [ ] Creates worktree at specified path
+- [ ] Creates new branch if specified
+- [ ] Uses existing branch if it exists
+- [ ] Errors if not in git repo
+- [ ] Errors if path already exists (non-worktree)
+- [ ] Handles existing worktree gracefully
+
+**Worktree execution:**
+- [ ] Child Claude components run in worktree cwd
+- [ ] Multiple agents in same worktree work correctly
+- [ ] Worktree context passed through React context
+
+**Worktree cleanup:**
+- [ ] cleanup=true removes worktree on completion
+- [ ] cleanup=false preserves worktree
+- [ ] Cleanup handles uncommitted changes
+- [ ] Cleanup errors don't crash execution
+
+**Parallel worktrees:**
+- [ ] Multiple Worktree components can run in parallel
+- [ ] Each worktree has isolated filesystem
+- [ ] No conflicts between parallel worktree agents
+
+#### 10. TUI Tests (`evals/tui.test.ts`)
+
+**TreeView component:**
+- [ ] Renders SmithersNode tree correctly
+- [ ] Arrow up/down navigates between nodes
+- [ ] Arrow right expands node children
+- [ ] Arrow left collapses node
+- [ ] Enter key selects agent node
+- [ ] Shows correct execution status icons
+- [ ] Handles empty tree
+- [ ] Handles deeply nested tree (10+ levels)
+
+**AgentPanel component:**
+- [ ] Displays selected agent's prompt
+- [ ] Displays agent's output/result
+- [ ] Escape returns to tree view
+- [ ] Handles agents without output
+- [ ] Streaming output updates in real-time
+
+**Layout component:**
+- [ ] Renders tree and panel in split view
+- [ ] Responds to terminal resize
+- [ ] Status bar shows frame count
+- [ ] Status bar shows elapsed time
+
+**TUI integration:**
+- [ ] TUI updates on each Ralph frame
+- [ ] Running status shown during execution
+- [ ] Complete status shown when done
+- [ ] Error status shown on failure
+
+#### 10. Integration Tests (`evals/integration.test.ts`)
 
 **Full workflows:**
 - [ ] init → plan → run (mock mode)

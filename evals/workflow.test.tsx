@@ -374,6 +374,7 @@ describe('Workflow', () => {
 
       function Iterator() {
         const iteration = workflow.useInput('iteration') ?? 0
+        const store = workflow.useStore()
 
         if (iteration >= 2) {
           return null // Stop after 2 iterations
@@ -385,8 +386,8 @@ describe('Workflow', () => {
           <Claude
             _mockMode
             onFinished={() => {
-              // This would normally be set by the workflow output
-              // but we're simulating the iteration update
+              // Increment iteration to trigger re-execution
+              store.setValue('iteration', iteration + 1)
             }}
           >
             Iteration {iteration}
@@ -405,9 +406,10 @@ describe('Workflow', () => {
 
       const result = await executePlan(<App />, { mockMode: true })
 
-      // Should have executed at least once
-      expect(executionCount).toBeGreaterThanOrEqual(1)
-      expect(result.frames).toBeGreaterThan(0)
+      // Should have executed multiple times due to reactive re-execution
+      // Iteration 0, iteration 1, iteration 2 (returns null but counter already incremented)
+      expect(executionCount).toBe(3)
+      expect(result.frames).toBeGreaterThanOrEqual(3)
     })
   })
 })

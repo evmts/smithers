@@ -931,6 +931,7 @@ export async function executeFileNode(
   const path = node.props.path as string
   const mode = (node.props.mode as 'write' | 'append') || 'write'
   const encoding = (node.props.encoding as BufferEncoding) || 'utf-8'
+  const createDirs = node.props.createDirs !== false // defaults to true
   const onWritten = node.props.onWritten as ((path: string) => void) | undefined
   const onError = node.props.onError as ((error: Error) => void) | undefined
   const nodeMockMode = node.props._mockMode === true
@@ -967,7 +968,7 @@ export async function executeFileNode(
 
     // Create parent directories if needed
     const dir = dirname(path)
-    if (dir && !existsSync(dir)) {
+    if (createDirs && dir && !existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
     }
 
