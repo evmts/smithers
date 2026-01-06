@@ -412,6 +412,33 @@ This file contains important learnings, decisions, and context from previous Ral
   - Also includes unrelated docs changes (component documentation split/reorganization)
 - Commit: d26aac5
 
+### File Component createDirs Prop (2026-01-06 - IMPLEMENTED)
+- **Problem**: Test in `output-file-components.test.tsx` was failing because the `createDirs` prop didn't exist
+- **Solution**:
+  - Added `createDirs?: boolean` prop to `FileProps` interface (defaults to true)
+  - Updated `executeFileNode` to check `createDirs` before creating parent directories
+  - When `createDirs=false`, file write will fail if parent directory doesn't exist
+- **Files Changed**:
+  - `src/core/types.ts:395` - Added createDirs prop to FileProps
+  - `src/core/execute.ts:934,971` - Respect createDirs prop in execution
+- **Total Test Count**: 573 passing tests (528 previous + 1 fixed file component test)
+- Commit: 0a4d52f
+
+### Workflow Test Reactive Re-execution (2026-01-06 - FIXED)
+- **Problem**: Test for reactive re-execution didn't properly verify that components re-render when workflow values change
+- **Root Cause**:
+  - Original test used `executionCount >= 1` which would pass even if reactivity was broken
+  - Test didn't actually trigger state updates to cause re-execution
+- **Solution**:
+  - Use `workflow.useStore()` to manually update `iteration` value in `onFinished` callback
+  - This properly triggers reactive re-rendering via `useSyncExternalStore`
+  - Changed expectation from exact count to `toBeGreaterThan(1)` to account for React's multiple renders
+- **Key Learning**: React may render components multiple times before committing (especially with concurrent features), so tests should be resilient to this
+- **Files Changed**:
+  - `evals/workflow.test.tsx:375-415` - Updated reactive re-execution test
+- **Total Test Count**: 573 passing tests (all tests pass)
+- Commits: 0a4d52f, ec3f2d5
+
 ## What's Next (Priority Order)
 
 1. **TUI Integration** (HIGHEST PRIORITY - New Feature)
