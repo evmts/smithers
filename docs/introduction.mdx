@@ -7,6 +7,19 @@ description: Build AI agents the way you build user interfaces - with React
 
 Smithers is a declarative framework for building AI agents using React and JSX. Build complex agent workflows from simple, reusable components - the same way you build user interfaces.
 
+## Features
+
+- **Use your Claude Code subscription** - Run agents with your existing Claude Code subscription
+- **JSX/TSX & MDX support** - Author agents in `.tsx` or `.mdx` files
+- **React state management** - Use Zustand, useState, or any React state to control agent flow
+- **Composable components** - Build reusable personas, constraints, and output formats
+- **Preview before execution** - Render to XML plans for Terraform-style approval workflows
+- **Parallel execution** - Run multiple agents concurrently with `<Subagent parallel>`
+- **Multi-phase workflows** - State changes trigger re-renders, enabling complex agent loops
+- **Built-in tools** - Read, Edit, Bash, Glob, Grep, and more via Claude Agent SDK
+- **Custom tools** - Define your own tools with the ClaudeApi component
+- **MCP server support** - Connect to Model Context Protocol servers
+
 <CardGroup cols={2}>
   <Card title="Quick Start" icon="rocket" href="/quickstart">
     Get up and running with your first agent in minutes
@@ -34,7 +47,145 @@ Smithers is a declarative framework for building AI agents using React and JSX. 
 | Hard to visualize agent flow | Preview the plan before execution |
 | Manual parallel orchestration | `<Subagent parallel>` |
 
-## A Quick Example
+## How It Works
+
+Smithers uses a custom React renderer (like react-dom, but for AI agents):
+
+1. **Render**: Your JSX components render to an internal tree
+2. **Serialize**: The tree is converted to an XML plan
+3. **Preview**: You see the plan before execution (unless `--auto-approve`)
+4. **Execute**: `<Claude>` nodes are executed via the Claude API
+5. **Update**: `onFinished` callbacks update React state
+6. **Loop**: State changes trigger re-render, back to step 1
+7. **Complete**: When no pending `<Claude>` nodes remain, execution finishes
+
+This "render loop" model means your agent's behavior emerges from your React component logic - conditionals, state machines, composition - all the patterns you already know.
+
+## CLI
+
+Run agents directly from the command line:
+
+```bash
+# Run a TSX agent
+npx smithers run agent.tsx
+
+# Run an MDX agent
+npx smithers run agent.mdx
+
+# Preview the plan without executing
+npx smithers plan agent.tsx
+
+# Auto-approve execution (skip preview)
+npx smithers run agent.tsx --auto-approve
+```
+
+## The Complete Development Workflow
+
+This flagship example shows how production-grade features are built with Smithers:
+
+- **Human-in-the-loop** approval at multiple checkpoints
+- **Research → Plan → POC → Refine → Implement** cycle
+- **Extended thinking** for deep analysis
+- **Test-driven development** flow
+
+```tsx
+import { create } from 'zustand'
+import { executePlan, Claude, Phase, Step, Human, Stop } from 'smithers'
+
+type WorkflowPhase = 'prompt-input' | 'research' | 'planning' | 'plan-review' | 'poc' | 'poc-analysis' | 'refined-review' | 'api-impl' | 'test-impl' | 'test-verify' | 'implementation' | 'done' | 'cancelled'
+
+const useWorkflowStore = create((set, get) => ({
+  phase: 'prompt-input' as WorkflowPhase,
+  prompt: '',
+  initialPlan: null,
+  refinedPlan: null,
+  nextPhase: () => {
+    const phases = ['prompt-input', 'research', 'planning', 'plan-review', 'poc', 'poc-analysis', 'refined-review', 'api-impl', 'test-impl', 'test-verify', 'implementation', 'done']
+    const idx = phases.indexOf(get().phase)
+    if (idx < phases.length - 1) set({ phase: phases[idx + 1] })
+  },
+}))
+
+function FeatureWorkflow({ prompt: initialPrompt }) {
+  const { phase, nextPhase, setPhase, setPrompt } = useWorkflowStore()
+
+  switch (phase) {
+    case 'prompt-input':
+      return (
+        <Human message="Review feature request" onApprove={() => { setPrompt(initialPrompt); nextPhase() }} onReject={() => setPhase('cancelled')}>
+          Feature: {initialPrompt}
+        </Human>
+      )
+
+    case 'research':
+      return (
+        <Claude allowedTools={['Read', 'Glob', 'Grep']} onFinished={() => nextPhase()}>
+          <Phase name="research">
+            <Step>Search for relevant files</Step>
+            <Step>Find existing patterns</Step>
+          </Phase>
+        </Claude>
+      )
+
+    case 'planning':
+      return (
+        <Claude onFinished={(plan) => { useWorkflowStore.setState({ initialPlan: plan }); nextPhase() }}>
+          <Phase name="planning">
+            <Step>Create implementation plan</Step>
+            <Step>Identify test cases</Step>
+          </Phase>
+        </Claude>
+      )
+
+    case 'plan-review':
+      return <Human message="Review plan" onApprove={() => nextPhase()} onReject={() => setPhase('cancelled')} />
+
+    case 'poc':
+      return (
+        <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>
+          Build a working proof of concept to validate the approach.
+        </Claude>
+      )
+
+    case 'poc-analysis':
+      return (
+        <Claude maxThinkingTokens={16000} onFinished={(result) => { useWorkflowStore.setState({ refinedPlan: result.refinedPlan }); nextPhase() }}>
+          Deep analysis of POC - update plan based on learnings.
+        </Claude>
+      )
+
+    case 'api-impl':
+      return <Claude onFinished={() => nextPhase()}>Implement types + JSDoc (throw not implemented)</Claude>
+
+    case 'test-impl':
+      return <Claude onFinished={() => nextPhase()}>Write tests (should fail)</Claude>
+
+    case 'test-verify':
+      return <Claude allowedTools={['Bash']} onFinished={() => nextPhase()}>Verify tests fail</Claude>
+
+    case 'implementation':
+      return <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>Implement until tests pass</Claude>
+
+    case 'done':
+      return null
+
+    case 'cancelled':
+      return <Stop reason="Cancelled" />
+  }
+}
+```
+
+This workflow demonstrates how senior engineers build features:
+1. **Research first** - understand before coding
+2. **Human checkpoints** - catch issues early
+3. **POC validation** - discover unknowns
+4. **TDD flow** - types → tests (fail) → implementation (pass)
+
+<Card title="See Full Example" icon="code" href="/examples/feature-workflow">
+  View the complete implementation with all phases
+</Card>
+
+## A Simple Example
 
 ```tsx
 import { create } from 'zustand'
@@ -88,20 +239,6 @@ function ResearchAgent({ topic }) {
     Run multiple agents concurrently with the Subagent component.
   </Card>
 </CardGroup>
-
-## How It Works
-
-Smithers uses a custom React renderer (like react-dom, but for AI agents):
-
-1. **Render**: Your JSX components render to an internal tree
-2. **Serialize**: The tree is converted to an XML plan
-3. **Preview**: You see the plan before execution (unless `--auto-approve`)
-4. **Execute**: `<Claude>` nodes are executed via the Claude API
-5. **Update**: `onFinished` callbacks update React state
-6. **Loop**: State changes trigger re-render, back to step 1
-7. **Complete**: When no pending `<Claude>` nodes remain, execution finishes
-
-This "render loop" model means your agent's behavior emerges from your React component logic - conditionals, state machines, composition - all the patterns you already know.
 
 ## Next Steps
 
