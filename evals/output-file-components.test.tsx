@@ -373,15 +373,20 @@ describe('File component', () => {
         )
       }
 
-      await executePlan(<FileAgent />)
+      await executePlan(<FileAgent />, { mockMode: true })
 
       expect(useStore.getState().written).toBe(true)
       expect(writtenPath).toBe(filePath)
     })
 
     it('calls onError callback on failure', async () => {
-      // Try to write to an invalid path (e.g., root on most systems)
-      const invalidPath = '/nonexistent-root-dir-test/file.txt'
+      // Use a path where parent directory doesn't exist and we can verify it fails
+      // This works cross-platform by using a non-existent nested path in the test directory
+      const invalidPath = join(testDir, 'nonexistent-parent', 'deeply', 'nested', 'file.txt')
+      // Remove the test directory to ensure the parent path doesn't exist
+      if (existsSync(testDir)) {
+        rmSync(testDir, { recursive: true, force: true })
+      }
       let errorCaught: Error | null = null
 
       const useStore = create<{ error: boolean; setError: () => void }>((set) => ({
@@ -396,6 +401,7 @@ describe('File component', () => {
           <>
             <File
               path={invalidPath}
+              createDirs={false}
               onError={(err) => {
                 errorCaught = err
                 setError()
@@ -408,7 +414,7 @@ describe('File component', () => {
         )
       }
 
-      await executePlan(<FileAgent />)
+      await executePlan(<FileAgent />, { mockMode: true })
 
       expect(useStore.getState().error).toBe(true)
       expect(errorCaught).not.toBeNull()
@@ -540,8 +546,7 @@ describe('File component', () => {
       )
 
       // In mock mode, file should NOT be written
-      // (This depends on implementation - update if behavior differs)
-      // For now, we test that it doesn't throw
+      expect(existsSync(filePath)).toBe(false)
     })
   })
 })
