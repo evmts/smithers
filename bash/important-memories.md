@@ -249,16 +249,48 @@ This file contains important learnings, decisions, and context from previous Ral
   - Removed `evals/claude-cli.test.tsx`
 - **Current Test Count**: 401 passing tests (88 previously + new tests from recent work)
 
+### Renderer Test Coverage (2026-01-05 - IMPLEMENTED)
+- **Feature**: Comprehensive test coverage for renderPlan() and serialize() functions
+- **Implementation**:
+  - Created `evals/renderer.test.tsx` with 32 tests covering all renderer functionality
+  - **renderPlan() Tests** (11 tests):
+    - Single/nested/sibling components
+    - All prop types (string, number, boolean, function, object)
+    - Conditional rendering, array children, fragments
+    - Text/mixed children, deeply nested/wide trees
+  - **serialize() Tests** (10 tests):
+    - XML special character escaping
+    - Quote escaping in attributes
+    - Boolean/undefined/null prop handling
+    - Whitespace preservation
+    - Nested tree indentation
+    - ROOT node handling
+    - Self-closing tags
+    - Object prop serialization
+  - **createRoot() Tests** (2 tests):
+    - Root lifecycle (render/unmount)
+    - Multiple renders with same root
+  - **Edge Cases** (9 tests):
+    - Unicode/emoji support
+    - Special XML chars in content
+    - Newlines/tabs
+    - Empty components
+    - Very long prompts
+    - Numeric zero/empty string props
+    - Function prop serialization
+- **Total Test Count**: 433 passing tests (401 previous + 32 new renderer tests)
+- Commit: c6a4681
+
 ## What's Next (Priority Order)
 
 1. **Test Coverage** (Highest Priority)
    - ✅ CLI tests (`evals/cli.test.ts`) - 34 tests (DONE)
    - ✅ Loader tests (`evals/loader.test.ts`) - 33 tests (DONE)
-   - Add MCP integration tests (`evals/mcp.test.ts`) - server management, tool integration
-   - Add Renderer tests (`evals/renderer.test.ts`) - renderPlan(), serialize()
-   - Add Executor tests (`evals/executor.test.ts`) - Ralph loop, state management
-   - Add Component tests (`evals/components.test.ts`) - all component behaviors
-   - Add Edge case tests (`evals/edge-cases.test.ts`)
+   - ✅ Renderer tests (`evals/renderer.test.tsx`) - 32 tests (DONE)
+   - Add Executor tests (`evals/executor.test.ts`) - Ralph loop edge cases, state management
+   - Add Component tests (`evals/components.test.ts`) - Persona, Constraints, OutputFormat behaviors
+   - Add Edge case tests (`evals/edge-cases.test.ts`) - limits, error scenarios
+   - Note: MCP tests already exist (`mcp-manager.test.ts`, `mcp-presets.test.ts`)
    - See Test Matrix in CLAUDE.md for full coverage targets
 
 2. **Examples + Documentation**
