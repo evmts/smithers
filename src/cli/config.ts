@@ -108,6 +108,16 @@ async function loadJsConfig(configPath: string): Promise<SmithersConfig> {
     return validateConfig(config, configPath)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+
+    // Provide helpful error message for TypeScript config files
+    if (configPath.endsWith('.ts') && message.includes('Unknown file extension')) {
+      throw new Error(
+        `Failed to load TypeScript config file: ${configPath}\n` +
+          `Smithers requires Bun to load .ts config files.\n` +
+          `Make sure you're running with Bun, or use .js/.mjs config files instead.`
+      )
+    }
+
     throw new Error(
       `Failed to load config file: ${configPath}\n` +
         `Reason: ${message}`
@@ -279,6 +289,9 @@ export function getConfigPath(startDir?: string): string | null {
 
 /**
  * Define configuration with type safety (for JS/TS config files)
+ *
+ * Note: TypeScript config files (.ts) require Bun runtime. Use .js or .mjs
+ * config files if running in Node.js.
  *
  * @example
  * // smithers.config.ts

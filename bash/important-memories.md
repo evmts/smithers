@@ -81,7 +81,7 @@ This file contains important learnings, decisions, and context from previous Ral
 - MDX and TSX/JSX file loading
 - All known bugs fixed (execution state keying, content hashing, ESM compatibility, MCP types)
 
-### MCP Integration (2026-01-05 - IMPLEMENTED)
+### MCP Integration (2026-01-05 - IMPLEMENTED + FIXED)
 - **Feature**: MCP (Model Context Protocol) server integration allows agents to connect to MCP servers and use their tools
 - **Implementation**:
   - Added `MCPManager` initialization in `executePlan()`
@@ -90,24 +90,60 @@ This file contains important learnings, decisions, and context from previous Ral
   - Convert MCP tools to Smithers Tool format with execute wrappers
   - Clean up MCP connections when execution completes
 - **Important**: Tools are passed via `toolsOverride` parameter instead of mutating `node.props.tools` to prevent contentHash changes that would trigger infinite re-execution
-- **Known Issues** (from Codex review f8588ee):
-  1. MCPManager is shared across all nodes - tools from earlier nodes leak into later nodes without `mcpServers` prop
-  2. Tool name collisions between inline tools and MCP tools are not handled - silent shadowing occurs
-  3. Mock mode doesn't use prepared tools (acceptable for testing but inconsistent)
-- Commit: f8588ee
+- **FIXED** (2026-01-05):
+  1. ✅ MCP tool scoping fixed - now uses `getToolsForServer()` instead of `getAllTools()` to prevent tool leakage (Commit 9ef5d50)
+  2. ✅ Tool name collision detection added - warns when MCP and inline tools have same name (Commit 9ef5d50)
+  3. ✅ Tool deduplication implemented - removes MCP tool when inline tool has same name, ensuring only one definition is sent to API (Commit [current])
+  4. Mock mode doesn't use prepared tools (acceptable for testing but inconsistent)
+- Commit: f8588ee, 9ef5d50
+
+### Configuration System (2026-01-05 - IMPLEMENTED + IMPROVED)
+- **Feature**: CLI configuration file support for persistent settings
+- **Implementation**:
+  - Config auto-discovery: `.smithersrc`, `.smithersrc.json`, `smithers.config.{js,mjs,ts}`
+  - Searches from cwd up to filesystem root
+  - CLI flags override config file settings
+  - Export `defineConfig`, `loadConfig`, `mergeOptions` for programmatic use
+  - Supported options: model, maxTokens, maxFrames, timeout, autoApprove, mockMode, verbose
+- **TypeScript Config Files** (2026-01-05):
+  - `.ts` config files work correctly because Smithers CLI uses Bun runtime (shebang: `#!/usr/bin/env bun`)
+  - Bun natively supports TypeScript imports, so no loader needed
+  - Added helpful error message if user tries to run in Node.js without TS loader
+  - JSDoc documentation clarifies Bun requirement
+- Commit: 9ef5d50, [current]
+
+### Stop Component (2026-01-05 - IMPLEMENTED)
+- **Feature**: `<Stop>` component to halt Ralph Wiggum loop execution
+- **Implementation**:
+  - Add `findStopNode()` in `executePlan()` to detect Stop before executing pending nodes
+  - Optional `reason` prop for debugging/logging
+  - Comprehensive test suite in `evals/stop-component.test.tsx`
+  - All 44/44 tests pass including Stop component tests
+- Commit: 9ef5d50
+
+### Task Component (2026-01-05 - IMPLEMENTED)
+- **Feature**: `<Task>` component for trackable tasks with completion state
+- **Implementation**:
+  - Added `TaskProps` interface with `done` boolean prop
+  - Export Task and TaskProps from main index
+  - Ready for future iteration tracking features
+- Commit: 9ef5d50
 
 ## What's Next (Priority Order)
 
-1. **Runtime Integration Fixes** (Highest Priority)
-   - Fix MCP tool scoping - prevent tool leakage between nodes
-   - Add tool name collision detection and warnings
-   - Add configuration surface for retries, timeouts, streaming in ClaudeProps
+1. **Runtime Integration** (Highest Priority)
+   - ✅ Fix MCP tool scoping - prevent tool leakage between nodes (DONE)
+   - ✅ Add tool name collision detection and warnings (DONE)
+   - ✅ Add configuration system with file support (DONE)
+   - Add retry logic for failed API calls (types already in place)
+   - Add tool retry configuration (types already in place)
    - Test real Claude API execution (not just mocks)
 
 2. **Execution Semantics**
-   - Implement `<Task>` component with `done` prop for completion tracking
-   - Implement `<Stop>` component to signal Ralph loop termination
+   - ✅ Implement `<Task>` component with `done` prop (DONE)
+   - ✅ Implement `<Stop>` component to signal Ralph loop termination (DONE)
    - Ensure onError callbacks can trigger re-rendering and recovery
+   - Add Human component for interactive approval points
 
 3. **CLI UX + MDX**
    - Implement Terraform-style plan display with syntax highlighting

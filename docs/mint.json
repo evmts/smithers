@@ -64,6 +64,14 @@
       ]
     },
     {
+      "group": "Guides",
+      "pages": [
+        "guides/advanced-patterns",
+        "guides/debugging",
+        "guides/migration"
+      ]
+    },
+    {
       "group": "Components",
       "pages": [
         "components/claude",

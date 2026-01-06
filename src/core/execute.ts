@@ -574,6 +574,11 @@ async function prepareTools(node: PluNode, mcpManager: MCPManager): Promise<Tool
           `Tool name collision detected: "${inlineTool.name}" is provided by both MCP server and inline tools. ` +
             `The inline tool will take precedence.`
         )
+        // Remove the MCP tool with the same name
+        const index = tools.findIndex((t) => t.name === inlineTool.name)
+        if (index !== -1) {
+          tools.splice(index, 1)
+        }
       }
       tools.push(inlineTool)
     }

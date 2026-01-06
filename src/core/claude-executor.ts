@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { PluNode, Tool, StreamChunk } from './types.js'
+import type { PluNode, Tool, StreamChunk, ToolRetryOptions, ExecutionError, ToolExecutionResult } from './types.js'
 
 /**
  * Configuration for Claude API client
@@ -31,6 +31,142 @@ export class RateLimitError extends Error {
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Create a detailed execution error with full context
+ */
+export function createExecutionError(
+  message: string,
+  options: {
+    nodeType: string
+    nodePath: string
+    input?: string
+    failedTool?: string
+    toolInput?: unknown
+    retriesAttempted?: number
+    cause?: Error
+  }
+): ExecutionError {
+  const error = new Error(message) as ExecutionError
+  error.name = 'ExecutionError'
+  error.nodeType = options.nodeType
+  error.nodePath = options.nodePath
+  error.input = options.input
+  error.failedTool = options.failedTool
+  error.toolInput = options.toolInput
+  error.retriesAttempted = options.retriesAttempted
+  error.cause = options.cause
+  return error
+}
+
+/**
+ * Default tool retry options
+ */
+const DEFAULT_TOOL_RETRY_OPTIONS: Required<ToolRetryOptions> = {
+  maxRetries: 2,
+  baseDelayMs: 500,
+  exponentialBackoff: true,
+  skipOnFailure: [],
+  continueOnToolFailure: false,
+}
+
+/**
+ * Execute a single tool with retry logic
+ *
+ * @param tool The tool to execute
+ * @param input The input to pass to the tool
+ * @param options Retry configuration
+ * @param onToolError Optional callback for tool errors
+ * @returns Result of the tool execution including retry information
+ */
+async function executeToolWithRetry(
+  tool: Tool,
+  input: unknown,
+  options: Required<ToolRetryOptions>,
+  onToolError?: (toolName: string, error: Error, input: unknown) => void
+): Promise<ToolExecutionResult> {
+  let lastError: Error | null = null
+  let retriesAttempted = 0
+
+  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+    try {
+      if (!tool.execute) {
+        return {
+          toolName: tool.name,
+          success: false,
+          error: new Error(`Tool "${tool.name}" has no execute function`),
+          retriesAttempted: 0,
+        }
+      }
+
+      const result = await tool.execute(input)
+      return {
+        toolName: tool.name,
+        success: true,
+        result,
+        retriesAttempted,
+      }
+    } catch (error) {
+      lastError = error as Error
+      retriesAttempted = attempt
+
+      // Check if this tool should be skipped on failure
+      if (options.skipOnFailure.includes(tool.name)) {
+        if (onToolError) {
+          onToolError(tool.name, lastError, input)
+        }
+        return {
+          toolName: tool.name,
+          success: false,
+          error: lastError,
+          retriesAttempted,
+        }
+      }
+
+      // Don't retry if we've exhausted attempts
+      if (attempt === options.maxRetries) {
+        if (onToolError) {
+          onToolError(tool.name, lastError, input)
+        }
+        break
+      }
+
+      // Calculate delay with optional exponential backoff
+      const delay = options.exponentialBackoff
+        ? options.baseDelayMs * Math.pow(2, attempt)
+        : options.baseDelayMs
+
+      console.warn(
+        `Tool "${tool.name}" failed, retrying in ${delay}ms (attempt ${attempt + 1}/${options.maxRetries + 1}): ${lastError.message}`
+      )
+
+      await sleep(delay)
+    }
+  }
+
+  return {
+    toolName: tool.name,
+    success: false,
+    error: lastError || new Error('Unknown error'),
+    retriesAttempted,
+  }
+}
+
+/**
+ * Get node path for error context
+ */
+export function getNodePath(node: PluNode): string {
+  const parts: string[] = []
+  let current: PluNode | null = node
+
+  while (current) {
+    const name = current.props.name ? `[name="${current.props.name}"]` : ''
+    parts.unshift(`${current.type}${name}`)
+    current = current.parent
+  }
+
+  return parts.join(' > ')
 }
 
 /**
@@ -153,15 +289,28 @@ export async function executeWithClaude(
   const maxTokens = (node.props.maxTokens as number) || config.maxTokens || 8192
   const maxToolIterations = (node.props.maxToolIterations as number) || 10
 
+  // Extract retry configuration
+  const apiRetries = (node.props.retries as number) ?? 3
+  const toolRetryConfig: Required<ToolRetryOptions> = {
+    ...DEFAULT_TOOL_RETRY_OPTIONS,
+    ...(node.props.toolRetry as ToolRetryOptions | undefined),
+  }
+
   // Extract streaming options
   const streamEnabled = node.props.stream === true
   const onStream = node.props.onStream as ((chunk: StreamChunk) => void) | undefined
+
+  // Extract tool error callback for graceful degradation
+  const onToolError = node.props.onToolError as ((toolName: string, error: Error, input: unknown) => void) | undefined
 
   // Convert tools to Anthropic format and build tool lookup map
   // Use toolsOverride if provided, otherwise fall back to node.props.tools
   const toolDefs = toolsOverride || (node.props.tools as Tool[] | undefined)
   const tools = convertTools(toolDefs)
   const toolMap = buildToolMap(toolDefs)
+
+  // Get node path for error context
+  const nodePath = getNodePath(node)
 
   // Build the messages array - starts with just the user message
   const messages: Anthropic.MessageParam[] = [
@@ -217,7 +366,7 @@ export async function executeWithClaude(
 
           // Wait for final message
           return await stream.finalMessage()
-        })
+        }, apiRetries)
       } else {
         // Use non-streaming API for better performance when streaming not needed
         response = await withRetry(() =>
@@ -227,7 +376,8 @@ export async function executeWithClaude(
             messages,
             ...(system ? { system } : {}),
             ...(tools.length > 0 ? { tools } : {}),
-          })
+          }),
+          apiRetries
         )
       }
 
@@ -250,59 +400,95 @@ export async function executeWithClaude(
         break
       }
 
-      // Execute tool calls and collect results
+      // Execute tool calls and collect results with retry logic
       const toolResults: Anthropic.ToolResultBlockParam[] = []
+      const toolExecutionResults: ToolExecutionResult[] = []
+      let hasToolFailures = false
 
       for (const toolBlock of toolUseBlocks) {
         const tool = toolMap.get(toolBlock.name)
 
         if (!tool) {
           // Tool not found - return error result
+          const notFoundError = new Error(`Tool "${toolBlock.name}" not found`)
+          if (onToolError) {
+            onToolError(toolBlock.name, notFoundError, toolBlock.input)
+          }
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolBlock.id,
             content: `Error: Tool "${toolBlock.name}" not found`,
             is_error: true,
           })
-          continue
-        }
-
-        if (!tool.execute) {
-          // Tool has no execute function - return error result
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: toolBlock.id,
-            content: `Error: Tool "${toolBlock.name}" has no execute function`,
-            is_error: true,
+          hasToolFailures = true
+          toolExecutionResults.push({
+            toolName: toolBlock.name,
+            success: false,
+            error: notFoundError,
+            retriesAttempted: 0,
           })
           continue
         }
 
-        try {
-          // Execute the tool
-          const result = await tool.execute(toolBlock.input)
+        // Execute tool with retry logic
+        const execResult = await executeToolWithRetry(
+          tool,
+          toolBlock.input,
+          toolRetryConfig,
+          onToolError
+        )
 
+        toolExecutionResults.push(execResult)
+
+        if (execResult.success) {
           // Convert result to string with safe serialization
           const resultStr =
-            typeof result === 'string' ? result : safeStringify(result)
+            typeof execResult.result === 'string'
+              ? execResult.result
+              : safeStringify(execResult.result)
 
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolBlock.id,
             content: resultStr,
           })
-        } catch (error) {
-          // Tool execution failed - return error result
-          const errorMessage =
-            error instanceof Error ? error.message : String(error)
+        } else {
+          hasToolFailures = true
+          const errorMessage = execResult.error?.message || 'Unknown error'
+          const retriesInfo = execResult.retriesAttempted > 0
+            ? ` (after ${execResult.retriesAttempted + 1} attempts)`
+            : ''
 
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolBlock.id,
-            content: `Error executing tool: ${errorMessage}`,
+            content: `Error executing tool${retriesInfo}: ${errorMessage}`,
             is_error: true,
           })
         }
+      }
+
+      // If all tools failed and we're not configured to continue on failure, throw
+      const allToolsFailed = toolExecutionResults.length > 0 &&
+        toolExecutionResults.every(r => !r.success)
+
+      if (allToolsFailed && !toolRetryConfig.continueOnToolFailure) {
+        const failedTools = toolExecutionResults
+          .filter(r => !r.success)
+          .map(r => `${r.toolName}: ${r.error?.message}`)
+          .join('; ')
+
+        throw createExecutionError(
+          `All tool executions failed: ${failedTools}`,
+          {
+            nodeType: node.type,
+            nodePath,
+            input: prompt,
+            failedTool: toolExecutionResults[0]?.toolName,
+            toolInput: toolUseBlocks[0]?.input,
+            retriesAttempted: toolExecutionResults.reduce((max, r) => Math.max(max, r.retriesAttempted), 0),
+          }
+        )
       }
 
       // Add assistant message with tool use blocks
@@ -322,12 +508,34 @@ export async function executeWithClaude(
         throw error
       }
 
-      // Handle other API errors
-      if (error instanceof Anthropic.APIError) {
-        throw new Error(`Claude API error (${error.status}): ${error.message}`)
+      // Re-throw ExecutionError (already has context)
+      if ((error as ExecutionError).nodeType) {
+        throw error
       }
 
-      throw error
+      // Handle other API errors with enhanced context
+      if (error instanceof Anthropic.APIError) {
+        throw createExecutionError(
+          `Claude API error (${error.status}): ${error.message}`,
+          {
+            nodeType: node.type,
+            nodePath,
+            input: prompt,
+            cause: error,
+          }
+        )
+      }
+
+      // Wrap unknown errors with context
+      throw createExecutionError(
+        error instanceof Error ? error.message : String(error),
+        {
+          nodeType: node.type,
+          nodePath,
+          input: prompt,
+          cause: error instanceof Error ? error : undefined,
+        }
+      )
     }
   }
 

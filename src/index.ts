@@ -62,3 +62,16 @@ export type {
 // CLI Configuration (for programmatic use)
 export { loadConfig, loadConfigFromFile, mergeOptions, getConfigPath, defineConfig } from './cli/config.js'
 export type { SmithersConfig } from './cli/config.js'
+
+// File loading (for programmatic use)
+export {
+  loadAgentFile,
+  loadTsxFile,
+  loadMdxFile,
+  extractElement,
+  LoaderError,
+  SyntaxLoadError,
+  ExportError,
+  InvalidElementError,
+} from './cli/loader.js'
+export type { LoadOptions, LoadedModule } from './cli/loader.js'

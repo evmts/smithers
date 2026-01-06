@@ -1,4 +1,5 @@
 import pc from 'picocolors'
+import { LoaderError } from './loader.js'
 
 /**
  * Display the XML plan in a Terraform-style format
@@ -69,14 +70,26 @@ export function displayResult(
 }
 
 /**
- * Display an error
+ * Display an error with rich formatting for LoaderError types
  */
 export function displayError(error: Error): void {
   console.error()
   console.error(pc.bold(pc.red('Error')))
+
+  // Use rich formatting for LoaderError types
+  if (error instanceof LoaderError) {
+    console.error()
+    console.error(pc.red(error.format()))
+    return
+  }
+
+  // Standard error display
   console.error(pc.red(error.message))
 
-  if (error.stack) {
+  // Only show stack in verbose mode or for unexpected errors
+  if (error.stack && process.env.DEBUG) {
+    console.error()
+    console.error(pc.dim('Stack trace:'))
     console.error(pc.dim(error.stack))
   }
 }
