@@ -115,9 +115,123 @@ export interface StreamChunk {
 }
 
 /**
- * Props for the Claude component
+ * Permission mode for controlling how tool executions are handled.
+ */
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk'
+
+/**
+ * Agent definition for custom subagents invoked via the Task tool.
+ */
+export interface AgentDefinition {
+  /** Natural language description of when to use this agent */
+  description: string
+  /** Array of allowed tool names. If omitted, inherits all tools from parent */
+  tools?: string[]
+  /** Array of tool names to explicitly disallow for this agent */
+  disallowedTools?: string[]
+  /** The agent's system prompt */
+  prompt: string
+  /** Model to use for this agent. If omitted or 'inherit', uses the main model */
+  model?: 'sonnet' | 'opus' | 'haiku' | 'inherit'
+}
+
+/**
+ * JSON Schema output format for structured responses.
+ */
+export interface JsonSchemaOutputFormat {
+  type: 'json_schema'
+  schema: Record<string, unknown>
+}
+
+/**
+ * Props for the Claude component (uses Claude Agent SDK)
+ *
+ * The Claude component executes prompts using the Claude Agent SDK,
+ * which provides built-in tools for file operations, bash commands,
+ * web search, and more.
  */
 export interface ClaudeProps {
+  /** Callback invoked when execution completes */
+  onFinished?: (output: unknown) => void
+  /** Callback invoked if execution fails */
+  onError?: (error: Error | ExecutionError) => void
+  /** The prompt content */
+  children?: ReactNode
+
+  // Tool configuration
+  /**
+   * List of tool names that are auto-allowed without prompting for permission.
+   * Built-in tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task
+   */
+  allowedTools?: string[]
+  /**
+   * List of tool names that are disallowed. These tools will be removed
+   * from the model's context and cannot be used.
+   */
+  disallowedTools?: string[]
+  /**
+   * Specify the base set of available built-in tools.
+   * - `string[]` - Array of specific tool names
+   * - `[]` (empty array) - Disable all built-in tools
+   * - `{ type: 'preset'; preset: 'claude_code' }` - Use all default Claude Code tools
+   */
+  tools?: string[] | { type: 'preset'; preset: 'claude_code' }
+
+  // Model and execution
+  /** Claude model to use */
+  model?: string
+  /** Maximum number of conversation turns before the query stops */
+  maxTurns?: number
+  /** Maximum budget in USD for the query */
+  maxBudgetUsd?: number
+  /** Maximum tokens for thinking/reasoning process */
+  maxThinkingTokens?: number
+
+  // System prompt
+  /**
+   * System prompt configuration.
+   * - `string` - Use a custom system prompt
+   * - `{ type: 'preset', preset: 'claude_code', append?: string }` - Use default Claude Code prompt
+   */
+  systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string }
+
+  // Permissions
+  /** Permission mode for the session */
+  permissionMode?: PermissionMode
+  /** Must be true when using permissionMode: 'bypassPermissions' */
+  allowDangerouslySkipPermissions?: boolean
+
+  // Advanced features
+  /** Working directory for the session */
+  cwd?: string
+  /** MCP server configurations */
+  mcpServers?: Record<string, MCPServerConfig>
+  /** Custom subagent definitions */
+  agents?: Record<string, AgentDefinition>
+  /** Output format for structured responses */
+  outputFormat?: JsonSchemaOutputFormat
+  /** Session ID to resume */
+  resume?: string
+  /** Additional directories Claude can access */
+  additionalDirectories?: string[]
+  /**
+   * Control which filesystem settings to load.
+   * - 'user' - Global user settings
+   * - 'project' - Project settings
+   * - 'local' - Local settings
+   */
+  settingSources?: Array<'user' | 'project' | 'local'>
+
+  [key: string]: unknown // Pass-through to SDK
+}
+
+/**
+ * Props for the ClaudeApi component (uses Anthropic API SDK directly)
+ *
+ * The ClaudeApi component executes prompts using the Anthropic API SDK,
+ * giving you direct control over API calls with per-token billing.
+ */
+export interface ClaudeApiProps {
   tools?: Tool[]
   onFinished?: (output: unknown) => void
   /** Enhanced error callback with detailed error context */
@@ -258,6 +372,20 @@ export interface ClaudeCliProps {
 }
 
 /**
+ * Information about a plan and its prompt at the top level
+ */
+export interface PlanInfo {
+  /** The serialized XML plan */
+  planXml: string
+  /** The text prompt (if any) */
+  prompt: string
+  /** Paths to executable nodes in the plan */
+  executablePaths: string[]
+  /** The frame number */
+  frame: number
+}
+
+/**
  * Options for executing a plan
  */
 export interface ExecuteOptions {
@@ -281,6 +409,17 @@ export interface ExecuteOptions {
    * @returns Promise<boolean> - true if approved, false if rejected
    */
   onHumanPrompt?: (message: string, content: string) => Promise<boolean>
+  /**
+   * Callback invoked at the start of each frame when there's a top-level plan.
+   * This is called after rendering but before executing any nodes.
+   *
+   * Use this to show Claude the plan and prompt before execution begins.
+   * The callback receives the serialized plan and any text prompt found in the tree.
+   *
+   * @param info - Information about the plan and prompt
+   * @returns Optional response from consulting Claude about the plan
+   */
+  onPlanWithPrompt?: (info: PlanInfo) => Promise<string | void>
   /**
    * Debug observability options.
    * When enabled, emits structured events throughout the Ralph Wiggum loop
