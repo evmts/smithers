@@ -188,7 +188,7 @@ This file contains important learnings, decisions, and context from previous Ral
   - Commander.js shows help for unknown commands (exit 0) rather than erroring
 - **Total Test Count**: 88 passing tests (51 previous + 34 new CLI tests + 3 other new tests)
 - **Note**: 1 pre-existing test failure in `evals/subagent-scheduling.test.tsx` unrelated to CLI work
-- Commit: 01ca917
+- Commit: 01ca917 (CLI tests)
 
 ### Loader Test Coverage (2026-01-05 - IMPLEMENTED)
 - **Feature**: Comprehensive loader tests for MDX/TSX file loading
@@ -235,8 +235,8 @@ This file contains important learnings, decisions, and context from previous Ral
   - Component returning null is valid - extractElement creates a React element wrapping it
 - **Total Test Count**: 121 passing tests (88 previous + 33 new loader tests)
 - **Known Limitations** (from Codex review 3e0ce64):
-  - The "undefined component" MDX test doesn't error at load time (only at render time)
-  - The missing-import test is non-deterministic due to Bun tree-shaking
+  - The "undefined component" MDX test doesn't error at load time (only at render time) - test quality issue, not functional bug
+  - The missing-import test is non-deterministic due to Bun tree-shaking - documented as known limitation
 - Commit: 3e0ce64
 
 ### Test Fixes (2026-01-05 - FIXED)

@@ -1079,6 +1079,7 @@ function computeContentHash(node: SmithersNode): string {
 
 /**
  * Safely stringify a value for hashing, handling edge cases
+ * Uses a cycle-safe stringifier to avoid hash collisions
  */
 function safeStringify(value: unknown): string {
   try {
@@ -1097,14 +1098,27 @@ function safeStringify(value: unknown): string {
       return `symbol:${value.toString()}`
     }
 
-    // Try JSON.stringify for objects/arrays
+    // Try JSON.stringify for objects/arrays with cycle detection
     if (typeof value === 'object') {
-      return JSON.stringify(value)
+      const seen = new WeakSet()
+      return JSON.stringify(value, (key, val) => {
+        if (typeof val === 'object' && val !== null) {
+          if (seen.has(val)) {
+            return '[Circular]'
+          }
+          seen.add(val)
+        }
+        // Handle BigInt in nested objects
+        if (typeof val === 'bigint') {
+          return `bigint:${val.toString()}`
+        }
+        return val
+      })
     }
 
     return String(value)
   } catch (error) {
-    // Fallback for circular refs or other errors
+    // Fallback for other stringify errors
     return `[unstringifiable:${typeof value}]`
   }
 }
