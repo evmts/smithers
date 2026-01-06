@@ -1,6 +1,7 @@
 import { cloneElement, createElement, type ReactElement } from 'react'
 import type {
   ExecuteOptions,
+  ExecutionError,
   ExecutionResult,
   ExecutionState,
   FrameResult,
@@ -9,7 +10,7 @@ import type {
 } from './types.js'
 import { createRoot } from './render.js'
 import { runWithSyncUpdates, waitForStateUpdates } from '../reconciler/index.js'
-import { executeWithClaude } from './claude-executor.js'
+import { executeWithClaude, createExecutionError, getNodePath } from './claude-executor.js'
 import { MCPManager } from '../mcp/manager.js'
 import type { MCPServerConfig } from '../mcp/types.js'
 
@@ -102,6 +103,16 @@ export async function executePlan(
     if (verbose) {
       const firstChild = tree.children[0]
       console.log(`[Frame ${frameNumber}] After restore, first child type: ${firstChild?.type}`)
+    }
+
+    // Check for Stop node - if present, halt the loop
+    const stopNode = findStopNode(tree)
+    if (stopNode) {
+      const reason = stopNode.props.reason as string | undefined
+      if (verbose) {
+        console.log(`[Frame ${frameNumber}] Stop node detected${reason ? `: ${reason}` : ''}, halting execution`)
+      }
+      break
     }
 
     // Find nodes that need execution
@@ -381,6 +392,33 @@ function restoreExecutionState(tree: PluNode, storage: Map<string, ExecutionStat
 }
 
 /**
+ * Check if a Stop node exists in the tree
+ *
+ * The Stop component signals the Ralph Wiggum loop to halt execution
+ * after all currently running agents complete.
+ *
+ * @returns The Stop node if found, or null if no Stop node exists
+ */
+export function findStopNode(tree: PluNode): PluNode | null {
+  function walk(node: PluNode): PluNode | null {
+    if (node.type === 'stop') {
+      return node
+    }
+
+    for (const child of node.children) {
+      const found = walk(child)
+      if (found) {
+        return found
+      }
+    }
+
+    return null
+  }
+
+  return walk(tree)
+}
+
+/**
  * Find nodes that are ready for execution
  */
 export function findPendingExecutables(tree: PluNode): PluNode[] {
@@ -496,36 +534,49 @@ async function prepareTools(node: PluNode, mcpManager: MCPManager): Promise<Tool
       })
     )
 
-    // Get all tools from connected MCP servers and convert to Smithers Tool format
-    const mcpTools = mcpManager.getAllTools()
-    for (const mcpTool of mcpTools) {
-      tools.push({
-        name: mcpTool.name,
-        description: mcpTool.description || '',
-        input_schema: mcpTool.inputSchema,
-        execute: async (args: unknown) => {
-          // Call the MCP tool through the manager
-          const result = await mcpManager.callTool(
-            mcpTool.name,
-            args as Record<string, unknown>
-          )
+    // Get tools ONLY from the MCP servers specified for this node
+    // This prevents tool leakage from earlier nodes
+    for (const config of mcpServerConfigs) {
+      const mcpTools = mcpManager.getToolsForServer(config.name)
+      for (const mcpTool of mcpTools) {
+        tools.push({
+          name: mcpTool.name,
+          description: mcpTool.description || '',
+          input_schema: mcpTool.inputSchema,
+          execute: async (args: unknown) => {
+            // Call the MCP tool through the manager
+            const result = await mcpManager.callTool(
+              mcpTool.name,
+              args as Record<string, unknown>
+            )
 
-          if (!result.success) {
-            throw new Error(result.error || 'Tool execution failed')
-          }
+            if (!result.success) {
+              throw new Error(result.error || 'Tool execution failed')
+            }
 
-          // Return the first text content, or empty string if no content
-          const textContent = result.content?.find((c) => c.type === 'text')
-          return textContent?.text || ''
-        },
-      })
+            // Return the first text content, or empty string if no content
+            const textContent = result.content?.find((c) => c.type === 'text')
+            return textContent?.text || ''
+          },
+        })
+      }
     }
   }
 
   // Add inline tools from the tools prop
   const inlineTools = node.props.tools as Tool[] | undefined
   if (inlineTools) {
-    tools.push(...inlineTools)
+    // Check for tool name collisions between MCP and inline tools
+    const toolNames = new Set(tools.map((t) => t.name))
+    for (const inlineTool of inlineTools) {
+      if (toolNames.has(inlineTool.name)) {
+        console.warn(
+          `Tool name collision detected: "${inlineTool.name}" is provided by both MCP server and inline tools. ` +
+            `The inline tool will take precedence.`
+        )
+      }
+      tools.push(inlineTool)
+    }
   }
 
   return tools
@@ -619,16 +670,31 @@ export async function executeNode(
       onFinished(outputToPass)
     }
   } catch (error) {
+    // Enhance error with context if it's not already an ExecutionError
+    let enhancedError: Error | ExecutionError = error as Error
+
+    if (!(error as ExecutionError).nodeType) {
+      enhancedError = createExecutionError(
+        (error as Error).message || String(error),
+        {
+          nodeType: node.type,
+          nodePath: getNodePath(node),
+          input: extractTextContent(node),
+          cause: error as Error,
+        }
+      )
+    }
+
     node._execution = {
       status: 'error',
-      error: error as Error,
+      error: enhancedError,
       contentHash,
     }
 
     if (onError) {
-      onError(error as Error)
+      onError(enhancedError)
     } else {
-      throw error
+      throw enhancedError
     }
   }
 }
@@ -646,7 +712,11 @@ async function executeMock(node: PluNode): Promise<string> {
     promptText.toLowerCase().includes('fail intentionally') ||
     promptText.toLowerCase().includes('will fail')
   ) {
-    throw new Error('Simulated failure for testing')
+    throw createExecutionError('Simulated failure for testing', {
+      nodeType: node.type,
+      nodePath: getNodePath(node),
+      input: promptText,
+    })
   }
 
   let mockOutput: string = 'Hello, I am Smithers! A React-based framework for AI agent prompts.'

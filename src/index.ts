@@ -1,7 +1,13 @@
 // Core rendering and execution
 export { renderPlan, createRoot, serialize } from './core/render.js'
-export { executePlan, executeNode, findPendingExecutables } from './core/execute.js'
-export { executeWithClaude, type ClaudeConfig } from './core/claude-executor.js'
+export { executePlan, executeNode, findPendingExecutables, findStopNode } from './core/execute.js'
+export {
+  executeWithClaude,
+  createExecutionError,
+  getNodePath,
+  type ClaudeConfig,
+  RateLimitError,
+} from './core/claude-executor.js'
 
 // Components
 export {
@@ -12,6 +18,8 @@ export {
   Persona,
   Constraints,
   OutputFormat,
+  Task,
+  Stop,
 } from './components/index.js'
 
 // Types
@@ -19,8 +27,11 @@ export type {
   PluNode,
   PluRoot,
   ExecutionState,
+  ExecutionError,
   Tool,
   ToolInputSchema,
+  ToolRetryOptions,
+  ToolExecutionResult,
   ClaudeProps,
   SubagentProps,
   PhaseProps,
@@ -28,6 +39,8 @@ export type {
   PersonaProps,
   ConstraintsProps,
   OutputFormatProps,
+  TaskProps,
+  StopProps,
   ExecuteOptions,
   ExecutionResult,
   FrameResult,
@@ -45,3 +58,7 @@ export type {
   MCPTool,
   MCPToolResult,
 } from './mcp/index.js'
+
+// CLI Configuration (for programmatic use)
+export { loadConfig, loadConfigFromFile, mergeOptions, getConfigPath, defineConfig } from './cli/config.js'
+export type { SmithersConfig } from './cli/config.js'

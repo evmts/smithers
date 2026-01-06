@@ -20,6 +20,53 @@ export interface ExecutionState {
 }
 
 /**
+ * Detailed error information for better error recovery
+ */
+export interface ExecutionError extends Error {
+  /** The type of node that failed */
+  nodeType: string
+  /** Path to the failed node in the tree */
+  nodePath: string
+  /** The input/prompt that was being processed */
+  input?: string
+  /** Tool that failed, if applicable */
+  failedTool?: string
+  /** Tool input that caused the failure */
+  toolInput?: unknown
+  /** Number of retries attempted */
+  retriesAttempted?: number
+  /** Original error before wrapping */
+  cause?: Error
+}
+
+/**
+ * Result of a single tool execution
+ */
+export interface ToolExecutionResult {
+  toolName: string
+  success: boolean
+  result?: unknown
+  error?: Error
+  retriesAttempted: number
+}
+
+/**
+ * Options for tool retry behavior
+ */
+export interface ToolRetryOptions {
+  /** Maximum number of retries for a failed tool (default: 2) */
+  maxRetries?: number
+  /** Base delay in ms between retries (default: 500) */
+  baseDelayMs?: number
+  /** Whether to use exponential backoff (default: true) */
+  exponentialBackoff?: boolean
+  /** Tool names to skip on failure (continue with other tools) */
+  skipOnFailure?: string[]
+  /** Whether to continue execution if some tools fail (default: false) */
+  continueOnToolFailure?: boolean
+}
+
+/**
  * JSON Schema for tool input parameters
  */
 export interface ToolInputSchema {
@@ -69,7 +116,10 @@ export interface StreamChunk {
 export interface ClaudeProps {
   tools?: Tool[]
   onFinished?: (output: unknown) => void
-  onError?: (error: Error) => void
+  /** Enhanced error callback with detailed error context */
+  onError?: (error: Error | ExecutionError) => void
+  /** Callback for partial tool results when some tools fail but execution continues */
+  onToolError?: (toolName: string, error: Error, input: unknown) => void
   children?: ReactNode
   /** System prompt for the conversation */
   system?: string
@@ -81,6 +131,10 @@ export interface ClaudeProps {
   onStream?: (chunk: StreamChunk) => void
   /** MCP servers to connect to for additional tools */
   mcpServers?: MCPServerConfig[]
+  /** Number of retries for Claude API calls (default: 3) */
+  retries?: number
+  /** Tool retry configuration for failed tool executions */
+  toolRetry?: ToolRetryOptions
   [key: string]: unknown // Pass-through to SDK
 }
 
@@ -132,6 +186,27 @@ export interface OutputFormatProps {
 }
 
 /**
+ * Props for the Task component
+ */
+export interface TaskProps {
+  /** Whether the task is completed */
+  done?: boolean
+  children?: ReactNode
+}
+
+/**
+ * Props for the Stop component
+ *
+ * The Stop component signals the Ralph Wiggum loop to halt execution
+ * after all currently running agents complete.
+ */
+export interface StopProps {
+  /** Optional reason for stopping execution */
+  reason?: string
+  children?: ReactNode
+}
+
+/**
  * Options for executing a plan
  */
 export interface ExecuteOptions {
@@ -139,6 +214,12 @@ export interface ExecuteOptions {
   maxFrames?: number
   timeout?: number
   verbose?: boolean
+  /** Enable mock mode (no real API calls) */
+  mockMode?: boolean
+  /** Claude model to use */
+  model?: string
+  /** Maximum tokens for Claude responses */
+  maxTokens?: number
   onPlan?: (xml: string, frame: number) => void
   onFrame?: (frame: FrameResult) => void
 }

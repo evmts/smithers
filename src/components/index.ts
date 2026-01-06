@@ -7,6 +7,8 @@ import type {
   PersonaProps,
   ConstraintsProps,
   OutputFormatProps,
+  TaskProps,
+  StopProps,
 } from '../core/types.js'
 
 /**
@@ -107,6 +109,35 @@ export function OutputFormat(props: OutputFormatProps): ReactElement {
   return createElement('output-format', props)
 }
 
+/**
+ * Trackable task with completion state
+ *
+ * @example
+ * ```tsx
+ * <Task done={false}>Research the topic</Task>
+ * <Task done={true}>Write the outline</Task>
+ * ```
+ */
+export function Task(props: TaskProps): ReactElement {
+  return createElement('task', props)
+}
+
+/**
+ * Signals the Ralph Wiggum loop to halt execution
+ *
+ * When a Stop component is rendered in the tree, the execution loop
+ * will complete any currently running agents and then halt, preventing
+ * further iterations of the loop.
+ *
+ * @example
+ * ```tsx
+ * {isComplete && <Stop reason="All tasks completed" />}
+ * ```
+ */
+export function Stop(props: StopProps): ReactElement {
+  return createElement('stop', props)
+}
+
 // Re-export types
 export type {
   ClaudeProps,
@@ -116,4 +147,6 @@ export type {
   PersonaProps,
   ConstraintsProps,
   OutputFormatProps,
+  TaskProps,
+  StopProps,
 }
