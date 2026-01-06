@@ -1,6 +1,6 @@
 // Core rendering and execution
 export { renderPlan, createRoot, serialize } from './core/render.js'
-export { executePlan, executeNode, findPendingExecutables, findStopNode, findHumanNode, findPendingFileNodes, executeFileNode } from './core/execute.js'
+export { executePlan, executeNode, findPendingExecutables, findStopNode, findHumanNode, findPendingFileNodes, executeFileNode, type ExecuteNodeResult } from './core/execute.js'
 export {
   executeWithClaude,
   createExecutionError,
@@ -77,7 +77,34 @@ export type {
   ExecutionResult,
   FrameResult,
   PlanInfo,
+  ProviderContext,
 } from './core/types.js'
+
+// ClaudeProvider context (rate limiting, usage tracking, default props)
+export {
+  ClaudeProvider,
+  ClaudeContext,
+  useClaudeContext,
+  useClaudeContextOptional,
+  TokenBucketRateLimiter,
+  UsageTracker,
+  BudgetExceededError,
+} from './context/index.js'
+export { RateLimitError as ProviderRateLimitError } from './context/index.js'
+export type {
+  ClaudeProviderProps,
+  ClaudeDefaultProps,
+  ClaudeProviderEvents,
+  ClaudeContextValue,
+  RateLimitConfig,
+  TokenBucketState,
+  UsageLimitConfig,
+  UsageStats,
+  UsageReport,
+  TokenEstimate,
+  BudgetCheckResult,
+  StorageAdapter,
+} from './context/index.js'
 
 // MCP (Model Context Protocol) integration
 export { MCPManager, MCPPresets, createMCPConfigs } from './mcp/index.js'
@@ -138,3 +165,14 @@ export type {
   HumanNodeDetectedEvent,
   LoopTerminatedEvent,
 } from './debug/types.js'
+
+// Workflow system
+export { createWorkflow, findWorkflowOutputs, zodSchemaToToolSchema, getWorkflowStoreFromTree } from './workflow/index.js'
+export type {
+  Workflow,
+  WorkflowStore,
+  CreateWorkflowOptions,
+  WorkflowOutputProps,
+  HumanPromptInfo,
+  HumanPromptResponse,
+} from './workflow/index.js'
