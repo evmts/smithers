@@ -153,6 +153,234 @@ Smithers shows you exactly what the agent will do before executing:
 ? Execute this plan? (Y/n)
 ```
 
+## The Complete Development Workflow
+
+This is the flagship example showing how to build production-grade features with Smithers. It implements a comprehensive workflow with:
+
+- **Human-in-the-loop** approval at multiple checkpoints
+- **Research → Plan → POC → Refine → Implement** cycle
+- **Extended thinking** for deep analysis
+- **Test-driven development** flow
+
+```tsx
+import { create } from 'zustand'
+import { executePlan, Claude, Phase, Step, Persona, Constraints, OutputFormat, Human, Stop } from 'smithers'
+
+type WorkflowPhase =
+  | 'prompt-input' | 'research' | 'planning' | 'plan-review'
+  | 'poc' | 'poc-analysis' | 'refined-review'
+  | 'api-impl' | 'test-impl' | 'test-verify' | 'implementation'
+  | 'done' | 'cancelled'
+
+const useWorkflowStore = create((set, get) => ({
+  phase: 'prompt-input' as WorkflowPhase,
+  prompt: '',
+  fileResearch: [],
+  initialPlan: null,
+  refinedPlan: null,
+  pocResult: null,
+
+  setPhase: (phase) => set({ phase }),
+  setPrompt: (prompt) => set({ prompt }),
+  // ... other setters
+  nextPhase: () => {
+    const phases = ['prompt-input', 'research', 'planning', 'plan-review', 'poc', 'poc-analysis', 'refined-review', 'api-impl', 'test-impl', 'test-verify', 'implementation', 'done']
+    const idx = phases.indexOf(get().phase)
+    if (idx < phases.length - 1) set({ phase: phases[idx + 1] })
+  },
+}))
+
+function FeatureWorkflow({ prompt: initialPrompt }) {
+  const { phase, nextPhase, setPhase, setPrompt } = useWorkflowStore()
+
+  switch (phase) {
+    // Phase 1: Human confirms the feature request
+    case 'prompt-input':
+      return (
+        <Human
+          message="Review the feature request before proceeding"
+          onApprove={() => { setPrompt(initialPrompt); nextPhase() }}
+          onReject={() => setPhase('cancelled')}
+        >
+          Feature: {initialPrompt}
+        </Human>
+      )
+
+    // Phase 2: Research the codebase
+    case 'research':
+      return (
+        <Claude
+          allowedTools={['Read', 'Glob', 'Grep']}
+          onFinished={(result) => {
+            useWorkflowStore.setState({ fileResearch: result.files })
+            nextPhase()
+          }}
+        >
+          <Persona role="senior software architect">
+            You explore codebases thoroughly before acting.
+          </Persona>
+          <Phase name="research">
+            <Step>Search for relevant file paths</Step>
+            <Step>Find existing patterns and conventions</Step>
+            <Step>Identify integration points</Step>
+          </Phase>
+          Feature to implement: {useWorkflowStore.getState().prompt}
+        </Claude>
+      )
+
+    // Phase 3: Create implementation plan
+    case 'planning':
+      return (
+        <Claude onFinished={(plan) => { useWorkflowStore.setState({ initialPlan: plan }); nextPhase() }}>
+          <Persona role="software architect">Create detailed, actionable plans.</Persona>
+          <Phase name="planning">
+            <Step>Analyze research findings</Step>
+            <Step>Break down into concrete steps</Step>
+            <Step>Identify test cases including edge cases</Step>
+            <Step>Define public API surface</Step>
+          </Phase>
+          <OutputFormat schema={{ summary: 'string', steps: 'array', testCases: 'array', apis: 'array' }}>
+            Return a JSON implementation plan.
+          </OutputFormat>
+        </Claude>
+      )
+
+    // Phase 4: Human reviews the plan
+    case 'plan-review':
+      return (
+        <Human
+          message="Review the implementation plan"
+          onApprove={() => nextPhase()}
+          onReject={() => setPhase('cancelled')}
+        >
+          {JSON.stringify(useWorkflowStore.getState().initialPlan, null, 2)}
+        </Human>
+      )
+
+    // Phase 5: Build a proof of concept
+    case 'poc':
+      return (
+        <Claude
+          allowedTools={['Read', 'Write', 'Edit', 'Bash']}
+          onFinished={(result) => { useWorkflowStore.setState({ pocResult: result }); nextPhase() }}
+        >
+          <Persona role="rapid prototyping engineer">
+            Build quick, working prototypes to validate approaches.
+          </Persona>
+          <Constraints>
+            - Build a WORKING proof of concept, not production code
+            - Goal is to validate the approach and discover unknowns
+            - Document discoveries and suggestions for the real implementation
+          </Constraints>
+        </Claude>
+      )
+
+    // Phase 6: Deep analysis with extended thinking
+    case 'poc-analysis':
+      return (
+        <Claude
+          maxThinkingTokens={16000}
+          onFinished={(result) => {
+            useWorkflowStore.setState({ refinedPlan: result.refinedPlan })
+            nextPhase()
+          }}
+        >
+          <Persona role="senior architect">Deep analysis of POC results.</Persona>
+          <Phase name="poc-analysis">
+            <Step>Analyze POC discoveries</Step>
+            <Step>Update plan based on learnings</Step>
+            <Step>Add detailed test cases from POC findings</Step>
+          </Phase>
+          POC Result: {JSON.stringify(useWorkflowStore.getState().pocResult)}
+        </Claude>
+      )
+
+    // Phase 7: Human reviews refined plan
+    case 'refined-review':
+      return (
+        <Human
+          message="Review the refined plan with APIs and test cases"
+          onApprove={() => nextPhase()}
+          onReject={() => setPhase('cancelled')}
+        >
+          {JSON.stringify(useWorkflowStore.getState().refinedPlan, null, 2)}
+        </Human>
+      )
+
+    // Phase 8: Implement types and JSDoc (throw not implemented)
+    case 'api-impl':
+      return (
+        <Claude allowedTools={['Read', 'Write', 'Edit']} onFinished={() => nextPhase()}>
+          <Phase name="api-impl">
+            <Step>Create TypeScript interfaces and types</Step>
+            <Step>Write comprehensive JSDoc documentation</Step>
+            <Step>All function bodies throw new Error('Not implemented')</Step>
+          </Phase>
+        </Claude>
+      )
+
+    // Phase 9: Write tests
+    case 'test-impl':
+      return (
+        <Claude allowedTools={['Read', 'Write', 'Edit']} onFinished={() => nextPhase()}>
+          <Phase name="test-impl">
+            <Step>Write tests for all test cases from plan</Step>
+            <Step>Tests should FAIL at this point</Step>
+          </Phase>
+        </Claude>
+      )
+
+    // Phase 10: Verify tests fail
+    case 'test-verify':
+      return (
+        <Claude allowedTools={['Bash']} onFinished={() => nextPhase()}>
+          <Phase name="test-verify">
+            <Step>Run test suite</Step>
+            <Step>Verify tests fail with "Not implemented"</Step>
+          </Phase>
+        </Claude>
+      )
+
+    // Phase 11: Implement the actual code
+    case 'implementation':
+      return (
+        <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>
+          <Phase name="implementation">
+            <Step>Replace stubs with real implementation</Step>
+            <Step>Run tests until they pass</Step>
+          </Phase>
+        </Claude>
+      )
+
+    case 'done':
+      return null
+
+    case 'cancelled':
+      return <Stop reason="Workflow cancelled by user" />
+  }
+}
+
+// Run the workflow
+await executePlan(
+  <FeatureWorkflow prompt="Add user authentication" />,
+  {
+    onHumanPrompt: async (message, content) => {
+      console.log(message, content)
+      return true // or show UI for approval
+    },
+  }
+)
+```
+
+This workflow demonstrates how senior engineers build features:
+1. **Research first** - understand the codebase before coding
+2. **Human checkpoints** - catch issues early with approval gates
+3. **POC validation** - discover unknowns before committing to a plan
+4. **TDD flow** - types → tests (fail) → implementation (pass)
+5. **Extended thinking** - deep analysis for complex decisions
+
+See [examples/00-feature-workflow](./examples/00-feature-workflow) for the full implementation.
+
 ## Core Concepts
 
 ### Components Are Prompts
