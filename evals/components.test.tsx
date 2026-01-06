@@ -617,7 +617,7 @@ describe('Human component', () => {
         Critical operation about to be performed
       </Human>,
       {
-        onHumanPrompt: async (message) => {
+        onHumanPrompt: async (message, _content) => {
           humanPromptCalled = true
           promptMessage = message
           return true // Auto-approve

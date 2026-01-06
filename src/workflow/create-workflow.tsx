@@ -29,8 +29,10 @@ function createStore<T>(defaultValues?: Partial<T>): WorkflowStore<T> {
   // Only update when values actually change
   let snapshot = values
 
-  return {
-    values,
+  const store: WorkflowStore<T> = {
+    get values() {
+      return values
+    },
     listeners,
 
     subscribe(listener: () => void): () => void {
@@ -60,6 +62,8 @@ function createStore<T>(defaultValues?: Partial<T>): WorkflowStore<T> {
       return values[name]
     },
   }
+
+  return store
 }
 
 /**

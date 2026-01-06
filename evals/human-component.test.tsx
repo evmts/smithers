@@ -243,7 +243,7 @@ describe('human-component', () => {
 
     await executePlan(<AgentWithHuman />, {
       mockMode: true,
-      onHumanPrompt: async (message) => {
+      onHumanPrompt: async (message, _content) => {
         capturedMessage = message
         return true
       },
@@ -350,7 +350,7 @@ describe('human-component', () => {
 
     await executePlan(<AgentWithMultiplePersistentHumans />, {
       mockMode: true,
-      onHumanPrompt: async (message) => {
+      onHumanPrompt: async (message, _content) => {
         prompts.push(message)
         return true
       },

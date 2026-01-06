@@ -237,7 +237,7 @@ export async function executePlan(
         let workflowValues: Record<string, unknown> | undefined
 
         if (onHumanPrompt) {
-          // Build HumanPromptInfo for enhanced callback support
+          // Always build HumanPromptInfo for consistent handling
           const promptInfo: HumanPromptInfo = {
             message,
             content,
@@ -248,15 +248,26 @@ export async function executePlan(
             })),
           }
 
+          // Detect callback signature by checking parameter count
+          // Legacy callbacks accept 2 parameters: (message, content)
+          // Enhanced callbacks accept 1 parameter: (info)
+          const isLegacyCallback = onHumanPrompt.length >= 2
+
           // Call the onHumanPrompt callback
-          // It could return boolean (legacy) or HumanPromptResponse (enhanced)
-          const result = await (onHumanPrompt as (
-            arg1: string | HumanPromptInfo,
-            arg2?: string
-          ) => Promise<boolean | HumanPromptResponse>)(
-            hasWorkflowOutputs ? promptInfo : message,
-            hasWorkflowOutputs ? undefined : content
-          )
+          let result: boolean | HumanPromptResponse
+
+          if (isLegacyCallback) {
+            // Legacy callback: pass (message, content) and expect boolean
+            result = await (onHumanPrompt as (
+              message: string,
+              content: string
+            ) => Promise<boolean>)(promptInfo.message, promptInfo.content)
+          } else {
+            // Enhanced callback: pass HumanPromptInfo and handle response
+            result = await (onHumanPrompt as (
+              info: HumanPromptInfo
+            ) => Promise<boolean | HumanPromptResponse>)(promptInfo)
+          }
 
           if (typeof result === 'boolean') {
             // Legacy callback: returns boolean
@@ -1182,7 +1193,10 @@ async function prepareTools(node: SmithersNode, mcpManager: MCPManager): Promise
  * @param node The node to search for workflow outputs
  * @returns Array of tools for setting workflow values
  */
-function generateWorkflowTools(node: SmithersNode): Tool[] {
+function generateWorkflowTools(
+  node: SmithersNode,
+  onValueSet?: () => void
+): Tool[] {
   const outputNodes = findWorkflowOutputs(node)
   const tools: Tool[] = []
 
@@ -1193,7 +1207,8 @@ function generateWorkflowTools(node: SmithersNode): Tool[] {
     const workflowId = output.props._workflowId as string | undefined
 
     // Convert Zod schema to JSON Schema for the tool
-    const inputSchema = zodSchemaToToolSchema(schema)
+    // Only call zodSchemaToToolSchema if schema is defined
+    const inputSchema = schema ? zodSchemaToToolSchema(schema) : { type: 'object', properties: {} }
 
     tools.push({
       name: `set_${name}`,
@@ -1209,6 +1224,10 @@ function generateWorkflowTools(node: SmithersNode): Tool[] {
               ? (input as { value: unknown }).value
               : input
           store.setValue(name, value)
+          // Notify that workflow values were set
+          if (onValueSet) {
+            onValueSet()
+          }
           return `Successfully set ${name}`
         }
         return `Warning: No workflow store found for ${name}`
@@ -1337,7 +1356,10 @@ export async function executeNode(
       const preparedTools = await prepareTools(node, mcpManager)
 
       // Add workflow output tools if the node has workflow-output children
-      const workflowTools = generateWorkflowTools(node)
+      // Pass a callback to set the workflowValuesSet flag when values are set
+      const workflowTools = generateWorkflowTools(node, () => {
+        workflowValuesSet = true
+      })
       const allTools = [...preparedTools, ...workflowTools]
 
       if (useMockMode) {

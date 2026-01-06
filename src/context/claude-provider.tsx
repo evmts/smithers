@@ -208,6 +208,20 @@ export function ClaudeProvider({
     }
   }, [persistence?.enabled])
 
+  // Update rate limiter config when rateLimit prop changes
+  useEffect(() => {
+    if (rateLimiterRef.current && rateLimit) {
+      rateLimiterRef.current.updateConfig(rateLimit)
+    }
+  }, [rateLimit])
+
+  // Update usage tracker limits when usageLimit prop changes
+  useEffect(() => {
+    if (usageTrackerRef.current && usageLimit) {
+      usageTrackerRef.current.updateLimits(usageLimit)
+    }
+  }, [usageLimit])
+
   // Create context value with memoization
   const contextValue = useMemo<ClaudeContextValue>(() => {
     const tokenEstimator = estimateTokens ?? defaultEstimateTokens
@@ -228,11 +242,18 @@ export function ClaudeProvider({
           await rateLimiterRef.current.acquire(estimate)
         } catch (error) {
           if (events?.onRateLimited && error instanceof RateLimitError) {
-            events.onRateLimited({
-              type: error.limitType as 'rpm' | 'itpm' | 'otpm',
-              waitMs: error.retryAfterMs,
-              queuePosition: rateLimiterRef.current.getQueueLength(),
-            })
+            // Only call onRateLimited for actual rate limit types, not queue_full or timeout
+            if (
+              error.limitType === 'rpm' ||
+              error.limitType === 'itpm' ||
+              error.limitType === 'otpm'
+            ) {
+              events.onRateLimited({
+                type: error.limitType,
+                waitMs: error.retryAfterMs,
+                queuePosition: rateLimiterRef.current.getQueueLength(),
+              })
+            }
           }
           throw error
         }

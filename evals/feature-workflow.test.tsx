@@ -433,7 +433,7 @@ describe('feature-workflow', () => {
 
     await executePlan(<FeatureWorkflow prompt="Add feature X" />, {
       mockMode: true,
-      onHumanPrompt: async (message) => {
+      onHumanPrompt: async (message, _content) => {
         humanPrompts.push(message)
         return true // Auto-approve
       },

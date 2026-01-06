@@ -142,6 +142,7 @@ export class UsageTracker {
     reject: (error: Error) => void
   }> = []
   private pauseReason?: string
+  private budgetCheckInterval?: ReturnType<typeof setInterval>
 
   // Callback for pause events
   private onPausedCallback?: (info: { reason: string; resume: () => void }) => void
@@ -290,12 +291,16 @@ export class UsageTracker {
     return new Promise((resolve, reject) => {
       this.waitingPromises.push({ resolve, reject })
 
+      // Clear any existing interval before starting a new one
+      if (this.budgetCheckInterval) {
+        clearInterval(this.budgetCheckInterval)
+      }
+
       // Also check periodically for window expiration
-      const checkInterval = setInterval(() => {
+      this.budgetCheckInterval = setInterval(() => {
         this.refreshWindow()
         const newCheck = this.checkBudget()
         if (newCheck.allowed) {
-          clearInterval(checkInterval)
           this.resume()
         }
       }, 10000) // Check every 10 seconds
@@ -311,6 +316,12 @@ export class UsageTracker {
 
     this.paused = false
     this.pauseReason = undefined
+
+    // Clear the budget check interval if it's running
+    if (this.budgetCheckInterval) {
+      clearInterval(this.budgetCheckInterval)
+      this.budgetCheckInterval = undefined
+    }
 
     // Resolve all waiting promises
     const promises = this.waitingPromises

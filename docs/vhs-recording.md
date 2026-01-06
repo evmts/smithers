@@ -343,7 +343,7 @@ vhs demo.tape
 open demo.gif
 ```
 
-Tip: Use `Watch+Screen` to speed up development by waiting for output instead of hard-coded `Sleep` durations.
+Tip: Use `Wait+Screen` to speed up development by waiting for output instead of hard-coded `Sleep` durations.
 
 ## VHS GitHub Action
 
