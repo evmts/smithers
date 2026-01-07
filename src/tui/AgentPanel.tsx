@@ -65,6 +65,16 @@ function extractOutput(node: SmithersNode): string {
 }
 
 /**
+ * Apply scroll offset to text content
+ * Shows lines from scrollOffset onwards
+ */
+function applyScrollOffset(text: string, offset: number): string {
+  if (offset === 0) return text
+  const lines = text.split('\n')
+  return lines.slice(offset).join('\n')
+}
+
+/**
  * AgentPanel Component
  * Shows prompt and output for an agent node
  */
@@ -72,6 +82,9 @@ export function AgentPanel({ node, scrollOffset }: AgentPanelProps) {
   const prompt = extractPrompt(node)
   const output = extractOutput(node)
   const status = node._execution?.status || 'pending'
+
+  // Apply scroll offset to output (most commonly scrolled)
+  const scrolledOutput = applyScrollOffset(output, scrollOffset)
 
   // Get status color
   let statusColor = 'gray'
@@ -127,7 +140,7 @@ export function AgentPanel({ node, scrollOffset }: AgentPanelProps) {
           <strong>Output:</strong>
         </text>
         <scrollbox height="100%">
-          <text>{output}</text>
+          <text>{scrolledOutput}</text>
         </scrollbox>
       </box>
     </box>

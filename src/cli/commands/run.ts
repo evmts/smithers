@@ -193,68 +193,70 @@ async function run(file: string, options: RunOptions): Promise<void> {
     const renderer = await createCliRenderer()
     const tuiRoot = createTuiRoot(renderer)
 
-    // Initial render with empty tree
-    let currentTree: any = null
-    const startTime = Date.now()
+    try {
+      // Initial render with empty tree
+      let currentTree: any = null
+      const startTime = Date.now()
 
-    // Execute with TUI updates
-    const result = await executePlan(element, {
-      maxFrames,
-      timeout,
-      verbose,
-      mockMode,
-      model: merged.model,
-      maxTokens: merged.maxTokens,
-      onFrameUpdate: async (tree, frame) => {
-        currentTree = tree
+      // Execute with TUI updates
+      const result = await executePlan(element, {
+        maxFrames,
+        timeout,
+        verbose,
+        mockMode,
+        model: merged.model,
+        maxTokens: merged.maxTokens,
+        onFrameUpdate: async (tree, frame) => {
+          currentTree = tree
+          tuiRoot.render(
+            createElement(TuiRoot, {
+              tree,
+              frame,
+              maxFrames,
+              startTime,
+              onQuit: () => {
+                // User pressed 'q' - we can't stop execution mid-flight,
+                // but we can note it for later
+              },
+            })
+          )
+          // Give TUI time to render
+          await new Promise((resolve) => setImmediate(resolve))
+        },
+      })
+
+      // Keep TUI open after execution to show final state
+      info('Execution complete. Press q to quit.')
+
+      // Wait for user to quit
+      await new Promise<void>((resolve) => {
         tuiRoot.render(
           createElement(TuiRoot, {
-            tree,
-            frame,
+            tree: currentTree,
+            frame: result.frames,
             maxFrames,
             startTime,
             onQuit: () => {
-              // User pressed 'q' - we can't stop execution mid-flight,
-              // but we can note it for later
+              resolve()
             },
           })
         )
-        // Give TUI time to render
-        await new Promise((resolve) => setImmediate(resolve))
-      },
-    })
+      })
 
-    // Keep TUI open after execution to show final state
-    info('Execution complete. Press q to quit.')
-
-    // Wait for user to quit
-    await new Promise<void>((resolve) => {
-      tuiRoot.render(
-        createElement(TuiRoot, {
-          tree: currentTree,
-          frame: result.frames,
-          maxFrames,
-          startTime,
-          onQuit: () => {
-            resolve()
-          },
-        })
-      )
-    })
-
-    // Cleanup
-    renderer.cleanup()
-
-    // Display or save result
-    if (options.output) {
-      const outputPath = path.resolve(process.cwd(), options.output)
-      const content = options.json ? JSON.stringify(result, null, 2) : String(result.output)
-      fs.writeFileSync(outputPath, content)
-      success(`Result written to ${options.output}`)
-    } else if (options.json) {
-      console.log(JSON.stringify(result, null, 2))
-    } else {
-      displayResult(result.output, result.frames, result.totalDuration)
+      // Display or save result
+      if (options.output) {
+        const outputPath = path.resolve(process.cwd(), options.output)
+        const content = options.json ? JSON.stringify(result, null, 2) : String(result.output)
+        fs.writeFileSync(outputPath, content)
+        success(`Result written to ${options.output}`)
+      } else if (options.json) {
+        console.log(JSON.stringify(result, null, 2))
+      } else {
+        displayResult(result.output, result.frames, result.totalDuration)
+      }
+    } finally {
+      // Always cleanup renderer to restore terminal state
+      renderer.cleanup()
     }
   } else {
     // Standard non-TUI execution

@@ -127,19 +127,21 @@ export function TuiRoot({
   })
 
   // Render content based on view
-  const content =
-    view === 'tree' ? (
-      <TreeView
-        tree={tree}
-        selectedPath={selectedPath}
-        expandedPaths={expandedPaths}
-      />
-    ) : (
-      <AgentPanel
-        node={findNodeByPath(tree, selectedPath)!}
-        scrollOffset={detailScrollOffset}
-      />
-    )
+  // Check if selected node still exists before showing detail view
+  const selectedNode = view === 'detail' ? findNodeByPath(tree, selectedPath) : null
+  const shouldShowDetail = view === 'detail' && selectedNode !== null
+
+  const content = shouldShowDetail ? (
+    <AgentPanel node={selectedNode!} scrollOffset={detailScrollOffset} />
+  ) : (
+    <TreeView tree={tree} selectedPath={selectedPath} expandedPaths={expandedPaths} />
+  )
+
+  // If we were in detail view but node disappeared, fall back to tree view
+  if (view === 'detail' && !selectedNode) {
+    // Defer state update to avoid updating during render
+    setTimeout(() => setView('tree'), 0)
+  }
 
   return (
     <Layout
