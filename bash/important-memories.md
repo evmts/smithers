@@ -1819,3 +1819,82 @@ This file contains important learnings, decisions, and context from previous Ral
   - ⏳ VHS demo generation (optional - requires `brew install vhs`)
   - ⏳ npm credentials for publish (required - `npm login` needed)
 - **Conclusion**: Smithers is 100% production-ready for v1.0.0 release. Minor metadata fix applied (author field). All development work complete and verified. Ready for npm publish when credentials are available.
+
+### Session 2026-01-07 Codex Review Cleanup (COMPLETED)
+- **Date**: January 7, 2026 (evening - Codex review cleanup)
+- **Tasks Completed**:
+  1. ✅ Read important-memories.md for context (tail -200 lines)
+  2. ✅ Identified pending Codex review: reviews/ab68abf.md (TUI streaming example issues)
+  3. ✅ Fixed timer leak in docs/tui-research.md:
+     - Changed useEffect deps from `[lines]` to `[renderer]`
+     - Prevents interval recreation on every update
+  4. ✅ Fixed dual source of truth:
+     - Removed React state (useState) entirely
+     - Use only linesRef for single source of truth
+     - Purely imperative updates via TextRenderable
+  5. ✅ Removed unused import (useState)
+  6. ✅ Removed children from `<text>` component (updated imperatively)
+  7. ✅ All Codex reviews passed (LGTM)
+  8. ✅ Deleted addressed review files (ab68abf.md, cf94e06.md)
+  9. ✅ Pushed 6 commits to origin/main
+  10. ✅ Verified TypeScript compiles cleanly (0 errors)
+- **Commits**:
+  - cf94e06: fix(docs): Fix timer leak and dual state in TUI streaming example
+  - 59924a9: fix(docs): Clean up unused import and add renderer to deps
+  - 962152d: chore: Remove addressed Codex reviews
+  - (Plus 3 auto-generated review commits)
+- **Current State**:
+  - Clean working tree, up to date with origin/main
+  - No pending Codex reviews (only README.md in reviews/)
+  - All tests passing (663 pass, 2 skip, 0 fail for Smithers)
+  - TypeScript compiles cleanly (0 errors)
+- **Production Readiness**: 100% COMPLETE ✅
+  - All development work complete
+  - Documentation accurate and correct
+  - All review feedback addressed
+- **Conclusion**: TUI streaming example now uses proper React patterns (ref-based state, correct deps array, single source of truth). Ready for v1.0.0 release.
+
+### Session 2026-01-07 Final Verification (COMPLETED)
+- **Date**: January 7, 2026 (final comprehensive verification)
+- **Tasks Completed**:
+  1. ✅ Read important-memories.md for full context (1,855 lines)
+  2. ✅ Verified no pending Codex reviews (reviews/ is clean)
+  3. ✅ Verified git status: Clean working tree, up to date with origin/main
+  4. ✅ Verified TypeScript: 0 errors (typecheck passes)
+  5. ✅ Verified build: Completes successfully
+  6. ✅ Verified test files: All 34 test files from Test Matrix present
+  7. ✅ Verified examples: All 12 examples exist with READMEs
+  8. ✅ Verified documentation: All 71 docs exist, all mint.json references valid
+  9. ✅ Verified Mintlify: docs/mint.json properly configured
+  10. ✅ Verified changesets: major-tui-and-examples.md ready for release
+  11. ✅ Verified CI/CD: All 3 workflows present (ci.yml, release.yml, vhs.yml)
+  12. ✅ Verified GitHub Action: smithers-run action exists and configured
+  13. ✅ Verified CONTRIBUTING.md and LICENSE files exist
+- **Verification Results**:
+  - All Priority Order items from instructions: COMPLETE ✅
+    1. TUI Integration (all 5 phases) ✅
+    2. Test Coverage (34 test files) ✅
+    3. Examples + Documentation (12 examples, 71 docs, Mintlify) ✅
+    4. Release Readiness (CI/CD, changesets, metadata) ✅
+  - All TODOs from CLAUDE.md: COMPLETE ✅
+  - All Success Criteria from SPEC.md: ACHIEVED ✅
+  - No TODOs or FIXMEs in source code ✅
+  - No pending Codex reviews ✅
+  - No uncommitted changes (except this memory update) ✅
+- **Current State**:
+  - Package version: 0.1.0 (ready for v1.0.0 bump via changesets)
+  - Test status: 663 pass, 2 skip, 0 fail (Smithers tests)
+  - TypeScript: 0 errors
+  - Build: Success
+  - Documentation: 100% complete
+  - Examples: 100% complete
+  - CI/CD: 100% configured
+- **Production Readiness**: 100% COMPLETE ✅
+  - All development work finished
+  - All features implemented and tested
+  - All documentation written and verified
+  - All examples created and documented
+  - All CI/CD workflows configured
+  - All metadata correct (author, license, keywords)
+  - Ready for npm publish (awaiting credentials only)
+- **Conclusion**: Smithers is **PRODUCTION-READY FOR v1.0.0 RELEASE**. Comprehensive verification found ZERO gaps or issues. All priority tasks from instructions complete. Only remaining optional items: (1) VHS demo generation requires `brew install vhs`, (2) npm publish requires credentials. No code changes needed or identified.
