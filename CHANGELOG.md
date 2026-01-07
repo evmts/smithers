@@ -8,7 +8,7 @@
 
   This release represents a major milestone for Smithers with comprehensive new features:
 
-  ## TUI Integration (\u2728 NEW)
+  ## TUI Integration (✨ NEW)
 
   - **Interactive Terminal UI** using OpenTUI
     - Real-time execution monitoring with tree view
@@ -20,7 +20,7 @@
     - Automated GIF generation in CI
     - Comprehensive recording documentation
 
-  ## Interactive CLI Commands (\u2728 NEW)
+  ## Interactive CLI Commands (✨ NEW)
 
   - **Execution Control**: `/pause`, `/resume`, `/abort`
   - **Inspection**: `/status`, `/tree`, `/focus <path>`
@@ -29,7 +29,7 @@
   - **ExecutionController API** for programmatic control
   - 30 comprehensive tests
 
-  ## GitHub Action (\u2728 NEW)
+  ## GitHub Action (✨ NEW)
 
   - **CI/CD Integration** for running Smithers agents
   - Mock mode support for testing
@@ -38,7 +38,7 @@
   - 5 documented workflow examples
   - Security best practices
 
-  ## Worktree Component (\u2728 NEW)
+  ## Worktree Component (✨ NEW)
 
   - `<Worktree>` component for parallel agent isolation
   - Git worktree lifecycle management
@@ -46,7 +46,7 @@
   - Optional cleanup with error handling
   - Security: branch name validation, command injection prevention
 
-  ## ClaudeProvider (\u2728 NEW)
+  ## ClaudeProvider (✨ NEW)
 
   - Rate limiting (requests/tokens per minute)
   - Usage tracking and budget enforcement
@@ -54,7 +54,7 @@
   - Event callbacks for rate limits and usage updates
   - Token bucket algorithm implementation
 
-  ## Workflow System (\u2728 NEW)
+  ## Workflow System (✨ NEW)
 
   - Reactive workflow state management
   - Schema-driven input/output with Zod
@@ -71,7 +71,7 @@
   - **10-mcp-integration**: MCP server integration patterns
   - **11-rate-limited-batch**: Large-scale batch processing
 
-  ## Documentation (\u{1F4DA})
+  ## Documentation (📚)
 
   - Comprehensive API documentation for all components
   - 8 detailed guides (testing, error-handling, MCP integration, TUI usage, interactive commands)
@@ -79,7 +79,7 @@
   - 3 CLI command references
   - Mintlify docs configuration complete
 
-  ## Testing (\u2705)
+  ## Testing (✅)
 
   - 707 total tests passing
   - 619 Smithers-specific tests
@@ -93,7 +93,7 @@
     - Worktree tests (18)
     - Output/File component tests (45+)
 
-  ## Bug Fixes (\u{1F41B})
+  ## Bug Fixes (🐛)
 
   - Fixed React 19 async rendering issues
   - Fixed execution state keying collisions
@@ -102,7 +102,7 @@
   - Fixed MCP client capabilities
   - Fixed example bugs (test-generator, file-processor, rate-limited-batch)
 
-  ## Breaking Changes (\u26A0\uFE0F)
+  ## Breaking Changes (⚠️)
 
   - `onHumanPrompt` callback signature enhanced (backwards compatible via .length detection)
   - ClaudeProvider rate/usage limit props now reactive
