@@ -415,185 +415,107 @@ jobs:
     SMITHERS_MOCK: 'true'  # Use mock mode for CI
 ```
 
-## Smithers-Specific Demos
+## Smithers Demos
 
-### Demo 1: Basic Execution
+Smithers includes 4 demo tape files in the `demos/` directory showcasing the TUI:
 
-File: `demos/01-basic-execution.tape`
-
-```tape
-Output demos/01-basic-execution.gif
-
-Set FontSize 16
-Set Width 1200
-Set Height 800
-Set Theme "Catppuccin Mocha"
-Set TypingSpeed 50ms
-
-# Show the command
-Type "smithers run examples/hello-world.mdx --tui"
-Enter
-
-# Wait for TUI to appear
-Sleep 1s
-
-# Navigate down in tree
-Down
-Sleep 500ms
-Down
-Sleep 500ms
-
-# Expand a node
-Right
-Sleep 1s
-
-# Wait for execution
-Sleep 3s
-
-# Quit
-Type "q"
-Sleep 500ms
-```
+### Demo 1: Basic Execution (`demos/01-basic-execution.tape`)
 
 **Purpose:** Demonstrate basic TUI navigation and execution flow.
 
-### Demo 2: Agent Detail View
+**Shows:**
+- Running smithers with `--tui` flag
+- Basic tree navigation with arrow keys
+- Expanding nodes to see children
+- Watching execution progress
 
-File: `demos/02-agent-details.tape`
+**Duration:** ~10 seconds
 
-```tape
-Output demos/02-agent-details.gif
-
-Set FontSize 16
-Set Width 1400
-Set Height 1000
-Set Theme "Dracula"
-Set TypingSpeed 50ms
-
-# Start execution
-Type "smithers run examples/code-review.mdx --tui"
-Enter
-
-Sleep 2s
-
-# Navigate to an agent node
-Down
-Down
-Sleep 500ms
-
-# Open detail view
-Enter
-Sleep 2s
-
-# Scroll output
-Down
-Down
-Down
-Sleep 1s
-
-# Go back to tree
-Escape
-Sleep 1s
-
-# Quit
-Type "q"
+**To run:**
+```bash
+vhs demos/01-basic-execution.tape
 ```
 
-**Purpose:** Show agent detail view with prompt and streaming output.
+### Demo 2: Tree Navigation (`demos/02-tree-navigation.tape`)
 
-### Demo 3: Multi-Phase Workflow
+**Purpose:** Showcase keyboard navigation capabilities.
 
-File: `demos/03-multi-phase.tape`
+**Shows:**
+- Navigating up/down through tree nodes
+- Expanding/collapsing nodes with right/left arrows
+- Navigating into nested structures
+- Smooth keyboard-driven interaction
 
-```tape
-Output demos/03-multi-phase.gif
+**Duration:** ~15 seconds
 
-Set FontSize 16
-Set Width 1200
-Set Height 900
-Set Theme "Nord"
-Set TypingSpeed 50ms
-
-# Run multi-phase agent
-Type "smithers run examples/multi-phase-research.mdx --tui"
-Enter
-
-Sleep 1s
-
-# Watch first phase complete
-Wait /Phase: Research.*complete/
-Sleep 1s
-
-# Expand first phase
-Right
-Sleep 500ms
-
-# Navigate through completed agents
-Down
-Sleep 500ms
-Down
-Sleep 500ms
-
-# Move to second phase
-Down
-Down
-Sleep 1s
-
-# Wait for second phase to run
-Wait /Phase: Implementation.*running/
-Sleep 3s
-
-# Quit
-Type "q"
+**To run:**
+```bash
+vhs demos/02-tree-navigation.tape
 ```
 
-**Purpose:** Demonstrate multi-phase execution with state transitions.
+### Demo 3: Agent Details (`demos/03-agent-details.tape`)
 
-### Demo 4: Error Recovery
+**Purpose:** Show agent detail view with prompt and output inspection.
 
-File: `demos/04-error-recovery.tape`
+**Shows:**
+- Entering detail view with Enter key
+- Viewing agent prompts and outputs
+- Scrolling through long outputs
+- Returning to tree view with Escape
+- Navigating between different agents
 
-```tape
-Output demos/04-error-recovery.gif
+**Duration:** ~20 seconds
 
-Set FontSize 16
-Set Width 1200
-Set Height 800
-Set Theme "Tokyo Night"
-Set TypingSpeed 50ms
-
-# Run agent that will error
-Type "smithers run examples/error-example.mdx --tui"
-Enter
-
-Sleep 2s
-
-# Wait for error
-Wait /error/
-Sleep 1s
-
-# Navigate to error node
-Down
-Down
-Sleep 500ms
-
-# View error details
-Enter
-Sleep 2s
-
-# Scroll to see full error
-PageDown
-Sleep 1s
-
-# Go back
-Escape
-Sleep 500ms
-
-# Quit
-Type "q"
+**To run:**
+```bash
+vhs demos/03-agent-details.tape
 ```
 
-**Purpose:** Show how errors are displayed and navigated in TUI.
+### Demo 4: Multi-Phase Workflow (`demos/04-multi-phase.tape`)
+
+**Purpose:** Demonstrate complex multi-phase execution.
+
+**Shows:**
+- Navigating through multiple phases
+- Expanding phases to see component agents
+- Watching state transitions in real-time
+- Complex nested tree structures
+
+**Duration:** ~25 seconds
+
+**To run:**
+```bash
+vhs demos/04-multi-phase.tape
+```
+
+### Demo Files Location
+
+All demo tape files are in the `demos/` directory:
+
+```
+demos/
+├── README.md                   # Comprehensive demo documentation
+├── 01-basic-execution.tape     # Basic TUI demo
+├── 02-tree-navigation.tape     # Navigation demo
+├── 03-agent-details.tape       # Detail view demo
+└── 04-multi-phase.tape         # Multi-phase demo
+```
+
+After running VHS, the corresponding `.gif` files will be generated in the same directory.
+
+### Generating All Demos
+
+From project root:
+
+```bash
+cd demos/
+vhs 01-basic-execution.tape
+vhs 02-tree-navigation.tape
+vhs 03-agent-details.tape
+vhs 04-multi-phase.tape
+```
+
+Or use the GitHub Action (see CI/CD Integration section below).
 
 ## Best Practices
 
