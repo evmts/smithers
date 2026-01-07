@@ -558,6 +558,12 @@ export interface ExecuteOptions {
    * @param frame - Current frame number
    */
   onFrameUpdate?: (tree: SmithersNode, frame: number) => void | Promise<void>
+  /**
+   * Controller for interactive execution.
+   * Allows pause/resume, skip, inject, and abort during execution.
+   * Used by interactive CLI commands (/pause, /resume, etc.)
+   */
+  controller?: import('../cli/interactive.js').ExecutionController
 }
 
 /**

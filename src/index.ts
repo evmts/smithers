@@ -191,3 +191,16 @@ export type {
   HumanPromptInfo,
   HumanPromptResponse,
 } from './workflow/index.js'
+
+// Interactive CLI commands
+export {
+  ExecutionController,
+  parseCommand,
+  handleCommand,
+  formatTree,
+  findNodeByPath as findNodeByPathInteractive,
+  formatDuration,
+  type CommandInput,
+  type CommandResult,
+  type ExecutionStatus as InteractiveExecutionStatus,
+} from './cli/interactive.js'

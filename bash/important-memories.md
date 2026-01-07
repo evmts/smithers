@@ -795,10 +795,52 @@ This file contains important learnings, decisions, and context from previous Ral
   - Phase 5: GitHub Action for running Smithers agents in CI/CD
 - Commits: 29ec4a0, d8a4493
 
+### Interactive CLI Commands (2026-01-06 - COMPLETED)
+- **Feature**: Interactive slash commands for real-time execution control (Phase 4 of TUI Integration)
+- **Implementation**:
+  - Created `src/cli/interactive.ts` with ExecutionController class
+  - Command parsing via `parseCommand()` function
+  - Command handling via `handleCommand()` with result messages
+  - **Commands Implemented**:
+    - `/pause` - Pause execution after current frame
+    - `/resume` - Resume from paused state
+    - `/status` - Show execution state (frame, elapsed, pending/completed nodes)
+    - `/tree [--full]` - Display SmithersNode tree structure
+    - `/focus <path>` - Focus on node by path (TUI navigation)
+    - `/skip [<path>]` - Skip pending node (marks as complete without executing)
+    - `/inject <prompt>` - Inject context into next Claude node (one-time)
+    - `/abort [reason]` - Abort execution immediately
+    - `/help [cmd]` - Show command help
+  - **Integration with executePlan()**:
+    - Added `controller` option to ExecuteOptions
+    - Check abort/pause state at start of each frame
+    - Skip logic marks node with contentHash to prevent re-execution
+    - Inject logic temporarily modifies node children with TEXT node
+    - originalChildren restored in finally block after execution
+  - **Test Coverage**: 30 tests in `evals/interactive.test.ts` (all passing)
+    - Command parsing, controller state management
+    - handleCommand for all command types
+    - Integration tests with pause/resume/skip/inject/abort
+- **Key Design Decisions**:
+  - Controller passed through ExecuteOptions, available to all frames
+  - Skip marks node as complete with contentHash to prevent re-execution on next render
+  - Inject adds temporary TEXT child node, restored after execution
+  - Pause uses busy-wait loop (100ms sleep) until resumed or aborted
+  - Commands return CommandResult with success/message for display
+- **Exported**: ExecutionController, parseCommand, handleCommand, formatTree, formatDuration, CommandInput, CommandResult types
+- **Files Changed**:
+  - `src/cli/interactive.ts` (new, 600+ lines)
+  - `src/core/types.ts` (added controller to ExecuteOptions)
+  - `src/core/execute.ts` (integrated controller checks and inject/skip/pause/abort logic)
+  - `src/index.ts` (exported interactive utilities)
+  - `evals/interactive.test.ts` (new test file, 30 tests)
+  - `docs/cli-commands.md` (comprehensive documentation)
+- Commits: [current session]
+
 ## What's Next (Priority Order)
 
 1. **Fix Remaining Test Issues** (if any)
-   - Currently 589 tests passing, 2 skip, 0 failures
+   - Currently 619 tests passing (589 + 30 new), 2 skip, 0 failures
    - OpenTUI SolidJS test failures not relevant
 
 2. **TUI Integration** (COMPLETED - 2026-01-06)

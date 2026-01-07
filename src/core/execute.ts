@@ -67,6 +67,7 @@ export async function executePlan(
     onHumanPrompt,
     onPlanWithPrompt,
     debug,
+    controller,
   } = options
 
   // Initialize debug collector
@@ -144,6 +145,47 @@ export async function executePlan(
     if (verbose) {
       const firstChild = tree.children[0]
       console.log(`[Frame ${frameNumber}] After restore, first child type: ${firstChild?.type}`)
+    }
+
+    // Update controller state with current frame and tree
+    if (controller) {
+      controller._updateState(frameNumber, tree)
+    }
+
+    // Call onFrameUpdate callback if provided
+    if (onFrameUpdate) {
+      await onFrameUpdate(tree, frameNumber)
+    }
+
+    // Check for abort
+    if (controller?.aborted) {
+      debugCollector.emit({ type: 'loop:terminated', reason: 'aborted' })
+      if (verbose) {
+        const reason = controller.abortReason ? `: ${controller.abortReason}` : ''
+        console.log(`[Frame ${frameNumber}] Execution aborted${reason}`)
+      }
+      throw new Error(`Execution aborted${controller.abortReason ? ': ' + controller.abortReason : ''}`)
+    }
+
+    // Check for pause
+    if (controller?.paused) {
+      debugCollector.emit({ type: 'control:pause' })
+      if (verbose) {
+        console.log(`[Frame ${frameNumber}] Execution paused, waiting for resume...`)
+      }
+      // Wait for resume
+      while (controller.paused && !controller.aborted) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      // Check abort again after resume
+      if (controller.aborted) {
+        debugCollector.emit({ type: 'loop:terminated', reason: 'aborted' })
+        throw new Error(`Execution aborted${controller.abortReason ? ': ' + controller.abortReason : ''}`)
+      }
+      debugCollector.emit({ type: 'control:resume' })
+      if (verbose) {
+        console.log(`[Frame ${frameNumber}] Execution resumed`)
+      }
     }
 
     // Execute Worktree nodes FIRST - setup git worktrees before any other operations
@@ -407,6 +449,51 @@ export async function executePlan(
 
     // Find nodes that need execution
     const pendingNodes = findPendingExecutables(tree)
+
+    // Check for skip command
+    if (controller?.skipNextNode && pendingNodes.length > 0) {
+      const skipPath = controller.skipNodePath
+      let nodeToSkip: SmithersNode | null = null
+
+      if (skipPath) {
+        // Skip specific node by path
+        nodeToSkip = pendingNodes.find(n => getNodePath(n) === skipPath) || null
+        if (!nodeToSkip) {
+          if (verbose) {
+            console.log(`[Frame ${frameNumber}] Skip requested for ${skipPath} but node not in pending list`)
+          }
+        }
+      } else {
+        // Skip first pending node
+        nodeToSkip = pendingNodes[0]
+      }
+
+      if (nodeToSkip) {
+        const nodePath = getNodePath(nodeToSkip)
+        if (verbose) {
+          console.log(`[Frame ${frameNumber}] Skipping node: ${nodePath}`)
+        }
+        // Mark as skipped with contentHash for change detection
+        const skipContentHash = computeContentHash(nodeToSkip)
+        nodeToSkip._execution = {
+          status: 'complete', // Mark as complete to prevent re-execution
+          result: '[SKIPPED]',
+          contentHash: skipContentHash,
+        }
+        saveExecutionState(nodeToSkip, executionState)
+        debugCollector.emit({
+          type: 'control:skip',
+          nodePath,
+        })
+      }
+
+      // Clear skip flag
+      controller.skipNextNode = false
+      controller.skipNodePath = undefined
+
+      // Continue to next frame to process remaining nodes
+      continue
+    }
 
     // Emit node:found events for each pending node
     for (const node of pendingNodes) {
@@ -1681,6 +1768,9 @@ export async function executeNode(
   // Track whether workflow values were set during execution
   let workflowValuesSet = false
 
+  // Track original children if we inject prompt (needs to be in scope for finally block)
+  let originalChildren: SmithersNode[] | undefined
+
   try {
     let output: string
     // Track usage for reporting (populated by executors that support it)
@@ -1734,6 +1824,30 @@ export async function executeNode(
 
       // Acquire rate limit permission (may queue if limited)
       await providerContext.acquireRateLimit(tokenEstimate)
+    }
+
+    // Check for injected prompt from interactive command
+    let injectedPrompt: string | undefined
+    if (executionOptions?.controller?.injectedPrompt) {
+      injectedPrompt = executionOptions.controller.injectedPrompt
+      // Clear injection after use (one-time)
+      executionOptions.controller.injectedPrompt = undefined
+      // Note: Could emit debug event here if debugCollector was available
+    }
+
+    // If injecting, temporarily modify node children to include injected text
+    if (injectedPrompt) {
+      originalChildren = node.children
+      // Create a TEXT node with the injected prompt
+      const injectedNode: SmithersNode = {
+        type: 'TEXT',
+        props: { value: `\n\n${injectedPrompt}` },
+        children: [],
+        parent: node,
+        _execution: undefined,
+      }
+      // Append to children
+      node.children = [...originalChildren, injectedNode]
     }
 
     // Route to appropriate executor based on node type
@@ -1896,6 +2010,11 @@ export async function executeNode(
       return { workflowValuesSet }
     } else {
       throw enhancedError
+    }
+  } finally {
+    // Restore original children if we injected prompt
+    if (originalChildren) {
+      node.children = originalChildren
     }
   }
 }
