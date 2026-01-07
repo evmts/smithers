@@ -980,6 +980,9 @@ This file contains important learnings, decisions, and context from previous Ral
   * 3 CLI commands
 - **Total Tests**: 619 passing tests (589 Smithers + 30 interactive), 2 skip, 20 failures (OpenTUI SolidJS - expected)
 - Commit: 997728e
+- **Codex Review 997728e** (ADDRESSED - 2026-01-06):
+  1. ✅ mint.json referenced files - All files exist (workflows.mdx, claude-provider.mdx, worktree.mdx, all example docs)
+  2. ✅ dist/ directory tracking - Intentionally tracked for GitHub Actions (Node20 runtime requires built code), never in .gitignore
 
 ## What's Next (Priority Order)
 
