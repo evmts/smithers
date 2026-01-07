@@ -1,6 +1,6 @@
 {
   "name": "smithers",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Build AI agents in React. Declarative JSX components for orchestrating Claude agents with state management, parallel execution, and TUI visualization.",
   "type": "module",
   "main": "dist/index.js",
