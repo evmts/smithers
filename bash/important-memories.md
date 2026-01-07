@@ -1102,6 +1102,18 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Result**: README now accurately reflects all v1.0.0 features
 - Commits: b4410bf (removed resolved review), db0a1f2 (README updates)
 
+### TypeScript and OpenTUI Fixes (2026-01-06 - FIXED)
+- **Problem**: TypeScript errors preventing clean build due to incorrect OpenTUI API usage and type mismatches
+- **Issues Fixed**:
+  1. TUI cleanup: `renderer.cleanup()` → `renderer.destroy()` (correct OpenTUI API)
+  2. OpenTUI imports: `createCliRenderer` should import from `@opentui/core`, not `@opentui/react`
+  3. ClaudeProvider rate limit: `queueTimeout` → `queueTimeoutMs` (correct RateLimitConfig prop)
+  4. UsageTracker window: `'total'` → `'all-time'` (correct UsageLimitConfig window type)
+- **CLAUDE.md Updated**: Marked all TODOs as complete (7/7 done)
+- **Result**: All 707 Smithers tests passing, build working
+- **Known Limitation**: OpenTUI type definitions have errors for `box` element and `KeyEvent.key`, but these don't affect runtime
+- Commit: df7014d
+
 ## What's Next (Priority Order)
 
 1. **Release Readiness** (2026-01-06)
