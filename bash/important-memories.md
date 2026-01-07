@@ -940,7 +940,46 @@ This file contains important learnings, decisions, and context from previous Ral
   - Security considerations covered
   - Performance implications explained
   - Troubleshooting sections included
-- Commit: [current session]
+- Commit: cf77e11
+
+### Documentation Expansion (2026-01-06 - COMPLETED)
+- **Feature**: Completed comprehensive example and testing documentation
+- **Implementation**:
+  - Created example documentation for all numbered examples:
+    * `docs/examples/hello-world.mdx` - Basic Claude component usage
+    * `docs/examples/research-pipeline.mdx` - Multi-phase with Zustand (Ralph Wiggum loop)
+    * `docs/examples/parallel-research.mdx` - Subagent parallel execution
+    * `docs/examples/dev-team.mdx` - Complex multi-agent orchestration with dependencies
+  - Created comprehensive testing guide (docs/guides/testing.mdx) - 370+ lines
+    * Mock mode usage, best practices, configuration
+    * Unit testing: components, callbacks, state transitions
+    * Integration testing: multi-agent workflows, parallel execution
+    * Real API testing patterns with conditional execution
+    * Performance testing, snapshot testing, error path testing
+    * Human component testing, worktree testing, tool testing
+    * Best practices and debugging techniques
+  - Created comprehensive error handling guide (docs/guides/error-handling.mdx) - 695+ lines
+    * Error taxonomy (API, Execution, State, Logic)
+    * Retry strategies (automatic, state reset, conditional)
+    * Fallback patterns (graceful degradation, alternative agents)
+    * Recovery workflows (two-phase, supervisor agent patterns)
+    * Rate limit handling (ClaudeProvider, manual retry logic)
+    * Timeout handling (per-agent, global execution)
+    * Human-in-the-loop error recovery
+    * Validation and prevention (pre-execution, output validation, circuit breakers)
+    * Debugging techniques and telemetry patterns
+  - Updated mint.json navigation:
+    * Added testing and error-handling guides
+    * Added all example documentation (hello-world, research-pipeline, parallel-research, dev-team)
+    * Added workflows to concepts section
+- **Result**: All API documentation requirements from project instructions now complete
+  * 15 components fully documented
+  * 8 comprehensive guides
+  * 13 example walkthroughs
+  * 3 API references
+  * 3 CLI commands
+- **Total Tests**: 619 passing tests (589 Smithers + 30 interactive), 2 skip, 20 failures (OpenTUI SolidJS - expected)
+- Commit: 997728e
 
 ## What's Next (Priority Order)
 
