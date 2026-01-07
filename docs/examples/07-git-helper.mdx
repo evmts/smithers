@@ -19,6 +19,7 @@ An AI-powered interface to common git commands using Smithers and the Bash tool.
 ```tsx
 import { Claude, executePlan } from 'smithers'
 import { create } from 'zustand'
+import { useEffect } from 'react'
 
 interface GitHelperState {
   command: 'status' | 'commit' | 'branch' | 'log' | 'diff' | 'done'
@@ -43,12 +44,10 @@ function GitHelper({
 }) {
   const { command, setCommand, setResult } = useStore()
 
-  // Initialize command from operation prop on first render
-  const initializedRef = { current: false }
-  if (!initializedRef.current) {
+  // Initialize command from operation prop on mount
+  useEffect(() => {
     setCommand(operation as GitHelperState['command'])
-    initializedRef.current = true
-  }
+  }, [operation, setCommand])
 
   // Status command
   if (command === 'status') {

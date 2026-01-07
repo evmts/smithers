@@ -87,14 +87,20 @@ function FileProcessor({
         allowedTools={['Read']}
         onFinished={(result) => {
           // Parse Claude's output to extract processed content per file
-          // Expected format: filename followed by processed content
+          // Expected format: markdown header followed by content
           const processed: Record<string, string> = {}
           const resultText = result.text
 
-          // Simple parsing: look for file paths followed by content
+          // Parse files separated by markdown headers
           files.forEach(file => {
             const filename = file.split('/').pop()
-            const filePattern = new RegExp(`${filename}\\s*\\n([\\s\\S]*?)(?=\\n\\S+\\.md|$)`)
+            // Escape regex metacharacters in filename
+            const escapedFilename = filename?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            // Match heading with optional # markers, followed by content until next file or end
+            const filePattern = new RegExp(
+              `^#+\\s*${escapedFilename}\\s*\\n([\\s\\S]*?)(?=\\n#+\\s*\\S+\\.md|$)`,
+              'm'
+            )
             const match = resultText.match(filePattern)
             processed[file] = match ? match[1].trim() : resultText
           })
@@ -112,7 +118,7 @@ function FileProcessor({
         3. Add a table of contents at the top
         4. Add word count at the bottom
 
-        Output each file's processed content with the filename as a header.
+        Output each file's processed content with the filename as a markdown header (e.g., "## filename.md").
       </Claude>
     )
   }
