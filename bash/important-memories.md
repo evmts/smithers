@@ -892,6 +892,56 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Known Limitation**: Codex review failed due to 6.6MB bundle size (empty review deleted)
 - Commit: d04e27a
 
+### API Documentation (2026-01-06 - COMPLETED)
+- **Feature**: Comprehensive documentation for all major APIs and components
+- **Implementation**:
+  - Created `docs/components/worktree.mdx` - Complete Worktree component documentation with:
+    - All props documented (path, branch, baseBranch, cleanup, callbacks)
+    - 5 use case examples (parallel features, code review, experimental refactoring, multi-version testing)
+    - Behavior details (creation, cwd injection, cleanup, error handling)
+    - Security considerations (branch name validation, safe command execution)
+    - Performance considerations and mock mode behavior
+  - Created `docs/components/claude-provider.mdx` - Complete ClaudeProvider documentation with:
+    - All props documented (defaults, rateLimit, usageLimit, events, persistence)
+    - Type definitions (RateLimitConfig, UsageLimitConfig, ClaudeProviderEvents, UsageStats)
+    - 5 use case examples (cost control, rate limit compliance, usage monitoring, shared config)
+    - Token bucket algorithm explanation
+    - Cost estimation table for all models
+    - Programmatic access via useClaudeContext hook
+  - Created `docs/guides/mcp-integration.mdx` - Comprehensive MCP Integration guide with:
+    - Quick start and all 8 built-in presets documented
+    - Multiple server configuration examples
+    - ClaudeProvider integration patterns
+    - Tool name collision resolution
+    - Scoped tool access and lifecycle management
+    - Security best practices
+    - Debugging tips and 5 detailed use cases
+    - Custom MCP server development guide
+  - Created `docs/guides/tui-usage.mdx` - Complete TUI Usage guide with:
+    - Keyboard navigation reference
+    - Interface overview (tree view, detail panel, header, status bar)
+    - Example session walkthrough
+    - Use cases (monitoring, debugging, reviewing, tracking)
+    - Combining with CLI flags (mock, auto-approve, verbose, max-frames)
+    - Terminal requirements and troubleshooting
+    - Advanced usage (programmatic TUI, custom components)
+  - Created `docs/guides/interactive-commands.mdx` - Interactive CLI Commands guide with:
+    - All 9 commands documented (/pause, /resume, /status, /tree, /focus, /skip, /inject, /abort, /help)
+    - Detailed examples for each command
+    - 4 complete workflow examples (debugging, clarifications, monitoring, testing)
+    - Programmatic usage via ExecutionController API
+    - Best practices and troubleshooting
+- **Files Created**: 5 comprehensive documentation files (9,896 lines total)
+- **Result**: All major APIs now properly documented with examples and use cases
+- **Key Documentation Standards Met**:
+  - Every component prop documented with examples
+  - Multiple use case examples for each feature
+  - Type definitions included
+  - Security considerations covered
+  - Performance implications explained
+  - Troubleshooting sections included
+- Commit: [current session]
+
 ## What's Next (Priority Order)
 
 1. **Fix Remaining Test Issues** (if any)
@@ -953,7 +1003,19 @@ This file contains important learnings, decisions, and context from previous Ral
    - Remaining: TUI tests (`evals/tui.test.ts`) once TUI is implemented
    - Remaining: Integration tests (`evals/integration.test.ts`) if needed for full workflows
 
-3. **Examples + Documentation**
+3. **API Documentation** (COMPLETED - 2026-01-06) ✅
+   - ✅ Worktree component documentation
+   - ✅ ClaudeProvider component documentation
+   - ✅ MCP Integration guide
+   - ✅ TUI Usage guide
+   - ✅ Interactive CLI Commands guide
+   - All major APIs now comprehensively documented with examples
+   - **Remaining**:
+     - Testing guide (how to test agents)
+     - Error handling guide (patterns for recovery)
+     - Additional component docs (Output, File) if needed
+
+4. **Examples + Documentation**
    - Create/update examples to showcase MCP integration
    - Add multi-agent orchestration example
    - Document MCP server configuration patterns
@@ -961,7 +1023,7 @@ This file contains important learnings, decisions, and context from previous Ral
    - Keep docs aligned with API changes
    - Add TUI demos to README
 
-4. **Release Readiness**
+5. **Release Readiness**
    - Add changesets for all recent changes
    - Set up CI workflows (tests, typecheck, lint)
    - Create npm publish pipeline
