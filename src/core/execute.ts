@@ -1372,10 +1372,10 @@ export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
       const failedWorktree = hasFailedWorktreeAncestor(node)
       if (failedWorktree) {
         const worktreeError = failedWorktree._execution?.error
+        // Don't set contentHash so the node can re-execute if worktree is fixed
         node._execution = {
           status: 'error',
           error: new Error(`Cannot execute: parent worktree failed (${worktreeError?.message || 'unknown error'})`),
-          contentHash: computeContentHash(node),
         }
         return
       }
