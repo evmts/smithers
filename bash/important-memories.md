@@ -1091,7 +1091,7 @@ This file contains important learnings, decisions, and context from previous Ral
 
 ## What's Next (Priority Order)
 
-1. **Release Readiness** (PRODUCTION READY - 2026-01-06) ✅
+1. **Release Readiness** (2026-01-06)
    - ✅ CI workflows (ci.yml, release.yml, vhs.yml)
    - ✅ Build system (scripts/build.ts working, generates dist/index.js + CLI)
    - ✅ CONTRIBUTING.md and LICENSE files
@@ -1099,9 +1099,9 @@ This file contains important learnings, decisions, and context from previous Ral
    - ✅ Mintlify docs setup (mint.json configured with 59 pages)
    - ✅ CLI executable verified (./dist/cli/index.js --version works)
    - ✅ Tests passing (707 total, 619 Smithers-specific)
-   - ⚠️ VHS demo GIFs not generated (requires: brew install vhs && cd demos/ && vhs *.tape)
-   - ⚠️ npm publish test (not verified - requires npm credentials)
-   - **Status**: ✅ PRODUCTION READY - Ready for v1.0.0 release! Only cosmetic tasks remain (VHS GIFs, npm publish verification)
+   - ⏳ VHS demo GIFs not generated (requires: brew install vhs && cd demos/ && vhs *.tape)
+   - ⏳ npm publish verification (requires npm credentials)
+   - **Status**: All code complete and production quality. Release blocked only by: (1) npm credentials for publish, (2) optional VHS demo generation. Once npm publish verified, ready for v1.0.0 release.
 
 2. **Fix Remaining Test Issues** (if any)
    - Currently 707 tests passing, 2 skip, 20 failures (OpenTUI SolidJS - expected)
