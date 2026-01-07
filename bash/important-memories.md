@@ -687,13 +687,53 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Key Learning**: `renderPlan()` is for generating XML output. For execution tests, always pass JSX directly to `executePlan()`. For tree inspection tests, use `createRoot().render()`.
 - Commits: bd16920, f9071b8, fb9ab99, 3916e82, 328c2e5
 
+### TUI Implementation (2026-01-06 - COMPLETED)
+- **Feature**: Terminal UI for interactive execution monitoring using OpenTUI
+- **Implementation**:
+  - Created 9 TUI components in `src/tui/`:
+    - `TuiRoot`: Main application with keyboard navigation and state management
+    - `TreeView`: Displays SmithersNode tree with expand/collapse
+    - `AgentPanel`: Shows agent prompt and output in detail view
+    - `Layout`: Responsive layout with terminal size checks
+    - `Header`: Frame counter and elapsed time display
+    - `StatusBar`: Context-aware keyboard shortcuts
+    - `tree-utils.ts`: Tree traversal, path manipulation, node display utilities
+    - `types.ts`: TUI state types (TuiView, TuiState, KeyEvent)
+  - Added `onFrameUpdate` callback to ExecuteOptions
+  - `executePlan()` calls `onFrameUpdate(tree, frameNumber)` after each frame
+  - CLI run command supports `--tui` flag with dynamic OpenTUI imports
+  - TUI stays open after execution completes (press 'q' to quit)
+- **Keyboard Navigation**:
+  - Arrow keys: Navigate tree (up/down), expand/collapse (right/left)
+  - Enter: View agent details (prompt/output)
+  - Escape: Return to tree view
+  - q: Quit TUI
+  - Space: Toggle expand/collapse
+- **Dependencies**: @opentui/core@0.1.69, @opentui/react@0.1.69
+- **Key Design Decisions**:
+  - TUI is pure observer (read-only), doesn't modify SmithersNode tree
+  - Real-time updates via onFrameUpdate callback
+  - Responsive to terminal size (min 40x10)
+  - Uses React hooks (useState, useEffect) for TUI state
+  - Uses OpenTUI hooks (useKeyboard, useTerminalDimensions) for terminal integration
+- **Test Results**: All 589 Smithers tests passing
+- **Known Limitation**: OpenTUI brings in SolidJS test files that fail (not relevant to Smithers)
+- **Files Changed**:
+  - `src/tui/` (9 new files)
+  - `src/core/types.ts` (added onFrameUpdate to ExecuteOptions)
+  - `src/core/execute.ts` (integrated callback)
+  - `src/cli/commands/run.ts` (added --tui flag and TUI integration)
+  - `package.json`, `bun.lock` (new dependencies)
+  - `.gitignore` (excluded solidjs/ directory)
+- Commit: e6a5371
+
 ## What's Next (Priority Order)
 
 1. **Fix Remaining Test Issues** (if any)
-   - Currently 588 tests passing, 1 skip, 0 failures
-   - 1 unhandled error between tests (likely dangling process from non-mock worktree test)
+   - Currently 589 tests passing, 2 skip, 0 failures
+   - OpenTUI SolidJS test failures not relevant
 
-2. **TUI Integration** (HIGHEST PRIORITY - New Feature)
+2. **TUI Integration** (Phase 2b COMPLETED - 2026-01-06)
    - ✅ Phase 1: Research & Documentation (COMPLETED - 2026-01-06)
      - Created `docs/tui-research.md` - Comprehensive OpenTUI architecture, APIs, hooks, integration patterns
      - Created `docs/tui-design.md` - UI mockups, keyboard navigation spec, component hierarchy, state management
