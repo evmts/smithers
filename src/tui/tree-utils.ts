@@ -181,20 +181,20 @@ export function getStatusBadge(node: SmithersNode): string {
 }
 
 /**
- * Get ANSI color code for status
+ * Get color name for status (OpenTUI compatible)
  */
 export function getStatusColor(status: string): string {
   switch (status) {
     case '[pending]':
-      return '\x1b[90m' // Dim gray
+      return '#888888' // Gray
     case '[running]':
-      return '\x1b[93m' // Bright yellow
+      return '#ffff00' // Yellow
     case '[complete]':
-      return '\x1b[92m' // Bright green
+      return '#00ff00' // Green
     case '[error]':
-      return '\x1b[91m' // Bright red
+      return '#ff0000' // Red
     default:
-      return '\x1b[0m' // Reset
+      return '#ffffff' // White
   }
 }
 

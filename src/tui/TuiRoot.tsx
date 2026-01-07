@@ -70,37 +70,37 @@ export function TuiRoot({
 
     // Tree view navigation
     if (view === 'tree') {
-      if (key.name === 'Down' || key.name === 'j') {
+      if (key.name === 'down' || key.name === 'j') {
         const next = getNextVisibleNode(tree, selectedPath, expandedPaths)
         if (next) {
           setSelectedPath(next)
         }
-      } else if (key.name === 'Up' || key.name === 'k') {
+      } else if (key.name === 'up' || key.name === 'k') {
         const prev = getPrevVisibleNode(tree, selectedPath, expandedPaths)
         if (prev) {
           setSelectedPath(prev)
         }
-      } else if (key.name === 'Right' || key.name === 'l') {
+      } else if (key.name === 'right' || key.name === 'l') {
         // Expand selected node
         const node = findNodeByPath(tree, selectedPath)
         if (node && hasChildren(node)) {
           setExpandedPaths(new Set([...expandedPaths, selectedPath]))
         }
-      } else if (key.name === 'Left' || key.name === 'h') {
+      } else if (key.name === 'left' || key.name === 'h') {
         // Collapse selected node
         setExpandedPaths((prev) => {
           const next = new Set(prev)
           next.delete(selectedPath)
           return next
         })
-      } else if (key.name === 'Enter') {
+      } else if (key.name === 'return') {
         // View details (only for claude/claude-api nodes)
         const node = findNodeByPath(tree, selectedPath)
         if (node && (node.type === 'claude' || node.type === 'claude-api')) {
           setView('detail')
           setDetailScrollOffset(0)
         }
-      } else if (key.name === ' ') {
+      } else if (key.name === 'space') {
         // Toggle expand/collapse
         const node = findNodeByPath(tree, selectedPath)
         if (node && hasChildren(node)) {
@@ -119,11 +119,11 @@ export function TuiRoot({
 
     // Detail view navigation
     if (view === 'detail') {
-      if (key.name === 'Escape' || key.name === 'Backspace') {
+      if (key.name === 'escape' || key.name === 'backspace') {
         setView('tree')
-      } else if (key.name === 'Down' || key.name === 'j') {
+      } else if (key.name === 'down' || key.name === 'j') {
         setDetailScrollOffset((prev) => prev + 1)
-      } else if (key.name === 'Up' || key.name === 'k') {
+      } else if (key.name === 'up' || key.name === 'k') {
         setDetailScrollOffset((prev) => Math.max(0, prev - 1))
       }
     }

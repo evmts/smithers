@@ -77,11 +77,13 @@ export function TreeView({
             width="100%"
             backgroundColor={isSelected ? 'blue' : undefined}
           >
-            <text color={isSelected ? 'white' : undefined}>
+            {/* @ts-expect-error - OpenTUI JSX element */}
+            <text fg={isSelected ? 'white' : undefined}>
               {indent}
               {icon} {label}
               {'  '}
-              <span color={statusColor.replace('\x1b[', '').replace('m', '')}>
+              {/* @ts-expect-error - OpenTUI JSX element */}
+              <span fg={statusColor}>
                 {status}
               </span>
             </text>

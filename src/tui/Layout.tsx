@@ -32,8 +32,10 @@ export function Layout({ header, content, statusBar }: LayoutProps) {
         justifyContent="center"
         alignItems="center"
       >
-        <text color="red">Terminal too small.</text>
-        <text color="yellow">Resize to at least 40x10.</text>
+        {/* @ts-expect-error - OpenTUI JSX element */}
+        <text fg="red">Terminal too small.</text>
+        {/* @ts-expect-error - OpenTUI JSX element */}
+        <text fg="yellow">Resize to at least 40x10.</text>
         {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       </box>
     )
@@ -79,7 +81,8 @@ export function Layout({ header, content, statusBar }: LayoutProps) {
           backgroundColor="white"
           padding={{ left: 1, right: 1 }}
         >
-          <text color="black">{statusBar}</text>
+          {/* @ts-expect-error - OpenTUI JSX element */}
+          <text fg="black">{statusBar}</text>
         {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
         </box>
       )}
