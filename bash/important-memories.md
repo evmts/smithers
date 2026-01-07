@@ -2751,3 +2751,49 @@ $ bun run build
 **Project remains 100% production-ready for npm publish.**
 
 **No technical gaps or incomplete features identified.**
+
+---
+
+## Session 2026-01-07 - Bun Requirement Documentation
+
+**Date**: 2026-01-07 Late Afternoon/Evening
+
+### Task: Clarify Bun requirement in documentation
+
+**Objective**: Make it crystal clear that Bun is required for CLI usage, while Node.js works for library-only usage.
+
+### Issue Discovered
+
+While verifying the project's production readiness, discovered that:
+- The CLI has `#!/usr/bin/env bun` shebang
+- The bundled CLI uses `bun:ffi` imports (from OpenTUI dependency)
+- Documentation said "Node.js 18+ or Bun" which was misleading
+- Users without Bun would get `ERR_UNSUPPORTED_ESM_URL_SCHEME` errors
+
+### Root Cause
+
+OpenTUI (the TUI library) depends on Bun's FFI layer for native bindings, making Bun an absolute requirement for the CLI. The library itself (programmatic usage) works fine with Node.js 18+.
+
+### Changes Made
+
+1. **README.md**:
+   - Added explicit "Requirements" section
+   - Listed Bun as required for CLI (with explanation)
+   - Added Bun installation command
+   - Clarified npm can be used for library-only usage
+
+2. **docs/quickstart.mdx**:
+   - Updated Prerequisites to emphasize Bun requirement
+   - Added `<Note>` callout explaining the FFI dependency
+   - Distinguished between CLI (requires Bun) and library (Node.js OK)
+
+### Verification
+
+- ✅ TypeScript compiles cleanly
+- ✅ All 663 tests still pass
+- ✅ Codex review: LGTM
+- ✅ Commit: `55982eb` - "docs: Clarify Bun requirement for CLI usage"
+
+### Key Learning
+
+**Always verify runtime requirements match documentation**. The CLI's use of `bun:ffi` makes Bun non-negotiable, and users need to know this upfront to avoid confusion.
