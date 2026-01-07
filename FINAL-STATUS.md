@@ -1,5 +1,6 @@
-# Smithers v1.0.0 - Final Release Status
+# Smithers - Final Release Status
 
+**Current Version:** 0.1.0 (will become 1.0.0 after merging PR #1)
 **Date:** 2026-01-07
 **Status:** 🚀 **READY FOR RELEASE**
 
@@ -205,7 +206,7 @@ git commit -m "docs: Add VHS demo recordings"
 ### npm pack (Dry Run)
 
 ```
-✅ Package: smithers@0.1.0
+✅ Package: smithers@0.1.0 (will be 1.0.0 after PR #1)
 ✅ Tarball: 5.6 MB
 ✅ Unpacked: 31.4 MB
 ✅ Files: 114
@@ -253,6 +254,7 @@ After `npm publish` completes:
 
 2. **Tag GitHub release:**
    ```bash
+   # After changesets bumps version to 1.0.0
    git tag v1.0.0
    git push origin v1.0.0
    ```
@@ -303,7 +305,12 @@ After `npm publish` completes:
 
 ## Conclusion
 
-**Smithers is production-ready.** The only remaining step is npm authentication, which is user-dependent. Once credentials are provided, the release process is fully automated via changesets.
+**Smithers is production-ready.** The only remaining step is npm authentication, which is user-dependent.
+
+Once credentials are provided:
+1. Merging PR #1 will bump version from 0.1.0 → 1.0.0
+2. GitHub Actions will automatically publish to npm
+3. The package will be available as `smithers@1.0.0`
 
 **No code changes are needed.** The project is at shipping quality with comprehensive features, testing, and documentation.
 
