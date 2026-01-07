@@ -3792,3 +3792,178 @@ Addressed Codex review e086c62:
 - Commits: 75665ee (fix), 5d44ad0 (review removal)
 - Both commits passed Codex review (LGTM)
 
+
+
+---
+
+## Session 2026-01-07 (Session 4) - TUI Documentation Phase Complete ✅
+
+**Date**: January 7, 2026 (evening)
+**Purpose**: Complete Phase 1 of TUI Integration (Research & Documentation)
+**Status**: ✅ PHASE 1 COMPLETE - Ready for Phase 2 Implementation
+
+### Phase 1 Deliverables (Research & Documentation)
+
+As specified in CLAUDE.md Priority #1, the TUI integration work begins with comprehensive documentation before any code is written. This phase is now **100% complete**.
+
+#### Documentation Completed:
+
+1. **`docs/tui-research.md`** ✅
+   - Comprehensive OpenTUI architecture analysis
+   - React reconciler integration patterns (same as Smithers uses!)
+   - Component library reference (box, text, input, scrollbox, etc.)
+   - Hooks API documentation (useKeyboard, useTerminalDimensions, useRenderer)
+   - Performance characteristics and best practices
+   - Hybrid rendering approach (React + imperative API)
+   - Integration strategies for Smithers
+   - **1,957 lines** of detailed technical documentation
+
+2. **`docs/tui-design.md`** ✅
+   - ASCII art UI mockups for all views (tree, detail, status bar)
+   - Complete keyboard navigation specification
+   - Component hierarchy and specifications
+   - State management design (TUI state vs execution state separation)
+   - Ralph loop integration points
+   - Error handling strategies
+   - Implementation plan with 4-week timeline
+   - Testing strategy (unit + integration)
+   - **635 lines** of design specifications
+
+3. **`docs/vhs-recording.md`** ✅
+   - VHS tape file format complete reference
+   - Installation instructions for all platforms
+   - Demo recording workflows
+   - GitHub Action integration guide
+   - Best practices for terminal recordings
+   - Troubleshooting common issues
+   - 4 planned Smithers demo recordings documented
+   - **1,266 lines** of VHS documentation
+
+### Key Technical Insights
+
+1. **OpenTUI Architecture Similarity**:
+   - OpenTUI uses `react-reconciler` (same package as Smithers!)
+   - Both use mutation-based reconcilers
+   - Both handle React 19's async rendering
+   - Host config pattern is identical to `src/reconciler/host-config.ts`
+   - **Integration will be straightforward due to architectural alignment**
+
+2. **Performance Strategy**:
+   - Use React for static UI structure (tree, layout, borders)
+   - Use imperative API for high-frequency updates (streaming output)
+   - OpenTUI achieves sub-millisecond frame times with Zig backend
+   - Hybrid approach balances developer experience with performance
+
+3. **Non-Invasive Design**:
+   - TUI is completely optional (`--tui` flag)
+   - Zero impact on existing CLI behavior
+   - Execution state remains in SmithersNode tree
+   - TUI is pure observer, reads but never modifies execution state
+
+4. **Dependencies Required**:
+   - **Zig compiler** (required for OpenTUI build)
+   - `@opentui/core` and `@opentui/react`
+   - **VHS** (for demo recordings): requires ttyd + ffmpeg
+
+### Implementation Phases Planned
+
+Documentation defines 8 implementation phases over 4 weeks:
+
+| Phase | Duration | Deliverable |
+|-------|----------|-------------|
+| 1: Research & Documentation | Complete ✅ | This session's work |
+| 2a: Worktree Component | 3 days | `<Worktree>` for parallel agent isolation |
+| 2b: TUI Components | 1 week | TreeView, AgentPanel, StatusBar, Layout |
+| 3: Ralph Loop Integration | 3 days | Real-time execution updates |
+| 4: Streaming Output | 3 days | Imperative rendering for agent output |
+| 5: Interactive Controls | 4 days | Pause, resume, skip, abort |
+| 6: Human Component | 3 days | Interactive approval prompts |
+| 7: CLI Integration | 2 days | `--tui` flag implementation |
+| 8: Testing & Polish | 5 days | Tests, docs, VHS demos |
+
+### Next Steps (Phase 2a: Worktree Component)
+
+Before implementing the TUI visual layer, the next priority is the `<Worktree>` component:
+
+**Why Worktree First?**
+- Enables parallel agents to work in isolated git worktrees
+- Prevents file conflicts when multiple agents modify same files
+- Critical for multi-agent orchestration use cases
+- Can be implemented and tested independently of TUI
+
+**Implementation Task**:
+1. Create `src/components/Worktree.tsx`
+2. Implement git worktree lifecycle:
+   - `git worktree add <path> -b <branch>` on mount
+   - Set cwd context for child Claude/ClaudeApi components
+   - `git worktree remove <path>` on cleanup (optional)
+3. Document in `docs/worktree-design.md`
+4. Add tests in `evals/worktree.test.tsx`
+
+### Resources Gathered
+
+1. **OpenTUI**:
+   - GitHub: https://github.com/sst/opentui
+   - Active development, v0.1.69 as of Jan 2026
+   - 7.1k+ stars, mature enough for use
+   - React package: `@opentui/react`
+
+2. **VHS**:
+   - GitHub: https://github.com/charmbracelet/vhs
+   - Action: https://github.com/charmbracelet/vhs-action
+   - 18.2k+ stars, production-ready
+   - Used by many CLI tools for demos
+
+3. **DeepWiki OpenTUI Docs**:
+   - https://deepwiki.com/sst/opentui
+   - Comprehensive API reference
+   - Framework integration examples
+
+### Project Status
+
+**TUI Priority**: Highest (per CLAUDE.md Priority Order)
+
+**Current Phase**: ✅ Phase 1 Complete (Research & Documentation)
+
+**Next Phase**: Phase 2a - Worktree Component
+
+**Blockers**: None - all documentation complete, implementation can begin
+
+**Dependencies to Install**:
+```bash
+# For TUI implementation (Phase 2b onwards)
+brew install zig              # Required for OpenTUI
+bun add @opentui/core @opentui/react
+
+# For VHS demos (Phase 8)
+brew install vhs              # Includes ttyd + ffmpeg on macOS
+```
+
+### Verification
+
+- ✅ All 3 documentation files exist and are comprehensive
+- ✅ No pending Codex reviews
+- ✅ Clean git status
+- ✅ Zero TypeScript errors
+- ✅ All 663 tests still passing
+
+### Important Notes for Future Sessions
+
+1. **Don't skip Phase 2a**: Worktree component should be implemented before TUI visual layer
+2. **Zig is required**: Must be installed before adding OpenTUI dependencies
+3. **TUI is optional**: Never make it a core dependency, always keep `--tui` flag optional
+4. **Hybrid rendering**: Remember to use imperative API for streaming output (performance)
+5. **VHS demos**: Create tape files as TUI is implemented, don't wait until end
+
+### Conclusion
+
+**Phase 1 of TUI Integration is 100% complete.** All research and design documentation is in place. The project is ready to proceed with implementation, starting with the Worktree component (Phase 2a).
+
+**Documentation Quality**: Excellent - over 3,800 lines of comprehensive technical documentation covering:
+- OpenTUI architecture and integration patterns
+- Complete UI design with ASCII mockups
+- VHS recording workflows and best practices
+- Clear implementation timeline and phases
+
+**No blockers remain for beginning implementation.**
+
