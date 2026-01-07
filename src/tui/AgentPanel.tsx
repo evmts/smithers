@@ -67,11 +67,15 @@ function extractOutput(node: SmithersNode): string {
 /**
  * Apply scroll offset to text content
  * Shows lines from scrollOffset onwards
+ * Clamps offset to [0, lineCount-1] to prevent unbounded growth
  */
 function applyScrollOffset(text: string, offset: number): string {
   if (offset === 0) return text
   const lines = text.split('\n')
-  return lines.slice(offset).join('\n')
+  // Clamp offset to valid range
+  const clampedOffset = Math.max(0, Math.min(offset, lines.length - 1))
+  if (clampedOffset === 0) return text
+  return lines.slice(clampedOffset).join('\n')
 }
 
 /**

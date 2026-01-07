@@ -131,17 +131,19 @@ export function TuiRoot({
   const selectedNode = view === 'detail' ? findNodeByPath(tree, selectedPath) : null
   const shouldShowDetail = view === 'detail' && selectedNode !== null
 
+  // If we were in detail view but node disappeared, fall back to tree view
+  // Use useEffect to avoid side effects during render
+  useEffect(() => {
+    if (view === 'detail' && !selectedNode) {
+      setView('tree')
+    }
+  }, [view, selectedNode])
+
   const content = shouldShowDetail ? (
     <AgentPanel node={selectedNode!} scrollOffset={detailScrollOffset} />
   ) : (
     <TreeView tree={tree} selectedPath={selectedPath} expandedPaths={expandedPaths} />
   )
-
-  // If we were in detail view but node disappeared, fall back to tree view
-  if (view === 'detail' && !selectedNode) {
-    // Defer state update to avoid updating during render
-    setTimeout(() => setView('tree'), 0)
-  }
 
   return (
     <Layout
