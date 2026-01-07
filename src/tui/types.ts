@@ -24,10 +24,5 @@ export interface TuiState {
   showHelp: boolean
 }
 
-export interface KeyEvent {
-  key: string
-  ctrl?: boolean
-  alt?: boolean
-  shift?: boolean
-  meta?: boolean
-}
+// Note: KeyEvent type is provided by @opentui/core
+// We don't define it here to avoid conflicts

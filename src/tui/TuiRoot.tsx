@@ -60,44 +60,44 @@ export function TuiRoot({
   // Keyboard navigation
   useKeyboard((key) => {
     // Global quit
-    if (key.key === 'q') {
+    if (key.name === 'q') {
       onQuit?.()
       return
     }
 
     // Tree view navigation
     if (view === 'tree') {
-      if (key.key === 'Down' || key.key === 'j') {
+      if (key.name === 'Down' || key.name === 'j') {
         const next = getNextVisibleNode(tree, selectedPath, expandedPaths)
         if (next) {
           setSelectedPath(next)
         }
-      } else if (key.key === 'Up' || key.key === 'k') {
+      } else if (key.name === 'Up' || key.name === 'k') {
         const prev = getPrevVisibleNode(tree, selectedPath, expandedPaths)
         if (prev) {
           setSelectedPath(prev)
         }
-      } else if (key.key === 'Right' || key.key === 'l') {
+      } else if (key.name === 'Right' || key.name === 'l') {
         // Expand selected node
         const node = findNodeByPath(tree, selectedPath)
         if (node && hasChildren(node)) {
           setExpandedPaths(new Set([...expandedPaths, selectedPath]))
         }
-      } else if (key.key === 'Left' || key.key === 'h') {
+      } else if (key.name === 'Left' || key.name === 'h') {
         // Collapse selected node
         setExpandedPaths((prev) => {
           const next = new Set(prev)
           next.delete(selectedPath)
           return next
         })
-      } else if (key.key === 'Enter') {
+      } else if (key.name === 'Enter') {
         // View details (only for claude/claude-api nodes)
         const node = findNodeByPath(tree, selectedPath)
         if (node && (node.type === 'claude' || node.type === 'claude-api')) {
           setView('detail')
           setDetailScrollOffset(0)
         }
-      } else if (key.key === ' ') {
+      } else if (key.name === ' ') {
         // Toggle expand/collapse
         const node = findNodeByPath(tree, selectedPath)
         if (node && hasChildren(node)) {
@@ -116,11 +116,11 @@ export function TuiRoot({
 
     // Detail view navigation
     if (view === 'detail') {
-      if (key.key === 'Escape' || key.key === 'Backspace') {
+      if (key.name === 'Escape' || key.name === 'Backspace') {
         setView('tree')
-      } else if (key.key === 'Down' || key.key === 'j') {
+      } else if (key.name === 'Down' || key.name === 'j') {
         setDetailScrollOffset((prev) => prev + 1)
-      } else if (key.key === 'Up' || key.key === 'k') {
+      } else if (key.name === 'Up' || key.name === 'k') {
         setDetailScrollOffset((prev) => Math.max(0, prev - 1))
       }
     }
