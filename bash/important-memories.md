@@ -1233,9 +1233,10 @@ This file contains important learnings, decisions, and context from previous Ral
    - ✅ TypeScript errors fixed - CI typecheck now passes with 0 errors
    - ✅ All Codex reviews resolved (no pending actionable feedback)
    - ✅ RELEASE-CHECKLIST.md created with detailed pre-release and post-release steps
+   - ✅ npm publish dry-run verified (package.json repository URL normalized)
    - ⏳ VHS demo GIFs not generated (requires: brew install vhs && cd demos/ && vhs *.tape)
-   - ⏳ npm publish verification (requires npm credentials)
-   - **Status**: All code complete and production quality. CI will now pass on all checks (typecheck, test, build). Release blocked only by: (1) npm credentials for publish, (2) optional VHS demo generation. Ready for v1.0.0 release once npm publish is verified.
+   - ⏳ npm publish to registry (requires npm credentials)
+   - **Status**: All code complete and production quality. CI will pass on all checks (typecheck, test, build). Package verified with `npm publish --dry-run`. Release blocked only by: (1) npm credentials for publish to registry, (2) optional VHS demo generation. Ready for v1.0.0 release.
    - **Documentation**: RELEASE-CHECKLIST.md provides complete step-by-step guide for release process, post-release verification, and rollback plan.
 
 2. **Fix Remaining Test Issues** (COMPLETE - No action needed)
