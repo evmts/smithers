@@ -1232,9 +1232,11 @@ This file contains important learnings, decisions, and context from previous Ral
    - ✅ README updated with TUI and interactive commands documentation
    - ✅ TypeScript errors fixed - CI typecheck now passes with 0 errors
    - ✅ All Codex reviews resolved (no pending actionable feedback)
+   - ✅ RELEASE-CHECKLIST.md created with detailed pre-release and post-release steps
    - ⏳ VHS demo GIFs not generated (requires: brew install vhs && cd demos/ && vhs *.tape)
    - ⏳ npm publish verification (requires npm credentials)
    - **Status**: All code complete and production quality. CI will now pass on all checks (typecheck, test, build). Release blocked only by: (1) npm credentials for publish, (2) optional VHS demo generation. Ready for v1.0.0 release once npm publish is verified.
+   - **Documentation**: RELEASE-CHECKLIST.md provides complete step-by-step guide for release process, post-release verification, and rollback plan.
 
 2. **Fix Remaining Test Issues** (if any)
    - Currently 707 tests passing, 2 skip, 20 failures (OpenTUI SolidJS - expected)
