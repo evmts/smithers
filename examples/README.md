@@ -20,6 +20,12 @@ bun run examples/01-hello-world/agent.tsx
 | 03 | [Research Pipeline](./03-research-pipeline/) | Multi-phase, Zustand state, Ralph loop | Intermediate |
 | 04 | [Parallel Research](./04-parallel-research/) | Subagent, parallel execution | Intermediate |
 | 05 | [Dev Team](./05-dev-team/) | Multi-agent orchestration | Advanced |
+| 06 | [File Processor](./06-file-processor/) | File operations, multi-phase transforms | Intermediate |
+| 07 | [Git Helper](./07-git-helper/) | Git operations with Bash tool | Intermediate |
+| 08 | [Test Generator](./08-test-generator/) | Code analysis, test generation, OutputFormat | Intermediate |
+| 09 | [Parallel Worktrees](./09-parallel-worktrees/) | Git worktrees, isolated parallel execution | Advanced |
+| 10 | [MCP Integration](./10-mcp-integration/) | MCP servers, external tools | Advanced |
+| 11 | [Rate-Limited Batch](./11-rate-limited-batch/) | ClaudeProvider, rate limiting, usage tracking | Advanced |
 
 ## Learning Path
 
@@ -256,6 +262,24 @@ bun run examples/04-parallel-research/agent.tsx "AI" "ML" "NLP"
 
 # Dev Team (with custom task)
 bun run examples/05-dev-team/agent.tsx "Build a REST API"
+
+# File Processor (with custom pattern and output)
+bun run examples/06-file-processor/agent.tsx "**/*.md" "./processed"
+
+# Git Helper (with operation)
+bun run examples/07-git-helper/agent.tsx status
+
+# Test Generator (with source file and framework)
+bun run examples/08-test-generator/agent.tsx src/utils/math.ts bun
+
+# Parallel Worktrees (with multiple features)
+bun run examples/09-parallel-worktrees/agent.tsx "Add dark mode" "Fix mobile layout"
+
+# MCP Integration (with demo type)
+bun run examples/10-mcp-integration/agent.tsx filesystem
+
+# Rate-Limited Batch (with input and output paths)
+bun run examples/11-rate-limited-batch/agent.tsx ./items.txt ./results
 ```
 
 ## Project Structure
