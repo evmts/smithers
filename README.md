@@ -81,6 +81,21 @@ const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 | Hard to visualize agent flow | Preview the plan before execution |
 | Manual parallel orchestration | `<Subagent parallel>` |
 
+## Key Features
+
+✨ **Interactive Terminal UI** - Real-time execution visualization with keyboard navigation
+🔄 **The Ralph Wiggum Loop** - Automatic re-execution until your agent completes its goals
+⚛️ **React State Management** - Use useState, Zustand, or any React state library
+🎯 **Terraform-Style Approval** - Preview the plan before execution
+🧩 **Component Composition** - Build complex agents from simple, reusable pieces
+⚡ **Parallel Execution** - Run multiple agents concurrently with `<Subagent parallel>`
+🔧 **MCP Integration** - Connect to Model Context Protocol servers for external tools
+🎮 **Interactive Commands** - Pause, inject context, skip steps during execution
+🌳 **Git Worktrees** - Isolate agents in separate git worktrees for parallel development
+📊 **Rate Limiting & Cost Control** - Built-in usage tracking and budget enforcement
+🧪 **Mock Mode** - Test agents without API calls
+📝 **MDX Support** - Write agents in Markdown with JSX components
+
 ## Install
 
 ```bash
@@ -152,6 +167,35 @@ Smithers shows you exactly what the agent will do before executing:
 
 ? Execute this plan? (Y/n)
 ```
+
+### 4. Watch it run with the TUI
+
+Launch the interactive terminal UI for real-time execution monitoring:
+
+```bash
+smithers run review-agent.tsx --tui
+```
+
+Navigate with arrow keys, press Enter to view agent details, and use interactive commands to control execution:
+
+```
+┌─ Smithers TUI ──────────────────────────────── Frame: 3 | Elapsed: 12.5s ─┐
+│ Tree View                    │ Agent Details                              │
+│ ▼ ROOT                       │ Prompt:                                    │
+│   ▼ claude                   │ Review these files for issues: src/auth.ts │
+│     ● constraints (complete) │                                            │
+│     ⚙ Phase: review (running)│ Output:                                    │
+│     ○ output-format (pending)│ Analyzing src/auth.ts...                   │
+│                              │ Found 3 potential issues:                  │
+│ Status: ●Running             │ 1. Line 42: Missing input validation       │
+│ Commands: ↑↓ Navigate        │ 2. Line 58: SQL injection risk             │
+│          ←→ Expand/Collapse  │ 3. Line 91: Unused import                  │
+│          ⏎  View Details     │                                            │
+│          q  Quit             │ Commands: ↑↓ Scroll | Esc Back             │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+See [TUI Usage Guide](docs/guides/tui-usage.mdx) for keyboard shortcuts and interactive commands.
 
 ## The Complete Development Workflow
 
@@ -754,10 +798,12 @@ smithers run <file> [options]
 Options:
   --props, -p <json>     Props to pass to the component
   --auto-approve, -y     Skip plan approval prompt
+  --tui                  Launch interactive terminal UI
   --verbose, -v          Show detailed execution logs
   --max-frames <n>       Maximum execution iterations (default: 100)
   --timeout <ms>         Execution timeout in milliseconds
   --output, -o <file>    Write final output to file
+  --mock                 Run in mock mode (no API calls)
 ```
 
 Examples:
@@ -769,12 +815,34 @@ smithers run agent.tsx --props '{"repo": "my-org/my-repo"}'
 # Auto-approve for CI/CD
 smithers run agent.tsx -y
 
+# Interactive TUI with live execution visualization
+smithers run agent.tsx --tui
+
 # Debug mode
 smithers run agent.tsx --verbose
 
 # Save output
 smithers run agent.tsx -o result.json
+
+# Mock mode for testing (no API costs)
+smithers run agent.tsx --mock
 ```
+
+**Interactive Commands** (available during execution with `--tui`):
+
+While your agent runs, use these commands to control execution:
+
+- `/pause` - Pause after current frame
+- `/resume` - Resume from paused state
+- `/status` - Show execution state
+- `/tree` - Display the current agent tree
+- `/focus <path>` - Navigate to a specific node
+- `/skip [path]` - Skip a pending node
+- `/inject <prompt>` - Add context to next Claude call
+- `/abort [reason]` - Stop execution immediately
+- `/help` - Show command reference
+
+See [Interactive Commands Guide](docs/guides/interactive-commands.mdx) for details.
 
 ### `smithers plan`
 
