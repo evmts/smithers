@@ -14,12 +14,17 @@ import { join } from 'path'
  * - Progress reporting
  */
 
+interface BatchItem {
+  id: string // Unique identifier (filename or line number)
+  content: string // Actual content to process
+}
+
 interface BatchState {
-  items: string[]
+  items: BatchItem[]
   processed: number
-  results: Array<{ item: string; result: string }>
+  results: Array<{ id: string; content: string; result: string }>
   usage: { inputTokens: number; outputTokens: number; cost: number }
-  addResult: (item: string, result: string, tokens: { input: number; output: number }) => void
+  addResult: (id: string, content: string, result: string, tokens: { input: number; output: number }) => void
   incrementProcessed: () => void
 }
 
@@ -28,9 +33,9 @@ const useStore = create<BatchState>((set) => ({
   processed: 0,
   results: [],
   usage: { inputTokens: 0, outputTokens: 0, cost: 0 },
-  addResult: (item, result, tokens) =>
+  addResult: (id, content, result, tokens) =>
     set((state) => ({
-      results: [...state.results, { item, result }],
+      results: [...state.results, { id, content, result }],
       usage: {
         inputTokens: state.usage.inputTokens + tokens.input,
         outputTokens: state.usage.outputTokens + tokens.output,
@@ -44,7 +49,7 @@ const useStore = create<BatchState>((set) => ({
   incrementProcessed: () => set((state) => ({ processed: state.processed + 1 })),
 }))
 
-function BatchProcessor({ items, outputDir }: { items: string[]; outputDir: string }) {
+function BatchProcessor({ items, outputDir }: { items: BatchItem[]; outputDir: string }) {
   const { addResult, incrementProcessed } = useStore()
 
   // Initialize items in store
@@ -73,15 +78,15 @@ function BatchProcessor({ items, outputDir }: { items: string[]; outputDir: stri
     >
       {items.map((item) => (
         <Claude
-          key={item}
+          key={item.id}
           model="claude-sonnet-4-20250514"
           maxTokens={1000}
           onFinished={(result) => {
             // Mock token usage for demo
-            const inputTokens = item.length * 2 // Rough estimate
+            const inputTokens = item.content.length * 2 // Rough estimate
             const outputTokens = result.text.length * 1.5 // Rough estimate
 
-            addResult(item, result.text, {
+            addResult(item.id, item.content, result.text, {
               input: inputTokens,
               output: outputTokens,
             })
@@ -90,7 +95,7 @@ function BatchProcessor({ items, outputDir }: { items: string[]; outputDir: stri
         >
           Process this item and provide a summary:
 
-          {item}
+          {item.content}
 
           Provide a concise analysis (2-3 sentences).
         </Claude>
@@ -112,8 +117,11 @@ function ResultsWriter({ outputDir }: { outputDir: string }) {
       {JSON.stringify(
         {
           timestamp: new Date().toISOString(),
-          items: results.length,
-          results,
+          total: results.length,
+          results: results.map(({ id, result }) => ({
+            id,
+            result,
+          })),
         },
         null,
         2
@@ -132,7 +140,7 @@ console.log(`  Output: ${outputDir}`)
 console.log()
 
 // Load items to process
-let items: string[] = []
+let items: BatchItem[] = []
 
 try {
   const fileExists = await Bun.file(inputPath).exists()
@@ -140,7 +148,11 @@ try {
   if (fileExists) {
     // Single file - split into lines
     const content = await readFile(inputPath, 'utf-8')
-    items = content.split('\n').filter((line) => line.trim())
+    const lines = content.split('\n').filter((line) => line.trim())
+    items = lines.map((line, index) => ({
+      id: `line-${index + 1}`,
+      content: line,
+    }))
   } else {
     // Directory - read file contents for processing
     const files = await readdir(inputPath)
@@ -150,7 +162,10 @@ try {
     for (const file of relevantFiles) {
       const filePath = join(inputPath, file)
       const content = await readFile(filePath, 'utf-8')
-      items.push(content)
+      items.push({
+        id: file, // Use filename as unique identifier
+        content,
+      })
     }
   }
 } catch (err) {
