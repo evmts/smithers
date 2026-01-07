@@ -984,6 +984,49 @@ This file contains important learnings, decisions, and context from previous Ral
   1. ✅ mint.json referenced files - All files exist (workflows.mdx, claude-provider.mdx, worktree.mdx, all example docs)
   2. ✅ dist/ directory tracking - Intentionally tracked for GitHub Actions (Node20 runtime requires built code), never in .gitignore
 
+### Sophisticated Examples (2026-01-06 - COMPLETED)
+- **Feature**: Created 6 additional sophisticated examples as specified in project instructions
+- **Implementation**:
+  - **06-file-processor** - Multi-phase file transformation pipeline
+    * Reading phase: Glob to find files
+    * Processing phase: Claude transforms content
+    * Writing phase: File components write output
+    * Demonstrates: File operations, state management, progress tracking
+  - **07-git-helper** - AI-powered git operations interface
+    * Commands: status, commit, branch, log, diff
+    * Uses Bash tool for git commands
+    * Demonstrates: Command routing, natural language interfaces, CLI arguments
+  - **08-test-generator** - Automated test generation from source code
+    * Analyze phase: Extract exports with OutputFormat
+    * Generate phase: Create comprehensive tests
+    * Write phase: Save test file alongside source
+    * Supports: Bun, Jest, Vitest frameworks
+    * Demonstrates: Code analysis, structured output, multi-phase generation
+  - **09-parallel-worktrees** - Parallel feature development with git worktrees
+    * Creates isolated git worktrees per feature
+    * Runs agents in parallel with Subagent
+    * Each branch develops independently
+    * Demonstrates: Worktree component, parallel execution, coordinated multi-feature development
+  - **10-mcp-integration** - MCP server integration examples
+    * Filesystem demo: File operations with MCP
+    * SQLite demo: Database queries
+    * GitHub demo: Repository and issue management
+    * Demonstrates: MCP presets, tool scoping, external tool capabilities
+  - **11-rate-limited-batch** - Large-scale batch processing with rate limiting
+    * Processes many items with ClaudeProvider
+    * Enforces rate limits (requests/tokens per minute)
+    * Tracks usage and costs in real-time
+    * Demonstrates: ClaudeProvider, rate limiting, usage tracking, budget enforcement
+- **Each Example Includes**:
+  - Fully runnable agent.tsx with CLI argument support
+  - Comprehensive README.md (100-200 lines each)
+  - Real-world use cases and extensions
+  - Best practices and security considerations
+  - Cross-references to related examples
+- **Updated**: examples/README.md now includes all 12 examples (00-11) in overview table and running instructions
+- **Total Examples**: 12 (1 flagship + 2 beginner + 3 intermediate + 6 advanced)
+- Commit: 8da3269
+
 ## What's Next (Priority Order)
 
 1. **Fix Remaining Test Issues** (if any)
