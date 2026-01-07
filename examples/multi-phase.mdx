@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Claude, Phase, Step } from 'smithers'
-import { webSearch, fileSystem } from './tools'
 
 # Research Agent
 
@@ -12,7 +11,6 @@ export function ResearchAgent({ topic }) {
   if (phase === 'gather') {
     return (
       <Claude
-        tools={[webSearch]}
         onFinished={(result) => {
           setSources(result.sources)
           setPhase('analyze')
@@ -48,7 +46,7 @@ export function ResearchAgent({ topic }) {
   }
 
   return (
-    <Claude tools={[fileSystem]} onFinished={() => setPhase('done')}>
+    <Claude onFinished={() => setPhase('done')}>
       <Phase name="report">
         Write a research report based on this analysis:
         {JSON.stringify(analysis)}
