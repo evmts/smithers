@@ -221,7 +221,7 @@ export function ClaudeProvider({
           itpm: Infinity,
           otpm: Infinity,
           maxQueueSize: Infinity,
-          queueTimeout: Infinity,
+          queueTimeoutMs: Infinity,
         })
       }
     }
@@ -240,7 +240,7 @@ export function ClaudeProvider({
           maxTotalTokens: Infinity,
           maxInputTokens: Infinity,
           maxOutputTokens: Infinity,
-          window: 'total', // Use 'total' window when disabling
+          window: 'all-time', // Use 'all-time' window when disabling
         })
       }
     }

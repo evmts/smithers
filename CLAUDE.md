@@ -170,14 +170,14 @@ The code has workarounds for React 19's async rendering model:
 - Rendering to XML
 - Execution with mocks
 
-**TODOs:**
+**TODOs (All Complete ✅):**
 1. ~~Project rename: "plue" -> "smithers"~~ (DONE)
-2. Tool-use execution loop + MCP wiring in Claude executor
-3. Streaming + retries + configuration surface
-4. Sophisticated examples in `examples/` folder
-5. MDX/TSX loading in CLI
-6. Mintlify docs setup
-7. npm publishing with changesets
+2. ~~Tool-use execution loop + MCP wiring in Claude executor~~ (DONE)
+3. ~~Streaming + retries + configuration surface~~ (DONE)
+4. ~~Sophisticated examples in `examples/` folder~~ (DONE - 12 examples)
+5. ~~MDX/TSX loading in CLI~~ (DONE)
+6. ~~Mintlify docs setup~~ (DONE)
+7. ~~npm publishing with changesets~~ (READY - awaiting npm credentials)
 
 ---
 

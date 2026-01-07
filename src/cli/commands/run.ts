@@ -185,7 +185,8 @@ async function run(file: string, options: RunOptions): Promise<void> {
   // TUI mode or standard mode
   if (options.tui) {
     // Dynamic import TUI components
-    const { createCliRenderer, createRoot: createTuiRoot } = await import('@opentui/react')
+    const { createCliRenderer } = await import('@opentui/core')
+    const { createRoot: createTuiRoot } = await import('@opentui/react')
     const { TuiRoot } = await import('../../tui/index.js')
     const { createElement } = await import('react')
 
@@ -256,7 +257,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
       }
     } finally {
       // Always cleanup renderer to restore terminal state
-      renderer.cleanup()
+      renderer.destroy()
     }
   } else {
     // Standard non-TUI execution
