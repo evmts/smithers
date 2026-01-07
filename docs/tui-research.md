@@ -1611,7 +1611,7 @@ createRoot(renderer).render(<LoginForm />)
 ```tsx
 import { createCliRenderer, TextRenderable } from "@opentui/core"
 import { createRoot, useRenderer } from "@opentui/react"
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useRef } from "react"
 
 function StreamingLog() {
   const renderer = useRenderer()
@@ -1638,7 +1638,7 @@ function StreamingLog() {
     }, 100)  // 10 updates per second
 
     return () => clearInterval(interval)
-  }, [])  // Empty deps - interval created once, no timer leak
+  }, [renderer])  // Include renderer to avoid stale references
 
   return (
     <box
