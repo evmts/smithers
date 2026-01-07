@@ -1114,6 +1114,23 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Known Limitation**: OpenTUI type definitions have errors for `box` element and `KeyEvent.key`, but these don't affect runtime
 - Commit: df7014d
 
+### OpenTUI KeyEvent Bug Fix (2026-01-06 - FIXED)
+- **Problem**: TUI keyboard navigation was completely broken - pressing keys did nothing
+- **Root Cause**: OpenTUI's KeyEvent class uses `name` property, not `key`
+  - Code had `key.key === 'Down'` which always evaluated to `undefined === 'Down'` (false)
+  - Local KeyEvent interface in types.ts conflicted with OpenTUI's KeyEvent class
+- **Solution**:
+  - Changed all `key.key` references to `key.name` in TuiRoot.tsx
+  - Removed conflicting local KeyEvent interface from types.ts
+  - Added comment explaining KeyEvent is provided by @opentui/core
+- **Attempted Workarounds** (didn't work):
+  - Adding `@jsxImportSource @opentui/react` pragma broke build (no jsx-runtime export)
+  - Creating custom type declarations didn't help (TypeScript still inferred wrong type)
+  - The `@jsxImportSource` pragma requires the package to export jsx-runtime, which OpenTUI doesn't
+- **Key Learning**: OpenTUI's KeyEvent type definition is incomplete/incorrect in the published types. The actual class has `name` property (not `key`). Always check runtime behavior when type definitions seem wrong.
+- **Result**: TUI keyboard navigation now works correctly, all 707 tests passing
+- Commit: 4a234b2
+
 ## What's Next (Priority Order)
 
 1. **Release Readiness** (2026-01-06)
