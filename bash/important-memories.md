@@ -1259,6 +1259,24 @@ This file contains important learnings, decisions, and context from previous Ral
   5. Codex review approved (LGTM) - commit bfcf509
   6. No further blockers for v1.0.0 release
 
+### Session 2026-01-06 Evening Status (COMPLETED)
+- **Date**: January 6, 2026 evening (late session)
+- **Tasks Completed**:
+  1. ✅ Verified project status (707 tests passing, 0 TypeScript errors)
+  2. ✅ Found and committed uncommitted OpenTUI API fix in AgentPanel.tsx (commit 9a9686a)
+  3. ✅ Updated important-memories.md with commit reference
+  4. ✅ Verified no pending Codex reviews
+  5. ✅ Confirmed npm dry-run successful (5.6 MB package, 114 files)
+- **Current State**:
+  - All code committed and production-ready
+  - No pending work or blockers
+  - Untracked docs/solid/ directory contains WIP Solid renderer migration docs (future work, not v1.0.0)
+- **Production Readiness**: 100% COMPLETE ✅
+- **Next Steps**: When ready to release, follow RELEASE-CHECKLIST.md for:
+  1. Optional: Generate VHS demos (`brew install vhs && cd demos/ && vhs *.tape`)
+  2. Required: Publish to npm (`npm publish`)
+  3. Post-release verification and announcements
+
 ### OpenTUI API Fixes (2026-01-06 - FIXED)
 - **Problem**: TUI was using incorrect OpenTUI API (wrong color attribute and key names)
 - **Root Causes**:
@@ -1276,8 +1294,9 @@ This file contains important learnings, decisions, and context from previous Ral
   - `src/tui/TreeView.tsx` - Fixed text/span colors
   - `src/tui/TuiRoot.tsx` - Fixed all key name comparisons
   - `src/tui/tree-utils.ts` - Changed getStatusColor to return hex colors
+  - `src/tui/AgentPanel.tsx` - Completed fix with remaining color→fg conversions (commit 9a9686a)
 - **Result**: All 707 tests passing, typecheck passes, Codex review: LGTM
-- Commit: 36e85f0
+- Commits: 36e85f0, 9a9686a
 
 ## What's Next (Priority Order)
 
