@@ -1616,7 +1616,7 @@ import { useState, useEffect, useRef } from "react"
 function StreamingLog() {
   const renderer = useRenderer()
   const textRenderableRef = useRef<TextRenderable>()
-  const [lines, setLines] = useState<string[]>([])
+  const linesRef = useRef<string[]>([])
 
   useEffect(() => {
     // Create imperative renderable for high-frequency updates
@@ -1626,21 +1626,19 @@ function StreamingLog() {
       })
     }
 
-    // Simulate streaming logs
+    // Simulate streaming logs - interval created once, uses ref for state
     const interval = setInterval(() => {
-      const newLine = `[${new Date().toISOString()}] Log entry ${lines.length + 1}`
-      const updatedLines = [...lines, newLine].slice(-20)  // Keep last 20 lines
+      const newLine = `[${new Date().toISOString()}] Log entry ${linesRef.current.length + 1}`
+      linesRef.current = [...linesRef.current, newLine].slice(-20)  // Keep last 20 lines
 
-      // Update imperatively (bypasses React reconciler)
+      // Update imperatively (bypasses React reconciler for performance)
       if (textRenderableRef.current) {
-        textRenderableRef.current.text = updatedLines.join("\n")
+        textRenderableRef.current.text = linesRef.current.join("\n")
       }
-
-      setLines(updatedLines)
     }, 100)  // 10 updates per second
 
     return () => clearInterval(interval)
-  }, [lines])
+  }, [])  // Empty deps - interval created once, no timer leak
 
   return (
     <box
@@ -1652,7 +1650,7 @@ function StreamingLog() {
       }}
     >
       <scrollbox>
-        <text ref={textRenderableRef}>{lines.join("\n")}</text>
+        <text ref={textRenderableRef} />
       </scrollbox>
     </box>
   )
