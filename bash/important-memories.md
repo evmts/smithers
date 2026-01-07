@@ -1089,6 +1089,19 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Ready for Deployment**: Mintlify can auto-deploy from main branch
 - Commit: 8fac0f7
 
+### README TUI Documentation (2026-01-06 - COMPLETED)
+- **Problem**: TUI and interactive commands (major v1.0.0 features) were not documented in main README
+- **Solution**: Added comprehensive documentation to README.md
+- **Changes**:
+  - Added "Key Features" section with 12 feature highlights (emojis for visual appeal)
+  - Added "Watch it run with the TUI" section in Quick Start with ASCII art mockup
+  - Updated CLI Reference with --tui and --mock flags
+  - Added Interactive Commands reference with all 9 commands
+  - Added cross-references to detailed guides
+- **Impact**: Makes TUI and interactive features discoverable for new users
+- **Result**: README now accurately reflects all v1.0.0 features
+- Commits: b4410bf (removed resolved review), db0a1f2 (README updates)
+
 ## What's Next (Priority Order)
 
 1. **Release Readiness** (2026-01-06)
@@ -1099,6 +1112,7 @@ This file contains important learnings, decisions, and context from previous Ral
    - ✅ Mintlify docs setup (mint.json configured with 59 pages)
    - ✅ CLI executable verified (./dist/cli/index.js --version works)
    - ✅ Tests passing (707 total, 619 Smithers-specific)
+   - ✅ README updated with TUI and interactive commands documentation
    - ⏳ VHS demo GIFs not generated (requires: brew install vhs && cd demos/ && vhs *.tape)
    - ⏳ npm publish verification (requires npm credentials)
    - **Status**: All code complete and production quality. Release blocked only by: (1) npm credentials for publish, (2) optional VHS demo generation. Once npm publish verified, ready for v1.0.0 release.
