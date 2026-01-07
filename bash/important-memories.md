@@ -3783,3 +3783,12 @@ The only remaining action is user-dependent: npm authentication and running `npm
 
 **Status**: 🚀 READY TO SHIP
 
+### Post-Commit Fix
+
+Addressed Codex review e086c62:
+- Fixed versioning inconsistency in FINAL-STATUS.md
+- Clarified current version is 0.1.0, will be 1.0.0 after PR #1 merge
+- Updated documentation to explain changesets version bump workflow
+- Commits: 75665ee (fix), 5d44ad0 (review removal)
+- Both commits passed Codex review (LGTM)
+
