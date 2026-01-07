@@ -113,7 +113,8 @@ export function AgentPanel({ node, scrollOffset }: AgentPanelProps) {
         <text>
           <strong>Agent Details:</strong> {node.type}
           {'  '}
-          <span color={statusColor}>[{status}]</span>
+          {/* @ts-expect-error - OpenTUI JSX element */}
+          <span fg={statusColor}>[{status}]</span>
         </text>
       {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       </box>
@@ -128,7 +129,8 @@ export function AgentPanel({ node, scrollOffset }: AgentPanelProps) {
         padding={{ left: 1, right: 1 }}
         marginBottom={1}
       >
-        <text color="cyan">
+        {/* @ts-expect-error - OpenTUI JSX element */}
+        <text fg="cyan">
           <strong>Prompt:</strong>
         </text>
         {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
@@ -148,7 +150,8 @@ export function AgentPanel({ node, scrollOffset }: AgentPanelProps) {
         borderStyle="single"
         padding={{ left: 1, right: 1 }}
       >
-        <text color="cyan">
+        {/* @ts-expect-error - OpenTUI JSX element */}
+        <text fg="cyan">
           <strong>Output:</strong>
         </text>
         {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
