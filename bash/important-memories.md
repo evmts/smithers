@@ -804,7 +804,7 @@ This file contains important learnings, decisions, and context from previous Ral
   - **Commands Implemented**:
     - `/pause` - Pause execution after current frame
     - `/resume` - Resume from paused state
-    - `/status` - Show execution state (frame, elapsed, pending/completed nodes)
+    - `/status` - Show execution state (frame, elapsed, pending/running/completed nodes)
     - `/tree [--full]` - Display SmithersNode tree structure
     - `/focus <path>` - Focus on node by path (TUI navigation)
     - `/skip [<path>]` - Skip pending node (marks as complete without executing)
@@ -835,7 +835,12 @@ This file contains important learnings, decisions, and context from previous Ral
   - `src/index.ts` (exported interactive utilities)
   - `evals/interactive.test.ts` (new test file, 30 tests)
   - `docs/cli-commands.md` (comprehensive documentation)
-- Commits: [current session]
+- **Bug Fix** (Codex review 5dc4843, 2026-01-06):
+  - Separated running nodes from pending nodes in `/status` output
+  - Added `runningNodes` field to ExecutionStatus interface
+  - Prevents misleading output where running nodes appeared in "Pending" list but couldn't be skipped
+  - Commit: 905f71b
+- Commits: [initial implementation], 905f71b
 
 ## What's Next (Priority Order)
 
