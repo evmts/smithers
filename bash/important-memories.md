@@ -1209,6 +1209,15 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Result**: All 12 numbered examples (00-11) now have comprehensive documentation
 - **Total Documentation Pages**: Now 65 total (59 previous + 6 new examples)
 - Commit: 70097a6
+- **Codex Review 70097a6** (ADDRESSED - 2026-01-06):
+  1. ✅ git-helper operation prop unused - Fixed by using useEffect to initialize command state from operation prop
+  2. ✅ git-helper missing onFinished callbacks - Added callbacks to branch/log/diff commands to transition to done
+  3. ✅ file-processor placeholder content - Now parses Claude's actual output with escaped regex and markdown header matching
+- **Codex Review 7bf4430** (ADDRESSED - 2026-01-06):
+  1. ✅ Render loop from object recreation - Replaced with useEffect hook
+  2. ✅ Unescaped regex metacharacters - Added proper escaping with .replace()
+  3. ✅ Regex mismatch with prompt - Updated to match markdown headers (# filename.md)
+- Commits: 7bf4430, acfea61, 898f8b8
 
 ## What's Next (Priority Order)
 
