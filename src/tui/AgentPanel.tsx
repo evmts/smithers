@@ -3,8 +3,6 @@
  * Displays detailed information about a Claude/ClaudeApi node
  */
 
-// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
-
 import React from 'react'
 import type { SmithersNode } from '../core/types.js'
 import { serialize } from '../core/render.js'
@@ -107,17 +105,21 @@ export function AgentPanel({ node, scrollOffset }: AgentPanelProps) {
   }
 
   return (
+    // @ts-expect-error - OpenTUI JSX element not in type definitions
     <box flexDirection="column" width="100%" height="100%">
       {/* Title */}
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       <box width="100%" marginBottom={1}>
         <text>
           <strong>Agent Details:</strong> {node.type}
           {'  '}
           <span color={statusColor}>[{status}]</span>
         </text>
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       </box>
 
       {/* Prompt Section */}
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       <box
         flexDirection="column"
         width="100%"
@@ -129,12 +131,16 @@ export function AgentPanel({ node, scrollOffset }: AgentPanelProps) {
         <text color="cyan">
           <strong>Prompt:</strong>
         </text>
+        {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
         <scrollbox height="100%">
           <text>{prompt}</text>
+        {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
         </scrollbox>
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       </box>
 
       {/* Output Section */}
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       <box
         flexDirection="column"
         width="100%"
@@ -145,10 +151,14 @@ export function AgentPanel({ node, scrollOffset }: AgentPanelProps) {
         <text color="cyan">
           <strong>Output:</strong>
         </text>
+        {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
         <scrollbox height="100%">
           <text>{scrolledOutput}</text>
+        {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
         </scrollbox>
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       </box>
+    {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
     </box>
   )
 }

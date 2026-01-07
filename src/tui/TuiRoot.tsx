@@ -3,7 +3,8 @@
  * Main TUI application that orchestrates all components
  */
 
-// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
+// OpenTUI JSX elements (box, scrollbox, text) are not in TypeScript definitions
+// Using targeted @ts-expect-error comments on specific JSX usage lines
 
 import React, { useState, useEffect } from 'react'
 import { useKeyboard } from '@opentui/react'

@@ -60,9 +60,17 @@ export class DebugCollector {
    *
    * Events are enriched with timestamp and frame number before being stored and emitted.
    * Events can be filtered by type if eventFilter is specified.
+   *
+   * @param event - Event data without timestamp/frameNumber (will be added automatically)
+   *
+   * TypeScript note: Due to the complexity of correctly typing Omit on union types,
+   * this signature provides basic type checking. For stricter validation at specific
+   * call sites, consider using `satisfies` with the specific event type.
    */
   emit(
-    event: { type: SmithersDebugEventType; [key: string]: any }
+    event:
+      | Omit<SmithersDebugEvent, 'timestamp' | 'frameNumber'>
+      | { type: SmithersDebugEventType; [key: string]: unknown }
   ): void {
     if (!this.options.enabled) return
 

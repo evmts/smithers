@@ -3,8 +3,6 @@
  * Displays and navigates the SmithersNode tree
  */
 
-// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
-
 import React from 'react'
 import type { SmithersNode } from '../core/types.js'
 import {
@@ -58,6 +56,7 @@ export function TreeView({
   const visibleWindow = visibleNodes.slice(startIndex, endIndex)
 
   return (
+    // @ts-expect-error - OpenTUI JSX element not in type definitions
     <box flexDirection="column" width="100%" height="100%">
       {visibleWindow.map(({ node, path, depth }) => {
         const isSelected = path === selectedPath
@@ -71,6 +70,7 @@ export function TreeView({
         const indent = '  '.repeat(Math.max(0, depth - 1))
 
         return (
+          // @ts-expect-error - OpenTUI JSX element not in type definitions
           <box
             key={path}
             flexDirection="row"
@@ -85,9 +85,11 @@ export function TreeView({
                 {status}
               </span>
             </text>
+          {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
           </box>
         )
       })}
+    {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
     </box>
   )
 }

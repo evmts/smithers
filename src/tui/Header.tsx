@@ -3,8 +3,6 @@
  * Displays execution progress information
  */
 
-// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
-
 import React from 'react'
 
 export interface HeaderProps {
@@ -30,6 +28,7 @@ export function Header({ currentFrame, maxFrames, elapsedTime }: HeaderProps) {
   const timeInfo = formatTime(elapsedTime)
 
   return (
+    // @ts-expect-error - OpenTUI JSX element not in type definitions
     <box flexDirection="row" justifyContent="space-between" width="100%">
       <text>
         <strong>Smithers Agent Execution</strong>
@@ -37,6 +36,7 @@ export function Header({ currentFrame, maxFrames, elapsedTime }: HeaderProps) {
       <text>
         {frameInfo}  {timeInfo}
       </text>
+    {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
     </box>
   )
 }

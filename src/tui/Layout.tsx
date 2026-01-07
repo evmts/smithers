@@ -3,7 +3,7 @@
  * Manages overall TUI layout with header, content area, and status bar
  */
 
-// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
+/// <reference path="./opentui.d.ts" />
 
 import React from 'react'
 import { useTerminalDimensions } from '@opentui/react'
@@ -24,6 +24,7 @@ export function Layout({ header, content, statusBar }: LayoutProps) {
   // Minimum terminal size check
   if (width < 40 || height < 10) {
     return (
+      // @ts-expect-error - OpenTUI JSX element not in type definitions
       <box
         flexDirection="column"
         width="100%"
@@ -33,6 +34,7 @@ export function Layout({ header, content, statusBar }: LayoutProps) {
       >
         <text color="red">Terminal too small.</text>
         <text color="yellow">Resize to at least 40x10.</text>
+        {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       </box>
     )
   }
@@ -44,8 +46,10 @@ export function Layout({ header, content, statusBar }: LayoutProps) {
   const contentHeight = height - 4
 
   return (
+    // @ts-expect-error - OpenTUI JSX element not in type definitions
     <box flexDirection="column" width="100%" height="100%">
       {/* Header */}
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       <box
         width="100%"
         height={1}
@@ -54,15 +58,19 @@ export function Layout({ header, content, statusBar }: LayoutProps) {
         padding={{ left: 1, right: 1 }}
       >
         {header}
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       </box>
 
       {/* Content Area */}
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       <box width="100%" height={contentHeight} padding={{ left: 1, right: 1 }}>
         {content}
+      {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
       </box>
 
       {/* Status Bar */}
       {!isCompact && (
+        // @ts-expect-error - OpenTUI JSX element not in type definitions
         <box
           width="100%"
           height={1}
@@ -72,8 +80,10 @@ export function Layout({ header, content, statusBar }: LayoutProps) {
           padding={{ left: 1, right: 1 }}
         >
           <text color="black">{statusBar}</text>
+        {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
         </box>
       )}
+    {/* @ts-expect-error - OpenTUI JSX element not in type definitions */}
     </box>
   )
 }
