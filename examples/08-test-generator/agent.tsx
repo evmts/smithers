@@ -102,7 +102,7 @@ function TestGenerator({ sourceFile, framework }: { sourceFile: string; framewor
       bun: 'Use Bun test syntax with `import { test, expect } from "bun:test"`',
       jest: 'Use Jest syntax with `describe`, `it`, `expect`',
       vitest: 'Use Vitest syntax with `import { describe, it, expect } from "vitest"`',
-    }[framework] || frameworkInstructions.bun
+    }[framework] || 'Use Bun test syntax with `import { test, expect } from "bun:test"`'
 
     return (
       <Claude
@@ -142,7 +142,7 @@ function TestGenerator({ sourceFile, framework }: { sourceFile: string; framewor
   }
 
   if (phase === 'write') {
-    const testFilePath = sourceFile.replace(/\.(ts|js)x?$/, '.test.$1')
+    const testFilePath = sourceFile.replace(/\.(tsx|jsx|ts|js)$/, (_, ext) => `.test.${ext}`)
 
     return (
       <File

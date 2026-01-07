@@ -135,18 +135,23 @@ console.log()
 let items: string[] = []
 
 try {
-  const stats = await Bun.file(inputPath).exists()
+  const fileExists = await Bun.file(inputPath).exists()
 
-  if (stats) {
+  if (fileExists) {
     // Single file - split into lines
     const content = await readFile(inputPath, 'utf-8')
     items = content.split('\n').filter((line) => line.trim())
   } else {
-    // Directory - process each file
+    // Directory - read file contents for processing
     const files = await readdir(inputPath)
-    items = files
-      .filter((f) => f.endsWith('.md') || f.endsWith('.txt'))
-      .map((f) => join(inputPath, f))
+    const relevantFiles = files.filter((f) => f.endsWith('.md') || f.endsWith('.txt'))
+
+    // Read each file's contents
+    for (const file of relevantFiles) {
+      const filePath = join(inputPath, file)
+      const content = await readFile(filePath, 'utf-8')
+      items.push(content)
+    }
   }
 } catch (err) {
   console.error('❌ Failed to load items:', err)

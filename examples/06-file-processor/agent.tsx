@@ -16,22 +16,26 @@ interface ProcessorState {
   phase: 'reading' | 'processing' | 'writing' | 'done'
   files: string[]
   processedContent: Record<string, string>
+  writtenCount: number
   setPhase: (phase: ProcessorState['phase']) => void
   setFiles: (files: string[]) => void
   setProcessedContent: (content: Record<string, string>) => void
+  incrementWritten: () => void
 }
 
 const useStore = create<ProcessorState>((set) => ({
   phase: 'reading',
   files: [],
   processedContent: {},
+  writtenCount: 0,
   setPhase: (phase) => set({ phase }),
   setFiles: (files) => set({ files }),
   setProcessedContent: (content) => set({ processedContent: content }),
+  incrementWritten: () => set((state) => ({ writtenCount: state.writtenCount + 1 })),
 }))
 
 function FileProcessor({ pattern, outputDir }: { pattern: string; outputDir: string }) {
-  const { phase, files, processedContent, setPhase, setFiles, setProcessedContent } = useStore()
+  const { phase, files, processedContent, writtenCount, setPhase, setFiles, setProcessedContent, incrementWritten } = useStore()
 
   if (phase === 'reading') {
     return (
@@ -94,11 +98,12 @@ function FileProcessor({ pattern, outputDir }: { pattern: string; outputDir: str
               path={outputPath}
               onWritten={() => {
                 console.log(`✓ Written: ${outputPath}`)
+                incrementWritten()
 
                 // Check if this is the last file
-                const writtenCount = Object.keys(processedContent).length
+                const currentWritten = useStore.getState().writtenCount
                 const totalFiles = files.length
-                if (writtenCount === totalFiles) {
+                if (currentWritten === totalFiles) {
                   setPhase('done')
                 }
               }}
