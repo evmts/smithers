@@ -727,6 +727,37 @@ This file contains important learnings, decisions, and context from previous Ral
   - `.gitignore` (excluded solidjs/ directory)
 - Commit: e6a5371
 
+### TUI Robustness Fixes (2026-01-06 - COMPLETED)
+- **Feature**: Fixed three critical robustness issues in TUI implementation
+- **Implementation** (Codex review e6a5371):
+  1. **TUI cleanup guaranteed on error** (00f9a05):
+     - Wrapped TUI execution in try/finally block
+     - `renderer.cleanup()` always called to restore terminal state
+     - Prevents terminal being left in raw mode on crash
+  2. **Null check for findNodeByPath** (00f9a05):
+     - Added guard for selectedNode becoming null after tree updates
+     - Falls back to tree view when selected node disappears
+     - Uses useEffect to avoid render-time state mutations
+  3. **Wired up scrollOffset** (00f9a05):
+     - Implemented `applyScrollOffset` helper to slice output text by line
+     - Up/Down arrow keys now scroll output in detail view
+     - Fulfills UX promise advertised in status bar
+  4. **Moved side effect to useEffect** (76f32ac):
+     - Replaced setTimeout() during render with useEffect hook
+     - Watches [view, selectedNode] dependencies
+     - Prevents multiple timeout scheduling and memory leaks
+  5. **Clamped scroll offset** (76f32ac):
+     - Added bounds checking in `applyScrollOffset` helper
+     - Clamps offset to [0, lineCount-1] range
+     - Prevents performance issues with large outputs
+     - Prevents UI appearing "stuck" when offset exceeds lines
+- **Files Changed**:
+  - `src/cli/commands/run.ts` - try/finally wrapper for cleanup
+  - `src/tui/TuiRoot.tsx` - null check and useEffect for view switching
+  - `src/tui/AgentPanel.tsx` - scrollOffset implementation and clamping
+- **Test Results**: All 589 Smithers tests passing
+- Commits: 00f9a05, 76f32ac
+
 ## What's Next (Priority Order)
 
 1. **Fix Remaining Test Issues** (if any)
