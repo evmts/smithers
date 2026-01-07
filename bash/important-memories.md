@@ -1026,6 +1026,12 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Updated**: examples/README.md now includes all 12 examples (00-11) in overview table and running instructions
 - **Total Examples**: 12 (1 flagship + 2 beginner + 3 intermediate + 6 advanced)
 - Commit: 8da3269
+- **Bug Fixes** (2026-01-06):
+  1. ✅ test-generator frameworkInstructions self-reference - Fixed ReferenceError by using literal string fallback (de95eee)
+  2. ✅ test-generator testFilePath regex - Now preserves .tsx/.jsx extensions correctly with capture group (de95eee)
+  3. ✅ file-processor premature done phase - Added writtenCount state to track individual writes, prevents unmounting File components (de95eee)
+  4. ✅ rate-limited-batch file content processing - Now reads actual file contents instead of passing paths (de95eee)
+  5. ✅ rate-limited-batch React key collisions - Added BatchItem interface with id field for stable unique keys (1a6028b)
 
 ## What's Next (Priority Order)
 
