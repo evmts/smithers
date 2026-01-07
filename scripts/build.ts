@@ -9,10 +9,10 @@
  */
 
 import { $ } from 'bun'
-import { rmSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { rmSync, mkdirSync, chmodSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
-const ROOT = import.meta.dir.replace('/scripts', '')
+const ROOT = resolve(import.meta.dir, '..')
 const DIST = join(ROOT, 'dist')
 
 console.log('🏗️  Building Smithers...\n')
@@ -30,6 +30,10 @@ await $`bun build ./src/index.ts --outdir ./dist --target node --sourcemap=exter
 console.log('🔧 Building CLI...')
 mkdirSync(join(DIST, 'cli'), { recursive: true })
 await $`bun build ./src/cli/index.ts --outdir ./dist/cli --target node --sourcemap=external`
+
+// Set executable bit on CLI
+const cliPath = join(DIST, 'cli', 'index.js')
+chmodSync(cliPath, 0o755)
 
 // Generate TypeScript declarations
 console.log('📝 Generating type declarations...')
