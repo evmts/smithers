@@ -29,6 +29,8 @@ jobs:
 
       - name: Test
         run: bun test
+        env:
+          NO_COLOR: 1
 
       - name: Build
         run: bun run build
