@@ -1368,8 +1368,16 @@ export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
   function walk(node: SmithersNode) {
     // Check for 'claude' (Agent SDK), 'claude-api' (API SDK), and 'claude-cli' (deprecated CLI) node types
     if (node.type === 'claude' || node.type === 'claude-api' || node.type === 'claude-cli') {
-      // Mark nodes with failed worktree ancestors as errored
+      // Check for failed worktree ancestors
       const failedWorktree = hasFailedWorktreeAncestor(node)
+
+      // If node was previously blocked but worktree is now OK, clear the error
+      if (!failedWorktree && node._execution?.status === 'error' &&
+          node._execution.error?.message.includes('parent worktree failed')) {
+        delete node._execution
+      }
+
+      // Mark nodes with failed worktree ancestors as errored
       if (failedWorktree) {
         const worktreeError = failedWorktree._execution?.error
         // Don't set contentHash so the node can re-execute if worktree is fixed
