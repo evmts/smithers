@@ -1,7 +1,7 @@
 {
   "name": "smithers",
   "version": "0.1.0",
-  "description": "React-based framework for composable AI agent prompts",
+  "description": "Build AI agents in React. Declarative JSX components for orchestrating Claude agents with state management, parallel execution, and TUI visualization.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -75,7 +75,15 @@
     "jsx",
     "mdx",
     "llm",
-    "claude"
+    "claude",
+    "anthropic",
+    "orchestration",
+    "workflow",
+    "automation",
+    "agentic",
+    "multi-agent",
+    "rag",
+    "framework"
   ],
   "author": "William Cory",
   "license": "MIT"
