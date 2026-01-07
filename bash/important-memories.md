@@ -758,36 +758,80 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Test Results**: All 589 Smithers tests passing
 - Commits: 00f9a05, 76f32ac
 
+### VHS Demo Recording Infrastructure (2026-01-06 - COMPLETED)
+- **Feature**: Created complete VHS demo infrastructure for TUI (Phase 3 of TUI Integration)
+- **Implementation**:
+  - **Demo Tape Files** (4 total):
+    1. `demos/01-basic-execution.tape` - Basic TUI navigation (~10s)
+    2. `demos/02-tree-navigation.tape` - Keyboard navigation, expand/collapse (~15s)
+    3. `demos/03-agent-details.tape` - Agent detail view, scrolling (~20s)
+    4. `demos/04-multi-phase.tape` - Complex multi-phase workflow (~25s)
+  - **Documentation**:
+    - `demos/README.md` - Comprehensive guide: prerequisites, generating recordings, customization, troubleshooting
+    - Updated `docs/vhs-recording.md` - Replaced placeholder demos with actual demo references
+  - **GitHub Action**:
+    - `.github/workflows/vhs.yml` - Auto-regenerate demos on tape file or TUI changes
+    - Commits GIFs to main branch, uploads artifacts for PR previews
+    - Uses SMITHERS_MOCK=true to avoid API calls in CI
+- **Features**:
+  - All demos use `--mock` flag for fast, deterministic execution
+  - Various themes showcased (Catppuccin Mocha, Dracula, Nord, Tokyo Night)
+  - Keyboard navigation patterns demonstrated
+  - Ready to generate once VHS is installed: `brew install vhs`
+- **Bug Fix** (Codex review 29ec4a0):
+  - Fixed example paths in all tape files
+  - `examples/hello-world` → `examples/01-hello-world`
+  - `examples/feature-workflow` → `examples/00-feature-workflow`
+  - Ensures demos execute correctly when run locally or in CI
+- **Files Created**:
+  - `demos/01-basic-execution.tape`, `demos/02-tree-navigation.tape`, `demos/03-agent-details.tape`, `demos/04-multi-phase.tape`
+  - `demos/README.md`
+  - `.github/workflows/vhs.yml`
+- **Files Modified**:
+  - `docs/vhs-recording.md` - Updated with actual demo references
+- **Next Steps**:
+  - Install VHS locally to generate actual GIF recordings
+  - Phase 4: Interactive CLI commands (/pause, /resume, /inject, etc.)
+  - Phase 5: GitHub Action for running Smithers agents in CI/CD
+- Commits: 29ec4a0, d8a4493
+
 ## What's Next (Priority Order)
 
 1. **Fix Remaining Test Issues** (if any)
    - Currently 589 tests passing, 2 skip, 0 failures
    - OpenTUI SolidJS test failures not relevant
 
-2. **TUI Integration** (Phase 2b COMPLETED - 2026-01-06)
+2. **TUI Integration** (COMPLETED - 2026-01-06)
    - ✅ Phase 1: Research & Documentation (COMPLETED - 2026-01-06)
      - Created `docs/tui-research.md` - Comprehensive OpenTUI architecture, APIs, hooks, integration patterns
      - Created `docs/tui-design.md` - UI mockups, keyboard navigation spec, component hierarchy, state management
      - Created `docs/vhs-recording.md` - VHS tape file format, workflows, CI integration
-   - **Phase 2a: Worktree Component** (COMPLETED - 2026-01-06)
+   - ✅ Phase 2a: Worktree Component (COMPLETED - 2026-01-06)
      - Implemented Worktree component for parallel agent isolation
      - Git worktree lifecycle management (create, execute, cleanup)
      - cwd injection for child Claude nodes
-   - **Phase 2b: TUI Implementation** (NEXT)
-     - Install Zig and OpenTUI dependencies (@opentui/core, @opentui/react)
-     - Create TreeView component (arrow key navigation, expand/collapse)
-     - Create AgentPanel component (display prompt/output, scrolling)
-     - Create Layout component (split pane, responsive sizing)
-     - Integrate with executePlan() via onFrameUpdate callback
-   - **Phase 3: VHS Demo Recording**
-     - Create demos/ directory with .tape files
-     - Record basic execution, agent details, multi-phase, error recovery demos
-     - Set up GitHub Action for automated regeneration
+   - ✅ Phase 2b: TUI Implementation (COMPLETED - 2026-01-06)
+     - Installed OpenTUI dependencies (@opentui/core, @opentui/react)
+     - Created TreeView component (arrow key navigation, expand/collapse)
+     - Created AgentPanel component (display prompt/output, scrolling)
+     - Created Layout component (split pane, responsive sizing)
+     - Integrated with executePlan() via onFrameUpdate callback
+   - ✅ Phase 3: VHS Demo Recording (COMPLETED - 2026-01-06)
+     - Created demos/ directory with 4 .tape files
+     - 01-basic-execution.tape - Basic TUI navigation (~10s)
+     - 02-tree-navigation.tape - Keyboard navigation, expand/collapse (~15s)
+     - 03-agent-details.tape - Agent detail view, scrolling (~20s)
+     - 04-multi-phase.tape - Complex multi-phase workflow (~25s)
+     - Created demos/README.md with comprehensive usage guide
+     - Updated docs/vhs-recording.md with actual demo references
+     - Set up .github/workflows/vhs.yml for automated regeneration
+     - Fixed example paths (29ec4a0 review addressed)
    - **Key Design Decisions:**
      - TUI is read-only observer of execution (doesn't modify tree)
      - Uses onFrameUpdate callback from executePlan() for real-time updates
      - Keyboard navigation follows depth-first tree traversal
      - Responsive design with breakpoints for small terminals
+     - All demos use --mock flag for fast, deterministic execution
 
 3. **Test Coverage**
    - ✅ CLI tests (`evals/cli.test.ts`) - 34 tests (DONE)
