@@ -1259,6 +1259,26 @@ This file contains important learnings, decisions, and context from previous Ral
   5. Codex review approved (LGTM) - commit bfcf509
   6. No further blockers for v1.0.0 release
 
+### OpenTUI API Fixes (2026-01-06 - FIXED)
+- **Problem**: TUI was using incorrect OpenTUI API (wrong color attribute and key names)
+- **Root Causes**:
+  1. Used `color` attribute instead of `fg` for text/span elements
+  2. Used capitalized key names ('Down', 'Up', 'Enter') instead of lowercase ('down', 'up', 'return')
+  3. Used ANSI color codes instead of hex colors
+- **Solution**:
+  - Changed all `color` props to `fg` (correct OpenTUI API)
+  - Fixed key names to lowercase (down, up, left, right)
+  - Fixed special keys (return, escape, space, backspace)
+  - Replaced ANSI codes (\x1b[92m) with hex colors (#00ff00)
+- **Impact**: TUI keyboard navigation and colors now work correctly
+- **Files Changed**:
+  - `src/tui/Layout.tsx` - Fixed color attributes for terminal size warning
+  - `src/tui/TreeView.tsx` - Fixed text/span colors
+  - `src/tui/TuiRoot.tsx` - Fixed all key name comparisons
+  - `src/tui/tree-utils.ts` - Changed getStatusColor to return hex colors
+- **Result**: All 707 tests passing, typecheck passes, Codex review: LGTM
+- Commit: 36e85f0
+
 ## What's Next (Priority Order)
 
 1. **Release Readiness** (2026-01-06 - COMPLETE ✅)
