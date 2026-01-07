@@ -1354,9 +1354,25 @@ export function getWorktreePath(node: SmithersNode): string | null {
 export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
   const executables: SmithersNode[] = []
 
+  function hasFailedWorktreeAncestor(node: SmithersNode): boolean {
+    let current: SmithersNode | null = node.parent
+    while (current) {
+      if (current.type === 'worktree' && current._execution?.status === 'error') {
+        return true
+      }
+      current = current.parent
+    }
+    return false
+  }
+
   function walk(node: SmithersNode) {
     // Check for 'claude' (Agent SDK), 'claude-api' (API SDK), and 'claude-cli' (deprecated CLI) node types
     if (node.type === 'claude' || node.type === 'claude-api' || node.type === 'claude-cli') {
+      // Skip nodes with failed worktree ancestors
+      if (hasFailedWorktreeAncestor(node)) {
+        return
+      }
+
       // A node is pending if:
       // 1. It has no execution status, OR
       // 2. Its execution status is explicitly 'pending', OR
