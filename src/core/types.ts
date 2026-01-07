@@ -26,6 +26,8 @@ export interface ExecutionState {
   result?: unknown
   error?: Error
   contentHash?: string // Hash of node content for change detection
+  /** Flag indicating this node was blocked by a failed parent worktree */
+  blockedByWorktree?: boolean
 }
 
 /**

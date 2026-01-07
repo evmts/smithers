@@ -1371,9 +1371,8 @@ export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
       // Check for failed worktree ancestors
       const failedWorktree = hasFailedWorktreeAncestor(node)
 
-      // If node was previously blocked but worktree is now OK, clear the error
-      if (!failedWorktree && node._execution?.status === 'error' &&
-          node._execution.error?.message.includes('parent worktree failed')) {
+      // If node was previously blocked but worktree is now OK, clear the execution state
+      if (!failedWorktree && node._execution?.blockedByWorktree) {
         delete node._execution
       }
 
@@ -1381,9 +1380,11 @@ export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
       if (failedWorktree) {
         const worktreeError = failedWorktree._execution?.error
         // Don't set contentHash so the node can re-execute if worktree is fixed
+        // Set blockedByWorktree flag to identify this as a transient error
         node._execution = {
           status: 'error',
           error: new Error(`Cannot execute: parent worktree failed (${worktreeError?.message || 'unknown error'})`),
+          blockedByWorktree: true,
         }
         return
       }
