@@ -21,7 +21,7 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target node",
+    "build": "bun run scripts/build.ts",
     "dev": "bun run src/cli/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",

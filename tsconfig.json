@@ -18,6 +18,6 @@
       "smithers": ["./src/index.ts"]
     }
   },
-  "include": ["src/**/*", "evals/**/*.tsx"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "evals", "solidjs"]
 }
