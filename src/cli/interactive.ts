@@ -101,8 +101,13 @@ export class ExecutionController {
 
     if (this._tree) {
       this._walkTree(this._tree, (node) => {
+        // Only count executable node types (claude, claude-api, claude-cli)
+        const isExecutable = node.type === 'claude' || node.type === 'claude-api' || node.type === 'claude-cli'
+        if (!isExecutable) return
+
         const status = node._execution?.status
-        if (status === 'pending') {
+        // Treat missing execution as pending (most pending nodes don't have _execution set yet)
+        if (!status || status === 'pending' || status === 'running') {
           pendingNodes.push({
             path: getNodePath(node),
             type: node.type,

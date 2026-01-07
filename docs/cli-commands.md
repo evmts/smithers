@@ -218,10 +218,12 @@ ROOT
 - `<reason>` (optional): Reason for aborting (logged)
 
 **Behavior:**
-- Stops Ralph loop immediately (doesn't wait for frame)
-- Running nodes are interrupted (no results stored)
+- Stops Ralph loop at next frame boundary (current frame/node completes first)
+- Execution stops before starting new nodes
 - onError callback called with AbortError
 - TUI exits cleanly
+
+**Note:** Abort checks happen between frames, not mid-execution. A long-running node will complete before abort takes effect.
 
 **Use Cases:**
 - Stop runaway execution
