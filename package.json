@@ -45,6 +45,8 @@
     "@anthropic-ai/sdk": "^0.71.2",
     "@mdx-js/mdx": "^3.1.1",
     "@modelcontextprotocol/sdk": "^1.25.1",
+    "@opentui/core": "^0.1.69",
+    "@opentui/react": "^0.1.69",
     "commander": "^12.1.0",
     "ora": "^8.1.1",
     "picocolors": "^1.1.1",

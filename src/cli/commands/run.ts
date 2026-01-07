@@ -28,6 +28,7 @@ export const runCommand = new Command('run')
   .option('--max-tokens <n>', 'Maximum tokens for Claude responses')
   .option('--mock', 'Enable mock mode (no real API calls)')
   .option('-c, --config <file>', 'Path to config file')
+  .option('--tui', 'Enable Terminal UI for interactive execution monitoring')
   .action(async (file: string, options) => {
     try {
       await run(file, options)
@@ -51,6 +52,7 @@ interface RunOptions {
   mock?: boolean
   autoApprove?: boolean
   config?: string
+  tui?: boolean
 }
 
 async function run(file: string, options: RunOptions): Promise<void> {
@@ -174,40 +176,116 @@ async function run(file: string, options: RunOptions): Promise<void> {
 
   // Execute the plan
   console.log()
-  const execSpinner = ora('Executing plan...').start()
 
   // Show mock mode indicator
   if (mockMode) {
     info('Running in mock mode (no real API calls)')
   }
 
-  const result = await executePlan(element, {
-    maxFrames,
-    timeout,
-    verbose,
-    mockMode,
-    model: merged.model,
-    maxTokens: merged.maxTokens,
-    onFrame: (frame) => {
-      if (verbose) {
-        execSpinner.text = `Frame ${frame.frame}: ${frame.executedNodes.join(', ')}`
-      }
-    },
-  })
+  // TUI mode or standard mode
+  if (options.tui) {
+    // Dynamic import TUI components
+    const { createCliRenderer, createRoot: createTuiRoot } = await import('@opentui/react')
+    const { TuiRoot } = await import('../../tui/index.js')
+    const { createElement } = await import('react')
 
-  execSpinner.succeed(`Execution complete (${result.frames} frames)`)
+    // Create OpenTUI renderer
+    const renderer = await createCliRenderer()
+    const tuiRoot = createTuiRoot(renderer)
 
-  // Display or save result
-  if (options.output) {
-    const outputPath = path.resolve(process.cwd(), options.output)
-    const content = options.json
-      ? JSON.stringify(result, null, 2)
-      : String(result.output)
-    fs.writeFileSync(outputPath, content)
-    success(`Result written to ${options.output}`)
-  } else if (options.json) {
-    console.log(JSON.stringify(result, null, 2))
+    // Initial render with empty tree
+    let currentTree: any = null
+    const startTime = Date.now()
+
+    // Execute with TUI updates
+    const result = await executePlan(element, {
+      maxFrames,
+      timeout,
+      verbose,
+      mockMode,
+      model: merged.model,
+      maxTokens: merged.maxTokens,
+      onFrameUpdate: async (tree, frame) => {
+        currentTree = tree
+        tuiRoot.render(
+          createElement(TuiRoot, {
+            tree,
+            frame,
+            maxFrames,
+            startTime,
+            onQuit: () => {
+              // User pressed 'q' - we can't stop execution mid-flight,
+              // but we can note it for later
+            },
+          })
+        )
+        // Give TUI time to render
+        await new Promise((resolve) => setImmediate(resolve))
+      },
+    })
+
+    // Keep TUI open after execution to show final state
+    info('Execution complete. Press q to quit.')
+
+    // Wait for user to quit
+    await new Promise<void>((resolve) => {
+      tuiRoot.render(
+        createElement(TuiRoot, {
+          tree: currentTree,
+          frame: result.frames,
+          maxFrames,
+          startTime,
+          onQuit: () => {
+            resolve()
+          },
+        })
+      )
+    })
+
+    // Cleanup
+    renderer.cleanup()
+
+    // Display or save result
+    if (options.output) {
+      const outputPath = path.resolve(process.cwd(), options.output)
+      const content = options.json ? JSON.stringify(result, null, 2) : String(result.output)
+      fs.writeFileSync(outputPath, content)
+      success(`Result written to ${options.output}`)
+    } else if (options.json) {
+      console.log(JSON.stringify(result, null, 2))
+    } else {
+      displayResult(result.output, result.frames, result.totalDuration)
+    }
   } else {
-    displayResult(result.output, result.frames, result.totalDuration)
+    // Standard non-TUI execution
+    const execSpinner = ora('Executing plan...').start()
+
+    const result = await executePlan(element, {
+      maxFrames,
+      timeout,
+      verbose,
+      mockMode,
+      model: merged.model,
+      maxTokens: merged.maxTokens,
+      onFrame: (frame) => {
+        if (verbose) {
+          execSpinner.text = `Frame ${frame.frame}: ${frame.executedNodes.join(', ')}`
+        }
+      },
+    })
+
+    execSpinner.succeed(`Execution complete (${result.frames} frames)`)
+
+    // Display or save result
+    if (options.output) {
+      const outputPath = path.resolve(process.cwd(), options.output)
+      const content = options.json ? JSON.stringify(result, null, 2) : String(result.output)
+      fs.writeFileSync(outputPath, content)
+      success(`Result written to ${options.output}`)
+    } else if (options.json) {
+      console.log(JSON.stringify(result, null, 2))
+    } else {
+      displayResult(result.output, result.frames, result.totalDuration)
+    }
   }
 }

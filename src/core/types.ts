@@ -549,6 +549,15 @@ export interface ExecuteOptions {
    * This is typically injected by ClaudeProvider.
    */
   providerContext?: ProviderContext
+  /**
+   * Callback invoked after each Ralph loop frame with the updated tree.
+   * This is called after rendering and execution but before starting the next frame.
+   * Useful for TUI updates, logging, or other real-time monitoring.
+   *
+   * @param tree - The updated SmithersNode tree
+   * @param frame - Current frame number
+   */
+  onFrameUpdate?: (tree: SmithersNode, frame: number) => void | Promise<void>
 }
 
 /**

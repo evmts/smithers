@@ -63,6 +63,7 @@ export async function executePlan(
     mockMode = false,
     onPlan,
     onFrame,
+    onFrameUpdate,
     onHumanPrompt,
     onPlanWithPrompt,
     debug,
@@ -776,6 +777,11 @@ export async function executePlan(
 
     if (onFrame) {
       onFrame(frameResult)
+    }
+
+    // Call frame update callback for TUI or other monitoring
+    if (onFrameUpdate) {
+      await onFrameUpdate(tree, frameNumber)
     }
 
     // If no state changes detected, check if there are still more pending nodes
