@@ -86,10 +86,19 @@ function FileProcessor({
       <Claude
         allowedTools={['Read']}
         onFinished={(result) => {
+          // Parse Claude's output to extract processed content per file
+          // Expected format: filename followed by processed content
           const processed: Record<string, string> = {}
+          const resultText = result.text
+
+          // Simple parsing: look for file paths followed by content
           files.forEach(file => {
-            processed[file] = `Processed: ${file}`
+            const filename = file.split('/').pop()
+            const filePattern = new RegExp(`${filename}\\s*\\n([\\s\\S]*?)(?=\\n\\S+\\.md|$)`)
+            const match = resultText.match(filePattern)
+            processed[file] = match ? match[1].trim() : resultText
           })
+
           setProcessedContent(processed)
           setPhase('writing')
         }}
@@ -102,6 +111,8 @@ function FileProcessor({
         2. Convert all headers to title case
         3. Add a table of contents at the top
         4. Add word count at the bottom
+
+        Output each file's processed content with the filename as a header.
       </Claude>
     )
   }

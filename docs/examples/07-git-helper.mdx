@@ -43,6 +43,13 @@ function GitHelper({
 }) {
   const { command, setCommand, setResult } = useStore()
 
+  // Initialize command from operation prop on first render
+  const initializedRef = { current: false }
+  if (!initializedRef.current) {
+    setCommand(operation as GitHelperState['command'])
+    initializedRef.current = true
+  }
+
   // Status command
   if (command === 'status') {
     return (
@@ -90,14 +97,26 @@ function GitHelper({
 
     if (newBranch) {
       return (
-        <Claude allowedTools={['Bash']}>
+        <Claude
+          allowedTools={['Bash']}
+          onFinished={(result) => {
+            setResult(result.text)
+            setCommand('done')
+          }}
+        >
           Create and switch to new branch: {newBranch}
         </Claude>
       )
     }
 
     return (
-      <Claude allowedTools={['Bash']}>
+      <Claude
+        allowedTools={['Bash']}
+        onFinished={(result) => {
+          setResult(result.text)
+          setCommand('done')
+        }}
+      >
         List all git branches with current branch highlighted
       </Claude>
     )
@@ -108,7 +127,13 @@ function GitHelper({
     const count = args.count || 5
 
     return (
-      <Claude allowedTools={['Bash']}>
+      <Claude
+        allowedTools={['Bash']}
+        onFinished={(result) => {
+          setResult(result.text)
+          setCommand('done')
+        }}
+      >
         Show last {count} git commits with:
         - Commit hash (short)
         - Author
@@ -123,7 +148,13 @@ function GitHelper({
     const file = args.file
 
     return (
-      <Claude allowedTools={['Bash']}>
+      <Claude
+        allowedTools={['Bash']}
+        onFinished={(result) => {
+          setResult(result.text)
+          setCommand('done')
+        }}
+      >
         Show git diff for {file || 'all changed files'}
         Summarize the changes in a readable format
       </Claude>
