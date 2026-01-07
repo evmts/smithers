@@ -161,12 +161,12 @@ export function getNodeLabel(node: SmithersNode): string {
 /**
  * Node types that can be executed (have their own execution status)
  */
-const EXECUTABLE_NODE_TYPES = new Set(['claude', 'claude-api', 'human', 'ROOT'])
+const EXECUTABLE_NODE_TYPES = new Set(['claude', 'claude-api', 'human', 'file', 'worktree'])
 
 /**
  * Get status badge text for a node
- * Only shows status for executable nodes (claude, claude-api, human)
- * Structural nodes (phase, step, text) don't show status
+ * Only shows status for executable nodes (claude, claude-api, human, file, worktree)
+ * Structural nodes (phase, step, text, ROOT) don't show status
  */
 export function getStatusBadge(node: SmithersNode): string {
   // Only show status for executable nodes
