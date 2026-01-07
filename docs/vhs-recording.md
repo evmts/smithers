@@ -125,10 +125,12 @@ Output frames/  # PNG sequence
 ```
 
 **Supported formats:**
-- `.gif` - Animated GIF
-- `.mp4` - H.264 video
-- `.webm` - WebM video
-- `directory/` - PNG image sequence
+- `.gif` - Animated GIF (larger file size, universal support)
+- `.mp4` - H.264 video (smaller file size, good quality)
+- `.webm` - WebM video (smallest file size, web-optimized)
+- `directory/` - PNG image sequence (for advanced editing)
+- `.txt` - ASCII text output (for golden file testing)
+- `.ascii` - ASCII art output (for integration testing)
 
 #### Terminal Configuration
 
@@ -148,9 +150,11 @@ Set Margin 20                     # Frame margin in pixels
 #### Window Styling
 
 ```tape
-Set WindowBar Colorful           # Window bar style
+Set WindowBar Colorful           # Window bar style (Rings, RingsRight, Colorful, ColorfulRight)
+Set WindowBarSize 40             # Window bar height in pixels (default 40)
 Set BorderRadius 10              # Corner roundness in pixels
 Set CursorBlink true             # Cursor animation on/off
+Set MarginFill "#1e1e2e"         # Color to fill margin with (hex or file path)
 ```
 
 #### Recording Settings
@@ -196,6 +200,9 @@ Enter                            # Press Enter/Return
 Backspace                        # Press Backspace
 Tab                              # Press Tab
 Space                            # Press Space
+Escape                           # Press Escape
+Delete                           # Press Delete
+Insert                           # Press Insert
 
 # Arrow keys
 Up
@@ -211,6 +218,11 @@ PageDown
 Ctrl+C                           # Ctrl+C
 Ctrl+Alt+Delete                  # Ctrl+Alt+Delete
 Shift+Tab                        # Shift+Tab
+Alt+F4                           # Alt+F4
+
+# Repeat keys with optional timing
+Enter@500ms 3                    # Press Enter 3 times with 500ms delay
+Down 5                           # Press Down 5 times
 ```
 
 #### Sleep
@@ -350,6 +362,56 @@ open demo.gif
 
 Tip: Use `Wait+Screen` to speed up development by waiting for output instead of hard-coded `Sleep` durations.
 
+## VHS Publishing and Sharing
+
+### Publishing to vhs.charm.sh
+
+VHS provides a built-in publishing service to share your recordings:
+
+```bash
+# Generate and publish in one command
+vhs publish demo.tape
+
+# Or publish an existing GIF
+vhs publish demo.gif
+```
+
+This uploads your recording to `vhs.charm.sh` and provides:
+- **Browser link** - View in browser
+- **HTML embed code** - Embed in websites
+- **Markdown link** - Share in docs
+
+### Self-Hosted VHS Server
+
+Run your own VHS server for team sharing:
+
+```bash
+# Start VHS server on port 1976
+vhs serve
+
+# Access from other machines
+vhs <remote-host>:1976 demo.tape
+```
+
+This enables:
+- Running tapes from any machine on your network
+- Centralized recording generation
+- Team collaboration on demos
+
+### SSH Server Integration
+
+VHS can execute tapes across networks via SSH:
+
+```bash
+# Run tape on remote server
+vhs ssh://user@host:22 demo.tape
+```
+
+Use cases:
+- Generate recordings on CI servers
+- Test across different environments
+- Collaborate with remote teams
+
 ## VHS GitHub Action
 
 Automate recording generation in CI/CD using the [vhs-action](https://github.com/charmbracelet/vhs-action).
@@ -406,6 +468,30 @@ jobs:
 |-------|-------------|---------|
 | `path` | Tape file(s) or directory | Required |
 | `install-fonts` | Install custom fonts | `false` |
+| `version` | VHS version to use | `latest` |
+| `token` | GitHub token | `${{ github.token }}` |
+
+### Available Fonts
+
+**Default font:** JetBrains Mono (always available)
+
+**Additional fonts** (with `install-fonts: true`):
+- Bitstream Vera Sans Mono
+- DejaVu Sans Mono
+- Fira Code
+- Hack
+- IBM Plex Mono
+- Inconsolata
+- Liberation Mono
+- Roboto Mono
+- Source Code Pro
+- Ubuntu Mono
+- Plus nerd font variations for each
+
+Check available fonts locally:
+```bash
+vhs fonts
+```
 
 ### Advanced Example
 
@@ -561,8 +647,18 @@ Popular themes for demos:
 - **Nord** - Clean, minimal
 - **Tokyo Night** - Trendy, easy on eyes
 - **Gruvbox** - Retro, warm colors
+- **Monokai** - Classic, high contrast
+- **Solarized Dark** - Easy on eyes, well-balanced
+- **One Dark** - Popular VS Code theme
+- **Material Design** - Clean, modern
+- **Synthwave** - Neon aesthetic for fun demos
 
-See all themes: `vhs themes`
+See all 350+ themes: `vhs themes`
+
+**Custom themes:**
+```tape
+Set Theme { "name": "custom", "black": "#000000", "red": "#ff0000", ... }
+```
 
 ### 4. Balance Speed and Readability
 
@@ -614,6 +710,71 @@ Type "smithers run agent.mdx --tui"
 Enter
 ```
 
+### 9. Optimize for Different Platforms
+
+```tape
+# macOS optimized (Retina displays)
+Set Width 1400
+Set Height 900
+Set FontSize 16
+
+# Web optimized (smaller file size)
+Set Width 1000
+Set Height 600
+Set Framerate 30
+Output demo.webm  # Smallest file size
+```
+
+### 10. Use Hide/Show for Setup/Cleanup
+
+```tape
+# Hide setup commands
+Hide
+Type "cd /tmp && mkdir demo && cd demo"
+Enter
+Type "npm install smithers"
+Enter
+Show
+
+# Now show the actual demo
+Type "smithers run agent.mdx"
+Enter
+Wait /Complete/
+
+# Hide cleanup
+Hide
+Type "cd .. && rm -rf demo"
+Enter
+```
+
+### 11. Create Smooth Loops
+
+Use `LoopOffset` to create seamless GIF loops:
+
+```tape
+Set LoopOffset 5%  # Start loop 5% into the recording
+
+# Your demo commands
+Type "smithers run agent.mdx"
+Enter
+Wait /Complete/
+Sleep 2s
+```
+
+### 12. Test Recordings Quickly
+
+```bash
+# Generate low-quality preview for quick iteration
+Set Framerate 15
+Set Width 800
+Set Height 500
+
+# When satisfied, increase quality
+Set Framerate 60
+Set Width 1400
+Set Height 900
+```
+
 ## File Organization
 
 Organize demos in a dedicated directory:
@@ -658,6 +819,19 @@ which ffmpeg
 # Install if missing
 brew install ttyd ffmpeg  # macOS
 sudo apt install ttyd ffmpeg  # Ubuntu/Debian
+```
+
+**Common Issue:** On Ubuntu/Debian, the deb package doesn't include ttyd as a dependency. You must install it manually:
+```bash
+# Download latest ttyd from GitHub releases
+wget https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+chmod +x ttyd.x86_64
+sudo mv ttyd.x86_64 /usr/local/bin/ttyd
+```
+
+**Version Issues:** VHS requires ttyd 1.7.1 or later. Check your version:
+```bash
+ttyd --version
 ```
 
 ### Font Not Found
@@ -711,6 +885,253 @@ vhs --verbose demo.tape
 # - Settings after action commands
 # - Missing quotes around strings with spaces
 # - Invalid regex in Wait commands
+```
+
+### ffmpeg Errors
+
+**"Number of frames to loop is not set"**: This can result in an empty GIF. Use the `-v` flag for verbose ffmpeg output:
+```bash
+vhs -v demo.tape
+```
+
+**"Unrecognized option 'crf'"**: Your ffmpeg version may be outdated or missing codec support:
+```bash
+# Update ffmpeg
+brew upgrade ffmpeg  # macOS
+sudo apt update && sudo apt upgrade ffmpeg  # Ubuntu
+
+# Or install with all codecs
+brew install ffmpeg --with-all
+```
+
+**"Option 'whole_dur' not found"**: Audio filter compatibility issue. VHS primarily works with video, so this usually doesn't affect output.
+
+### Browser Launch Errors
+
+If `vhs publish` fails with browser errors, ensure you have a compatible browser installed or use the `--no-publish` flag:
+```bash
+vhs demo.tape  # Generate without publishing
+```
+
+### Performance Issues
+
+If VHS is slow:
+```bash
+# Use lower framerate
+Set Framerate 30  # Instead of 60
+
+# Reduce terminal size
+Set Width 1000
+Set Height 600
+
+# Use MP4 instead of GIF (faster encoding)
+Output demo.mp4
+```
+
+## Advanced Examples
+
+### Example 1: Multi-Step CLI Workflow
+
+```tape
+# Setup
+Output workflow-demo.gif
+Set FontSize 16
+Set Width 1400
+Set Height 900
+Set Theme "Dracula"
+
+Require smithers
+Require node
+
+# Show version
+Type "smithers --version"
+Enter
+Sleep 1s
+
+# Initialize project
+Type "smithers init my-agent"
+Enter
+Wait /Created project/
+Sleep 500ms
+
+# Navigate and show structure
+Type "cd my-agent && ls -la"
+Enter
+Sleep 2s
+
+# Run the agent
+Type "smithers run hello.mdx --tui"
+Enter
+Wait /Execution Complete/
+Sleep 2s
+```
+
+### Example 2: Interactive TUI Navigation
+
+```tape
+# Setup
+Output tui-navigation.gif
+Set FontSize 18
+Set Width 1200
+Set Height 800
+Set Theme "Tokyo Night"
+Set TypingSpeed 50ms
+
+# Start TUI
+Type "smithers run multi-phase.mdx --tui"
+Enter
+Sleep 2s
+
+# Navigate tree
+Down 3
+Sleep 500ms
+Right  # Expand node
+Sleep 500ms
+Down 2
+Sleep 500ms
+Enter  # View details
+Sleep 2s
+Escape  # Back to tree
+Sleep 500ms
+
+# Navigate to different phase
+Down 5
+Right
+Sleep 1s
+```
+
+### Example 3: Error Handling Demo
+
+```tape
+Output error-demo.gif
+Set FontSize 16
+Set Width 1200
+Set Height 700
+Set Theme "Monokai"
+
+# Run command with missing file
+Hide
+Type "cd /tmp"
+Enter
+Show
+
+Type "smithers run nonexistent.mdx"
+Enter
+Wait /Error:/
+Sleep 2s
+
+# Show help instead
+Type "smithers run --help"
+Enter
+Sleep 3s
+```
+
+### Example 4: Integration Testing with Golden Files
+
+```tape
+# Generate text output for integration testing
+Output test-output.txt
+
+Require smithers
+
+Type "smithers run agent.mdx"
+Enter
+Wait /Complete/
+Sleep 1s
+```
+
+Then compare the `.txt` output in your test suite:
+```bash
+# In your test script
+vhs test-recording.tape
+diff test-output.txt expected-output.txt
+```
+
+### Example 5: Code Editor + Terminal Split
+
+```tape
+Output code-demo.gif
+Set FontSize 14
+Set Width 1600
+Set Height 900
+Set Theme "Nord"
+
+# Show code file first
+Type "cat agent.mdx"
+Enter
+Sleep 3s
+
+# Split with execution
+Type "smithers run agent.mdx"
+Enter
+Wait /Execution Complete/
+Sleep 2s
+```
+
+### Example 6: Using Source for Modular Tapes
+
+Create `setup.tape`:
+```tape
+# Common setup
+Set FontSize 16
+Set Width 1200
+Set Height 800
+Set Theme "Catppuccin Mocha"
+Env SMITHERS_MOCK true
+```
+
+Then in your demo tapes:
+```tape
+Source setup.tape
+Output demo1.gif
+
+Type "smithers run demo1.mdx"
+Enter
+Sleep 3s
+```
+
+```tape
+Source setup.tape
+Output demo2.gif
+
+Type "smithers run demo2.mdx"
+Enter
+Sleep 3s
+```
+
+### Example 7: Complex Multi-Agent Execution
+
+```tape
+Output multi-agent.gif
+Set FontSize 15
+Set Width 1400
+Set Height 1000
+Set Theme "Gruvbox Dark"
+Set TypingSpeed 75ms
+
+# Run multi-agent workflow
+Type "smithers run code-review.mdx --tui"
+Enter
+Sleep 1s
+
+# Wait for first agent to complete
+Wait /✓ Code Analyzer/
+Sleep 500ms
+
+# Navigate to view first agent
+Down 2
+Enter
+Sleep 2s
+Escape
+
+# Wait for second agent
+Wait /✓ Security Reviewer/
+Sleep 500ms
+
+# Show final results
+Down 3
+Enter
+Sleep 3s
 ```
 
 ## Integration with Documentation
@@ -809,12 +1230,28 @@ Reviewers can download artifacts to preview changes.
 
 ## Resources
 
-- [VHS GitHub Repository](https://github.com/charmbracelet/vhs)
-- [VHS Documentation](https://github.com/charmbracelet/vhs/blob/main/README.md)
-- [VHS GitHub Action](https://github.com/charmbracelet/vhs-action)
-- [Charmbracelet Blog](https://charm.sh/blog/)
-- [ttyd GitHub](https://github.com/tsl0922/ttyd)
-- [FFmpeg Documentation](https://ffmpeg.org/documentation.html)
+### Official Documentation
+- [VHS GitHub Repository](https://github.com/charmbracelet/vhs) - Main project repository
+- [VHS README](https://github.com/charmbracelet/vhs/blob/main/README.md) - Complete documentation
+- [VHS Themes](https://github.com/charmbracelet/vhs/blob/main/THEMES.md) - All 350+ available themes
+- [VHS Examples](https://github.com/charmbracelet/vhs/tree/main/examples) - Official example tape files
+- [VHS GitHub Action](https://github.com/charmbracelet/vhs-action) - CI/CD integration
+- [VHS Action Marketplace](https://github.com/marketplace/actions/vhs-action) - GitHub Actions listing
+
+### Dependencies
+- [ttyd GitHub](https://github.com/tsl0922/ttyd) - Terminal multiplexer dependency
+- [FFmpeg Documentation](https://ffmpeg.org/documentation.html) - Video encoding tool
+
+### Community Resources
+- [Charmbracelet Blog](https://charm.sh/blog/) - Updates and tutorials
+- [VHS Discussions](https://github.com/charmbracelet/vhs/discussions) - Community Q&A
+- [VHS Issues](https://github.com/charmbracelet/vhs/issues) - Bug reports and feature requests
+
+### Related Tools
+- [Charm](https://charm.sh/) - Parent organization
+- [Glow](https://github.com/charmbracelet/glow) - Markdown renderer (featured in examples)
+- [Gum](https://github.com/charmbracelet/gum) - Shell scripting components (featured in examples)
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea) - TUI framework
 
 ## Next Steps
 
