@@ -9,8 +9,13 @@ This guide will walk you through installing Smithers and creating your first AI 
 
 ## Prerequisites
 
-- Node.js 18+ or Bun
+- **[Bun](https://bun.sh)** (required for the CLI due to OpenTUI's native bindings)
+- Node.js 18+ can be used for programmatic usage (library only)
 - An Anthropic API key
+
+<Note>
+The `smithers` CLI requires Bun because it uses OpenTUI for the interactive terminal interface, which depends on Bun's FFI. If you're only using Smithers as a library in your code, Node.js 18+ will work fine.
+</Note>
 
 ## Installation
 

@@ -98,10 +98,18 @@ const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 
 ## Install
 
+**Requirements:**
+- [Bun](https://bun.sh) - Required for the CLI (uses OpenTUI with native bindings)
+- Node.js 18+ - Works for programmatic/library usage
+
 ```bash
-npm install smithers
-# or
+# Install Bun first (if not already installed)
+curl -fsSL https://bun.sh/install | bash
+
+# Then install Smithers
 bun add smithers
+# or with npm (library usage only, CLI requires Bun)
+npm install smithers
 ```
 
 ## Quick Start
