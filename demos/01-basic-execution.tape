@@ -10,7 +10,7 @@ Set Theme "Catppuccin Mocha"
 Set TypingSpeed 50ms
 
 # Show the command
-Type "smithers run examples/hello-world/agent.tsx --tui --mock"
+Type "smithers run examples/01-hello-world/agent.tsx --tui --mock"
 Enter
 
 # Wait for TUI to appear

@@ -10,7 +10,7 @@ Set Theme "Dracula"
 Set TypingSpeed 50ms
 
 # Run a multi-level example
-Type "smithers run examples/feature-workflow/agent.tsx --tui --mock"
+Type "smithers run examples/00-feature-workflow/agent.tsx --tui --mock"
 Enter
 
 # Wait for TUI to appear

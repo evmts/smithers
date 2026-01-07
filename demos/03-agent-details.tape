@@ -10,7 +10,7 @@ Set Theme "Tokyo Night"
 Set TypingSpeed 50ms
 
 # Start execution with a more complex example
-Type "smithers run examples/feature-workflow/agent.tsx --tui --mock"
+Type "smithers run examples/00-feature-workflow/agent.tsx --tui --mock"
 Enter
 
 # Wait for TUI to load

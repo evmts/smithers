@@ -10,7 +10,7 @@ Set Theme "Nord"
 Set TypingSpeed 50ms
 
 # Run multi-phase example
-Type "smithers run examples/feature-workflow/agent.tsx --tui --mock"
+Type "smithers run examples/00-feature-workflow/agent.tsx --tui --mock"
 Enter
 
 # Wait for TUI to appear
