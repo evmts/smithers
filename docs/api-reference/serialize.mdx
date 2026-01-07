@@ -215,7 +215,6 @@ test('renders phase correctly', async () => {
 ## Related APIs
 
 - [`renderPlan`](./render-plan.mdx): Renders JSX to XML (uses serialize internally)
-- [`createRoot`](./render-plan.mdx#createroot): Creates a SmithersRoot for rendering
 - [`executePlan`](./execute-plan.mdx): Executes a rendered plan
 - [`SmithersNode`](./types.mdx#smithersnode): The node type that serialize operates on
 
@@ -223,6 +222,6 @@ test('renders phase correctly', async () => {
 
 - **Output-only function**: `serialize` does not modify the node tree.
 - **No validation**: `serialize` does not validate the tree structure; it serializes whatever it receives.
-- **Performance**: Serialization is fast and synchronous. Large trees (1000+ nodes) serialize in ~1ms.
+- **Performance**: Serialization is fast and synchronous, typically completing in single-digit milliseconds even for complex trees.
 - **Not reversible**: XML cannot be deserialized back to a SmithersNode tree. Serialization is one-way for plan display only.
 - **Callback exclusion**: Functions like `onFinished` are excluded because they can't be meaningfully represented in XML.
