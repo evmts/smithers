@@ -1354,22 +1354,29 @@ export function getWorktreePath(node: SmithersNode): string | null {
 export function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
   const executables: SmithersNode[] = []
 
-  function hasFailedWorktreeAncestor(node: SmithersNode): boolean {
+  function hasFailedWorktreeAncestor(node: SmithersNode): SmithersNode | null {
     let current: SmithersNode | null = node.parent
     while (current) {
       if (current.type === 'worktree' && current._execution?.status === 'error') {
-        return true
+        return current
       }
       current = current.parent
     }
-    return false
+    return null
   }
 
   function walk(node: SmithersNode) {
     // Check for 'claude' (Agent SDK), 'claude-api' (API SDK), and 'claude-cli' (deprecated CLI) node types
     if (node.type === 'claude' || node.type === 'claude-api' || node.type === 'claude-cli') {
-      // Skip nodes with failed worktree ancestors
-      if (hasFailedWorktreeAncestor(node)) {
+      // Mark nodes with failed worktree ancestors as errored
+      const failedWorktree = hasFailedWorktreeAncestor(node)
+      if (failedWorktree) {
+        const worktreeError = failedWorktree._execution?.error
+        node._execution = {
+          status: 'error',
+          error: new Error(`Cannot execute: parent worktree failed (${worktreeError?.message || 'unknown error'})`),
+          contentHash: computeContentHash(node),
+        }
         return
       }
 

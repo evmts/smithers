@@ -170,11 +170,11 @@ describe('Worktree Component', () => {
       expect(errorMessage).toContain('worktree')
     })
 
-    test('worktree fails if not in git repository', async () => {
+    test.skip('worktree fails if not in git repository', async () => {
       // Skip this test as it requires chdir which affects the whole process
       // and can cause issues with the Claude Agent SDK spawning
       // The error handling is already tested by the previous test
-    }).skip()
+    })
   })
 
   describe('Props', () => {
