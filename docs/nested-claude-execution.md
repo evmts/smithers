@@ -1,3 +1,8 @@
+---
+title: Nested Claude Execution
+description: Tool-mediated execution for plans inside Claude nodes
+---
+
 # Nested Claude Execution Model
 
 ## Overview

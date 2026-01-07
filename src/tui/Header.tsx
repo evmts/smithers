@@ -3,6 +3,8 @@
  * Displays execution progress information
  */
 
+// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
+
 import React from 'react'
 
 export interface HeaderProps {

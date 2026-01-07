@@ -1,3 +1,8 @@
+---
+title: TUI Research
+description: Research notes on OpenTUI and integration patterns
+---
+
 # TUI Research Documentation
 
 This document contains research findings on OpenTUI architecture, APIs, and integration patterns for building the Smithers TUI.

@@ -105,6 +105,19 @@
       ]
     },
     {
+      "group": "Design Docs",
+      "pages": [
+        "pludom-design",
+        "nested-claude-execution",
+        "worktree-design",
+        "tui-design",
+        "tui-research",
+        "cli-commands",
+        "github-action-design",
+        "vhs-recording"
+      ]
+    },
+    {
       "group": "API Reference",
       "pages": [
         "api-reference/render-plan",

@@ -1,3 +1,8 @@
+---
+title: PluDom Design
+description: Design notes for the custom renderer and execution model
+---
+
 # PluDom Design Document
 
 ## Research Summary

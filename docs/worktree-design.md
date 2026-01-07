@@ -1,3 +1,8 @@
+---
+title: Worktree Design
+description: Design notes for Worktree component behavior and lifecycle
+---
+
 # Worktree Component Design
 
 ## Overview

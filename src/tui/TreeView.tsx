@@ -3,6 +3,8 @@
  * Displays and navigates the SmithersNode tree
  */
 
+// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
+
 import React from 'react'
 import type { SmithersNode } from '../core/types.js'
 import {

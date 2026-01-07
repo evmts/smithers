@@ -921,7 +921,9 @@ export async function executePlan(
       collectWorktrees(child)
     }
   }
-  collectWorktrees(tree)
+  if (tree!) {
+    collectWorktrees(tree)
+  }
 
   for (const worktreeNode of allWorktreeNodes) {
     await cleanupWorktreeNode(worktreeNode, mockMode)

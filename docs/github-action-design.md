@@ -1,3 +1,8 @@
+---
+title: GitHub Action Design
+description: Design notes for the smithers GitHub Action
+---
+
 # GitHub Action Design
 
 This document outlines the design for a GitHub Action that runs Smithers agents in CI/CD pipelines.

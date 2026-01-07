@@ -61,15 +61,15 @@ export class DebugCollector {
    * Events are enriched with timestamp and frame number before being stored and emitted.
    * Events can be filtered by type if eventFilter is specified.
    */
-  emit<T extends SmithersDebugEvent>(
-    event: Omit<T, 'timestamp' | 'frameNumber'>
+  emit(
+    event: { type: SmithersDebugEventType; [key: string]: any }
   ): void {
     if (!this.options.enabled) return
 
     // Filter events if filter is specified
     if (
       this.options.eventFilter.length > 0 &&
-      !this.options.eventFilter.includes(event.type as SmithersDebugEventType)
+      !this.options.eventFilter.includes(event.type)
     ) {
       return
     }

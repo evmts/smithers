@@ -1,3 +1,8 @@
+---
+title: VHS Recording
+description: How to record Smithers terminal demos with VHS
+---
+
 # VHS Recording Documentation
 
 This document explains how to use VHS (Video Home System) to create terminal session recordings for Smithers TUI demos and documentation.

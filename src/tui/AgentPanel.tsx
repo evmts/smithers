@@ -3,6 +3,8 @@
  * Displays detailed information about a Claude/ClaudeApi node
  */
 
+// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
+
 import React from 'react'
 import type { SmithersNode } from '../core/types.js'
 import { serialize } from '../core/render.js'

@@ -1,3 +1,8 @@
+---
+title: TUI Design
+description: Terminal UI layout, navigation, and state design
+---
+
 # TUI Design Documentation
 
 This document defines the user interface design, keyboard navigation, component hierarchy, and state management for the Smithers Terminal UI.

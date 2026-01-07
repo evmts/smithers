@@ -1,3 +1,8 @@
+---
+title: Interactive CLI Commands
+description: Design notes for runtime slash commands in the CLI
+---
+
 # Interactive CLI Commands
 
 This document describes the interactive slash commands available during Smithers execution, similar to Claude Code's real-time control interface.

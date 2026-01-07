@@ -29,7 +29,7 @@ export interface FrameEndEvent extends BaseDebugEvent {
 
 export interface FrameRenderEvent extends BaseDebugEvent {
   type: 'frame:render'
-  treeSnapshot?: PluNodeSnapshot
+  treeSnapshot?: SmithersNodeSnapshot
 }
 
 /**
@@ -96,7 +96,31 @@ export interface HumanNodeDetectedEvent extends BaseDebugEvent {
 
 export interface LoopTerminatedEvent extends BaseDebugEvent {
   type: 'loop:terminated'
-  reason: 'no_pending_nodes' | 'stop_node' | 'human_rejected' | 'max_frames' | 'timeout'
+  reason: 'no_pending_nodes' | 'stop_node' | 'human_rejected' | 'max_frames' | 'timeout' | 'aborted'
+}
+
+/**
+ * Interactive command control events
+ */
+export interface PauseEvent extends BaseDebugEvent {
+  type: 'control:pause'
+  reason?: string
+}
+
+export interface ResumeEvent extends BaseDebugEvent {
+  type: 'control:resume'
+  reason?: string
+}
+
+export interface SkipEvent extends BaseDebugEvent {
+  type: 'control:skip'
+  nodePath: string
+  reason?: string
+}
+
+export interface AbortEvent extends BaseDebugEvent {
+  type: 'control:abort'
+  reason?: string
 }
 
 /**
@@ -114,6 +138,10 @@ export type SmithersDebugEvent =
   | StopNodeDetectedEvent
   | HumanNodeDetectedEvent
   | LoopTerminatedEvent
+  | PauseEvent
+  | ResumeEvent
+  | SkipEvent
+  | AbortEvent
 
 /**
  * All possible event type strings
@@ -124,14 +152,19 @@ export type SmithersDebugEventType = SmithersDebugEvent['type']
  * Lightweight node snapshot for tree visualization
  * Excludes functions and non-serializable data
  */
-export interface PluNodeSnapshot {
+export interface SmithersNodeSnapshot {
   type: string
   path: string
   props: Record<string, unknown>
   executionStatus?: ExecutionStatus
   contentHash?: string
-  children: PluNodeSnapshot[]
+  children: SmithersNodeSnapshot[]
 }
+
+/**
+ * @deprecated Use SmithersNodeSnapshot instead
+ */
+export type PluNodeSnapshot = SmithersNodeSnapshot
 
 /**
  * Debug configuration options
@@ -174,6 +207,6 @@ export interface DebugSummary {
 /**
  * Timeline entry with relative timing
  */
-export interface TimelineEntry extends SmithersDebugEvent {
+export type TimelineEntry = SmithersDebugEvent & {
   relativeTime: number
 }

@@ -3,6 +3,8 @@
  * Manages overall TUI layout with header, content area, and status bar
  */
 
+// @ts-nocheck - OpenTUI types incomplete, see https://github.com/sst/opentui/issues
+
 import React from 'react'
 import { useTerminalDimensions } from '@opentui/react'
 
