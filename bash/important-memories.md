@@ -1999,7 +1999,7 @@ This file contains important learnings, decisions, and context from previous Ral
   - Build artifacts working ✅
 - **Current State**:
   - Package version: 0.1.0 (ready for v1.0.0 via changesets)
-  - Tests: 663 Smithers pass, 0 fail (20 fail from OpenTUI SolidJS dependency)
+  - Tests: 751 pass total (663 Smithers pass, 88 OpenTUI pass), 2 skip, 20 fail (all 20 from OpenTUI SolidJS dependency, 0 Smithers failures)
   - TypeScript: 0 errors
   - Build: Success (generates 5.94 MB CLI + 3.38 MB lib)
   - CLI: Functional (--version shows 0.1.0, --help displays usage)
