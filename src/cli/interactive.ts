@@ -25,6 +25,7 @@ export interface ExecutionStatus {
   elapsed: number
   state: 'running' | 'paused' | 'aborted'
   pendingNodes: Array<{ path: string; type: string; name?: string }>
+  runningNodes: Array<{ path: string; type: string; name?: string }>
   completedNodes: number
   failedNodes: number
 }
@@ -96,6 +97,7 @@ export class ExecutionController {
     const state = this.aborted ? 'aborted' : this.paused ? 'paused' : 'running'
 
     const pendingNodes: Array<{ path: string; type: string; name?: string }> = []
+    const runningNodes: Array<{ path: string; type: string; name?: string }> = []
     let completedNodes = 0
     let failedNodes = 0
 
@@ -107,8 +109,14 @@ export class ExecutionController {
 
         const status = node._execution?.status
         // Treat missing execution as pending (most pending nodes don't have _execution set yet)
-        if (!status || status === 'pending' || status === 'running') {
+        if (!status || status === 'pending') {
           pendingNodes.push({
+            path: getNodePath(node),
+            type: node.type,
+            name: node.props.name as string | undefined,
+          })
+        } else if (status === 'running') {
+          runningNodes.push({
             path: getNodePath(node),
             type: node.type,
             name: node.props.name as string | undefined,
@@ -126,6 +134,7 @@ export class ExecutionController {
       elapsed,
       state,
       pendingNodes,
+      runningNodes,
       completedNodes,
       failedNodes,
     }
@@ -389,6 +398,15 @@ function handleStatus(controller: ExecutionController): CommandResult {
 
   if (status.pendingNodes.length > 0) {
     for (const node of status.pendingNodes) {
+      const nameStr = node.name ? ` (name: "${node.name}")` : ''
+      lines.push(`    - ${node.type}${nameStr}`)
+    }
+  }
+
+  lines.push(`  Running Nodes: ${status.runningNodes.length}`)
+
+  if (status.runningNodes.length > 0) {
+    for (const node of status.runningNodes) {
       const nameStr = node.name ? ` (name: "${node.name}")` : ''
       lines.push(`    - ${node.type}${nameStr}`)
     }
