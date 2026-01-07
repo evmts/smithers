@@ -1065,7 +1065,10 @@ This file contains important learnings, decisions, and context from previous Ral
   - Build produces working bundles with partial type definitions
   - dist/index.d.ts and other .d.ts files generated successfully
 - **Testing**: CLI verified working (`./dist/cli/index.js --version` → `0.1.0`)
-- Commit: [current session]
+- **Bug Fixes** (Codex review 8fac0f7 - FIXED in 7b2546f):
+  1. ✅ Cross-platform path handling - Changed from string replace to path.resolve()
+  2. ✅ Executable bit on CLI - Added chmodSync(cliPath, 0o755) after build
+- Commits: 8fac0f7, 7b2546f
 
 ### Mintlify Docs Setup (2026-01-06 - COMPLETED)
 - **Feature**: Complete Mintlify documentation configuration
@@ -1084,7 +1087,7 @@ This file contains important learnings, decisions, and context from previous Ral
   - 3 core concept docs (Ralph Wiggum Loop, state management, workflows)
   - 12 example walkthroughs
 - **Ready for Deployment**: Mintlify can auto-deploy from main branch
-- Commit: [current session]
+- Commit: 8fac0f7
 
 ## What's Next (Priority Order)
 
