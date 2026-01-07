@@ -842,13 +842,63 @@ This file contains important learnings, decisions, and context from previous Ral
   - Commit: 905f71b
 - Commits: [initial implementation], 905f71b
 
+### GitHub Action (2026-01-06 - COMPLETED)
+- **Feature**: GitHub Action for running Smithers agents in CI/CD pipelines (Phase 5 of TUI Integration)
+- **Implementation**:
+  - Created `.github/actions/smithers-run/` with full action implementation
+  - **Action Metadata** (action.yml):
+    - 14 inputs: agent, config, mock, anthropic-api-key, max-frames, timeout, auto-approve, output-file, json-output, upload-artifacts, artifact-name, tui, approval-gate, approval-timeout
+    - 5 outputs: result, success, frames, elapsed, artifact-url
+  - **Source Files**:
+    - `src/index.ts` - Main entry point with comprehensive error handling, job summaries
+    - `src/runner.ts` - Agent execution logic using Smithers loadAgentFile/executePlan
+    - `src/artifacts.ts` - Result upload to GitHub workflow artifacts
+    - `src/approval.ts` - Manual approval gate support (via GitHub Environments)
+  - **Built Distribution**: dist/index.js (6.6MB bundled) committed for GitHub Actions runtime
+  - **Documentation**:
+    - `docs/github-action-design.md` - Comprehensive design doc with 5 example workflows
+    - `.github/actions/smithers-run/README.md` - Quick start guide
+- **Features**:
+  - Run agents in CI/CD pipelines
+  - Mock mode for testing without API calls
+  - Artifact upload for results
+  - Job summary with execution metrics table
+  - Manual approval gates (via GitHub Environments)
+  - Configurable timeouts and frame limits
+  - JSON output support
+  - Custom output file paths
+  - Security best practices documented
+- **Example Workflows Documented**:
+  1. Code review on PR (with comment posting)
+  2. Deployment with manual approval gate
+  3. Scheduled research agent (daily cron)
+  4. Test generation on new features
+  5. Mock mode testing (no API key)
+- **Key Design Decisions**:
+  - Uses GitHub Environments for approval gates (not custom polling)
+  - Commits built dist/ directory (required for Node20 runtime actions)
+  - Supports both SMITHERS_MOCK env var and mock input
+  - Creates detailed job summaries with tables
+  - Warns if approval-gate used without Environment protection
+- **Security Considerations**:
+  - API keys via GitHub Secrets recommended
+  - Rate limiting documentation
+  - Cost estimation table
+  - Environment protection for production
+- **Dependencies**: @actions/core, @actions/artifact, @actions/github, smithers
+- **Files Changed**:
+  - `.github/actions/smithers-run/` (10 files)
+  - `docs/github-action-design.md`
+- **Known Limitation**: Codex review failed due to 6.6MB bundle size (empty review deleted)
+- Commit: d04e27a
+
 ## What's Next (Priority Order)
 
 1. **Fix Remaining Test Issues** (if any)
    - Currently 619 tests passing (589 + 30 new), 2 skip, 0 failures
    - OpenTUI SolidJS test failures not relevant
 
-2. **TUI Integration** (COMPLETED - 2026-01-06)
+2. **TUI Integration** (COMPLETED - 2026-01-06) ✅
    - ✅ Phase 1: Research & Documentation (COMPLETED - 2026-01-06)
      - Created `docs/tui-research.md` - Comprehensive OpenTUI architecture, APIs, hooks, integration patterns
      - Created `docs/tui-design.md` - UI mockups, keyboard navigation spec, component hierarchy, state management
@@ -873,12 +923,23 @@ This file contains important learnings, decisions, and context from previous Ral
      - Updated docs/vhs-recording.md with actual demo references
      - Set up .github/workflows/vhs.yml for automated regeneration
      - Fixed example paths (29ec4a0 review addressed)
+   - ✅ Phase 4: Interactive CLI Commands (COMPLETED - 2026-01-06)
+     - Implemented /pause, /resume, /status, /tree, /focus, /skip, /inject, /abort, /help
+     - ExecutionController class for state management
+     - Integration with executePlan() Ralph loop
+     - 30 tests passing
+   - ✅ Phase 5: GitHub Action (COMPLETED - 2026-01-06)
+     - Full GitHub Action implementation for CI/CD
+     - Mock mode, artifact uploads, job summaries
+     - 5 example workflows documented
+     - Security best practices
    - **Key Design Decisions:**
      - TUI is read-only observer of execution (doesn't modify tree)
      - Uses onFrameUpdate callback from executePlan() for real-time updates
      - Keyboard navigation follows depth-first tree traversal
      - Responsive design with breakpoints for small terminals
      - All demos use --mock flag for fast, deterministic execution
+   - **TUI Integration NOW COMPLETE** - All 5 phases finished!
 
 3. **Test Coverage**
    - ✅ CLI tests (`evals/cli.test.ts`) - 34 tests (DONE)
