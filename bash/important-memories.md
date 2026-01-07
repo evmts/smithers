@@ -659,23 +659,33 @@ This file contains important learnings, decisions, and context from previous Ral
 - **Codex Reviews**: 9fa1591, b6d3bcf (addressed), ce572a2 (addressed)
 - Commits: b6d3bcf, ce572a2, 31eafd1
 
-### Worktree Tests Fixed (2026-01-06 - COMPLETED)
+### Worktree Tests Fixed + Error Handling Enhanced (2026-01-06 - COMPLETED)
 - **Problem**: Worktree tests were using wrong API - calling `renderPlan()` which returns XML string, then passing that to `executePlan()` which expects React elements
 - **Root Cause**:
   1. `renderPlan()` returns `Promise<string>` (XML), not a tree
   2. `executePlan()` expects `ReactElement` as first parameter
   3. When tree (SmithersNode) is passed to executePlan, it treats it as an element and re-renders, getting empty/wrong tree
-- **Solution**:
+- **Solution - Part 1 (Test Fixes)**:
   1. Tests that only check tree structure (props, children): Use `createRoot().render()` and don't pass to executePlan
   2. Tests that check execution behavior (callbacks): Pass JSX directly to `executePlan`, don't pre-render
-  3. Added `hasFailedWorktreeAncestor()` check in `findPendingExecutables()` to skip Claude nodes with failed parent worktrees
-  4. This prevents "Cannot execute agent: parent worktree failed" errors from bubbling up
+  3. Fixed test.skip() syntax for skipped chdir test
+- **Solution - Part 2 (Error Handling)**:
+  1. Added `hasFailedWorktreeAncestor()` in `findPendingExecutables()` to detect Claude nodes with failed parent worktrees
+  2. Mark blocked nodes with `status: 'error'` and `blockedByWorktree: true` flag (not contentHash, to allow re-execution)
+  3. When worktree is fixed, clear execution state of previously blocked nodes
+  4. Use `blockedByWorktree` flag instead of string matching for robustness
+- **Key Design Decisions** (from Codex feedback iterations):
+  - Initially skipped blocked nodes silently → Changed to mark as errored for visibility
+  - Tried using contentHash → Removed to allow re-execution after worktree fix
+  - Tried string matching error message → Changed to blockedByWorktree flag for maintainability
+  - Added automatic clearing of blockedByWorktree errors when parent worktree succeeds
 - **Files Changed**:
   - `evals/worktree.test.tsx` - Fixed all test cases to use correct API
-  - `src/core/execute.ts` - Added hasFailedWorktreeAncestor check in findPendingExecutables
-- **Test Results**: 588 passing tests, 1 skip (chdir test that conflicts with Agent SDK), 0 failures
+  - `src/core/execute.ts` - Added error handling for failed worktree ancestors
+  - `src/core/types.ts` - Added blockedByWorktree flag to ExecutionState
+- **Test Results**: 589 passing tests, 2 skips, 0 failures
 - **Key Learning**: `renderPlan()` is for generating XML output. For execution tests, always pass JSX directly to `executePlan()`. For tree inspection tests, use `createRoot().render()`.
-- Commit: [current session]
+- Commits: bd16920, f9071b8, fb9ab99, 3916e82, 328c2e5
 
 ## What's Next (Priority Order)
 
