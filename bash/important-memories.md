@@ -1598,7 +1598,7 @@ This file contains important learnings, decisions, and context from previous Ral
   1. ✅ Read important-memories.md for complete context (1,593 lines)
   2. ✅ Verified no pending Codex reviews (only README.md in reviews/)
   3. ✅ Verified git status: Clean working tree, up to date with origin/main
-  4. ✅ Verified test status: 663 pass, 2 skip, 0 failures (all Smithers tests passing)
+  4. ✅ Verified test status: 663 pass, 2 skip, 0 fail (Smithers-specific; 20 fail from OpenTUI SolidJS dependency)
   5. ✅ Verified TypeScript: 0 errors (typecheck passes cleanly)
   6. ✅ Verified CLI build: Working (./dist/cli/index.js --version → 0.1.0)
   7. ✅ Verified build artifacts: dist/index.js (3.2M), dist/cli/index.js (5.7M)
@@ -1616,7 +1616,7 @@ This file contains important learnings, decisions, and context from previous Ral
   - All 7 TODOs from CLAUDE.md complete
   - All 4 Priority Order items complete (TUI, Tests, Examples+Docs, Release)
 - **Code Quality Status**: 100% COMPLETE ✅
-  - All tests passing (663 pass, 2 skip, 0 failures)
+  - Smithers tests: 663 pass, 2 skip, 0 fail (20 fail from OpenTUI SolidJS dependency)
   - TypeScript compiles cleanly (0 errors)
   - Build artifacts working (CLI v0.1.0)
   - Documentation comprehensive (65+ pages)
@@ -1632,7 +1632,7 @@ This file contains important learnings, decisions, and context from previous Ral
   1. ✅ Read important-memories.md for complete context (1,628 lines)
   2. ✅ Verified no pending Codex reviews (only README.md in reviews/)
   3. ✅ Verified git status: Clean working tree, up to date with origin/main
-  4. ✅ Verified test status: 663 pass, 2 skip, 0 failures (all Smithers tests passing)
+  4. ✅ Verified test status: 663 pass, 2 skip, 0 fail (Smithers-specific; 20 fail from OpenTUI SolidJS dependency)
   5. ✅ Verified TypeScript: 0 errors (typecheck passes cleanly)
   6. ✅ Reviewed RELEASE-CHECKLIST.md: All pre-release verification complete
   7. ✅ Reviewed SPEC.md: All components and features implemented
@@ -1642,7 +1642,7 @@ This file contains important learnings, decisions, and context from previous Ral
   - All 7 TODOs from CLAUDE.md complete
   - All 4 Priority Order items complete (TUI, Tests, Examples+Docs, Release)
 - **Production Readiness**: 100% COMPLETE ✅
-  - All tests passing (663 pass, 2 skip, 0 failures)
+  - Smithers tests: 663 pass, 2 skip, 0 fail (20 fail from OpenTUI SolidJS dependency)
   - TypeScript compiles cleanly (0 errors)
   - Build artifacts working (CLI v0.1.0)
   - Documentation comprehensive (65+ pages)
@@ -1659,7 +1659,7 @@ This file contains important learnings, decisions, and context from previous Ral
   1. ✅ Read important-memories.md for complete context (1,654 lines)
   2. ✅ Verified no pending Codex reviews (only README.md in reviews/)
   3. ✅ Verified git status: Clean working tree, 1 commit ahead of origin
-  4. ✅ Verified test status: 663 pass, 2 skip, 0 failures (all Smithers tests passing)
+  4. ✅ Verified test status: 663 pass, 2 skip, 0 fail (Smithers-specific; 20 fail from OpenTUI SolidJS dependency)
   5. ✅ Verified TypeScript: 0 errors (typecheck passes cleanly)
   6. ✅ Pushed latest commit (394861d) to origin/main
   7. ✅ Verified git status: Now up to date with origin/main
@@ -1669,7 +1669,7 @@ This file contains important learnings, decisions, and context from previous Ral
   - All 7 TODOs from CLAUDE.md complete
   - All 4 Priority Order items complete (TUI, Tests, Examples+Docs, Release)
 - **Production Readiness**: 100% COMPLETE ✅
-  - All tests passing (663 pass, 2 skip, 0 failures)
+  - Smithers tests: 663 pass, 2 skip, 0 fail (20 fail from OpenTUI SolidJS dependency)
   - TypeScript compiles cleanly (0 errors)
   - Build artifacts working (CLI v0.1.0)
   - Documentation comprehensive (65+ pages)
@@ -1687,7 +1687,7 @@ This file contains important learnings, decisions, and context from previous Ral
   1. ✅ Read important-memories.md for complete context (1,680 lines)
   2. ✅ Verified no pending Codex reviews (only README.md in reviews/)
   3. ✅ Verified git status: Clean working tree, up to date with origin/main
-  4. ✅ Verified test status: 663 pass, 2 skip, 0 failures (all Smithers tests passing)
+  4. ✅ Verified test status: 663 pass, 2 skip, 0 fail (Smithers-specific; 20 fail from OpenTUI SolidJS dependency)
   5. ✅ Verified TypeScript: 0 errors (typecheck passes cleanly)
   6. ✅ Verified CLI build: Working (./dist/cli/index.js --version → 0.1.0)
   7. ✅ Verified build artifacts: dist/ directory present with all outputs
@@ -1698,7 +1698,7 @@ This file contains important learnings, decisions, and context from previous Ral
   - All 4 Priority Order items complete (TUI, Tests, Examples+Docs, Release)
   - SPEC.md shows all features implemented (no unchecked items)
 - **Production Readiness**: 100% COMPLETE ✅
-  - All tests passing (663 pass, 2 skip, 0 failures)
+  - Smithers tests: 663 pass, 2 skip, 0 fail (20 fail from OpenTUI SolidJS dependency)
   - TypeScript compiles cleanly (0 errors)
   - Build artifacts working (CLI v0.1.0)
   - Documentation comprehensive (65+ pages)

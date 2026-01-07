@@ -3,7 +3,8 @@
 ## Pre-Release Verification (✅ COMPLETE)
 
 ### Code Quality
-- [x] All 663 tests passing (Smithers-specific, 2 skip, 0 fail)
+- [x] All Smithers tests passing (663 pass, 2 skip, 0 fail)
+  - Note: 20 fail from bundled OpenTUI SolidJS dependency (not Smithers code)
 - [x] TypeScript compiles with 0 errors (`bun run typecheck`)
 - [x] Build completes successfully (`bun run build`)
 - [x] No Codex reviews pending
