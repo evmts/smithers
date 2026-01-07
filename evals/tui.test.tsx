@@ -4,7 +4,6 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { executePlan } from '../src/core/execute.js'
 import type { SmithersNode } from '../src/core/types.js'
 import {
   findNodeByPath,
@@ -18,9 +17,6 @@ import {
   getVisibleNodes,
   hasChildren,
 } from '../src/tui/tree-utils.js'
-
-// Mock component for testing
-import React from 'react'
 
 // Helper to create a simple tree for testing
 function createTestTree(): SmithersNode {
