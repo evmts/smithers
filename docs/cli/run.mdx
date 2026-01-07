@@ -44,6 +44,16 @@ smithers run <file> [options]
   ```
 </ParamField>
 
+<ParamField path="--tui" type="boolean" default="false">
+  Enable the interactive terminal UI for real-time execution visualization. Shows a tree view of the agent hierarchy with keyboard navigation.
+
+  ```bash
+  smithers run agent.tsx --tui
+  ```
+
+  See the [TUI Usage Guide](/guides/tui-usage) for details on navigation and features.
+</ParamField>
+
 <ParamField path="--verbose, -v" type="boolean" default="false">
   Show detailed execution logs including frame-by-frame progress.
 
@@ -75,6 +85,55 @@ smithers run <file> [options]
   ```bash
   smithers run agent.tsx -o result.json
   smithers run agent.tsx --output reports/analysis.md
+  ```
+</ParamField>
+
+<ParamField path="--dry-run" type="boolean" default="false">
+  Show the plan and exit without executing. Useful for previewing what an agent will do.
+
+  ```bash
+  smithers run agent.tsx --dry-run
+  ```
+</ParamField>
+
+<ParamField path="--json" type="boolean" default="false">
+  Output results as JSON instead of formatted text.
+
+  ```bash
+  smithers run agent.tsx --json -o result.json
+  ```
+</ParamField>
+
+<ParamField path="--model" type="string">
+  Override the Claude model to use (e.g., `claude-opus-4-5`, `claude-sonnet-4-5`).
+
+  ```bash
+  smithers run agent.tsx --model claude-opus-4-5
+  ```
+</ParamField>
+
+<ParamField path="--max-tokens" type="number">
+  Maximum tokens for Claude responses. Overrides config file setting.
+
+  ```bash
+  smithers run agent.tsx --max-tokens 4096
+  ```
+</ParamField>
+
+<ParamField path="--mock" type="boolean" default="false">
+  Enable mock mode - no real API calls are made. Useful for testing agent structure.
+
+  ```bash
+  smithers run agent.tsx --mock
+  ```
+</ParamField>
+
+<ParamField path="--config, -c" type="string">
+  Path to a specific config file. By default, searches for `.smithersrc`, `smithers.config.ts`, etc.
+
+  ```bash
+  smithers run agent.tsx --config ./custom-config.ts
+  smithers run agent.tsx -c .smithersrc.production
   ```
 </ParamField>
 
