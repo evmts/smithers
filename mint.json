@@ -23,7 +23,7 @@
   ],
   "topbarCtaButton": {
     "name": "GitHub",
-    "url": "https://github.com/smithers-ai/smithers"
+    "url": "https://github.com/evmts/smithers"
   },
   "navigation": [
     {
@@ -118,7 +118,7 @@
     }
   ],
   "footerSocials": {
-    "github": "https://github.com/smithers-ai/smithers",
+    "github": "https://github.com/evmts/smithers",
     "twitter": "https://twitter.com/smithersai"
   },
   "feedback": {
