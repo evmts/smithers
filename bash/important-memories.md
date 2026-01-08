@@ -5288,10 +5288,14 @@ The CLI binary was reporting version 0.1.0 when package.json had already been up
 ### Key Learning
 **JSON Import Syntax for Node Compatibility:**
 - `import foo from './foo.json'` - breaks in Node ESM (needs assertion)
-- `import foo from './foo.json' with { type: 'json' }` - requires Node 22+ or experimental flags
-- `import foo from './foo.json' assert { type: 'json' }` - works in Node 16.14+, 18+, 20+ (RECOMMENDED)
+- `import foo from './foo.json' assert { type: 'json' }` - stable in Node 16.15.0+, 17.5.0+, 18+, 20+ (RECOMMENDED)
+- `import foo from './foo.json' with { type: 'json' }` - newer syntax (Node 20.10+, 21+), `assert` is deprecated but still works
 
-The `assert` syntax is the safe choice for packages targeting Node LTS versions.
+**Version Details:**
+- Node < 17.5.0 or < 16.15.0: Requires `--experimental-json-modules` flag
+- Node 16.15.0+ and 17.5.0+: JSON import assertions unflagged (stable)
+- The `assert` syntax is stable and works across all Node LTS versions (16.15+, 18+, 20+)
+- The `with` syntax is the future standard but requires newer Node versions
 
 ### Current Status
 **Project remains 100% production-ready.**
