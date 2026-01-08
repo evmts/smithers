@@ -5253,3 +5253,55 @@ This session confirmed that Smithers v1.0.0 is 100% complete and production-read
 
 No code changes, bug fixes, documentation updates, feature additions, or any other development work is needed. The project has achieved 100% completion of all objectives.
 
+
+---
+
+## Session 2026-01-08 (Late Evening) - CLI Version Fix
+
+### Date
+January 8, 2026 (Late Evening EST)
+
+### Issue Discovered
+The CLI binary was reporting version 0.1.0 when package.json had already been updated to 1.0.0. This was due to a hardcoded VERSION constant in `src/cli/index.ts`.
+
+### Actions Taken
+1. ✅ Discovered hardcoded `const VERSION = '0.1.0'` in src/cli/index.ts
+2. ✅ Changed to import from package.json: `import { version as VERSION } from '../../package.json'`
+3. ✅ Added JSON import assertion for Node.js ESM compatibility
+4. ✅ Iterated through Codex feedback to use correct syntax:
+   - First: bare import (breaks in Node ESM)
+   - Second: `with { type: 'json' }` (requires Node 22+)
+   - Final: `assert { type: 'json' }` (works in Node 16.14+, 18+, 20+)
+
+### Commits
+- `13cf8ee`: Initial fix to read from package.json
+- `71b5c27`: Added `with { type: 'json' }` assertion
+- `f02368b`: Changed to `assert { type: 'json' }` for Node 20 compatibility
+- `8268cbc`: Cleaned up addressed Codex reviews
+
+### Verification
+- bun test: 663 pass, 2 skip, 0 fail ✓
+- bun run typecheck: 0 errors ✓
+- bun run build: Success ✓
+- ./dist/cli/index.js --version: 1.0.0 ✓
+
+### Key Learning
+**JSON Import Syntax for Node Compatibility:**
+- `import foo from './foo.json'` - breaks in Node ESM (needs assertion)
+- `import foo from './foo.json' with { type: 'json' }` - requires Node 22+ or experimental flags
+- `import foo from './foo.json' assert { type: 'json' }` - works in Node 16.14+, 18+, 20+ (RECOMMENDED)
+
+The `assert` syntax is the safe choice for packages targeting Node LTS versions.
+
+### Current Status
+**Project remains 100% production-ready.**
+
+All quality gates still passing:
+- Tests: 663 pass, 2 skip, 0 fail
+- TypeScript: 0 errors
+- Build: Success
+- CLI: Functional and showing correct version
+- Git: Clean working tree, ready to push
+
+**Next step:** Push commits to origin, then follow release process in NEXT-STEPS.md.
+
