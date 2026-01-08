@@ -22,11 +22,11 @@ The `smithers` CLI requires Bun because it uses OpenTUI for the interactive term
 <CodeGroup>
 
 ```bash npm
-npm install smithers
+npm install @evmts/smithers
 ```
 
 ```bash bun
-bun add smithers
+bun add @evmts/smithers
 ```
 
 ```bash pnpm
@@ -52,7 +52,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 Create a file called `review-agent.tsx`:
 
 ```tsx
-import { Claude, Constraints, OutputFormat } from 'smithers'
+import { Claude, Constraints, OutputFormat } from '@evmts/smithers'
 
 export function ReviewAgent({ files }) {
   return (

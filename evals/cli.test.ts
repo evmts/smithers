@@ -200,7 +200,7 @@ describe('CLI', () => {
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>
   Test prompt
@@ -243,7 +243,7 @@ export default (
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Test</Claude>
 `
@@ -268,7 +268,7 @@ export default (
 
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Output test</Claude>
 `
@@ -308,7 +308,7 @@ export default (
       const agentFile = path.join(tempDir, 'bad-syntax.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>
   Unclosed tag
@@ -347,7 +347,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>
   Say hello
@@ -367,7 +367,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Test</Claude>
 `
@@ -387,7 +387,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Dry run test</Claude>
 `
@@ -408,7 +408,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Verbose test</Claude>
 `
@@ -428,7 +428,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Max frames test</Claude>
 `
@@ -446,7 +446,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Timeout test</Claude>
 `
@@ -464,7 +464,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Model test</Claude>
 `
@@ -482,7 +482,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Max tokens test</Claude>
 `
@@ -509,7 +509,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Config test</Claude>
 `
@@ -530,7 +530,7 @@ const MyAgent = <Claude>Test</Claude>
 
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Output test</Claude>
 `
@@ -551,7 +551,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>JSON test</Claude>
 `
@@ -584,7 +584,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Auto-discover test</Claude>
 `
@@ -614,7 +614,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Override test</Claude>
 `
@@ -634,7 +634,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Test</Claude>
 `
@@ -652,7 +652,7 @@ const MyAgent = <Claude>Test</Claude>
       const agentFile = path.join(tempDir, 'agent.mdx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from 'smithers'
+        `import { Claude } from '@evmts/smithers'
 
 <Claude>Test</Claude>
 `

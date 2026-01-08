@@ -90,16 +90,16 @@ Once published, verify everything works:
 # Test install
 mkdir test-smithers && cd test-smithers
 bun init -y
-bun add smithers react zod
+bun add @evmts/smithers react zod
 
 # Test CLI
-bunx smithers --version
-bunx smithers init hello-world
+bunx @evmts/smithers --version
+bunx @evmts/smithers init hello-world
 cd hello-world
-bunx smithers run agent.mdx --mock
+bunx @evmts/smithers run agent.mdx --mock
 
 # Test library imports
-echo "import { Claude, renderPlan } from 'smithers'; console.log('✅ Works')" > test.ts
+echo "import { Claude, renderPlan } from '@evmts/smithers'; console.log('✅ Works')" > test.ts
 bun run test.ts
 ```
 

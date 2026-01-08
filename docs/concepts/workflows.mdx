@@ -21,7 +21,7 @@ Use `createWorkflow` to define a typed workflow schema:
 
 ```tsx
 import { z } from 'zod'
-import { createWorkflow } from 'smithers'
+import { createWorkflow } from '@evmts/smithers'
 
 const workflow = createWorkflow({
   schema: z.object({
@@ -53,7 +53,7 @@ const workflow = createWorkflow({
 
 ```tsx
 import { z } from 'zod'
-import { createWorkflow, Claude, executePlan } from 'smithers'
+import { createWorkflow, Claude, executePlan } from '@evmts/smithers'
 
 const workflow = createWorkflow({
   schema: z.object({

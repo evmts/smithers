@@ -364,7 +364,7 @@ interface SmithersRoot {
 ### Typed Agent Component
 
 ```tsx
-import type { ClaudeProps, Tool } from 'smithers'
+import type { ClaudeProps, Tool } from '@evmts/smithers'
 
 interface AnalysisResult {
   summary: string
@@ -399,7 +399,7 @@ function Analyzer({ code, strict = false }: AnalyzerProps) {
 ### Typed Tool Definition
 
 ```tsx
-import type { Tool } from 'smithers'
+import type { Tool } from '@evmts/smithers'
 
 const searchTool: Tool = {
   name: 'web-search',
@@ -424,8 +424,8 @@ const searchTool: Tool = {
 ### Typed Execution
 
 ```tsx
-import { executePlan } from 'smithers'
-import type { ExecutionResult, ExecuteOptions } from 'smithers'
+import { executePlan } from '@evmts/smithers'
+import type { ExecutionResult, ExecuteOptions } from '@evmts/smithers'
 
 interface ReportOutput {
   title: string

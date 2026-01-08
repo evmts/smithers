@@ -295,7 +295,7 @@ export function getConfigPath(startDir?: string): string | null {
  *
  * @example
  * // smithers.config.ts
- * import { defineConfig } from 'smithers'
+ * import { defineConfig } from '@evmts/smithers'
  *
  * export default defineConfig({
  *   model: 'claude-sonnet-4-20250514',

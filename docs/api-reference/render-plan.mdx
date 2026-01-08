@@ -28,7 +28,7 @@ function renderPlan(element: ReactElement): Promise<string>
 ## Usage
 
 ```tsx
-import { renderPlan, Claude, Phase, Step } from 'smithers'
+import { renderPlan, Claude, Phase, Step } from '@evmts/smithers'
 
 function MyAgent({ topic }) {
   return (
@@ -64,7 +64,7 @@ Output:
 Write tests that verify plan output without making API calls:
 
 ```tsx
-import { renderPlan } from 'smithers'
+import { renderPlan } from '@evmts/smithers'
 import { expect, test } from 'bun:test'
 
 test('renders correct research plan', async () => {

@@ -10,7 +10,7 @@ The `<ClaudeProvider>` component configures shared defaults, rate limiting, and 
 ## Basic Usage
 
 ```tsx
-import { ClaudeProvider, Claude } from 'smithers'
+import { ClaudeProvider, Claude } from '@evmts/smithers'
 
 function App() {
   return (
@@ -558,7 +558,7 @@ The provider emits warnings at 80% of any configured limit:
 Persist usage stats across restarts to maintain accurate cost tracking:
 
 ```tsx
-import { ClaudeProvider } from 'smithers'
+import { ClaudeProvider } from '@evmts/smithers'
 
 // Custom storage adapter (example with localStorage)
 const storageAdapter = {
@@ -619,7 +619,7 @@ interface StorageAdapter {
 Use the `useClaudeContext` hook to access provider functionality:
 
 ```tsx
-import { useClaudeContext } from 'smithers'
+import { useClaudeContext } from '@evmts/smithers'
 
 function UsageDisplay() {
   const context = useClaudeContext()

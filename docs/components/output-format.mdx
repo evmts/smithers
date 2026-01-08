@@ -10,7 +10,7 @@ The `<OutputFormat>` component specifies the expected structure for the agent's 
 ## Basic Usage
 
 ```tsx
-import { Claude, OutputFormat } from 'smithers'
+import { Claude, OutputFormat } from '@evmts/smithers'
 
 <Claude>
   Analyze this code for issues.
@@ -76,7 +76,7 @@ Create reusable format components:
 
 ```tsx
 // output-formats.tsx
-import { OutputFormat } from 'smithers'
+import { OutputFormat } from '@evmts/smithers'
 
 export function JSONOutput({ schema }) {
   return (

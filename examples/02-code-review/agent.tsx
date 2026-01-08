@@ -13,7 +13,7 @@ import {
   Constraints,
   OutputFormat,
   type Tool,
-} from 'smithers'
+} from '@evmts/smithers'
 
 // Define tools that the agent can use
 // In a real application, these would have actual implementations

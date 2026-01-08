@@ -18,7 +18,7 @@ smithers run agent.tsx --verbose
 Or programmatically:
 
 ```tsx
-import { executePlan } from 'smithers'
+import { executePlan } from '@evmts/smithers'
 
 const result = await executePlan(<MyAgent />, {
   verbose: true,
@@ -428,7 +428,7 @@ cat mcp.json
 ### Render Without Execution
 
 ```tsx
-import { renderPlan } from 'smithers'
+import { renderPlan } from '@evmts/smithers'
 
 // Just render, don't execute
 const xml = await renderPlan(<MyAgent initialState="test" />)

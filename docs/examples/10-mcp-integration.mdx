@@ -18,7 +18,7 @@ Demonstrates integrating MCP (Model Context Protocol) servers to extend Claude's
 ## The Code
 
 ```tsx
-import { executePlan, Claude } from 'smithers'
+import { executePlan, Claude } from '@evmts/smithers'
 import { filesystem, sqlite, github } from 'smithers/mcp'
 
 // Example 1: Filesystem Operations
@@ -403,7 +403,7 @@ import { custom } from 'smithers/mcp'
 ### Add Rate Limiting
 
 ```tsx
-import { ClaudeProvider } from 'smithers'
+import { ClaudeProvider } from '@evmts/smithers'
 
 <ClaudeProvider rateLimit={{ requestsPerMinute: 30 }}>
   <Claude mcpServers={[github({ owner, repo, token })]}>

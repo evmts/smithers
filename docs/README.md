@@ -122,7 +122,7 @@ Use fenced code blocks with language:
 
 ```mdx
 ```tsx
-import { Claude } from 'smithers'
+import { Claude } from '@evmts/smithers'
 
 function Agent() {
   return <Claude>Hello</Claude>

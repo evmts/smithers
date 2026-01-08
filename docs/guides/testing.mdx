@@ -24,7 +24,7 @@ Mock mode bypasses real Claude API calls and returns predictable responses based
 ### Enabling Mock Mode
 
 ```tsx
-import { executePlan } from 'smithers'
+import { executePlan } from '@evmts/smithers'
 
 // Option 1: Pass mockMode option
 await executePlan(<MyAgent />, { mockMode: true })
@@ -68,7 +68,7 @@ Test individual components in isolation using Bun's test framework.
 
 ```tsx
 import { test, expect } from 'bun:test'
-import { executePlan, Claude } from 'smithers'
+import { executePlan, Claude } from '@evmts/smithers'
 
 test('HelloWorld component renders and executes', async () => {
   function HelloWorld() {

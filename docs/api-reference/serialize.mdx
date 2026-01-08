@@ -10,7 +10,7 @@ The `serialize` function converts a SmithersNode tree into an XML string represe
 ## Import
 
 ```typescript
-import { serialize } from 'smithers'
+import { serialize } from '@evmts/smithers'
 ```
 
 ## Signature
@@ -64,8 +64,8 @@ The `serialize` function:
 ### Basic Usage
 
 ```typescript
-import { createRoot, serialize } from 'smithers'
-import { Claude, Phase } from 'smithers'
+import { createRoot, serialize } from '@evmts/smithers'
+import { Claude, Phase } from '@evmts/smithers'
 
 const root = createRoot()
 const tree = await root.render(
@@ -114,7 +114,7 @@ console.log(xml)
 ### Debugging Complex Trees
 
 ```typescript
-import { Subagent, Step } from 'smithers'
+import { Subagent, Step } from '@evmts/smithers'
 
 const tree = await root.render(
   <Phase name="implementation">
@@ -175,7 +175,7 @@ await executePlan(...)
 Verify that your JSX components are rendering correctly:
 
 ```typescript
-import { renderPlan } from 'smithers'
+import { renderPlan } from '@evmts/smithers'
 
 // renderPlan internally uses serialize
 const xml = await renderPlan(<MyAgent />)

@@ -101,7 +101,7 @@ Concepts demonstrated:
 Start here to understand the fundamental pattern:
 
 ```tsx
-import { executePlan, Claude } from 'smithers'
+import { executePlan, Claude } from '@evmts/smithers'
 
 function HelloWorld() {
   return (

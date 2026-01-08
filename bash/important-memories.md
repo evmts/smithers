@@ -7376,8 +7376,8 @@ Verified completion of all Priority 1 (TUI Integration) work items:
 
 **Post-Publish Steps** (for future reference):
 1. Verify package published to npm registry
-2. Test installation: `npm install smithers`
-3. Verify CLI works: `npx smithers --version`
+2. Test installation: `npm install @evmts/smithers`
+3. Verify CLI works: `npx @evmts/smithers --version`
 4. Update GitHub repo description/topics
 5. Announce release (Twitter, Discord, etc.)
 6. Monitor GitHub issues for feedback

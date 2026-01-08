@@ -6,7 +6,7 @@
  *
  * Run with: bun run examples/01-hello-world/agent.tsx
  */
-import { executePlan, Claude } from 'smithers'
+import { executePlan, Claude } from '@evmts/smithers'
 
 // The simplest agent: just Claude with a prompt
 function HelloWorld() {

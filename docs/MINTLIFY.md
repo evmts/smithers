@@ -110,7 +110,7 @@ Use fenced code blocks with language identifiers:
 
 ````mdx
 ```tsx
-import { Claude } from 'smithers'
+import { Claude } from '@evmts/smithers'
 
 export default function Agent() {
   return <Claude>Hello, world!</Claude>

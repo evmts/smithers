@@ -205,7 +205,7 @@ interface SmithersConfig {
 
 **TypeScript (`smithers.config.ts`):**
 ```typescript
-import { defineConfig } from 'smithers'
+import { defineConfig } from '@evmts/smithers'
 
 export default defineConfig({
   model: 'claude-sonnet-4-20250514',
@@ -246,7 +246,7 @@ CLI flags  >  Config file  >  Defaults
 The loader and config modules can be used programmatically:
 
 ```typescript
-import { loadAgentFile, loadConfig, mergeOptions } from 'smithers'
+import { loadAgentFile, loadConfig, mergeOptions } from '@evmts/smithers'
 
 // Load an agent file
 const element = await loadAgentFile('./agent.tsx')

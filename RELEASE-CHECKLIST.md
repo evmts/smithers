@@ -95,21 +95,21 @@ npm run release
    ```bash
    mkdir test-install && cd test-install
    bun init -y
-   bun add smithers react zod
+   bun add @evmts/smithers react zod
    ```
 
 2. **Verify CLI works**
    ```bash
-   bunx smithers --version
-   bunx smithers init hello-world
+   bunx @evmts/smithers --version
+   bunx @evmts/smithers init hello-world
    cd hello-world
-   bunx smithers run agent.mdx --mock
+   bunx @evmts/smithers run agent.mdx --mock
    ```
 
 3. **Verify library exports**
    ```bash
    # Create test file
-   echo "import { Claude, renderPlan } from 'smithers'; console.log('✅ Imports work')" > test.ts
+   echo "import { Claude, renderPlan } from '@evmts/smithers'; console.log('✅ Imports work')" > test.ts
    bun run test.ts
    ```
 
@@ -165,8 +165,8 @@ npm run release
 
 Release is successful when:
 - [x] Package available on npm registry
-- [x] CLI installable globally: `bunx smithers --version`
-- [x] Library importable: `import { Claude } from 'smithers'`
+- [x] CLI installable globally: `bunx @evmts/smithers --version`
+- [x] Library importable: `import { Claude } from '@evmts/smithers'`
 - [x] All examples work with published package
 - [x] Documentation accessible and accurate
 - [x] GitHub release tagged with changelog

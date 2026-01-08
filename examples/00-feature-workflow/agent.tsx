@@ -34,7 +34,7 @@ import {
   OutputFormat,
   Human,
   Stop,
-} from 'smithers'
+} from '@evmts/smithers'
 
 // =============================================================================
 // Types

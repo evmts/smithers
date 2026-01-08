@@ -98,7 +98,7 @@ git push --follow-tags
 
 - [ ] Verify package published to npm: https://www.npmjs.com/package/smithers
 - [ ] Create GitHub Release with changelog
-- [ ] Test installation: `npm install smithers`
+- [ ] Test installation: `npm install @evmts/smithers`
 - [ ] Update homepage with install instructions
 - [ ] Share on social media (Twitter, Reddit, HN)
 - [ ] Post in relevant communities (React, AI/ML)

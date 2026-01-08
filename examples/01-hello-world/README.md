@@ -11,7 +11,7 @@ The simplest possible Smithers agent demonstrating basic usage.
 ## The Code
 
 ```tsx
-import { executePlan, Claude } from 'smithers'
+import { executePlan, Claude } from '@evmts/smithers'
 
 function HelloWorld() {
   return (

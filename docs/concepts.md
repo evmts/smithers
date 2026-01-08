@@ -5,7 +5,7 @@
 Smithers agents are MDX files—Markdown with JSX support. The entry point is always an `.mdx` file:
 
 ```mdx
-import { Claude, Phase } from 'smithers'
+import { Claude, Phase } from '@evmts/smithers'
 
 # Research Agent
 

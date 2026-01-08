@@ -116,7 +116,7 @@ bun run examples/00-feature-workflow/agent.tsx "Add user authentication"
 
 ```tsx
 import { FeatureWorkflow, useWorkflowStore } from './agent.tsx'
-import { executePlan } from 'smithers'
+import { executePlan } from '@evmts/smithers'
 
 await executePlan(
   <FeatureWorkflow prompt="Add a caching layer" />,

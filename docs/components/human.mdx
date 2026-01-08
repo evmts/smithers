@@ -10,7 +10,7 @@ The `<Human>` component pauses the Ralph Wiggum loop and waits for human approva
 ## Basic Usage
 
 ```tsx
-import { Claude, Human } from 'smithers'
+import { Claude, Human } from '@evmts/smithers'
 
 function ReviewAgent({ changes }) {
   const [approved, setApproved] = useState(false)
@@ -81,7 +81,7 @@ function ReviewAgent({ changes }) {
 When using `executePlan`, provide an `onHumanPrompt` callback to handle approval:
 
 ```tsx
-import { executePlan } from 'smithers'
+import { executePlan } from '@evmts/smithers'
 
 const result = await executePlan(<MyAgent />, {
   onHumanPrompt: async (message, content) => {

@@ -26,7 +26,7 @@ const TEMPLATES: Record<string, { files: Record<string, string>; description: st
   'hello-world': {
     description: 'Simple hello world agent',
     files: {
-      'agent.mdx': `import { Claude } from 'smithers'
+      'agent.mdx': `import { Claude } from '@evmts/smithers'
 
 # Hello World Agent
 
@@ -40,7 +40,7 @@ const TEMPLATES: Record<string, { files: Record<string, string>; description: st
     description: 'Multi-phase research agent',
     files: {
       'agent.mdx': `import { useState } from 'react'
-import { Claude, Phase, Step } from 'smithers'
+import { Claude, Phase, Step } from '@evmts/smithers'
 
 # Research Agent
 
@@ -80,7 +80,7 @@ export function ResearchAgent({ topic }) {
     description: 'Multi-agent orchestration example',
     files: {
       'agent.mdx': `import { useState } from 'react'
-import { Claude, Subagent, Phase, Persona } from 'smithers'
+import { Claude, Subagent, Phase, Persona } from '@evmts/smithers'
 
 # Multi-Agent Team
 

@@ -246,10 +246,10 @@ After `npm publish` completes:
    ```bash
    mkdir test-install && cd test-install
    bun init -y
-   bun add smithers react zod
-   bunx smithers --version
-   bunx smithers init hello-world
-   cd hello-world && bunx smithers run agent.mdx --mock
+   bun add @evmts/smithers react zod
+   bunx @evmts/smithers --version
+   bunx @evmts/smithers init hello-world
+   cd hello-world && bunx @evmts/smithers run agent.mdx --mock
    ```
 
 2. **Tag GitHub release:**

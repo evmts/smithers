@@ -46,7 +46,7 @@ Model Context Protocol (MCP) integration for Smithers. MCP servers provide tools
 ### Using MCP Presets
 
 ```tsx
-import { Claude, MCPPresets } from 'smithers'
+import { Claude, MCPPresets } from '@evmts/smithers'
 
 function FileAgent({ directory }) {
   return (
@@ -83,7 +83,7 @@ function FileAgent({ directory }) {
 ### Custom MCP Server Configuration
 
 ```typescript
-import { Claude } from 'smithers'
+import { Claude } from '@evmts/smithers'
 
 const customServer = {
   name: 'my-custom-server',

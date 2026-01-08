@@ -6,7 +6,7 @@
  * @example
  * ```tsx
  * import { z } from 'zod'
- * import { createWorkflow, Claude, executePlan } from 'smithers'
+ * import { createWorkflow, Claude, executePlan } from '@evmts/smithers'
  *
  * const workflow = createWorkflow({
  *   schema: z.object({

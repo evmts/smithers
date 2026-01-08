@@ -18,7 +18,7 @@ import {
   Constraints,
   OutputFormat,
   type Tool,
-} from 'smithers'
+} from '@evmts/smithers'
 
 // =============================================================================
 // Types

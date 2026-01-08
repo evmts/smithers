@@ -18,7 +18,7 @@ import {
   Persona,
   OutputFormat,
   type Tool,
-} from 'smithers'
+} from '@evmts/smithers'
 
 // =============================================================================
 // State Management with Zustand

@@ -6,7 +6,7 @@
  *
  * @example
  * ```tsx
- * import { ClaudeProvider, useClaudeContext } from 'smithers'
+ * import { ClaudeProvider, useClaudeContext } from '@evmts/smithers'
  *
  * function MyWorkflow() {
  *   return (

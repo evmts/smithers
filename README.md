@@ -6,7 +6,7 @@ Build AI agents the same way you build user interfaces. Smithers lets you compos
 
 ```tsx
 import { create } from 'zustand'
-import { renderPlan, executePlan, Claude, Phase, Step, Subagent } from 'smithers'
+import { renderPlan, executePlan, Claude, Phase, Step, Subagent } from '@evmts/smithers'
 
 // Define agent state with Zustand
 const useResearchStore = create((set, get) => ({
@@ -107,9 +107,9 @@ const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 curl -fsSL https://bun.sh/install | bash
 
 # Then install Smithers
-bun add smithers
+bun add @evmts/smithers
 # or with npm (library usage only, CLI requires Bun)
-npm install smithers
+npm install @evmts/smithers
 ```
 
 ## Quick Start
@@ -119,7 +119,7 @@ npm install smithers
 Create `review-agent.tsx`:
 
 ```tsx
-import { Claude, Constraints, OutputFormat } from 'smithers'
+import { Claude, Constraints, OutputFormat } from '@evmts/smithers'
 
 export function ReviewAgent({ files }) {
   return (
@@ -216,7 +216,7 @@ This is the flagship example showing how to build production-grade features with
 
 ```tsx
 import { create } from 'zustand'
-import { executePlan, Claude, Phase, Step, Persona, Constraints, OutputFormat, Human, Stop } from 'smithers'
+import { executePlan, Claude, Phase, Step, Persona, Constraints, OutputFormat, Human, Stop } from '@evmts/smithers'
 
 type WorkflowPhase =
   | 'prompt-input' | 'research' | 'planning' | 'plan-review'
@@ -1012,7 +1012,7 @@ Specify expected response structure.
 Use Smithers in your own applications:
 
 ```tsx
-import { renderPlan, executePlan, Claude } from 'smithers'
+import { renderPlan, executePlan, Claude } from '@evmts/smithers'
 
 // Just render to XML (no execution)
 const xml = await renderPlan(<MyAgent topic="AI safety" />)
@@ -1043,7 +1043,7 @@ Write agents in MDX for a documentation-friendly format:
 name: Code Review Agent
 ---
 
-import { Claude, Constraints } from 'smithers'
+import { Claude, Constraints } from '@evmts/smithers'
 import { github } from './tools'
 
 # Code Review Agent
@@ -1079,7 +1079,7 @@ import type {
   SubagentProps,
   ExecutionResult,
   Tool,
-} from 'smithers'
+} from '@evmts/smithers'
 
 // Define typed tools
 const searchTool: Tool = {

@@ -69,16 +69,16 @@ Run agents directly from the command line:
 
 ```bash
 # Run a TSX agent
-npx smithers run agent.tsx
+npx @evmts/smithers run agent.tsx
 
 # Run an MDX agent
-npx smithers run agent.mdx
+npx @evmts/smithers run agent.mdx
 
 # Preview the plan without executing
-npx smithers plan agent.tsx
+npx @evmts/smithers plan agent.tsx
 
 # Auto-approve execution (skip preview)
-npx smithers run agent.tsx --auto-approve
+npx @evmts/smithers run agent.tsx --auto-approve
 ```
 
 ## The Complete Development Workflow
@@ -92,7 +92,7 @@ This flagship example shows how production-grade features are built with Smither
 
 ```tsx
 import { create } from 'zustand'
-import { executePlan, Claude, Phase, Step, Human, Stop } from 'smithers'
+import { executePlan, Claude, Phase, Step, Human, Stop } from '@evmts/smithers'
 
 type WorkflowPhase = 'prompt-input' | 'research' | 'planning' | 'plan-review' | 'poc' | 'poc-analysis' | 'refined-review' | 'api-impl' | 'test-impl' | 'test-verify' | 'implementation' | 'done' | 'cancelled'
 
@@ -193,7 +193,7 @@ This workflow demonstrates how senior engineers build features:
 
 ```tsx
 import { create } from 'zustand'
-import { Claude, Phase, Step } from 'smithers'
+import { Claude, Phase, Step } from '@evmts/smithers'
 
 // Define agent state with Zustand
 const useAgentStore = create((set) => ({

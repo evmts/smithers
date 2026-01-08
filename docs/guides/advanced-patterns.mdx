@@ -625,7 +625,7 @@ Test individual agent components in isolation:
 
 ```tsx
 import { describe, test, expect } from 'bun:test'
-import { renderPlan } from 'smithers'
+import { renderPlan } from '@evmts/smithers'
 
 describe('MyAgent', () => {
   test('renders correct plan for initial state', async () => {
@@ -651,7 +651,7 @@ Test full execution flows with mock responses:
 
 ```tsx
 import { describe, test, expect, beforeEach } from 'bun:test'
-import { executePlan } from 'smithers'
+import { executePlan } from '@evmts/smithers'
 
 // Enable mock mode
 process.env.SMITHERS_MOCK_MODE = 'true'

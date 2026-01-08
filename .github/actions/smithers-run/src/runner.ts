@@ -1,4 +1,4 @@
-import { loadAgentFile, executePlan } from 'smithers'
+import { loadAgentFile, executePlan } from '@evmts/smithers'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 

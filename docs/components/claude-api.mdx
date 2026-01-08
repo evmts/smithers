@@ -10,7 +10,7 @@ The `<ClaudeApi>` component uses the Anthropic API SDK directly, giving you full
 ## Basic Usage
 
 ```tsx
-import { ClaudeApi } from 'smithers'
+import { ClaudeApi } from '@evmts/smithers'
 
 <ClaudeApi
   tools={[myCustomTool]}
@@ -257,7 +257,7 @@ const robustTool = {
 Full type definitions are available:
 
 ```tsx
-import type { ClaudeApiProps, Tool } from 'smithers'
+import type { ClaudeApiProps, Tool } from '@evmts/smithers'
 
 interface CustomResult {
   analysis: string

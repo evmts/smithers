@@ -38,7 +38,7 @@ npx -y @modelcontextprotocol/server-filesystem
 Use the `mcpServers` prop on Claude/ClaudeApi components:
 
 ```tsx
-import { Claude, MCPPresets } from 'smithers'
+import { Claude, MCPPresets } from '@evmts/smithers'
 
 function FileProcessorAgent() {
   return (
@@ -66,7 +66,7 @@ Smithers provides presets for common MCP servers:
 Read and write files beyond Agent SDK's built-in tools:
 
 ```tsx
-import { Claude, MCPPresets } from 'smithers'
+import { Claude, MCPPresets } from '@evmts/smithers'
 
 <Claude
   mcpServers={{
@@ -253,7 +253,7 @@ Combine multiple servers for powerful workflows:
 For full control, use the raw `MCPServerConfig` format:
 
 ```tsx
-import type { MCPServerConfig } from 'smithers'
+import type { MCPServerConfig } from '@evmts/smithers'
 
 const customServer: MCPServerConfig = {
   name: 'my-custom-server',
@@ -298,7 +298,7 @@ const remoteServer: MCPServerConfig = {
 Share MCP servers across all agents using `ClaudeProvider`:
 
 ```tsx
-import { ClaudeProvider, Claude, MCPPresets } from 'smithers'
+import { ClaudeProvider, Claude, MCPPresets } from '@evmts/smithers'
 
 function App() {
   return (

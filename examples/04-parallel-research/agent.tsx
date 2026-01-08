@@ -17,7 +17,7 @@ import {
   Persona,
   OutputFormat,
   type Tool,
-} from 'smithers'
+} from '@evmts/smithers'
 
 // =============================================================================
 // Types
