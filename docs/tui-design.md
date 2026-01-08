@@ -1,634 +1,645 @@
----
-title: TUI Design
-description: Terminal UI layout, navigation, and state design
----
+# TUI Design: Interactive Ralph Wiggum Loop Interface
 
-# TUI Design Documentation
-
-This document defines the user interface design, keyboard navigation, component hierarchy, and state management for the Smithers Terminal UI.
+This document specifies the design for Smithers' terminal user interface (TUI), providing an interactive view of agent execution.
 
 ## Design Goals
 
-1. **Intuitive Navigation** - Arrow keys and familiar shortcuts for browsing agent execution
-2. **Real-time Updates** - Show execution progress as it happens (Ralph loop frames)
-3. **Minimal but Informative** - Essential information without clutter
-4. **Responsive** - Adapt to various terminal sizes gracefully
-5. **Non-blocking** - TUI observes execution without interfering with agent logic
+1. **Visibility**: Show the entire SmithersNode tree and execution status at a glance
+2. **Interactivity**: Navigate the tree, drill into agent details, view streaming output
+3. **Performance**: Handle large trees (100+ nodes) without lag
+4. **Clarity**: Clear visual hierarchy, execution status, and navigation hints
+5. **Usability**: Intuitive keyboard navigation, helpful status bar
 
-## UI Mockup
+## UI Mockups
 
-### Main View (Tree + Status Bar)
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ Smithers Agent Execution                                Frame 3/10   2.3s  │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│ ▼ ROOT                                                   [complete]        │
-│   ▼ Phase: Research                                     [complete]        │
-│     ▶ Claude: Gather Information                        [complete]        │
-│     ▶ Claude: Analyze Data                              [complete]        │
-│   ▼ Phase: Implementation                               [running]         │
-│ →   • Claude: Write Code                                [running]         │
-│     • Claude: Write Tests                               [pending]         │
-│     ▶ Subagent: Review (parallel)                       [pending]         │
-│       • Claude: Code Review                             [pending]         │
-│       • Claude: Security Check                          [pending]         │
-│   ▶ Phase: Finalization                                 [pending]         │
-│     • Claude: Generate Summary                          [pending]         │
-│                                                                            │
-│                                                                            │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│ ↑/↓: Navigate  →: Expand  ←: Collapse  ↵: View Details  q: Quit           │
-└────────────────────────────────────────────────────────────────────────────┤
-```
-
-### Agent Detail View (Activated by pressing Enter on a Claude/ClaudeApi node)
+### Main View: Tree + Status Bar
 
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ Agent Details: Claude: Write Code                            [running]     │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│ ┌─ Prompt ─────────────────────────────────────────────────────────────┐  │
-│ │ Implement the authentication middleware with JWT token validation.  │  │
-│ │ Use the existing user model and ensure proper error handling.       │  │
-│ │                                                                      │  │
-│ │ Requirements:                                                        │  │
-│ │ - Validate JWT signature                                            │  │
-│ │ - Check token expiration                                            │  │
-│ │ - Attach user object to request                                     │  │
-│ └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                            │
-│ ┌─ Output (streaming) ─────────────────────────────────────────────────┐  │
-│ │ I'll implement the JWT authentication middleware. Let me start by   │  │
-│ │ reading the existing user model...                                  │  │
-│ │                                                                      │  │
-│ │ [Tool: Read] Reading src/models/user.ts                            │  │
-│ │ [Result] User model loaded successfully                             │  │
-│ │                                                                      │  │
-│ │ Now I'll create the middleware:                                     │  │
-│ │                                                                      │  │
-│ │ [Tool: Write] Writing src/middleware/auth.ts                       │  │
-│ │ [In Progress...] ▌                                                  │  │
-│ └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│ Esc: Back to tree  ↑/↓: Scroll  q: Quit                                   │
-└────────────────────────────────────────────────────────────────────────────┤
+┌─ Smithers Agent Execution ─────────────────────────────────────────────────┐
+│                                                                             │
+│ ▼ ROOT                                                                      │
+│   ▼ claude [✓ complete]                                                    │
+│     ▶ phase: "Planning"                                                    │
+│   ▶ claude [⟳ running]                                                     │
+│     ▶ phase: "Implementation"                                              │
+│   ▶ claude [○ pending]                                                     │
+│     ▶ phase: "Testing"                                                     │
+│                                                                             │
+│                                                                             │
+│                                                                             │
+│                                                                             │
+│                                                                             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+Frame 2/∞ | Elapsed: 12.4s | ↑↓ Navigate | → Expand | ← Collapse | ⏎ Details
 ```
 
-### Compact View (Small Terminal Height)
-
-When terminal height < 20 lines, switch to compact mode:
+### Agent Detail View
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│ Smithers                                  Frame 3/10      2.3s   │
-├──────────────────────────────────────────────────────────────────┤
-│ ▶ Phase: Research                                    [complete]  │
-│ → Phase: Implementation                              [running]   │
-│ ▶ Phase: Finalization                                [pending]   │
-├──────────────────────────────────────────────────────────────────┤
-│ ↑/↓: Nav  →/←: Expand  ↵: Details  q: Quit                      │
-└──────────────────────────────────────────────────────────────────┘
+┌─ Claude Agent Details ──────────────────────────────────────────────────────┐
+│                                                                             │
+│ Status: Running                                                             │
+│ Node Path: ROOT/claude[1]                                                   │
+│ Content Hash: abc123...                                                     │
+│                                                                             │
+│ ─── Prompt ──────────────────────────────────────────────────────────────── │
+│ You are implementing the authentication system. Review the                 │
+│ requirements and write the code.                                            │
+│                                                                             │
+│ ─── Output (streaming) ──────────────────────────────────────────────────── │
+│ I'll implement the authentication system. Let me start by                   │
+│ reading the requirements...                                                 │
+│ ▌                                                                           │
+│                                                                             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+Esc: Back to tree | Ctrl+C: Cancel execution
 ```
 
-## Visual Design Elements
-
-### Node Type Icons
-
-| Icon | Node Type | Description |
-|------|-----------|-------------|
-| `▶`  | Collapsed | Node has children, currently collapsed |
-| `▼`  | Expanded  | Node has children, currently expanded |
-| `•`  | Leaf      | Node has no children (agent or step) |
-| `→`  | Selected  | Currently selected node |
-
-### Execution Status Indicators
-
-| Status | Badge | Color |
-|--------|-------|-------|
-| Pending | `[pending]` | Gray/dim |
-| Running | `[running]` | Yellow/bright |
-| Complete | `[complete]` | Green |
-| Error | `[error]` | Red |
-
-### Color Scheme
-
-Following terminal-friendly color conventions:
-
-- **Selected row**: Blue background with white text
-- **Status badges**:
-  - `[pending]`: Dim gray
-  - `[running]`: Bright yellow
-  - `[complete]`: Bright green
-  - `[error]`: Bright red
-- **Node icons**: Bright white or blue
-- **Text**: Default terminal color
-- **Borders**: Dim gray
-- **Status bar**: Inverted colors (background highlight)
-
-## Keyboard Navigation Specification
-
-### Global Keys (Available in all views)
-
-| Key | Action | Notes |
-|-----|--------|-------|
-| `q` | Quit TUI | Return to CLI, execution continues in background |
-| `Ctrl+C` | Force quit | Terminate execution immediately |
-| `?` | Show help | Overlay with keyboard shortcuts |
-
-### Tree View Keys
-
-| Key | Action | Details |
-|-----|--------|---------|
-| `↑` / `k` | Move up | Select previous node in tree (depth-first traversal) |
-| `↓` / `j` | Move down | Select next node in tree |
-| `→` / `l` | Expand | Expand selected node (if it has children) |
-| `←` / `h` | Collapse | Collapse selected node (if expanded) |
-| `Enter` | View details | Show agent detail view (only for Claude/ClaudeApi nodes) |
-| `Space` | Toggle expand/collapse | Quick toggle |
-| `Home` | Jump to top | Select first node (ROOT) |
-| `End` | Jump to bottom | Select last visible node |
-| `Page Up` | Scroll up | Move up by 10 nodes |
-| `Page Down` | Scroll down | Move down by 10 nodes |
-
-**Navigation Rules:**
-- Navigation follows depth-first order (pre-order traversal)
-- Collapsed nodes' children are skipped in navigation
-- If selected node is removed (e.g., conditional rendering changes), select previous sibling or parent
-- Navigation wraps at top/bottom (optional, configurable)
-
-### Agent Detail View Keys
-
-| Key | Action | Details |
-|-----|--------|---------|
-| `Esc` / `Backspace` | Back to tree | Return to tree view |
-| `↑` / `k` | Scroll up | Scroll output content up |
-| `↓` / `j` | Scroll down | Scroll output content down |
-| `Page Up` | Page up | Scroll up by page height |
-| `Page Down` | Page down | Scroll down by page height |
-| `Home` | Jump to top | Scroll to beginning of output |
-| `End` | Jump to bottom | Scroll to end of output (auto-scroll during streaming) |
-| `Tab` | Toggle section | Switch between Prompt and Output sections |
-
-**Auto-scroll Behavior:**
-- During streaming output, automatically scroll to bottom
-- User scrolling up disables auto-scroll
-- Pressing `End` re-enables auto-scroll
-
-## Component Hierarchy
+### Split View (Advanced)
 
 ```
-<TuiRoot>
-├── <Layout>
-│   ├── <Header>
-│   │   └── Frame counter, elapsed time
-│   ├── <MainPanel>
-│   │   ├── <TreeView> (if view === 'tree')
-│   │   │   ├── <TreeNode> (recursive)
-│   │   │   │   ├── Icon (expand/collapse/leaf)
-│   │   │   │   ├── Label
-│   │   │   │   └── Status badge
-│   │   │   └── ... (children nodes)
-│   │   └── <AgentPanel> (if view === 'detail')
-│   │       ├── <AgentPrompt>
-│   │       │   └── Scrollable prompt text
-│   │       └── <AgentOutput>
-│   │           └── Scrollable output with streaming
-│   └── <StatusBar>
-│       └── Keyboard shortcuts
-└── <HelpOverlay> (conditional, shown when '?' pressed)
-    └── Full keyboard shortcut reference
+┌─ Tree ──────────────────┬─ Agent Output ──────────────────────────────────┐
+│                         │                                                  │
+│ ▼ ROOT                  │ Claude Agent: ROOT/claude[1]                     │
+│   ▼ claude [✓]          │ Status: Running                                  │
+│     ▶ phase: "Planning" │                                                  │
+│   ▶ claude [⟳]    ◄────┤ ─── Prompt ───────────────────────────────────── │
+│     ▶ phase: "Impl"     │ You are implementing the authentication          │
+│   ▶ claude [○]          │ system...                                        │
+│     ▶ phase: "Testing"  │                                                  │
+│                         │ ─── Output ────────────────────────────────────  │
+│                         │ I'll implement the authentication system.        │
+│                         │ Let me start by reading...                       │
+│                         │ ▌                                                │
+│                         │                                                  │
+└─────────────────────────┴──────────────────────────────────────────────────┘
+Frame 2/∞ | Elapsed: 12.4s | ↑↓ Navigate | Tab: Switch pane
+```
+
+## Visual Elements
+
+### Execution Status Icons
+
+| Icon | Status | Color | Meaning |
+|------|--------|-------|---------|
+| `○` | pending | dim/gray | Not yet executed |
+| `⟳` | running | yellow | Currently executing |
+| `✓` | complete | green | Successfully finished |
+| `✗` | error | red | Failed with error |
+| `⊗` | skipped | dim/gray | Skipped (conditional rendering) |
+
+### Tree Expansion Icons
+
+| Icon | Meaning |
+|------|---------|
+| `▶` | Collapsed (has children) |
+| `▼` | Expanded (showing children) |
+| `  ` | Leaf node (no children) |
+
+### Node Type Labels
+
+Format: `type [status]` or `type: "name" [status]`
+
+Examples:
+- `claude [⟳ running]`
+- `phase: "Planning" [✓ complete]`
+- `subagent: "Code Reviewer" [○ pending]`
+- `step [✓ complete]`
+
+## Component Architecture
+
+### 1. TUI App Root (`src/tui/App.tsx`)
+
+Main entry point that sets up the TUI application.
+
+```typescript
+interface TUIAppProps {
+  executionState: ExecutionState
+  onCancel?: () => void
+}
+
+export function TUIApp({ executionState, onCancel }: TUIAppProps) {
+  const [view, setView] = useState<'tree' | 'detail' | 'split'>('tree')
+  const [selectedNode, setSelectedNode] = useState<SmithersNode | null>(null)
+
+  return (
+    <box>
+      {view === 'tree' && (
+        <TreeView
+          tree={executionState.tree}
+          onSelect={setSelectedNode}
+        />
+      )}
+      {view === 'detail' && selectedNode && (
+        <AgentPanel
+          node={selectedNode}
+          onBack={() => setView('tree')}
+        />
+      )}
+      {view === 'split' && (
+        <SplitView
+          tree={executionState.tree}
+          selectedNode={selectedNode}
+          onSelect={setSelectedNode}
+        />
+      )}
+      <StatusBar
+        frame={executionState.currentFrame}
+        elapsed={executionState.elapsedTime}
+        view={view}
+      />
+    </box>
+  )
+}
+```
+
+### 2. Tree View (`src/tui/TreeView.tsx`)
+
+Displays the SmithersNode tree with keyboard navigation.
+
+```typescript
+interface TreeViewProps {
+  tree: SmithersNode
+  onSelect: (node: SmithersNode) => void
+}
+
+export function TreeView({ tree, onSelect }: TreeViewProps) {
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(['ROOT']))
+  const [selectedPath, setSelectedPath] = useState<string>('ROOT')
+  const flatTree = useMemo(() => flattenTree(tree, expandedPaths), [tree, expandedPaths])
+
+  useKeyboard((event) => {
+    if (event.name === "up") {
+      // Move selection up
+      const index = flatTree.findIndex(n => n.path === selectedPath)
+      if (index > 0) setSelectedPath(flatTree[index - 1].path)
+    } else if (event.name === "down") {
+      // Move selection down
+      const index = flatTree.findIndex(n => n.path === selectedPath)
+      if (index < flatTree.length - 1) setSelectedPath(flatTree[index + 1].path)
+    } else if (event.name === "right") {
+      // Expand node
+      setExpandedPaths(prev => new Set([...prev, selectedPath]))
+    } else if (event.name === "left") {
+      // Collapse node
+      setExpandedPaths(prev => {
+        const next = new Set(prev)
+        next.delete(selectedPath)
+        return next
+      })
+    } else if (event.name === "return") {
+      // View details
+      const node = findNodeByPath(tree, selectedPath)
+      if (node && (node.type === 'claude' || node.type === 'subagent')) {
+        onSelect(node)
+      }
+    }
+  })
+
+  return (
+    <scrollbox>
+      {flatTree.map((item) => (
+        <TreeNode
+          key={item.path}
+          node={item.node}
+          depth={item.depth}
+          isExpanded={expandedPaths.has(item.path)}
+          isSelected={item.path === selectedPath}
+        />
+      ))}
+    </scrollbox>
+  )
+}
+```
+
+### 3. Tree Node (`src/tui/TreeNode.tsx`)
+
+Individual tree node renderer.
+
+```typescript
+interface TreeNodeProps {
+  node: SmithersNode
+  depth: number
+  isExpanded: boolean
+  isSelected: boolean
+}
+
+export function TreeNode({ node, depth, isExpanded, isSelected }: TreeNodeProps) {
+  const hasChildren = node.children.length > 0
+  const icon = getStatusIcon(node._execution?.status)
+  const expandIcon = hasChildren ? (isExpanded ? '▼' : '▶') : '  '
+  const indent = '  '.repeat(depth)
+  const label = formatNodeLabel(node)
+  const bgColor = isSelected ? 'blue' : 'transparent'
+
+  return (
+    <text style={{ backgroundColor: bgColor }}>
+      {indent}{expandIcon} {label} [{icon} {node._execution?.status || 'pending'}]
+    </text>
+  )
+}
+
+function getStatusIcon(status?: string): string {
+  switch (status) {
+    case 'running': return '⟳'
+    case 'complete': return '✓'
+    case 'error': return '✗'
+    default: return '○'
+  }
+}
+
+function formatNodeLabel(node: SmithersNode): string {
+  if (node.type === 'ROOT') return 'ROOT'
+  if (node.type === 'TEXT') return `"${truncate(node.content, 30)}"`
+  
+  const name = node.props?.name || node.props?.role
+  if (name) return `${node.type}: "${name}"`
+  
+  return node.type
+}
+```
+
+### 4. Agent Panel (`src/tui/AgentPanel.tsx`)
+
+Detail view for Claude/Subagent nodes.
+
+```typescript
+interface AgentPanelProps {
+  node: SmithersNode
+  onBack: () => void
+}
+
+export function AgentPanel({ node, onBack }: AgentPanelProps) {
+  useKeyboard((event) => {
+    if (event.name === "escape") {
+      onBack()
+    }
+  })
+
+  const prompt = extractPrompt(node)
+  const output = node._execution?.result?.output || ''
+  const status = node._execution?.status || 'pending'
+
+  return (
+    <box border>
+      <text style={{ fontWeight: 'bold' }}>Claude Agent Details</text>
+      <text>Status: {status}</text>
+      <text>Node Path: {node.path}</text>
+      <text>Content Hash: {node._execution?.contentHash?.substring(0, 10)}...</text>
+      
+      <box border style={{ marginTop: 1 }}>
+        <text style={{ fontWeight: 'bold' }}>─── Prompt ───</text>
+        <text>{prompt}</text>
+      </box>
+      
+      <box border style={{ marginTop: 1 }}>
+        <text style={{ fontWeight: 'bold' }}>─── Output {status === 'running' ? '(streaming)' : ''} ───</text>
+        <scrollbox>
+          <text>{output}</text>
+          {status === 'running' && <text>▌</text>}
+        </scrollbox>
+      </box>
+    </box>
+  )
+}
+```
+
+### 5. Status Bar (`src/tui/StatusBar.tsx`)
+
+Bottom status bar with hints and stats.
+
+```typescript
+interface StatusBarProps {
+  frame: number
+  elapsed: number
+  view: 'tree' | 'detail' | 'split'
+}
+
+export function StatusBar({ frame, elapsed, view }: StatusBarProps) {
+  const hints = getHintsForView(view)
+  
+  return (
+    <box style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'gray' }}>
+      <text>
+        Frame {frame}/{frame === 0 ? '?' : '∞'} | 
+        Elapsed: {formatTime(elapsed)} | 
+        {hints.join(' | ')}
+      </text>
+    </box>
+  )
+}
+
+function getHintsForView(view: string): string[] {
+  if (view === 'tree') {
+    return ['↑↓ Navigate', '→ Expand', '← Collapse', '⏎ Details', 'Ctrl+C Exit']
+  }
+  if (view === 'detail') {
+    return ['Esc Back', 'Ctrl+C Exit']
+  }
+  return ['↑↓ Navigate', 'Tab Switch pane', 'Ctrl+C Exit']
+}
+```
+
+### 6. Split View (`src/tui/SplitView.tsx`)
+
+Combined tree + detail view.
+
+```typescript
+interface SplitViewProps {
+  tree: SmithersNode
+  selectedNode: SmithersNode | null
+  onSelect: (node: SmithersNode) => void
+}
+
+export function SplitView({ tree, selectedNode, onSelect }: SplitViewProps) {
+  const { width } = useTerminalDimensions()
+  const treeWidth = Math.floor(width * 0.4)
+  const panelWidth = width - treeWidth - 1
+
+  return (
+    <box>
+      <box style={{ width: treeWidth, borderRight: true }}>
+        <TreeView tree={tree} onSelect={onSelect} />
+      </box>
+      <box style={{ width: panelWidth }}>
+        {selectedNode ? (
+          <AgentPanel node={selectedNode} onBack={() => {}} />
+        ) : (
+          <text>Select an agent to view details</text>
+        )}
+      </box>
+    </box>
+  )
+}
 ```
 
 ## State Management
 
-The TUI maintains its own React state separate from the agent execution state:
+### ExecutionState Interface
 
-### TUI State (useState / Zustand)
-
-```typescript
-interface TuiState {
-  // View state
-  view: 'tree' | 'detail'
-  selectedNodePath: string | null  // e.g., "ROOT/phase[0]/claude[1]"
-  expandedPaths: Set<string>       // Set of expanded node paths
-
-  // Detail view state
-  detailNodePath: string | null    // Which node is shown in detail view
-  detailScrollOffset: number       // Scroll position in detail view
-  autoScroll: boolean              // Whether to auto-scroll during streaming
-
-  // Execution tracking
-  currentFrame: number
-  maxFrames: number
-  startTime: number
-
-  // Help overlay
-  showHelp: boolean
-}
-```
-
-### Agent Execution State (Read-only from SmithersNode tree)
-
-The TUI reads execution state from the SmithersNode tree that's already managed by `executePlan()`:
+Shared between Smithers executor and TUI:
 
 ```typescript
-// Already exists in SmithersNode
 interface ExecutionState {
-  status: 'pending' | 'running' | 'complete' | 'error'
-  result?: unknown
+  tree: SmithersNode | null
+  currentFrame: number
+  elapsedTime: number
+  status: 'initializing' | 'running' | 'paused' | 'complete' | 'error'
   error?: Error
-  contentHash?: string
+  
+  // Streaming output
+  streamingNode?: string // node path
+  streamingContent?: string
 }
 ```
 
-**Key Design Principle:** TUI is a pure observer. It reads from SmithersNode tree but never modifies it. All state changes happen through normal agent execution flow.
-
-## Integration with Ralph Loop
-
-### Execution Flow with TUI
-
-```
-1. User runs: smithers run agent.mdx --tui
-2. CLI loads agent file and renders initial plan
-3. CLI creates TUI root and renders TUI
-4. TUI displays initial tree (all nodes [pending])
-5. CLI calls executePlan() with onFrameUpdate callback
-6. For each frame:
-   a. Execute pending nodes (agent calls, etc.)
-   b. Update SmithersNode._execution status
-   c. Call onFrameUpdate(tree, frameNum)
-   d. TUI re-renders with updated tree
-   e. If state changed, re-render plan (Ralph loop)
-7. When execution complete:
-   a. Show final tree (all [complete] or some [error])
-   b. Wait for user to quit (press 'q')
-   c. Exit TUI and return to CLI
-```
-
-### executePlan() Integration Point
-
-Add optional callback to `executePlan()`:
+### State Updates
 
 ```typescript
-interface ExecutePlanOptions {
-  // ... existing options ...
-  onFrameUpdate?: (tree: SmithersNode, frame: number) => void | Promise<void>
+// In executePlan()
+const executionState: ExecutionState = {
+  tree: null,
+  currentFrame: 0,
+  elapsedTime: 0,
+  status: 'initializing'
+}
+
+// TUI subscribes to updates
+const tuiRoot = createTUIRoot()
+tuiRoot.render(<TUIApp executionState={executionState} />)
+
+// Update loop
+while (executing) {
+  const startTime = Date.now()
+  
+  executionState.tree = await renderPlan(element)
+  executionState.currentFrame++
+  executionState.status = 'running'
+  
+  // Execute agents...
+  
+  executionState.elapsedTime = Date.now() - startTime
+  
+  // TUI automatically re-renders
 }
 ```
 
-The callback is called after each Ralph loop frame, allowing TUI to update in real-time.
+## Keyboard Navigation Specification
 
-### TUI Initialization
+### Tree View Mode
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move selection up |
+| `↓` / `j` | Move selection down |
+| `→` / `l` | Expand selected node |
+| `←` / `h` | Collapse selected node |
+| `Enter` | View agent details (if Claude/Subagent) |
+| `Space` | Toggle expand/collapse |
+| `Home` | Jump to root |
+| `End` | Jump to last node |
+| `Tab` | Switch to split view |
+| `q` / `Ctrl+C` | Exit |
+
+### Detail View Mode
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Back to tree view |
+| `↑` / `k` | Scroll output up |
+| `↓` / `j` | Scroll output down |
+| `PageUp` | Scroll page up |
+| `PageDown` | Scroll page down |
+| `Home` | Scroll to top |
+| `End` | Scroll to bottom |
+| `q` / `Ctrl+C` | Exit |
+
+### Split View Mode
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Switch active pane |
+| `↑` / `↓` | Navigate (active pane) |
+| `→` / `←` | Expand/collapse (tree pane) |
+| `Enter` | Select agent (tree pane) |
+| `q` / `Ctrl+C` | Exit |
+
+## Performance Optimization
+
+### Virtual Scrolling
+
+For trees with 100+ nodes, use virtual scrolling:
 
 ```typescript
-// In CLI run command (src/cli/commands/run.ts)
+function VirtualTreeView({ tree, viewportHeight }: VirtualTreeViewProps) {
+  const flatTree = flattenTree(tree)
+  const [scrollOffset, setScrollOffset] = useState(0)
+  const visibleNodes = flatTree.slice(scrollOffset, scrollOffset + viewportHeight)
 
-if (options.tui) {
-  // Create OpenTUI renderer
-  const renderer = await createCliRenderer()
-  const tuiRoot = createRoot(renderer)
-
-  // Render TUI with initial tree
-  let currentTree: SmithersNode
-  tuiRoot.render(<TuiRoot tree={currentTree} />)
-
-  // Execute with TUI updates
-  await executePlan(currentTree, {
-    ...options,
-    onFrameUpdate: async (tree, frame) => {
-      currentTree = tree
-      tuiRoot.render(<TuiRoot tree={tree} frame={frame} />)
-      // Wait a bit for TUI to render before next frame
-      await new Promise(resolve => setImmediate(resolve))
-    }
-  })
-
-  // Keep TUI open after execution
-  // Wait for user to press 'q'
-  await waitForQuit(tuiRoot)
-
-  // Cleanup
-  renderer.cleanup()
+  return (
+    <box>
+      {visibleNodes.map((node, i) => (
+        <TreeNode key={node.path} node={node} index={scrollOffset + i} />
+      ))}
+    </box>
+  )
 }
 ```
 
-## Component Specifications
+### React.memo for Nodes
 
-### TreeView Component
+Prevent unnecessary re-renders:
 
-**Purpose:** Display and navigate the SmithersNode tree
-
-**Props:**
 ```typescript
-interface TreeViewProps {
-  tree: SmithersNode
-  selectedPath: string | null
-  expandedPaths: Set<string>
-  onSelectNode: (path: string) => void
-  onToggleExpand: (path: string) => void
-  onViewDetails: (path: string) => void
-}
+export const TreeNode = React.memo(TreeNodeComponent, (prev, next) => {
+  return (
+    prev.node._execution?.status === next.node._execution?.status &&
+    prev.isSelected === next.isSelected &&
+    prev.isExpanded === next.isExpanded
+  )
+})
 ```
 
-**Behavior:**
-- Render tree recursively using depth-first traversal
-- Highlight selected node with blue background
-- Show expand/collapse icons based on expandedPaths
-- Show execution status badge from node._execution.status
-- Handle arrow key navigation
-- Handle Enter key for viewing details
+### Debounced Streaming Updates
 
-**Rendering Rules:**
-- Only render visible nodes (collapsed nodes hide children)
-- If tree height exceeds terminal height, scroll selected node into view
-- Use virtualization if tree has 100+ nodes (future optimization)
+Don't update TUI on every character:
 
-### AgentPanel Component
-
-**Purpose:** Display detailed information about a Claude/ClaudeApi node
-
-**Props:**
 ```typescript
-interface AgentPanelProps {
-  node: SmithersNode  // Must be type 'claude' or 'claude-api'
-  scrollOffset: number
-  autoScroll: boolean
-  onScrollChange: (offset: number) => void
-}
+const debouncedUpdate = debounce((content: string) => {
+  executionState.streamingContent = content
+}, 100) // Update TUI every 100ms max
 ```
-
-**Behavior:**
-- Display prompt in top section (read from node.children)
-- Display output in bottom section (read from node._execution.result)
-- Support scrolling both sections independently
-- Auto-scroll output during streaming if autoScroll is true
-- Handle Tab key to switch between sections
-- Handle Esc to return to tree view
-
-**Streaming Output:**
-- Subscribe to streaming events from executor (if available)
-- Append new chunks to output in real-time
-- Auto-scroll to bottom unless user has manually scrolled up
-
-### Layout Component
-
-**Purpose:** Manage overall TUI layout and responsive behavior
-
-**Props:**
-```typescript
-interface LayoutProps {
-  view: 'tree' | 'detail'
-  header: React.ReactNode
-  content: React.ReactNode
-  statusBar: React.ReactNode
-}
-```
-
-**Behavior:**
-- Use `useTerminalDimensions()` to get terminal size
-- Allocate space for header (1 line), content (remaining), statusBar (1 line)
-- Switch to compact mode if height < 20 lines
-- Handle terminal resize gracefully
-
-**Responsive Breakpoints:**
-- **Height < 15 lines:** Minimal UI, hide statusBar
-- **Height 15-19 lines:** Compact mode, shorter labels
-- **Height 20+ lines:** Full UI with all details
-- **Width < 60 columns:** Truncate long labels with "..."
-- **Width 60-99 columns:** Standard layout
-- **Width 100+ columns:** Full layout with extra details
-
-### StatusBar Component
-
-**Purpose:** Display keyboard shortcuts and help
-
-**Props:**
-```typescript
-interface StatusBarProps {
-  view: 'tree' | 'detail'
-}
-```
-
-**Behavior:**
-- Show relevant keyboard shortcuts for current view
-- Inverted colors (highlight background)
-- Truncate shortcuts if terminal width is small
 
 ## Error Handling
 
-### Execution Errors
+### Error Display
 
-When a node has `_execution.status === 'error'`:
-- Show `[error]` badge in red
-- In tree view, expand ancestors to make error visible
-- In detail view, show error message in Output section
-- Allow navigation to error nodes
+Show errors inline in tree:
 
-### Terminal Too Small
+```
+▼ ROOT
+  ▼ claude [✗ error]
+    ▶ Error: API rate limit exceeded
+```
 
-If terminal dimensions are too small to render UI:
-- Minimum width: 40 columns
-- Minimum height: 10 lines
-- If smaller, show message: "Terminal too small. Resize to at least 40x10."
+### Error Detail View
 
-### TUI Crashes
+```
+┌─ Execution Error ───────────────────────────────────────────────────────────┐
+│                                                                             │
+│ Node: ROOT/claude[1]                                                        │
+│ Status: error                                                               │
+│                                                                             │
+│ Error: API rate limit exceeded                                             │
+│                                                                             │
+│ Stack Trace:                                                                │
+│   at executeWithClaude (src/core/claude-executor.ts:123)                   │
+│   at executePlan (src/core/execute.ts:456)                                 │
+│                                                                             │
+│ Actions:                                                                    │
+│   [R] Retry execution                                                       │
+│   [S] Skip this node                                                        │
+│   [Q] Quit                                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-If TUI encounters an error:
-- Catch at top level
-- Restore terminal state (clear screen, reset cursor)
-- Print error message
-- Continue execution in non-TUI mode
-- Save TUI error to log file for debugging
+## Accessibility Considerations
 
-## Future Enhancements (Post-MVP)
+1. **Screen Readers**: Use semantic labels for all UI elements
+2. **High Contrast**: Support terminal theme colors
+3. **Keyboard Only**: All functionality accessible via keyboard
+4. **Status Announcements**: Announce status changes audibly (if supported)
 
-These features are out of scope for initial TUI but worth considering:
+## Integration with CLI
 
-1. **Interactive Editing**
-   - Edit prompt before execution
-   - Pause/resume execution
-   - Retry failed agents
+### CLI Flag
 
-2. **Performance Metrics**
-   - Token usage per agent
-   - Execution time per node
-   - Memory usage graph
+```bash
+smithers run agent.tsx --tui        # Enable TUI mode
+smithers run agent.tsx              # Default: non-TUI mode (CI-friendly)
+```
 
-3. **Filtering and Search**
-   - Filter tree by status (show only errors)
-   - Search tree by node name
-   - Collapse all / expand all shortcuts
+### Feature Detection
 
-4. **Multiple Execution Sessions**
-   - Tab view for multiple runs
-   - Compare results side-by-side
-
-5. **Log Export**
-   - Export execution log to file
-   - Save specific agent outputs
-   - Copy to clipboard (if terminal supports)
-
-6. **Color Themes**
-   - Light/dark theme toggle
-   - Custom color schemes
-   - High contrast mode
-
-7. **Mouse Support**
-   - Click to select node
-   - Click to expand/collapse
-   - Scroll with mouse wheel
+```typescript
+export function shouldUseTUI(): boolean {
+  // Don't use TUI in CI environments
+  if (process.env.CI) return false
+  
+  // Don't use TUI if output is redirected
+  if (!process.stdout.isTTY) return false
+  
+  // User explicitly disabled TUI
+  if (process.env.SMITHERS_NO_TUI) return false
+  
+  return true
+}
+```
 
 ## Testing Strategy
 
 ### Unit Tests
 
-Test components in isolation with mocked tree data:
-
 ```typescript
-describe('TreeView', () => {
-  it('should render nodes with correct status badges', () => {
-    const tree = createMockTree()
-    render(<TreeView tree={tree} ... />)
-    // Assert status badges are correct
-  })
-
-  it('should handle arrow key navigation', () => {
-    const onSelectNode = jest.fn()
-    render(<TreeView onSelectNode={onSelectNode} ... />)
-    // Simulate arrow down key
-    // Assert onSelectNode called with next path
+describe('TreeNode', () => {
+  it('renders pending status icon', () => {
+    const node = createMockNode({ _execution: { status: 'pending' } })
+    const result = render(<TreeNode node={node} depth={0} />)
+    expect(result).toContain('○')
   })
 })
 ```
 
 ### Integration Tests
 
-Test full TUI flow with real OpenTUI renderer:
-
 ```typescript
 describe('TUI Integration', () => {
-  it('should update tree as execution progresses', async () => {
-    const tree = await renderPlan(<TestAgent />)
-    const renderer = await createCliRenderer()
-    const root = createRoot(renderer)
-
-    root.render(<TuiRoot tree={tree} />)
-
-    await executePlan(tree, {
-      onFrameUpdate: (updatedTree, frame) => {
-        root.render(<TuiRoot tree={updatedTree} frame={frame} />)
-      }
+  it('updates tree when execution state changes', async () => {
+    const executionState = createMockExecutionState()
+    const tui = renderTUI(<TUIApp executionState={executionState} />)
+    
+    executionState.tree = createMockTree()
+    await waitFor(() => {
+      expect(tui.getByText('ROOT')).toBeVisible()
     })
-
-    // Assert final tree state is correct
   })
 })
 ```
 
-### Manual Testing
+### Manual Testing Checklist
 
-Essential for visual and interaction testing:
-- Test in multiple terminal emulators
-- Test with various terminal sizes
-- Test keyboard navigation feels responsive
-- Test colors look good in light/dark themes
-- Test with real agent executions (not mocks)
+- [ ] Navigate tree with arrow keys
+- [ ] Expand/collapse nodes
+- [ ] View agent details
+- [ ] Watch streaming output in real-time
+- [ ] Resize terminal window
+- [ ] Handle very large trees (100+ nodes)
+- [ ] Handle errors gracefully
+- [ ] Exit cleanly with Ctrl+C
 
-## Implementation Plan
+## Future Enhancements
 
-### Phase 1: Basic TUI (Weeks 1-2)
+1. **Search**: `/` to search tree for nodes
+2. **Filtering**: Hide completed nodes, show only errors
+3. **Themes**: Customizable color schemes
+4. **Export**: Save tree view to file
+5. **Replay**: Replay execution frame-by-frame
+6. **Pause/Resume**: Pause execution, resume later
+7. **Logs Panel**: Show all console output in separate pane
+8. **Mouse Support**: Click to select nodes (optional)
 
-1. **Set up OpenTUI** (Day 1)
-   - Install Zig
-   - Install @opentui/core and @opentui/react
-   - Create basic "Hello World" TUI
+## Open Questions
 
-2. **TreeView Component** (Days 2-4)
-   - Render SmithersNode tree recursively
-   - Show node type, name, and status
-   - Implement expand/collapse logic
-   - Add arrow key navigation
+1. Should we support mouse input or keyboard-only?
+2. How to handle very deep trees (20+ levels)?
+3. Should we show tool calls in the tree?
+4. How to display MCP server connections?
+5. Should we persist TUI state between runs?
 
-3. **Layout & StatusBar** (Day 5)
-   - Create Layout component with header and status bar
-   - Implement responsive sizing
-   - Add frame counter and elapsed time
+## Related Documents
 
-4. **Integration with executePlan** (Day 6-7)
-   - Add onFrameUpdate callback
-   - Update TUI on each frame
-   - Test with real agent execution
-
-### Phase 2: Agent Detail View (Week 3)
-
-1. **AgentPanel Component** (Days 1-3)
-   - Render prompt and output sections
-   - Implement scrolling
-   - Add Tab key section switching
-
-2. **Detail View Navigation** (Days 4-5)
-   - Handle Enter key from tree view
-   - Handle Esc key back to tree
-   - Preserve scroll state
-
-3. **Streaming Output** (Days 6-7)
-   - Subscribe to streaming events
-   - Update output in real-time
-   - Implement auto-scroll behavior
-
-### Phase 3: Polish & Testing (Week 4)
-
-1. **Error Handling** (Days 1-2)
-   - Handle execution errors gracefully
-   - Handle terminal resize
-   - Handle TUI crashes
-
-2. **Help Overlay** (Day 3)
-   - Implement '?' key help
-   - Show all keyboard shortcuts
-   - Add examples
-
-3. **Testing** (Days 4-7)
-   - Write unit tests
-   - Write integration tests
-   - Manual testing across terminals
-   - Fix bugs and polish UX
-
-## Success Criteria
-
-The TUI is ready for release when:
-
-1. ✅ All keyboard navigation works smoothly
-2. ✅ Tree updates in real-time during execution
-3. ✅ Agent detail view shows prompt and output
-4. ✅ Handles terminal resize without crashing
-5. ✅ Works in major terminal emulators (iTerm, Terminal.app, Alacritty)
-6. ✅ Colors are readable in light and dark themes
-7. ✅ No visual glitches or flickering
-8. ✅ Performance is acceptable with 50+ node trees
-9. ✅ Error states are clearly communicated
-10. ✅ User can always quit cleanly (press 'q')
-
-## Appendix: ASCII Art Guidelines
-
-When creating mockups, use these box-drawing characters:
-
-```
-┌─┬─┐   Top borders
-│ │ │   Vertical borders
-├─┼─┤   Middle borders
-└─┴─┘   Bottom borders
-
-▶ ▼ ◀ ▲   Triangular arrows
-→ ← ↑ ↓   Line arrows
-• ○ ◆ ◇   Bullets
-```
-
-Character encoding: UTF-8 (required for box-drawing characters)
-
-Terminal compatibility: Modern terminals support these characters, but test on target platforms.
+- [TUI Research](./tui-research.md) - OpenTUI architecture and integration patterns
+- [VHS Recording](./vhs-recording.md) - Demo recording workflow
+- [CLI Commands](./cli-commands.md) - Interactive slash commands
