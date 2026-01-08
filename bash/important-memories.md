@@ -61,6 +61,9 @@ Smithers is **100% feature-complete** and ready for npm publishing. The only rem
 **Test Summary:**
 - Total: 665 tests (663 passing, 2 skipped, 0 failing)
 - Coverage areas: CLI (34), Loader (33), Renderer (32), Components (44), TUI (44), Worktree (18), Interactive (30), Edge cases (29), Output/File (45+)
+- **Skipped Tests (Intentional):**
+  1. `evals/edge-cases.test.tsx:315` - "maxFrames prevents infinite loops" - Skipped because it would run for a very long time (testing infinite loop prevention). The maxFrames functionality is covered by other tests.
+  2. `evals/worktree.test.tsx:173` - "worktree fails if not in git repository" - Skipped because it requires `chdir()` which affects the entire process and can cause issues with Claude Agent SDK spawning. The error handling is already tested by other worktree tests.
 
 **No TODOs/FIXMEs** in codebase - all development work is complete.
 
