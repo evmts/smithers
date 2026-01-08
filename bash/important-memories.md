@@ -8835,3 +8835,97 @@ All systems green. Zero technical debt. Zero pending work.
 
 **🚀 READY TO SHIP v1.0.0 - Awaiting npm authentication only! 🚀**
 
+
+---
+
+## Session: 2026-01-08 04:00 PST - Package Rename for npm Publication
+
+**Status: ✅ CRITICAL ISSUE RESOLVED - Package renamed to avoid npm conflict**
+
+### Problem: npm Package Name Conflict
+
+Discovered that the unscoped package name `smithers` is already taken on npm:
+- Existing package: `smithers@0.5.4` (Jenkins API client)
+- Maintained by: clementallen
+- Last published: Over a year ago
+- Cannot use this name for publication
+
+### Solution: Scoped Package Name
+
+Renamed package to `@evmts/smithers`:
+- Aligns with GitHub organization: github.com/evmts/smithers
+- Follows npm best practices for org-owned packages
+- Scoped name is available on npm registry
+
+### Implementation Details
+
+**Changes Made (83 files):**
+- `package.json`: Changed `"name"` from `"smithers"` to `"@evmts/smithers"`
+- All documentation (73 files): Updated imports and install commands
+- All examples (18 examples): Updated to use scoped imports
+- All CLI command references: Updated npx/bunx commands
+- Test fixtures: Updated MDX import statements
+
+**Technical Challenge: Bun Self-Referencing**
+
+Tests initially failed (16/34) because:
+1. Bun supports "self-referencing" - packages can import from themselves
+2. `import { Claude } from 'smithers'` worked with `"name": "smithers"`
+3. After rename, `import { Claude } from '@evmts/smithers'` failed
+4. MDX evaluation couldn't resolve the new scoped name
+
+**Solution: `bun link`**
+```bash
+bun link                    # Register @evmts/smithers globally
+bun link @evmts/smithers    # Link to itself in node_modules
+```
+
+This creates `node_modules/@evmts/smithers` symlink to project root, enabling self-referencing for scoped packages.
+
+### Verification
+
+**All Systems Green:**
+- ✅ Tests: 663 pass, 2 skip, 0 fail (665 total)
+- ✅ TypeScript: No errors (strict mode)
+- ✅ Build: Success (dist/ generated)
+- ✅ Manual CLI testing: Works correctly
+- ✅ Commit: 6e8b206 with comprehensive git notes
+
+**Git Commit:**
+- Commit: 6e8b206
+- Message: "fix: rename package from 'smithers' to '@evmts/smithers' for npm publication"
+- Notes: Full context of investigation and solution process
+- Pushed to: origin/main
+
+### Developer Setup Note
+
+For local development, contributors must run:
+```bash
+bun link && bun link @evmts/smithers
+```
+
+This is only needed for local development. End users installing from npm won't need this.
+
+### Publication Status
+
+**READY TO PUBLISH** 🚀
+
+The package can now be published to npm as `@evmts/smithers` without conflicts:
+```bash
+npm login
+bun run build
+npm publish --access public
+```
+
+Or via automated GitHub Actions workflow (requires NPM_TOKEN secret).
+
+### Next Steps
+
+1. Add NPM_TOKEN to GitHub repo secrets
+2. Create changeset for v1.0.0 release
+3. Push changeset to trigger release workflow
+4. Automated publish to npm will complete
+5. Verify installation: `npm install @evmts/smithers`
+
+**No technical blockers remain. Package is 100% ready for publication.**
+
