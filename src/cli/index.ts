@@ -5,7 +5,7 @@ import pc from 'picocolors'
 import { runCommand } from './commands/run.js'
 import { planCommand } from './commands/plan.js'
 import { initCommand } from './commands/init.js'
-import { version as VERSION } from '../../package.json'
+import { version as VERSION } from '../../package.json' with { type: 'json' }
 
 const program = new Command()
   .name('smithers')
