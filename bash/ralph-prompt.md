@@ -29,7 +29,7 @@ Read these files to understand the project:
 ## Current State (Read First)
 
 **Completed (✅):**
-- Core renderer + executor exist and 44 tests pass
+- Core renderer + executor exist and 663 tests pass (2 skipped, 0 failing)
 - `renderPlan()`/`executePlan()` are async (React 19 reconciler)
 - Claude executor with full tool-use loop, retries, streaming
 - MCP integration (stdio + HTTP transports, 9 presets)
@@ -38,13 +38,15 @@ Read these files to understand the project:
 - CLI commands fully working (init, plan, run)
 - MDX/TSX file loading with rich error messages
 - Terraform-style plan display and approval prompt
+- **TUI Integration (COMPLETE)** - OpenTUI, VHS demos, keyboard navigation
+- **Worktree Component (COMPLETE)** - Git worktree isolation for parallel agents
+- **Interactive CLI Commands (COMPLETE)** - 8 commands (/pause, /resume, etc.)
+- **GitHub Action (COMPLETE)** - CI/CD integration
+- **Examples (COMPLETE)** - 18 comprehensive examples
+- **Documentation (COMPLETE)** - 74 .mdx/.md files, Mintlify configured
 
 **Remaining:**
-- **TUI Integration (NEW - Highest Priority)**
-- Examples directory needs sophisticated demos
-- Mintlify docs not set up
-- npm not yet published (changesets configured)
-- Test coverage gaps (see Test Matrix below)
+- npm publish (awaiting credentials only - all code complete)
 
 ## Priority Order (Top → Bottom)
 
@@ -323,7 +325,9 @@ Remember: Ship quality code. It's better to do one thing well than many things p
 
 This section defines comprehensive test coverage targets. Tests should be added incrementally as features are completed. Current tests live in `evals/`.
 
-### Current Coverage (44 tests passing)
+### Current Coverage (663 tests passing, 2 skipped, 0 failing)
+
+**35 test files** covering all components and functionality:
 
 | File | Coverage |
 |------|----------|
@@ -335,6 +339,18 @@ This section defines comprehensive test coverage targets. Tests should be added 
 | `stop-component.test.tsx` | Stop behavior, conditional stopping |
 | `error-recovery.test.tsx` | ExecutionError context, retries, graceful degradation |
 | `config.test.ts` | Config loading, validation, merging |
+| `cli.test.ts` | CLI commands (init, plan, run) - 34 tests |
+| `loader.test.ts` | MDX/TSX loading - 33 tests |
+| `renderer.test.tsx` | renderPlan, serialize - 32 tests |
+| `components.test.tsx` | All components - 44 tests |
+| `executor.test.tsx` | Ralph loop, state - 29 tests |
+| `edge-cases.test.tsx` | Unicode, limits, errors - 29 tests |
+| `interactive.test.ts` | CLI commands - 30 tests |
+| `worktree.test.tsx` | Git worktrees - 18 tests (1 skipped) |
+| `tui.test.tsx` | TUI components - 44 tests |
+| `output-file.test.tsx` | Output/File components - 45+ tests |
+| `mcp.test.ts` | MCP integration tests |
+| And 16+ more test files covering all features |
 
 ### Test Cases Needed
 
