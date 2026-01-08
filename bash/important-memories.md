@@ -6017,3 +6017,17 @@ smithers/
 - Verified 4 VHS demo tapes
 - Verified GitHub Action (smithers-run) implemented
 - **Status**: PRODUCTION READY - All quality criteria met, awaiting npm credentials only
+
+### 2026-01-07 19:52 - TypeScript Declaration Path Fix (CRITICAL BUG)
+- **Problem Discovered**: package.json declared `"types": "./dist/index.d.ts"` but TypeScript was outputting to `"dist/src/index.d.ts"`
+- **Impact**: This would cause type resolution failures when package is published and consumed
+- **Root Cause**: tsconfig.json had `declarationDir="./dist"` but no `rootDir` setting, causing TypeScript to preserve src/ directory structure
+- **Solution**: Added `"rootDir": "./src"` to tsconfig.json
+- **Verification**:
+  - ✅ dist/index.d.ts now exists at expected path
+  - ✅ All 663 tests still passing
+  - ✅ Zero type errors
+  - ✅ Test consumption in separate project works correctly (created /tmp/smithers-test and verified imports)
+- **Commit**: a507093
+- **Codex Review**: LGTM
+- **Status**: PRODUCTION READY - Critical bug fixed, ready for npm publish
