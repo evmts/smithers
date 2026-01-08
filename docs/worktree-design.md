@@ -1,324 +1,322 @@
 ---
-title: Worktree Design
-description: Design notes for Worktree component behavior and lifecycle
+title: Worktree Component
+description: Git worktree isolation for parallel agent execution
 ---
 
 # Worktree Component Design
 
-## Overview
-
-The `<Worktree>` component enables parallel agent isolation by running agents in git worktrees. This allows multiple agents to work on different features simultaneously without filesystem conflicts.
+The `<Worktree>` component enables parallel agents to work in isolated git worktrees, preventing filesystem conflicts and enabling true concurrent development workflows.
 
 ## Use Case
 
-**Primary Use Case**: Parallel feature development by multiple agents
+When multiple agents need to work on different features simultaneously, they can interfere with each other by modifying the same files. Git worktrees provide isolated working directories linked to the same repository, allowing each agent to work in its own filesystem namespace.
 
+**Example scenario:**
 ```tsx
-import { Worktree, Claude } from 'smithers'
-
-function ParallelFeatures() {
-  return (
-    <>
-      <Worktree path="./worktrees/feature-a" branch="feature-a">
-        <Claude>Implement authentication feature</Claude>
-      </Worktree>
-
-      <Worktree path="./worktrees/feature-b" branch="feature-b">
-        <Claude>Add user profile page</Claude>
-      </Worktree>
-    </>
-  )
-}
-```
-
-Each agent works in an isolated filesystem, preventing conflicts when multiple agents modify the same files.
-
-## Component API
-
-```typescript
-interface WorktreeProps {
-  /** Path where the worktree will be created */
-  path: string
-
-  /** Optional branch name. If provided, creates a new branch */
-  branch?: string
-
-  /** Whether to clean up worktree after execution (default: true) */
-  cleanup?: boolean
-
-  /** Optional base branch to create new branch from (default: current branch) */
-  baseBranch?: string
-
-  /** React children (typically Claude/ClaudeApi components) */
-  children: React.ReactNode
-}
-```
-
-## Git Worktree Lifecycle
-
-### 1. Creation
-
-**New Branch**:
-```bash
-git worktree add <path> -b <branch>
-```
-
-**Existing Branch**:
-```bash
-git worktree add <path> <branch>
-```
-
-**No Branch (detached HEAD)**:
-```bash
-git worktree add <path>
-```
-
-### 2. Execution
-
-- All child `<Claude>` and `<ClaudeApi>` components execute with `cwd` set to worktree path
-- Agent's file operations (Read, Edit, Write, Bash) operate within worktree filesystem
-- Worktree path passed through React context to child components
-
-### 3. Cleanup
-
-**On Success** (cleanup=true):
-```bash
-git worktree remove <path>
-```
-
-**On Error** (cleanup=true):
-```bash
-git worktree remove <path> --force
-```
-
-**Preserve Worktree** (cleanup=false):
-- Worktree remains on disk for manual inspection/merging
-
-## Implementation Details
-
-### Context Propagation
-
-Worktree component uses React Context to propagate working directory to child components:
-
-```typescript
-interface WorktreeContext {
-  cwd: string
-  worktreePath: string
-  branch?: string
-}
-
-const WorktreeContext = React.createContext<WorktreeContext | null>(null)
-```
-
-Child `<Claude>` components check context and pass `cwd` to Claude executor:
-
-```typescript
-const worktreeCtx = React.useContext(WorktreeContext)
-const executorOptions = {
-  ...otherOptions,
-  cwd: worktreeCtx?.cwd ?? process.cwd()
-}
-```
-
-### Error Handling
-
-**Worktree Already Exists**:
-- Check if path exists and is a git worktree
-- If worktree exists with different branch, error
-- If worktree exists with same branch, reuse it
-
-**Not in Git Repository**:
-- Throw error: "Worktree component requires a git repository"
-- Check: `git rev-parse --git-dir` succeeds
-
-**Branch Conflicts**:
-- If branch already checked out in another worktree, error
-- Git prevents same branch in multiple worktrees
-
-**Cleanup Failures**:
-- If worktree has uncommitted changes and cleanup=true, warn and force remove
-- If worktree locked, attempt to unlock before removal
-
-### Integration with Ralph Loop
-
-Worktree creation/cleanup happens at specific points in execution:
-
-1. **Before First Frame**: Create worktree when Worktree node first encountered
-2. **During Execution**: All child nodes execute with worktree cwd
-3. **After Completion**: Cleanup worktree if cleanup=true
-
-Worktree lifecycle tracked in `_execution` metadata:
-
-```typescript
-interface WorktreeExecutionState extends ExecutionState {
-  worktreeCreated: boolean
-  worktreePath: string
-  branch?: string
-}
-```
-
-## Execution Flow
-
-```
-┌─────────────────────────────────────┐
-│ executePlan() starts                │
-└───────────┬─────────────────────────┘
-            │
-            v
-┌─────────────────────────────────────┐
-│ Walk tree, find Worktree nodes      │
-└───────────┬─────────────────────────┘
-            │
-            v
-┌─────────────────────────────────────┐
-│ Execute Worktree node:              │
-│ 1. Run git worktree add             │
-│ 2. Store path in _execution         │
-│ 3. Set WorktreeContext              │
-└───────────┬─────────────────────────┘
-            │
-            v
-┌─────────────────────────────────────┐
-│ Execute child Claude nodes with cwd │
-└───────────┬─────────────────────────┘
-            │
-            v
-┌─────────────────────────────────────┐
-│ Children complete                   │
-└───────────┬─────────────────────────┘
-            │
-            v
-┌─────────────────────────────────────┐
-│ Cleanup: git worktree remove        │
-└─────────────────────────────────────┘
-```
-
-## Parallel Execution
-
-When used with `<Subagent parallel={true}>`, multiple worktrees can be active simultaneously:
-
-```tsx
-<Subagent parallel={true}>
+<Subagent parallel>
   <Worktree path="./worktrees/feature-a" branch="feature-a">
-    <Claude>Implement feature A</Claude>
+    <Claude>Implement authentication system</Claude>
   </Worktree>
 
   <Worktree path="./worktrees/feature-b" branch="feature-b">
-    <Claude>Implement feature B</Claude>
+    <Claude>Add dark mode support</Claude>
   </Worktree>
 </Subagent>
 ```
 
-Each worktree has isolated filesystem:
-- No conflicts when agents modify same files
-- Each agent can commit independently
-- Branches can be merged back to main after completion
+Each agent works in its own worktree, can commit to its own branch, and won't conflict with the other agent's file modifications.
 
-## Testing Strategy
-
-### Unit Tests
-
-1. **Worktree Creation**:
-   - Creates worktree at specified path
-   - Creates new branch if specified
-   - Uses existing branch if it exists
-   - Errors if not in git repo
-   - Errors if path already exists (non-worktree)
-
-2. **Worktree Execution**:
-   - Child Claude components run in worktree cwd
-   - Multiple agents in same worktree work correctly
-   - Worktree context passed through React context
-
-3. **Worktree Cleanup**:
-   - cleanup=true removes worktree on completion
-   - cleanup=false preserves worktree
-   - Cleanup handles uncommitted changes
-   - Cleanup errors don't crash execution
-
-4. **Parallel Worktrees**:
-   - Multiple Worktree components run in parallel
-   - Each worktree has isolated filesystem
-   - No conflicts between parallel worktree agents
-
-### Integration Tests
-
-1. **Full Feature Workflow**:
-   - Create worktree → implement feature → commit → cleanup
-   - Verify branch created and committed correctly
-
-2. **Error Recovery**:
-   - Agent fails mid-execution, worktree still cleaned up
-   - Worktree preserved when cleanup=false
-
-## Security Considerations
-
-### Path Safety
-
-- Validate worktree path is within project directory
-- Prevent path traversal attacks (../../etc/passwd)
-- Check path doesn't conflict with .git directory
-
-### Git Safety
-
-- Never run destructive git commands (reset --hard, etc.) unless explicitly requested
-- Preserve uncommitted changes when possible
-- Warn before force-removing worktrees with changes
-
-## Performance Considerations
-
-### Worktree Creation Overhead
-
-- Creating worktree takes ~100-500ms depending on repo size
-- Consider reusing worktrees across multiple runs
-- Cleanup async where possible (don't block execution)
-
-### Disk Space
-
-- Each worktree is a full working tree (not a clone)
-- Large repos with many worktrees can consume significant disk space
-- Consider cleanup strategies for long-running agents
-
-## Future Enhancements
-
-### Worktree Pooling
-
-Create pool of reusable worktrees to avoid creation overhead:
+## Component API
 
 ```tsx
-<WorktreePool size={5} baseDir="./worktrees">
-  <Subagent parallel={true}>
-    {tasks.map(task => (
-      <Claude key={task.id}>{task.prompt}</Claude>
-    ))}
-  </Subagent>
-</WorktreePool>
-```
+interface WorktreeProps {
+  /** Path where the worktree will be created (relative or absolute) */
+  path: string
 
-### Automatic Merging
+  /** Optional branch name to create or use (defaults to detached HEAD) */
+  branch?: string
 
-Auto-merge successful feature branches:
+  /** Whether to clean up the worktree after execution (default: false) */
+  cleanup?: boolean
 
-```tsx
-<Worktree path="./worktrees/feature-a" branch="feature-a" autoMerge={true}>
-  <Claude>Implement feature A</Claude>
+  /** Base ref to branch from (default: 'HEAD') */
+  base?: string
+
+  /** React children (Claude, ClaudeApi, or other components) */
+  children: React.ReactNode
+}
+
+<Worktree
+  path="./worktrees/my-feature"
+  branch="my-feature"
+  cleanup={true}
+  base="main"
+>
+  <Claude>Implement the feature</Claude>
 </Worktree>
 ```
 
-### Worktree Monitoring
+## Git Worktree Lifecycle
 
-Real-time status of all active worktrees:
+### 1. Creation (Before Execution)
+
+When the Worktree component is executed:
+
+1. **Check if already exists**: If worktree at path already exists, skip creation (idempotent)
+2. **Validate git repository**: Ensure we're in a git repository
+3. **Create worktree**:
+   ```bash
+   # With branch
+   git worktree add <path> -b <branch> <base>
+
+   # Without branch (detached HEAD)
+   git worktree add <path> <base>
+   ```
+4. **Set execution context**: Store worktree path in React Context for child components
+
+### 2. Execution
+
+- All child `<Claude>` and `<ClaudeApi>` components receive the worktree path as their `cwd`
+- Tools (Bash, Read, Edit, etc.) operate within the worktree directory
+- Agents can commit changes to the worktree's branch
+
+### 3. Cleanup (After Execution)
+
+If `cleanup={true}`:
+1. **Remove worktree**:
+   ```bash
+   git worktree remove <path>
+   ```
+2. **Handle uncommitted changes**:
+   - Default: Fail with error if worktree has uncommitted changes
+   - Option: Force removal with `--force` flag (loses changes)
+
+## React Context Pattern
+
+The Worktree component uses React Context to pass the `cwd` to all descendant components:
+
+```typescript
+interface WorktreeContext {
+  cwd: string | null  // null = use process.cwd()
+}
+
+const WorktreeContext = React.createContext<WorktreeContext>({ cwd: null })
+
+// In Claude executor
+function executeWithClaude(node: SmithersNode, config: ExecutionConfig) {
+  const context = useContext(WorktreeContext)
+  const cwd = context.cwd ?? process.cwd()
+
+  // Pass cwd to Agent SDK
+  const agent = new Agent({
+    cwd,
+    // ... other config
+  })
+}
+```
+
+## Error Handling
+
+### Worktree Creation Errors
+
+**Not in git repository:**
+```
+Error: Cannot create worktree - not in a git repository
+  at Worktree component (/path/to/agent.tsx:10)
+```
+
+**Path already exists (non-worktree):**
+```
+Error: Path './worktrees/feature-a' already exists and is not a git worktree
+  at Worktree component (/path/to/agent.tsx:10)
+
+Suggestion: Use a different path or remove the existing directory
+```
+
+**Branch already exists:**
+```
+Error: Branch 'feature-a' already exists
+  at Worktree component (/path/to/agent.tsx:10)
+
+Suggestion: Use a different branch name or omit the 'branch' prop to use detached HEAD
+```
+
+### Worktree Cleanup Errors
+
+**Uncommitted changes:**
+```
+Error: Cannot remove worktree './worktrees/feature-a' - uncommitted changes present
+  at Worktree component (/path/to/agent.tsx:10)
+
+Suggestion: Either commit the changes, or set cleanup={false} to preserve the worktree
+```
+
+## Integration with Ralph Wiggum Loop
+
+The Worktree component integrates seamlessly with the Ralph loop:
+
+1. **Render Phase**: Worktree component renders to XML, contentHash includes path/branch
+2. **Execution Phase**:
+   - Before executing child nodes, create worktree (if needed)
+   - Set WorktreeContext with the worktree path
+   - Execute children (Claude/ClaudeApi) with worktree as cwd
+3. **Cleanup Phase**: After child execution completes, optionally remove worktree
+4. **Re-render**: If state changes, Ralph loop re-renders. Worktree creation is idempotent (won't recreate if already exists)
+
+## Performance Considerations
+
+- **Worktree creation is fast** (~50-100ms) but not instant
+- **Parallel worktrees** can be created concurrently using `<Subagent parallel>`
+- **Disk space**: Each worktree is a full working directory (not a copy of files, but still uses disk space)
+- **Cleanup is important**: Without cleanup, worktrees accumulate and use disk space
+
+## Best Practices
+
+### When to Use Worktrees
+
+✅ **Good use cases:**
+- Parallel agents working on different features
+- Testing different approaches to the same problem
+- PR review agents that need isolated environments
+
+❌ **Don't use worktrees for:**
+- Sequential agents (use regular execution)
+- Single-agent workflows (unnecessary overhead)
+- Agents that only read files (no risk of conflicts)
+
+### Branch Naming
+
+Use descriptive branch names that indicate the agent's purpose:
+```tsx
+<Worktree path="./worktrees/auth" branch="agent/auth-implementation">
+  <Claude>Implement authentication</Claude>
+</Worktree>
+```
+
+### Cleanup Strategy
+
+**For ephemeral agents** (one-time tasks):
+```tsx
+<Worktree path="./worktrees/experiment" cleanup={true}>
+  <Claude>Try this experimental approach</Claude>
+</Worktree>
+```
+
+**For persistent agents** (review, iterate):
+```tsx
+<Worktree path="./worktrees/feature" cleanup={false} branch="feature-branch">
+  <Claude>Implement feature (can run multiple times)</Claude>
+</Worktree>
+```
+
+## Example: Parallel Feature Development
 
 ```tsx
-<WorktreeMonitor>
-  {worktrees => (
-    <div>
-      {worktrees.map(wt => (
-        <div key={wt.path}>
-          {wt.branch}: {wt.status}
-        </div>
-      ))}
-    </div>
-  )}
-</WorktreeMonitor>
+import { create } from 'zustand'
+
+const useStore = create((set, get) => ({
+  features: ['auth', 'dark-mode', 'notifications'],
+  completedFeatures: [],
+  markComplete: (feature) =>
+    set({ completedFeatures: [...get().completedFeatures, feature] }),
+}))
+
+export default function ParallelDevelopment() {
+  const features = useStore((s) => s.features)
+  const completedFeatures = useStore((s) => s.completedFeatures)
+  const markComplete = useStore((s) => s.markComplete)
+
+  // Stop when all features complete
+  if (completedFeatures.length === features.length) {
+    return <Stop reason="All features implemented" />
+  }
+
+  return (
+    <Subagent parallel>
+      {features
+        .filter(f => !completedFeatures.includes(f))
+        .map(feature => (
+          <Worktree
+            key={feature}
+            path={`./worktrees/${feature}`}
+            branch={`feature/${feature}`}
+            cleanup={false}
+          >
+            <Claude onFinished={() => markComplete(feature)}>
+              Implement {feature} feature. When done, commit your changes
+              to the current branch.
+            </Claude>
+          </Worktree>
+        ))
+      }
+    </Subagent>
+  )
+}
 ```
+
+## Implementation Notes
+
+### Smithers Node Type
+
+The Worktree component will have type `'worktree'` in the SmithersNode tree:
+
+```typescript
+{
+  type: 'worktree',
+  props: {
+    path: './worktrees/feature-a',
+    branch: 'feature-a',
+    cleanup: false,
+    base: 'main'
+  },
+  children: [/* Claude nodes */],
+  _execution: {
+    status: 'complete',
+    result: { worktreePath: '/abs/path/to/worktrees/feature-a' }
+  }
+}
+```
+
+### Execution Result
+
+The Worktree execution returns metadata about the created worktree:
+
+```typescript
+interface WorktreeExecutionResult {
+  worktreePath: string      // Absolute path to worktree
+  branch: string | null     // Branch name or null if detached
+  created: boolean          // true if worktree was created, false if already existed
+  cleanedUp: boolean        // true if worktree was removed after execution
+}
+```
+
+### Context Provider Implementation
+
+The Worktree component will use React Context to pass `cwd` to descendants:
+
+```tsx
+export function Worktree({ path, branch, cleanup = false, base = 'HEAD', children }: WorktreeProps) {
+  // This is just the React component definition
+  // The actual worktree creation happens in the executor
+  const absolutePath = resolvePath(path)
+
+  return (
+    <WorktreeContext.Provider value={{ cwd: absolutePath }}>
+      {children}
+    </WorktreeContext.Provider>
+  )
+}
+```
+
+The executor (`src/core/execute.ts`) will handle the actual git operations when it encounters a `worktree` node.
+
+## Testing Strategy
+
+See `evals/worktree.test.ts` for comprehensive test coverage:
+
+1. **Creation tests**: Verify worktrees are created with correct branch/path
+2. **Isolation tests**: Verify agents in different worktrees don't interfere
+3. **Cleanup tests**: Verify cleanup behavior with/without uncommitted changes
+4. **Error tests**: Verify proper error messages for invalid scenarios
+5. **Context tests**: Verify child components receive correct cwd
+6. **Parallel tests**: Verify multiple worktrees can be created/used simultaneously
