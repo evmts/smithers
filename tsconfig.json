@@ -9,6 +9,7 @@
     "declaration": true,
     "declarationDir": "./dist",
     "outDir": "dist",
+    "rootDir": "./src",
     "jsx": "react-jsx",
     "jsxImportSource": "react",
     "types": ["bun-types"],
