@@ -5294,12 +5294,11 @@ The CLI binary was reporting version 0.1.0 when package.json had already been up
 **Version Details:**
 - Node < 17.5.0 or < 16.15.0: Requires `--experimental-json-modules` flag
 - Node 16.15.0+ and 17.5.0+: JSON import assertions (`assert`) unflagged (stable)
-- Node 20.10+ and 21+: Import attributes (`with`) supported
-- The `assert` syntax is officially deprecated by TC39 (replaced with `with`), but Node still supports it for backward compatibility
-- The `with` syntax is the current TC39 standard (import attributes replaced import assertions)
-- V8 v12.3+ deprecated `assert`, planned removal by v12.6
-- For maximum compatibility with older Node LTS versions (16.x, 18.x), use `assert`
-- For new projects targeting Node 20+, use `with`
+- Node 20.10+: Import attributes (`with`) supported
+- The `assert` keyword has been officially deprecated by TC39 in favor of `with` (import attributes proposal)
+- Node.js still supports `assert` for backward compatibility with existing code
+- **Recommendation:** Use `assert` for maximum compatibility with older Node LTS versions (16.x, 18.x)
+- For new projects targeting Node 20+, consider using `with` as it's the current standard
 
 ### Current Status
 **Project remains 100% production-ready.**
