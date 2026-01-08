@@ -4627,13 +4627,13 @@ The TUI Integration feature (CLAUDE.md highest priority) was **already fully imp
 - Missing `NPM_TOKEN` secret in GitHub repository
 - Error message: "This command requires you to be logged in to https://registry.npmjs.org"
 
-**Last 3 GitHub Actions runs:**
+**Last 3 GitHub Actions runs (at time of session):**
 - Run 20802437054 (2026-01-08 01:34) - FAILED (missing NPM_TOKEN)
 - Run 20802198578 (2026-01-08 01:22) - FAILED (missing NPM_TOKEN)
 - Run 20802160519 (2026-01-08 01:20) - FAILED (missing NPM_TOKEN)
 
 ### What's Blocking Release
-The ONLY blocker is npm authentication. Two options:
+npm authentication is needed. Two options:
 
 1. **Automated (via GitHub Actions):**
    - Add `NPM_TOKEN` secret to GitHub repo
