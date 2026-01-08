@@ -29,7 +29,7 @@ Read these files to understand the project:
 ## Current State (Read First)
 
 **Completed (✅):**
-- Core renderer + executor exist and 663 tests pass (2 skipped, 0 failing)
+- Core renderer + executor exist and 665 total tests (663 passing, 2 skipped, 0 failing)
 - `renderPlan()`/`executePlan()` are async (React 19 reconciler)
 - Claude executor with full tool-use loop, retries, streaming
 - MCP integration (stdio + HTTP transports, 9 presets)
@@ -325,9 +325,9 @@ Remember: Ship quality code. It's better to do one thing well than many things p
 
 This section defines comprehensive test coverage targets. Tests should be added incrementally as features are completed. Current tests live in `evals/`.
 
-### Current Coverage (663 tests passing, 2 skipped, 0 failing)
+### Current Coverage (665 total tests: 663 passing, 2 skipped, 0 failing)
 
-**35 test files** covering all components and functionality:
+**35 test files across 35 files** covering all components and functionality:
 
 | File | Coverage |
 |------|----------|
@@ -350,7 +350,7 @@ This section defines comprehensive test coverage targets. Tests should be added 
 | `tui.test.tsx` | TUI components - 44 tests |
 | `output-file.test.tsx` | Output/File components - 45+ tests |
 | `mcp.test.ts` | MCP integration tests |
-| And 16+ more test files covering all features |
+| *(Plus 16 more test files)* | Additional feature coverage |
 
 ### Test Cases Needed
 
