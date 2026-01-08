@@ -25,20 +25,6 @@
     "name": "GitHub",
     "url": "https://github.com/smithers-ai/smithers"
   },
-  "tabs": [
-    {
-      "name": "API Reference",
-      "url": "api-reference"
-    },
-    {
-      "name": "Examples",
-      "url": "examples"
-    },
-    {
-      "name": "CLI",
-      "url": "cli"
-    }
-  ],
   "anchors": [
     {
       "name": "Documentation",

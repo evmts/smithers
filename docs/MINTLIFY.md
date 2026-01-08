@@ -13,11 +13,8 @@ npm install -g mintlify
 ### Run Development Server
 
 ```bash
-# From the project root
+# From the project root (mint.json must be in current directory)
 mintlify dev
-
-# Or specify the docs directory
-cd docs && mintlify dev
 ```
 
 This will start a local server at `http://localhost:3000` with hot-reload.
@@ -25,8 +22,9 @@ This will start a local server at `http://localhost:3000` with hot-reload.
 ## Project Structure
 
 ```
-docs/
-├── mint.json                    # Mintlify configuration
+smithers/
+├── mint.json                    # Mintlify configuration (at project root)
+├── docs/
 ├── introduction.mdx             # Landing page
 ├── quickstart.mdx               # Getting started guide
 ├── concepts/                    # Core concepts
@@ -57,7 +55,7 @@ docs/
 
 ## Configuration
 
-The `mint.json` file at the project root configures:
+The `mint.json` file (located at the project root, not in docs/) configures:
 - Site name, logo, and branding colors
 - Navigation structure
 - Tabs and anchors
