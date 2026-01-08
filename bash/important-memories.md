@@ -5287,15 +5287,19 @@ The CLI binary was reporting version 0.1.0 when package.json had already been up
 
 ### Key Learning
 **JSON Import Syntax for Node Compatibility:**
-- `import foo from './foo.json'` - breaks in Node ESM (needs assertion)
-- `import foo from './foo.json' assert { type: 'json' }` - stable in Node 16.15.0+, 17.5.0+, 18+, 20+ (RECOMMENDED)
-- `import foo from './foo.json' with { type: 'json' }` - newer syntax (Node 20.10+, 21+), `assert` is deprecated but still works
+- `import foo from './foo.json'` - breaks in Node ESM (needs import assertion/attribute)
+- `import foo from './foo.json' assert { type: 'json' }` - stable in Node 16.15.0+, 17.5.0+, 18+, 20+ (RECOMMENDED for backward compatibility)
+- `import foo from './foo.json' with { type: 'json' }` - newer "import attributes" syntax (Node 20.10+, 21+)
 
 **Version Details:**
 - Node < 17.5.0 or < 16.15.0: Requires `--experimental-json-modules` flag
-- Node 16.15.0+ and 17.5.0+: JSON import assertions unflagged (stable)
-- The `assert` syntax is stable and works across all Node LTS versions (16.15+, 18+, 20+)
-- The `with` syntax is the future standard but requires newer Node versions
+- Node 16.15.0+ and 17.5.0+: JSON import assertions (`assert`) unflagged (stable)
+- Node 20.10+ and 21+: Import attributes (`with`) supported
+- The `assert` syntax is officially deprecated by TC39 (replaced with `with`), but Node still supports it for backward compatibility
+- The `with` syntax is the current TC39 standard (import attributes replaced import assertions)
+- V8 v12.3+ deprecated `assert`, planned removal by v12.6
+- For maximum compatibility with older Node LTS versions (16.x, 18.x), use `assert`
+- For new projects targeting Node 20+, use `with`
 
 ### Current Status
 **Project remains 100% production-ready.**
