@@ -230,6 +230,9 @@ Smithers uses `react-reconciler` to render JSX → SmithersNode tree. OpenTUI al
 ### State Sharing Pattern
 
 ```typescript
+import { createCliRenderer } from "@opentui/core"
+import { createRoot } from "@opentui/react"
+
 // Smithers execution (existing)
 const smithersRoot = createSmithersRoot()
 const executionState = {
@@ -239,7 +242,8 @@ const executionState = {
 }
 
 // OpenTUI display (new)
-const tuiRoot = createRoot(domElement) // OpenTUI's createRoot
+const renderer = await createCliRenderer() // Create the CLI renderer first
+const tuiRoot = createRoot(renderer) // OpenTUI's createRoot expects a renderer
 tuiRoot.render(
   <TUIApp executionState={executionState} />
 )

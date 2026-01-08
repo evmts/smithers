@@ -1,3 +1,8 @@
+---
+title: TUI Design
+description: Terminal UI layout, navigation, and state design
+---
+
 # TUI Design: Interactive Ralph Wiggum Loop Interface
 
 This document specifies the design for Smithers' terminal user interface (TUI), providing an interactive view of agent execution.

@@ -1,3 +1,8 @@
+---
+title: VHS Recording
+description: Terminal demo workflow with VHS tape files
+---
+
 # VHS Recording: Terminal Demo Workflow
 
 This document describes how to create and maintain terminal recordings using VHS (CLI Home Video Recorder) for Smithers demos and documentation.
