@@ -33,13 +33,17 @@ interface WorktreeProps {
   /** Path where the worktree will be created (relative or absolute) */
   path: string
 
-  /** Optional branch name to create or use (defaults to detached HEAD) */
+  /**
+   * Optional branch name. If the branch exists, checks it out.
+   * If it doesn't exist, creates a new branch from the base ref.
+   * If omitted, creates a detached HEAD worktree.
+   */
   branch?: string
 
   /** Whether to clean up the worktree after execution (default: false) */
   cleanup?: boolean
 
-  /** Base ref to branch from (default: 'HEAD') */
+  /** Base ref to branch from when creating a new branch (default: 'HEAD') */
   base?: string
 
   /** React children (Claude, ClaudeApi, or other components) */
@@ -66,11 +70,14 @@ When the Worktree component is executed:
 2. **Validate git repository**: Ensure we're in a git repository
 3. **Create worktree**:
    ```bash
-   # With branch
-   git worktree add <path> -b <branch> <base>
+   # With branch (branch already exists)
+   git worktree add -- <path> <branch>
 
-   # Without branch (detached HEAD)
-   git worktree add <path> <base>
+   # With branch (create new branch)
+   git worktree add -b <branch> -- <path> [<base>]
+
+   # Without branch (detached HEAD at base ref)
+   git worktree add -- <path> [<commit-ish>]
    ```
 4. **Set execution context**: Store worktree path in React Context for child components
 
@@ -134,12 +141,7 @@ Suggestion: Use a different path or remove the existing directory
 ```
 
 **Branch already exists:**
-```
-Error: Branch 'feature-a' already exists
-  at Worktree component (/path/to/agent.tsx:10)
-
-Suggestion: Use a different branch name or omit the 'branch' prop to use detached HEAD
-```
+If the branch already exists, the worktree will check out the existing branch (no error). To create a new branch instead, use a different branch name.
 
 ### Worktree Cleanup Errors
 
