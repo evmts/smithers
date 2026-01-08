@@ -5,8 +5,7 @@ import pc from 'picocolors'
 import { runCommand } from './commands/run.js'
 import { planCommand } from './commands/plan.js'
 import { initCommand } from './commands/init.js'
-
-const VERSION = '0.1.0'
+import { version as VERSION } from '../../package.json'
 
 const program = new Command()
   .name('smithers')
