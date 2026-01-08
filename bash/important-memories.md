@@ -6068,3 +6068,30 @@ smithers/
 - **Next Steps**: Get user approval, then implement Worktree component, build TUI components, create demos, add interactive CLI commands
 - **Commit**: ee92338
 - **Status**: Awaiting user approval on TUI design before Phase 2 (Implementation)
+
+### 2026-01-07 20:05 - OpenTUI Documentation Fixes
+- **Fixed Codex review ee92338 feedback**:
+  1. Restored frontmatter (title/description) in tui-design.md and vhs-recording.md
+  2. Fixed createRoot() example - should be `createRoot(renderer)` not `createRoot(domElement)`
+  3. Added proper imports (createCliRenderer, createRoot) to State Sharing Pattern
+- **Key Learning**: OpenTUI's createRoot() expects a CliRenderer instance from createCliRenderer()
+- **Commit**: f9df18e
+
+### 2026-01-07 20:08 - Worktree Component Documentation (Phase 2a)
+- **Completed**: Comprehensive design documentation for Worktree component
+- **Component Already Implemented**: Worktree is fully working with 17/18 tests passing
+- **Documentation Created**: `docs/worktree-design.md` covers:
+  - Complete API with all props (path, branch, cleanup, base)
+  - Git worktree lifecycle (creation, execution, cleanup)
+  - React Context pattern for cwd propagation
+  - Error handling with detailed messages
+  - Integration with Ralph Wiggum loop
+  - Best practices and when to use/not use worktrees
+  - Example: parallel feature development with Zustand state
+- **Codex Review Fix (cafbec7)**: Clarified branch behavior to match implementation
+  - Branch prop can use existing branches OR create new ones
+  - If branch exists → checks it out (no error)
+  - If branch doesn't exist → creates new branch from base ref
+  - Detached HEAD only when branch prop is omitted
+- **Commits**: cafbec7, 3184c30
+- **Status**: Worktree component ready for production use
