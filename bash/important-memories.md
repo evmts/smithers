@@ -65,6 +65,16 @@ This file contains important learnings, decisions, and context from previous Ral
 - All issues were preventing potential runtime failures or misleading behavior
 - Commit: 3c9fc96
 
+### OpenTUI Documentation Corrections (2026-01-07 - FIXED)
+- **Problem**: TUI documentation had incorrect API usage and missing frontmatter
+- **Fixed 3 issues from Codex review ee92338**:
+  1. Restored frontmatter in `tui-design.md` and `vhs-recording.md` for docs metadata/indexing
+  2. Fixed `createRoot()` example - should be `createRoot(renderer)` not `createRoot(domElement)`
+  3. Added proper imports (`createCliRenderer`, `createRoot`) to State Sharing Pattern example
+- **Key learning**: OpenTUI's `createRoot()` expects a `CliRenderer` instance from `createCliRenderer()`, not a DOM element
+- Affected files: `docs/tui-design.md`, `docs/vhs-recording.md`, `docs/tui-research.md`
+- Commit: f9df18e
+
 ## Project History
 
 - Originally named "Plue", renamed to "Smithers" on 2026-01-05
@@ -6031,3 +6041,30 @@ smithers/
 - **Commit**: a507093
 - **Codex Review**: LGTM
 - **Status**: PRODUCTION READY - Critical bug fixed, ready for npm publish
+### 2026-01-07 20:01 - TUI Integration Phase 1: Research & Documentation
+- **Phase 1 Complete**: Created comprehensive documentation BEFORE writing any code (following instructions)
+- **Created 3 Documentation Files**:
+  1. `docs/tui-research.md` - OpenTUI architecture research
+     - Reconciler pattern analysis (OpenTUI uses react-reconciler just like Smithers)
+     - Dual reconciler challenge: Need separate React roots for Smithers and OpenTUI
+     - @opentui/react API: useRenderer, useKeyboard, useTerminalDimensions, useOnResize, useTimeline
+     - Zig dependency requirement (must be installed for building)
+     - Performance: Sub-millisecond frame times
+     - Integration pattern recommendation: Separate React Roots with shared state
+  2. `docs/tui-design.md` - Complete TUI design specification
+     - UI mockups: Tree view, Agent detail view, Split view
+     - 6 component architecture: TUIApp, TreeView, TreeNode, AgentPanel, StatusBar, SplitView
+     - Keyboard navigation spec (arrow keys, enter, escape, etc.)
+     - Visual language: Execution status icons (○ pending, ⟳ running, ✓ complete, ✗ error)
+     - State management: ExecutionState shared between executor and TUI
+     - Performance: Virtual scrolling, React.memo, debounced updates
+     - Error handling and accessibility considerations
+  3. `docs/vhs-recording.md` - Terminal demo recording workflow
+     - VHS tape file format (.tape files with commands)
+     - Example tapes: hello-world, multi-phase, tui-navigation, error-handling
+     - CI/CD integration with vhs-action
+     - Best practices: Keep recordings 30-60s, use Wait for output, hide sensitive info
+- **Key Insight**: Smithers and OpenTUI both use react-reconciler, so we need careful integration with separate roots
+- **Next Steps**: Get user approval, then implement Worktree component, build TUI components, create demos, add interactive CLI commands
+- **Commit**: ee92338
+- **Status**: Awaiting user approval on TUI design before Phase 2 (Implementation)
