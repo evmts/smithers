@@ -233,6 +233,7 @@ export function createSmithersSolidRenderer() {
     getNextSibling(node: SmithersNode): SmithersNode | undefined {
       if (!node.parent) return undefined
       const idx = node.parent.children.indexOf(node)
+      if (idx === -1) return undefined
       return node.parent.children[idx + 1]
     },
   })
