@@ -5,7 +5,7 @@
     "rootDir": "./src",
     "declaration": true,
     "declarationDir": "./dist",
-    "types": ["bun-types"]
+    "types": ["@types/bun"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

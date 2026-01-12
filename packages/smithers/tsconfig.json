@@ -7,7 +7,7 @@
     "declarationDir": "./dist",
     "jsx": "react-jsx",
     "jsxImportSource": "react",
-    "types": ["bun-types"],
+    "types": ["@types/bun"],
     "paths": {
       "@evmts/smithers": ["./src/index.ts"]
     }
