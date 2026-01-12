@@ -37,6 +37,9 @@ const NON_SERIALIZABLE_PROPS = new Set([
   'onStreamEnd',     // Callback
   'onApprove',       // Callback
   'onReject',        // Callback
+  'onWritten',       // Callback
+  'onCreated',       // Callback
+  'onCleanup',       // Callback
   'mcpServers',      // MCP server configs
   'toolRetry',       // Retry configuration
   'debug',           // Debug options
