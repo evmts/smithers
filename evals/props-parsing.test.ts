@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { parseProps } from '../src/cli/props.js'
+import { parseProps } from '@evmts/smithers-cli/props'
 
 /**
  * Props Parsing Unit Tests

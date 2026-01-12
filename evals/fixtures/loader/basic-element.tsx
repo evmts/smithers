@@ -1,4 +1,4 @@
-import { Claude } from '../../../src/components/index.js'
+import { Claude } from '@evmts/smithers'
 
 export default (
   <Claude>

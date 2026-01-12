@@ -10,7 +10,7 @@ import {
   Step,
   Persona,
   Constraints,
-} from '../src/index.js'
+} from '@evmts/smithers'
 
 /**
  * Comprehensive eval that tests ALL Smithers features in a single complex scenario:

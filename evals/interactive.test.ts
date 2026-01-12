@@ -3,16 +3,15 @@
  */
 
 import { test, expect } from 'bun:test'
+import type { SmithersNode } from '@evmts/smithers'
+import { executePlan, Claude, Phase } from '@evmts/smithers'
 import {
   ExecutionController,
   parseCommand,
   handleCommand,
   formatTree,
   formatDuration,
-  type SmithersNode,
-} from '../src/index.js'
-import { executePlan } from '../src/core/execute.js'
-import { Claude, Phase } from '../src/components/index.js'
+} from '@evmts/smithers-cli/interactive'
 import { createElement } from 'react'
 import { create } from 'zustand'
 

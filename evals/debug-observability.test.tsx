@@ -12,7 +12,7 @@ import {
   formatTreeAsAscii,
   type SmithersDebugEvent,
   type DebugSummary,
-} from '../src/index.js'
+} from '@evmts/smithers'
 
 // Set mock mode for testing
 process.env.SMITHERS_MOCK_MODE = 'true'

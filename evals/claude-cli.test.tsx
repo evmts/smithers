@@ -1,7 +1,7 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test'
 import './setup.ts'
 import { z } from 'zod'
-import { renderPlan, executePlan, ClaudeCli, Persona, Constraints } from '../src/index.js'
+import { renderPlan, executePlan, ClaudeCli, Persona, Constraints } from '@evmts/smithers'
 
 describe('ClaudeCli component', () => {
   describe('rendering', () => {

@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test'
 import './setup.ts'
 import { create } from 'zustand'
 
-import { createRoot, executePlan, findPendingExecutables, Claude, Subagent } from '../src/index.js'
+import { createRoot, executePlan, findPendingExecutables, Claude, Subagent } from '@evmts/smithers'
 
 describe('subagent scheduling', () => {
   test('findPendingExecutables only returns Claude nodes', async () => {

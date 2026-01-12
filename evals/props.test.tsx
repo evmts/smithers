@@ -2,7 +2,8 @@ import { describe, test, expect } from 'bun:test'
 import './setup.ts'
 import * as path from 'path'
 
-import { loadAgentFile, renderPlan } from '../src/index.js'
+import { renderPlan } from '@evmts/smithers'
+import { loadAgentFile } from '@evmts/smithers-cli/loader'
 
 describe('props handling', () => {
   test('loadAgentFile applies props to component exports', async () => {

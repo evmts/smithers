@@ -15,8 +15,8 @@ import {
   Task,
   Stop,
   Human,
-} from '../src/index.js'
-import type { Tool } from '../src/core/types.js'
+} from '@evmts/smithers'
+import type { Tool } from '@evmts/smithers'
 
 /**
  * Component Behavior Tests

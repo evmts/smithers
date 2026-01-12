@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
-import { renderPlan, executePlan, Claude } from '../src/index.js'
+import { renderPlan, executePlan, Claude } from '@evmts/smithers'
 
 describe('hello-world', () => {
   test('renders basic Claude component to XML', async () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test'
-import * as display from '../src/cli/display.js'
-import { LoaderError, SyntaxLoadError } from '../src/cli/loader.js'
+import * as display from '@evmts/smithers-cli/display'
+import { LoaderError, SyntaxLoadError } from '@evmts/smithers-cli/loader'
 
 /**
  * Display Module Unit Tests

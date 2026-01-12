@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test'
-import { MCPManager } from '../src/mcp/manager.js'
-import type { MCPServerConfig, MCPTool } from '../src/mcp/types.js'
+import { MCPManager } from '@evmts/smithers'
+import type { MCPServerConfig, MCPTool } from '@evmts/smithers'
 
 /**
  * MCPManager Unit Tests

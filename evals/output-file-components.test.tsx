@@ -11,7 +11,7 @@ import {
   File,
   Stop,
   Phase,
-} from '../src/index.js'
+} from '@evmts/smithers'
 
 /**
  * Tests for the Output and File components

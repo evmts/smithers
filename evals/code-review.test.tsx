@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
-import { renderPlan, executePlan, Claude, Phase, Step, Constraints } from '../src/index.js'
+import { renderPlan, executePlan, Claude, Phase, Step, Constraints } from '@evmts/smithers'
 import { z } from 'zod'
 
 describe('code-review', () => {

@@ -3,8 +3,8 @@ import {
   createExecutionError,
   getNodePath,
   RateLimitError,
-} from '../src/core/claude-executor.js'
-import type { SmithersNode, ExecutionError, Tool } from '../src/core/types.js'
+} from '@evmts/smithers'
+import type { SmithersNode, ExecutionError, Tool } from '@evmts/smithers'
 
 /**
  * Claude Executor Unit Tests

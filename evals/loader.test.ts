@@ -14,7 +14,7 @@ import {
   SyntaxLoadError,
   ExportError,
   InvalidElementError,
-} from '../src/cli/loader.js'
+} from '@evmts/smithers-cli/loader'
 
 const FIXTURES_DIR = path.join(import.meta.dir, 'fixtures', 'loader')
 

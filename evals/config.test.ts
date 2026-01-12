@@ -9,7 +9,7 @@ import {
   mergeOptions,
   defineConfig,
   type SmithersConfig,
-} from '../src/cli/config.js'
+} from '@evmts/smithers-cli/config'
 
 describe('config', () => {
   let tempDir: string

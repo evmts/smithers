@@ -7,13 +7,13 @@ import {
   Phase,
   Step,
   type PlanInfo,
-} from '../src/index.js'
+} from '@evmts/smithers'
 import {
   separatePromptAndPlan,
   generateNodePaths,
   serializePlanWithPaths,
-} from '../src/core/nested-execution.js'
-import { createRoot, serialize } from '../src/core/render.js'
+} from '@evmts/smithers'
+import { createRoot, serialize } from '@evmts/smithers'
 
 describe('Nested Claude Execution', () => {
   let originalMockMode: string | undefined

@@ -3,8 +3,8 @@ import {
   findPendingExecutables,
   findStopNode,
   findHumanNode,
-} from '../src/core/execute.js'
-import type { SmithersNode, ExecutionState } from '../src/core/types.js'
+} from '@evmts/smithers'
+import type { SmithersNode, ExecutionState } from '@evmts/smithers'
 
 /**
  * Execute Module Helper Function Tests

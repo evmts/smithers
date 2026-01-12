@@ -12,7 +12,7 @@ import {
   OutputFormat,
   Human,
   Stop,
-} from '../src/index.js'
+} from '@evmts/smithers'
 
 /**
  * Tests for the Feature Workflow example - the comprehensive development workflow.

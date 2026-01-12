@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { MCPPresets, createMCPConfigs } from '../src/mcp/presets.js'
+import { MCPPresets, createMCPConfigs } from '@evmts/smithers'
 
 /**
  * MCP Presets Unit Tests

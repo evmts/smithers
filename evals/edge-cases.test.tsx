@@ -7,8 +7,8 @@
 
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
-import { renderPlan, executePlan, Claude, Phase, Step, Subagent, createRoot } from '../src/index.js'
-import type { SmithersNode } from '../src/core/types.js'
+import { renderPlan, executePlan, Claude, Phase, Step, Subagent, createRoot } from '@evmts/smithers'
+import type { SmithersNode } from '@evmts/smithers'
 import React from 'react'
 
 describe('Edge Cases: Empty/Null Scenarios', () => {
@@ -255,7 +255,7 @@ describe('Edge Cases: Unicode and Special Characters', () => {
   })
 
   test('Special XML chars are escaped in serialization', async () => {
-    const { serialize } = await import('../src/core/render.js')
+    const { serialize } = await import('@evmts/smithers')
 
     const specialChars = '<script>alert("xss")</script> & "quotes" & \'single\''
 
@@ -519,7 +519,7 @@ describe('Edge Cases: Prop Types', () => {
   })
 
   test('Function props are stored but not serialized', async () => {
-    const { serialize } = await import('../src/core/render.js')
+    const { serialize } = await import('@evmts/smithers')
     const fn = () => console.log('test')
 
     const root = createRoot()

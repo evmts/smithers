@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { z } from 'zod'
 import React from 'react'
-import { createWorkflow, Claude, ClaudeApi, Human, executePlan } from '../src/index.js'
+import { createWorkflow, Claude, ClaudeApi, Human, executePlan } from '@evmts/smithers'
 
 describe('Workflow', () => {
   describe('createWorkflow', () => {

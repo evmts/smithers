@@ -41,7 +41,7 @@ function extractJsonFromOutput(output: string): unknown {
  */
 describe('CLI', () => {
   let tempDir: string
-  const cliPath = path.resolve(__dirname, '../src/cli/index.ts')
+  const cliPath = path.resolve(__dirname, '../packages/cli/src/index.ts')
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smithers-cli-test-'))
@@ -217,11 +217,12 @@ describe('CLI', () => {
     })
 
     it('renders TSX file to XML', async () => {
-      const srcPath = path.resolve(__dirname, '../src/components/index.js')
+      // Use absolute path to dist since temp files can't resolve workspace packages
+      const smithersPath = path.resolve(__dirname, '../packages/smithers/dist/index.js')
       const agentFile = path.join(tempDir, 'agent.tsx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from '${srcPath}'
+        `import { Claude } from '${smithersPath}'
 
 export default (
   <Claude>
@@ -324,11 +325,12 @@ export default (
     })
 
     it('errors on file without default export', async () => {
-      const srcPath = path.resolve(__dirname, '../src/components/index.js')
+      // Use absolute path to dist since temp files can't resolve workspace packages
+      const smithersPath = path.resolve(__dirname, '../packages/smithers/dist/index.js')
       const agentFile = path.join(tempDir, 'no-export.tsx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from '${srcPath}'
+        `import { Claude } from '${smithersPath}'
 
 // No export
 const MyAgent = <Claude>Test</Claude>

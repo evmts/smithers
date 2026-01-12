@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import './setup.ts'
-import { Worktree, Claude, renderPlan, executePlan, createRoot } from '../src/index.js'
+import { Worktree, Claude, renderPlan, executePlan, createRoot } from '@evmts/smithers'
 import { execSync } from 'child_process'
 import { existsSync, rmSync, mkdirSync } from 'fs'
 import { join } from 'path'

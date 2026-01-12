@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
 
-import { executePlan, Claude } from '../src/index.js'
+import { executePlan, Claude } from '@evmts/smithers'
 
 describe('executePlan options', () => {
   test('mockMode overrides SMITHERS_REAL_MODE', async () => {

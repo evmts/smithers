@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
 import { create } from 'zustand'
-import { renderPlan, executePlan, Claude, Phase, Stop } from '../src/index.js'
+import { renderPlan, executePlan, Claude, Phase, Stop } from '@evmts/smithers'
 
 describe('Stop component', () => {
   test('renders Stop component in XML plan', async () => {

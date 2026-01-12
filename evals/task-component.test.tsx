@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
-import { renderPlan, Claude, Phase, Step, Task } from '../src/index.js'
+import { renderPlan, Claude, Phase, Step, Task } from '@evmts/smithers'
 
 /**
  * Tests for the Task component - trackable task with completion state.

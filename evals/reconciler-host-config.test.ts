@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
-import { hostConfig } from '../src/reconciler/host-config.js'
-import type { SmithersNode } from '../src/core/types.js'
+import { hostConfig } from '@evmts/smithers'
+import type { SmithersNode } from '@evmts/smithers'
 
 /**
  * Reconciler Host Config Unit Tests

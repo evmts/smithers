@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
 import { create } from 'zustand'
-import { renderPlan, executePlan, Claude, Phase, Step } from '../src/index.js'
+import { renderPlan, executePlan, Claude, Phase, Step } from '@evmts/smithers'
 
 describe('multi-phase', () => {
   test('renders different plans based on props', async () => {

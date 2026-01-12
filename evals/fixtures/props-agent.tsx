@@ -1,4 +1,4 @@
-import { Claude } from '../../src/index.js'
+import { Claude } from '@evmts/smithers'
 
 export default function PropsAgent({ name }: { name: string }) {
   return (

@@ -6,7 +6,7 @@ import {
   Claude,
   Phase,
   type ExecutionError,
-} from '../src/index.js'
+} from '@evmts/smithers'
 
 /**
  * Tests for error recovery patterns in the Smithers execution pipeline.

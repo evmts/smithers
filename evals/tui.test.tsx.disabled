@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import type { SmithersNode } from '../src/core/types.js'
+import type { SmithersNode } from '@evmts/smithers'
 import {
   findNodeByPath,
   getNextVisibleNode,

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
 import { useState } from 'react'
-import { executePlan, Claude, Human, Phase } from '../src/index.js'
+import { executePlan, Claude, Human, Phase } from '@evmts/smithers'
 
 /**
  * Tests for the Human component - interactive approval points in execution.

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import './setup.ts'
 import { useState } from 'react'
-import { renderPlan, executePlan, Claude, Phase, Step, Persona } from '../src/index.js'
+import { renderPlan, executePlan, Claude, Phase, Step, Persona } from '@evmts/smithers'
 
 describe('multi-agent', () => {
   test('renders nested Claude components', async () => {

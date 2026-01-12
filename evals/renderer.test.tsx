@@ -10,8 +10,8 @@ import {
   Persona,
   Constraints,
   Subagent,
-} from '../src/index.js'
-import type { SmithersNode } from '../src/core/types.js'
+} from '@evmts/smithers'
+import type { SmithersNode } from '@evmts/smithers'
 import { Fragment } from 'react'
 
 describe('renderPlan()', () => {
