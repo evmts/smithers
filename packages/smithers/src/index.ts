@@ -65,6 +65,7 @@ export type {
   SmithersNode,
   SmithersRoot,
   ExecutionState,
+  ExecutionController,
   ExecutionError,
   Tool,
   ToolInputSchema,
@@ -175,3 +176,6 @@ export type {
   HumanPromptInfo,
   HumanPromptResponse,
 } from './workflow/index.js'
+
+// Reconciler (for testing)
+export { hostConfig } from './reconciler/host-config.js'

@@ -31,6 +31,26 @@ export interface ExecutionState {
 }
 
 /**
+ * Controller interface for interactive execution.
+ * Allows pause/resume, skip, inject, and abort during execution.
+ * Used by interactive CLI commands (/pause, /resume, etc.)
+ */
+export interface ExecutionController {
+  paused: boolean
+  skipNextNode: boolean
+  skipNodePath?: string
+  injectedPrompt?: string
+  aborted: boolean
+  abortReason?: string
+  pause(): void
+  resume(): void
+  skip(nodePath?: string): void
+  inject(prompt: string): void
+  abort(reason?: string): void
+  _updateState(frame: number, tree: SmithersNode): void
+}
+
+/**
  * Detailed error information for better error recovery
  */
 export interface ExecutionError extends Error {
@@ -563,7 +583,7 @@ export interface ExecuteOptions {
    * Allows pause/resume, skip, inject, and abort during execution.
    * Used by interactive CLI commands (/pause, /resume, etc.)
    */
-  controller?: import('../cli/interactive.js').ExecutionController
+  controller?: ExecutionController
 }
 
 /**

@@ -49,6 +49,13 @@ export class DebugCollector {
   }
 
   /**
+   * Get the onEvent callback
+   */
+  get onEvent(): ((event: SmithersDebugEvent) => void) | undefined {
+    return this.options.onEvent
+  }
+
+  /**
    * Set the current frame number for event timestamps
    */
   setFrame(frame: number): void {
