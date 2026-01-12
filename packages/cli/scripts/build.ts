@@ -17,9 +17,16 @@ console.log('Cleaning dist directory...')
 rmSync(DIST, { recursive: true, force: true })
 mkdirSync(DIST, { recursive: true })
 
-// Build CLI
+// Build CLI - main entry point
 console.log('Building CLI...')
 await $`bun build ./src/index.ts --outdir ./dist --target node --sourcemap=external`
+
+// Build individual modules for subpath exports
+console.log('Building submodules...')
+const submodules = ['display', 'loader', 'config', 'props', 'interactive']
+for (const mod of submodules) {
+  await $`bun build ./src/${mod}.ts --outfile ./dist/${mod}.js --target node`
+}
 
 // Set executable bit
 const cliPath = join(DIST, 'index.js')

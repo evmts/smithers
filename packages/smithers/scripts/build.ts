@@ -18,8 +18,10 @@ rmSync(DIST, { recursive: true, force: true })
 mkdirSync(DIST, { recursive: true })
 
 // Build main library
+// Mark react and react-reconciler as external to prevent bundling multiple React copies
+// This fixes "Invalid hook call" errors when consumers have their own React instance
 console.log('Building library...')
-await $`bun build ./src/index.ts --outdir ./dist --target node --sourcemap=external`
+await $`bun build ./src/index.ts --outdir ./dist --target node --sourcemap=external --external react --external react-reconciler`
 
 // Generate TypeScript declarations
 console.log('Generating type declarations...')
