@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, setDefaultTimeout } from '
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { pathToFileURL } from 'url'
 import { $ } from 'bun'
 
 // Increase timeout for CLI integration tests (they spawn processes and can be slow)
@@ -217,12 +218,13 @@ describe('CLI', () => {
     })
 
     it('renders TSX file to XML', async () => {
-      // Use absolute path to dist since temp files can't resolve workspace packages
+      // Use file URL to ensure cross-platform compatibility (handles Windows paths correctly)
       const smithersPath = path.resolve(__dirname, '../packages/smithers/dist/index.js')
+      const smithersUrl = pathToFileURL(smithersPath).href
       const agentFile = path.join(tempDir, 'agent.tsx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from '${smithersPath}'
+        `import { Claude } from ${JSON.stringify(smithersUrl)}
 
 export default (
   <Claude>
@@ -325,12 +327,13 @@ export default (
     })
 
     it('errors on file without default export', async () => {
-      // Use absolute path to dist since temp files can't resolve workspace packages
+      // Use file URL to ensure cross-platform compatibility (handles Windows paths correctly)
       const smithersPath = path.resolve(__dirname, '../packages/smithers/dist/index.js')
+      const smithersUrl = pathToFileURL(smithersPath).href
       const agentFile = path.join(tempDir, 'no-export.tsx')
       fs.writeFileSync(
         agentFile,
-        `import { Claude } from '${smithersPath}'
+        `import { Claude } from ${JSON.stringify(smithersUrl)}
 
 // No export
 const MyAgent = <Claude>Test</Claude>
