@@ -5,6 +5,32 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./display": {
+      "types": "./dist/display.d.ts",
+      "import": "./dist/display.js"
+    },
+    "./loader": {
+      "types": "./dist/loader.d.ts",
+      "import": "./dist/loader.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./props": {
+      "types": "./dist/props.d.ts",
+      "import": "./dist/props.js"
+    },
+    "./interactive": {
+      "types": "./dist/interactive.d.ts",
+      "import": "./dist/interactive.js"
+    }
+  },
   "bin": {
     "smithers": "dist/index.js"
   },
@@ -31,6 +57,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/react": "^19.0.0",
     "@types/ws": "^8.5.13",
     "typescript": "^5.7.2"
   },
