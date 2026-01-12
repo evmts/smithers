@@ -17,11 +17,30 @@ console.log('Cleaning dist directory...')
 rmSync(DIST, { recursive: true, force: true })
 mkdirSync(DIST, { recursive: true })
 
-// Build main library
+// Build main library and testing exports
 // Mark react and react-reconciler as external to prevent bundling multiple React copies
 // This fixes "Invalid hook call" errors when consumers have their own React instance
-console.log('Building library...')
-await $`bun build ./src/index.ts --outdir ./dist --target node --sourcemap=external --external react --external react-reconciler`
+// Also externalize JSX runtime subpaths which are imported by compiled JSX
+// Note: We build each entrypoint separately to avoid Bun's code-splitting duplicate export bug
+console.log('Building main library...')
+await $`bun build ./src/index.ts \
+  --outdir ./dist \
+  --target node \
+  --sourcemap=external \
+  --external react \
+  --external react-reconciler \
+  --external react/jsx-runtime \
+  --external react/jsx-dev-runtime`
+
+console.log('Building testing exports...')
+await $`bun build ./src/testing.ts \
+  --outdir ./dist \
+  --target node \
+  --sourcemap=external \
+  --external react \
+  --external react-reconciler \
+  --external react/jsx-runtime \
+  --external react/jsx-dev-runtime`
 
 // Generate TypeScript declarations
 console.log('Generating type declarations...')
