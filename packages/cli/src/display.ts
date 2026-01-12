@@ -70,14 +70,24 @@ export function displayResult(
 }
 
 /**
+ * Check if an error is a LoaderError (duck typing to work across bundle boundaries)
+ */
+function isLoaderError(error: Error): error is LoaderError {
+  return (
+    typeof (error as LoaderError).format === 'function' &&
+    typeof (error as LoaderError).filePath === 'string'
+  )
+}
+
+/**
  * Display an error with rich formatting for LoaderError types
  */
 export function displayError(error: Error): void {
   console.error()
   console.error(pc.bold(pc.red('Error')))
 
-  // Use rich formatting for LoaderError types
-  if (error instanceof LoaderError) {
+  // Use rich formatting for LoaderError types (duck typing for bundle compatibility)
+  if (isLoaderError(error)) {
     console.error()
     console.error(pc.red(error.format()))
     return

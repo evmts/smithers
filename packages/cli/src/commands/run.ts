@@ -238,7 +238,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
       debug: {
         enabled: true,
         includeTreeSnapshots: true,
-        onEvent: debugCollector.options.onEvent,
+        onEvent: debugCollector.onEvent,
       },
       onFrameUpdate: async (tree, frame) => {
         execSpinner.text = `Frame ${frame}...`

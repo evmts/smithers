@@ -5,8 +5,8 @@
  * of the Ralph Wiggum loop during execution.
  */
 
-import type { SmithersNode } from '../core/types'
-import { getNodePath } from '../core/claude-executor'
+import type { SmithersNode, ExecutionController as IExecutionController } from '@evmts/smithers'
+import { getNodePath } from '@evmts/smithers'
 
 /**
  * Parsed command from user input
@@ -36,7 +36,7 @@ export interface ExecutionStatus {
  * Used by executePlan() to check state before each frame
  * and by command handlers to update state.
  */
-export class ExecutionController {
+export class ExecutionController implements IExecutionController {
   paused: boolean = false
   skipNextNode: boolean = false
   skipNodePath?: string
