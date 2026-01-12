@@ -1,4 +1,3 @@
-import { cloneElement, createElement, type ReactElement } from 'react'
 import type {
   ExecuteOptions,
   ExecutionError,
@@ -11,8 +10,6 @@ import type {
   SmithersNode,
   Tool,
 } from './types.js'
-import { createRoot } from './render.js'
-import { runWithSyncUpdates, waitForStateUpdates } from '../reconciler/index.js'
 import { executeWithClaude, createExecutionError, getNodePath } from './claude-executor.js'
 import { executeWithClaudeCli } from './claude-cli-executor.js'
 import { executeWithAgentSdk, executeAgentMock } from './claude-agent-executor.js'
@@ -25,21 +22,37 @@ import { MCPManager } from '../mcp/manager.js'
 import type { MCPServerConfig } from '../mcp/types.js'
 import { DebugCollector } from '../debug/collector.js'
 import type { ExecutionStatus } from '../debug/types.js'
-import {
-  findWorkflowOutputs,
-  zodSchemaToToolSchema,
-  getWorkflowStoreFromTree,
-} from '../workflow/helpers.js'
+// TODO: Workflow helpers need to be ported to smithers-core or made optional
+// import {
+//   findWorkflowOutputs,
+//   zodSchemaToToolSchema,
+//   getWorkflowStoreFromTree,
+// } from '../workflow/helpers.js'
 
-/**
- * Wrapper component that passes through children
- * We clone the child element to force React to re-evaluate it on every render
- * This ensures useState updates are properly processed
- */
-function RenderFrame({ children, frameCount }: { children: ReactElement; frameCount: number }) {
-  // Clone the element to create a new reference, forcing React to re-evaluate
-  // But DON'T change the key - that would remount and lose state
-  return cloneElement(children)
+// Temporary stub implementations until workflow helpers are ported
+function findWorkflowOutputs(_node: SmithersNode): SmithersNode[] {
+  return []
+}
+
+function zodSchemaToToolSchema(_schema: unknown): unknown {
+  return { type: 'object', properties: {} }
+}
+
+function getWorkflowStoreFromTree(_node: SmithersNode, _workflowId?: string): { setValue: (name: string, value: unknown) => void } | null {
+  return null
+}
+
+// Temporary stub implementations for React-specific functions
+async function waitForStateUpdates(): Promise<void> {
+  // In renderer-agnostic core, state updates are handled by the rerender callback
+  // This is a no-op placeholder
+  return Promise.resolve()
+}
+
+function runWithSyncUpdates(fn: () => void): void {
+  // In renderer-agnostic core, sync updates are handled by the renderer
+  // Just execute the function immediately
+  fn()
 }
 
 /**
@@ -51,10 +64,15 @@ function RenderFrame({ children, frameCount }: { children: ReactElement; frameCo
  * 3. Executes those nodes
  * 4. If onFinished callbacks trigger state changes, re-render
  * 5. Repeats until no more executable nodes or max frames reached
+ *
+ * @param initialTree The initial SmithersNode tree to execute
+ * @param options Execution options including optional rerender callback
  */
 export async function executePlan(
-  element: ReactElement,
-  options: ExecuteOptions = {}
+  initialTree: SmithersNode,
+  options: ExecuteOptions & {
+    rerender?: () => Promise<SmithersNode>
+  } = {}
 ): Promise<ExecutionResult> {
   const {
     maxFrames = 100,
@@ -83,16 +101,13 @@ export async function executePlan(
   // This prevents infinite prompting when a Human node has no onApprove callback
   const approvedHumanNodes = new Set<string>()
 
-  // Create root once and reuse it - this preserves React state (useState, etc.)
-  const root = createRoot()
-
   // Initialize MCP manager for tool discovery
   const mcpManager = new MCPManager()
 
   let frameNumber = 0
   let finalOutput: unknown = null
   const mcpServers = new Set<string>()
-  let tree: SmithersNode
+  let tree: SmithersNode = initialTree
 
   // Ralph Wiggum loop: keep rendering and executing until done
   while (frameNumber < maxFrames) {
@@ -108,13 +123,14 @@ export async function executePlan(
     debugCollector.emit({ type: 'frame:start' })
 
     if (verbose) {
-      console.log(`[Frame ${frameNumber}] Rendering element...`)
+      console.log(`[Frame ${frameNumber}] Rendering tree...`)
     }
 
-    // Wrap element in RenderFrame with changing frameCount prop
-    // This forces React to recognize this as a new render cycle while preserving state
-    const wrapped = createElement(RenderFrame, { frameCount: frameNumber, children: element })
-    tree = await root.render(wrapped)
+    // Call rerender callback if provided (for subsequent frames after the first)
+    // The rerender callback is responsible for re-rendering the tree with updated state
+    if (frameNumber > 1 && options.rerender) {
+      tree = await options.rerender()
+    }
 
     // Emit frame:render event with optional tree snapshot
     debugCollector.emit({
@@ -529,8 +545,7 @@ export async function executePlan(
     }
 
     // Serialize the current tree to XML for logging
-    // Don't call renderPlan() as it would create a new root and re-render
-    const { serialize } = await import('./render.js')
+    const { serialize } = await import('./serialize.js')
     const plan = serialize(tree)
 
     if (onPlan) {
@@ -899,9 +914,6 @@ export async function executePlan(
     // Save execution state for next frame
     saveExecutionState(tree, executionState)
   }
-
-  // Unmount the root after we're done
-  root.unmount()
 
   // Disconnect all MCP servers
   await mcpManager.disconnectAll()
