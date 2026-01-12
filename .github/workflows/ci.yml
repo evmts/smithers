@@ -16,26 +16,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Install Zig (for OpenTUI)
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.15.2
-
       - name: Install dependencies
-        run: bun install
+        run: pnpm install
 
       - name: Typecheck
-        run: bun run typecheck
+        run: pnpm run typecheck
+
+      - name: Build
+        run: pnpm run build
 
       - name: Test
         run: bun test
         env:
           NO_COLOR: 1
-
-      - name: Build
-        run: bun run build
