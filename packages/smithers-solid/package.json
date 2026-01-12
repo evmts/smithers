@@ -24,7 +24,8 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@evmts/smithers": "workspace:*"
+    "@evmts/smithers": "workspace:*",
+    "solid-js": "^1.9.10"
   },
   "devDependencies": {
     "@evmts/smithers": "workspace:*",
