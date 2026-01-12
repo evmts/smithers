@@ -1,33 +1,18 @@
 {
-  "name": "@evmts/smithers",
+  "name": "smithers-monorepo",
   "version": "1.0.0",
-  "description": "Build AI agents in React. Declarative JSX components for orchestrating Claude agents with state management, parallel execution, and TUI visualization.",
+  "private": true,
+  "description": "Build AI agents in React. Declarative JSX components for orchestrating Claude agents.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "bin": {
-    "smithers": "dist/cli/index.js"
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
-  "sideEffects": false,
   "scripts": {
-    "build": "bun run scripts/build.ts",
-    "dev": "bun run src/cli/index.ts",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "bun run build && changeset publish"
+    "release": "turbo run build && changeset publish"
   },
   "repository": {
     "type": "git",
@@ -37,37 +22,15 @@
   "bugs": {
     "url": "https://github.com/evmts/smithers/issues"
   },
-  "publishConfig": {
-    "access": "public"
-  },
-  "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
-    "@anthropic-ai/sdk": "^0.71.2",
-    "@mdx-js/mdx": "^3.1.1",
-    "@modelcontextprotocol/sdk": "^1.25.1",
-    "@opentui/core": "^0.1.69",
-    "@opentui/react": "^0.1.69",
-    "commander": "^12.1.0",
-    "ora": "^8.1.1",
-    "picocolors": "^1.1.1",
-    "react-reconciler": "^0.33.0",
-    "zod-to-json-schema": "^3.24.1",
-    "zustand": "^5.0.9"
-  },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
     "@changesets/cli": "^2.29.8",
     "@types/bun": "latest",
     "@types/node": "^22.10.2",
-    "@types/react": "^19.2.7",
-    "@types/react-reconciler": "^0.32.3",
-    "typescript": "^5.7.2",
-    "zod": "^3.24.1"
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
   },
-  "peerDependencies": {
-    "react": "^19.2.3",
-    "zod": "^3.0.0"
-  },
+  "packageManager": "pnpm@9.15.0",
   "keywords": [
     "ai",
     "agent",

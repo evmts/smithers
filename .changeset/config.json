@@ -1,11 +1,13 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.2/schema.json",
-  "changelog": "@changesets/cli/changelog",
+  "changelog": "@changesets/changelog-github",
   "commit": false,
   "fixed": [],
-  "linked": [],
+  "linked": [
+    ["@evmts/smithers", "@evmts/smithers-cli", "@evmts/smithers-protocol"]
+  ],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": []
+  "ignore": ["@evmts/smithers-desktop"]
 }

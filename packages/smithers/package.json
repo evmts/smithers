@@ -1,0 +1,58 @@
+{
+  "name": "@evmts/smithers",
+  "version": "1.0.0",
+  "description": "Build AI agents in React. Declarative JSX components for orchestrating Claude agents with state management and parallel execution.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "dev": "bun run scripts/build.ts --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
+    "@anthropic-ai/sdk": "^0.71.2",
+    "@mdx-js/mdx": "^3.1.1",
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "react-reconciler": "^0.33.0",
+    "zod-to-json-schema": "^3.24.1",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-reconciler": "^0.32.3",
+    "typescript": "^5.7.2",
+    "zod": "^3.24.1"
+  },
+  "peerDependencies": {
+    "react": "^19.2.3",
+    "zod": "^3.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "react",
+    "jsx",
+    "llm",
+    "claude",
+    "anthropic"
+  ],
+  "author": "William Cory",
+  "license": "MIT"
+}
