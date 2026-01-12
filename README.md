@@ -83,7 +83,7 @@ const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 
 ## Key Features
 
-✨ **Interactive Terminal UI** - Real-time execution visualization with keyboard navigation
+✨ **Desktop App** - Real-time execution visualization with the Smithers Desktop (Tauri)
 🔄 **The Ralph Wiggum Loop** - Automatic re-execution until your agent completes its goals
 ⚛️ **React State Management** - Use useState, Zustand, or any React state library
 🎯 **Terraform-Style Approval** - Preview the plan before execution
@@ -99,17 +99,20 @@ const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 ## Install
 
 **Requirements:**
-- [Bun](https://bun.sh) - Required for the CLI (uses OpenTUI with native bindings)
+- [Bun](https://bun.sh) - Required for the CLI and tests
 - Node.js 18+ - Works for programmatic/library usage
+- [pnpm](https://pnpm.io) - For monorepo development
 
 ```bash
-# Install Bun first (if not already installed)
-curl -fsSL https://bun.sh/install | bash
-
-# Then install Smithers
-bun add @evmts/smithers
-# or with npm (library usage only, CLI requires Bun)
+# Install the core library
 npm install @evmts/smithers
+# or with bun
+bun add @evmts/smithers
+
+# Install the CLI (globally)
+npm install -g @evmts/smithers-cli
+# or use npx
+npx @evmts/smithers-cli run agent.mdx
 ```
 
 ## Quick Start
@@ -176,24 +179,25 @@ Smithers shows you exactly what the agent will do before executing:
 ? Execute this plan? (Y/n)
 ```
 
-### 4. Watch it run with the TUI
+### 4. Watch it run with the Desktop App
 
-Launch the interactive terminal UI for real-time execution monitoring:
+When running the CLI, the Smithers Desktop app can connect for real-time visualization:
 
 ```bash
-smithers run review-agent.tsx --tui
+smithers run review-agent.tsx
+# Press 'o' to open Smithers Desktop when prompted
 ```
 
-Navigate with arrow keys, press Enter to view agent details, and use interactive commands to control execution:
+The desktop app shows the execution tree, agent outputs, and allows interactive control:
 
 ```
-┌─ Smithers TUI ──────────────────────────────── Frame: 3 | Elapsed: 12.5s ─┐
-│ Tree View                    │ Agent Details                              │
-│ ▼ ROOT                       │ Prompt:                                    │
-│   ▼ claude                   │ Review these files for issues: src/auth.ts │
-│     ● constraints (complete) │                                            │
-│     ⚙ Phase: review (running)│ Output:                                    │
-│     ○ output-format (pending)│ Analyzing src/auth.ts...                   │
+┌─ Smithers Desktop ────────────────────────────── Frame: 3 | Elapsed: 12.5s ─┐
+│ Tree View                    │ Agent Details                               │
+│ ▼ ROOT                       │ Prompt:                                     │
+│   ▼ claude                   │ Review these files for issues: src/auth.ts  │
+│     ● constraints (complete) │                                             │
+│     ⚙ Phase: review (running)│ Output:                                     │
+│     ○ output-format (pending)│ Analyzing src/auth.ts...                    │
 │                              │ Found 3 potential issues:                  │
 │ Status: ●Running             │ 1. Line 42: Missing input validation       │
 │ Commands: ↑↓ Navigate        │ 2. Line 58: SQL injection risk             │
@@ -1125,6 +1129,42 @@ This "render loop" model means your agent's behavior emerges from your React com
 - [Component Reference](./docs/components.md) - Full API documentation
 - [Examples](./examples) - More complete examples
 - [Manual Tests](./manual-tests) - Real API integration tests
+
+## Project Structure
+
+Smithers is organized as a pnpm monorepo:
+
+```
+smithers/
+├── packages/
+│   ├── smithers/           # @evmts/smithers - Core library
+│   ├── cli/                # @evmts/smithers-cli - CLI tool
+│   └── protocol/           # @evmts/smithers-protocol - WebSocket protocol
+├── apps/
+│   └── tauri-app/          # @evmts/smithers-desktop - Desktop app (Tauri + Solid.js)
+├── evals/                  # Test suite (663 tests)
+├── examples/               # Example agents
+└── docs/                   # Documentation
+```
+
+### Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build all packages
+pnpm build
+
+# Run tests
+bun test
+
+# Run typecheck
+pnpm typecheck
+
+# Start desktop app in dev mode
+cd apps/tauri-app && pnpm dev:tauri
+```
 
 ## Contributing
 
