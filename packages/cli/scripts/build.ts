@@ -17,18 +17,23 @@ console.log('Cleaning dist directory...')
 rmSync(DIST, { recursive: true, force: true })
 mkdirSync(DIST, { recursive: true })
 
-// Build CLI - main entry point
-console.log('Building CLI...')
-await $`bun build ./src/index.ts --outdir ./dist --target node --sourcemap=external`
+// Build all entrypoints in a single build with code splitting
+// This ensures shared modules (like LoaderError) maintain class identity across bundles
+console.log('Building CLI with code splitting...')
+await $`bun build \
+  ./src/index.ts \
+  ./src/display.ts \
+  ./src/loader.ts \
+  ./src/config.ts \
+  ./src/props.ts \
+  ./src/interactive.ts \
+  ./src/testing.ts \
+  --outdir ./dist \
+  --target node \
+  --sourcemap=external \
+  --splitting`
 
-// Build individual modules for subpath exports
-console.log('Building submodules...')
-const submodules = ['display', 'loader', 'config', 'props', 'interactive']
-for (const mod of submodules) {
-  await $`bun build ./src/${mod}.ts --outfile ./dist/${mod}.js --target node`
-}
-
-// Set executable bit
+// Set executable bit on main CLI entry point
 const cliPath = join(DIST, 'index.js')
 chmodSync(cliPath, 0o755)
 
