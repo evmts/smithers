@@ -7,7 +7,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "test": "turbo run test",
+    "test": "pnpm run build && bun test",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "changeset": "changeset",
