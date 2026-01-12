@@ -1,0 +1,57 @@
+{
+  "name": "@evmts/smithers-solid",
+  "version": "0.0.1",
+  "description": "Solid.js renderer for Smithers - Build AI agents with JSX",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@evmts/smithers": "workspace:*"
+  },
+  "devDependencies": {
+    "@evmts/smithers": "workspace:*",
+    "@types/bun": "latest",
+    "solid-js": "^1.9.10",
+    "typescript": "^5.7.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evmts/smithers.git",
+    "directory": "packages/smithers-solid"
+  },
+  "homepage": "https://github.com/evmts/smithers#readme",
+  "bugs": {
+    "url": "https://github.com/evmts/smithers/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "solid",
+    "solidjs",
+    "jsx",
+    "llm",
+    "claude",
+    "anthropic",
+    "smithers"
+  ],
+  "author": "William Cory",
+  "license": "MIT"
+}
