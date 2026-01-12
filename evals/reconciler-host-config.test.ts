@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
-import { hostConfig } from '@evmts/smithers'
+import { hostConfig } from '@evmts/smithers/testing'
 import type { SmithersNode } from '@evmts/smithers'
 
 /**

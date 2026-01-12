@@ -176,6 +176,3 @@ export type {
   HumanPromptInfo,
   HumanPromptResponse,
 } from './workflow/index.js'
-
-// Reconciler (for testing)
-export { hostConfig } from './reconciler/host-config.js'
