@@ -17,21 +17,27 @@ console.log('Cleaning dist directory...')
 rmSync(DIST, { recursive: true, force: true })
 mkdirSync(DIST, { recursive: true })
 
-// Build all entrypoints in a single build with code splitting
-// This ensures shared modules (like LoaderError) maintain class identity across bundles
-console.log('Building CLI with code splitting...')
-await $`bun build \
-  ./src/index.ts \
-  ./src/display.ts \
-  ./src/loader.ts \
-  ./src/config.ts \
-  ./src/props.ts \
-  ./src/interactive.ts \
-  ./src/testing.ts \
-  --outdir ./dist \
-  --target node \
-  --sourcemap=external \
-  --splitting`
+// Build each entrypoint separately to avoid Bun's code-splitting duplicate export bug
+// While this means shared modules may be duplicated, the CLI subpath exports are
+// relatively independent and don't share much code between them
+console.log('Building CLI entrypoints...')
+
+const entrypoints = [
+  'index.ts',
+  'display.ts',
+  'loader.ts',
+  'config.ts',
+  'props.ts',
+  'interactive.ts',
+  'testing.ts',
+]
+
+for (const entry of entrypoints) {
+  await $`bun build ./src/${entry} \
+    --outdir ./dist \
+    --target node \
+    --sourcemap=external`
+}
 
 // Set executable bit on main CLI entry point
 const cliPath = join(DIST, 'index.js')

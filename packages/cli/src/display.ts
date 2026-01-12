@@ -70,16 +70,11 @@ export function displayResult(
 }
 
 /**
- * Check if an error is a LoaderError
- * Uses instanceof first (works now with code splitting), with duck typing as fallback
+ * Check if an error is a LoaderError (duck typing to work across bundle boundaries)
+ * Note: We use duck typing because CLI entrypoints are bundled separately, which can
+ * create different LoaderError class identities across modules.
  */
 function isLoaderError(error: Error): error is LoaderError {
-  // Primary check: instanceof works correctly now that we use code splitting
-  if (error instanceof LoaderError) {
-    return true
-  }
-
-  // Fallback: duck typing for extra resilience
   return (
     typeof (error as LoaderError).format === 'function' &&
     typeof (error as LoaderError).filePath === 'string'
