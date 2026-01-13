@@ -222,26 +222,28 @@ export interface WorktreeProps {
   [key: string]: unknown
 }
 
+export type SmithersIntrinsicElements = {
+  claude: ClaudeProps
+  'claude-api': ClaudeApiProps
+  'claude-cli': ClaudeCliProps
+  subagent: SubagentProps
+  phase: PhaseProps
+  step: StepProps
+  persona: PersonaProps
+  constraints: ConstraintsProps
+  task: TaskProps
+  'output-format': OutputFormatProps
+  human: HumanProps
+  stop: StopProps
+  output: OutputProps
+  file: FileProps
+  worktree: WorktreeProps
+}
+
 // Declare lowercase JSX intrinsic elements for the host components
 declare module 'solid-js' {
   namespace JSX {
-    interface IntrinsicElements {
-      claude: ClaudeProps
-      'claude-api': ClaudeApiProps
-      'claude-cli': ClaudeCliProps
-      subagent: SubagentProps
-      phase: PhaseProps
-      step: StepProps
-      persona: PersonaProps
-      constraints: ConstraintsProps
-      task: TaskProps
-      'output-format': OutputFormatProps
-      human: HumanProps
-      stop: StopProps
-      output: OutputProps
-      file: FileProps
-      worktree: WorktreeProps
-    }
+    interface IntrinsicElements extends SmithersIntrinsicElements {}
   }
 }
 

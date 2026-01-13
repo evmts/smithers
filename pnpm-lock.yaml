@@ -215,6 +215,9 @@ importers:
       '@evmts/smithers':
         specifier: workspace:*
         version: link:../smithers
+      '@evmts/smithers-core':
+        specifier: workspace:*
+        version: link:../smithers-core
       '@types/bun':
         specifier: latest
         version: 1.3.5

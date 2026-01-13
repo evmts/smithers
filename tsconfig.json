@@ -4,7 +4,7 @@
     "outDir": "dist",
     "rootDir": "./evals",
     "jsx": "react-jsx",
-    "jsxImportSource": "react",
+    "jsxImportSource": "@evmts/smithers-solid/solid-js-jsx-runtime",
     "types": ["@types/bun"]
   },
   "include": ["evals/**/*"],

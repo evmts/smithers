@@ -1,5 +1,6 @@
 import type { JSX } from 'solid-js'
 import { createSmithersSolidRenderer } from './renderer.js'
+import { ensureDocumentShim } from './dom-shim.js'
 
 /**
  * Internal node representation for the Smithers renderer
@@ -92,6 +93,7 @@ export function createSmithersSolidRoot(): SmithersRoot {
     parent: null,
   }
 
+  ensureDocumentShim()
   const { render } = createSmithersSolidRenderer()
   let disposeFunction: (() => void) | null = null
 
