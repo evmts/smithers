@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { Claude, executePlan, Worktree, Subagent } from '../../src'
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 
 /**
  * Parallel Worktrees Example
@@ -19,38 +19,30 @@ interface WorktreeState {
     status: 'pending' | 'in_progress' | 'complete' | 'error'
     result?: string
   }>
-  updateFeatureStatus: (name: string, status: any, result?: string) => void
 }
 
-const useStore = create<WorktreeState>((set) => ({
+const [store, setStore] = createStore<WorktreeState>({
   features: [],
-  updateFeatureStatus: (name, status, result) =>
-    set((state) => ({
-      features: state.features.map((f) =>
-        f.name === name ? { ...f, status, result } : f
-      ),
-    })),
-}))
+})
 
-function ParallelWorktrees({ features }: { features: string[] }) {
-  const { updateFeatureStatus } = useStore()
+const updateFeatureStatus = (name: string, status: any, result?: string) => {
+  setStore('features', (f) => f.name === name, { status, result })
+}
 
+function ParallelWorktrees(props: { features: string[] }) {
   // Initialize features in store
-  if (useStore.getState().features.length === 0) {
-    useStore.setState({
-      features: features.map((name) => ({
-        name,
-        branch: `feature/${name.toLowerCase().replace(/\s+/g, '-')}`,
-        status: 'pending',
-      })),
-    })
+  if (store.features.length === 0) {
+    setStore('features', props.features.map((name) => ({
+      name,
+      branch: `feature/${name.toLowerCase().replace(/\s+/g, '-')}`,
+      status: 'pending',
+    })))
   }
 
-  const featureList = useStore.getState().features
-
-  return (
+  // Return closure for reactivity
+  return () => (
     <>
-      {featureList.map((feature) => (
+      {store.features.map((feature) => (
         <Subagent key={feature.name} name={feature.name} parallel>
           <Worktree
             path={`./worktrees/${feature.branch}`}
@@ -121,12 +113,12 @@ console.log()
 
 const startTime = Date.now()
 
-const result = await executePlan(<ParallelWorktrees features={features} />, {
+const result = await executePlan(() => <ParallelWorktrees features={features} />, {
   mockMode: process.env.SMITHERS_MOCK === 'true',
 })
 
 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-const { features: completedFeatures } = useStore.getState()
+const { features: completedFeatures } = store
 
 console.log()
 console.log('✅ Parallel Development Complete')

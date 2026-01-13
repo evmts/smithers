@@ -76,11 +76,9 @@ The Developer component checks dependencies before executing:
 
 ```tsx
 function Developer({ subtask }) {
-  const { plan } = useDevTeam()
-
   // Check if dependencies are complete
   const depsComplete = subtask.dependencies.every((depId) =>
-    plan?.subtasks.find((s) => s.id === depId)?.status === 'complete'
+    store.plan?.subtasks.find((s) => s.id === depId)?.status === 'complete'
   )
 
   if (!depsComplete) {
@@ -97,17 +95,15 @@ If the Reviewer finds issues, they can request revisions:
 
 ```tsx
 function Reviewer() {
-  const { requestRevision, nextStage } = useDevTeam()
-
   return (
     <Claude
       onFinished={(result) => {
         if (result.approved) {
-          nextStage()  // -> done
+          actions.nextStage()  // -> done
         } else {
           // Send back to implementing with notes
           result.requiredChanges.forEach((change) => {
-            requestRevision(change.subtaskId, change.change)
+            actions.requestRevision(change.subtaskId, change.change)
           })
         }
       }}

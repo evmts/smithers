@@ -140,7 +140,7 @@ async function main() {
 
   console.log(`Running Code Review Agent on: ${targetPath}\n`)
 
-  const result = await executePlan(<CodeReviewAgent targetPath={targetPath} />, {
+  const result = await executePlan(() => <CodeReviewAgent targetPath={targetPath} />, {
     verbose: true,
   })
 

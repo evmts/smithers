@@ -125,8 +125,7 @@ Let user choose what to test:
 ```tsx
 <Human
   message="Which functions should I test?"
-  onApprove={(selected) => setFunctions(selected)}
->
+  onApprove={(selected) => setFunctions(selected)}>
   Available functions:
   {analysis.functions.map(f => `\n- ${f}`).join('')}
 </Human>

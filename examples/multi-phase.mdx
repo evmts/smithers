@@ -1,60 +1,66 @@
-import { useState } from 'react'
+import { createSignal } from 'solid-js'
 import { Claude, Phase, Step } from '@evmts/smithers'
 
 # Research Agent
 
-export function ResearchAgent({ topic }) {
-  const [phase, setPhase] = useState('gather')
-  const [sources, setSources] = useState([])
-  const [analysis, setAnalysis] = useState(null)
+export function ResearchAgent(props) {
+  const [phase, setPhase] = createSignal('gather')
+  const [sources, setSources] = createSignal([])
+  const [analysis, setAnalysis] = createSignal(null)
 
-  if (phase === 'gather') {
+  return () => {
+    const p = phase()
+    const s = sources()
+    const a = analysis()
+
+    if (p === 'gather') {
+      return (
+        <Claude
+          onFinished={(result) => {
+            setSources(result.sources)
+            setPhase('analyze')
+          }}
+        >
+          <Phase name="gather">
+            <Step>Search for recent papers and articles about: {props.topic}</Step>
+            <Step>Collect at least 5 high-quality sources</Step>
+            <Step>Extract key findings from each source</Step>
+          </Phase>
+        </Claude>
+      )
+    }
+
+    if (p === 'analyze') {
+      return (
+        <Claude
+          onFinished={(result) => {
+            setAnalysis(result)
+            setPhase('report')
+          }}
+        >
+          <Phase name="analyze">
+            Analyze these sources and identify:
+            - Common themes
+            - Contradictions
+            - Knowledge gaps
+
+            Sources: {JSON.stringify(s)}
+          </Phase>
+        </Claude>
+      )
+    }
+
     return (
-      <Claude
-        onFinished={(result) => {
-          setSources(result.sources)
-          setPhase('analyze')
-        }}
-      >
-        <Phase name="gather">
-          <Step>Search for recent papers and articles about: {topic}</Step>
-          <Step>Collect at least 5 high-quality sources</Step>
-          <Step>Extract key findings from each source</Step>
+      <Claude onFinished={() => setPhase('done')}>
+        <Phase name="report">
+          Write a research report based on this analysis:
+          {JSON.stringify(a)}
+
+          Save the report to `output/report.md`.
         </Phase>
       </Claude>
     )
   }
-
-  if (phase === 'analyze') {
-    return (
-      <Claude
-        onFinished={(result) => {
-          setAnalysis(result)
-          setPhase('report')
-        }}
-      >
-        <Phase name="analyze">
-          Analyze these sources and identify:
-          - Common themes
-          - Contradictions
-          - Knowledge gaps
-
-          Sources: {JSON.stringify(sources)}
-        </Phase>
-      </Claude>
-    )
-  }
-
-  return (
-    <Claude onFinished={() => setPhase('done')}>
-      <Phase name="report">
-        Write a research report based on this analysis:
-        {JSON.stringify(analysis)}
-
-        Save the report to `output/report.md`.
-      </Phase>
-    </Claude>
-  )
 }
 
 <ResearchAgent topic="large language model agents" />

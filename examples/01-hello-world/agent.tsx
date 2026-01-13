@@ -22,7 +22,7 @@ function HelloWorld() {
 async function main() {
   console.log('Running Hello World agent...\n')
 
-  const result = await executePlan(<HelloWorld />)
+  const result = await executePlan(() => <HelloWorld />)
 
   console.log('Response:', result.output)
   console.log('\nExecution completed in', result.totalDuration, 'ms')

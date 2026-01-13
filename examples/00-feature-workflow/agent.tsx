@@ -23,7 +23,7 @@
  *
  * Run with: bun run examples/00-feature-workflow/agent.tsx "Your feature request"
  */
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 import {
   executePlan,
   Claude,
@@ -77,14 +77,14 @@ interface TestCase {
 
 interface Plan {
   summary: string
-  steps: Array<{
+  steps: Array <{
     step: number
     description: string
     files: string[]
     dependencies: string[]
   }>
   testCases: TestCase[]
-  apis: Array<{
+  apis: Array <{
     name: string
     signature: string
     description: string
@@ -127,23 +127,6 @@ interface WorkflowState {
   testImplementation: string | null
   testResults: { passed: boolean; output: string } | null
   finalImplementation: string | null
-
-  // Actions
-  setPhase: (phase: WorkflowPhase) => void
-  setPrompt: (prompt: string) => void
-  setFileResearch: (research: FileResearch[]) => void
-  setDocResearch: (research: DocResearch[]) => void
-  setContextResearch: (research: string[]) => void
-  setInitialPlan: (plan: Plan) => void
-  setRefinedPlan: (plan: Plan) => void
-  setHumanFeedback: (feedback: string | null) => void
-  setPOCResult: (result: POCResult) => void
-  setPOCAnalysis: (analysis: string) => void
-  setApiImplementation: (impl: string) => void
-  setTestImplementation: (impl: string) => void
-  setTestResults: (results: { passed: boolean; output: string }) => void
-  setFinalImplementation: (impl: string) => void
-  nextPhase: () => void
 }
 
 const phaseOrder: WorkflowPhase[] = [
@@ -161,7 +144,7 @@ const phaseOrder: WorkflowPhase[] = [
   'done',
 ]
 
-const useWorkflowStore = create<WorkflowState>((set, get) => ({
+const [store, setStore] = createStore<WorkflowState>({
   phase: 'prompt-input',
   prompt: '',
   fileResearch: [],
@@ -176,29 +159,30 @@ const useWorkflowStore = create<WorkflowState>((set, get) => ({
   testImplementation: null,
   testResults: null,
   finalImplementation: null,
+})
 
-  setPhase: (phase) => set({ phase }),
-  setPrompt: (prompt) => set({ prompt }),
-  setFileResearch: (fileResearch) => set({ fileResearch }),
-  setDocResearch: (docResearch) => set({ docResearch }),
-  setContextResearch: (contextResearch) => set({ contextResearch }),
-  setInitialPlan: (initialPlan) => set({ initialPlan }),
-  setRefinedPlan: (refinedPlan) => set({ refinedPlan }),
-  setHumanFeedback: (humanFeedback) => set({ humanFeedback }),
-  setPOCResult: (pocResult) => set({ pocResult }),
-  setPOCAnalysis: (pocAnalysis) => set({ pocAnalysis }),
-  setApiImplementation: (apiImplementation) => set({ apiImplementation }),
-  setTestImplementation: (testImplementation) => set({ testImplementation }),
-  setTestResults: (testResults) => set({ testResults }),
-  setFinalImplementation: (finalImplementation) => set({ finalImplementation }),
+const actions = {
+  setPhase: (phase: WorkflowPhase) => setStore('phase', phase),
+  setPrompt: (prompt: string) => setStore('prompt', prompt),
+  setFileResearch: (fileResearch: FileResearch[]) => setStore('fileResearch', fileResearch),
+  setDocResearch: (docResearch: DocResearch[]) => setStore('docResearch', docResearch),
+  setContextResearch: (contextResearch: string[]) => setStore('contextResearch', contextResearch),
+  setInitialPlan: (initialPlan: Plan) => setStore('initialPlan', initialPlan),
+  setRefinedPlan: (refinedPlan: Plan) => setStore('refinedPlan', refinedPlan),
+  setHumanFeedback: (humanFeedback: string | null) => setStore('humanFeedback', humanFeedback),
+  setPOCResult: (pocResult: POCResult) => setStore('pocResult', pocResult),
+  setPOCAnalysis: (pocAnalysis: string) => setStore('pocAnalysis', pocAnalysis),
+  setApiImplementation: (apiImplementation: string) => setStore('apiImplementation', apiImplementation),
+  setTestImplementation: (testImplementation: string) => setStore('testImplementation', testImplementation),
+  setTestResults: (testResults: { passed: boolean; output: string }) => setStore('testResults', testResults),
+  setFinalImplementation: (finalImplementation: string) => setStore('finalImplementation', finalImplementation),
   nextPhase: () => {
-    const { phase } = get()
-    const currentIndex = phaseOrder.indexOf(phase)
+    const currentIndex = phaseOrder.indexOf(store.phase)
     if (currentIndex < phaseOrder.length - 1) {
-      set({ phase: phaseOrder[currentIndex + 1] })
+      setStore('phase', phaseOrder[currentIndex + 1])
     }
   },
-}))
+}
 
 // =============================================================================
 // Phase Components
@@ -208,17 +192,15 @@ const useWorkflowStore = create<WorkflowState>((set, get) => ({
  * Phase 1: Prompt Input - Confirm the feature request
  */
 function PromptInputPhase({ initialPrompt }: { initialPrompt: string }) {
-  const { setPrompt, nextPhase } = useWorkflowStore()
-
   return (
     <Human
       message="Please review the feature request before proceeding"
       onApprove={() => {
-        setPrompt(initialPrompt)
-        nextPhase()
+        actions.setPrompt(initialPrompt)
+        actions.nextPhase()
       }}
       onReject={() => {
-        useWorkflowStore.setState({ phase: 'cancelled' })
+        actions.setPhase('cancelled')
       }}
     >
       Feature Request: {initialPrompt}
@@ -230,9 +212,6 @@ function PromptInputPhase({ initialPrompt }: { initialPrompt: string }) {
  * Phase 2: Research - Gather context from files, docs, and codebase
  */
 function ResearchPhase() {
-  const { prompt, setFileResearch, setDocResearch, setContextResearch, nextPhase } =
-    useWorkflowStore()
-
   return (
     <Claude
       allowedTools={['Read', 'Glob', 'Grep', 'WebFetch']}
@@ -242,10 +221,10 @@ function ResearchPhase() {
           docs: DocResearch[]
           context: string[]
         }
-        setFileResearch(data.files || [])
-        setDocResearch(data.docs || [])
-        setContextResearch(data.context || [])
-        nextPhase()
+        actions.setFileResearch(data.files || [])
+        actions.setDocResearch(data.docs || [])
+        actions.setContextResearch(data.context || [])
+        actions.nextPhase()
       }}
     >
       <Persona role="senior software architect">
@@ -267,7 +246,7 @@ function ResearchPhase() {
         - Document your reasoning for why each finding is relevant
       </Constraints>
 
-      Feature to implement: {prompt}
+      Feature to implement: {store.prompt}
 
       <OutputFormat
         schema={{
@@ -313,15 +292,12 @@ function ResearchPhase() {
  * Phase 3: Planning - Create detailed implementation plan
  */
 function PlanningPhase() {
-  const { prompt, fileResearch, docResearch, contextResearch, setInitialPlan, nextPhase } =
-    useWorkflowStore()
-
   return (
     <Claude
       onFinished={(result: unknown) => {
         const plan = result as Plan
-        setInitialPlan(plan)
-        nextPhase()
+        actions.setInitialPlan(plan)
+        actions.nextPhase()
       }}
     >
       <Persona role="software architect">
@@ -345,12 +321,12 @@ function PlanningPhase() {
         - Consider backwards compatibility
       </Constraints>
 
-      Feature to implement: {prompt}
+      Feature to implement: {store.prompt}
 
       Research findings:
-      Files: {JSON.stringify(fileResearch, null, 2)}
-      Docs: {JSON.stringify(docResearch, null, 2)}
-      Context: {JSON.stringify(contextResearch, null, 2)}
+      Files: {JSON.stringify(store.fileResearch, null, 2)}
+      Docs: {JSON.stringify(store.docResearch, null, 2)}
+      Context: {JSON.stringify(store.contextResearch, null, 2)}
 
       <OutputFormat
         schema={{
@@ -407,34 +383,32 @@ function PlanningPhase() {
  * Phase 4: Plan Review - Human approves/modifies/rejects plan
  */
 function PlanReviewPhase() {
-  const { initialPlan, setHumanFeedback, nextPhase, setPhase } = useWorkflowStore()
-
   return (
     <Human
       message="Review the implementation plan. Approve to continue, reject to cancel."
       onApprove={() => {
-        setHumanFeedback(null)
-        nextPhase()
+        actions.setHumanFeedback(null)
+        actions.nextPhase()
       }}
       onReject={() => {
-        setPhase('cancelled')
+        actions.setPhase('cancelled')
       }}
     >
       Implementation Plan:
 
-      Summary: {initialPlan?.summary}
+      Summary: {store.initialPlan?.summary}
 
       Steps:
-      {(initialPlan?.steps ?? []).map((s, i) => `${i + 1}. ${s.description}`).join('\n')}
+      {(store.initialPlan?.steps ?? []).map((s, i) => `${i + 1}. ${s.description}`).join('\n')}
 
-      Test Cases ({initialPlan?.testCases?.length}):
-      {(initialPlan?.testCases ?? []).map((t) => `- ${t.name}${t.edgeCase ? ' (edge case)' : ''}`).join('\n')}
+      Test Cases ({store.initialPlan?.testCases?.length}):
+      {(store.initialPlan?.testCases ?? []).map((t) => `- ${t.name}${t.edgeCase ? ' (edge case)' : ''}`).join('\n')}
 
       APIs:
-      {(initialPlan?.apis ?? []).map((a) => `- ${a.name}: ${a.signature}`).join('\n')}
+      {(store.initialPlan?.apis ?? []).map((a) => `- ${a.name}: ${a.signature}`).join('\n')}
 
       Risks:
-      {(initialPlan?.risks ?? []).map((r) => `- ${r}`).join('\n')}
+      {(store.initialPlan?.risks ?? []).map((r) => `- ${r}`).join('\n')}
     </Human>
   )
 }
@@ -443,15 +417,13 @@ function PlanReviewPhase() {
  * Phase 5: POC - Build a working proof of concept
  */
 function POCPhase() {
-  const { prompt, initialPlan, fileResearch, setPOCResult, nextPhase } = useWorkflowStore()
-
   return (
     <Claude
       allowedTools={['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']}
       onFinished={(result: unknown) => {
         const poc = result as POCResult
-        setPOCResult(poc)
-        nextPhase()
+        actions.setPOCResult(poc)
+        actions.nextPhase()
       }}
     >
       <Persona role="rapid prototyping engineer">
@@ -475,9 +447,9 @@ function POCPhase() {
         - Keep it simple - this is throwaway code to inform the plan
       </Constraints>
 
-      Feature: {prompt}
-      Plan: {JSON.stringify(initialPlan, null, 2)}
-      Relevant files: {JSON.stringify(fileResearch, null, 2)}
+      Feature: {store.prompt}
+      Plan: {JSON.stringify(store.initialPlan, null, 2)}
+      Relevant files: {JSON.stringify(store.fileResearch, null, 2)}
 
       <OutputFormat
         schema={{
@@ -501,17 +473,14 @@ function POCPhase() {
  * Phase 6: POC Analysis - Deep analysis with extended thinking
  */
 function POCAnalysisPhase() {
-  const { prompt, initialPlan, pocResult, setPOCAnalysis, setRefinedPlan, nextPhase } =
-    useWorkflowStore()
-
   return (
     <Claude
       maxThinkingTokens={16000}
       onFinished={(result: unknown) => {
         const data = result as { analysis: string; refinedPlan: Plan }
-        setPOCAnalysis(data.analysis)
-        setRefinedPlan(data.refinedPlan)
-        nextPhase()
+        actions.setPOCAnalysis(data.analysis)
+        actions.setRefinedPlan(data.refinedPlan)
+        actions.nextPhase()
       }}
     >
       <Persona role="senior architect conducting thorough analysis">
@@ -537,9 +506,9 @@ function POCAnalysisPhase() {
         - Consider error handling and recovery scenarios
       </Constraints>
 
-      Original feature: {prompt}
-      Original plan: {JSON.stringify(initialPlan, null, 2)}
-      POC results: {JSON.stringify(pocResult, null, 2)}
+      Original feature: {store.prompt}
+      Original plan: {JSON.stringify(store.initialPlan, null, 2)}
+      POC results: {JSON.stringify(store.pocResult, null, 2)}
 
       <OutputFormat
         schema={{
@@ -570,32 +539,30 @@ function POCAnalysisPhase() {
  * Phase 7: Refined Plan Review - Human reviews the improved plan
  */
 function RefinedPlanReviewPhase() {
-  const { refinedPlan, pocAnalysis, nextPhase, setPhase } = useWorkflowStore()
-
   return (
     <Human
       message="Review the refined plan based on POC learnings. This plan includes detailed APIs, documentation, and test cases."
-      onApprove={() => nextPhase()}
-      onReject={() => setPhase('cancelled')}
+      onApprove={() => actions.nextPhase()}
+      onReject={() => actions.setPhase('cancelled')}
     >
       POC Analysis:
-      {pocAnalysis}
+      {store.pocAnalysis}
 
       Refined Implementation Plan:
 
-      Summary: {refinedPlan?.summary}
+      Summary: {store.refinedPlan?.summary}
 
       Steps:
-      {(refinedPlan?.steps ?? []).map((s, i) => `${i + 1}. ${s.description}`).join('\n')}
+      {(store.refinedPlan?.steps ?? []).map((s, i) => `${i + 1}. ${s.description}`).join('\n')}
 
-      Test Cases ({refinedPlan?.testCases?.length}):
-      {(refinedPlan?.testCases ?? []).map((t) => `- ${t.name}: ${t.description}${t.edgeCase ? ' (EDGE CASE)' : ''}`).join('\n')}
+      Test Cases ({store.refinedPlan?.testCases?.length}):
+      {(store.refinedPlan?.testCases ?? []).map((t) => `- ${t.name}: ${t.description}${t.edgeCase ? ' (EDGE CASE)' : ''}`).join('\n')}
 
       APIs:
-      {(refinedPlan?.apis ?? []).map((a) => `- ${a.name}\n  ${a.signature}\n  ${a.description}`).join('\n\n')}
+      {(store.refinedPlan?.apis ?? []).map((a) => `- ${a.name}\n  ${a.signature}\n  ${a.description}`).join('\n\n')}
 
       Risks:
-      {(refinedPlan?.risks ?? []).map((r) => `- ${r}`).join('\n')}
+      {(store.refinedPlan?.risks ?? []).map((r) => `- ${r}`).join('\n')}
     </Human>
   )
 }
@@ -604,15 +571,13 @@ function RefinedPlanReviewPhase() {
  * Phase 8: API Implementation - Types and JSDoc with throw not implemented
  */
 function APIImplementationPhase() {
-  const { prompt, refinedPlan, setApiImplementation, nextPhase } = useWorkflowStore()
-
   return (
     <Claude
       allowedTools={['Read', 'Write', 'Edit', 'Glob', 'Grep']}
       onFinished={(result: unknown) => {
         const data = result as { implementation: string }
-        setApiImplementation(data.implementation)
-        nextPhase()
+        actions.setApiImplementation(data.implementation)
+        actions.nextPhase()
       }}
     >
       <Persona role="TypeScript API designer">
@@ -635,8 +600,8 @@ function APIImplementationPhase() {
         - This is the API contract - implementation comes later
       </Constraints>
 
-      Feature: {prompt}
-      Plan: {JSON.stringify(refinedPlan, null, 2)}
+      Feature: {store.prompt}
+      Plan: {JSON.stringify(store.refinedPlan, null, 2)}
 
       <OutputFormat>
         Return a JSON object with "implementation" describing what was created.
@@ -649,15 +614,13 @@ function APIImplementationPhase() {
  * Phase 9: Test Implementation - Write comprehensive tests
  */
 function TestImplementationPhase() {
-  const { prompt, refinedPlan, setTestImplementation, nextPhase } = useWorkflowStore()
-
   return (
     <Claude
       allowedTools={['Read', 'Write', 'Edit', 'Glob', 'Grep']}
       onFinished={(result: unknown) => {
         const data = result as { implementation: string }
-        setTestImplementation(data.implementation)
-        nextPhase()
+        actions.setTestImplementation(data.implementation)
+        actions.nextPhase()
       }}
     >
       <Persona role="test engineer">
@@ -680,8 +643,8 @@ function TestImplementationPhase() {
         - Follow existing test patterns in the project
       </Constraints>
 
-      Feature: {prompt}
-      Test cases: {JSON.stringify(refinedPlan?.testCases, null, 2)}
+      Feature: {store.prompt}
+      Test cases: {JSON.stringify(store.refinedPlan?.testCases, null, 2)}
 
       <OutputFormat>
         Return a JSON object with "implementation" describing what tests were created.
@@ -694,15 +657,13 @@ function TestImplementationPhase() {
  * Phase 10: Test Verification - Verify tests fail
  */
 function TestVerificationPhase() {
-  const { setTestResults, nextPhase } = useWorkflowStore()
-
   return (
     <Claude
       allowedTools={['Bash', 'Read']}
       onFinished={(result: unknown) => {
         const data = result as { passed: boolean; output: string }
-        setTestResults(data)
-        nextPhase()
+        actions.setTestResults(data)
+        actions.nextPhase()
       }}
     >
       <Persona role="QA engineer">
@@ -733,15 +694,13 @@ function TestVerificationPhase() {
  * Phase 11: Implementation - Implement the actual code
  */
 function ImplementationPhase() {
-  const { prompt, refinedPlan, setFinalImplementation, nextPhase } = useWorkflowStore()
-
   return (
     <Claude
       allowedTools={['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']}
       onFinished={(result: unknown) => {
         const data = result as { implementation: string }
-        setFinalImplementation(data.implementation)
-        nextPhase()
+        actions.setFinalImplementation(data.implementation)
+        actions.nextPhase()
       }}
     >
       <Persona role="senior software engineer">
@@ -765,8 +724,8 @@ function ImplementationPhase() {
         - Keep changes focused - don't over-engineer
       </Constraints>
 
-      Feature: {prompt}
-      Plan: {JSON.stringify(refinedPlan, null, 2)}
+      Feature: {store.prompt}
+      Plan: {JSON.stringify(store.refinedPlan, null, 2)}
 
       <OutputFormat>
         Return JSON with "implementation" describing what was implemented.
@@ -780,42 +739,42 @@ function ImplementationPhase() {
 // =============================================================================
 
 export function FeatureWorkflow({ prompt: initialPrompt }: { prompt: string }) {
-  const { phase } = useWorkflowStore()
+  console.log(`[FeatureWorkflow] Phase: ${store.phase}`)
 
-  console.log(`[FeatureWorkflow] Phase: ${phase}`)
-
-  switch (phase) {
-    case 'prompt-input':
-      return <PromptInputPhase initialPrompt={initialPrompt} />
-    case 'research':
-      return <ResearchPhase />
-    case 'planning':
-      return <PlanningPhase />
-    case 'plan-review':
-      return <PlanReviewPhase />
-    case 'poc':
-      return <POCPhase />
-    case 'poc-analysis':
-      return <POCAnalysisPhase />
-    case 'refined-review':
-      return <RefinedPlanReviewPhase />
-    case 'api-impl':
-      return <APIImplementationPhase />
-    case 'test-impl':
-      return <TestImplementationPhase />
-    case 'test-verify':
-      return <TestVerificationPhase />
-    case 'implementation':
-      return <ImplementationPhase />
-    case 'done':
-      console.log('\n=== Feature Implementation Complete ===')
-      const state = useWorkflowStore.getState()
-      console.log('Final implementation:', state.finalImplementation)
-      return null
-    case 'cancelled':
-      return <Stop reason="Workflow cancelled by user" />
-    default:
-      return null
+  // Return a closure for reactivity
+  return () => {
+    switch (store.phase) {
+      case 'prompt-input':
+        return <PromptInputPhase initialPrompt={initialPrompt} />
+      case 'research':
+        return <ResearchPhase />
+      case 'planning':
+        return <PlanningPhase />
+      case 'plan-review':
+        return <PlanReviewPhase />
+      case 'poc':
+        return <POCPhase />
+      case 'poc-analysis':
+        return <POCAnalysisPhase />
+      case 'refined-review':
+        return <RefinedPlanReviewPhase />
+      case 'api-impl':
+        return <APIImplementationPhase />
+      case 'test-impl':
+        return <TestImplementationPhase />
+      case 'test-verify':
+        return <TestVerificationPhase />
+      case 'implementation':
+        return <ImplementationPhase />
+      case 'done':
+        console.log('\n=== Feature Implementation Complete ===')
+        console.log('Final implementation:', store.finalImplementation)
+        return null
+      case 'cancelled':
+        return <Stop reason="Workflow cancelled by user" />
+      default:
+        return null
+    }
   }
 }
 
@@ -835,7 +794,7 @@ async function main() {
   console.log('        -> poc -> poc-analysis -> refined-review')
   console.log('        -> api-impl -> test-impl -> test-verify -> implementation\n')
 
-  const result = await executePlan(<FeatureWorkflow prompt={prompt} />, {
+  const result = await executePlan(() => <FeatureWorkflow prompt={prompt} />,{
     verbose: true,
     onFrame: (frame) => {
       console.log(`\n[Frame ${frame.frame}] Executed: ${frame.executedNodes.join(', ')}`)
@@ -859,15 +818,14 @@ async function main() {
   console.log(`Total frames: ${result.frames}`)
   console.log(`Duration: ${result.totalDuration}ms`)
 
-  const finalState = useWorkflowStore.getState()
-  console.log(`\nFinal phase: ${finalState.phase}`)
-  console.log(`Files researched: ${finalState.fileResearch.length}`)
-  console.log(`Test cases: ${finalState.refinedPlan?.testCases.length || 0}`)
-  console.log(`APIs defined: ${finalState.refinedPlan?.apis.length || 0}`)
+  console.log(`\nFinal phase: ${store.phase}`)
+  console.log(`Files researched: ${store.fileResearch.length}`)
+  console.log(`Test cases: ${store.refinedPlan?.testCases.length || 0}`)
+  console.log(`APIs defined: ${store.refinedPlan?.apis.length || 0}`)
 }
 
 main().catch(console.error)
 
 // Export for module usage
-export { useWorkflowStore }
-export default <FeatureWorkflow prompt="Add a new feature" />
+export { store as workflowStore }
+export default (() => <FeatureWorkflow prompt="Add a new feature" />)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { Claude, executePlan, File, OutputFormat } from '../../src'
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 
 /**
  * Test Generator Example
@@ -21,20 +21,20 @@ interface TestGeneratorState {
     exports: string[]
   } | null
   testCode: string
-  setPhase: (phase: TestGeneratorState['phase']) => void
-  setAnalysis: (analysis: TestGeneratorState['analysis']) => void
-  setTestCode: (code: string) => void
 }
 
-const useStore = create<TestGeneratorState>((set) => ({
+const [store, setStore] = createStore<TestGeneratorState>({
   phase: 'analyze',
   sourceFile: '',
   analysis: null,
   testCode: '',
-  setPhase: (phase) => set({ phase }),
-  setAnalysis: (analysis) => set({ analysis }),
-  setTestCode: (testCode) => set({ testCode }),
-}))
+})
+
+const actions = {
+  setPhase: (phase: TestGeneratorState['phase']) => setStore('phase', phase),
+  setAnalysis: (analysis: TestGeneratorState['analysis']) => setStore('analysis', analysis),
+  setTestCode: (testCode: string) => setStore('testCode', testCode),
+}
 
 const analysisSchema = {
   type: 'object',
@@ -58,107 +58,108 @@ const analysisSchema = {
   required: ['functions', 'classes', 'exports'],
 }
 
-function TestGenerator({ sourceFile, framework }: { sourceFile: string; framework: string }) {
-  const { phase, analysis, testCode, setPhase, setAnalysis, setTestCode } = useStore()
+function TestGenerator(props: { sourceFile: string; framework: string }) {
+  // Return closure for reactivity
+  return () => {
+    if (store.phase === 'analyze') {
+      return (
+        <Claude
+          allowedTools={['Read']}
+          onFinished={(result) => {
+            // Parse the JSON response
+            try {
+              const parsed = JSON.parse(result.text)
+              actions.setAnalysis(parsed)
+              actions.setPhase('generate')
+            } catch (err) {
+              console.error('Failed to parse analysis:', err)
+              actions.setPhase('done')
+            }
+          }}
+        >
+          <OutputFormat schema={analysisSchema}>
+            Analyze the source file at: {props.sourceFile}
 
-  if (phase === 'analyze') {
-    return (
-      <Claude
-        allowedTools={['Read']}
-        onFinished={(result) => {
-          // Parse the JSON response
-          try {
-            const parsed = JSON.parse(result.text)
-            setAnalysis(parsed)
-            setPhase('generate')
-          } catch (err) {
-            console.error('Failed to parse analysis:', err)
-            setPhase('done')
-          }
-        }}
-      >
-        <OutputFormat schema={analysisSchema}>
-          Analyze the source file at: {sourceFile}
+            Use the Read tool to load the file, then extract:
+            1. All exported functions
+            2. All exported classes
+            3. All exports (both functions and classes)
 
-          Use the Read tool to load the file, then extract:
-          1. All exported functions
-          2. All exported classes
-          3. All exports (both functions and classes)
-
-          Return JSON matching the schema.
-        </OutputFormat>
-      </Claude>
-    )
-  }
-
-  if (phase === 'generate') {
-    if (!analysis) {
-      console.error('No analysis available')
-      setPhase('done')
-      return null
+            Return JSON matching the schema.
+          </OutputFormat>
+        </Claude>
+      )
     }
 
-    const frameworkInstructions = {
-      bun: 'Use Bun test syntax with `import { test, expect } from "bun:test"`',
-      jest: 'Use Jest syntax with `describe`, `it`, `expect`',
-      vitest: 'Use Vitest syntax with `import { describe, it, expect } from "vitest"`',
-    }[framework] || 'Use Bun test syntax with `import { test, expect } from "bun:test"`'
+    if (store.phase === 'generate') {
+      if (!store.analysis) {
+        console.error('No analysis available')
+        actions.setPhase('done')
+        return null
+      }
 
-    return (
-      <Claude
-        allowedTools={['Read']}
-        onFinished={(result) => {
-          // Extract test code from result (Claude returns code in markdown blocks)
-          const codeMatch = result.text.match(/```(?:typescript|ts)?\n([\s\S]*?)\n```/)
-          const code = codeMatch ? codeMatch[1] : result.text
+      const frameworkInstructions = {
+        bun: 'Use Bun test syntax with `import { test, expect } from "bun:test"`',
+        jest: 'Use Jest syntax with `describe`, `it`, `expect`',
+        vitest: 'Use Vitest syntax with `import { describe, it, expect } from "vitest"`',
+      }[props.framework] || 'Use Bun test syntax with `import { test, expect } from "bun:test"`'
 
-          setTestCode(code)
-          setPhase('write')
-        }}
-      >
-        Generate comprehensive tests for: {sourceFile}
+      return (
+        <Claude
+          allowedTools={['Read']}
+          onFinished={(result) => {
+            // Extract test code from result (Claude returns code in markdown blocks)
+            const codeMatch = result.text.match(/```(?:typescript|ts)?\n([\s\S]*?)\n```/)
+            const code = codeMatch ? codeMatch[1] : result.text
 
-        Analysis:
-        - Functions: {analysis.functions.join(', ')}
-        - Classes: {analysis.classes.join(', ')}
+            actions.setTestCode(code)
+            actions.setPhase('write')
+          }}
+        >
+          Generate comprehensive tests for: {props.sourceFile}
 
-        Requirements:
-        1. {frameworkInstructions}
-        2. Import the source file correctly
-        3. Test all exported functions and classes
-        4. Include:
-           - Happy path tests
-           - Edge cases
-           - Error cases
-           - Type safety tests (if applicable)
-        5. Use descriptive test names
-        6. Add helpful comments
+          Analysis:
+          - Functions: {store.analysis.functions.join(', ')}
+          - Classes: {store.analysis.classes.join(', ')}
 
-        Read the source file to understand implementation details.
+          Requirements:
+          1. {frameworkInstructions}
+          2. Import the source file correctly
+          3. Test all exported functions and classes
+          4. Include:
+             - Happy path tests
+             - Edge cases
+             - Error cases
+             - Type safety tests (if applicable)
+          5. Use descriptive test names
+          6. Add helpful comments
 
-        Return the complete test file code in a TypeScript code block.
-      </Claude>
-    )
+          Read the source file to understand implementation details.
+
+          Return the complete test file code in a TypeScript code block.
+        </Claude>
+      )
+    }
+
+    if (store.phase === 'write') {
+      const testFilePath = props.sourceFile.replace(/\.(tsx|jsx|ts|js)$/, (_, ext) => `.test.${ext}`)
+
+      return (
+        <File
+          path={testFilePath}
+          onWritten={() => {
+            console.log(`✓ Test file written: ${testFilePath}`)
+            actions.setPhase('done')
+          }}
+        >
+          {store.testCode}
+        </File>
+      )
+    }
+
+    // Done
+    return null
   }
-
-  if (phase === 'write') {
-    const testFilePath = sourceFile.replace(/\.(tsx|jsx|ts|js)$/, (_, ext) => `.test.${ext}`)
-
-    return (
-      <File
-        path={testFilePath}
-        onWritten={() => {
-          console.log(`✓ Test file written: ${testFilePath}`)
-          setPhase('done')
-        }}
-      >
-        {testCode}
-      </File>
-    )
-  }
-
-  // Done
-  return null
 }
 
 // Main execution
@@ -183,11 +184,11 @@ console.log(`  Source: ${sourceFile}`)
 console.log(`  Framework: ${framework}`)
 console.log()
 
-const result = await executePlan(<TestGenerator sourceFile={sourceFile} framework={framework} />, {
+const result = await executePlan(() => <TestGenerator sourceFile={sourceFile} framework={framework} />, {
   mockMode: process.env.SMITHERS_MOCK === 'true',
 })
 
-const { analysis, testCode } = useStore.getState()
+const { analysis, testCode } = store
 
 console.log()
 console.log('✅ Test Generation Complete')

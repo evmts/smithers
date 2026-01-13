@@ -22,13 +22,14 @@ The `<File>` component writes content to disk:
 
 ### Multi-Phase State Management
 
-Uses Zustand to track progress through phases:
+Uses SolidJS Store to track progress through phases:
 
 ```tsx
-const useStore = create((set) => ({
+const [store, setStore] = createStore({
   phase: 'reading',
-  setPhase: (phase) => set({ phase }),
-}))
+})
+
+const setPhase = (phase) => setStore('phase', phase)
 ```
 
 ### Tool Integration

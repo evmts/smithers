@@ -8,7 +8,7 @@
  *
  * Run with: bun run examples/05-dev-team/agent.tsx
  */
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 import {
   executePlan,
   Claude,
@@ -47,103 +47,74 @@ interface DevTeamState {
     notes: string[]
     requiredChanges: { subtaskId: string; change: string }[]
   } | null
-
-  // Actions
-  setPlan: (plan: DevTeamState['plan']) => void
-  startSubtask: (id: string) => void
-  completeSubtask: (id: string, implementation: string) => void
-  setReviewResult: (result: DevTeamState['reviewResult']) => void
-  requestRevision: (subtaskId: string, notes: string) => void
-  nextStage: () => void
 }
 
 // =============================================================================
 // State Management
 // =============================================================================
 
-const useDevTeam = create<DevTeamState>((set, get) => ({
+const [store, setStore] = createStore<DevTeamState>({
   stage: 'planning',
   task: '',
   plan: null,
   currentSubtask: null,
   reviewResult: null,
+})
 
-  setPlan: (plan) => {
+const actions = {
+  setTask: (task: string) => setStore('task', task),
+
+  setPlan: (plan: DevTeamState['plan']) => {
     const normalized = plan
       ? {
           ...plan,
           subtasks: plan.subtasks.map((subtask) => ({
             ...subtask,
-            status: 'pending',
+            status: 'pending' as const,
           })),
         }
       : null
 
-    set({ plan: normalized })
+    setStore('plan', normalized)
   },
 
-  startSubtask: (id) => {
-    set((state) => ({
-      currentSubtask: id,
-      plan: state.plan
-        ? {
-            ...state.plan,
-            subtasks: state.plan.subtasks.map((s) =>
-              s.id === id ? { ...s, status: 'in_progress' } : s
-            ),
-          }
-        : null,
-    }))
+  startSubtask: (id: string) => {
+    setStore('currentSubtask', id)
+    if (store.plan) {
+      setStore('plan', 'subtasks', (s) => s.id === id, 'status', 'in_progress')
+    }
   },
 
-  completeSubtask: (id, implementation) => {
-    set((state) => ({
-      currentSubtask: null,
-      plan: state.plan
-        ? {
-            ...state.plan,
-            subtasks: state.plan.subtasks.map((s) =>
-              s.id === id ? { ...s, status: 'complete', implementation } : s
-            ),
-          }
-        : null,
-    }))
+  completeSubtask: (id: string, implementation: string) => {
+    setStore('currentSubtask', null)
+    if (store.plan) {
+      setStore('plan', 'subtasks', (s) => s.id === id, { status: 'complete', implementation })
+    }
   },
 
-  setReviewResult: (result) => set({ reviewResult: result }),
+  setReviewResult: (result: DevTeamState['reviewResult']) => setStore('reviewResult', result),
 
-  requestRevision: (subtaskId, notes) => {
-    set((state) => ({
-      stage: 'implementing',
-      plan: state.plan
-        ? {
-            ...state.plan,
-            subtasks: state.plan.subtasks.map((s) =>
-              s.id === subtaskId
-                ? { ...s, status: 'needs_revision', reviewNotes: notes }
-                : s
-            ),
-          }
-        : null,
-    }))
+  requestRevision: (subtaskId: string, notes: string) => {
+    setStore('stage', 'implementing')
+    if (store.plan) {
+      setStore('plan', 'subtasks', (s) => s.id === subtaskId, { status: 'needs_revision', reviewNotes: notes })
+    }
   },
 
   nextStage: () => {
-    const { stage, plan } = get()
-
-    if (stage === 'planning') {
-      set({ stage: 'implementing' })
-    } else if (stage === 'implementing') {
+    if (store.stage === 'planning') {
+      setStore('stage', 'implementing')
+    } else if (store.stage === 'implementing') {
       // Check if all subtasks are complete
-      const allComplete = plan?.subtasks.every((s) => s.status === 'complete')
+      const allComplete = store.plan?.subtasks.every((s) => s.status === 'complete')
       if (allComplete) {
-        set({ stage: 'reviewing' })
+        setStore('stage', 'reviewing')
       }
-    } else if (stage === 'reviewing') {
-      set({ stage: 'done' })
+    } else if (store.stage === 'reviewing') {
+      setStore('stage', 'done')
     }
   },
-}))
+}
 
 // =============================================================================
 // Tools
@@ -215,16 +186,14 @@ const lintTool: Tool = {
  * Architect Agent - Plans the implementation
  */
 function Architect({ task }: { task: string }) {
-  const { setPlan, nextStage } = useDevTeam()
-
   return (
     <Claude
       tools={[fileSystemTool]}
       onFinished={(result: unknown) => {
         const data = result as DevTeamState['plan']
         console.log('[Architect] Plan created with', data?.subtasks.length, 'subtasks')
-        setPlan(data)
-        nextStage()
+        actions.setPlan(data)
+        actions.nextStage()
       }}
     >
       <Persona role="software architect">
@@ -276,12 +245,10 @@ function Architect({ task }: { task: string }) {
  * Developer Agent - Implements a single subtask
  */
 function Developer({ subtask }: { subtask: Subtask }) {
-  const { completeSubtask, nextStage, plan } = useDevTeam()
-
   // Check if dependencies are complete
   const deps = subtask.dependencies
   const depsComplete = deps.every((depId) =>
-    plan?.subtasks.find((s) => s.id === depId)?.status === 'complete'
+    store.plan?.subtasks.find((s) => s.id === depId)?.status === 'complete'
   )
 
   if (!depsComplete) {
@@ -295,8 +262,8 @@ function Developer({ subtask }: { subtask: Subtask }) {
       onFinished={(result: unknown) => {
         const data = result as { implementation: string; files: string[] }
         console.log(`[Developer] Completed: ${subtask.name}`)
-        completeSubtask(subtask.id, data.implementation)
-        nextStage()
+        actions.completeSubtask(subtask.id, data.implementation)
+        actions.nextStage()
       }}
     >
       <Persona role="senior developer">
@@ -335,8 +302,6 @@ function Developer({ subtask }: { subtask: Subtask }) {
  * Reviewer Agent - Reviews all implementations
  */
 function Reviewer() {
-  const { plan, setReviewResult, requestRevision, nextStage } = useDevTeam()
-
   return (
     <Claude
       tools={[fileSystemTool, runTestsTool, lintTool]}
@@ -349,16 +314,16 @@ function Reviewer() {
         console.log(`[Reviewer] Review complete: ${data.approved ? 'APPROVED' : 'CHANGES REQUESTED'}`)
 
         if (data.approved) {
-          setReviewResult({
+          actions.setReviewResult({
             approved: true,
             notes: data.notes,
             requiredChanges: [],
           })
-          nextStage()
+          actions.nextStage()
         } else {
           // Request revisions for specific subtasks
           data.requiredChanges.forEach((change) => {
-            requestRevision(change.subtaskId, change.change)
+            actions.requestRevision(change.subtaskId, change.change)
           })
         }
       }}
@@ -388,7 +353,7 @@ function Reviewer() {
 
       Here are the implementations to review:
 
-      {plan?.subtasks.map((s) => (
+      {store.plan?.subtasks.map((s) => (
         `## ${s.name}\n${s.description}\n\nImplementation: ${s.implementation}\n\n`
       )).join('')}
 
@@ -396,7 +361,7 @@ function Reviewer() {
         Return JSON with:
         - "approved": boolean
         - "notes": array of general feedback strings
-        - "requiredChanges": array of {"{"}subtaskId, change{"}"} if not approved
+        - "requiredChanges": array of {"{"}"subtaskId", "change"{"}"} if not approved
       </OutputFormat>
     </Claude>
   )
@@ -407,66 +372,67 @@ function Reviewer() {
 // =============================================================================
 
 function DevTeam({ task }: { task: string }) {
-  const { stage, plan, currentSubtask, reviewResult, startSubtask } = useDevTeam()
+  console.log(`[DevTeam] Stage: ${store.stage}`)
 
-  console.log(`[DevTeam] Stage: ${stage}`)
+  // Return closure for reactivity
+  return () => {
+    switch (store.stage) {
+      case 'planning':
+        return <Architect task={task} />
 
-  switch (stage) {
-    case 'planning':
-      return <Architect task={task} />
+      case 'implementing':
+        if (!store.plan) return null
 
-    case 'implementing':
-      if (!plan) return null
+        // Find the next subtask to work on
+        const pendingSubtasks = store.plan.subtasks.filter(
+          (s) => s.status === 'pending' || s.status === 'needs_revision'
+        )
 
-      // Find the next subtask to work on
-      const pendingSubtasks = plan.subtasks.filter(
-        (s) => s.status === 'pending' || s.status === 'needs_revision'
-      )
+        if (pendingSubtasks.length === 0) {
+          // Check if we should move to reviewing
+          const allComplete = store.plan.subtasks.every((s) => s.status === 'complete')
+          if (allComplete) {
+            actions.nextStage()
+            return null
+          }
+          return null // Waiting for in-progress subtasks
+        }
 
-      if (pendingSubtasks.length === 0) {
-        // Check if we should move to reviewing
-        const allComplete = plan.subtasks.every((s) => s.status === 'complete')
-        if (allComplete) {
-          useDevTeam.getState().nextStage()
+        // Find a subtask whose dependencies are met
+        const nextSubtask = pendingSubtasks.find((s) =>
+          s.dependencies.every(
+            (depId) => store.plan!.subtasks.find((d) => d.id === depId)?.status === 'complete'
+          )
+        )
+
+        if (!nextSubtask) {
+          console.log('[DevTeam] Waiting for dependencies...')
           return null
         }
-        return null // Waiting for in-progress subtasks
-      }
 
-      // Find a subtask whose dependencies are met
-      const nextSubtask = pendingSubtasks.find((s) =>
-        s.dependencies.every(
-          (depId) => plan.subtasks.find((d) => d.id === depId)?.status === 'complete'
-        )
-      )
+        if (store.currentSubtask !== nextSubtask.id) {
+          actions.startSubtask(nextSubtask.id)
+        }
 
-      if (!nextSubtask) {
-        console.log('[DevTeam] Waiting for dependencies...')
+        return <Developer subtask={nextSubtask} />
+
+      case 'reviewing':
+        return <Reviewer />
+
+      case 'done':
+        console.log('\n=== Development Complete ===')
+        console.log('\nPlan Overview:', store.plan?.overview)
+        console.log('\nSubtasks:')
+        store.plan?.subtasks.forEach((s) => {
+          console.log(`  - ${s.name}: ${s.status}`)
+        })
+        console.log('\nReview:', store.reviewResult?.approved ? 'APPROVED' : 'PENDING')
+        store.reviewResult?.notes.forEach((note) => console.log(`  - ${note}`))
         return null
-      }
 
-      if (currentSubtask !== nextSubtask.id) {
-        startSubtask(nextSubtask.id)
-      }
-
-      return <Developer subtask={nextSubtask} />
-
-    case 'reviewing':
-      return <Reviewer />
-
-    case 'done':
-      console.log('\n=== Development Complete ===')
-      console.log('\nPlan Overview:', plan?.overview)
-      console.log('\nSubtasks:')
-      plan?.subtasks.forEach((s) => {
-        console.log(`  - ${s.name}: ${s.status}`)
-      })
-      console.log('\nReview:', reviewResult?.approved ? 'APPROVED' : 'PENDING')
-      reviewResult?.notes.forEach((note) => console.log(`  - ${note}`))
-      return null
-
-    default:
-      return null
+      default:
+        return null
+    }
   }
 }
 
@@ -482,9 +448,9 @@ async function main() {
   console.log('Workflow: Architect -> Developer (per subtask) -> Reviewer\n')
 
   // Initialize the task in state
-  useDevTeam.setState({ task })
+  actions.setTask(task)
 
-  const result = await executePlan(<DevTeam task={task} />, {
+  const result = await executePlan(() => <DevTeam task={task} />, {
     verbose: true,
     onFrame: (frame) => {
       console.log(`\n[Frame ${frame.frame}] Executed: ${frame.executedNodes.join(', ')}`)
@@ -498,15 +464,14 @@ async function main() {
   console.log('MCP servers used:', result.mcpServers?.join(', ') || 'none')
 
   // Final state
-  const state = useDevTeam.getState()
   console.log('\n=== Final Project State ===')
-  console.log('Stage:', state.stage)
-  console.log('Subtasks completed:', state.plan?.subtasks.filter((s) => s.status === 'complete').length)
-  console.log('Review approved:', state.reviewResult?.approved)
+  console.log('Stage:', store.stage)
+  console.log('Subtasks completed:', store.plan?.subtasks.filter((s) => s.status === 'complete').length)
+  console.log('Review approved:', store.reviewResult?.approved)
 }
 
 main().catch(console.error)
 
 // Export
-export { DevTeam, Architect, Developer, Reviewer, useDevTeam }
-export default <DevTeam task="Build a REST API for user management" />
+export { DevTeam, Architect, Developer, Reviewer, store }
+export default (() => <DevTeam task="Build a REST API for user management" />)

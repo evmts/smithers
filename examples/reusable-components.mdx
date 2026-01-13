@@ -6,7 +6,7 @@ This example shows how to build a library of reusable prompt components.
 
 ## Custom Components
 
-export function SecurityReviewer({ children }) {
+export function SecurityReviewer(props) {
   return (
     <>
       <Persona role="security engineer">
@@ -19,27 +19,27 @@ export function SecurityReviewer({ children }) {
         - Always suggest remediation steps
       </Constraints>
 
-      {children}
+      {props.children}
     </>
   )
 }
 
-export function JsonOutput({ schema, children }) {
+export function JsonOutput(props) {
   return (
-    <OutputFormat schema={schema}>
+    <OutputFormat schema={props.schema}>
       Return valid JSON matching this schema:
       ```json
-      {schema}
+      {JSON.stringify(props.schema)}
       ```
-      {children}
+      {props.children}
     </OutputFormat>
   )
 }
 
-export function Checklist({ items }) {
+export function Checklist(props) {
   return (
     <Phase name="checklist">
-      {items.map((item, i) => (
+      {props.items.map((item, i) => (
         <Step key={i}>{item}</Step>
       ))}
     </Phase>

@@ -17,7 +17,7 @@ bun run examples/01-hello-world/agent.tsx
 | 00 | [**Feature Workflow**](./00-feature-workflow/) | Human-in-loop, POC-driven, TDD flow, Extended thinking | **Flagship** |
 | 01 | [Hello World](./01-hello-world/) | Basic Claude component | Beginner |
 | 02 | [Code Review](./02-code-review/) | Tools, Constraints, OutputFormat | Beginner |
-| 03 | [Research Pipeline](./03-research-pipeline/) | Multi-phase, Zustand state, Ralph loop | Intermediate |
+| 03 | [Research Pipeline](./03-research-pipeline/) | Multi-phase, SolidJS store, Ralph loop | Intermediate |
 | 04 | [Parallel Research](./04-parallel-research/) | Subagent, parallel execution | Intermediate |
 | 05 | [Dev Team](./05-dev-team/) | Multi-agent orchestration | Advanced |
 | 06 | [File Processor](./06-file-processor/) | File operations, multi-phase transforms | Intermediate |
@@ -31,60 +31,50 @@ bun run examples/01-hello-world/agent.tsx
 
 ### 0. Feature Workflow - The Complete Example
 
-**Start here if you want to see everything Smithers can do.** This flagship example demonstrates a production-grade development workflow:
+**Start here if you want to see everything Smithers can do.** This flagship example demonstrates a production-grade development workflow using SolidJS stores:
 
 ```tsx
-function FeatureWorkflow({ prompt }) {
-  const { phase, nextPhase, setPhase } = useWorkflowStore()
+import { createStore } from 'solid-js/store'
 
-  switch (phase) {
-    case 'prompt-input':
-      return (
-        <Human message="Review feature request" onApprove={() => nextPhase()} onReject={() => setPhase('cancelled')}>
-          Feature: {prompt}
-        </Human>
-      )
+function FeatureWorkflow(props) {
+  const [state, setState] = createStore({
+    phase: 'prompt-input',
+    plan: null,
+    refinedPlan: null
+  })
 
-    case 'research':
-      return <Claude allowedTools={['Read', 'Glob', 'Grep']} onFinished={() => nextPhase()}>Research the codebase...</Claude>
+  return () => {
+    switch (state.phase) {
+      case 'prompt-input':
+        return (
+          <Human message="Review feature request" 
+                 onApprove={() => setState('phase', 'research')} 
+                 onReject={() => setState('phase', 'cancelled')}>
+            Feature: {props.prompt}
+          </Human>
+        )
 
-    case 'planning':
-      return <Claude onFinished={(plan) => { setState({ plan }); nextPhase() }}>Create implementation plan...</Claude>
+      case 'research':
+        return <Claude allowedTools={['Read', 'Glob', 'Grep']} 
+                       onFinished={() => setState('phase', 'planning')}>Research the codebase...</Claude>
 
-    case 'plan-review':
-      return (
-        <Human message="Review plan" onApprove={() => nextPhase()} onReject={() => setPhase('planning')}>
-          {JSON.stringify(plan, null, 2)}
-        </Human>
-      )
+      case 'planning':
+        return <Claude onFinished={(plan) => setState({ plan, phase: 'plan-review' })}>Create implementation plan...</Claude>
 
-    case 'poc':
-      return <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>Build POC...</Claude>
+      case 'plan-review':
+        return (
+          <Human message="Review plan" 
+                 onApprove={() => setState('phase', 'poc')} 
+                 onReject={() => setState('phase', 'planning')}>
+            {JSON.stringify(state.plan, null, 2)}
+          </Human>
+        )
 
-    case 'poc-analysis':
-      return <Claude maxThinkingTokens={16000} onFinished={() => nextPhase()}>Deep analysis with extended thinking...</Claude>
+      // ... other phases (poc, poc-analysis, refined-review, api-impl, etc.)
 
-    case 'refined-review':
-      return (
-        <Human message="Review refined plan" onApprove={() => nextPhase()} onReject={() => setPhase('poc-analysis')}>
-          {JSON.stringify(refinedPlan, null, 2)}
-        </Human>
-      )
-
-    case 'api-impl':
-      return <Claude onFinished={() => nextPhase()}>Implement types (throw not implemented)...</Claude>
-
-    case 'test-impl':
-      return <Claude onFinished={() => nextPhase()}>Write tests (should fail)...</Claude>
-
-    case 'test-verify':
-      return <Claude allowedTools={['Bash']} onFinished={() => nextPhase()}>Run tests to verify they fail...</Claude>
-
-    case 'implementation':
-      return <Claude onFinished={() => nextPhase()}>Implement until tests pass...</Claude>
-
-    case 'done':
-      return null
+      case 'done':
+        return null
+    }
   }
 }
 ```
@@ -111,7 +101,7 @@ function HelloWorld() {
   )
 }
 
-await executePlan(<HelloWorld />)
+await executePlan(() => <HelloWorld />)
 ```
 
 ### 2. Code Review - Tools and Structure
@@ -136,21 +126,20 @@ Learn how to give agents capabilities and structured output:
 
 ### 3. Research Pipeline - State and Phases
 
-Understand the Ralph Wiggum loop and state-driven re-rendering:
+Understand the Ralph Wiggum loop and state-driven re-rendering with Signals:
 
 ```tsx
-const useStore = create((set) => ({
-  phase: 'gather',
-  nextPhase: () => set({ phase: 'analyze' }),
-}))
+import { createSignal } from 'solid-js'
 
 function Pipeline() {
-  const { phase, nextPhase } = useStore()
+  const [phase, setPhase] = createSignal('gather')
 
-  if (phase === 'gather') {
-    return <Claude onFinished={nextPhase}>Gather data</Claude>
+  return () => {
+    if (phase() === 'gather') {
+      return <Claude onFinished={() => setPhase('analyze')}>Gather data</Claude>
+    }
+    // ... more phases
   }
-  // ... more phases
 }
 ```
 
@@ -159,10 +148,10 @@ function Pipeline() {
 Run multiple agents in parallel with Subagent:
 
 ```tsx
-function ParallelResearch({ topics }) {
+function ParallelResearch(props) {
   return (
     <>
-      {topics.map(topic => (
+      {props.topics.map(topic => (
         <Subagent key={topic} name={topic} parallel>
           <Claude>Research: {topic}</Claude>
         </Subagent>
@@ -177,16 +166,19 @@ function ParallelResearch({ topics }) {
 Build complex multi-agent systems with specialized roles:
 
 ```tsx
-function DevTeam({ task }) {
-  const { stage } = useDevTeam()
+function DevTeam(props) {
+  const [stage, setStage] = createSignal('planning')
+  // ... state setup
 
-  switch (stage) {
-    case 'planning':
-      return <Architect task={task} />
-    case 'implementing':
-      return <Developer subtask={currentSubtask} />
-    case 'reviewing':
-      return <Reviewer />
+  return () => {
+    switch (stage()) {
+      case 'planning':
+        return <Architect task={props.task} />
+      case 'implementing':
+        return <Developer subtask={currentSubtask()} />
+      case 'reviewing':
+        return <Reviewer />
+    }
   }
 }
 ```
@@ -229,17 +221,13 @@ Smithers' execution model:
 
 ### State Management
 
-Use Zustand for predictable state across phases:
+Use SolidJS Signals or Stores for predictable state across phases:
 
 ```tsx
-import { create } from 'zustand'
+import { createSignal } from 'solid-js'
 
-const useStore = create((set) => ({
-  phase: 'start',
-  data: null,
-  setData: (data) => set({ data }),
-  nextPhase: () => set({ phase: 'next' }),
-}))
+const [phase, setPhase] = createSignal('start')
+const [data, setData] = createSignal(null)
 ```
 
 ## Running Examples

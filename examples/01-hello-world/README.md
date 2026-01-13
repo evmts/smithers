@@ -22,7 +22,7 @@ function HelloWorld() {
   )
 }
 
-const result = await executePlan(<HelloWorld />)
+const result = await executePlan(() => <HelloWorld />)
 console.log(result.output)
 ```
 
@@ -47,7 +47,7 @@ bun run examples/01-hello-world/agent.tsx
 
 ### Execution
 
-`executePlan()` takes a JSX element, renders it to XML, and executes it with Claude. It returns an `ExecutionResult` containing:
+`executePlan()` takes a function that returns a JSX element, renders it to XML, and executes it with Claude. It returns an `ExecutionResult` containing:
 
 - `output` - The agent's response
 - `frames` - Number of execution cycles

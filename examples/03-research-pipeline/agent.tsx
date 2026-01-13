@@ -1,7 +1,7 @@
 /**
  * Research Pipeline Example
  *
- * A multi-phase research agent using Zustand for state management.
+ * A multi-phase research agent using SolidJS Store for state management.
  * Demonstrates the "Ralph Wiggum loop" - re-rendering and re-executing
  * the plan as state changes.
  *
@@ -9,7 +9,7 @@
  *
  * Run with: bun run examples/03-research-pipeline/agent.tsx
  */
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 import {
   executePlan,
   Claude,
@@ -21,7 +21,7 @@ import {
 } from '@evmts/smithers'
 
 // =============================================================================
-// State Management with Zustand
+// State Management with SolidJS Store
 // =============================================================================
 
 interface ResearchState {
@@ -44,33 +44,28 @@ interface ResearchState {
 
   // Final report
   report: string | null
-
-  // Actions
-  setSources: (sources: ResearchState['sources']) => void
-  setAnalysis: (analysis: ResearchState['analysis']) => void
-  setReport: (report: string) => void
-  nextPhase: () => void
 }
 
-const useResearchStore = create<ResearchState>((set, get) => ({
+const [store, setStore] = createStore<ResearchState>({
   phase: 'gather',
   sources: [],
   analysis: null,
   report: null,
+})
 
-  setSources: (sources) => set({ sources }),
-  setAnalysis: (analysis) => set({ analysis }),
-  setReport: (report) => set({ report }),
+const actions = {
+  setSources: (sources: ResearchState['sources']) => setStore('sources', sources),
+  setAnalysis: (analysis: ResearchState['analysis']) => setStore('analysis', analysis),
+  setReport: (report: string) => setStore('report', report),
   nextPhase: () => {
-    const { phase } = get()
     const transitions: Record<string, ResearchState['phase']> = {
       gather: 'analyze',
       analyze: 'report',
       report: 'done',
     }
-    set({ phase: transitions[phase] || 'done' })
+    setStore('phase', transitions[store.phase] || 'done')
   },
-}))
+}
 
 // =============================================================================
 // Tools
@@ -125,16 +120,14 @@ const fileSystemTool: Tool = {
 // =============================================================================
 
 function GatherPhase({ topic }: { topic: string }) {
-  const { setSources, nextPhase } = useResearchStore()
-
   return (
     <Claude
       tools={[webSearchTool]}
       onFinished={(result: unknown) => {
         const data = result as { sources: ResearchState['sources'] }
         console.log('[Gather] Collected sources:', data.sources?.length || 0)
-        setSources(data.sources || [])
-        nextPhase()
+        actions.setSources(data.sources || [])
+        actions.nextPhase()
       }}
     >
       <Persona role="research assistant">
@@ -170,15 +163,13 @@ function GatherPhase({ topic }: { topic: string }) {
 }
 
 function AnalyzePhase() {
-  const { sources, setAnalysis, nextPhase } = useResearchStore()
-
   return (
     <Claude
       onFinished={(result: unknown) => {
         const data = result as ResearchState['analysis']
         console.log('[Analyze] Found themes:', data?.themes?.length || 0)
-        setAnalysis(data)
-        nextPhase()
+        actions.setAnalysis(data)
+        actions.nextPhase()
       }}
     >
       <Persona role="research analyst">
@@ -193,7 +184,7 @@ function AnalyzePhase() {
       </Phase>
 
       Here are the sources to analyze:
-      {JSON.stringify(sources, null, 2)}
+      {JSON.stringify(store.sources, null, 2)}
 
       <OutputFormat schema={{
         type: 'object',
@@ -210,16 +201,14 @@ function AnalyzePhase() {
 }
 
 function ReportPhase({ topic }: { topic: string }) {
-  const { sources, analysis, setReport, nextPhase } = useResearchStore()
-
   return (
     <Claude
       tools={[fileSystemTool]}
       onFinished={(result: unknown) => {
         const data = result as { report: string }
         console.log('[Report] Generated report')
-        setReport(data.report)
-        nextPhase()
+        actions.setReport(data.report)
+        actions.nextPhase()
       }}
     >
       <Persona role="technical writer">
@@ -242,10 +231,10 @@ function ReportPhase({ topic }: { topic: string }) {
       Topic: {topic}
 
       Sources:
-      {JSON.stringify(sources, null, 2)}
+      {JSON.stringify(store.sources, null, 2)}
 
       Analysis:
-      {JSON.stringify(analysis, null, 2)}
+      {JSON.stringify(store.analysis, null, 2)}
 
       <OutputFormat>
         Return a JSON object with a "report" field containing the full markdown report.
@@ -259,29 +248,30 @@ function ReportPhase({ topic }: { topic: string }) {
 // =============================================================================
 
 function ResearchPipeline({ topic }: { topic: string }) {
-  const { phase, report } = useResearchStore()
+  console.log(`[ResearchPipeline] Current phase: ${store.phase}`)
 
-  console.log(`[ResearchPipeline] Current phase: ${phase}`)
+  // Return a closure for reactivity
+  return () => {
+    switch (store.phase) {
+      case 'gather':
+        return <GatherPhase topic={topic} />
 
-  switch (phase) {
-    case 'gather':
-      return <GatherPhase topic={topic} />
+      case 'analyze':
+        return <AnalyzePhase />
 
-    case 'analyze':
-      return <AnalyzePhase />
+      case 'report':
+        return <ReportPhase topic={topic} />
 
-    case 'report':
-      return <ReportPhase topic={topic} />
+      case 'done':
+        // No more Claude components - the loop will end
+        console.log('\n=== Research Complete ===')
+        console.log('Final report preview:')
+        console.log(store.report?.slice(0, 500) + '...')
+        return null
 
-    case 'done':
-      // No more Claude components - the loop will end
-      console.log('\n=== Research Complete ===')
-      console.log('Final report preview:')
-      console.log(report?.slice(0, 500) + '...')
-      return null
-
-    default:
-      return null
+      default:
+        return null
+    }
   }
 }
 
@@ -295,7 +285,8 @@ async function main() {
   console.log(`\nStarting research pipeline on: "${topic}"\n`)
   console.log('Phases: gather -> analyze -> report\n')
 
-  const result = await executePlan(<ResearchPipeline topic={topic} />, {
+  const result = await executePlan(() => <ResearchPipeline topic={topic} />,
+ {
     verbose: true,
     onFrame: (frame) => {
       console.log(`\n[Frame ${frame.frame}] Executed: ${frame.executedNodes.join(', ')}`)
@@ -307,15 +298,14 @@ async function main() {
   console.log('Duration:', result.totalDuration, 'ms')
 
   // Display final state
-  const state = useResearchStore.getState()
   console.log('\n=== Final State ===')
-  console.log('Sources collected:', state.sources.length)
-  console.log('Themes identified:', state.analysis?.themes?.length || 0)
-  console.log('Report generated:', state.report ? 'Yes' : 'No')
+  console.log('Sources collected:', store.sources.length)
+  console.log('Themes identified:', store.analysis?.themes?.length || 0)
+  console.log('Report generated:', store.report ? 'Yes' : 'No')
 }
 
 main().catch(console.error)
 
 // Export for use as a module
-export { ResearchPipeline, useResearchStore }
-export default <ResearchPipeline topic="AI agents" />
+export { ResearchPipeline, store as researchStore }
+export default (() => <ResearchPipeline topic="AI agents" />)

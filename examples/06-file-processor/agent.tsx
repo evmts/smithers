@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { Claude, executePlan, File } from '../../src'
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 
 /**
  * File Processor Example
@@ -17,107 +17,107 @@ interface ProcessorState {
   files: string[]
   processedContent: Record<string, string>
   writtenCount: number
-  setPhase: (phase: ProcessorState['phase']) => void
-  setFiles: (files: string[]) => void
-  setProcessedContent: (content: Record<string, string>) => void
-  incrementWritten: () => void
 }
 
-const useStore = create<ProcessorState>((set) => ({
+const [store, setStore] = createStore<ProcessorState>({
   phase: 'reading',
   files: [],
   processedContent: {},
   writtenCount: 0,
-  setPhase: (phase) => set({ phase }),
-  setFiles: (files) => set({ files }),
-  setProcessedContent: (content) => set({ processedContent: content }),
-  incrementWritten: () => set((state) => ({ writtenCount: state.writtenCount + 1 })),
-}))
+})
 
-function FileProcessor({ pattern, outputDir }: { pattern: string; outputDir: string }) {
-  const { phase, files, processedContent, writtenCount, setPhase, setFiles, setProcessedContent, incrementWritten } = useStore()
+const actions = {
+  setPhase: (phase: ProcessorState['phase']) => setStore('phase', phase),
+  setFiles: (files: string[]) => setStore('files', files),
+  setProcessedContent: (content: Record<string, string>) => setStore('processedContent', content),
+  incrementWritten: () => setStore('writtenCount', (c) => c + 1),
+}
 
-  if (phase === 'reading') {
-    return (
-      <Claude
-        allowedTools={['Glob', 'Read']}
-        onFinished={(result) => {
-          // Extract file list from result
-          const fileList = result.text.match(/\S+\.md/g) || []
-          setFiles(fileList)
-          setPhase('processing')
-        }}
-      >
-        Find all markdown files matching pattern: {pattern}
+function FileProcessor(props: { pattern: string; outputDir: string }) {
+  // Return closure for reactivity
+  return () => {
+    if (store.phase === 'reading') {
+      return (
+        <Claude
+          allowedTools={['Glob', 'Read']}
+          onFinished={(result) => {
+            // Extract file list from result
+            const fileList = result.text.match(/\S+\.md/g) || []
+            actions.setFiles(fileList)
+            actions.setPhase('processing')
+          }}
+        >
+          Find all markdown files matching pattern: {props.pattern}
 
-        Use Glob to find files, then list them one per line.
-      </Claude>
-    )
+          Use Glob to find files, then list them one per line.
+        </Claude>
+      )
+    }
+
+    if (store.phase === 'processing') {
+      return (
+        <Claude
+          allowedTools={['Read']}
+          onFinished={(result) => {
+            // Parse the processed content from the result
+            const processed: Record<string, string> = {}
+
+            // Extract file content pairs from result
+            store.files.forEach(file => {
+              // Mock processing for demo - in real usage Claude would return structured data
+              processed[file] = `Processed: ${file}`
+            })
+
+            actions.setProcessedContent(processed)
+            actions.setPhase('writing')
+          }}
+        >
+          Read and process the following markdown files:
+          {store.files.map(f => `\n- ${f}`).join('')}
+
+          For each file:
+          1. Read the content
+          2. Convert all headers to title case
+          3. Add a table of contents at the top
+          4. Add word count at the bottom
+
+          Return the processed content for each file.
+        </Claude>
+      )
+    }
+
+    if (store.phase === 'writing') {
+      return (
+        <>
+          {Object.entries(store.processedContent).map(([filename, content]) => {
+            const outputPath = `${props.outputDir}/${filename.split('/').pop()}`
+            return (
+              <File
+                key={filename}
+                path={outputPath}
+                onWritten={() => {
+                  console.log(`✓ Written: ${outputPath}`)
+                  actions.incrementWritten()
+
+                  // Check if this is the last file
+                  const currentWritten = store.writtenCount
+                  const totalFiles = store.files.length
+                  if (currentWritten === totalFiles) {
+                    actions.setPhase('done')
+                  }
+                }}
+              >
+                {content}
+              </File>
+            )
+          })}
+        </>
+      )
+    }
+
+    // Done phase - return null to complete execution
+    return null
   }
-
-  if (phase === 'processing') {
-    return (
-      <Claude
-        allowedTools={['Read']}
-        onFinished={(result) => {
-          // Parse the processed content from the result
-          const processed: Record<string, string> = {}
-
-          // Extract file content pairs from result
-          files.forEach(file => {
-            // Mock processing for demo - in real usage Claude would return structured data
-            processed[file] = `Processed: ${file}`
-          })
-
-          setProcessedContent(processed)
-          setPhase('writing')
-        }}
-      >
-        Read and process the following markdown files:
-        {files.map(f => `\n- ${f}`).join('')}
-
-        For each file:
-        1. Read the content
-        2. Convert all headers to title case
-        3. Add a table of contents at the top
-        4. Add word count at the bottom
-
-        Return the processed content for each file.
-      </Claude>
-    )
-  }
-
-  if (phase === 'writing') {
-    return (
-      <>
-        {Object.entries(processedContent).map(([filename, content]) => {
-          const outputPath = `${outputDir}/${filename.split('/').pop()}`
-          return (
-            <File
-              key={filename}
-              path={outputPath}
-              onWritten={() => {
-                console.log(`✓ Written: ${outputPath}`)
-                incrementWritten()
-
-                // Check if this is the last file
-                const currentWritten = useStore.getState().writtenCount
-                const totalFiles = files.length
-                if (currentWritten === totalFiles) {
-                  setPhase('done')
-                }
-              }}
-            >
-              {content}
-            </File>
-          )
-        })}
-      </>
-    )
-  }
-
-  // Done phase - return null to complete execution
-  return null
 }
 
 // Main execution
@@ -129,10 +129,10 @@ console.log(`  Pattern: ${pattern}`)
 console.log(`  Output: ${outputDir}`)
 console.log()
 
-const result = await executePlan(<FileProcessor pattern={pattern} outputDir={outputDir} />, {
+const result = await executePlan(() => <FileProcessor pattern={pattern} outputDir={outputDir} />, {
   mockMode: process.env.SMITHERS_MOCK === 'true',
 })
 
 console.log()
 console.log('✅ File Processing Complete')
-console.log(`  Processed: ${useStore.getState().files.length} files`)
+console.log(`  Processed: ${store.files.length} files`)

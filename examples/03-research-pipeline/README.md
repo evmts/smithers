@@ -1,11 +1,11 @@
 # Research Pipeline
 
-A multi-phase research agent using Zustand for state management. Demonstrates the "Ralph Wiggum loop" pattern.
+A multi-phase research agent using SolidJS Store for state management. Demonstrates the "Ralph Wiggum loop" pattern.
 
 ## What This Example Shows
 
 - **Multi-phase workflows** with distinct gather, analyze, and report phases
-- **Zustand state management** for tracking progress and data between phases
+- **SolidJS Store state management** for tracking progress and data between phases
 - **The Ralph Wiggum loop** - automatic re-rendering and re-execution as state changes
 - **Phase transitions** via callbacks (`onFinished`)
 - **Data flow** between phases through shared state
@@ -16,51 +16,51 @@ Named after the Simpsons character who keeps doing something until it works, the
 
 1. Render the JSX component to an XML plan
 2. Execute any pending `<Claude>` components
-3. When `onFinished` fires, it may update state (Zustand/React)
-4. State changes trigger a re-render, producing a new plan
+3. When `onFinished` fires, it updates SolidJS signals/stores
+4. State changes trigger a re-render via fine-grained reactivity, producing a new plan
 5. Repeat until no more `<Claude>` components need execution
 
 ```
 Initial Render -> Execute Claude -> State Change -> Re-render -> Execute Claude -> ...
 ```
 
-## State Management with Zustand
+## State Management with SolidJS Store
 
 ```tsx
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 
-const useResearchStore = create<ResearchState>((set, get) => ({
+const [store, setStore] = createStore({
   phase: 'gather',
   sources: [],
   analysis: null,
+})
 
-  setSources: (sources) => set({ sources }),
-  setAnalysis: (analysis) => set({ analysis }),
+const actions = {
+  setSources: (sources) => setStore('sources', sources),
+  setAnalysis: (analysis) => setStore('analysis', analysis),
   nextPhase: () => {
     const transitions = { gather: 'analyze', analyze: 'report', report: 'done' }
-    set({ phase: transitions[get().phase] })
+    setStore('phase', transitions[store.phase])
   },
-}))
+}
 ```
 
 ## Phase Components
 
 Each phase is a separate component that:
-1. Reads current state from Zustand
+1. Reads current state from the store
 2. Renders a Claude component with phase-specific instructions
 3. Updates state in `onFinished` callback
 4. Triggers transition to next phase
 
 ```tsx
 function GatherPhase({ topic }) {
-  const { setSources, nextPhase } = useResearchStore()
-
   return (
     <Claude
       tools={[webSearchTool]}
       onFinished={(result) => {
-        setSources(result.sources)
-        nextPhase() // Move to 'analyze'
+        actions.setSources(result.sources)
+        actions.nextPhase() // Move to 'analyze'
       }}
     >
       <Phase name="gather">
@@ -73,21 +73,21 @@ function GatherPhase({ topic }) {
 
 ## The Orchestrator
 
-The main component switches between phases based on state:
+The main component switches between phases based on state. Note the return of a closure `() => ...` to ensure reactivity:
 
 ```tsx
 function ResearchPipeline({ topic }) {
-  const { phase } = useResearchStore()
-
-  switch (phase) {
-    case 'gather':
-      return <GatherPhase topic={topic} />
-    case 'analyze':
-      return <AnalyzePhase />
-    case 'report':
-      return <ReportPhase topic={topic} />
-    case 'done':
-      return null // Loop ends when no Claude components
+  return () => {
+    switch (store.phase) {
+      case 'gather':
+        return <GatherPhase topic={topic} />
+      case 'analyze':
+        return <AnalyzePhase />
+      case 'report':
+        return <ReportPhase topic={topic} />
+      case 'done':
+        return null // Loop ends when no Claude components
+    }
   }
 }
 ```
@@ -124,14 +124,14 @@ bun run examples/03-research-pipeline/agent.tsx "quantum computing applications"
   - No Claude components, loop ends
 ```
 
-## Why Zustand?
+## Why SolidJS?
 
-Smithers recommends Zustand over `useState` for multi-phase agents:
+Smithers uses SolidJS over React for state management because:
 
-1. **External state** - Zustand stores state outside React, making it accessible from `onFinished` callbacks
-2. **Predictable updates** - Direct mutations via actions, no batching surprises
-3. **Debugging** - Easy to inspect full state at any point
-4. **Testability** - Can reset/mock store state in tests
+1. **Fine-grained reactivity** - Updates only what changes, no full VDOM re-renders
+2. **No stale closures** - Signals always return current value
+3. **Performance** - Efficient execution loop
+4. **Simple API** - `createSignal` and `createStore` cover most use cases without complex providers
 
 ## Next Steps
 

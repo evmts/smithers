@@ -56,30 +56,26 @@ function ResearchPhase({ topics }) {
 
 ## State Coordination
 
-Zustand manages coordination between parallel agents:
+SolidJS Store manages coordination between parallel agents:
 
 ```tsx
-const useStore = create((set, get) => ({
+const [store, setStore] = createStore({
   topics: [],
+})
 
-  updateTopic: (topic, data) =>
-    set((state) => ({
-      topics: state.topics.map((t) =>
-        t.topic === topic ? { ...t, ...data } : t
-      ),
-    })),
+const updateTopic = (topic, data) => {
+  setStore('topics', (t) => t.topic === topic, data)
+}
 
-  nextPhase: () => {
-    const { phase, topics } = get()
-    // Only proceed when ALL topics are complete
-    if (phase === 'research') {
-      const allComplete = topics.every((t) => t.status === 'complete')
-      if (allComplete) {
-        set({ phase: 'synthesize' })
-      }
+const nextPhase = () => {
+  // Only proceed when ALL topics are complete
+  if (store.phase === 'research') {
+    const allComplete = store.topics.every((t) => t.status === 'complete')
+    if (allComplete) {
+      setStore('phase', 'synthesize')
     }
-  },
-}))
+  }
+}
 ```
 
 ## Running

@@ -85,23 +85,25 @@ Build something quick to learn, then refine the plan:
 Initial Plan → POC → Discoveries → Refined Plan (better APIs, more tests, etc.)
 ```
 
-### 5. Zustand State Management
+### 5. SolidJS State Management
 
-Complex state flows through 12 phases using Zustand:
+Complex state flows through 12 phases using SolidJS Stores:
 
 ```tsx
-const useWorkflowStore = create<WorkflowState>((set, get) => ({
+const [store, setStore] = createStore<WorkflowState>({
   phase: 'prompt-input',
   fileResearch: [],
   initialPlan: null,
   refinedPlan: null,
   // ... many more fields
+})
+
+const actions = {
   nextPhase: () => {
-    const { phase } = get()
-    const currentIndex = phaseOrder.indexOf(phase)
-    set({ phase: phaseOrder[currentIndex + 1] })
+    const currentIndex = phaseOrder.indexOf(store.phase)
+    setStore('phase', phaseOrder[currentIndex + 1])
   },
-}))
+}
 ```
 
 ## Usage
@@ -115,11 +117,11 @@ bun run examples/00-feature-workflow/agent.tsx "Add user authentication"
 ### As a Module
 
 ```tsx
-import { FeatureWorkflow, useWorkflowStore } from './agent.tsx'
+import FeatureWorkflow, { workflowStore } from './agent.tsx'
 import { executePlan } from '@evmts/smithers'
 
 await executePlan(
-  <FeatureWorkflow prompt="Add a caching layer" />,
+  FeatureWorkflow,
   {
     onHumanPrompt: async (message, content) => {
       // Show UI for human approval
@@ -129,8 +131,7 @@ await executePlan(
 )
 
 // Access final state
-const state = useWorkflowStore.getState()
-console.log(state.refinedPlan)
+console.log(workflowStore.refinedPlan)
 ```
 
 ## Customization
@@ -180,4 +181,4 @@ This workflow is designed for building **robust, production-quality features**:
 - **TDD flow** ensures testable, well-designed code
 - **Extended thinking** enables deep analysis of complex problems
 
-It's the workflow you'd use for building a React framework.
+It's the workflow you'd use for building a SolidJS framework.

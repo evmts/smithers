@@ -25,13 +25,14 @@ Uses the Bash tool to execute git commands safely:
 
 ### Command Routing
 
-Uses state management to route to different command handlers:
+Uses SolidJS Store to route to different command handlers:
 
 ```tsx
-const useStore = create((set) => ({
+const [store, setStore] = createStore({
   command: 'status',
-  setCommand: (cmd) => set({ command: cmd }),
-}))
+})
+
+const setCommand = (cmd) => setStore('command', cmd)
 ```
 
 ### Natural Language Interface
@@ -141,8 +142,7 @@ This example uses `Bash` tool which can run arbitrary commands. In production:
 Example with confirmation:
 
 ```tsx
-<Human message="Commit these changes?" onApprove={() => setPhase('commit')}>
-  Files to commit:
+<Human message="Commit these changes?" onApprove={() => setPhase('commit')}>  Files to commit:
   {changedFiles.map(f => `\n- ${f}`).join('')}
 </Human>
 ```

@@ -6,8 +6,8 @@
  *
  * Run with: bun run examples/04-parallel-research/agent.tsx
  */
-import { useEffect } from 'react'
-import { create } from 'zustand'
+import { createEffect } from 'solid-js'
+import { createStore } from 'solid-js/store'
 import {
   executePlan,
   Claude,
@@ -34,64 +34,50 @@ interface ParallelResearchState {
   phase: 'research' | 'synthesize' | 'done'
   topics: TopicResearch[]
   finalReport: string | null
-
-  initTopics: (topics: string[]) => void
-  startTopic: (topic: string) => void
-  updateTopic: (topic: string, data: Partial<TopicResearch>) => void
-  setFinalReport: (report: string) => void
-  nextPhase: () => void
 }
 
 // =============================================================================
 // State
 // =============================================================================
 
-const useStore = create<ParallelResearchState>((set, get) => ({
+const [store, setStore] = createStore<ParallelResearchState>({
   phase: 'research',
   topics: [],
   finalReport: null,
+})
 
-  initTopics: (topics) =>
-    set({
-      topics: topics.map((topic) => ({
-        topic,
-        status: 'pending',
-        findings: [],
-        summary: '',
-      })),
-    }),
+const actions = {
+  initTopics: (topics: string[]) => {
+    setStore('topics', topics.map((topic) => ({
+      topic,
+      status: 'pending',
+      findings: [],
+      summary: '',
+    })))
+  },
 
-  startTopic: (topic) =>
-    set((state) => ({
-      topics: state.topics.map((t) =>
-        t.topic === topic && t.status === 'pending'
-          ? { ...t, status: 'in_progress' }
-          : t
-      ),
-    })),
+  startTopic: (topic: string) => {
+    setStore('topics', (t) => t.topic === topic && t.status === 'pending', 'status', 'in_progress')
+  },
 
-  updateTopic: (topic, data) =>
-    set((state) => ({
-      topics: state.topics.map((t) =>
-        t.topic === topic ? { ...t, ...data } : t
-      ),
-    })),
+  updateTopic: (topic: string, data: Partial<TopicResearch>) => {
+    setStore('topics', (t) => t.topic === topic, data)
+  },
 
-  setFinalReport: (report) => set({ finalReport: report }),
+  setFinalReport: (report: string) => setStore('finalReport', report),
 
   nextPhase: () => {
-    const { phase, topics } = get()
     // Only move to synthesize when all topics are complete
-    if (phase === 'research') {
-      const allComplete = topics.every((t) => t.status === 'complete')
+    if (store.phase === 'research') {
+      const allComplete = store.topics.every((t) => t.status === 'complete')
       if (allComplete) {
-        set({ phase: 'synthesize' })
+        setStore('phase', 'synthesize')
       }
-    } else if (phase === 'synthesize') {
-      set({ phase: 'done' })
+    } else if (store.phase === 'synthesize') {
+      setStore('phase', 'done')
     }
   },
-}))
+}
 
 // =============================================================================
 // Tools
@@ -127,11 +113,9 @@ const webSearchTool: Tool = {
  * Individual topic researcher - runs in parallel with other researchers
  */
 function TopicResearcher({ topic }: { topic: string }) {
-  const { startTopic, updateTopic, nextPhase } = useStore()
-
-  useEffect(() => {
-    startTopic(topic)
-  }, [startTopic, topic])
+  createEffect(() => {
+    actions.startTopic(topic)
+  })
 
   return (
     <Subagent name={`researcher-${topic.replace(/\s+/g, '-').toLowerCase()}`} parallel>
@@ -140,12 +124,12 @@ function TopicResearcher({ topic }: { topic: string }) {
         onFinished={(result: unknown) => {
           const data = result as { findings: string[]; summary: string }
           console.log(`[${topic}] Research complete`)
-          updateTopic(topic, {
+          actions.updateTopic(topic, {
             status: 'complete',
             findings: data.findings || [],
             summary: data.summary || '',
           })
-          nextPhase() // Check if all topics are done
+          actions.nextPhase() // Check if all topics are done
         }}
       >
         <Persona role="research specialist">
@@ -170,15 +154,13 @@ function TopicResearcher({ topic }: { topic: string }) {
  * Synthesizer - combines all topic research into a final report
  */
 function Synthesizer() {
-  const { topics, setFinalReport, nextPhase } = useStore()
-
   return (
     <Claude
       onFinished={(result: unknown) => {
         const data = result as { report: string }
         console.log('[Synthesizer] Report complete')
-        setFinalReport(data.report)
-        nextPhase()
+        actions.setFinalReport(data.report)
+        actions.nextPhase()
       }}
     >
       <Persona role="research director">
@@ -194,7 +176,7 @@ function Synthesizer() {
 
       Here is the research from all specialists:
 
-      {topics.map((t) => (
+      {store.topics.map((t) => (
         `## ${t.topic}\n${t.summary}\n\nKey findings:\n${t.findings.map(f => `- ${f}`).join('\n')}\n\n`
       )).join('')}
 
@@ -209,47 +191,47 @@ function Synthesizer() {
  * Main orchestrator for parallel research
  */
 function ParallelResearchAgent({ topics }: { topics: string[] }) {
-  const { phase, topics: topicState, finalReport, initTopics } = useStore()
-
-  // Initialize topics on first render
-  if (topicState.length === 0) {
-    initTopics(topics)
-    return null // Re-render with initialized state
+  // Initialize topics on first render if empty
+  if (store.topics.length === 0) {
+    actions.initTopics(topics)
   }
 
-  console.log(`[ParallelResearch] Phase: ${phase}`)
+  console.log(`[ParallelResearch] Phase: ${store.phase}`)
 
-  switch (phase) {
-    case 'research':
-      // Render all topic researchers in parallel
-      const pendingTopics = topicState.filter((t) => t.status === 'pending')
+  // Return closure for reactivity
+  return () => {
+    switch (store.phase) {
+      case 'research':
+        // Render all topic researchers in parallel
+        const pendingTopics = store.topics.filter((t) => t.status === 'pending')
 
-      if (pendingTopics.length === 0) {
-        // Still waiting for in-progress topics or phase transition
+        if (pendingTopics.length === 0) {
+          // Still waiting for in-progress topics or phase transition
+          return null
+        }
+
+        console.log(`[ParallelResearch] Starting ${pendingTopics.length} parallel researchers`)
+
+        return (
+          <>
+            {pendingTopics.map((t) => (
+              <TopicResearcher key={t.topic} topic={t.topic} />
+            ))}
+          </>
+        )
+
+      case 'synthesize':
+        return <Synthesizer />
+
+      case 'done':
+        console.log('\n=== Parallel Research Complete ===')
+        console.log('\nFinal Report:')
+        console.log(store.finalReport?.slice(0, 800) + '...')
         return null
-      }
 
-      console.log(`[ParallelResearch] Starting ${pendingTopics.length} parallel researchers`)
-
-      return (
-        <>
-          {pendingTopics.map((t) => (
-            <TopicResearcher key={t.topic} topic={t.topic} />
-          ))}
-        </>
-      )
-
-    case 'synthesize':
-      return <Synthesizer />
-
-    case 'done':
-      console.log('\n=== Parallel Research Complete ===')
-      console.log('\nFinal Report:')
-      console.log(finalReport?.slice(0, 800) + '...')
-      return null
-
-    default:
-      return null
+      default:
+        return null
+    }
   }
 }
 
@@ -275,7 +257,7 @@ async function main() {
   console.log()
 
   const result = await executePlan(
-    <ParallelResearchAgent topics={topics} />,
+    () => <ParallelResearchAgent topics={topics} />,
     {
       verbose: true,
       onFrame: (frame) => {
@@ -289,9 +271,8 @@ async function main() {
   console.log('Duration:', result.totalDuration, 'ms')
 
   // Show final state
-  const state = useStore.getState()
   console.log('\n=== Research Summary ===')
-  state.topics.forEach((t) => {
+  store.topics.forEach((t) => {
     console.log(`\n${t.topic}:`)
     console.log(`  Status: ${t.status}`)
     console.log(`  Findings: ${t.findings.length}`)
@@ -301,5 +282,5 @@ async function main() {
 main().catch(console.error)
 
 // Export
-export { ParallelResearchAgent, useStore }
-export default <ParallelResearchAgent topics={['AI agents', 'LLM applications']} />
+export { ParallelResearchAgent, store }
+export default (() => <ParallelResearchAgent topics={['AI agents', 'LLM applications']} />)

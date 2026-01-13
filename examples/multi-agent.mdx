@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { createSignal } from 'solid-js'
 import { Claude, Phase, Step, Persona } from '@evmts/smithers'
 
 # Multi-Agent Development Team
 
-export function Architect({ task, onPlan }) {
+export function Architect(props) {
   return (
-    <Claude onFinished={onPlan}>
+    <Claude onFinished={props.onPlan}>
       <Persona role="software architect">
         You design clean, maintainable systems.
       </Persona>
@@ -16,16 +16,16 @@ export function Architect({ task, onPlan }) {
         <Step>Define interfaces between components</Step>
       </Phase>
 
-      Task: {task}
+      Task: {props.task}
 
       Return a JSON array of subtasks, each with: name, description, dependencies.
     </Claude>
   )
 }
 
-export function Developer({ subtask, onComplete }) {
+export function Developer(props) {
   return (
-    <Claude onFinished={onComplete}>
+    <Claude onFinished={props.onComplete}>
       <Persona role="senior developer">
         You write clean, tested code.
       </Persona>
@@ -36,15 +36,15 @@ export function Developer({ subtask, onComplete }) {
         <Step>Write unit tests</Step>
       </Phase>
 
-      Subtask: {subtask.name}
-      Description: {subtask.description}
+      Subtask: {props.subtask.name}
+      Description: {props.subtask.description}
     </Claude>
   )
 }
 
-export function Reviewer({ onApprove }) {
+export function Reviewer(props) {
   return (
-    <Claude onFinished={onApprove}>
+    <Claude onFinished={props.onApprove}>
       <Persona role="tech lead">
         You ensure code quality and correctness.
       </Persona>
@@ -60,47 +60,53 @@ export function Reviewer({ onApprove }) {
   )
 }
 
-export function DevTeam({ task }) {
-  const [stage, setStage] = useState('planning')
-  const [plan, setPlan] = useState(null)
-  const [completed, setCompleted] = useState([])
+export function DevTeam(props) {
+  const [stage, setStage] = createSignal('planning')
+  const [plan, setPlan] = createSignal(null)
+  const [completed, setCompleted] = createSignal([])
 
-  if (stage === 'planning') {
-    return (
-      <Architect
-        task={task}
-        onPlan={(p) => {
-          setPlan(p)
-          setStage('implementing')
-        }}
-      />
-    )
-  }
+  return () => {
+    const s = stage()
+    const p = plan()
+    const c = completed()
 
-  if (stage === 'implementing') {
-    const remaining = plan.subtasks.filter(
-      (s) => !completed.includes(s.name)
-    )
-
-    if (remaining.length === 0) {
-      setStage('reviewing')
-      return null
+    if (s === 'planning') {
+      return (
+        <Architect
+          task={props.task}
+          onPlan={(res) => {
+            setPlan(res)
+            setStage('implementing')
+          }}
+        />
+      )
     }
 
-    const next = remaining[0]
+    if (s === 'implementing') {
+      const remaining = p.subtasks.filter(
+        (sub) => !c.includes(sub.name)
+      )
+
+      if (remaining.length === 0) {
+        setStage('reviewing')
+        return null
+      }
+
+      const next = remaining[0]
+      return (
+        <Developer
+          subtask={next}
+          onComplete={() => setCompleted([...c, next.name])}
+        />
+      )
+    }
+
     return (
-      <Developer
-        subtask={next}
-        onComplete={() => setCompleted([...completed, next.name])}
+      <Reviewer
+        onApprove={() => setStage('done')}
       />
     )
   }
-
-  return (
-    <Reviewer
-      onApprove={() => setStage('done')}
-    />
-  )
 }
 
 <DevTeam task="Add user authentication with email/password login" />

@@ -163,12 +163,12 @@ Or manually: `git worktree remove ./worktrees/feature-a`
 <Subagent name="Feature A" parallel>
   <Worktree path="./worktrees/feature-a" branch="feature-a">
     {phase === 'implement' && (
-      <Claude onFinished={() => setPhase('test')}>
+      <Claude onFinished={() => setPhase('test')}> 
         Implement feature
       </Claude>
     )}
     {phase === 'test' && (
-      <Claude onFinished={() => setPhase('done')}>
+      <Claude onFinished={() => setPhase('done')}> 
         Write tests
       </Claude>
     )}
