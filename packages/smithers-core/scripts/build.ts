@@ -32,16 +32,15 @@ await $`bun build ./src/index.ts \
   --external react/jsx-runtime \
   --external react/jsx-dev-runtime`
 
-// TODO: Add testing exports when needed
-// console.log('Building testing exports...')
-// await $`bun build ./src/testing.ts \
-//   --outdir ./dist \
-//   --target node \
-//   --sourcemap=external \
-//   --external react \
-//   --external react-reconciler \
-//   --external react/jsx-runtime \
-//   --external react/jsx-dev-runtime`
+console.log('Building testing exports...')
+await $`bun build ./src/testing.ts \
+  --outdir ./dist \
+  --target node \
+  --sourcemap=external \
+  --external react \
+  --external react-reconciler \
+  --external react/jsx-runtime \
+  --external react/jsx-dev-runtime`
 
 // Generate TypeScript declarations
 console.log('Generating type declarations...')

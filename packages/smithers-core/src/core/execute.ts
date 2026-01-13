@@ -23,25 +23,11 @@ import { MCPManager } from '../mcp/manager.js'
 import type { MCPServerConfig } from '../mcp/types.js'
 import { DebugCollector } from '../debug/collector.js'
 import type { ExecutionStatus } from '../debug/types.js'
-// TODO: Workflow helpers need to be ported to smithers-core or made optional
-// import {
-//   findWorkflowOutputs,
-//   zodSchemaToToolSchema,
-//   getWorkflowStoreFromTree,
-// } from '../workflow/helpers.js'
-
-// Temporary stub implementations until workflow helpers are ported
-function findWorkflowOutputs(_node: SmithersNode): SmithersNode[] {
-  return []
-}
-
-function zodSchemaToToolSchema(_schema: unknown): unknown {
-  return { type: 'object', properties: {} }
-}
-
-function getWorkflowStoreFromTree(_node: SmithersNode, _workflowId?: string): { setValue: (name: string, value: unknown) => void } | null {
-  return null
-}
+import {
+  findWorkflowOutputs,
+  zodSchemaToToolSchema,
+  getWorkflowStoreFromTree,
+} from '../workflow/helpers.js'
 
 // Temporary stub implementations for React-specific functions
 async function waitForStateUpdates(): Promise<void> {
