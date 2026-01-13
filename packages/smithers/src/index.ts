@@ -48,6 +48,27 @@ export {
 // Root factory
 export { createSmithersSolidRoot } from './root.js'
 
+// Re-export SolidJS primitives using browser build for reactivity
+// Users should import these from @evmts/smithers instead of solid-js directly
+// to ensure signals work properly in Node.js environments
+export {
+  createSignal,
+  createEffect,
+  createMemo,
+  createRoot,
+  batch,
+  untrack,
+  on,
+  onMount,
+  onCleanup,
+  type Accessor,
+  type Setter,
+} from './solid-shim.js'
+
+// Control flow components - custom implementations for Smithers tree rendering
+// These replace solid-js Show/For/Switch/Match/Index which are designed for DOM
+export { Show, For, Switch, Match, Index } from './control-flow.js'
+
 // Components
 export {
   Claude,
@@ -81,6 +102,23 @@ export {
   type FileProps,
   type WorktreeProps,
 } from './components/index.js'
+
+// Sequence helpers for multi-phase execution
+export {
+  createSequence,
+  createChecklist,
+  createStep,
+} from './sequence.js'
+
+// Re-export core execution from smithers-core
+export {
+  executePlan,
+  executeNode,
+  type ExecuteNodeResult,
+  type ExecuteOptions,
+  type ExecutionResult,
+  type FrameResult,
+} from '@evmts/smithers-core'
 
 // Import SmithersNode type for serialize function
 import type { SmithersNode } from './renderer.js'
