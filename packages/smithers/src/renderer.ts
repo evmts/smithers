@@ -1,4 +1,6 @@
 import { createRenderer } from 'solid-js/universal'
+// Import all reactive primitives from browser build to ensure single solid-js instance
+import { createRoot, createEffect, untrack } from './solid-shim.js'
 
 /**
  * Execution state attached to a SmithersNode during the Ralph Wiggum loop.
@@ -248,23 +250,86 @@ export function createSmithersSolidRenderer() {
 export const smithersRenderer = createSmithersSolidRenderer()
 
 /**
- * Render function from the default renderer.
+ * Reactive render function that tracks signal dependencies in components.
  *
- * Renders a Solid component tree into a SmithersNode root.
+ * Unlike the default solid-js/universal render which calls the component once,
+ * this version passes the component function to `insert` so that signal reads
+ * inside the component are tracked and structural changes trigger re-renders.
+ *
+ * @param code - Component function that returns JSX
+ * @param element - Root SmithersNode to render into
+ * @returns Dispose function to clean up the reactive root
  *
  * @example
  * ```typescript
- * import { render, SmithersNode } from '@evmts/smithers-solid'
+ * const [phase, setPhase] = createSignal('first')
  *
- * const root: SmithersNode = {
- *   type: 'root',
- *   props: {},
- *   children: [],
- *   parent: null,
+ * const App = () => {
+ *   // This conditional is now reactive!
+ *   if (phase() === 'first') return <Claude>Phase 1</Claude>
+ *   return <Claude>Phase 2</Claude>
  * }
  *
- * render(() => <Claude>Hello</Claude>, root)
- * console.log(root.children) // SmithersNode[]
+ * render(App, root) // Will re-render when phase changes
  * ```
  */
-export const { render, effect, memo, createComponent } = smithersRenderer
+export function render(code: () => unknown, element: SmithersNode): () => void {
+  let disposer: () => void
+
+  createRoot((dispose) => {
+    disposer = dispose
+
+    // Use createEffect from browser build to track signal dependencies.
+    // When signals change, this effect re-runs and rebuilds the tree.
+    createEffect(() => {
+      // Clear previous children before re-rendering
+      element.children = []
+
+      // Call the component and render its output
+      const result = code()
+
+      // Handle the result - it could be a node, array, or primitive
+      if (result !== null && result !== undefined) {
+        insertResult(element, result)
+      }
+    })
+  })
+
+  return disposer!
+}
+
+/**
+ * Helper to insert render result into parent node
+ */
+function insertResult(parent: SmithersNode, result: unknown): void {
+  if (result === null || result === undefined) {
+    return
+  }
+
+  if (Array.isArray(result)) {
+    for (const item of result) {
+      insertResult(parent, item)
+    }
+    return
+  }
+
+  // If it's a SmithersNode, add it as a child
+  if (typeof result === 'object' && 'type' in result && 'props' in result && 'children' in result) {
+    const node = result as SmithersNode
+    node.parent = parent
+    parent.children.push(node)
+    return
+  }
+
+  // Otherwise treat as text
+  const textNode: SmithersNode = {
+    type: 'TEXT',
+    props: { value: String(result) },
+    children: [],
+    parent: parent,
+  }
+  parent.children.push(textNode)
+}
+
+// Re-export other utilities from the renderer
+export const { effect, memo, createComponent } = smithersRenderer

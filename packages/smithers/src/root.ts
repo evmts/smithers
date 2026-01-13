@@ -1,5 +1,5 @@
 import type { JSX } from 'solid-js'
-import { createSmithersSolidRenderer } from './renderer.js'
+import { render } from './renderer.js'
 import { ensureDocumentShim } from './dom-shim.js'
 
 /**
@@ -94,7 +94,6 @@ export function createSmithersSolidRoot(): SmithersRoot {
   }
 
   ensureDocumentShim()
-  const { render } = createSmithersSolidRenderer()
   let disposeFunction: (() => void) | null = null
 
   return {
