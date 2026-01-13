@@ -24,7 +24,7 @@ Analyze the current git repository state and create atomic, conventional commits
    - Files starting with `test_`, `debug_`, `temp_`
    - Files ending with `.tmp`, `.log`, `.bak`, `.swp`, `.swo`, `~`
    - IDE directories: `.vscode/`, `.idea/`, `.vs/`
-   - Build artifacts: `node_modules/`, `target/debug/`, `target/release/`, `.zig-cache/`, `zig-out/`
+   - Build artifacts: `node_modules/`, `dist/`, `build/`, `target/debug/`, `target/release/`
    - OS files: `.DS_Store`, `Thumbs.db`
 
    Explain what files were filtered out and why.
@@ -32,12 +32,12 @@ Analyze the current git repository state and create atomic, conventional commits
 3. **Group Changes Logically**
    Group files into logical atomic commits based on:
 
-   - **EVM module**: `src/evm/` files
-   - **Core functionality**: `src/` files (non-EVM)
-   - **Tests**: `test/` files or files containing "test"
-   - **Documentation**: `.md` files or `doc/` files
-   - **Build system**: `build.zig`, build-related files
-   - **Benchmarks**: `bench/` files
+   - **Core packages**: `packages/smithers-core/` files
+   - **Framework packages**: `packages/smithers-react/`, `packages/smithers-solid/` files
+   - **Tests/Evals**: `evals/` directory or files containing "test"
+   - **Documentation**: `.md` files, `docs/` directory
+   - **Build system**: `package.json`, `tsconfig.json`, build-related files
+   - **Examples**: `examples/` directory
    - **Claude Code**: `.claude/`, `CLAUDE.md` files
    - **Miscellaneous**: Everything else
 
@@ -77,11 +77,11 @@ Analyze the current git repository state and create atomic, conventional commits
 
 ## Examples of Good Commit Messages
 
-- `🎉 feat: Add storage state tracking to EVM tracer`
-- `🐛 fix: Resolve memory leak in stack operations`
-- `♻️ refactor: Simplify bytecode dispatch logic`
-- `📚 docs: Update API documentation for tracers`
-- `✅ test: Add comprehensive tracer test suite`
+- `🎉 feat: Add Human approval component for agent workflows`
+- `🐛 fix: Resolve state synchronization in Ralph Wiggum loop`
+- `♻️ refactor: Simplify reconciler host config implementation`
+- `📚 docs: Update API documentation for Claude component`
+- `✅ test: Add comprehensive multi-phase execution tests`
 - `🔧 chore: Update dependencies and build configuration`
 
 ## Important Guidelines
