@@ -51,8 +51,37 @@ export type {
 
 // MCP integration
 export { MCPManager } from './mcp/manager.js'
-export type { MCPServerConfig, MCPToolConfig } from './mcp/types.js'
+export type {
+  MCPServerConfig,
+  MCPStdioConfig,
+  MCPHttpConfig,
+  MCPTransportType,
+  MCPConnection,
+  MCPConnectionStatus,
+  MCPTool,
+  MCPToolResult,
+} from './mcp/types.js'
 
 // Debug/observability
 export { DebugCollector } from './debug/collector.js'
-export type { DebugEvent, DebugOptions } from './debug/types.js'
+export type {
+  DebugOptions,
+  SmithersDebugEvent,
+  SmithersDebugEventType,
+  SmithersNodeSnapshot,
+  PluNodeSnapshot,
+  DebugSummary,
+  TimelineEntry,
+  ExecutionStatus,
+  FrameStartEvent,
+  FrameEndEvent,
+  FrameRenderEvent,
+  NodeFoundEvent,
+  NodeExecuteStartEvent,
+  NodeExecuteEndEvent,
+  CallbackInvokedEvent,
+  StateChangeEvent,
+  StopNodeDetectedEvent,
+  HumanNodeDetectedEvent,
+  LoopTerminatedEvent,
+} from './debug/types.js'

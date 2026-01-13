@@ -167,6 +167,90 @@ export interface JsonSchemaOutputFormat {
 }
 
 /**
+ * Props for the Claude component (uses Claude Agent SDK)
+ *
+ * The Claude component executes prompts using the Claude Agent SDK,
+ * which provides built-in tools for file operations, bash commands,
+ * web search, and more.
+ *
+ * @typeParam T - Zod schema type for structured output inference
+ */
+export interface ClaudeProps<T extends ZodType = ZodType> {
+  /** Callback invoked when execution completes. Output is typed if schema is provided. */
+  onFinished?: (output: T extends ZodType<infer U> ? U : unknown) => void
+  /** Callback invoked if execution fails */
+  onError?: (error: Error | ExecutionError) => void
+  /** The prompt content */
+  children?: unknown
+
+  // Tool configuration
+  /**
+   * List of tool names that are auto-allowed without prompting for permission.
+   * Built-in tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task
+   */
+  allowedTools?: string[]
+  /**
+   * List of tool names that are disallowed. These tools will be removed
+   * from the model's context and cannot be used.
+   */
+  disallowedTools?: string[]
+  /**
+   * Specify the base set of available built-in tools.
+   * - `string[]` - Array of specific tool names
+   * - `[]` (empty array) - Disable all built-in tools
+   * - `{ type: 'preset'; preset: 'claude_code' }` - Use all default Claude Code tools
+   */
+  tools?: string[] | { type: 'preset'; preset: 'claude_code' }
+
+  // Model and execution
+  /** Claude model to use */
+  model?: string
+  /** Maximum number of conversation turns before the query stops */
+  maxTurns?: number
+  /** Maximum budget in USD for the query */
+  maxBudgetUsd?: number
+  /** Maximum tokens for thinking/reasoning process */
+  maxThinkingTokens?: number
+
+  // System prompt
+  /**
+   * System prompt configuration.
+   * - `string` - Use a custom system prompt
+   * - `{ type: 'preset', preset: 'claude_code', append?: string }` - Use default Claude Code prompt
+   */
+  systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string }
+
+  // Permissions
+  /** Permission mode for the session */
+  permissionMode?: PermissionMode
+  /** Must be true when using permissionMode: 'bypassPermissions' */
+  allowDangerouslySkipPermissions?: boolean
+
+  // Advanced features
+  /** Working directory for the session */
+  cwd?: string
+  /** MCP server configurations */
+  mcpServers?: Record<string, MCPServerConfig>
+  /** Custom subagent definitions */
+  agents?: Record<string, AgentDefinition>
+  /** Zod schema for structured output. The onFinished callback will receive typed output. */
+  schema?: T
+  /** Session ID to resume */
+  resume?: string
+  /** Additional directories Claude can access */
+  additionalDirectories?: string[]
+  /**
+   * Control which filesystem settings to load.
+   * - 'user' - Global user settings
+   * - 'project' - Project settings
+   * - 'local' - Local settings
+   */
+  settingSources?: Array<'user' | 'project' | 'local'>
+
+  [key: string]: unknown // Pass-through to SDK
+}
+
+/**
  * Information about a plan and its prompt at the top level
  */
 export interface PlanInfo {
@@ -213,7 +297,7 @@ export interface HumanPromptResponse {
   /** Whether the user approved */
   approved: boolean
   /** Optional workflow output values */
-  outputs?: Record<string, unknown>
+  values?: Record<string, unknown>
 }
 
 /**
@@ -225,10 +309,10 @@ export interface HumanPromptInfo {
   /** The full content/prompt */
   content: string
   /** Available workflow output definitions */
-  workflowOutputs?: Array<{
+  outputs: Array<{
     name: string
     description?: string
-    schema?: ZodType
+    schema?: unknown
   }>
 }
 
