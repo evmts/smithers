@@ -27,7 +27,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "bun test",
+    "test": "bun --conditions=browser test",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
@@ -35,8 +35,10 @@
     "@evmts/smithers": "workspace:*",
     "solid-js": "^1.9.10"
   },
+  "dependencies": {
+    "@evmts/smithers-core": "workspace:*"
+  },
   "devDependencies": {
-    "@evmts/smithers-core": "workspace:*",
     "@evmts/smithers": "workspace:*",
     "@types/bun": "latest",
     "solid-js": "^1.9.10",

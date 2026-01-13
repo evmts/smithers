@@ -12,7 +12,10 @@
     "clean": "turbo run clean",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "turbo run build && changeset publish"
+    "release": "turbo run build && changeset publish",
+    "agent": "bun run packages/cli/src/index.ts run",
+    "agent:tauri": "./scripts/run-with-tauri.sh",
+    "tauri": "cd apps/tauri-app && pnpm dev:tauri"
   },
   "repository": {
     "type": "git",
