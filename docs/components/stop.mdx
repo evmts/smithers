@@ -35,7 +35,7 @@ function ConditionalAgent({ shouldStop }) {
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode">
+<ParamField path="children" type="JSX.Element">
   Optional children content (typically not used).
 </ParamField>
 
@@ -46,25 +46,24 @@ function ConditionalAgent({ shouldStop }) {
 Stop execution after a certain number of iterations:
 
 ```tsx
-import { create } from 'zustand'
-
-const useStore = create((set) => ({
-  count: 0,
-  increment: () => set((s) => ({ count: s.count + 1 })),
-}))
+import { createStore } from 'solid-js/store'
 
 function LimitedAgent() {
-  const { count, increment } = useStore()
-  const shouldStop = count >= 5
+  const [state, setState] = createStore({ count: 0 })
+  const increment = () => setState('count', c => c + 1)
+  
+  return () => {
+    const shouldStop = state.count >= 5
 
-  return (
-    <>
-      <Claude onFinished={increment}>
-        Iteration {count}: Do some work
-      </Claude>
-      {shouldStop && <Stop reason="Reached iteration limit" />}
-    </>
-  )
+    return (
+      <>
+        <Claude onFinished={increment}>
+          Iteration {state.count}: Do some work
+        </Claude>
+        {shouldStop && <Stop reason="Reached iteration limit" />}
+      </>
+    )
+  }
 }
 ```
 
@@ -73,32 +72,36 @@ function LimitedAgent() {
 Stop when a specific condition is met:
 
 ```tsx
-function SearchAgent({ query }) {
-  const [found, setFound] = useState(false)
-  const [result, setResult] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (found) {
+function SearchAgent(props) {
+  const [found, setFound] = createSignal(false)
+  const [result, setResult] = createSignal(null)
+
+  return () => {
+    if (found()) {
+      return (
+        <>
+          <div>Found: {JSON.stringify(result())}</div>
+          <Stop reason="Target found" />
+        </>
+      )
+    }
+
     return (
-      <>
-        <div>Found: {JSON.stringify(result)}</div>
-        <Stop reason="Target found" />
-      </>
+      <Claude
+        tools={[searchTool]}
+        onFinished={(output) => {
+          if (output.found) {
+            setResult(output.data)
+            setFound(true)
+          }
+        }}
+      >
+        Search for: {props.query}
+      </Claude>
     )
   }
-
-  return (
-    <Claude
-      tools={[searchTool]}
-      onFinished={(output) => {
-        if (output.found) {
-          setResult(output.data)
-          setFound(true)
-        }
-      }}
-    >
-      Search for: {query}
-    </Claude>
-  )
 }
 ```
 
@@ -107,23 +110,30 @@ function SearchAgent({ query }) {
 Exit early when an error phase is reached:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function WorkflowAgent() {
-  const [phase, setPhase] = useState('start')
+  const [phase, setPhase] = createSignal('start')
 
-  if (phase === 'error') {
-    return (
-      <>
-        <Claude>Log the error and clean up</Claude>
-        <Stop reason="Error recovery complete" />
-      </>
-    )
+  return () => {
+    const p = phase()
+
+    if (p === 'error') {
+      return (
+        <>
+          <Claude>Log the error and clean up</Claude>
+          <Stop reason="Error recovery complete" />
+        </>
+      )
+    }
+
+    if (p === 'done') {
+      return <Stop reason="Workflow complete" />
+    }
+
+    // ... normal workflow phases
+    return <Claude onFinished={() => setPhase('done')}>Work</Claude>
   }
-
-  if (phase === 'done') {
-    return <Stop reason="Workflow complete" />
-  }
-
-  // ... normal workflow phases
 }
 ```
 
@@ -136,7 +146,7 @@ When a `<Stop>` component is present in the rendered tree:
 3. `executePlan` returns with the results collected so far
 
 ```tsx
-const result = await executePlan(<MyAgent />, {
+const result = await executePlan(() => <MyAgent />, {
   onFrame: (frame) => {
     console.log(`Frame ${frame.frame} completed`)
   }
@@ -157,25 +167,30 @@ The Ralph Wiggum loop naturally terminates when there are no more pending `<Clau
 ```tsx
 // Natural termination - no Stop needed
 function NaturalEnd() {
-  const [done, setDone] = useState(false)
+  const [done, setDone] = createSignal(false)
 
-  if (done) {
-    return <div>Complete</div> // No Claude nodes, loop ends
+  return () => {
+    if (done()) {
+      return <div>Complete</div> // No Claude nodes, loop ends
+    }
+
+    return <Claude onFinished={() => setDone(true)}>Do work</Claude>
   }
-
-  return <Claude onFinished={() => setDone(true)}>Do work</Claude>
 }
 
 // Explicit Stop - when you want to signal intent or exit mid-workflow
 function ExplicitStop() {
-  const [phase, setPhase] = useState('working')
+  const [phase, setPhase] = createSignal('working')
 
-  return (
-    <>
-      <Claude onFinished={() => setPhase('done')}>Do work</Claude>
-      {phase === 'done' && <Stop reason="Work complete" />}
-    </>
-  )
+  return () => {
+    const p = phase()
+    return (
+      <>
+        <Claude onFinished={() => setPhase('done')}>Do work</Claude>
+        {p === 'done' && <Stop reason="Work complete" />}
+      </>
+    )
+  }
 }
 ```
 

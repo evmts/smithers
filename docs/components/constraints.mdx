@@ -43,7 +43,7 @@ Renders to:
 
 ## Props
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The constraint rules, typically as a bulleted list.
 </ParamField>
 
@@ -66,10 +66,10 @@ export function SafeCodeConstraints() {
   )
 }
 
-export function StyleConstraints({ style }) {
+export function StyleConstraints(props) {
   return (
     <Constraints>
-      - Follow {style} style guide
+      - Follow {props.style} style guide
       - Use consistent naming conventions
       - Add comments for complex logic only
       - Prefer readability over cleverness
@@ -140,7 +140,7 @@ import { SafeCodeConstraints, StyleConstraints } from './constraints'
 ## Combining with Other Components
 
 ```tsx
-function CodeReviewer({ files }) {
+function CodeReviewer(props) {
   return (
     <Claude tools={[filesystem, grep]}>
       <Persona role="Senior Code Reviewer" />
@@ -152,7 +152,7 @@ function CodeReviewer({ files }) {
         - Prioritize bugs over style issues
       </Constraints>
 
-      Review these files: {files.join(', ')}
+      Review these files: {props.files.join(', ')}
 
       <OutputFormat>
         Return markdown with sections for:

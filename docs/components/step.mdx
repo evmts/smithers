@@ -41,7 +41,7 @@ Renders to:
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The step description.
 </ParamField>
 
@@ -62,11 +62,11 @@ Steps can be used directly inside Claude components:
 Generate steps dynamically from data:
 
 ```tsx
-function FileProcessor({ files }) {
+function FileProcessor(props) {
   return (
     <Claude tools={[filesystem]}>
       <Phase name="process">
-        {files.map((file, i) => (
+        {props.files.map((file, i) => (
           <Step key={file}>
             {i + 1}. Process {file} and extract metadata
           </Step>
@@ -87,14 +87,14 @@ function FileProcessor({ files }) {
 Include or exclude steps based on conditions:
 
 ```tsx
-function ReviewAgent({ strict, files }) {
+function ReviewAgent(props) {
   return (
     <Claude tools={[filesystem]}>
       <Phase name="review">
         <Step>Read and understand the code</Step>
         <Step>Check for bugs and logic errors</Step>
 
-        {strict && (
+        {props.strict && (
           <>
             <Step>Verify code style compliance</Step>
             <Step>Check test coverage</Step>
@@ -114,17 +114,17 @@ function ReviewAgent({ strict, files }) {
 Mark steps as completed to track progress:
 
 ```tsx
-function MultiStepAgent({ completedSteps }) {
+function MultiStepAgent(props) {
   return (
     <Claude tools={[filesystem]}>
       <Phase name="setup">
-        <Step completed={completedSteps.includes('install')}>
+        <Step completed={props.completedSteps.includes('install')}>
           Install dependencies
         </Step>
-        <Step completed={completedSteps.includes('config')}>
+        <Step completed={props.completedSteps.includes('config')}>
           Configure environment
         </Step>
-        <Step completed={completedSteps.includes('validate')}>
+        <Step completed={props.completedSteps.includes('validate')}>
           Validate setup
         </Step>
       </Phase>
@@ -174,21 +174,21 @@ Provide additional context within steps:
 Create reusable step components:
 
 ```tsx
-function GitCommitSteps({ message }) {
+function GitCommitSteps(props) {
   return (
     <>
       <Step>Stage all modified files</Step>
       <Step>Review the diff</Step>
-      <Step>Commit with message: "{message}"</Step>
+      <Step>Commit with message: "{props.message}"</Step>
     </>
   )
 }
 
-function TestingSteps({ coverage }) {
+function TestingSteps(props) {
   return (
     <>
       <Step>Run unit tests</Step>
-      <Step>Check coverage is at least {coverage}%</Step>
+      <Step>Check coverage is at least {props.coverage}%</Step>
       <Step>Run integration tests</Step>
     </>
   )

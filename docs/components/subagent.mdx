@@ -12,10 +12,10 @@ The `<Subagent>` component creates a parallel execution boundary. Multiple subag
 ```tsx
 import { Claude, Subagent } from '@evmts/smithers'
 
-function ParallelResearch({ topics }) {
+function ParallelResearch(props) {
   return (
     <>
-      {topics.map(topic => (
+      {props.topics.map(topic => (
         <Subagent key={topic} name={`researcher-${topic}`}>
           <Claude tools={[webSearch]}>
             Research: {topic}
@@ -54,7 +54,7 @@ All three subagents execute simultaneously, not sequentially.
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The content to execute. Typically contains a `<Claude>` component.
 </ParamField>
 
@@ -63,45 +63,41 @@ All three subagents execute simultaneously, not sequentially.
 The most common use case is running multiple agents in parallel and collecting results:
 
 ```tsx
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 
-const useStore = create((set, get) => ({
-  results: {} as Record<string, any>,
-  addResult: (key: string, value: any) => set((s) => ({
-    results: { ...s.results, [key]: value }
-  })),
-}))
+function ParallelAnalysis(props) {
+  const [results, setResults] = createStore<Record<string, any>>({})
 
-function ParallelAnalysis({ files }) {
-  const { results, addResult } = useStore()
-  const pendingFiles = files.filter(f => !results[f])
+  return () => {
+    const pendingFiles = props.files.filter(f => !results[f])
 
-  // Phase 1: Analyze all files in parallel
-  if (pendingFiles.length > 0) {
+    // Phase 1: Analyze all files in parallel
+    if (pendingFiles.length > 0) {
+      return (
+        <>
+          {pendingFiles.map(file => (
+            <Subagent key={file} name={`analyzer-${file}`}>
+              <Claude
+                tools={[filesystem]}
+                onFinished={(analysis) => setResults(file, analysis)}
+              >
+                Analyze the file: {file}
+                Identify potential issues and improvements.
+              </Claude>
+            </Subagent>
+          ))}
+        </>
+      )
+    }
+
+    // Phase 2: Synthesize results (runs after all parallel work completes)
     return (
-      <>
-        {pendingFiles.map(file => (
-          <Subagent key={file} name={`analyzer-${file}`}>
-            <Claude
-              tools={[filesystem]}
-              onFinished={(analysis) => addResult(file, analysis)}
-            >
-              Analyze the file: {file}
-              Identify potential issues and improvements.
-            </Claude>
-          </Subagent>
-        ))}
-      </>
+      <Claude>
+        Synthesize these analyses into a comprehensive report:
+        {JSON.stringify(results)}
+      </Claude>
     )
   }
-
-  // Phase 2: Synthesize results (runs after all parallel work completes)
-  return (
-    <Claude>
-      Synthesize these analyses into a comprehensive report:
-      {JSON.stringify(results)}
-    </Claude>
-  )
 }
 ```
 
@@ -134,58 +130,65 @@ Within a single frame, Smithers executes:
 Create specialized agents that work together:
 
 ```tsx
-function FeatureTeam({ feature }) {
-  const [plan, setPlan] = useState(null)
-  const [implementations, setImplementations] = useState({})
+import { createSignal } from 'solid-js'
+import { createStore } from 'solid-js/store'
 
-  // Phase 1: Architect creates the plan
-  if (!plan) {
+function FeatureTeam(props) {
+  const [plan, setPlan] = createSignal(null)
+  const [implementations, setImplementations] = createStore({})
+
+  return () => {
+    const p = plan()
+
+    // Phase 1: Architect creates the plan
+    if (!p) {
+      return (
+        <Claude onFinished={setPlan}>
+          <Persona role="Software Architect" />
+          Design an implementation plan for: {props.feature}
+          Break into independent subtasks for parallel work.
+
+          <OutputFormat schema={{
+            subtasks: [{ id: 'string', description: 'string', dependencies: 'string[]' }]
+          }} />
+        </Claude>
+      )
+    }
+
+    // Phase 2: Developers implement in parallel
+    const pendingTasks = p.subtasks.filter(t => !implementations[t.id])
+
+    if (pendingTasks.length > 0) {
+      return (
+        <>
+          {pendingTasks.map(task => (
+            <Subagent key={task.id} name={`dev-${task.id}`}>
+              <Claude
+                tools={[filesystem, terminal]}
+                onFinished={(code) => {
+                  setImplementations(task.id, code)
+                }}
+              >
+                <Persona role="Senior Developer" />
+                Implement: {task.description}
+                Write clean, tested code.
+              </Claude>
+            </Subagent>
+          ))}
+        </>
+      )
+    }
+
+    // Phase 3: Integration review
     return (
-      <Claude onFinished={setPlan}>
-        <Persona role="Software Architect" />
-        Design an implementation plan for: {feature}
-        Break into independent subtasks for parallel work.
-
-        <OutputFormat schema={{
-          subtasks: [{ id: 'string', description: 'string', dependencies: 'string[]' }]
-        }} />
+      <Claude tools={[filesystem, terminal]}>
+        <Persona role="Tech Lead" />
+        Review and integrate these implementations:
+        {JSON.stringify(implementations)}
+        Ensure tests pass and code is consistent.
       </Claude>
     )
   }
-
-  // Phase 2: Developers implement in parallel
-  const pendingTasks = plan.subtasks.filter(t => !implementations[t.id])
-
-  if (pendingTasks.length > 0) {
-    return (
-      <>
-        {pendingTasks.map(task => (
-          <Subagent key={task.id} name={`dev-${task.id}`}>
-            <Claude
-              tools={[filesystem, terminal]}
-              onFinished={(code) => {
-                setImplementations(prev => ({ ...prev, [task.id]: code }))
-              }}
-            >
-              <Persona role="Senior Developer" />
-              Implement: {task.description}
-              Write clean, tested code.
-            </Claude>
-          </Subagent>
-        ))}
-      </>
-    )
-  }
-
-  // Phase 3: Integration review
-  return (
-    <Claude tools={[filesystem, terminal]}>
-      <Persona role="Tech Lead" />
-      Review and integrate these implementations:
-      {JSON.stringify(implementations)}
-      Ensure tests pass and code is consistent.
-    </Claude>
-  )
 }
 ```
 
@@ -194,10 +197,10 @@ function FeatureTeam({ feature }) {
 Subagents can contain other subagents for hierarchical workflows:
 
 ```tsx
-function ResearchDepartment({ topics }) {
+function ResearchDepartment(props) {
   return (
     <>
-      {topics.map(topic => (
+      {props.topics.map(topic => (
         <Subagent key={topic} name={`team-${topic}`}>
           {/* Each team has multiple researchers */}
           <Subagent name={`${topic}-primary`}>
@@ -223,50 +226,54 @@ function ResearchDepartment({ topics }) {
 Handle errors from individual subagents:
 
 ```tsx
-function ResilientParallel({ tasks }) {
-  const [results, setResults] = useState({})
-  const [errors, setErrors] = useState({})
+import { createStore } from 'solid-js/store'
 
-  const pending = tasks.filter(t => !results[t.id] && !errors[t.id])
+function ResilientParallel(props) {
+  const [results, setResults] = createStore({})
+  const [errors, setErrors] = createStore({})
 
-  if (pending.length > 0) {
+  return () => {
+    const pending = props.tasks.filter(t => !results[t.id] && !errors[t.id])
+
+    if (pending.length > 0) {
+      return (
+        <>
+          {pending.map(task => (
+            <Subagent key={task.id} name={`worker-${task.id}`}>
+              <Claude
+                onFinished={(result) => {
+                  setResults(task.id, result)
+                }}
+                onError={(error) => {
+                  setErrors(task.id, error)
+                }}
+              >
+                Process: {task.description}
+              </Claude>
+            </Subagent>
+          ))}
+        </>
+      )
+    }
+
+    // Handle partial success
+    const successCount = Object.keys(results).length
+    const errorCount = Object.keys(errors).length
+
     return (
-      <>
-        {pending.map(task => (
-          <Subagent key={task.id} name={`worker-${task.id}`}>
-            <Claude
-              onFinished={(result) => {
-                setResults(prev => ({ ...prev, [task.id]: result }))
-              }}
-              onError={(error) => {
-                setErrors(prev => ({ ...prev, [task.id]: error }))
-              }}
-            >
-              Process: {task.description}
-            </Claude>
-          </Subagent>
-        ))}
-      </>
+      <Claude>
+        {successCount} tasks succeeded, {errorCount} failed.
+
+        Successful results: {JSON.stringify(results)}
+
+        Failed tasks: {Object.entries(errors).map(([id, err]) =>
+          `${id}: ${err.message}`
+        ).join('\n')}
+
+        Create a summary handling partial success appropriately.
+      </Claude>
     )
   }
-
-  // Handle partial success
-  const successCount = Object.keys(results).length
-  const errorCount = Object.keys(errors).length
-
-  return (
-    <Claude>
-      {successCount} tasks succeeded, {errorCount} failed.
-
-      Successful results: {JSON.stringify(results)}
-
-      Failed tasks: {Object.entries(errors).map(([id, err]) =>
-        `${id}: ${err.message}`
-      ).join('\n')}
-
-      Create a summary handling partial success appropriately.
-    </Claude>
-  )
 }
 ```
 
@@ -293,7 +300,7 @@ function ResilientParallel({ tasks }) {
   <Card title="Handle partial failures" icon="shield">
     Use onError to gracefully handle individual subagent failures
   </Card>
-  <Card title="Collect results with Zustand" icon="database">
+  <Card title="Collect results with Solid Store" icon="database">
     Avoid stale closure issues when aggregating parallel results
   </Card>
   <Card title="Batch large workloads" icon="layer-group">
@@ -311,6 +318,6 @@ function ResilientParallel({ tasks }) {
     Understand how parallel execution fits in the frame model
   </Card>
   <Card title="State Management" icon="database" href="/concepts/state-management">
-    Best practices for managing parallel state with Zustand
+    Best practices for managing parallel state
   </Card>
 </CardGroup>

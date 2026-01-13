@@ -71,7 +71,7 @@ function SimpleAgent() {
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The prompt content. Can be plain text, markdown, or nested components.
 </ParamField>
 
@@ -122,36 +122,37 @@ This renders to XML that Claude interprets:
 
 ## State-Driven Rendering
 
-Use React state to control what the agent does:
+Use SolidJS state to control what the agent does:
 
 ```tsx
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 
-const useStore = create((set) => ({
-  phase: 'research' as 'research' | 'write',
-  findings: null,
-  setFindings: (findings) => set({ findings, phase: 'write' }),
-}))
+function StatefulAgent(props) {
+  const [state, setState] = createStore({
+    phase: 'research' as 'research' | 'write',
+    findings: null,
+  })
 
-function StatefulAgent({ topic }) {
-  const { phase, findings, setFindings } = useStore()
+  const setFindings = (findings) => setState({ findings, phase: 'write' })
 
-  if (phase === 'research') {
+  return () => {
+    if (state.phase === 'research') {
+      return (
+        <Claude tools={[webSearch]} onFinished={setFindings}>
+          Research {props.topic}. Find 5 authoritative sources.
+        </Claude>
+      )
+    }
+
     return (
-      <Claude tools={[webSearch]} onFinished={setFindings}>
-        Research {topic}. Find 5 authoritative sources.
+      <Claude tools={[filesystem]} onFinished={() => console.log('Done!')}>
+        Write a report synthesizing these findings:
+        {JSON.stringify(state.findings)}
+
+        Save to output/report.md
       </Claude>
     )
   }
-
-  return (
-    <Claude tools={[filesystem]} onFinished={() => console.log('Done!')}>
-      Write a report synthesizing these findings:
-      {JSON.stringify(findings)}
-
-      Save to output/report.md
-    </Claude>
-  )
 }
 ```
 
@@ -162,26 +163,26 @@ function StatefulAgent({ topic }) {
 Create reusable components for common patterns:
 
 ```tsx
-function SecurityExpert({ children }) {
+function SecurityExpert(props) {
   return (
     <Persona role="Security Expert">
       You are a senior application security engineer with expertise in
       OWASP Top 10, secure coding practices, and threat modeling.
-      {children}
+      {props.children}
     </Persona>
   )
 }
 
-function JSONOutput({ schema }) {
+function JSONOutput(props) {
   return (
-    <OutputFormat schema={schema}>
+    <OutputFormat schema={props.schema}>
       Respond with valid JSON matching the schema. No markdown, no explanation.
     </OutputFormat>
   )
 }
 
 // Usage
-function SecurityAudit({ codebase }) {
+function SecurityAudit(props) {
   return (
     <Claude tools={[filesystem, grep]}>
       <SecurityExpert />
@@ -191,7 +192,7 @@ function SecurityAudit({ codebase }) {
         - Provide actionable remediation steps
       </Constraints>
 
-      Audit {codebase} for security vulnerabilities.
+      Audit {props.codebase} for security vulnerabilities.
 
       <JSONOutput schema={{
         vulnerabilities: [{
@@ -211,12 +212,12 @@ function SecurityAudit({ codebase }) {
 Include or exclude prompt sections based on props:
 
 ```tsx
-function FlexibleReviewer({ strict, includeTests, files }) {
+function FlexibleReviewer(props) {
   return (
     <Claude tools={[filesystem, grep]}>
-      Review these files: {files.join(', ')}
+      Review these files: {props.files.join(', ')}
 
-      {strict && (
+      {props.strict && (
         <Constraints>
           - Apply strict code standards
           - Flag any potential issues, even minor ones
@@ -224,7 +225,7 @@ function FlexibleReviewer({ strict, includeTests, files }) {
         </Constraints>
       )}
 
-      {includeTests && (
+      {props.includeTests && (
         <Phase name="test-review">
           Also review test coverage and test quality.
           Suggest additional test cases if needed.
@@ -240,10 +241,10 @@ function FlexibleReviewer({ strict, includeTests, files }) {
 You can nest `<Claude>` components for sub-agent patterns:
 
 ```tsx
-function OrchestratorAgent({ task }) {
+function OrchestratorAgent(props) {
   return (
     <Claude>
-      You are an orchestrator. Break down this task: {task}
+      You are an orchestrator. Break down this task: {props.task}
 
       <Subagent name="researcher">
         <Claude tools={[webSearch]}>
@@ -266,27 +267,34 @@ function OrchestratorAgent({ task }) {
 Handle errors gracefully with the `onError` callback:
 
 ```tsx
-function ResilientAgent({ task }) {
-  const [error, setError] = useState(null)
-  const [retries, setRetries] = useState(0)
+import { createSignal } from 'solid-js'
 
-  if (error && retries < 3) {
+function ResilientAgent(props) {
+  const [error, setError] = createSignal(null)
+  const [retries, setRetries] = createSignal(0)
+
+  return () => {
+    const err = error()
+    const r = retries()
+
+    if (err && r < 3) {
+      return (
+        <Claude onFinished={() => {
+          setError(null)
+          setRetries(prev => prev + 1)
+        }}>
+          The previous attempt failed with: {err.message}
+          Try a different approach to complete: {props.task}
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={() => {
-        setError(null)
-        setRetries(r => r + 1)
-      }}>
-        The previous attempt failed with: {error.message}
-        Try a different approach to complete: {task}
+      <Claude onError={setError} onFinished={console.log}>
+        Complete this task: {props.task}
       </Claude>
     )
   }
-
-  return (
-    <Claude onError={setError} onFinished={console.log}>
-      Complete this task: {task}
-    </Claude>
-  )
 }
 ```
 
@@ -302,7 +310,7 @@ interface AnalysisResult {
   issues: Array<{ severity: string; message: string }>
 }
 
-function TypedAgent({ code }: { code: string }) {
+function TypedAgent(props: { code: string }) {
   const handleResult = (result: AnalysisResult) => {
     console.log(result.summary)
     result.issues.forEach(issue => console.log(issue.message))
@@ -314,7 +322,7 @@ function TypedAgent({ code }: { code: string }) {
       onFinished={handleResult}
     >
       Analyze this code and return a summary with issues:
-      {code}
+      {props.code}
     </Claude>
   )
 }

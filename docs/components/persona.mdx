@@ -43,7 +43,7 @@ Renders to:
   The persona's role or title.
 </ParamField>
 
-<ParamField path="children" type="ReactNode">
+<ParamField path="children" type="JSX.Element">
   Additional details about the persona's background, expertise, or approach.
 </ParamField>
 
@@ -55,32 +55,32 @@ Create a library of reusable personas for your domain:
 // personas.tsx
 import { Persona } from '@evmts/smithers'
 
-export function SecurityExpert({ children }) {
+export function SecurityExpert(props) {
   return (
     <Persona role="Security Expert">
       Senior application security engineer with expertise in OWASP Top 10,
       secure coding practices, and threat modeling.
-      {children}
+      {props.children}
     </Persona>
   )
 }
 
-export function DatabaseArchitect({ children }) {
+export function DatabaseArchitect(props) {
   return (
     <Persona role="Database Architect">
       15 years of experience with PostgreSQL, MySQL, MongoDB, and Redis.
       Expert in query optimization, indexing strategies, and data modeling.
-      {children}
+      {props.children}
     </Persona>
   )
 }
 
-export function TechLead({ children }) {
+export function TechLead(props) {
   return (
     <Persona role="Tech Lead">
       Experienced engineering leader focused on code quality, team velocity,
       and sustainable development practices.
-      {children}
+      {props.children}
     </Persona>
   )
 }
@@ -104,7 +104,7 @@ import { SecurityExpert } from './personas'
 Personas work well with other structural components:
 
 ```tsx
-function SecurityAudit({ codebase }) {
+function SecurityAudit(props) {
   return (
     <Claude tools={[filesystem, grep]}>
       <Persona role="Security Auditor">
@@ -119,7 +119,7 @@ function SecurityAudit({ codebase }) {
       </Constraints>
 
       <Phase name="audit">
-        <Step>Scan {codebase} for security vulnerabilities</Step>
+        <Step>Scan {props.codebase} for security vulnerabilities</Step>
         <Step>Analyze authentication and authorization flows</Step>
       </Phase>
     </Claude>

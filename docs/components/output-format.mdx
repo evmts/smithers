@@ -53,7 +53,7 @@ import { Claude, OutputFormat } from '@evmts/smithers'
   JSON Schema or simple object describing the expected output structure.
 </ParamField>
 
-<ParamField path="children" type="ReactNode">
+<ParamField path="children" type="JSX.Element">
   Human-readable description of the expected format.
 </ParamField>
 
@@ -78,9 +78,9 @@ Create reusable format components:
 // output-formats.tsx
 import { OutputFormat } from '@evmts/smithers'
 
-export function JSONOutput({ schema }) {
+export function JSONOutput(props) {
   return (
-    <OutputFormat schema={schema}>
+    <OutputFormat schema={props.schema}>
       Respond with valid JSON matching the schema.
       No markdown, no explanation, just the JSON object.
     </OutputFormat>
@@ -99,10 +99,10 @@ export function MarkdownReport() {
   )
 }
 
-export function CodeOnlyOutput({ language }) {
+export function CodeOnlyOutput(props) {
   return (
     <OutputFormat>
-      Return only the {language} code.
+      Return only the {props.language} code.
       No explanations, no markdown blocks, just raw code.
       Include necessary imports.
     </OutputFormat>
@@ -176,7 +176,7 @@ import { JSONOutput } from './output-formats'
 ## Combining with Other Components
 
 ```tsx
-function SecurityAudit({ codebase }) {
+function SecurityAudit(props) {
   return (
     <Claude tools={[filesystem, grep]}>
       <Persona role="Security Auditor">
@@ -192,7 +192,7 @@ function SecurityAudit({ codebase }) {
       </Constraints>
 
       <Phase name="audit">
-        <Step>Scan {codebase} for security vulnerabilities</Step>
+        <Step>Scan {props.codebase} for security vulnerabilities</Step>
         <Step>Analyze authentication and authorization flows</Step>
         <Step>Check for injection vulnerabilities</Step>
         <Step>Review cryptographic implementations</Step>

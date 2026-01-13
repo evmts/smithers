@@ -112,7 +112,7 @@ function SimpleAgent() {
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The prompt content. Can be plain text, markdown, or nested components.
 </ParamField>
 
@@ -137,48 +137,49 @@ Everything inside `<ClaudeCli>` becomes the prompt, just like `<Claude>`:
 
 ## State-Driven Rendering
 
-Use React state to control the workflow:
+Use Solid state to control the workflow:
 
 ```tsx
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 
-const useStore = create((set) => ({
-  phase: 'research' as 'research' | 'implement',
-  findings: '',
-  setFindings: (findings) => set({ findings, phase: 'implement' }),
-}))
+function DeveloperAgent(props) {
+  const [state, setState] = createStore({
+    phase: 'research',
+    findings: '',
+  })
 
-function DeveloperAgent({ task }) {
-  const { phase, findings, setFindings } = useStore()
+  const setFindings = (findings) => setState({ findings, phase: 'implement' })
 
-  if (phase === 'research') {
+  return () => {
+    if (state.phase === 'research') {
+      return (
+        <ClaudeCli onFinished={setFindings}>
+          Research the codebase to understand how to: {props.task}
+
+          Focus on:
+          - Existing patterns and conventions
+          - Related files and functions
+          - Dependencies and constraints
+        </ClaudeCli>
+      )
+    }
+
     return (
-      <ClaudeCli onFinished={setFindings}>
-        Research the codebase to understand how to: {task}
+      <ClaudeCli onFinished={() => console.log('Done!')}>
+        Implement the following task: {props.task}
 
-        Focus on:
-        - Existing patterns and conventions
-        - Related files and functions
-        - Dependencies and constraints
+        Based on your research:
+        {state.findings}
       </ClaudeCli>
     )
   }
-
-  return (
-    <ClaudeCli onFinished={() => console.log('Done!')}>
-      Implement the following task: {task}
-
-      Based on your research:
-      {findings}
-    </ClaudeCli>
-  )
 }
 ```
 
 ## Example: Code Review with CLI
 
 ```tsx
-function CodeReviewAgent({ files }) {
+function CodeReviewAgent(props) {
   return (
     <ClaudeCli
       allowedTools={['Read', 'Glob', 'Grep']}
@@ -191,7 +192,7 @@ function CodeReviewAgent({ files }) {
         - Performance implications
       </Persona>
 
-      Review these files: {files.join(', ')}
+      Review these files: {props.files.join(', ')}
 
       <OutputFormat>
         For each issue found, provide:

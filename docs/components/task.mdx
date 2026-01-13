@@ -50,7 +50,7 @@ Renders to:
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The task description.
 </ParamField>
 
@@ -59,37 +59,37 @@ Renders to:
 Use state to track task completion:
 
 ```tsx
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 
-const useStore = create((set) => ({
-  completedTasks: new Set(),
-  completeTask: (id) => set((s) => ({
-    completedTasks: new Set([...s.completedTasks, id])
-  }))
-}))
+function ProgressAgent(props) {
+  const [state, setState] = createStore({
+    completedTasks: new Set()
+  })
+  
+  const completeTask = (id) => setState('completedTasks', prev => new Set([...prev, id]))
 
-function ProgressAgent({ tasks }) {
-  const { completedTasks, completeTask } = useStore()
-  const pending = tasks.filter(t => !completedTasks.has(t.id))
+  return () => {
+    const pending = props.tasks.filter(t => !state.completedTasks.has(t.id))
 
-  if (pending.length === 0) {
-    return <div>All tasks completed!</div>
+    if (pending.length === 0) {
+      return <div>All tasks completed!</div>
+    }
+
+    const currentTask = pending[0]
+
+    return (
+      <Claude onFinished={() => completeTask(currentTask.id)}>
+        Current progress:
+        {props.tasks.map(task => (
+          <Task key={task.id} done={state.completedTasks.has(task.id)}>
+            {task.description}
+          </Task>
+        ))}
+
+        Now complete: {currentTask.description}
+      </Claude>
+    )
   }
-
-  const currentTask = pending[0]
-
-  return (
-    <Claude onFinished={() => completeTask(currentTask.id)}>
-      Current progress:
-      {tasks.map(task => (
-        <Task key={task.id} done={completedTasks.has(task.id)}>
-          {task.description}
-        </Task>
-      ))}
-
-      Now complete: {currentTask.description}
-    </Claude>
-  )
 }
 ```
 
@@ -98,8 +98,10 @@ function ProgressAgent({ tasks }) {
 Show task lists to help Claude understand what needs to be done:
 
 ```tsx
-function ProjectAgent({ project }) {
-  const [completed, setCompleted] = useState([])
+import { createSignal } from 'solid-js'
+
+function ProjectAgent(props) {
+  const [completed, setCompleted] = createSignal([])
 
   return (
     <Claude
@@ -110,11 +112,11 @@ function ProjectAgent({ project }) {
     >
       <Persona role="Project Manager" />
 
-      Project: {project.name}
+      Project: {props.project.name}
 
       Task list:
-      {project.tasks.map(task => (
-        <Task key={task.id} done={completed.includes(task.id)}>
+      {props.project.tasks.map(task => (
+        <Task key={task.id} done={completed().includes(task.id)}>
           {task.title}: {task.description}
         </Task>
       ))}
@@ -130,9 +132,9 @@ function ProjectAgent({ project }) {
 Show different content based on task state:
 
 ```tsx
-function SmartTaskList({ tasks }) {
-  const completedTasks = tasks.filter(t => t.done)
-  const pendingTasks = tasks.filter(t => !t.done)
+function SmartTaskList(props) {
+  const completedTasks = props.tasks.filter(t => t.done)
+  const pendingTasks = props.tasks.filter(t => !t.done)
 
   return (
     <Claude>
@@ -165,10 +167,10 @@ function SmartTaskList({ tasks }) {
 Combine tasks with phases for organized workflows:
 
 ```tsx
-function PhasedProject({ phases }) {
+function PhasedProject(props) {
   return (
     <Claude tools={[filesystem]}>
-      {phases.map(phase => (
+      {props.phases.map(phase => (
         <Phase key={phase.name} name={phase.name}>
           {phase.tasks.map(task => (
             <Task key={task.id} done={task.completed}>
@@ -189,50 +191,57 @@ function PhasedProject({ phases }) {
 Generate tasks based on analysis:
 
 ```tsx
-function AdaptiveAgent({ codebase }) {
-  const [tasks, setTasks] = useState(null)
-  const [completed, setCompleted] = useState([])
+import { createSignal } from 'solid-js'
 
-  if (!tasks) {
+function AdaptiveAgent(props) {
+  const [tasks, setTasks] = createSignal(null)
+  const [completed, setCompleted] = createSignal([])
+
+  return () => {
+    const t = tasks()
+    const c = completed()
+
+    if (!t) {
+      return (
+        <Claude
+          tools={[filesystem, grep]}
+          onFinished={(analysis) => setTasks(analysis.tasks)}
+        >
+          Analyze {props.codebase} and create a list of improvement tasks.
+
+          <OutputFormat schema={{
+            tasks: [{
+              id: 'string',
+              description: 'string',
+              priority: 'high | medium | low'
+            }]
+          }} />
+        </Claude>
+      )
+    }
+
+    const pending = t.filter(item => !c.includes(item.id))
+
+    if (pending.length === 0) {
+      return <div>All improvements complete!</div>
+    }
+
     return (
       <Claude
-        tools={[filesystem, grep]}
-        onFinished={(analysis) => setTasks(analysis.tasks)}
+        tools={[filesystem]}
+        onFinished={() => setCompleted(prev => [...prev, pending[0].id])}
       >
-        Analyze {codebase} and create a list of improvement tasks.
+        Task progress:
+        {t.map(task => (
+          <Task key={task.id} done={c.includes(task.id)}>
+            [{task.priority}] {task.description}
+          </Task>
+        ))}
 
-        <OutputFormat schema={{
-          tasks: [{
-            id: 'string',
-            description: 'string',
-            priority: 'high | medium | low'
-          }]
-        }} />
+        Complete the next pending task: {pending[0].description}
       </Claude>
     )
   }
-
-  const pending = tasks.filter(t => !completed.includes(t.id))
-
-  if (pending.length === 0) {
-    return <div>All improvements complete!</div>
-  }
-
-  return (
-    <Claude
-      tools={[filesystem]}
-      onFinished={() => setCompleted(prev => [...prev, pending[0].id])}
-    >
-      Task progress:
-      {tasks.map(task => (
-        <Task key={task.id} done={completed.includes(task.id)}>
-          [{task.priority}] {task.description}
-        </Task>
-      ))}
-
-      Complete the next pending task: {pending[0].description}
-    </Claude>
-  )
 }
 ```
 
@@ -243,7 +252,7 @@ function AdaptiveAgent({ codebase }) {
     Task descriptions should be actionable and specific
   </Card>
   <Card title="Track state externally" icon="database">
-    Use Zustand or React state to track completion
+    Use Solid stores or signals to track completion
   </Card>
   <Card title="Show progress" icon="chart-line">
     Display both completed and pending tasks for context

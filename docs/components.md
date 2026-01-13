@@ -62,7 +62,7 @@ Defines an individual step within a phase.
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `children` | `ReactNode` | Step description |
+| `children` | `JSX.Element` | Step description |
 
 ### Usage
 
@@ -83,7 +83,7 @@ Sets the agent's persona/role.
 | Prop | Type | Description |
 |------|------|-------------|
 | `role` | `string` | The persona role |
-| `children` | `ReactNode` | Additional persona details |
+| `children` | `JSX.Element` | Additional persona details |
 
 ### Usage
 
@@ -101,7 +101,7 @@ Defines constraints/rules for the agent.
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `children` | `ReactNode` | Constraint list |
+| `children` | `JSX.Element` | Constraint list |
 
 ### Usage
 
@@ -122,7 +122,7 @@ Specifies expected output structure.
 | Prop | Type | Description |
 |------|------|-------------|
 | `schema` | `object` | JSON schema for output |
-| `children` | `ReactNode` | Human-readable format description |
+| `children` | `JSX.Element` | Human-readable format description |
 
 ### Usage
 

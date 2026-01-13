@@ -12,11 +12,11 @@ The `<Phase>` component defines a named phase in a multi-step workflow. It provi
 ```tsx
 import { Claude, Phase, Step } from '@evmts/smithers'
 
-function ResearchAgent({ topic }) {
+function ResearchAgent(props) {
   return (
     <Claude tools={[webSearch, filesystem]}>
       <Phase name="research">
-        <Step>Search for academic papers on {topic}</Step>
+        <Step>Search for academic papers on {props.topic}</Step>
         <Step>Find industry reports and case studies</Step>
         <Step>Identify key experts and their publications</Step>
       </Phase>
@@ -75,24 +75,24 @@ Renders to:
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The content of the phase - typically `<Step>` components or plain text.
 </ParamField>
 
 ## Conditional Phases
 
-Use React conditionals to include or exclude phases:
+Use Solid's `<Show>` component or standard boolean logic to include or exclude phases:
 
 ```tsx
-function FlexibleAgent({ includeReview, includeDocs, task }) {
+function FlexibleAgent(props) {
   return (
     <Claude tools={[filesystem]}>
       <Phase name="implement">
-        <Step>Implement {task}</Step>
+        <Step>Implement {props.task}</Step>
         <Step>Write tests</Step>
       </Phase>
 
-      {includeReview && (
+      {props.includeReview && (
         <Phase name="review">
           <Step>Self-review the implementation</Step>
           <Step>Check for edge cases</Step>
@@ -100,7 +100,7 @@ function FlexibleAgent({ includeReview, includeDocs, task }) {
         </Phase>
       )}
 
-      {includeDocs && (
+      {props.includeDocs && (
         <Phase name="document">
           <Step>Add JSDoc comments</Step>
           <Step>Update README if needed</Step>
@@ -151,10 +151,10 @@ Combine steps with prose:
 Create custom phase components for common patterns:
 
 ```tsx
-function SecurityReviewPhase({ focus }) {
+function SecurityReviewPhase(props) {
   return (
     <Phase name="security-review">
-      <Step>Check for injection vulnerabilities in {focus}</Step>
+      <Step>Check for injection vulnerabilities in {props.focus}</Step>
       <Step>Verify authentication and authorization</Step>
       <Step>Review sensitive data handling</Step>
       <Step>Check for common security misconfigurations</Step>
@@ -162,10 +162,10 @@ function SecurityReviewPhase({ focus }) {
   )
 }
 
-function TestingPhase({ coverage }) {
+function TestingPhase(props) {
   return (
     <Phase name="testing">
-      <Step>Write unit tests (target {coverage}% coverage)</Step>
+      <Step>Write unit tests (target {props.coverage}% coverage)</Step>
       <Step>Add integration tests for critical paths</Step>
       <Step>Verify all tests pass</Step>
     </Phase>
@@ -173,14 +173,14 @@ function TestingPhase({ coverage }) {
 }
 
 // Usage
-function SecureFeature({ feature }) {
+function SecureFeature(props) {
   return (
     <Claude tools={[filesystem, terminal]}>
       <Phase name="implement">
-        <Step>Implement {feature}</Step>
+        <Step>Implement {props.feature}</Step>
       </Phase>
 
-      <SecurityReviewPhase focus={feature} />
+      <SecurityReviewPhase focus={props.feature} />
       <TestingPhase coverage={80} />
     </Claude>
   )

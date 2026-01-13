@@ -126,7 +126,7 @@ This creates two isolated git worktrees where agents can work on different featu
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode">
+<ParamField path="children" type="JSX.Element">
   Child agents (typically `<Claude>` or `<ClaudeApi>` components) that will run inside the worktree with an isolated filesystem.
 </ParamField>
 
@@ -172,16 +172,18 @@ function ParallelDevelopment() {
 Review changes without affecting the main working directory:
 
 ```tsx
-function ReviewAgent({ prNumber }) {
-  const [approved, setApproved] = useState(false)
-  const [issues, setIssues] = useState([])
+import { createSignal } from 'solid-js'
+
+function ReviewAgent(props) {
+  const [approved, setApproved] = createSignal(false)
+  const [issues, setIssues] = createSignal([])
 
   return (
     <Worktree
-      path={`./worktrees/pr-${prNumber}`}
-      branch={`pr/${prNumber}`}
+      path={`./worktrees/pr-${props.prNumber}`}
+      branch={`pr/${props.prNumber}`}
       baseBranch="main"
-      cleanup={!approved}
+      cleanup={!approved()}
     >
       <Claude
         tools={['Read', 'Grep', 'Glob']}
@@ -208,12 +210,14 @@ function ReviewAgent({ prNumber }) {
 Test refactoring ideas without risk:
 
 ```tsx
-function RefactorExperiment({ approaches }) {
-  const [results, setResults] = useState([])
+import { createStore } from 'solid-js/store'
+
+function RefactorExperiment(props) {
+  const [results, setResults] = createStore([])
 
   return (
     <>
-      {approaches.map((approach, i) => (
+      {props.approaches.map((approach, i) => (
         <Worktree
           key={i}
           path={`./worktrees/refactor-${i}`}
@@ -241,7 +245,7 @@ function RefactorExperiment({ approaches }) {
         </Worktree>
       ))}
 
-      {results.length === approaches.length && (
+      {results.length === props.approaches.length && (
         <Claude>
           Compare these refactoring results and recommend the best approach:
           {JSON.stringify(results, null, 2)}
@@ -257,12 +261,14 @@ function RefactorExperiment({ approaches }) {
 Test changes across multiple git branches:
 
 ```tsx
-function CrossVersionTest({ branches }) {
-  const [testResults, setTestResults] = useState({})
+import { createStore } from 'solid-js/store'
+
+function CrossVersionTest(props) {
+  const [testResults, setTestResults] = createStore({})
 
   return (
     <>
-      {branches.map(branch => (
+      {props.branches.map(branch => (
         <Worktree
           key={branch}
           path={`./worktrees/test-${branch}`}
@@ -271,10 +277,7 @@ function CrossVersionTest({ branches }) {
           <Claude
             tools={['Bash']}
             onFinished={(result) => {
-              setTestResults(prev => ({
-                ...prev,
-                [branch]: result
-              }))
+              setTestResults(branch, result)
             }}
           >
             Run the full test suite on this branch and report:
@@ -418,7 +421,7 @@ In mock mode (`mockMode: true`), worktrees are not actually created:
 - Useful for testing without filesystem operations
 
 ```tsx
-const result = await executePlan(<MyAgent />, {
+const result = await executePlan(() => <MyAgent />, {
   mockMode: true // Worktrees won't be created
 })
 ```

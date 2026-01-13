@@ -72,7 +72,7 @@ function ReviewAgent({ changes }) {
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode">
+<ParamField path="children" type="JSX.Element">
   Content to show to the user for review. This is passed to the `onHumanPrompt` callback.
 </ParamField>
 
@@ -83,7 +83,7 @@ When using `executePlan`, provide an `onHumanPrompt` callback to handle approval
 ```tsx
 import { executePlan } from '@evmts/smithers'
 
-const result = await executePlan(<MyAgent />, {
+const result = await executePlan(() => <MyAgent />, {
   onHumanPrompt: async (message, content) => {
     // Display the message and content to the user
     console.log(`\n${message}\n`)
@@ -106,7 +106,7 @@ If no `onHumanPrompt` callback is provided, Human nodes are automatically approv
 
 ```tsx
 // Auto-approves all Human nodes
-const result = await executePlan(<MyAgent />)
+const result = await executePlan(() => <MyAgent />)
 ```
 
 ## Use Cases
@@ -116,31 +116,36 @@ const result = await executePlan(<MyAgent />)
 Require approval before deploying changes:
 
 ```tsx
-function DeployAgent({ changes }) {
-  const [phase, setPhase] = useState('review')
+import { createSignal } from 'solid-js'
 
-  if (phase === 'review') {
-    return (
-      <Human
-        message="Review changes before deployment"
-        onApprove={() => setPhase('deploy')}
-        onReject={() => setPhase('cancelled')}
-      >
-        Files to be modified:
-        {changes.map(c => `- ${c.file}: ${c.summary}`).join('\n')}
-      </Human>
-    )
+function DeployAgent(props) {
+  const [phase, setPhase] = createSignal('review')
+
+  return () => {
+    const p = phase()
+    if (p === 'review') {
+      return (
+        <Human
+          message="Review changes before deployment"
+          onApprove={() => setPhase('deploy')}
+          onReject={() => setPhase('cancelled')}
+        >
+          Files to be modified:
+          {props.changes.map(c => `- ${c.file}: ${c.summary}`).join('\n')}
+        </Human>
+      )
+    }
+
+    if (p === 'deploy') {
+      return (
+        <Claude tools={[deployTool]}>
+          Deploy the approved changes
+        </Claude>
+      )
+    }
+
+    return <div>Deployment cancelled</div>
   }
-
-  if (phase === 'deploy') {
-    return (
-      <Claude tools={[deployTool]}>
-        Deploy the approved changes
-      </Claude>
-    )
-  }
-
-  return <div>Deployment cancelled</div>
 }
 ```
 
@@ -149,54 +154,62 @@ function DeployAgent({ changes }) {
 Multiple review points in a workflow:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function MultiReviewAgent() {
-  const [step, setStep] = useState(1)
-  const [plan, setPlan] = useState(null)
-  const [code, setCode] = useState(null)
+  const [step, setStep] = createSignal(1)
+  const [plan, setPlan] = createSignal(null)
+  const [code, setCode] = createSignal(null)
 
-  if (step === 1) {
-    return (
-      <Claude onFinished={(p) => { setPlan(p); setStep(2) }}>
-        Create an implementation plan
-      </Claude>
-    )
+  return () => {
+    const s = step()
+    const p = plan()
+    const c = code()
+
+    if (s === 1) {
+      return (
+        <Claude onFinished={(p) => { setPlan(p); setStep(2) }}>
+          Create an implementation plan
+        </Claude>
+      )
+    }
+
+    if (s === 2) {
+      return (
+        <Human
+          message="Review the implementation plan"
+          onApprove={() => setStep(3)}
+          onReject={() => setStep(1)}
+        >
+          Proposed plan:
+          {JSON.stringify(p, null, 2)}
+        </Human>
+      )
+    }
+
+    if (s === 3) {
+      return (
+        <Claude onFinished={(c) => { setCode(c); setStep(4) }}>
+          Implement the plan: {JSON.stringify(p)}
+        </Claude>
+      )
+    }
+
+    if (s === 4) {
+      return (
+        <Human
+          message="Review the implementation"
+          onApprove={() => setStep(5)}
+          onReject={() => setStep(3)}
+        >
+          Generated code:
+          {c}
+        </Human>
+      )
+    }
+
+    return <div>Complete!</div>
   }
-
-  if (step === 2) {
-    return (
-      <Human
-        message="Review the implementation plan"
-        onApprove={() => setStep(3)}
-        onReject={() => setStep(1)}
-      >
-        Proposed plan:
-        {JSON.stringify(plan, null, 2)}
-      </Human>
-    )
-  }
-
-  if (step === 3) {
-    return (
-      <Claude onFinished={(c) => { setCode(c); setStep(4) }}>
-        Implement the plan: {JSON.stringify(plan)}
-      </Claude>
-    )
-  }
-
-  if (step === 4) {
-    return (
-      <Human
-        message="Review the implementation"
-        onApprove={() => setStep(5)}
-        onReject={() => setStep(3)}
-      >
-        Generated code:
-        {code}
-      </Human>
-    )
-  }
-
-  return <div>Complete!</div>
 }
 ```
 
@@ -205,27 +218,31 @@ function MultiReviewAgent() {
 Gate dangerous operations behind human approval:
 
 ```tsx
-function DangerousAgent({ operation }) {
-  const [confirmed, setConfirmed] = useState(false)
+import { createSignal } from 'solid-js'
 
-  if (!confirmed) {
+function DangerousAgent(props) {
+  const [confirmed, setConfirmed] = createSignal(false)
+
+  return () => {
+    if (!confirmed()) {
+      return (
+        <Human
+          message="This operation is potentially destructive"
+          onApprove={() => setConfirmed(true)}
+        >
+          You are about to: {props.operation}
+
+          This action cannot be undone. Please confirm.
+        </Human>
+      )
+    }
+
     return (
-      <Human
-        message="This operation is potentially destructive"
-        onApprove={() => setConfirmed(true)}
-      >
-        You are about to: {operation}
-
-        This action cannot be undone. Please confirm.
-      </Human>
+      <Claude tools={[dangerousTool]}>
+        Execute: {props.operation}
+      </Claude>
     )
   }
-
-  return (
-    <Claude tools={[dangerousTool]}>
-      Execute: {operation}
-    </Claude>
-  )
 }
 ```
 

@@ -31,7 +31,7 @@ import { File } from '@evmts/smithers'
   ```
 </ParamField>
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The content to write to the file.
 </ParamField>
 
@@ -88,37 +88,42 @@ import { File } from '@evmts/smithers'
 Write analysis results to a file:
 
 ```tsx
-function ReportAgent({ codebase }) {
-  const [analysis, setAnalysis] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (!analysis) {
+function ReportAgent(props) {
+  const [analysis, setAnalysis] = createSignal(null)
+
+  return () => {
+    const a = analysis()
+    if (!a) {
+      return (
+        <Claude onFinished={setAnalysis} tools={[filesystem]}>
+          Analyze {props.codebase} for code quality issues
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={setAnalysis} tools={[filesystem]}>
-        Analyze {codebase} for code quality issues
-      </Claude>
+      <>
+        <File path="reports/analysis.md">
+          # Code Quality Report
+
+          ## Summary
+          {a.summary}
+
+          ## Issues Found
+          {a.issues.map(issue =>
+            `- **${issue.severity}**: ${issue.message} (${issue.file}:${issue.line})`
+          ).join('\n')}
+
+          ## Recommendations
+          {a.recommendations.join('\n')}
+        </File>
+        <Output>Report written to reports/analysis.md</Output>
+        <Stop reason="Report generated" />
+      </>
     )
   }
-
-  return (
-    <>
-      <File path="reports/analysis.md">
-        # Code Quality Report
-
-        ## Summary
-        {analysis.summary}
-
-        ## Issues Found
-        {analysis.issues.map(issue =>
-          `- **${issue.severity}**: ${issue.message} (${issue.file}:${issue.line})`
-        ).join('\n')}
-
-        ## Recommendations
-        {analysis.recommendations.join('\n')}
-      </File>
-      <Output>Report written to reports/analysis.md</Output>
-      <Stop reason="Report generated" />
-    </>
-  )
 }
 ```
 
@@ -127,22 +132,27 @@ function ReportAgent({ codebase }) {
 Save structured data:
 
 ```tsx
-function DataExportAgent({ query }) {
-  const [data, setData] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (!data) {
+function DataExportAgent(props) {
+  const [data, setData] = createSignal(null)
+
+  return () => {
+    const d = data()
+    if (!d) {
+      return (
+        <Claude onFinished={setData}>
+          Query the database: {props.query}
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={setData}>
-        Query the database: {query}
-      </Claude>
+      <File path="export/data.json">
+        {JSON.stringify(d, null, 2)}
+      </File>
     )
   }
-
-  return (
-    <File path="export/data.json">
-      {JSON.stringify(data, null, 2)}
-    </File>
-  )
 }
 ```
 
@@ -151,26 +161,31 @@ function DataExportAgent({ query }) {
 Add entries to a log file:
 
 ```tsx
-function LoggingAgent({ task }) {
-  const [result, setResult] = useState(null)
+import { createSignal } from 'solid-js'
 
-  return (
-    <>
-      <File path="execution.log" mode="append">
-        [{new Date().toISOString()}] Starting: {task}
-      </File>
+function LoggingAgent(props) {
+  const [result, setResult] = createSignal(null)
 
-      <Claude onFinished={setResult}>
-        Execute: {task}
-      </Claude>
-
-      {result && (
+  return () => {
+    const r = result()
+    return (
+      <>
         <File path="execution.log" mode="append">
-          [{new Date().toISOString()}] Completed: {task} - {result.status}
+          [{new Date().toISOString()}] Starting: {props.task}
         </File>
-      )}
-    </>
-  )
+
+        <Claude onFinished={setResult}>
+          Execute: {props.task}
+        </Claude>
+
+        {r && (
+          <File path="execution.log" mode="append">
+            [{new Date().toISOString()}] Completed: {props.task} - {r.status}
+          </File>
+        )}
+      </>
+    )
+  }
 }
 ```
 
@@ -179,41 +194,46 @@ function LoggingAgent({ task }) {
 Generate multiple files from a single workflow:
 
 ```tsx
-function DocumentationAgent({ modules }) {
-  const [docs, setDocs] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (!docs) {
+function DocumentationAgent(props) {
+  const [docs, setDocs] = createSignal(null)
+
+  return () => {
+    const d = docs()
+    if (!d) {
+      return (
+        <Claude onFinished={setDocs}>
+          Generate documentation for: {props.modules.join(', ')}
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={setDocs}>
-        Generate documentation for: {modules.join(', ')}
-      </Claude>
+      <>
+        {d.modules.map(mod => (
+          <File key={mod.name} path={`docs/${mod.name}.md`}>
+            # {mod.name}
+
+            {mod.description}
+
+            ## API
+            {mod.api}
+          </File>
+        ))}
+
+        <File path="docs/index.md">
+          # Documentation Index
+
+          {d.modules.map(mod =>
+            `- [${mod.name}](./${mod.name}.md)`
+          ).join('\n')}
+        </File>
+
+        <Output>Generated {d.modules.length + 1} documentation files</Output>
+      </>
     )
   }
-
-  return (
-    <>
-      {docs.modules.map(mod => (
-        <File key={mod.name} path={`docs/${mod.name}.md`}>
-          # {mod.name}
-
-          {mod.description}
-
-          ## API
-          {mod.api}
-        </File>
-      ))}
-
-      <File path="docs/index.md">
-        # Documentation Index
-
-        {docs.modules.map(mod =>
-          `- [${mod.name}](./${mod.name}.md)`
-        ).join('\n')}
-      </File>
-
-      <Output>Generated {docs.modules.length + 1} documentation files</Output>
-    </>
-  )
 }
 ```
 
@@ -222,16 +242,16 @@ function DocumentationAgent({ modules }) {
 Write files based on conditions:
 
 ```tsx
-function ConfigAgent({ environment, settings }) {
+function ConfigAgent(props) {
   return (
     <>
-      <File path={`config/${environment}.json`}>
-        {JSON.stringify(settings, null, 2)}
+      <File path={`config/${props.environment}.json`}>
+        {JSON.stringify(props.settings, null, 2)}
       </File>
 
-      {environment === 'production' && (
+      {props.environment === 'production' && (
         <File path="config/backup.json">
-          {JSON.stringify({ ...settings, backup: true }, null, 2)}
+          {JSON.stringify({ ...props.settings, backup: true }, null, 2)}
         </File>
       )}
     </>
@@ -244,47 +264,54 @@ function ConfigAgent({ environment, settings }) {
 File works well with Claude and control flow:
 
 ```tsx
-function BuildAgent({ project }) {
-  const [phase, setPhase] = useState('analyze')
-  const [artifacts, setArtifacts] = useState({})
+import { createSignal } from 'solid-js'
 
-  if (phase === 'analyze') {
-    return (
-      <Claude onFinished={(a) => { setArtifacts(a); setPhase('generate') }}>
-        Analyze {project} and determine what files to generate
-      </Claude>
-    )
-  }
+function BuildAgent(props) {
+  const [phase, setPhase] = createSignal('analyze')
+  const [artifacts, setArtifacts] = createSignal({})
 
-  if (phase === 'generate') {
+  return () => {
+    const p = phase()
+    const a = artifacts()
+
+    if (p === 'analyze') {
+      return (
+        <Claude onFinished={(res) => { setArtifacts(res); setPhase('generate') }}>
+          Analyze {props.project} and determine what files to generate
+        </Claude>
+      )
+    }
+
+    if (p === 'generate') {
+      return (
+        <>
+          {a.files.map(file => (
+            <File
+              key={file.path}
+              path={file.path}
+              onWritten={() => console.log(`Generated: ${file.path}`)}
+            >
+              {file.content}
+            </File>
+          ))}
+
+          <Human
+            message="Review generated files before finalizing"
+            onApprove={() => setPhase('complete')}
+          >
+            Generated {a.files.length} files
+          </Human>
+        </>
+      )
+    }
+
     return (
       <>
-        {artifacts.files.map(file => (
-          <File
-            key={file.path}
-            path={file.path}
-            onWritten={() => console.log(`Generated: ${file.path}`)}
-          >
-            {file.content}
-          </File>
-        ))}
-
-        <Human
-          message="Review generated files before finalizing"
-          onApprove={() => setPhase('complete')}
-        >
-          Generated {artifacts.files.length} files
-        </Human>
+        <Output>Build complete! Generated {a.files.length} files.</Output>
+        <Stop reason="Build complete" />
       </>
     )
   }
-
-  return (
-    <>
-      <Output>Build complete! Generated {artifacts.files.length} files.</Output>
-      <Stop reason="Build complete" />
-    </>
-  )
 }
 ```
 
@@ -301,23 +328,28 @@ function BuildAgent({ project }) {
 Handle file write errors gracefully:
 
 ```tsx
-function SafeFileWriter({ path, content }) {
-  const [error, setError] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (error) {
+function SafeFileWriter(props) {
+  const [error, setError] = createSignal(null)
+
+  return () => {
+    const err = error()
+    if (err) {
+      return (
+        <>
+          <Output label="Error">Failed to write {props.path}: {err.message}</Output>
+          <Stop reason="File write failed" />
+        </>
+      )
+    }
+
     return (
-      <>
-        <Output label="Error">Failed to write {path}: {error.message}</Output>
-        <Stop reason="File write failed" />
-      </>
+      <File path={props.path} onError={setError}>
+        {props.content}
+      </File>
     )
   }
-
-  return (
-    <File path={path} onError={setError}>
-      {content}
-    </File>
-  )
 }
 ```
 

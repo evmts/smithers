@@ -19,7 +19,7 @@ import { Output } from '@evmts/smithers'
 
 ## Props
 
-<ParamField path="children" type="ReactNode" required>
+<ParamField path="children" type="JSX.Element" required>
   The content to output. Can be plain text, markdown, or nested components.
 </ParamField>
 
@@ -51,31 +51,36 @@ import { Output } from '@evmts/smithers'
 Show results between agent phases:
 
 ```tsx
-function AnalysisAgent({ files }) {
-  const [result, setResult] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (!result) {
+function AnalysisAgent(props) {
+  const [result, setResult] = createSignal(null)
+
+  return () => {
+    const r = result()
+    if (!r) {
+      return (
+        <Claude onFinished={setResult} tools={[filesystem]}>
+          Analyze {props.files.length} files for issues
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={setResult} tools={[filesystem]}>
-        Analyze {files.length} files for issues
-      </Claude>
+      <>
+        <Output format="markdown">
+          ## Analysis Complete
+
+          Found {r.issues.length} issues across {props.files.length} files.
+
+          ### Summary
+          - Critical: {r.critical}
+          - Warnings: {r.warnings}
+        </Output>
+        <Stop reason="Analysis complete" />
+      </>
     )
   }
-
-  return (
-    <>
-      <Output format="markdown">
-        ## Analysis Complete
-
-        Found {result.issues.length} issues across {files.length} files.
-
-        ### Summary
-        - Critical: {result.critical}
-        - Warnings: {result.warnings}
-      </Output>
-      <Stop reason="Analysis complete" />
-    </>
-  )
 }
 ```
 
@@ -84,30 +89,37 @@ function AnalysisAgent({ files }) {
 Show progress during multi-phase workflows:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function MultiPhaseAgent() {
-  const [phase, setPhase] = useState('research')
-  const [data, setData] = useState(null)
+  const [phase, setPhase] = createSignal('research')
+  const [data, setData] = createSignal(null)
 
-  if (phase === 'research') {
-    return (
-      <Claude onFinished={(d) => { setData(d); setPhase('report') }}>
-        Research the topic
-      </Claude>
-    )
-  }
+  return () => {
+    const p = phase()
+    const d = data()
 
-  if (phase === 'report') {
-    return (
-      <>
-        <Output label="Phase 1">Research complete, generating report...</Output>
-        <Claude onFinished={() => setPhase('done')}>
-          Generate report from: {JSON.stringify(data)}
+    if (p === 'research') {
+      return (
+        <Claude onFinished={(res) => { setData(res); setPhase('report') }}>
+          Research the topic
         </Claude>
-      </>
-    )
-  }
+      )
+    }
 
-  return <Output>All phases complete!</Output>
+    if (p === 'report') {
+      return (
+        <>
+          <Output label="Phase 1">Research complete, generating report...</Output>
+          <Claude onFinished={() => setPhase('done')}>
+            Generate report from: {JSON.stringify(d)}
+          </Claude>
+        </>
+      )
+    }
+
+    return <Output>All phases complete!</Output>
+  }
 }
 ```
 
@@ -131,23 +143,28 @@ Output structured data:
 Show output based on conditions:
 
 ```tsx
-function StatusAgent({ verbose }) {
-  const [status, setStatus] = useState(null)
+import { createSignal } from 'solid-js'
 
-  return (
-    <>
-      <Claude onFinished={setStatus}>Check system status</Claude>
+function StatusAgent(props) {
+  const [status, setStatus] = createSignal(null)
 
-      {status && (
-        <>
-          <Output>Status: {status.health}</Output>
-          {verbose && (
-            <Output format="json">{JSON.stringify(status.details)}</Output>
-          )}
-        </>
-      )}
-    </>
-  )
+  return () => {
+    const s = status()
+    return (
+      <>
+        <Claude onFinished={setStatus}>Check system status</Claude>
+
+        {s && (
+          <>
+            <Output>Status: {s.health}</Output>
+            {props.verbose && (
+              <Output format="json">{JSON.stringify(s.details)}</Output>
+            )}
+          </>
+        )}
+      </>
+    )
+  }
 }
 ```
 
@@ -156,53 +173,60 @@ function StatusAgent({ verbose }) {
 Output works well with control flow components:
 
 ```tsx
-function WorkflowAgent({ task }) {
-  const [step, setStep] = useState(1)
-  const [results, setResults] = useState({})
+import { createSignal } from 'solid-js'
+import { createStore } from 'solid-js/store'
 
-  if (step === 1) {
-    return (
-      <Claude onFinished={(r) => { setResults({ step1: r }); setStep(2) }}>
-        Analyze: {task}
-      </Claude>
-    )
-  }
+function WorkflowAgent(props) {
+  const [step, setStep] = createSignal(1)
+  const [results, setResults] = createStore({})
 
-  if (step === 2) {
+  return () => {
+    const s = step()
+
+    if (s === 1) {
+      return (
+        <Claude onFinished={(r) => { setResults('step1', r); setStep(2) }}>
+          Analyze: {props.task}
+        </Claude>
+      )
+    }
+
+    if (s === 2) {
+      return (
+        <>
+          <Output label="Step 1 Complete">
+            Analysis found {results.step1?.issues || 0} issues
+          </Output>
+          <Human
+            message="Continue to step 2?"
+            onApprove={() => setStep(3)}
+          >
+            {JSON.stringify(results.step1, null, 2)}
+          </Human>
+        </>
+      )
+    }
+
+    if (s === 3) {
+      return (
+        <Claude onFinished={(r) => { setResults('step2', r); setStep(4) }}>
+          Fix the issues from: {JSON.stringify(results.step1)}
+        </Claude>
+      )
+    }
+
     return (
       <>
-        <Output label="Step 1 Complete">
-          Analysis found {results.step1?.issues || 0} issues
+        <Output format="markdown">
+          ## Workflow Complete
+
+          - Step 1: {results.step1?.summary}
+          - Step 2: {results.step2?.summary}
         </Output>
-        <Human
-          message="Continue to step 2?"
-          onApprove={() => setStep(3)}
-        >
-          {JSON.stringify(results.step1, null, 2)}
-        </Human>
+        <Stop reason="Workflow complete" />
       </>
     )
   }
-
-  if (step === 3) {
-    return (
-      <Claude onFinished={(r) => { setResults({ ...results, step2: r }); setStep(4) }}>
-        Fix the issues from: {JSON.stringify(results.step1)}
-      </Claude>
-    )
-  }
-
-  return (
-    <>
-      <Output format="markdown">
-        ## Workflow Complete
-
-        - Step 1: {results.step1?.summary}
-        - Step 2: {results.step2?.summary}
-      </Output>
-      <Stop reason="Workflow complete" />
-    </>
-  )
 }
 ```
 
