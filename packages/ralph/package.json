@@ -1,0 +1,67 @@
+{
+  "name": "@evmts/ralph",
+  "version": "0.1.0",
+  "description": "Bun-based CLI for the Ralph Wiggum loop with git automation",
+  "type": "module",
+  "bin": {
+    "ralph": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./commands/*": {
+      "types": "./dist/commands/*.d.ts",
+      "import": "./dist/commands/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "hooks",
+    "templates",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "dev": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@evmts/smithers": "workspace:*",
+    "commander": "^12.1.0",
+    "ora": "^8.1.1",
+    "picocolors": "^1.1.1"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "optionalDependencies": {
+    "codex-cli": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "ralph",
+    "ralph-loop",
+    "git",
+    "hooks",
+    "cli",
+    "automation",
+    "codex",
+    "review"
+  ],
+  "author": "William Cory",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evmts/smithers.git",
+    "directory": "packages/ralph"
+  }
+}
