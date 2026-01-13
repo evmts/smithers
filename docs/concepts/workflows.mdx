@@ -41,10 +41,10 @@ const workflow = createWorkflow({
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `Provider` | `React.FC` | Context provider for the workflow |
-| `useInput` | `(name) => T \| undefined` | Hook to subscribe to a workflow value |
+| `Provider` | `Component` | Context provider for the workflow |
+| `useInput` | `(name) => () => T \| undefined` | Hook to subscribe to a workflow value (returns accessor) |
 | `useStore` | `() => WorkflowStore` | Hook to access the full store |
-| `Output` | `React.FC` | Component to define agent outputs |
+| `Output` | `Component` | Component to define agent outputs |
 | `schema` | `ZodObject` | The original Zod schema |
 
 ## Basic Usage
@@ -73,14 +73,18 @@ function Researcher() {
 
 function Writer() {
   const research = workflow.useInput('research')
-  if (!research) return null
 
-  return (
-    <Claude>
-      Summarize the following research: {research}
-      <workflow.Output name="summary" />
-    </Claude>
-  )
+  return () => {
+    const r = research()
+    if (!r) return null
+
+    return (
+      <Claude>
+        Summarize the following research: {r}
+        <workflow.Output name="summary" />
+      </Claude>
+    )
+  }
 }
 
 function App() {
@@ -92,15 +96,15 @@ function App() {
   )
 }
 
-await executePlan(<App />)
+await executePlan(() => <App />)
 ```
 
 ### How It Works
 
 1. `<Researcher />` executes first (no dependencies)
 2. Claude receives a `set_research` tool and calls it with findings
-3. The workflow store updates, triggering a re-render
-4. `<Writer />` now has `research` value, so it renders
+3. The workflow store updates, triggering a signal update
+4. `<Writer />`'s effect re-runs because `research()` changed
 5. Claude summarizes the research and sets `summary`
 
 ### Human-in-the-Loop Input
@@ -116,15 +120,15 @@ const workflow = createWorkflow({
 function FeedbackLoop() {
   const feedback = workflow.useInput('userFeedback')
 
-  return (
+  return () => (
     <>
       <Human message="Provide feedback on the draft">
         <workflow.Output name="userFeedback" description="Your feedback" />
       </Human>
 
-      {feedback && (
+      {feedback() && (
         <Claude>
-          Refine the output based on: {feedback}
+          Refine the output based on: {feedback()}
           <workflow.Output name="refinedOutput" />
         </Claude>
       )}
@@ -170,19 +174,20 @@ Values from `useInput()` are rendered directly into JSX:
 function Analyst() {
   const findings = workflow.useInput('findings')
 
-  return (
+  return () => (
     <Claude>
-      Analyze: {findings}
+      Analyze: {findings()}
     </Claude>
   )
 }
 ```
 
 When `findings` changes:
-1. React re-renders the component (`useSyncExternalStore` triggers)
-2. The Claude node's children contain different text
-3. Content hash differs from previous execution
-4. Ralph loop marks the node for re-execution
+1. Solid signals update
+2. The component re-executes the closure (fine-grained update)
+3. The Claude node's children contain different text
+4. Content hash differs from previous execution
+5. Ralph loop marks the node for re-execution
 
 ## Structured Outputs
 
@@ -214,13 +219,17 @@ function Reviewer() {
 
 function Reporter() {
   const analysis = workflow.useInput('analysis')
-  if (!analysis) return null
 
-  return (
-    <Output format="json" label="Security Report">
-      {JSON.stringify(analysis, null, 2)}
-    </Output>
-  )
+  return () => {
+    const a = analysis()
+    if (!a) return null
+
+    return (
+      <Output format="json" label="Security Report">
+        {JSON.stringify(a, null, 2)}
+      </Output>
+    )
+  }
 }
 ```
 
@@ -273,8 +282,8 @@ const workflow = createWorkflow({
 })
 
 // Type-safe input access
-const count = workflow.useInput('count') // number | undefined
-const name = workflow.useInput('name')   // string | undefined
+const count = workflow.useInput('count') // accessor: () => number | undefined
+const name = workflow.useInput('name')   // accessor: () => string | undefined
 
 // TypeScript error: 'invalid' doesn't exist
 const invalid = workflow.useInput('invalid')
@@ -319,7 +328,7 @@ function App() {
 
 ## Comparison with State Management
 
-| Feature | Zustand/useState | Workflows |
+| Feature | Signals/Store | Workflows |
 |---------|------------------|-----------|
 | Type safety | Manual | Automatic from Zod |
 | Agent outputs | Manual tool + callback | `<workflow.Output>` |
@@ -332,7 +341,7 @@ Use workflows when you want:
 - Built-in human input collection
 - Strong typing from Zod schemas
 
-Use Zustand/useState when you want:
+Use Signals/Store when you want:
 - More control over state shape
 - Custom tool implementations
 - Complex state transitions

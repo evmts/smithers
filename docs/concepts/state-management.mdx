@@ -1,341 +1,209 @@
 ---
 title: State Management
-description: Using Zustand for robust agent state management
+description: Using SolidJS signals and stores for robust agent state management
 ---
 
 # State Management
 
-Smithers uses real React, which means you can use any React state management solution. However, we strongly recommend **Zustand** for agent workflows.
+Smithers uses SolidJS's fine-grained reactivity system. You can use signals and stores to manage agent state with precision and performance.
 
-## Why Zustand?
+## Why SolidJS?
 
 <AccordionGroup>
+  <Accordion title="Fine-grained updates">
+    Only the parts of the plan that depend on changed state are re-evaluated. No full-tree re-renders.
+  </Accordion>
   <Accordion title="No stale closures">
-    Zustand's `get()` always returns the latest state. With `useState`, callbacks captured in closures can reference stale values.
+    Solid's signals always return the current value when called. You don't need dependency arrays or `useCallback`.
   </Accordion>
-  <Accordion title="Works outside React">
-    Access and update state from anywhere - callbacks, utilities, or even other modules.
+  <Accordion title="Simple mental model">
+    State is just values that change over time. Access them with `value()` and update them with `setValue(newValue)`.
   </Accordion>
-  <Accordion title="Simple API">
-    No providers, no context, no boilerplate. Just create a store and use it.
-  </Accordion>
-  <Accordion title="DevTools support">
-    Built-in support for Redux DevTools for debugging complex state flows.
+  <Accordion title="Mutable-like API with Stores">
+    Solid's `createStore` lets you update deeply nested state easily, while maintaining immutability under the hood.
   </Accordion>
 </AccordionGroup>
 
-## Basic Pattern
+## Basic Signals
+
+For simple state like strings, numbers, or booleans, use `createSignal`:
 
 ```tsx
-import { create } from 'zustand'
+import { createSignal } from 'solid-js'
 import { Claude, Phase, Step } from '@evmts/smithers'
 
-// Define your store
-const useAgentStore = create((set, get) => ({
-  // State
-  phase: 'research' as 'research' | 'analyze' | 'write',
-  findings: null as any,
-  analysis: null as any,
+function ResearchAgent(props) {
+  // Define signals
+  const [phase, setPhase] = createSignal('research')
+  const [findings, setFindings] = createSignal(null)
 
-  // Actions
-  setFindings: (findings) => set({ findings, phase: 'analyze' }),
-  setAnalysis: (analysis) => set({ analysis, phase: 'write' }),
-  reset: () => set({ phase: 'research', findings: null, analysis: null }),
-}))
+  // Use a closure to create a reactive effect (standard Smithers pattern)
+  return () => {
+    const p = phase()
 
-function ResearchAgent({ topic }) {
-  const { phase, findings, analysis, setFindings, setAnalysis } = useAgentStore()
+    if (p === 'research') {
+      return (
+        <Claude tools={[webSearch]} onFinished={(result) => {
+          setFindings(result)
+          setPhase('write')
+        }}>
+          Research {props.topic}.
+        </Claude>
+      )
+    }
 
-  if (phase === 'research') {
     return (
-      <Claude tools={[webSearch]} onFinished={setFindings}>
-        <Phase name="research">
-          <Step>Search for information about {topic}</Step>
-          <Step>Collect at least 5 sources</Step>
-        </Phase>
+      <Claude tools={[filesystem]}>
+        Write report based on: {JSON.stringify(findings())}
       </Claude>
     )
   }
+}
+```
 
-  if (phase === 'analyze') {
-    return (
-      <Claude onFinished={setAnalysis}>
-        <Phase name="analyze">
-          Analyze these findings: {JSON.stringify(findings)}
-          Identify key themes and insights.
-        </Phase>
-      </Claude>
-    )
+## Complex State with Stores
+
+For objects and arrays, use `createStore`. It provides a powerful path-syntax for updates:
+
+```tsx
+import { createStore } from 'solid-js/store'
+
+function ComplexAgent(props) {
+  const [state, setState] = createStore({
+    phase: 'research',
+    data: {
+      sources: [],
+      analysis: {},
+      metrics: { confidence: 0 }
+    }
+  })
+
+  const addSource = (source) => {
+    // Append to array without cloning the whole state
+    setState('data', 'sources', (prev) => [...prev, source])
   }
 
-  return (
-    <Claude tools={[filesystem]}>
-      <Phase name="write">
-        Write a comprehensive report based on:
-        - Findings: {JSON.stringify(findings)}
-        - Analysis: {JSON.stringify(analysis)}
-        Save to output/report.md
-      </Phase>
-    </Claude>
-  )
+  const updateMetric = (key, value) => {
+    // Deep update
+    setState('data', 'metrics', key, value)
+  }
+
+  return () => {
+    // ... logic using state.data.sources etc.
+  }
 }
 ```
 
-## The Stale Closure Problem
+## The "Stale Closure" Problem (Solved)
 
-Here's why Zustand matters. Consider this `useState` example:
+In React, you often struggle with closures capturing old state values. In Solid, this isn't an issue because you access state via function calls (`signal()`) or property access on a live proxy (`store.prop`).
 
 ```tsx
-// PROBLEMATIC: useState with closures
-function BadExample() {
-  const [results, setResults] = useState({})
-  const [topics] = useState(['AI', 'ML', 'DL'])
+// React (Problematic)
+/*
+const [count, setCount] = useState(0)
+useEffect(() => {
+  const timer = setInterval(() => {
+    console.log(count) // Always 0! captured in closure
+  }, 1000)
+}, [])
+*/
 
-  return (
-    <>
-      {topics.map(topic => (
-        <Subagent key={topic}>
-          <Claude onFinished={(data) => {
-            // BUG: `results` is always {} because this closure
-            // captured the initial value
-            setResults({ ...results, [topic]: data })
-          }}>
-            Research {topic}
-          </Claude>
-        </Subagent>
-      ))}
-    </>
-  )
-}
+// SolidJS (Correct)
+const [count, setCount] = createSignal(0)
+// This just works
+setInterval(() => {
+  console.log(count()) // Always prints current value
+}, 1000)
 ```
-
-When all three subagents complete, each callback has `results = {}`, so only the last one wins.
-
-```tsx
-// BETTER: useState with functional update
-function BetterExample() {
-  const [results, setResults] = useState({})
-  const [topics] = useState(['AI', 'ML', 'DL'])
-
-  return (
-    <>
-      {topics.map(topic => (
-        <Subagent key={topic}>
-          <Claude onFinished={(data) => {
-            // Use functional update to get latest state
-            setResults(prev => ({ ...prev, [topic]: data }))
-          }}>
-            Research {topic}
-          </Claude>
-        </Subagent>
-      ))}
-    </>
-  )
-}
-```
-
-This works, but Zustand is still cleaner for complex agent workflows:
-
-```tsx
-// CORRECT: Zustand solution
-const useStore = create((set) => ({
-  results: {},
-  addResult: (topic, data) => set((state) => ({
-    results: { ...state.results, [topic]: data }
-  })),
-}))
-
-function GoodExample() {
-  const { results, addResult } = useStore()
-  const topics = ['AI', 'ML', 'DL']
-
-  return (
-    <>
-      {topics.map(topic => (
-        <Subagent key={topic}>
-          <Claude onFinished={(data) => addResult(topic, data)}>
-            Research {topic}
-          </Claude>
-        </Subagent>
-      ))}
-    </>
-  )
-}
-```
-
-Zustand's updater function always receives the latest state.
 
 ## Complex State Machines
 
 For agents with complex flows, model explicit state machines:
 
 ```tsx
-const useWorkflowStore = create((set, get) => ({
-  // State machine
-  status: 'idle' as 'idle' | 'planning' | 'executing' | 'reviewing' | 'complete' | 'error',
+import { createStore } from 'solid-js/store'
 
-  // Data at each stage
-  plan: null as any,
-  results: [] as any[],
-  review: null as any,
-  error: null as Error | null,
-
-  // Transitions
-  startPlanning: () => set({ status: 'planning' }),
-
-  finishPlanning: (plan) => set({
-    plan,
-    status: 'executing',
-  }),
-
-  addResult: (result) => {
-    const { results: currentResults, plan } = get()
-    const results = [...currentResults, result]
-    const allDone = plan && results.length === plan.tasks.length
-    set({
-      results,
-      status: allDone ? 'reviewing' : 'executing',
-    })
-  },
-
-  finishReview: (review) => set({
-    review,
-    status: 'complete',
-  }),
-
-  handleError: (error) => set({
-    error,
-    status: 'error',
-  }),
-
-  reset: () => set({
-    status: 'idle',
+function WorkflowAgent() {
+  const [state, setState] = createStore({
+    status: 'idle', // idle | planning | executing | reviewing | complete
     plan: null,
     results: [],
-    review: null,
-    error: null,
-  }),
-}))
-```
-
-## Computed Values
-
-Use selectors for derived state:
-
-```tsx
-const useStore = create((set, get) => ({
-  tasks: [] as Task[],
-  completedIds: new Set<string>(),
+    error: null
+  })
 
   // Actions
-  addTask: (task) => set((s) => ({ tasks: [...s.tasks, task] })),
-  completeTask: (id) => set((s) => ({
-    completedIds: new Set([...s.completedIds, id])
-  })),
-}))
+  const actions = {
+    start: () => setState('status', 'planning'),
+    
+    setPlan: (plan) => setState({ plan, status: 'executing' }),
+    
+    addResult: (result) => {
+      setState('results', (prev) => [...prev, result])
+      
+      const allDone = state.results.length === state.plan.tasks.length
+      if (allDone) setState('status', 'reviewing')
+    },
+    
+    fail: (error) => setState({ error, status: 'error' })
+  }
 
-// Selectors (computed values)
-const selectPendingTasks = (state) =>
-  state.tasks.filter(t => !state.completedIds.has(t.id))
-
-const selectProgress = (state) =>
-  state.tasks.length > 0
-    ? state.completedIds.size / state.tasks.length
-    : 0
-
-// Usage in component
-function TaskAgent() {
-  const pendingTasks = useStore(selectPendingTasks)
-  const progress = useStore(selectProgress)
-
-  // ...
+  return () => {
+    switch (state.status) {
+      case 'idle':
+        return <Claude onFinished={actions.start}>Ready?</Claude>
+      
+      case 'planning':
+        return <Claude onFinished={actions.setPlan}>Create plan...</Claude>
+        
+      // ... cases
+    }
+  }
 }
 ```
 
-## Persisting State
+## Derived State (Computed Values)
 
-For long-running agents, persist state to resume after interruption:
+Use memos (`createMemo`) or simple functions for derived state. Solid tracks dependencies automatically.
 
 ```tsx
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createMemo } from 'solid-js'
 
-const useAgentStore = create(
-  persist(
-    (set, get) => ({
-      phase: 'start',
-      data: {},
-      // ... actions
-    }),
-    {
-      name: 'agent-state', // localStorage key
-    }
+function TaskAgent(props) {
+  const [tasks, setTasks] = createSignal([])
+  
+  // Computed value - updates only when tasks() changes
+  const completedCount = createMemo(() => 
+    tasks().filter(t => t.done).length
   )
-)
-```
-
-## Multiple Stores
-
-For complex agents, split state into focused stores:
-
-```tsx
-// Research data
-const useResearchStore = create((set) => ({
-  sources: [],
-  addSource: (source) => set((s) => ({ sources: [...s.sources, source] })),
-}))
-
-// Execution progress
-const useProgressStore = create((set) => ({
-  currentPhase: 'init',
-  completedSteps: 0,
-  setPhase: (phase) => set({ currentPhase: phase }),
-  incrementSteps: () => set((s) => ({ completedSteps: s.completedSteps + 1 })),
-}))
-
-// Error handling
-const useErrorStore = create((set) => ({
-  errors: [],
-  addError: (error) => set((s) => ({ errors: [...s.errors, error] })),
-  clearErrors: () => set({ errors: [] }),
-}))
-```
-
-## Debugging with DevTools
-
-Enable Redux DevTools for state inspection:
-
-```tsx
-import { create } from 'zustand'
-import { devtools } from 'zustand/middleware'
-
-const useAgentStore = create(
-  devtools(
-    (set) => ({
-      phase: 'init',
-      setPhase: (phase) => set({ phase }, false, 'setPhase'),
-    }),
-    { name: 'AgentStore' }
+  
+  const progress = createMemo(() => 
+    tasks().length > 0 ? completedCount() / tasks().length : 0
   )
-)
-```
 
-Open Redux DevTools in your browser to see state changes in real-time.
+  return () => (
+    <Claude>
+      Status: {Math.round(progress() * 100)}% complete
+      ({completedCount()} / {tasks().length} tasks)
+    </Claude>
+  )
+}
+```
 
 ## Best Practices
 
 <CardGroup cols={2}>
-  <Card title="Use Zustand over useState" icon="check">
-    Avoid stale closure bugs with Zustand's functional updates
+  <Card title="Use Stores for Objects" icon="layer-group">
+    `createStore` makes handling nested data and arrays much easier than `createSignal`.
   </Card>
-  <Card title="Model explicit phases" icon="diagram-project">
-    Use a `phase` or `status` field to drive conditional rendering
+  <Card title="Return a Closure" icon="code">
+    Return `() => JSX` from your main component to ensure reactivity works as expected in the Smithers loop.
   </Card>
-  <Card title="Colocate related state" icon="layer-group">
-    Keep related data and actions in the same store
+  <Card title="Colocate Actions" icon="bolt">
+    Define state helper functions (actions) inside your component or extract them to a custom hook.
   </Card>
-  <Card title="Use selectors" icon="filter">
-    Derive computed values with selector functions
+  <Card title="Use Memos" icon="calculator">
+    Use `createMemo` for expensive calculations derived from state.
   </Card>
 </CardGroup>
 

@@ -14,7 +14,7 @@ Each iteration of the loop is called a "frame". Here's what happens in each fram
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  1. RENDER                                                  │
-│     JSX Components → SmithersNode Tree → XML Plan                │
+│     JSX Components → SmithersNode Tree → XML Plan           │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -29,7 +29,7 @@ Each iteration of the loop is called a "frame". Here's what happens in each fram
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │  4. UPDATE                                                  │
-│     onFinished callbacks update React state                 │
+│     onFinished callbacks update SolidJS signals             │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -44,7 +44,7 @@ The loop continues until there are no more pending `<Claude>` nodes to execute.
 
 <AccordionGroup>
   <Accordion title="Simple mental model">
-    You don't need to think about complex orchestration. Write React components with conditional rendering, and the loop handles execution.
+    You don't need to think about complex orchestration. Write SolidJS components with conditional rendering, and the loop handles execution.
   </Accordion>
   <Accordion title="Emergent behavior">
     Complex multi-step workflows emerge naturally from simple state transitions. Each render produces a new plan based on current state.
@@ -62,26 +62,32 @@ The loop continues until there are no more pending `<Claude>` nodes to execute.
 Let's trace through a simple multi-phase agent:
 
 ```tsx
-function ResearchAgent({ topic }) {
-  const [phase, setPhase] = useState('research')
-  const [findings, setFindings] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (phase === 'research') {
+function ResearchAgent(props) {
+  const [phase, setPhase] = createSignal('research')
+  const [findings, setFindings] = createSignal(null)
+
+  return () => {
+    const p = phase()
+
+    if (p === 'research') {
+      return (
+        <Claude onFinished={(data) => {
+          setFindings(data)
+          setPhase('write')
+        }}>
+          Research {props.topic}. Find key facts.
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={(data) => {
-        setFindings(data)
-        setPhase('write')
-      }}>
-        Research {topic}. Find key facts.
+      <Claude>
+        Write a report based on: {JSON.stringify(findings())}
       </Claude>
     )
   }
-
-  return (
-    <Claude>
-      Write a report based on: {JSON.stringify(findings)}
-    </Claude>
-  )
 }
 ```
 
@@ -124,32 +130,36 @@ No pending `<Claude>` nodes remain. The loop exits and returns the final result.
 When multiple `<Subagent>` components render, they execute in parallel within the same frame:
 
 ```tsx
-function ParallelResearch({ topics }) {
-  const [results, setResults] = useState({})
+import { createStore } from 'solid-js/store'
 
-  const pending = topics.filter(t => !results[t])
+function ParallelResearch(props) {
+  const [results, setResults] = createStore({})
 
-  if (pending.length > 0) {
+  return () => {
+    const pending = props.topics.filter(t => !results[t])
+
+    if (pending.length > 0) {
+      return (
+        <>
+          {pending.map(topic => (
+            <Subagent key={topic} name={`researcher-${topic}`}>
+              <Claude onFinished={(data) => {
+                setResults(topic, data)
+              }}>
+                Research: {topic}
+              </Claude>
+            </Subagent>
+          ))}
+        </>
+      )
+    }
+
     return (
-      <>
-        {pending.map(topic => (
-          <Subagent key={topic} name={`researcher-${topic}`}>
-            <Claude onFinished={(data) => {
-              setResults(prev => ({ ...prev, [topic]: data }))
-            }}>
-              Research: {topic}
-            </Claude>
-          </Subagent>
-        ))}
-      </>
+      <Claude>
+        Synthesize results: {JSON.stringify(results)}
+      </Claude>
     )
   }
-
-  return (
-    <Claude>
-      Synthesize results: {JSON.stringify(results)}
-    </Claude>
-  )
 }
 ```
 
@@ -227,7 +237,7 @@ Access frame-level information in code:
 ```tsx
 import { executePlan } from '@evmts/smithers'
 
-const result = await executePlan(<MyAgent />, {
+const result = await executePlan(() => <MyAgent />, {
   maxFrames: 50,
   onPlan: (xml, frame) => {
     console.log(`Frame ${frame}:`)
@@ -246,7 +256,7 @@ console.log('Final output:', result.output)
 
 <CardGroup cols={2}>
   <Card title="State Management" icon="database" href="/concepts/state-management">
-    Learn Zustand patterns for managing agent state
+    Learn SolidJS patterns for managing agent state
   </Card>
   <Card title="Subagent Component" icon="layer-group" href="/components/subagent">
     Deep dive into parallel execution

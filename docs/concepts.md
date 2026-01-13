@@ -40,18 +40,20 @@ Renders to:
 </claude>
 ```
 
-## React State
+## Solid State
 
-Smithers uses real React. State management works exactly as you'd expect:
+Smithers uses SolidJS. State management works using signals and stores:
 
 ```tsx
-function MyAgent() {
-  const [findings, setFindings] = useState(null)
+import { createSignal } from 'solid-js'
 
-  return (
+function MyAgent() {
+  const [findings, setFindings] = createSignal(null)
+
+  return () => (
     <Claude onFinished={setFindings}>
-      {findings
-        ? <Phase name="report">Summarize: {findings}</Phase>
+      {findings()
+        ? <Phase name="report">Summarize: {findings()}</Phase>
         : <Phase name="research">Find relevant information.</Phase>
       }
     </Claude>
@@ -59,7 +61,7 @@ function MyAgent() {
 }
 ```
 
-State changes trigger re-renders, producing new plans.
+State changes trigger fine-grained updates, producing new plans.
 
 ## The Ralph Wiggum Loop
 

@@ -29,7 +29,9 @@ Each agent works in its own worktree, can commit to its own branch, and won't co
 ## Component API
 
 ```tsx
-interface WorktreeProps {
+import { ParentProps } from 'solid-js'
+
+interface WorktreeProps extends ParentProps {
   /** Path where the worktree will be created (relative or absolute) */
   path: string
 
@@ -45,9 +47,6 @@ interface WorktreeProps {
 
   /** Base ref to branch from when creating a new branch (default: 'HEAD') */
   base?: string
-
-  /** React children (Claude, ClaudeApi, or other components) */
-  children: React.ReactNode
 }
 
 <Worktree
@@ -79,7 +78,7 @@ When the Worktree component is executed:
    # Without branch (detached HEAD at base ref)
    git worktree add -- <path> [<commit-ish>]
    ```
-4. **Set execution context**: Store worktree path in React Context for child components
+4. **Set execution context**: Store worktree path in Solid Context for child components
 
 ### 2. Execution
 
@@ -98,16 +97,18 @@ If `cleanup={true}`:
    - Default: Fail with error if worktree has uncommitted changes
    - Option: Force removal with `--force` flag (loses changes)
 
-## React Context Pattern
+## Context Pattern
 
-The Worktree component uses React Context to pass the `cwd` to all descendant components:
+The Worktree component uses Solid Context to pass the `cwd` to all descendant components:
 
 ```typescript
+import { createContext, useContext } from 'solid-js'
+
 interface WorktreeContext {
   cwd: string | null  // null = use process.cwd()
 }
 
-const WorktreeContext = React.createContext<WorktreeContext>({ cwd: null })
+const WorktreeContext = createContext<WorktreeContext>({ cwd: null })
 
 // In Claude executor
 function executeWithClaude(node: SmithersNode, config: ExecutionConfig) {
@@ -214,45 +215,46 @@ Use descriptive branch names that indicate the agent's purpose:
 ## Example: Parallel Feature Development
 
 ```tsx
-import { create } from 'zustand'
-
-const useStore = create((set, get) => ({
-  features: ['auth', 'dark-mode', 'notifications'],
-  completedFeatures: [],
-  markComplete: (feature) =>
-    set({ completedFeatures: [...get().completedFeatures, feature] }),
-}))
+import { createStore } from 'solid-js/store'
+import { For } from 'solid-js'
 
 export default function ParallelDevelopment() {
-  const features = useStore((s) => s.features)
-  const completedFeatures = useStore((s) => s.completedFeatures)
-  const markComplete = useStore((s) => s.markComplete)
+  const [state, setState] = createStore({
+    features: ['auth', 'dark-mode', 'notifications'],
+    completedFeatures: [] as string[],
+  })
 
-  // Stop when all features complete
-  if (completedFeatures.length === features.length) {
-    return <Stop reason="All features implemented" />
+  const markComplete = (feature: string) => {
+    setState('completedFeatures', (prev) => [...prev, feature])
   }
 
-  return (
-    <Subagent parallel>
-      {features
-        .filter(f => !completedFeatures.includes(f))
-        .map(feature => (
-          <Worktree
-            key={feature}
-            path={`./worktrees/${feature}`}
-            branch={`feature/${feature}`}
-            cleanup={false}
-          >
-            <Claude onFinished={() => markComplete(feature)}>
-              Implement {feature} feature. When done, commit your changes
-              to the current branch.
-            </Claude>
-          </Worktree>
-        ))
-      }
-    </Subagent>
-  )
+  // Use a derived check for completion
+  return () => {
+    if (state.completedFeatures.length === state.features.length) {
+      return <Stop reason="All features implemented" />
+    }
+
+    const pendingFeatures = state.features.filter(f => !state.completedFeatures.includes(f))
+
+    return (
+      <Subagent parallel>
+        <For each={pendingFeatures}>
+          {(feature) => (
+            <Worktree
+              path={`./worktrees/${feature}`}
+              branch={`feature/${feature}`}
+              cleanup={false}
+            >
+              <Claude onFinished={() => markComplete(feature)}>
+                Implement {feature} feature. When done, commit your changes
+                to the current branch.
+              </Claude>
+            </Worktree>
+          )}
+        </For>
+      </Subagent>
+    )
+  }
 }
 ```
 
@@ -294,17 +296,17 @@ interface WorktreeExecutionResult {
 
 ### Context Provider Implementation
 
-The Worktree component will use React Context to pass `cwd` to descendants:
+The Worktree component will use Solid Context to pass `cwd` to descendants:
 
 ```tsx
-export function Worktree({ path, branch, cleanup = false, base = 'HEAD', children }: WorktreeProps) {
-  // This is just the React component definition
+export function Worktree(props: WorktreeProps) {
+  // This is just the Solid component definition
   // The actual worktree creation happens in the executor
-  const absolutePath = resolvePath(path)
+  const absolutePath = () => resolvePath(props.path)
 
   return (
-    <WorktreeContext.Provider value={{ cwd: absolutePath }}>
-      {children}
+    <WorktreeContext.Provider value={{ cwd: absolutePath() }}>
+      {props.children}
     </WorktreeContext.Provider>
   )
 }

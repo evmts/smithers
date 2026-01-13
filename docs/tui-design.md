@@ -120,40 +120,42 @@ Examples:
 Main entry point that sets up the TUI application.
 
 ```typescript
+import { createSignal } from 'solid-js'
+
 interface TUIAppProps {
   executionState: ExecutionState
   onCancel?: () => void
 }
 
-export function TUIApp({ executionState, onCancel }: TUIAppProps) {
-  const [view, setView] = useState<'tree' | 'detail' | 'split'>('tree')
-  const [selectedNode, setSelectedNode] = useState<SmithersNode | null>(null)
+export function TUIApp(props: TUIAppProps) {
+  const [view, setView] = createSignal<'tree' | 'detail' | 'split'>('tree')
+  const [selectedNode, setSelectedNode] = createSignal<SmithersNode | null>(null)
 
   return (
     <box>
-      {view === 'tree' && (
+      {view() === 'tree' && (
         <TreeView
-          tree={executionState.tree}
+          tree={props.executionState.tree}
           onSelect={setSelectedNode}
         />
       )}
-      {view === 'detail' && selectedNode && (
+      {view() === 'detail' && selectedNode() && (
         <AgentPanel
-          node={selectedNode}
+          node={selectedNode()}
           onBack={() => setView('tree')}
         />
       )}
-      {view === 'split' && (
+      {view() === 'split' && (
         <SplitView
-          tree={executionState.tree}
-          selectedNode={selectedNode}
+          tree={props.executionState.tree}
+          selectedNode={selectedNode()}
           onSelect={setSelectedNode}
         />
       )}
       <StatusBar
-        frame={executionState.currentFrame}
-        elapsed={executionState.elapsedTime}
-        view={view}
+        frame={props.executionState.currentFrame}
+        elapsed={props.executionState.elapsedTime}
+        view={view()}
       />
     </box>
   )
@@ -165,53 +167,58 @@ export function TUIApp({ executionState, onCancel }: TUIAppProps) {
 Displays the SmithersNode tree with keyboard navigation.
 
 ```typescript
+import { createSignal, createMemo } from 'solid-js'
+
 interface TreeViewProps {
   tree: SmithersNode
   onSelect: (node: SmithersNode) => void
 }
 
-export function TreeView({ tree, onSelect }: TreeViewProps) {
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(['ROOT']))
-  const [selectedPath, setSelectedPath] = useState<string>('ROOT')
-  const flatTree = useMemo(() => flattenTree(tree, expandedPaths), [tree, expandedPaths])
+export function TreeView(props: TreeViewProps) {
+  const [expandedPaths, setExpandedPaths] = createSignal<Set<string>>(new Set(['ROOT']))
+  const [selectedPath, setSelectedPath] = createSignal<string>('ROOT')
+  
+  // Memoize the flat tree structure
+  const flatTree = createMemo(() => flattenTree(props.tree, expandedPaths()))
 
   useKeyboard((event) => {
+    const list = flatTree()
     if (event.name === "up") {
       // Move selection up
-      const index = flatTree.findIndex(n => n.path === selectedPath)
-      if (index > 0) setSelectedPath(flatTree[index - 1].path)
+      const index = list.findIndex(n => n.path === selectedPath())
+      if (index > 0) setSelectedPath(list[index - 1].path)
     } else if (event.name === "down") {
       // Move selection down
-      const index = flatTree.findIndex(n => n.path === selectedPath)
-      if (index < flatTree.length - 1) setSelectedPath(flatTree[index + 1].path)
+      const index = list.findIndex(n => n.path === selectedPath())
+      if (index < list.length - 1) setSelectedPath(list[index + 1].path)
     } else if (event.name === "right") {
       // Expand node
-      setExpandedPaths(prev => new Set([...prev, selectedPath]))
+      setExpandedPaths(prev => new Set([...prev, selectedPath()]))
     } else if (event.name === "left") {
       // Collapse node
       setExpandedPaths(prev => {
         const next = new Set(prev)
-        next.delete(selectedPath)
+        next.delete(selectedPath())
         return next
       })
     } else if (event.name === "return") {
       // View details
-      const node = findNodeByPath(tree, selectedPath)
+      const node = findNodeByPath(props.tree, selectedPath())
       if (node && (node.type === 'claude' || node.type === 'subagent')) {
-        onSelect(node)
+        props.onSelect(node)
       }
     }
   })
 
   return (
     <scrollbox>
-      {flatTree.map((item) => (
+      {flatTree().map((item) => (
         <TreeNode
           key={item.path}
           node={item.node}
           depth={item.depth}
-          isExpanded={expandedPaths.has(item.path)}
-          isSelected={item.path === selectedPath}
+          isExpanded={expandedPaths().has(item.path)}
+          isSelected={item.path === selectedPath()}
         />
       ))}
     </scrollbox>
@@ -231,17 +238,18 @@ interface TreeNodeProps {
   isSelected: boolean
 }
 
-export function TreeNode({ node, depth, isExpanded, isSelected }: TreeNodeProps) {
-  const hasChildren = node.children.length > 0
-  const icon = getStatusIcon(node._execution?.status)
-  const expandIcon = hasChildren ? (isExpanded ? '▼' : '▶') : '  '
-  const indent = '  '.repeat(depth)
-  const label = formatNodeLabel(node)
-  const bgColor = isSelected ? 'blue' : 'transparent'
+export function TreeNode(props: TreeNodeProps) {
+  // In Solid, props are reactive getters
+  const hasChildren = () => props.node.children.length > 0
+  const icon = () => getStatusIcon(props.node._execution?.status)
+  const expandIcon = () => hasChildren() ? (props.isExpanded ? '▼' : '▶') : '  '
+  const indent = () => '  '.repeat(props.depth)
+  const label = () => formatNodeLabel(props.node)
+  const bgColor = () => props.isSelected ? 'blue' : 'transparent'
 
   return (
-    <text style={{ backgroundColor: bgColor }}>
-      {indent}{expandIcon} {label} [{icon} {node._execution?.status || 'pending'}]
+    <text style={{ backgroundColor: bgColor() }}>
+      {indent()}{expandIcon()} {label()} [{icon()} {props.node._execution?.status || 'pending'}]
     </text>
   )
 }
@@ -276,34 +284,34 @@ interface AgentPanelProps {
   onBack: () => void
 }
 
-export function AgentPanel({ node, onBack }: AgentPanelProps) {
+export function AgentPanel(props: AgentPanelProps) {
   useKeyboard((event) => {
     if (event.name === "escape") {
-      onBack()
+      props.onBack()
     }
   })
 
-  const prompt = extractPrompt(node)
-  const output = node._execution?.result?.output || ''
-  const status = node._execution?.status || 'pending'
+  const prompt = () => extractPrompt(props.node)
+  const output = () => props.node._execution?.result?.output || ''
+  const status = () => props.node._execution?.status || 'pending'
 
   return (
     <box border>
       <text style={{ fontWeight: 'bold' }}>Claude Agent Details</text>
-      <text>Status: {status}</text>
-      <text>Node Path: {node.path}</text>
-      <text>Content Hash: {node._execution?.contentHash?.substring(0, 10)}...</text>
+      <text>Status: {status()}</text>
+      <text>Node Path: {props.node.path}</text>
+      <text>Content Hash: {props.node._execution?.contentHash?.substring(0, 10)}...</text>
       
       <box border style={{ marginTop: 1 }}>
         <text style={{ fontWeight: 'bold' }}>─── Prompt ───</text>
-        <text>{prompt}</text>
+        <text>{prompt()}</text>
       </box>
       
       <box border style={{ marginTop: 1 }}>
-        <text style={{ fontWeight: 'bold' }}>─── Output {status === 'running' ? '(streaming)' : ''} ───</text>
+        <text style={{ fontWeight: 'bold' }}>─── Output {status() === 'running' ? '(streaming)' : ''} ───</text>
         <scrollbox>
-          <text>{output}</text>
-          {status === 'running' && <text>▌</text>}
+          <text>{output()}</text>
+          {status() === 'running' && <text>▌</text>}
         </scrollbox>
       </box>
     </box>
@@ -322,15 +330,15 @@ interface StatusBarProps {
   view: 'tree' | 'detail' | 'split'
 }
 
-export function StatusBar({ frame, elapsed, view }: StatusBarProps) {
-  const hints = getHintsForView(view)
+export function StatusBar(props: StatusBarProps) {
+  const hints = () => getHintsForView(props.view)
   
   return (
     <box style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'gray' }}>
       <text>
-        Frame {frame}/{frame === 0 ? '?' : '∞'} | 
-        Elapsed: {formatTime(elapsed)} | 
-        {hints.join(' | ')}
+        Frame {props.frame}/{props.frame === 0 ? '?' : '∞'} | 
+        Elapsed: {formatTime(props.elapsed)} | 
+        {hints().join(' | ')}
       </text>
     </box>
   )
@@ -358,7 +366,7 @@ interface SplitViewProps {
   onSelect: (node: SmithersNode) => void
 }
 
-export function SplitView({ tree, selectedNode, onSelect }: SplitViewProps) {
+export function SplitView(props: SplitViewProps) {
   const { width } = useTerminalDimensions()
   const treeWidth = Math.floor(width * 0.4)
   const panelWidth = width - treeWidth - 1
@@ -366,11 +374,11 @@ export function SplitView({ tree, selectedNode, onSelect }: SplitViewProps) {
   return (
     <box>
       <box style={{ width: treeWidth, borderRight: true }}>
-        <TreeView tree={tree} onSelect={onSelect} />
+        <TreeView tree={props.tree} onSelect={props.onSelect} />
       </box>
       <box style={{ width: panelWidth }}>
-        {selectedNode ? (
-          <AgentPanel node={selectedNode} onBack={() => {}} />
+        {props.selectedNode ? (
+          <AgentPanel node={props.selectedNode} onBack={() => {}} />
         ) : (
           <text>Select an agent to view details</text>
         )}
@@ -478,33 +486,38 @@ while (executing) {
 For trees with 100+ nodes, use virtual scrolling:
 
 ```typescript
-function VirtualTreeView({ tree, viewportHeight }: VirtualTreeViewProps) {
-  const flatTree = flattenTree(tree)
-  const [scrollOffset, setScrollOffset] = useState(0)
-  const visibleNodes = flatTree.slice(scrollOffset, scrollOffset + viewportHeight)
+import { createSignal } from 'solid-js'
+
+function VirtualTreeView(props: VirtualTreeViewProps) {
+  const flatTree = () => flattenTree(props.tree)
+  const [scrollOffset, setScrollOffset] = createSignal(0)
+  const visibleNodes = () => flatTree().slice(scrollOffset(), scrollOffset() + props.viewportHeight)
 
   return (
     <box>
-      {visibleNodes.map((node, i) => (
-        <TreeNode key={node.path} node={node} index={scrollOffset + i} />
+      {visibleNodes().map((node, i) => (
+        <TreeNode key={node.path} node={node} index={scrollOffset() + i} />
       ))}
     </box>
   )
 }
 ```
 
-### React.memo for Nodes
+### Fine-grained Reactivity for Nodes
 
 Prevent unnecessary re-renders:
 
+SolidJS uses fine-grained reactivity, so "re-rendering the entire tree" isn't the same bottleneck as in React. Individual DOM/TUI nodes update only when their specific dependent signals change.
+
 ```typescript
-export const TreeNode = React.memo(TreeNodeComponent, (prev, next) => {
+// TreeNode updates are naturally optimized by Solid
+export function TreeNode(props) {
+  // Changes to props.node._execution.status will update ONLY the status text/icon
+  // without re-running the component function or re-rendering siblings.
   return (
-    prev.node._execution?.status === next.node._execution?.status &&
-    prev.isSelected === next.isSelected &&
-    prev.isExpanded === next.isExpanded
+     <text>...</text>
   )
-})
+}
 ```
 
 ### Debounced Streaming Updates
@@ -645,6 +658,6 @@ describe('TUI Integration', () => {
 
 ## Related Documents
 
-- [TUI Research](./tui-research.md) - OpenTUI architecture and integration patterns
+- [TUI Research](./tui-research.md) - SolidJS-based TUI architecture
 - [VHS Recording](./vhs-recording.md) - Demo recording workflow
 - [CLI Commands](./cli-commands.md) - Interactive slash commands

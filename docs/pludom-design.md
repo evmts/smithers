@@ -1,53 +1,76 @@
 ---
-title: PluDom Design
+title: PluDom Design (Solid Renderer)
 description: Design notes for the custom renderer and execution model
 ---
 
-# PluDom Design Document
+# PluDom Design Document (Solid Renderer)
 
 ## Research Summary
 
-### How React Custom Renderers Work
+### How Solid Custom Renderers Work
 
-React's architecture separates the **reconciler** (diffing algorithm) from the **renderer** (platform-specific output). The `react-reconciler` package exposes this, letting us build custom renderers.
+Solid's architecture separates the **reactive runtime** (signals, effects) from the **renderer** (DOM, string, custom). The `solid-js/universal` package exposes `createRenderer`, letting us build custom renderers for any target.
 
-**Key insight**: React doesn't care what you render to. React DOM renders to browser DOM, React Native renders to native views, Ink renders to terminal. We render to XML plans.
+**Key insight**: Solid doesn't care what you render to. Solid DOM renders to browser DOM, Solid Native renders to native views. We render to an in-memory `SmithersNode` tree which is then serialized to XML plans.
 
-### Host Config
+### Renderer Config
 
-A custom renderer implements a "host config" - an object with methods the reconciler calls:
+A custom renderer implements a config object with methods `solid-js/universal` calls to manipulate the tree:
 
 ```typescript
-const hostConfig = {
-  // Create element nodes
-  createInstance(type, props) → node
-  createTextInstance(text) → textNode
+import { createRenderer } from 'solid-js/universal'
 
-  // Tree manipulation
-  appendInitialChild(parent, child)
-  appendChild(parent, child)
-  removeChild(parent, child)
-  insertBefore(parent, child, beforeChild)
+export function createSmithersSolidRenderer() {
+  return createRenderer<SmithersNode>({
+    // Create element nodes
+    createElement(type) {
+      return { type, props: {}, children: [], parent: null }
+    },
 
-  // Updates
-  commitUpdate(node, type, oldProps, newProps)
-  commitTextUpdate(textNode, oldText, newText)
+    // Create text nodes
+    createTextNode(text) {
+      return { type: 'TEXT', props: { value: text }, children: [], parent: null }
+    },
 
-  // Lifecycle
-  prepareForCommit(container)
-  resetAfterCommit(container)
-  finalizeInitialChildren(node, type, props)
+    // Updates
+    replaceText(node, text) {
+      node.props.value = text
+    },
 
-  // Config
-  supportsMutation: true  // We use mutation mode
+    setProperty(node, name, value) {
+      if (name !== 'children') node.props[name] = value
+    },
+
+    // Tree manipulation
+    insertNode(parent, node, anchor) {
+      node.parent = parent
+      if (anchor) {
+        const idx = parent.children.indexOf(anchor)
+        if (idx !== -1) parent.children.splice(idx, 0, node)
+      } else {
+        parent.children.push(node)
+      }
+    },
+
+    removeNode(parent, node) {
+      const idx = parent.children.indexOf(node)
+      if (idx >= 0) parent.children.splice(idx, 1)
+      node.parent = null
+    },
+
+    // Traversal
+    getParentNode(node) { return node.parent ?? undefined },
+    getFirstChild(node) { return node.children[0] },
+    getNextSibling(node) {
+      if (!node.parent) return undefined
+      const idx = node.parent.children.indexOf(node)
+      return idx !== -1 ? node.parent.children[idx + 1] : undefined
+    },
+
+    isTextNode(node) { return node.type === 'TEXT' }
+  })
 }
 ```
-
-### Rendering Modes
-
-1. **Mutation mode** (`supportsMutation: true`): Nodes are modified in place. This is what DOM uses. **We'll use this.**
-
-2. **Persistent mode**: Immutable trees, changes clone the whole subtree. More complex, not needed for us.
 
 ---
 
@@ -59,11 +82,12 @@ const hostConfig = {
 ┌─────────────────────────────────────────────────────────────┐
 │                        User Code                             │
 │  MDX/JSX → <Claude>, <Phase>, <Step>, <Subagent>, etc.      │
+│  (Using Solid Signals for State)                            │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                      PluDom Renderer                         │
-│  react-reconciler + Smithers Host Config → SmithersNode Tree     │
+│  solid-js/universal + Smithers Renderer Config → Node Tree   │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -74,32 +98,33 @@ const hostConfig = {
 ┌─────────────────────────────────────────────────────────────┐
 │                       Executor                               │
 │  XML Plan → Claude SDK calls → Results                      │
-│  Results → onFinished callbacks → State updates             │
-│  State updates → Re-render → New plan (Ralph Wiggum loop)   │
+│  Results → onFinished callbacks → Signal updates            │
+│  Signal updates → Fine-grained Re-render → New plan         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Internal Node Representation
 
 ```typescript
-interface SmithersNode {
-  type: string                    // 'claude', 'phase', 'step', 'TEXT', etc.
-  props: Record<string, any>      // Component props
-  children: SmithersNode[]             // Child nodes
-  parent: SmithersNode | null          // Parent reference
+export interface ExecutionState {
+  status: 'pending' | 'running' | 'complete' | 'error'
+  result?: unknown
+  error?: Error
+  contentHash?: string
+}
 
-  // Execution state (used by executor)
-  _execution?: {
-    status: 'pending' | 'running' | 'complete' | 'error'
-    result?: any
-    error?: Error
-  }
+export interface SmithersNode {
+  type: string                    // 'claude', 'phase', 'step', 'TEXT', etc.
+  props: Record<string, unknown>  // Component props
+  children: SmithersNode[]        // Child nodes
+  parent: SmithersNode | null     // Parent reference
+  _execution?: ExecutionState     // Runtime execution state
 }
 ```
 
 ### Host Components
 
-These are the primitive "elements" our renderer understands (like `div`, `span` in DOM):
+These are the primitive "elements" our renderer understands (like `div`, `span` in DOM). In Solid, we typically don't wrap these in "Host Components" like React, but instead rely on the compiler or intrinsic elements.
 
 | Component | Purpose | Props |
 |-----------|---------|-------|
@@ -111,41 +136,6 @@ These are the primitive "elements" our renderer understands (like `div`, `span` 
 | `constraints` | Rules/limitations | (children only) |
 | `output-format` | Expected output schema | `schema` |
 
-### Exported Components (User-Facing)
-
-React treats lowercase as host components and uppercase as composite. We export uppercase wrappers:
-
-```typescript
-// These map to host components
-export function Claude(props: ClaudeProps): JSX.Element {
-  return createElement('claude', props)
-}
-
-export function Subagent(props: SubagentProps): JSX.Element {
-  return createElement('subagent', props)
-}
-
-export function Phase(props: PhaseProps): JSX.Element {
-  return createElement('phase', props)
-}
-
-export function Step(props: StepProps): JSX.Element {
-  return createElement('step', props)
-}
-
-export function Persona(props: PersonaProps): JSX.Element {
-  return createElement('persona', props)
-}
-
-export function Constraints(props: ConstraintsProps): JSX.Element {
-  return createElement('constraints', props)
-}
-
-export function OutputFormat(props: OutputFormatProps): JSX.Element {
-  return createElement('output-format', props)
-}
-```
-
 ---
 
 ## Component Details
@@ -155,12 +145,13 @@ export function OutputFormat(props: OutputFormatProps): JSX.Element {
 The core component. Represents a Claude agent invocation.
 
 ```tsx
-interface ClaudeProps {
-  tools?: Tool[]                    // MCP servers to connect
-  onFinished?: (output: any) => void  // Called with structured output
-  onError?: (error: Error) => void    // Called on failure
-  children: ReactNode                 // The prompt content
-  // ... additional SDK props pass through
+import { ParentProps } from 'solid-js'
+
+interface ClaudeProps extends ParentProps {
+  tools?: Tool[]
+  onFinished?: (output: any) => void
+  onError?: (error: Error) => void
+  // ... additional SDK props
 }
 ```
 
@@ -172,90 +163,39 @@ interface ClaudeProps {
 3. Call Claude SDK
 4. Parse response
 5. Call `onFinished` with result
-6. State update triggers re-render
+6. Signal update triggers fine-grained updates to the tree
 
 ### `<Subagent>`
 
-A parallel execution boundary. Children run concurrently with siblings.
+A parallel execution boundary.
 
 ```tsx
-interface SubagentProps {
-  name?: string          // Identifier for logs/debugging
-  parallel?: boolean     // Default true - run without blocking
-  children: ReactNode    // Usually contains <Claude>
+interface SubagentProps extends ParentProps {
+  name?: string
+  parallel?: boolean
 }
-```
-
-**Rendering**: Serializes to `<subagent name="...">` XML.
-
-**Execution**: Spawns concurrent execution. Parent doesn't wait unless `parallel={false}`.
-
-```tsx
-// Example: Two researchers run in parallel
-<>
-  <Subagent name="researcher-1">
-    <Claude onFinished={setFindings1}>Research topic A</Claude>
-  </Subagent>
-
-  <Subagent name="researcher-2">
-    <Claude onFinished={setFindings2}>Research topic B</Claude>
-  </Subagent>
-
-  {/* This renders when both complete and state updates */}
-  {findings1 && findings2 && (
-    <Claude>Combine: {findings1} and {findings2}</Claude>
-  )}
-</>
 ```
 
 ### `<Phase>` and `<Step>`
 
-Semantic markers for organizing plans. No special execution behavior.
+Semantic markers.
 
 ```tsx
 <Phase name="research">
   <Step>Search for relevant papers</Step>
   <Step>Extract key findings</Step>
 </Phase>
-
-<Phase name="synthesis">
-  <Step>Identify common themes</Step>
-  <Step>Write summary</Step>
-</Phase>
-```
-
-**Rendering**:
-```xml
-<phase name="research">
-  <step>Search for relevant papers</step>
-  <step>Extract key findings</step>
-</phase>
-<phase name="synthesis">
-  <step>Identify common themes</step>
-  <step>Write summary</step>
-</phase>
 ```
 
 ### `<Persona>`, `<Constraints>`, `<OutputFormat>`
 
-Prompt structure components. Render to semantic XML.
+Prompt structure components.
 
 ```tsx
 <Claude>
-  <Persona role="security expert">
-    10 years experience in application security.
-  </Persona>
-
-  <Constraints>
-    - Focus on OWASP Top 10
-    - Provide severity ratings
-  </Constraints>
-
-  <OutputFormat schema={{ vulnerabilities: 'array' }}>
-    Return JSON with vulnerabilities array.
-  </OutputFormat>
-
-  Review the authentication module.
+  <Persona role="security expert">...</Persona>
+  <Constraints>...</Constraints>
+  <OutputFormat schema={...} />
 </Claude>
 ```
 
@@ -268,22 +208,26 @@ Named after the simple, iterative approach: run the agent, get result, repeat.
 ### Loop Pseudocode
 
 ```typescript
-async function executePlan(element: ReactElement): Promise<any> {
-  const root = createSmithersRoot()
+import { render } from './renderer'
+
+async function executePlan(element: () => JSX.Element): Promise<any> {
+  // Create a root node for the renderer
+  const root: SmithersNode = { type: 'root', props: {}, children: [], parent: null }
+
+  // 1. Initial Render (Solid tracks dependencies)
+  // We pass a disposal function if we needed to clean up, but here we just render.
+  const dispose = render(element, root)
 
   while (true) {
-    // 1. Render JSX to SmithersNode tree
-    const tree = render(element, root)
-
-    // 2. Serialize to XML plan
-    const xmlPlan = serialize(tree)
+    // 2. Serialize current tree to XML plan
+    const xmlPlan = serialize(root)
 
     // 3. Find executable nodes (claude/subagent with pending status)
-    const executables = findPendingExecutables(tree)
+    const executables = findPendingExecutables(root)
 
     if (executables.length === 0) {
-      // Nothing left to execute - we're done
-      return extractResults(tree)
+      dispose()
+      return extractResults(root)
     }
 
     // 4. Execute nodes
@@ -293,13 +237,16 @@ async function executePlan(element: ReactElement): Promise<any> {
     const parallel = executables.filter(n => n.type === 'subagent')
 
     // Run first sequential + all parallel
+    // Note: Execution updates internal _execution state on nodes
+    // AND calls onFinished callbacks which update User Signals.
     await Promise.all([
       sequential[0] && executeNode(sequential[0]),
       ...parallel.map(executeNode)
     ])
 
-    // 5. State updates from onFinished trigger re-render
-    // The while loop continues with the new tree
+    // 5. Signal updates from onFinished trigger fine-grained updates
+    // Solid automatically updates the 'root' tree structure.
+    // The while loop continues with the updated tree.
   }
 }
 ```
@@ -308,12 +255,12 @@ async function executePlan(element: ReactElement): Promise<any> {
 
 Each "frame" is one iteration of the loop:
 
-1. **Render**: Current state → JSX → SmithersNode tree → XML
-2. **Display**: Show plan to user (Terraform-style approval)
-3. **Execute**: Run pending `<Claude>` / `<Subagent>` nodes
-4. **Update**: `onFinished` callbacks update React state
-5. **Re-render**: State change triggers new render
-6. **Repeat**: Loop until no pending executables
+1. **Render**: Solid Reactivity updates `SmithersNode` tree automatically.
+2. **Display**: Show plan to user.
+3. **Execute**: Run pending nodes.
+4. **Update**: `onFinished` callbacks update Solid signals.
+5. **Reactivity**: Signal changes trigger fine-grained DOM (Node) updates.
+6. **Repeat**: Loop until no pending executables.
 
 ---
 
@@ -323,129 +270,60 @@ Each "frame" is one iteration of the loop:
 
 ```typescript
 // Render JSX to XML string (no execution)
-export async function renderPlan(element: ReactElement): Promise<string>
+export async function renderPlan(element: () => JSX.Element): Promise<string>
 
 // Execute the plan with Ralph Wiggum loop
 export async function executePlan(
-  element: ReactElement,
+  element: () => JSX.Element,
   options?: ExecuteOptions
 ): Promise<ExecutionResult>
-
-// Create a root for manual control
-export function createRoot(): SmithersRoot
-
-interface ExecuteOptions {
-  autoApprove?: boolean      // Skip Terraform-style approval
-  onPlan?: (xml: string) => void  // Called before each execution
-  maxFrames?: number         // Safety limit
-}
-
-interface ExecutionResult {
-  output: any                // Final output
-  frames: number             // How many iterations
-  history: FrameHistory[]    // Full execution trace
-}
-```
-
-### Low-Level API
-
-```typescript
-interface SmithersRoot {
-  render(element: ReactElement): Promise<SmithersNode>
-  unmount(): void
-}
-
-// Serialize tree to XML
-export function serialize(node: SmithersNode): string
-
-// Find nodes ready for execution
-export function findPendingExecutables(tree: SmithersNode): SmithersNode[]
-
-// Execute a single node
-export async function executeNode(
-  node: SmithersNode,
-  onFinished?: (output: unknown) => void,
-  onError?: (error: Error) => void
-): Promise<void>
 ```
 
 ---
 
-## Implementation Plan (Current)
+## Implementation Plan
 
 ### Completed
 
-1. **Core renderer + reconciler** (`src/reconciler/*`)
-   - Mutation host config
-   - React 19 async commit handling
+1. **Core renderer** (`src/renderer.ts`)
+   - `solid-js/universal` implementation
+   - `SmithersNode` structure
 
-2. **Core API** (`src/core/*`)
-   - `renderPlan()` + `serialize()` for XML plans
-   - `executePlan()` Ralph Wiggum loop with state-aware re-renders
+2. **Core API** (`src/index.ts`)
+   - `renderPlan()`
+   - `executePlan()`
 
 3. **Components** (`src/components/index.ts`)
-   - Claude, Subagent, Phase, Step, Persona, Constraints, OutputFormat
+   - Solid functional components
 
-4. **CLI skeleton** (`src/cli/*`)
-   - `smithers run`, `smithers plan`, `smithers init` commands
+4. **CLI** (`packages/cli`)
+   - Updated to use Solid-based core
 
-5. **Evals** (`evals/*`)
-   - End-to-end coverage for major features
+### Next
 
-### Next (Priority Order)
-
-1. **Claude SDK integration**
-   - Harden Claude executor (config, retries, streaming)
-   - Implement tool-use execution loop + MCP wiring
-
-2. **Execution semantics**
-   - Implement `<Task>` and `<Stop>` components
-   - Ensure loop respects stop signals and task completion
-
-3. **CLI plan approval UX**
-   - Terraform-style plan display + approval prompt
-   - `--auto-approve` flow wired to executor
-
-4. **MDX entrypoint**
-   - MDX compilation pipeline
-   - CLI support for `.mdx` entry files
-
-5. **Quality + packaging**
-   - CLI integration tests
-   - Typecheck + coverage targets
-   - npm publishing workflow (changesets + CI)
+1. **TUI Implementation**
+   - Solid-based Terminal Renderer
 
 ---
 
 ## File Structure
 
 ```
-src/
+packages/smithers/src/
   index.ts              # Main exports
-  core/
-    render.ts           # Tree → XML conversion
-    execute.ts          # Ralph Wiggum loop
-    claude-executor.ts  # Claude SDK wrapper
-    types.ts            # Core types
-  reconciler/
-    host-config.ts      # react-reconciler host config
-    index.ts            # Reconciler setup
+  renderer.ts           # solid-js/universal renderer
+  root.ts               # Execution loop
+  claude-executor.ts    # Claude SDK wrapper
   components/
     index.ts            # All component exports
-  cli/
+packages/cli/src/
     index.ts            # CLI entry point
     commands/           # run/plan/init
-    display.ts          # Plan display
-    prompt.ts           # User approval
 ```
 
 ---
 
 ## References
 
-- [react-reconciler npm](https://www.npmjs.com/package/react-reconciler)
-- [react-reconciler README](https://github.com/facebook/react/blob/main/packages/react-reconciler/README.md)
-- [Making a Custom React Renderer](https://github.com/nitin42/Making-a-custom-React-renderer)
-- [Ink (terminal renderer)](https://github.com/vadimdemedes/ink)
-- [reconciled (simplified wrapper)](https://github.com/vadimdemedes/reconciled)
-- [react-xml-renderer](https://github.com/rettgerst/react-xml-renderer)
+- [solid-js/universal docs](https://www.solidjs.com/docs/latest/api#createrenderer)
+- [Making a Custom Solid Renderer](https://www.solidjs.com/guides/rendering#custom-renderers)
