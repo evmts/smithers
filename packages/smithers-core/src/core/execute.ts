@@ -10,6 +10,7 @@ import type {
   SmithersNode,
   Tool,
 } from './types.js'
+import { serialize } from './serialize.js'
 import { executeWithClaude, createExecutionError, getNodePath } from './claude-executor.js'
 import { executeWithClaudeCli } from './claude-cli-executor.js'
 import { executeWithAgentSdk, executeAgentMock } from './claude-agent-executor.js'
@@ -126,9 +127,9 @@ export async function executePlan(
       console.log(`[Frame ${frameNumber}] Rendering tree...`)
     }
 
-    // Call rerender callback if provided (for subsequent frames after the first)
+    // Call rerender callback if provided to get the latest tree with updated state
     // The rerender callback is responsible for re-rendering the tree with updated state
-    if (frameNumber > 1 && options.rerender) {
+    if (options.rerender) {
       tree = await options.rerender()
     }
 
@@ -545,7 +546,6 @@ export async function executePlan(
     }
 
     // Serialize the current tree to XML for logging
-    const { serialize } = await import('./serialize.js')
     const plan = serialize(tree)
 
     if (onPlan) {
@@ -957,7 +957,8 @@ function saveExecutionState(tree: SmithersNode, storage: Map<string, ExecutionSt
   function walk(node: SmithersNode, path: string[] = []) {
     const nodePath = [...path, node.type].join('/')
 
-    if ((node.type === 'claude' || node.type === 'claude-cli' || node.type === 'subagent') && node._execution) {
+    // Save execution state for all executable node types
+    if ((node.type === 'claude' || node.type === 'claude-cli' || node.type === 'claude-api' || node.type === 'subagent') && node._execution) {
       // Use stable node path as key to avoid collisions between identical nodes
       // Ensure contentHash is always set for change detection
       const stateToSave: ExecutionState = {
@@ -980,7 +981,9 @@ function restoreExecutionState(tree: SmithersNode, storage: Map<string, Executio
   function walk(node: SmithersNode, path: string[] = []) {
     const nodePath = [...path, node.type].join('/')
 
-    if (node.type === 'claude' || node.type === 'claude-cli') {
+    // Restore execution state for all executable node types
+    // Must match the node types saved in saveExecutionState
+    if (node.type === 'claude' || node.type === 'claude-cli' || node.type === 'claude-api' || node.type === 'subagent') {
       // Try to find execution state by stable node path
       const savedState = storage.get(nodePath)
       if (savedState) {
