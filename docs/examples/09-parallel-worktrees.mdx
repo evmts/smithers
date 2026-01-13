@@ -81,7 +81,7 @@ console.log('🚀 Parallel Feature Development Starting')
 console.log(`  Features: ${features.map(f => f.name).join(', ')}`)
 
 const result = await executePlan(
-  <ParallelFeatureDevelopment features={features} />
+  () => <ParallelFeatureDevelopment features={features} />
 )
 
 console.log('✅ All Features Complete')

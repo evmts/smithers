@@ -18,149 +18,134 @@ An AI-powered interface to common git commands using Smithers and the Bash tool.
 
 ```tsx
 import { Claude, executePlan } from '@evmts/smithers'
-import { create } from 'zustand'
-import { useEffect } from 'react'
+import { createStore } from 'solid-js/store'
+import { createEffect } from 'solid-js'
 
 interface GitHelperState {
   command: 'status' | 'commit' | 'branch' | 'log' | 'diff' | 'done'
   result: string | null
-  setCommand: (command: GitHelperState['command']) => void
-  setResult: (result: string) => void
 }
 
-const useStore = create<GitHelperState>((set) => ({
-  command: 'status',
-  result: null,
-  setCommand: (command) => set({ command }),
-  setResult: (result) => set({ result }),
-}))
-
-function GitHelper({
-  operation,
-  ...args
-}: {
+function GitHelper(props: {
   operation: string
-  [key: string]: any
+  message?: string
+  branch?: string
+  count?: number
+  file?: string
 }) {
-  const { command, setCommand, setResult } = useStore()
+  const [state, setState] = createStore<GitHelperState>({
+    command: (props.operation as GitHelperState['command']) || 'status',
+    result: null,
+  })
 
-  // Initialize command from operation prop on mount
-  useEffect(() => {
-    setCommand(operation as GitHelperState['command'])
-  }, [operation, setCommand])
-
-  // Status command
-  if (command === 'status') {
-    return (
-      <Claude
-        allowedTools={['Bash']}
-        onFinished={(result) => {
-          setResult(result.text)
-          setCommand('done')
-        }}
-      >
-        Run `git status` and provide a summary of:
-        - Modified files
-        - Untracked files
-        - Branch information
-        - Whether there are changes to commit
-
-        Format the output in a clear, readable way.
-      </Claude>
-    )
-  }
-
-  // Commit command
-  if (command === 'commit') {
-    const message = args.message || 'Update files'
-
-    return (
-      <Claude
-        allowedTools={['Bash']}
-        onFinished={(result) => {
-          setResult(result.text)
-          setCommand('done')
-        }}
-      >
-        Create a git commit:
-        1. Stage all changed files with `git add -A`
-        2. Create commit with message: {message}
-        3. Show the commit hash and summary
-      </Claude>
-    )
-  }
-
-  // Branch command
-  if (command === 'branch') {
-    const newBranch = args.branch
-
-    if (newBranch) {
+  return () => {
+    // Status command
+    if (state.command === 'status') {
       return (
         <Claude
           allowedTools={['Bash']}
           onFinished={(result) => {
-            setResult(result.text)
-            setCommand('done')
+            setState({ result: result.text, command: 'done' })
           }}
         >
-          Create and switch to new branch: {newBranch}
+          Run `git status` and provide a summary of:
+          - Modified files
+          - Untracked files
+          - Branch information
+          - Whether there are changes to commit
+
+          Format the output in a clear, readable way.
         </Claude>
       )
     }
 
-    return (
-      <Claude
-        allowedTools={['Bash']}
-        onFinished={(result) => {
-          setResult(result.text)
-          setCommand('done')
-        }}
-      >
-        List all git branches with current branch highlighted
-      </Claude>
-    )
+    // Commit command
+    if (state.command === 'commit') {
+      const message = props.message || 'Update files'
+
+      return (
+        <Claude
+          allowedTools={['Bash']}
+          onFinished={(result) => {
+            setState({ result: result.text, command: 'done' })
+          }}
+        >
+          Create a git commit:
+          1. Stage all changed files with `git add -A`
+          2. Create commit with message: {message}
+          3. Show the commit hash and summary
+        </Claude>
+      )
+    }
+
+    // Branch command
+    if (state.command === 'branch') {
+      const newBranch = props.branch
+
+      if (newBranch) {
+        return (
+          <Claude
+            allowedTools={['Bash']}
+            onFinished={(result) => {
+              setState({ result: result.text, command: 'done' })
+            }}
+          >
+            Create and switch to new branch: {newBranch}
+          </Claude>
+        )
+      }
+
+      return (
+        <Claude
+          allowedTools={['Bash']}
+          onFinished={(result) => {
+            setState({ result: result.text, command: 'done' })
+          }}
+        >
+          List all git branches with current branch highlighted
+        </Claude>
+      )
+    }
+
+    // Log command
+    if (state.command === 'log') {
+      const count = props.count || 5
+
+      return (
+        <Claude
+          allowedTools={['Bash']}
+          onFinished={(result) => {
+            setState({ result: result.text, command: 'done' })
+          }}
+        >
+          Show last {count} git commits with:
+          - Commit hash (short)
+          - Author
+          - Date
+          - Commit message
+        </Claude>
+      )
+    }
+
+    // Diff command
+    if (state.command === 'diff') {
+      const file = props.file
+
+      return (
+        <Claude
+          allowedTools={['Bash']}
+          onFinished={(result) => {
+            setState({ result: result.text, command: 'done' })
+          }}
+        >
+          Show git diff for {file || 'all changed files'}
+          Summarize the changes in a readable format
+        </Claude>
+      )
+    }
+
+    return null // Done
   }
-
-  // Log command
-  if (command === 'log') {
-    const count = args.count || 5
-
-    return (
-      <Claude
-        allowedTools={['Bash']}
-        onFinished={(result) => {
-          setResult(result.text)
-          setCommand('done')
-        }}
-      >
-        Show last {count} git commits with:
-        - Commit hash (short)
-        - Author
-        - Date
-        - Commit message
-      </Claude>
-    )
-  }
-
-  // Diff command
-  if (command === 'diff') {
-    const file = args.file
-
-    return (
-      <Claude
-        allowedTools={['Bash']}
-        onFinished={(result) => {
-          setResult(result.text)
-          setCommand('done')
-        }}
-      >
-        Show git diff for {file || 'all changed files'}
-        Summarize the changes in a readable format
-      </Claude>
-    )
-  }
-
-  return null // Done
 }
 
 // CLI execution
@@ -174,7 +159,7 @@ const args = {
 
 console.log(`🔧 Git Helper - ${operation}`)
 
-await executePlan(<GitHelper operation={operation} {...args} />)
+await executePlan(() => <GitHelper operation={operation} {...args} />)
 
 console.log('✅ Git operation complete')
 ```
@@ -254,10 +239,12 @@ Claude can execute git commands and interpret the output.
 Uses state management to route to different command handlers:
 
 ```tsx
-const useStore = create((set) => ({
-  command: 'status',
-  setCommand: (cmd) => set({ command: cmd }),
-}))
+const [state, setState] = createStore({
+  command: 'status'
+})
+
+// Update command
+setState('command', cmd)
 ```
 
 Based on the `command` state, different Claude agents are rendered.
