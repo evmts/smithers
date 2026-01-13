@@ -10,7 +10,7 @@ const App: Component = () => {
   const [view, setView] = createSignal<'tree' | 'logs'>('tree')
 
   onMount(() => {
-    // Initialize WebSocket connection to receive CLI updates
+    // Initialize Tauri event listener to receive CLI updates
     const cleanup = initWebSocket()
     onCleanup(cleanup)
   })
@@ -22,6 +22,69 @@ const App: Component = () => {
         onViewChange={setView}
         currentView={view()}
       />
+
+      {/* Frame navigation */}
+      <div style={{
+        padding: '8px 16px',
+        background: '#2a2a3e',
+        color: '#ccc',
+        'font-size': '13px',
+        display: 'flex',
+        'align-items': 'center',
+        gap: '16px',
+        'border-bottom': '1px solid #333'
+      }}>
+        <span style={{ color: '#888' }}>
+          Frame: {store.viewingFrame() ?? store.totalFrames()} / {store.totalFrames()}
+        </span>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => store.goToPrevFrame()}
+            disabled={store.totalFrames() === 0}
+            style={{
+              padding: '4px 12px',
+              background: '#3a3a4e',
+              border: 'none',
+              'border-radius': '4px',
+              color: '#ccc',
+              cursor: 'pointer'
+            }}
+          >
+            ← Prev
+          </button>
+          <button
+            onClick={() => store.goToNextFrame()}
+            disabled={store.viewingFrame() === null}
+            style={{
+              padding: '4px 12px',
+              background: '#3a3a4e',
+              border: 'none',
+              'border-radius': '4px',
+              color: '#ccc',
+              cursor: 'pointer'
+            }}
+          >
+            Next →
+          </button>
+          <button
+            onClick={() => store.goToLatest()}
+            disabled={store.viewingFrame() === null}
+            style={{
+              padding: '4px 12px',
+              background: store.viewingFrame() === null ? '#3a3a4e' : '#3498db',
+              border: 'none',
+              'border-radius': '4px',
+              color: '#fff',
+              cursor: 'pointer'
+            }}
+          >
+            Latest
+          </button>
+        </div>
+        <span style={{ color: '#666', 'margin-left': 'auto' }}>
+          Events: {store.events().length}
+        </span>
+      </div>
 
       <div class="main-content">
         <div class="left-panel">

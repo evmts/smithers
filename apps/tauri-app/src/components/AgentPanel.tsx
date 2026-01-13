@@ -69,15 +69,24 @@ export const AgentPanel: Component<AgentPanelProps> = (props) => {
         )}
       </Show>
 
-      <Show when={nodeInfo()?.props.children}>
-        {(children) => (
-          <div class="section">
-            <h3>Prompt</h3>
-            <div class="prompt-content">
-              {String(children())}
-            </div>
+      {/* Show text content for TEXT nodes */}
+      <Show when={nodeInfo()?.type === 'TEXT' && nodeInfo()?.props.value}>
+        <div class="section">
+          <h3>Text Content</h3>
+          <div class="prompt-content">
+            {String(nodeInfo()?.props.value)}
           </div>
-        )}
+        </div>
+      </Show>
+
+      {/* Show props for non-TEXT nodes */}
+      <Show when={nodeInfo()?.type !== 'TEXT' && Object.keys(nodeInfo()?.props || {}).length > 0}>
+        <div class="section">
+          <h3>Props</h3>
+          <div class="props-content">
+            {JSON.stringify(nodeInfo()?.props, null, 2)}
+          </div>
+        </div>
       </Show>
 
       <Show when={nodeOutput()}>
@@ -153,7 +162,8 @@ export const AgentPanel: Component<AgentPanelProps> = (props) => {
         }
 
         .prompt-content,
-        .output-content {
+        .output-content,
+        .props-content {
           background: #16162a;
           border-radius: 6px;
           padding: 12px;
@@ -172,6 +182,10 @@ export const AgentPanel: Component<AgentPanelProps> = (props) => {
 
         .output-content {
           color: #27ae60;
+        }
+
+        .props-content {
+          color: #e0c46c;
         }
 
         .error-content {

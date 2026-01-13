@@ -8,7 +8,7 @@ import type {
   NodeOutputMessage,
   ExecutionEventMessage,
 } from '@evmts/smithers-protocol'
-import { WS_PORT } from '@evmts/smithers-protocol'
+// WS_PORT used by Rust backend, not needed in frontend
 
 export interface Session {
   id: string
@@ -29,11 +29,21 @@ export interface NodeOutput {
   error?: string
 }
 
+// Tree history entry
+interface TreeFrame {
+  frame: number
+  tree: SmithersNodeSnapshot
+  timestamp: number
+}
+
 // Create reactive store using Solid's primitives
 function createExecutionStore() {
   const [sessions, setSessions] = createSignal<Record<string, Session>>({})
   const [currentSessionId, setCurrentSessionId] = createSignal<string | null>(null)
-  const [trees, setTrees] = createSignal<Record<string, SmithersNodeSnapshot>>({})
+  // Store full history of trees per session
+  const [treeHistory, setTreeHistory] = createSignal<Record<string, TreeFrame[]>>({})
+  // Current frame being viewed (null = latest)
+  const [viewingFrame, setViewingFrame] = createSignal<number | null>(null)
   const [nodeOutputs, setNodeOutputs] = createSignal<Record<string, NodeOutput>>({})
   const [selectedNode, setSelectedNode] = createSignal<string | null>(null)
   const [isConnected, setIsConnected] = createSignal(false)
@@ -95,10 +105,20 @@ function createExecutionStore() {
   }
 
   function handleTreeUpdate(msg: TreeUpdateMessage) {
-    setTrees((prev) => ({
-      ...prev,
-      [msg.sessionId]: msg.tree,
-    }))
+    // Add to history
+    setTreeHistory((prev) => {
+      const history = prev[msg.sessionId] || []
+      return {
+        ...prev,
+        [msg.sessionId]: [...history, {
+          frame: msg.frame,
+          tree: msg.tree,
+          timestamp: msg.timestamp,
+        }],
+      }
+    })
+    // Auto-follow latest frame
+    setViewingFrame(null)
     setSessions((prev) => {
       const session = prev[msg.sessionId]
       if (!session) return prev
@@ -135,7 +155,7 @@ function createExecutionStore() {
     // State
     sessions,
     currentSessionId,
-    trees,
+    treeHistory,
     nodeOutputs,
     selectedNode,
     isConnected,
@@ -152,10 +172,61 @@ function createExecutionStore() {
     },
     tree: () => {
       const id = currentSessionId()
-      return id ? trees()[id] : null
+      if (!id) return null
+      const history = treeHistory()[id]
+      if (!history || history.length === 0) return null
+      const frame = viewingFrame()
+      if (frame === null) {
+        // Show latest
+        return history[history.length - 1].tree
+      }
+      // Find the frame
+      const entry = history.find(h => h.frame === frame)
+      return entry?.tree || null
+    },
+    frames: () => {
+      const id = currentSessionId()
+      if (!id) return []
+      return treeHistory()[id] || []
+    },
+    viewingFrame,
+    totalFrames: () => {
+      const id = currentSessionId()
+      if (!id) return 0
+      return (treeHistory()[id] || []).length
     },
     getNodeOutput: (sessionId: string, nodePath: string) => {
       return nodeOutputs()[`${sessionId}:${nodePath}`]
+    },
+
+    // Actions
+    setViewingFrame,
+    goToFrame: (frame: number) => setViewingFrame(frame),
+    goToLatest: () => setViewingFrame(null),
+    goToPrevFrame: () => {
+      const id = currentSessionId()
+      if (!id) return
+      const history = treeHistory()[id] || []
+      if (history.length === 0) return
+      const current = viewingFrame() ?? history[history.length - 1].frame
+      const idx = history.findIndex(h => h.frame === current)
+      if (idx > 0) {
+        setViewingFrame(history[idx - 1].frame)
+      }
+    },
+    goToNextFrame: () => {
+      const id = currentSessionId()
+      if (!id) return
+      const history = treeHistory()[id] || []
+      if (history.length === 0) return
+      const current = viewingFrame()
+      if (current === null) return // Already at latest
+      const idx = history.findIndex(h => h.frame === current)
+      if (idx < history.length - 1) {
+        setViewingFrame(history[idx + 1].frame)
+      } else {
+        setViewingFrame(null) // Go to latest
+      }
     },
 
     // Message handler
@@ -163,68 +234,60 @@ function createExecutionStore() {
   }
 }
 
-// Create singleton store
-const store = createRoot(createExecutionStore)
+// Create singleton store - persist across HMR by attaching to window
+declare global {
+  interface Window {
+    __smithersStore?: ReturnType<typeof createExecutionStore>
+  }
+}
+
+const store = (typeof window !== 'undefined' && window.__smithersStore)
+  ? window.__smithersStore
+  : createRoot(createExecutionStore)
+
+if (typeof window !== 'undefined') {
+  window.__smithersStore = store
+}
 
 export function useExecutionStore() {
   return store
 }
 
-// WebSocket initialization
-let ws: WebSocket | null = null
-
+// Initialize Tauri event listeners (Rust backend forwards WebSocket messages as events)
 export function initWebSocket(): () => void {
-  const wsUrl = `ws://127.0.0.1:${WS_PORT}`
+  let unlisten: (() => void) | null = null
 
-  function connect() {
+  async function setup() {
     try {
-      ws = new WebSocket(wsUrl)
+      // Import Tauri event listener
+      const { listen } = await import('@tauri-apps/api/event')
 
-      ws.onopen = () => {
-        console.log('WebSocket connected')
-        store.setIsConnected(true)
-      }
+      // Listen for all WebSocket messages forwarded by Rust backend
+      unlisten = await listen<CliToTauriMessage>('ws:message', (event) => {
+        console.log('Received ws:message:', event.payload)
+        store.handleMessage(event.payload)
+      })
 
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data) as CliToTauriMessage
-          store.handleMessage(msg)
-        } catch (e) {
-          console.error('Failed to parse WebSocket message:', e)
-        }
-      }
-
-      ws.onclose = () => {
-        console.log('WebSocket disconnected')
-        store.setIsConnected(false)
-        // Attempt to reconnect after 2 seconds
-        setTimeout(connect, 2000)
-      }
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-      }
+      console.log('Tauri event listener initialized')
+      store.setIsConnected(true)
     } catch (e) {
-      console.error('Failed to create WebSocket:', e)
-      // Attempt to reconnect after 2 seconds
-      setTimeout(connect, 2000)
+      console.error('Failed to setup Tauri event listener:', e)
     }
   }
 
-  connect()
+  setup()
 
   // Return cleanup function
   return () => {
-    if (ws) {
-      ws.close()
-      ws = null
+    if (unlisten) {
+      unlisten()
+      unlisten = null
     }
   }
 }
 
 // Send message to CLI (for control commands)
+// TODO: Implement via Tauri command that sends through WebSocket
 export function sendToCli(msg: object): void {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg))
-  }
+  console.log('sendToCli not yet implemented:', msg)
 }
