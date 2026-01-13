@@ -6,7 +6,7 @@
     "declaration": true,
     "declarationDir": "./dist",
     "jsx": "react-jsx",
-    "jsxImportSource": "react",
+    "jsxImportSource": "@evmts/smithers",
     "types": ["@types/bun", "@types/node"]
   },
   "include": ["src/**/*"],

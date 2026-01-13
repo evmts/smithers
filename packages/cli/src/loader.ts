@@ -1,10 +1,9 @@
-import type { ReactElement } from 'react'
 import * as fs from 'fs'
 import * as path from 'path'
 import { pathToFileURL } from 'url'
 import { evaluate } from '@mdx-js/mdx'
-import * as runtime from 'react/jsx-runtime'
-import React from 'react'
+// @ts-ignore - Importing from workspace package
+import * as runtime from '@evmts/smithers/jsx-runtime'
 
 // Import smithers components to make them available to MDX files
 import {
@@ -16,7 +15,7 @@ import {
   Constraints,
 } from '@evmts/smithers'
 
-// MDX components (only actual React components, not utilities/types)
+// MDX components
 const mdxComponents = {
   Claude,
   Subagent,
@@ -148,7 +147,7 @@ export class ExportError extends LoaderError {
 }
 
 /**
- * Error for invalid React element/component exports
+ * Error for invalid Element/Component exports
  */
 export class InvalidElementError extends LoaderError {
   readonly actualType: string
@@ -226,7 +225,7 @@ export interface LoadOptions {
 
 export interface LoadedModule {
   /**
-   * The default export of the module (should be a React element or component)
+   * The default export of the module (should be a Component function or Element)
    */
   default: unknown
   /**
@@ -242,7 +241,7 @@ export interface LoadedModule {
 export async function loadAgentFile(
   filePath: string,
   options: LoadOptions = {}
-): Promise<ReactElement> {
+): Promise<() => any> {
   const absolutePath = path.isAbsolute(filePath)
     ? filePath
     : path.resolve(process.cwd(), filePath)
@@ -268,7 +267,7 @@ export async function loadAgentFile(
     module = await loadTsxFile(absolutePath)
   } else {
     throw new LoaderError(
-      `Unsupported file extension: "${ext}"`,
+      `Unsupported file extension: "${ext}"`, 
       absolutePath,
       [
         'Rename your file to use one of: .mdx, .tsx, .jsx, .ts, .js',
@@ -278,7 +277,7 @@ export async function loadAgentFile(
     )
   }
 
-  return extractElement(module, absolutePath, options.props)
+  return extractComponent(module, absolutePath, options.props)
 }
 
 /**
@@ -323,13 +322,8 @@ function parseTsxError(error: unknown, filePath: string): LoaderError {
 
   // Fall back to parsing from message/stack if no position info
   if (line === undefined) {
-    // Try to extract line/column from stack trace or error message
-    // Common patterns:
-    // - Bun: "file.tsx:10:5: error: ..."
-    // - Node: "SyntaxError: ... at file.tsx:10:5"
-    // - esbuild: "file.tsx:10:5 - error TS..."
     const locationMatch = message.match(/(\d+):(\d+)/) ||
-      stack?.match(new RegExp(`${escapeRegex(path.basename(filePath))}:(\\d+):(\\d+)`))
+      stack?.match(new RegExp(`${escapeRegex(path.basename(filePath))}:(\d+):(\d+)`))
 
     if (locationMatch) {
       line = parseInt(locationMatch[1], 10)
@@ -387,12 +381,8 @@ function getTsxErrorSuggestions(message: string, filePath: string): string[] {
     suggestions.push('Ensure JSX syntax is correct (closing tags, proper nesting)')
   }
 
-  if (lowerMessage.includes('jsx') && lowerMessage.includes('not defined')) {
-    suggestions.push("Import React at the top of your file: import React from 'react'")
-  }
-
   if (lowerMessage.includes('export') || lowerMessage.includes('default')) {
-    suggestions.push('Ensure your file has a default export: export default <MyComponent />')
+    suggestions.push('Ensure your file has a default export: export default function Agent() { ... }')
   }
 
   if (lowerMessage.includes('type') || lowerMessage.includes('typescript')) {
@@ -403,7 +393,7 @@ function getTsxErrorSuggestions(message: string, filePath: string): string[] {
   // Add generic suggestion if no specific ones matched
   if (suggestions.length === 0) {
     suggestions.push('Check the file for syntax errors')
-    suggestions.push('Ensure the file exports a valid React element or component')
+    suggestions.push('Ensure the file exports a valid Component function or JSX Element')
   }
 
   return suggestions
@@ -413,7 +403,7 @@ function getTsxErrorSuggestions(message: string, filePath: string): string[] {
  * Escape special regex characters in a string
  */
 function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return str.replace(/[.*+?^${}()|[\\]/g, '\\$&')
 }
 
 /**
@@ -463,13 +453,13 @@ export async function loadMdxFile(
   }
 
   try {
-    // Evaluate the MDX content with React runtime and smithers components
+    // Evaluate the MDX content with Solid-compatible runtime and smithers components
     const module = await evaluate(content, {
-      ...runtime,
+      ...runtime, // Injects { jsx, jsxs, Fragment } from smithers/jsx-runtime
       // Convert file path to file URL for proper baseUrl
       baseUrl: options.baseUrl || pathToFileURL(filePath).href,
       development: false,
-      // Provide smithers components to MDX (only actual React components)
+      // Provide smithers components to MDX
       useMDXComponents: () => mdxComponents,
     })
 
@@ -534,7 +524,7 @@ function parseMdxError(error: unknown, filePath: string, content: string): Loade
  * Extract line number from error message if present
  */
 function extractLineFromMessage(message: string): number | undefined {
-  const match = message.match(/line\s+(\d+)/i) || message.match(/:(\d+):\d+/)
+  const match = message.match(/line\s+(\d+)/i) || message.match(/:(\d+):(\d+)/)
   return match ? parseInt(match[1], 10) : undefined
 }
 
@@ -604,14 +594,13 @@ function getMdxErrorSuggestions(message: string, ruleId?: string): string[] {
 }
 
 /**
- * Extract a React element from a loaded module
- * Handles both direct element exports and component exports
+ * Extract a Solid component from a loaded module
  */
-export function extractElement(
+export function extractComponent(
   module: LoadedModule,
   filePath: string,
   props?: Record<string, unknown>
-): ReactElement {
+): () => any {
   const defaultExport = module.default
   const hasProps = props !== undefined && Object.keys(props).length > 0
 
@@ -621,7 +610,7 @@ export function extractElement(
   if (defaultExport === null || defaultExport === undefined) {
     const hasNamedExports = availableExports.length > 0
     const suggestions = [
-      'Add a default export: export default <YourComponent />',
+      'Add a default export: export default function Agent() { ... }',
     ]
 
     if (hasNamedExports) {
@@ -640,66 +629,31 @@ export function extractElement(
     )
   }
 
-  // If it's already a React element, validate and return it
-  if (React.isValidElement(defaultExport)) {
-    if (hasProps) {
-      return React.cloneElement(defaultExport, props)
-    }
-    return defaultExport
+  // In Solid, a Component is a function.
+  // MDX evaluate returns a Component function as default export.
+  if (typeof defaultExport === 'function') {
+    // Return a function that calls the component with props
+    return () => (defaultExport as Function)(hasProps ? props : {})
   }
 
-  // If it's a function (component), try to call it to get the element
-  if (typeof defaultExport === 'function') {
-    try {
-      const element = React.createElement(
-        defaultExport as React.ComponentType,
-        hasProps ? props : undefined
-      )
-
-      // Validate the created element
-      if (!React.isValidElement(element)) {
-        throw new InvalidElementError(
-          'Component did not return a valid React element',
-          filePath,
-          typeof element,
-          [
-            'Ensure your component returns JSX (e.g., return <Claude>...</Claude>)',
-            'Check that the component does not return null or undefined',
-          ]
-        )
-      }
-
-      return element
-    } catch (error) {
-      // If it's already one of our errors, re-throw it
-      if (error instanceof LoaderError) {
-        throw error
-      }
-
-      const message = error instanceof Error ? error.message : String(error)
-      throw new InvalidElementError(
-        `Failed to render component: ${message}`,
-        filePath,
-        'function (component)',
-        [
-          'Check that the component can render without required props',
-          'Ensure all hooks are used correctly inside the component',
-          'Verify all dependencies are imported correctly',
-        ]
-      )
-    }
+  // If it's not a function, it might be a pre-rendered node (if someone did export default <Claude>...)
+  // But wait, in Solid, <Claude>... calls the function and returns a node/result immediately if not compiled.
+  // If compiled with smithers jsx-runtime, it returns a SmithersNode.
+  if (typeof defaultExport === 'object') {
+     // We assume it's a node or valid return value from JSX.
+     // We wrap it in a function.
+     return () => defaultExport
   }
 
   // Not a valid export type
   const actualType = getDetailedType(defaultExport)
   throw new InvalidElementError(
-    `Invalid default export: expected a React element or component`,
+    `Invalid default export: expected a Component function or JSX Element`,
     filePath,
     actualType,
     [
-      'Export a React element: export default <Claude>...</Claude>',
-      'Export a component function: export default function Agent() { return <Claude>...</Claude> }',
-      `Received ${actualType} instead of React element/component`,
+      'Export a Component function: export default function Agent() { return <Claude>...</Claude> }',
+      `Received ${actualType} instead of Component`,
     ]
   )
 }
@@ -725,14 +679,4 @@ function getDetailedType(value: unknown): string {
   if (type === 'string') {
     const str = value as string
     if (str.length > 50) {
-      return `string ("${str.slice(0, 50)}...")`
-    }
-    return `string ("${str}")`
-  }
-
-  if (type === 'number') {
-    return `number (${value})`
-  }
-
-  return type
-}
+      return `string (

@@ -39,37 +39,42 @@ const TEMPLATES: Record<string, { files: Record<string, string>; description: st
   research: {
     description: 'Multi-phase research agent',
     files: {
-      'agent.mdx': `import { useState } from 'react'
+      'agent.mdx': `import { createSignal } from 'solid-js'
 import { Claude, Phase, Step } from '@evmts/smithers'
 
 # Research Agent
 
-export function ResearchAgent({ topic }) {
-  const [phase, setPhase] = useState('gather')
-  const [findings, setFindings] = useState(null)
+export function ResearchAgent(props) {
+  const [phase, setPhase] = createSignal('gather')
+  const [findings, setFindings] = createSignal(null)
 
-  if (phase === 'gather') {
+  return () => {
+    const p = phase()
+    const f = findings()
+
+    if (p === 'gather') {
+      return (
+        <Claude onFinished={(result) => {
+          setFindings(result)
+          setPhase('synthesize')
+        }}>
+          <Phase name="gather">
+            <Step>Search for information about: {props.topic}</Step>
+            <Step>Collect key findings</Step>
+          </Phase>
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={(result) => {
-        setFindings(result)
-        setPhase('synthesize')
-      }}>
-        <Phase name="gather">
-          <Step>Search for information about: {topic}</Step>
-          <Step>Collect key findings</Step>
+      <Claude>
+        <Phase name="synthesize">
+          Write a summary based on these findings:
+          {JSON.stringify(f)}
         </Phase>
       </Claude>
     )
   }
-
-  return (
-    <Claude>
-      <Phase name="synthesize">
-        Write a summary based on these findings:
-        {JSON.stringify(findings)}
-      </Phase>
-    </Claude>
-  )
 }
 
 <ResearchAgent topic="AI agents" />
@@ -79,14 +84,14 @@ export function ResearchAgent({ topic }) {
   'multi-agent': {
     description: 'Multi-agent orchestration example',
     files: {
-      'agent.mdx': `import { useState } from 'react'
+      'agent.mdx': `import { createSignal } from 'solid-js'
 import { Claude, Subagent, Phase, Persona } from '@evmts/smithers'
 
 # Multi-Agent Team
 
-export function Architect({ onPlan }) {
+export function Architect(props) {
   return (
-    <Claude onFinished={onPlan}>
+    <Claude onFinished={props.onPlan}>
       <Persona role="software architect" />
       <Phase name="plan">
         Break down the task into subtasks.
@@ -96,44 +101,50 @@ export function Architect({ onPlan }) {
   )
 }
 
-export function Developer({ task, onComplete }) {
+export function Developer(props) {
   return (
-    <Claude onFinished={onComplete}>
+    <Claude onFinished={props.onComplete}>
       <Persona role="developer" />
       <Phase name="implement">
-        Implement: {task.name}
-        {task.description}
+        Implement: {props.task.name}
+        {props.task.description}
       </Phase>
     </Claude>
   )
 }
 
-export function Team({ task }) {
-  const [stage, setStage] = useState('planning')
-  const [plan, setPlan] = useState(null)
-  const [done, setDone] = useState([])
+export function Team(props) {
+  const [stage, setStage] = createSignal('planning')
+  const [plan, setPlan] = createSignal(null)
+  const [done, setDone] = createSignal([])
 
-  if (stage === 'planning') {
+  return () => {
+    const s = stage()
+    const p = plan()
+    const d = done()
+
+    if (s === 'planning') {
+      return (
+        <Architect onPlan={(res) => {
+          setPlan(res)
+          setStage('implementing')
+        }} />
+      )
+    }
+
+    const remaining = p?.tasks?.filter(t => !d.includes(t.name)) || []
+
+    if (remaining.length === 0) {
+      return null // Done!
+    }
+
     return (
-      <Architect onPlan={(p) => {
-        setPlan(p)
-        setStage('implementing')
-      }} />
+      <Developer
+        task={remaining[0]}
+        onComplete={() => setDone([...d, remaining[0].name])}
+      />
     )
   }
-
-  const remaining = plan?.tasks?.filter(t => !done.includes(t.name)) || []
-
-  if (remaining.length === 0) {
-    return null // Done!
-  }
-
-  return (
-    <Developer
-      task={remaining[0]}
-      onComplete={() => setDone([...done, remaining[0].name])}
-    />
-  )
 }
 
 <Team task="Build a simple REST API" />
@@ -196,12 +207,32 @@ async function init(dir: string, options: InitOptions): Promise<void> {
         plan: 'smithers plan agent.mdx',
       },
       dependencies: {
-        smithers: '^0.1.0',
-        react: '^19.0.0',
+        '@evmts/smithers': '^0.1.0',
+        'solid-js': '^1.9.0',
       },
     }
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
     success(`Created ${pc.cyan('package.json')}`)
+  }
+
+  // Create tsconfig.json if it doesn't exist
+  const tsconfigPath = path.join(targetDir, 'tsconfig.json')
+  if (!fs.existsSync(tsconfigPath)) {
+    const tsconfig = {
+      compilerOptions: {
+        target: 'ESNext',
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        esModuleInterop: true,
+        forceConsistentCasingInFileNames: true,
+        strict: true,
+        skipLibCheck: true,
+        jsx: 'preserve',
+        jsxImportSource: '@evmts/smithers',
+      },
+    }
+    fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2))
+    success(`Created ${pc.cyan('tsconfig.json')}`)
   }
 
   console.log()

@@ -1,63 +1,66 @@
 {
   "name": "@evmts/smithers",
   "version": "1.0.0",
-  "description": "Build AI agents in React. Declarative JSX components for orchestrating Claude agents with state management and parallel execution.",
+  "description": "Build AI agents in Solid. Declarative JSX components for orchestrating Claude agents with signal-based state management and parallel execution.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./testing": {
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js"
+    "./jsx-runtime": {
+      "types": "./dist/solid-js-jsx-runtime/jsx-runtime.d.ts",
+      "import": "./dist/solid-js-jsx-runtime/jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./dist/solid-js-jsx-runtime/jsx-dev-runtime.d.ts",
+      "import": "./dist/solid-js-jsx-runtime/jsx-dev-runtime.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "src"
   ],
-  "sideEffects": false,
   "scripts": {
-    "build": "bun run scripts/build.ts",
-    "dev": "bun run scripts/build.ts --watch",
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
-  "publishConfig": {
-    "access": "public"
-  },
-  "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
-    "@anthropic-ai/sdk": "^0.71.2",
-    "@mdx-js/mdx": "^3.1.1",
-    "@modelcontextprotocol/sdk": "^1.25.1",
-    "zod-to-json-schema": "^3.24.1",
-    "zustand": "^5.0.9"
+  "peerDependencies": {
+    "@evmts/smithers": "workspace:*",
+    "solid-js": "^1.9.10"
   },
   "devDependencies": {
-    "@types/react": "^19.2.7",
-    "@types/react-reconciler": "^0.32.3",
-    "react": "^19.2.3",
-    "react-reconciler": "^0.33.0",
-    "typescript": "^5.7.2",
-    "zod": "^3.24.1"
+    "@evmts/smithers-core": "workspace:*",
+    "@evmts/smithers": "workspace:*",
+    "@types/bun": "latest",
+    "solid-js": "^1.9.10",
+    "typescript": "^5.7.2"
   },
-  "peerDependencies": {
-    "react": "^19.2.3",
-    "react-reconciler": "^0.33.0",
-    "zod": "^3.0.0"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evmts/smithers.git",
+    "directory": "packages/smithers-solid"
+  },
+  "homepage": "https://github.com/evmts/smithers#readme",
+  "bugs": {
+    "url": "https://github.com/evmts/smithers/issues"
   },
   "keywords": [
     "ai",
     "agent",
-    "react",
+    "solid",
+    "solidjs",
     "jsx",
     "llm",
     "claude",
-    "anthropic"
+    "anthropic",
+    "smithers"
   ],
   "author": "William Cory",
   "license": "MIT"

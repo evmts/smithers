@@ -57,11 +57,10 @@
     "commander": "^12.1.0",
     "ora": "^8.1.1",
     "picocolors": "^1.1.1",
-    "react": "^19.2.3",
+    "solid-js": "^1.9.10",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
     "@types/ws": "^8.5.13",
     "typescript": "^5.7.2"
   },
