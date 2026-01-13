@@ -14,7 +14,9 @@ Smithers is written in TypeScript and exports comprehensive type definitions.
 Props for the `<Claude>` component.
 
 ```typescript
-interface ClaudeProps<T = any> {
+import { ParentProps, JSX } from 'solid-js'
+
+interface ClaudeProps<T = any> extends ParentProps {
   /** Tools to make available */
   tools?: Tool[]
 
@@ -50,9 +52,6 @@ interface ClaudeProps<T = any> {
 
   /** Tool retry configuration for failed tool executions */
   toolRetry?: ToolRetryOptions
-
-  /** Prompt content */
-  children: ReactNode
 }
 
 interface ToolRetryOptions {
@@ -78,15 +77,14 @@ interface ToolRetryOptions {
 Props for the `<Subagent>` component.
 
 ```typescript
-interface SubagentProps {
+import { ParentProps } from 'solid-js'
+
+interface SubagentProps extends ParentProps {
   /** Identifier for logging and debugging */
   name?: string
 
   /** Run concurrently with siblings (default: true) */
   parallel?: boolean
-
-  /** Content to execute */
-  children: ReactNode
 }
 ```
 
@@ -95,15 +93,14 @@ interface SubagentProps {
 Props for the `<Phase>` component.
 
 ```typescript
-interface PhaseProps {
+import { ParentProps } from 'solid-js'
+
+interface PhaseProps extends ParentProps {
   /** Phase identifier */
   name: string
 
   /** Mark phase as already completed (skipped by Ralph loop) */
   completed?: boolean
-
-  /** Phase content */
-  children: ReactNode
 }
 ```
 
@@ -112,12 +109,11 @@ interface PhaseProps {
 Props for the `<Step>` component.
 
 ```typescript
-interface StepProps {
+import { ParentProps } from 'solid-js'
+
+interface StepProps extends ParentProps {
   /** Mark step as already completed (skipped by Ralph loop) */
   completed?: boolean
-
-  /** Step description */
-  children: ReactNode
 }
 ```
 
@@ -126,12 +122,11 @@ interface StepProps {
 Props for the `<Persona>` component.
 
 ```typescript
-interface PersonaProps {
+import { ParentProps } from 'solid-js'
+
+interface PersonaProps extends ParentProps {
   /** Role or title */
   role: string
-
-  /** Additional persona details */
-  children?: ReactNode
 }
 ```
 
@@ -140,9 +135,10 @@ interface PersonaProps {
 Props for the `<Constraints>` component.
 
 ```typescript
-interface ConstraintsProps {
+import { ParentProps } from 'solid-js'
+
+interface ConstraintsProps extends ParentProps {
   /** Constraint rules */
-  children: ReactNode
 }
 ```
 
@@ -151,12 +147,11 @@ interface ConstraintsProps {
 Props for the `<OutputFormat>` component.
 
 ```typescript
-interface OutputFormatProps {
+import { ParentProps } from 'solid-js'
+
+interface OutputFormatProps extends ParentProps {
   /** JSON Schema for expected output */
   schema?: JSONSchema
-
-  /** Human-readable format description */
-  children?: ReactNode
 }
 ```
 
@@ -347,9 +342,11 @@ interface ExecutionState {
 Root container for the renderer.
 
 ```typescript
+import { JSX } from 'solid-js'
+
 interface SmithersRoot {
-  /** Render a React element to SmithersNode tree */
-  render(element: ReactElement): Promise<SmithersNode>
+  /** Render a Solid component to SmithersNode tree */
+  render(element: () => JSX.Element): () => void
 
   /** Clean up the root */
   unmount(): void
@@ -365,6 +362,7 @@ interface SmithersRoot {
 
 ```tsx
 import type { ClaudeProps, Tool } from '@evmts/smithers'
+import { Claude, Constraints } from '@evmts/smithers'
 
 interface AnalysisResult {
   summary: string
@@ -377,7 +375,7 @@ interface AnalyzerProps {
   strict?: boolean
 }
 
-function Analyzer({ code, strict = false }: AnalyzerProps) {
+function Analyzer(props: AnalyzerProps) {
   const handleResult = (result: AnalysisResult) => {
     if (result.score < 0.5) {
       console.warn('Low quality score:', result.score)
@@ -389,8 +387,8 @@ function Analyzer({ code, strict = false }: AnalyzerProps) {
       tools={[filesystem]}
       onFinished={handleResult}
     >
-      Analyze this code: {code}
-      {strict && <Constraints>Apply strict standards</Constraints>}
+      Analyze this code: {props.code}
+      {props.strict && <Constraints>Apply strict standards</Constraints>}
     </Claude>
   )
 }
@@ -441,7 +439,7 @@ const options: ExecuteOptions = {
 }
 
 const result: ExecutionResult<ReportOutput> = await executePlan(
-  <ReportAgent topic="AI" />,
+  () => <ReportAgent topic="AI" />,
   options
 )
 
@@ -451,15 +449,14 @@ console.log(result.output.sections.length)
 
 ## JSX Types
 
-Smithers extends React's JSX types. Import the type definitions:
+Smithers uses standard SolidJS JSX types. Ensure your `tsconfig.json` is configured correctly:
 
 ```json
 // tsconfig.json
 {
   "compilerOptions": {
-    "types": ["smithers/jsx"]
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js"
   }
 }
 ```
-
-This enables proper type checking for Smithers components in JSX.

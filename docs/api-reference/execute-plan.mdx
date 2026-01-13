@@ -11,15 +11,15 @@ Execute a Smithers component using the Ralph Wiggum loop - repeatedly rendering 
 
 ```typescript
 function executePlan(
-  element: ReactElement,
+  element: () => JSX.Element,
   options?: ExecuteOptions
 ): Promise<ExecutionResult>
 ```
 
 ## Parameters
 
-<ParamField path="element" type="ReactElement" required>
-  The React element to execute. Typically your agent component with props.
+<ParamField path="element" type="() => JSX.Element" required>
+  A function that returns the JSX element to execute. Typically `() => <Agent />`.
 </ParamField>
 
 <ParamField path="options" type="ExecuteOptions">
@@ -68,16 +68,16 @@ function executePlan(
 ```tsx
 import { executePlan, Claude } from '@evmts/smithers'
 
-function SimpleAgent({ task }) {
+function SimpleAgent(props) {
   return (
     <Claude>
-      Complete this task: {task}
+      Complete this task: {props.task}
     </Claude>
   )
 }
 
 const result = await executePlan(
-  <SimpleAgent task="Write a haiku about coding" />
+  () => <SimpleAgent task="Write a haiku about coding" />
 )
 
 console.log('Output:', result.output)
@@ -87,7 +87,7 @@ console.log('Frames:', result.frames)
 ### With Options
 
 ```tsx
-const result = await executePlan(<ResearchAgent topic="AI" />, {
+const result = await executePlan(() => <ResearchAgent topic="AI" />, {
   autoApprove: true,      // No approval prompts
   maxFrames: 50,          // Limit iterations
   timeout: 300000,        // 5 minute timeout
@@ -107,33 +107,35 @@ const result = await executePlan(<ResearchAgent topic="AI" />, {
 ### Multi-Phase Agent
 
 ```tsx
-import { create } from 'zustand'
+import { createSignal } from 'solid-js'
 
-const useStore = create((set) => ({
-  phase: 'research',
-  data: null,
-  setData: (data) => set({ data, phase: 'write' }),
-}))
+function MultiPhaseAgent(props) {
+  const [phase, setPhase] = createSignal('research')
+  const [data, setData] = createSignal(null)
 
-function MultiPhaseAgent({ topic }) {
-  const { phase, data, setData } = useStore()
+  return () => {
+    const p = phase()
 
-  if (phase === 'research') {
+    if (p === 'research') {
+      return (
+        <Claude tools={[webSearch]} onFinished={(res) => {
+          setData(res)
+          setPhase('write')
+        }}>
+          Research {props.topic}
+        </Claude>
+      )
+    }
+
     return (
-      <Claude tools={[webSearch]} onFinished={setData}>
-        Research {topic}
+      <Claude>
+        Write a report: {JSON.stringify(data())}
       </Claude>
     )
   }
-
-  return (
-    <Claude>
-      Write a report: {JSON.stringify(data)}
-    </Claude>
-  )
 }
 
-const result = await executePlan(<MultiPhaseAgent topic="quantum" />, {
+const result = await executePlan(() => <MultiPhaseAgent topic="quantum" />, {
   onPlan: (xml, frame) => {
     console.log(`Frame ${frame}: ${xml.includes('research') ? 'Research' : 'Write'}`)
   }
@@ -146,7 +148,7 @@ console.log('Total frames:', result.frames)  // 2
 
 ```tsx
 try {
-  const result = await executePlan(<RiskyAgent />, {
+  const result = await executePlan(() => <RiskyAgent />, {
     maxFrames: 10,
     timeout: 60000,
   })
@@ -167,7 +169,7 @@ try {
 ### Analyzing Execution History
 
 ```tsx
-const result = await executePlan(<ComplexAgent />, { autoApprove: true })
+const result = await executePlan(() => <ComplexAgent />, { autoApprove: true })
 
 console.log('\n=== Execution Summary ===')
 console.log(`Total frames: ${result.frames}`)
@@ -184,16 +186,16 @@ result.history.forEach((frame, i) => {
 
 Each frame in the Ralph Wiggum loop:
 
-1. **Render**: React components render to SmithersNode tree
+1. **Render**: Solid components render to SmithersNode tree
 2. **Serialize**: Tree converts to XML plan
 3. **Callback**: `onPlan` called with XML and frame number
 4. **Execute**: Pending `<Claude>` nodes are executed
-5. **Update**: `onFinished` callbacks update React state
+5. **Update**: `onFinished` callbacks update Solid signals
 6. **Callback**: `onFrame` called with frame result
 7. **Loop**: If state changed, repeat from step 1
 
 ```tsx
-await executePlan(<Agent />, {
+await executePlan(() => <Agent />, {
   onPlan: (xml, frame) => {
     // Called BEFORE execution
     console.log(`Frame ${frame} starting...`)
@@ -211,7 +213,7 @@ When `<Subagent>` components are present, they execute in parallel:
 
 ```tsx
 const result = await executePlan(
-  <ParallelResearch topics={['AI', 'ML', 'DL']} />,
+  () => <ParallelResearch topics={['AI', 'ML', 'DL']} />,
   {
     onFrame: (frame) => {
       // May show multiple nodes executed in same frame

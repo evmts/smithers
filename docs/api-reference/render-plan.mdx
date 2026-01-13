@@ -1,6 +1,6 @@
 ---
 title: renderPlan
-description: Render a React element to XML plan without execution
+description: Render a Solid component to XML plan without execution
 ---
 
 # renderPlan
@@ -10,13 +10,13 @@ Render a Smithers component to its XML plan representation without executing it.
 ## Signature
 
 ```typescript
-function renderPlan(element: ReactElement): Promise<string>
+function renderPlan(element: () => JSX.Element): Promise<string>
 ```
 
 ## Parameters
 
-<ParamField path="element" type="ReactElement" required>
-  The React element to render. Typically your agent component with props.
+<ParamField path="element" type="() => JSX.Element" required>
+  A function that returns the JSX element to render. Typically `() => <Agent />`.
 </ParamField>
 
 ## Returns
@@ -30,11 +30,11 @@ function renderPlan(element: ReactElement): Promise<string>
 ```tsx
 import { renderPlan, Claude, Phase, Step } from '@evmts/smithers'
 
-function MyAgent({ topic }) {
+function MyAgent(props) {
   return (
     <Claude tools={[webSearch]}>
       <Phase name="research">
-        <Step>Search for {topic}</Step>
+        <Step>Search for {props.topic}</Step>
         <Step>Collect sources</Step>
       </Phase>
     </Claude>
@@ -42,7 +42,7 @@ function MyAgent({ topic }) {
 }
 
 // Render to XML
-const xml = await renderPlan(<MyAgent topic="AI safety" />)
+const xml = await renderPlan(() => <MyAgent topic="AI safety" />)
 console.log(xml)
 ```
 
@@ -68,7 +68,7 @@ import { renderPlan } from '@evmts/smithers'
 import { expect, test } from 'bun:test'
 
 test('renders correct research plan', async () => {
-  const xml = await renderPlan(<ResearchAgent topic="quantum computing" />)
+  const xml = await renderPlan(() => <ResearchAgent topic="quantum computing" />)
 
   expect(xml).toContain('<phase name="research">')
   expect(xml).toContain('quantum computing')
@@ -76,7 +76,7 @@ test('renders correct research plan', async () => {
 })
 
 test('includes constraints when strict mode', async () => {
-  const xml = await renderPlan(<ReviewAgent strict={true} />)
+  const xml = await renderPlan(() => <ReviewAgent strict={true} />)
 
   expect(xml).toContain('<constraints>')
   expect(xml).toContain('strict')
@@ -90,7 +90,7 @@ Inspect the plan to debug component issues:
 ```tsx
 async function debugAgent() {
   const xml = await renderPlan(
-    <MyAgent
+    () => <MyAgent
       files={['a.ts', 'b.ts']}
       options={{ strict: true }}
     />
@@ -112,8 +112,8 @@ Compare plans across different configurations:
 
 ```tsx
 async function comparePlans() {
-  const basicPlan = await renderPlan(<Agent mode="basic" />)
-  const advancedPlan = await renderPlan(<Agent mode="advanced" />)
+  const basicPlan = await renderPlan(() => <Agent mode="basic" />)
+  const advancedPlan = await renderPlan(() => <Agent mode="advanced" />)
 
   console.log('Basic plan length:', basicPlan.length)
   console.log('Advanced plan length:', advancedPlan.length)
@@ -135,9 +135,9 @@ import { writeFile } from 'fs/promises'
 
 async function generateDocs() {
   const examples = [
-    { name: 'basic', element: <BasicAgent /> },
-    { name: 'advanced', element: <AdvancedAgent /> },
-    { name: 'parallel', element: <ParallelAgent topics={['A', 'B']} /> },
+    { name: 'basic', element: () => <BasicAgent /> },
+    { name: 'advanced', element: () => <AdvancedAgent /> },
+    { name: 'parallel', element: () => <ParallelAgent topics={['A', 'B']} /> },
   ]
 
   for (const { name, element } of examples) {
