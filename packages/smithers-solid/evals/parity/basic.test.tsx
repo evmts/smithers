@@ -1,14 +1,33 @@
 import { describe, test, expect } from 'bun:test'
-import {
-  createSmithersSolidRoot,
-  renderPlan,
-  serialize,
-  Claude,
-  Phase,
-  Step,
-  Task,
-  type SmithersNode,
-} from '../../src/index.js'
+import { createSmithersSolidRoot, renderPlan, serialize, type SmithersNode } from '../../src/index.js'
+
+function textNode(value: string): SmithersNode {
+  return {
+    type: 'TEXT',
+    props: { value },
+    children: [],
+    parent: null,
+  }
+}
+
+function createNode(
+  type: string,
+  props: Record<string, unknown> = {},
+  children: SmithersNode[] = []
+): SmithersNode {
+  const node: SmithersNode = {
+    type,
+    props,
+    children,
+    parent: null,
+  }
+
+  for (const child of children) {
+    child.parent = node
+  }
+
+  return node
+}
 
 describe('Solid Renderer Basic Tests', () => {
   test('createSmithersSolidRoot creates a root node', () => {
@@ -25,21 +44,22 @@ describe('Solid Renderer Basic Tests', () => {
 
   test('mount renders claude with text', async () => {
     const root = createSmithersSolidRoot()
-    root.mount(() => <Claude>Hello world</Claude>)
+    const claude = createNode('claude', {}, [textNode('Hello world')])
+    root.mount(() => claude)
     await root.flush()
 
     const tree = root.getTree()
     expect(tree.children).toHaveLength(1)
 
-    const claude = tree.children[0]
-    expect(claude.type).toBe('claude')
-    expect(claude.parent).toBe(tree)
-    expect(claude.children).toHaveLength(1)
+    const mountedClaude = tree.children[0]
+    expect(mountedClaude.type).toBe('claude')
+    expect(mountedClaude.parent).toBe(tree)
+    expect(mountedClaude.children).toHaveLength(1)
 
-    const text = claude.children[0]
+    const text = mountedClaude.children[0]
     expect(text.type).toBe('TEXT')
     expect(text.props.value).toBe('Hello world')
-    expect(text.parent).toBe(claude)
+    expect(text.parent).toBe(mountedClaude)
 
     root.dispose()
   })
@@ -57,9 +77,9 @@ describe('Solid Renderer Basic Tests', () => {
   })
 
   test('renderPlan serializes element with props', async () => {
-    const xml = await renderPlan(() => (
-      <Claude model="claude-3-opus" maxTurns={10} />
-    ))
+    const xml = await renderPlan(() =>
+      createNode('claude', { model: 'claude-3-opus', maxTurns: 10 })
+    )
 
     expect(xml).toContain('<claude ')
     expect(xml).toContain('model="claude-3-opus"')
@@ -68,9 +88,9 @@ describe('Solid Renderer Basic Tests', () => {
   })
 
   test('serialize escapes XML special characters', async () => {
-    const xml = await renderPlan(() => (
-      <Claude>{'<script>alert("xss")</script>'}</Claude>
-    ))
+    const xml = await renderPlan(() =>
+      createNode('claude', {}, [textNode('<script>alert("xss")</script>')])
+    )
 
     expect(xml).toBe(
       '<claude>\n  &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;\n</claude>'
@@ -78,9 +98,13 @@ describe('Solid Renderer Basic Tests', () => {
   })
 
   test('serialize excludes callback props', async () => {
-    const xml = await renderPlan(() => (
-      <Claude model="claude-3-opus" onFinished={() => {}} onError={() => {}} />
-    ))
+    const xml = await renderPlan(() =>
+      createNode('claude', {
+        model: 'claude-3-opus',
+        onFinished: () => {},
+        onError: () => {},
+      })
+    )
 
     expect(xml).toBe('<claude model="claude-3-opus" />')
     expect(xml).not.toContain('onFinished')
@@ -90,19 +114,21 @@ describe('Solid Renderer Basic Tests', () => {
 
 describe('Solid Renderer XML Parity', () => {
   test('simple claude element serializes correctly', async () => {
-    const xml = await renderPlan(() => <Claude>Hello world</Claude>)
+    const xml = await renderPlan(() =>
+      createNode('claude', {}, [textNode('Hello world')])
+    )
     expect(xml).toBe('<claude>\n  Hello world\n</claude>')
   })
 
   test('nested phase/step serializes correctly', async () => {
-    const xml = await renderPlan(() => (
-      <Claude>
-        <Phase name="research">
-          <Step>Find sources</Step>
-          <Step>Summarize</Step>
-        </Phase>
-      </Claude>
-    ))
+    const xml = await renderPlan(() =>
+      createNode('claude', {}, [
+        createNode('phase', { name: 'research' }, [
+          createNode('step', {}, [textNode('Find sources')]),
+          createNode('step', {}, [textNode('Summarize')]),
+        ]),
+      ])
+    )
 
     expect(xml).toContain('<claude>')
     expect(xml).toContain('<phase name="research">')
@@ -114,7 +140,9 @@ describe('Solid Renderer XML Parity', () => {
   })
 
   test('task component renders as task element', async () => {
-    const xml = await renderPlan(() => <Task done>Track progress</Task>)
+    const xml = await renderPlan(() =>
+      createNode('task', { done: true }, [textNode('Track progress')])
+    )
     expect(xml).toBe('<task done="true">\n  Track progress\n</task>')
   })
 })
