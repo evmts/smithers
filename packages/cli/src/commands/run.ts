@@ -5,8 +5,9 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
 
-import { renderPlan, executePlan, DebugCollector } from '@evmts/smithers'
-import type { SmithersDebugEvent } from '@evmts/smithers'
+import { createSmithersSolidRoot, serialize } from '@evmts/smithers'
+import { executePlan, DebugCollector } from '@evmts/smithers-core'
+import type { SmithersDebugEvent } from '@evmts/smithers-core'
 import { displayPlan, displayResult, displayError, info, success, warn } from '../display.js'
 import { promptApproval } from '../prompt.js'
 import { loadAgentFile } from '../loader.js'
@@ -147,9 +148,12 @@ async function run(file: string, options: RunOptions): Promise<void> {
     throw error
   }
 
-  // Render the plan
+  // Create SolidJS root and mount component
   const planSpinner = ora('Rendering plan...').start()
-  const plan = await renderPlan(element)
+  const root = createSmithersSolidRoot()
+  root.mount(element)
+  await root.flush()
+  const plan = serialize(root.getTree())
   planSpinner.succeed('Plan rendered')
 
   // Display the plan
@@ -157,6 +161,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
 
   // Dry run - exit here
   if (options.dryRun) {
+    root.dispose()
     info('Dry run - exiting without execution')
     return
   }
@@ -165,6 +170,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
   if (!autoApprove) {
     const choice = await promptApproval()
     if (choice !== 'yes') {
+      root.dispose()
       info('Execution cancelled')
       return
     }
@@ -228,7 +234,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
   const startTime = Date.now()
 
   try {
-    const result = await executePlan(element, {
+    const result = await executePlan(root.getTree(), {
       maxFrames,
       timeout,
       verbose,
@@ -239,6 +245,11 @@ async function run(file: string, options: RunOptions): Promise<void> {
         enabled: true,
         includeTreeSnapshots: true,
         onEvent: debugCollector.onEvent,
+      },
+      rerender: async () => {
+        // Flush SolidJS reactive updates and return new tree
+        await root.flush()
+        return root.getTree()
       },
       onFrameUpdate: async (tree, frame) => {
         execSpinner.text = `Frame ${frame}...`
@@ -279,6 +290,7 @@ async function run(file: string, options: RunOptions): Promise<void> {
     throw error
   } finally {
     // Cleanup
+    root.dispose()
     if (tauriBridge) {
       tauriBridge.disconnect()
     }

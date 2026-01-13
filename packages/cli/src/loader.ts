@@ -679,4 +679,10 @@ function getDetailedType(value: unknown): string {
   if (type === 'string') {
     const str = value as string
     if (str.length > 50) {
-      return `string (
+      return `string (${str.length} chars)`
+    }
+    return 'string'
+  }
+
+  return type
+}
