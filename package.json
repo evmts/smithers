@@ -2,7 +2,7 @@
   "name": "smithers-monorepo",
   "version": "1.0.0",
   "private": true,
-  "description": "Build AI agents in React. Declarative JSX components for orchestrating Claude agents.",
+  "description": "Build AI agents in SolidJS. Declarative JSX components for orchestrating Claude agents.",
   "type": "module",
   "scripts": {
     "build": "turbo run build",
@@ -29,8 +29,7 @@
     "@evmts/smithers-cli": "workspace:*",
     "@types/bun": "latest",
     "@types/node": "^22.10.2",
-    "@types/react": "^19.0.0",
-    "react": "^19.2.3",
+    "solid-js": "^1.9.3",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",
     "zod": "^3.24.1",
@@ -40,7 +39,8 @@
   "keywords": [
     "ai",
     "agent",
-    "react",
+    "solid",
+    "solidjs",
     "jsx",
     "mdx",
     "llm",

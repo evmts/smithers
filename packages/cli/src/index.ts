@@ -17,7 +17,7 @@ const VERSION = packageJson.version
 
 const program = new Command()
   .name('smithers')
-  .description('React-based AI agent framework')
+  .description('Solid-based AI agent framework')
   .version(VERSION, '-V, --version', 'Print version')
 
 // Add commands
