@@ -22,21 +22,21 @@ Question: {question}
 Answer:"""
 
 chain = LLMChain(llm=llm, prompt=PromptTemplate.from_template(template))
-result = chain.run(question="What is React?")
+result = chain.run(question="What is SolidJS?")
 ```
 
 **Smithers:**
 ```tsx
-function Assistant({ question }) {
+function Assistant(props) {
   return (
     <Claude>
       <Persona role="helpful assistant" />
-      Question: {question}
+      Question: {props.question}
     </Claude>
   )
 }
 
-const result = await executePlan(<Assistant question="What is React?" />)
+const result = await executePlan(() => <Assistant question="What is SolidJS?" />)
 ```
 
 ### Tool-Using Agent
@@ -68,15 +68,15 @@ const calcTool = {
   execute: async (args) => calc(args.expression),
 }
 
-function ToolAgent({ task }) {
+function ToolAgent(props) {
   return (
     <Claude tools={[searchTool, calcTool]}>
-      {task}
+      {props.task}
     </Claude>
   )
 }
 
-const result = await executePlan(<ToolAgent task="What is 25 * 4?" />)
+const result = await executePlan(() => <ToolAgent task="What is 25 * 4?" />)
 ```
 
 ### Sequential Chain
@@ -96,23 +96,28 @@ chain = SequentialChain(
 
 **Smithers:**
 ```tsx
-function SequentialAgent({ topic }) {
-  const [phase, setPhase] = useState('research')
-  const [research, setResearch] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (phase === 'research') {
+function SequentialAgent(props) {
+  const [phase, setPhase] = createSignal('research')
+  const [research, setResearch] = createSignal(null)
+
+  return () => {
+    const p = phase()
+    if (p === 'research') {
+      return (
+        <Claude onFinished={(data) => { setResearch(data); setPhase('write') }}>
+          Research this topic: {props.topic}
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={(data) => { setResearch(data); setPhase('write') }}>
-        Research this topic: {topic}
+      <Claude>
+        Write a report based on: {JSON.stringify(research())}
       </Claude>
     )
   }
-
-  return (
-    <Claude>
-      Write a report based on: {JSON.stringify(research)}
-    </Claude>
-  )
 }
 ```
 
@@ -132,54 +137,56 @@ while task_queue:
 
 **Smithers:**
 ```tsx
-const useTaskStore = create((set, get) => ({
-  tasks: ['Research topic', 'Write outline', 'Draft content'],
-  completed: [],
-
-  completeTask: (task, result) => {
-    set({
-      tasks: get().tasks.filter(t => t !== task),
-      completed: [...get().completed, { task, result }],
-    })
-  },
-
-  addTasks: (newTasks) => {
-    set({ tasks: [...get().tasks, ...newTasks] })
-  },
-}))
+import { createStore } from 'solid-js/store'
 
 function TaskAgent() {
-  const { tasks, completed, completeTask, addTasks } = useTaskStore()
+  const [state, setState] = createStore({
+    tasks: ['Research topic', 'Write outline', 'Draft content'],
+    completed: [],
+  })
 
-  if (tasks.length === 0) {
-    return null // Done
+  const completeTask = (task, result) => {
+    setState(s => ({
+      tasks: s.tasks.filter(t => t !== task),
+      completed: [...s.completed, { task, result }]
+    }))
   }
 
-  const currentTask = tasks[0]
+  const addTasks = (newTasks) => {
+    setState('tasks', prev => [...prev, ...newTasks])
+  }
 
-  return (
-    <Claude
-      onFinished={(result) => {
-        completeTask(currentTask, result)
-        if (result.newTasks) {
-          addTasks(result.newTasks)
-        }
-      }}
-    >
-      <Phase name="execute">
-        Execute task: {currentTask}
+  return () => {
+    if (state.tasks.length === 0) {
+      return null // Done
+    }
 
-        Completed so far:
-        {completed.map(c => `- ${c.task}: ${c.result.summary}`).join('\n')}
-      </Phase>
+    const currentTask = state.tasks[0]
 
-      <OutputFormat schema={{
-        result: 'string',
-        summary: 'string',
-        newTasks: 'string[] (optional)'
-      }} />
-    </Claude>
-  )
+    return (
+      <Claude
+        onFinished={(result) => {
+          completeTask(currentTask, result)
+          if (result.newTasks) {
+            addTasks(result.newTasks)
+          }
+        }}
+      >
+        <Phase name="execute">
+          Execute task: {currentTask}
+
+          Completed so far:
+          {state.completed.map(c => `- ${c.task}: ${c.result.summary}`).join('\n')}
+        </Phase>
+
+        <OutputFormat schema={{
+          result: 'string',
+          summary: 'string',
+          newTasks: 'string[] (optional)'
+        }} />
+      </Claude>
+    )
+  }
 }
 ```
 
@@ -208,9 +215,11 @@ result = crew.kickoff()
 
 **Smithers:**
 ```tsx
-function Researcher({ onComplete }) {
+import { createSignal } from 'solid-js'
+
+function Researcher(props) {
   return (
-    <Claude tools={[searchTool]} onFinished={onComplete}>
+    <Claude tools={[searchTool]} onFinished={props.onComplete}>
       <Persona role="Researcher">
         You find and analyze information.
       </Persona>
@@ -221,33 +230,36 @@ function Researcher({ onComplete }) {
   )
 }
 
-function Writer({ research, onComplete }) {
+function Writer(props) {
   return (
-    <Claude onFinished={onComplete}>
+    <Claude onFinished={props.onComplete}>
       <Persona role="Writer">
         You write clear, engaging content.
       </Persona>
       <Phase name="write">
-        Create content based on: {JSON.stringify(research)}
+        Create content based on: {JSON.stringify(props.research)}
       </Phase>
     </Claude>
   )
 }
 
-function Crew({ topic }) {
-  const [phase, setPhase] = useState('research')
-  const [research, setResearch] = useState(null)
+function Crew(props) {
+  const [phase, setPhase] = createSignal('research')
+  const [research, setResearch] = createSignal(null)
 
-  if (phase === 'research') {
-    return (
-      <Researcher onComplete={(data) => {
-        setResearch(data)
-        setPhase('write')
-      }} />
-    )
+  return () => {
+    const p = phase()
+    if (p === 'research') {
+      return (
+        <Researcher onComplete={(data) => {
+          setResearch(data)
+          setPhase('write')
+        }} />
+      )
+    }
+
+    return <Writer research={research()} onComplete={() => setPhase('done')} />
   }
-
-  return <Writer research={research} onComplete={() => setPhase('done')} />
 }
 ```
 
@@ -265,30 +277,33 @@ public async Task<string> Summarize(string text) {
 
 **Smithers:**
 ```tsx
-function Summarizer({ text, onComplete }) {
+function Summarizer(props) {
   return (
-    <Claude onFinished={onComplete}>
+    <Claude onFinished={props.onComplete}>
       <Phase name="summarize">
-        Summarize: {text}
+        Summarize: {props.text}
       </Phase>
     </Claude>
   )
 }
 
-// Usage - composable like React components
-function MyAgent({ document }) {
-  const [summary, setSummary] = useState(null)
+// Usage - composable like Solid components
+function MyAgent(props) {
+  const [summary, setSummary] = createSignal(null)
 
-  if (!summary) {
-    return <Summarizer text={document} onComplete={setSummary} />
+  return () => {
+    const s = summary()
+    if (!s) {
+      return <Summarizer text={props.document} onComplete={setSummary} />
+    }
+
+    return (
+      <Claude>
+        Based on this summary: {s}
+        Take next action...
+      </Claude>
+    )
   }
-
-  return (
-    <Claude>
-      Based on this summary: {summary}
-      Take next action...
-    </Claude>
-  )
 }
 ```
 
@@ -299,9 +314,9 @@ function MyAgent({ document }) {
 | Chain / Pipeline | Multi-phase component with state |
 | Agent | `<Claude>` component with tools |
 | Tool | Tool object with `execute` function |
-| Memory | Zustand store or React state |
+| Memory | Solid Store or Signals |
 | Prompt Template | JSX with interpolation |
-| Sequential Chain | `useState` phase transitions |
+| Sequential Chain | `createSignal` phase transitions |
 | Parallel Agents | `<Subagent>` components |
 | Agent Executor | Ralph Wiggum loop (`executePlan`) |
 
@@ -354,15 +369,12 @@ When upgrading Smithers versions:
 {
   "dependencies": {
     "smithers": "^0.5.0",
-    "zustand": "^4.0.0",
-    "react": "^19.0.0"
+    "solid-js": "^1.9.0"
   }
 }
 ```
 
-**React Version**: Smithers requires React 19+ for synchronous rendering features.
-
-**Zustand Version**: Zustand 4.x is recommended for TypeScript support.
+**Solid Version**: Smithers requires Solid 1.9+ for universal renderer features.
 
 ## Quick Reference: Framework Translation
 
@@ -371,20 +383,20 @@ When upgrading Smithers versions:
 ```tsx
 // String interpolation
 <Claude>
-  You are a {role}. Your task is to {task}.
-  Input: {JSON.stringify(input)}
+  You are a {props.role}. Your task is to {props.task}.
+  Input: {JSON.stringify(props.input)}
 </Claude>
 
 // Conditional sections
 <Claude>
-  {context && <Phase name="context">{context}</Phase>}
-  <Phase name="main">{mainPrompt}</Phase>
+  {props.context && <Phase name="context">{props.context}</Phase>}
+  <Phase name="main">{props.mainPrompt}</Phase>
 </Claude>
 
 // Dynamic lists
 <Claude>
   <Phase name="review">
-    {files.map(f => <Step key={f}>Review: {f}</Step>)}
+    {props.files.map(f => <Step key={f}>Review: {f}</Step>)}
   </Phase>
 </Claude>
 ```
@@ -393,17 +405,17 @@ When upgrading Smithers versions:
 
 ```tsx
 // Simple state
-const [phase, setPhase] = useState('start')
+const [phase, setPhase] = createSignal('start')
 
-// Complex state with Zustand
-const useStore = create((set, get) => ({
+// Complex state with Solid Store
+const [state, setState] = createStore({
   phase: 'start',
-  data: {},
-  setPhase: (phase) => set({ phase }),
-  addData: (key, value) => set((s) => ({
-    data: { ...s.data, [key]: value }
-  })),
-}))
+  data: {}
+})
+
+// Update
+setPhase('next')
+setState('data', 'key', 'value')
 ```
 
 ### Tool Definition

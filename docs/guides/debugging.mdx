@@ -117,55 +117,9 @@ function GoodAgent() {
 
 ## Common Pitfalls and Solutions
 
-### Stale Closures with useState
+### Stale Closures (Not an issue in Solid)
 
-**Problem**: Parallel callbacks capture stale state
-
-```tsx
-// BUG: Each callback sees results = {}
-function BadParallel({ items }) {
-  const [results, setResults] = useState({})
-
-  return (
-    <>
-      {items.map(item => (
-        <Subagent key={item.id}>
-          <Claude onFinished={(r) => setResults({ ...results, [item.id]: r })}>
-            Process: {item}
-          </Claude>
-        </Subagent>
-      ))}
-    </>
-  )
-}
-```
-
-**Solution**: Use Zustand or functional updates
-
-```tsx
-// CORRECT: Functional update gets latest state
-const useStore = create((set) => ({
-  results: {},
-  addResult: (id, result) =>
-    set((state) => ({ results: { ...state.results, [id]: result } })),
-}))
-
-function GoodParallel({ items }) {
-  const { addResult } = useStore()
-
-  return (
-    <>
-      {items.map(item => (
-        <Subagent key={item.id}>
-          <Claude onFinished={(r) => addResult(item.id, r)}>
-            Process: {item}
-          </Claude>
-        </Subagent>
-      ))}
-    </>
-  )
-}
-```
+In React, stale closures were a common issue. In Solid, signals always return the current value, so this class of bugs is largely eliminated.
 
 ### Node Re-execution on Content Change
 
@@ -187,10 +141,10 @@ function BadAgent() {
 
 ```tsx
 // CORRECT: Static content
-function GoodAgent({ task }) {
+function GoodAgent(props) {
   return (
     <Claude>
-      Task: {task}
+      Task: {props.task}
     </Claude>
   )
 }
@@ -202,16 +156,21 @@ function GoodAgent({ task }) {
 
 ```tsx
 // BUG: Loops forever
-function ForeverAgent() {
-  const [phase, setPhase] = useState('start')
+import { createSignal } from 'solid-js'
 
-  if (phase === 'start') {
-    return <Claude onFinished={() => setPhase('process')}>Init</Claude>
+function ForeverAgent() {
+  const [phase, setPhase] = createSignal('start')
+
+  return () => {
+    const p = phase()
+    if (p === 'start') {
+      return <Claude onFinished={() => setPhase('process')}>Init</Claude>
+    }
+    if (p === 'process') {
+      return <Claude onFinished={() => setPhase('start')}>Process</Claude>
+    }
+    // Never returns null or exits
   }
-  if (phase === 'process') {
-    return <Claude onFinished={() => setPhase('start')}>Process</Claude>
-  }
-  // Never returns null or exits
 }
 ```
 
@@ -220,16 +179,19 @@ function ForeverAgent() {
 ```tsx
 // CORRECT: Has exit condition
 function FiniteAgent() {
-  const [phase, setPhase] = useState('start')
+  const [phase, setPhase] = createSignal('start')
 
-  if (phase === 'start') {
-    return <Claude onFinished={() => setPhase('process')}>Init</Claude>
-  }
-  if (phase === 'process') {
-    return <Claude onFinished={() => setPhase('done')}>Process</Claude>
-  }
+  return () => {
+    const p = phase()
+    if (p === 'start') {
+      return <Claude onFinished={() => setPhase('process')}>Init</Claude>
+    }
+    if (p === 'process') {
+      return <Claude onFinished={() => setPhase('done')}>Process</Claude>
+    }
 
-  return null  // Exit when phase === 'done'
+    return null  // Exit when phase === 'done'
+  }
 }
 ```
 
@@ -251,24 +213,29 @@ function FragileAgent() {
 **Solution**: Handle errors with onError
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 // CORRECT: Error is handled
 function RobustAgent() {
-  const [error, setError] = useState(null)
+  const [error, setError] = createSignal(null)
 
-  if (error) {
+  return () => {
+    const e = error()
+    if (e) {
+      return (
+        <Claude>
+          Previous operation failed: {e.message}
+          Attempting recovery...
+        </Claude>
+      )
+    }
+
     return (
-      <Claude>
-        Previous operation failed: {error.message}
-        Attempting recovery...
+      <Claude onError={setError}>
+        This might fail...
       </Claude>
     )
   }
-
-  return (
-    <Claude onError={(e) => setError(e)}>
-      This might fail...
-    </Claude>
-  )
 }
 ```
 
@@ -277,57 +244,57 @@ function RobustAgent() {
 ### Adding Debug Logging
 
 ```tsx
+import { createStore } from 'solid-js/store'
+
 function DebugAgent() {
-  const { phase, data } = useStore()
+  const [state, setState] = createStore({ phase: 'init', data: {} })
 
-  // Log on every render
-  console.log('[DebugAgent] Render:', { phase, dataKeys: Object.keys(data) })
+  // Log on every execution
+  console.log('[DebugAgent] Executing:', state)
 
-  if (phase === 'process') {
-    return (
-      <Claude
-        onFinished={(result) => {
-          console.log('[DebugAgent] onFinished:', result)
-          setPhase('done')
-        }}
-        onError={(error) => {
-          console.error('[DebugAgent] onError:', error)
-        }}
-      >
-        Process data...
-      </Claude>
-    )
+  return () => {
+    if (state.phase === 'process') {
+      return (
+        <Claude
+          onFinished={(result) => {
+            console.log('[DebugAgent] onFinished:', result)
+            setState('phase', 'done')
+          }}
+          onError={(error) => {
+            console.error('[DebugAgent] onError:', error)
+          }}
+        >
+          Process data...
+        </Claude>
+      )
+    }
+
+    return null
   }
-
-  return null
 }
 ```
 
-### Using React DevTools
+### Using Solid DevTools
 
-Smithers uses real React, so React DevTools work:
+Smithers uses SolidJS, so Solid DevTools work:
 
-1. Install React DevTools browser extension
+1. Install Solid DevTools browser extension (for Desktop app/web)
 2. Run your agent
-3. Inspect component tree and state
+3. Inspect component tree and signals
 
-### Zustand DevTools
+### Store Debugging
 
-Enable Redux DevTools for state inspection:
+Monitor store changes:
 
 ```tsx
-import { create } from 'zustand'
-import { devtools } from 'zustand/middleware'
+import { createStore } from 'solid-js/store'
+import { createEffect } from 'solid-js'
 
-const useStore = create(
-  devtools(
-    (set) => ({
-      phase: 'init',
-      setPhase: (phase) => set({ phase }, false, 'setPhase'),
-    }),
-    { name: 'AgentStore' }
-  )
-)
+const [state, setState] = createStore({ phase: 'init' })
+
+createEffect(() => {
+  console.log('State changed:', state)
+})
 ```
 
 ## Frame Inspection

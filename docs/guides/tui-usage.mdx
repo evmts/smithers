@@ -313,71 +313,37 @@ If your terminal doesn't support Unicode, you'll see ASCII alternatives.
 
 ## Implementation Details
 
-### React Reconciler Integration
+### Solid Renderer Integration
 
-The TUI uses the same React reconciler as Smithers' core renderer:
+The TUI uses the same Solid renderer architecture as Smithers' core renderer:
 
-- **SmithersNode tree**: Directly visualized in TUI
+- **SmithersNode tree**: Directly visualized
 - **Real-time updates**: `onFrameUpdate` callback provides tree snapshots
-- **No polling**: Push-based updates for efficiency
+- **Fine-grained reactivity**: Efficient updates without full tree re-renders
 
 ### Performance
 
-The TUI renders at frame boundaries (not continuously):
+The TUI architecture is designed for performance:
 
 - **Update frequency**: Once per Ralph Wiggum loop frame
-- **Render time**: <10ms for trees with <100 nodes
-- **Memory overhead**: ~1MB for TUI state
-
-### Terminal Rendering
-
-Uses OpenTUI library for terminal rendering:
-
-- **Sub-millisecond frame times**: Smooth 60 FPS when needed
-- **Efficient diffs**: Only updates changed regions
-- **Raw mode**: Direct terminal control for responsive UI
+- **Minimal overhead**: Lightweight state management via Solid signals
 
 ## Advanced Usage
 
 ### Programmatic TUI
 
-You can use the TUI programmatically in your own tools:
+You can hook into the execution loop to build custom visualizations:
 
 ```typescript
-import { executePlan, TuiRoot } from '@evmts/smithers'
-import { renderToTerminal } from '@opentui/react'
+import { executePlan } from '@evmts/smithers'
 
-// Render TUI
-const renderer = renderToTerminal(<TuiRoot />)
-
-// Execute with TUI updates
-const result = await executePlan(<MyAgent />, {
+// Execute with custom frame handling
+const result = await executePlan(() => <MyAgent />, {
   onFrameUpdate: (tree, frame) => {
-    renderer.update(<TuiRoot tree={tree} frame={frame} />)
+    // Render tree to your custom UI
+    myCustomRenderer.update(tree, frame)
   },
 })
-
-// Cleanup
-renderer.cleanup()
-```
-
-### Custom TUI Components
-
-Extend the TUI with custom visualizations:
-
-```typescript
-import { TuiRoot, TreeView, AgentPanel } from 'smithers/tui'
-
-function CustomTUI({ tree, frame }) {
-  return (
-    <Layout>
-      <Header frame={frame} elapsed={Date.now() - startTime} />
-      <TreeView tree={tree} />
-      <CustomMetrics tree={tree} />  {/* Your custom component */}
-      <AgentPanel />
-    </Layout>
-  )
-}
 ```
 
 ## Future Enhancements
