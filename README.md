@@ -1,82 +1,85 @@
 # Smithers
 
-**A declarative framework for building AI agents in React.**
+**A declarative framework for building AI agents in SolidJS.**
 
-Build AI agents the same way you build user interfaces. Smithers lets you compose complex agent workflows from simple, reusable components using JSX—with React state driving behavior, conditional rendering controlling flow, and TypeScript keeping everything type-safe.
+Build AI agents the same way you build user interfaces. Smithers lets you compose complex agent workflows from simple, reusable components using JSX—with SolidJS signals driving behavior, conditional rendering controlling flow, and TypeScript keeping everything type-safe.
 
 ```tsx
-import { create } from 'zustand'
+import { createSignal } from 'solid-js'
 import { renderPlan, executePlan, Claude, Phase, Step, Subagent } from '@evmts/smithers'
 
-// Define agent state with Zustand
-const useResearchStore = create((set, get) => ({
-  phase: 'research' as 'research' | 'analyze' | 'write',
-  sources: [] as { id: string; url: string }[],
-  analyses: {} as Record<string, any>,
+function ResearchAgent(props) {
+  const [phase, setPhase] = createSignal('research')
+  const [sources, setSources] = createSignal([])
+  const [analyses, setAnalyses] = createSignal({})
 
-  setSources: (sources) => set({ sources, phase: 'analyze' }),
-  addAnalysis: (id, result) => {
-    const analyses = { ...get().analyses, [id]: result }
-    const allDone = Object.keys(analyses).length === get().sources.length
-    set({ analyses, phase: allDone ? 'write' : 'analyze' })
-  },
-}))
+  // Return a closure to track signal updates (standard SolidJS pattern for dynamic sub-trees)
+  return () => {
+    const p = phase()
+    const s = sources()
+    const a = analyses()
 
-function ResearchAgent({ topic }) {
-  const { phase, sources, analyses, setSources, addAnalysis } = useResearchStore()
+    if (p === 'research') {
+      return (
+        <Claude tools={[webSearch]} onFinished={(result) => {
+          setSources(result.sources)
+          setPhase('analyze')
+        }}>
+          <Phase name="research">
+            <Step>Search for recent articles about {props.topic}</Step>
+            <Step>Find at least 5 credible sources</Step>
+          </Phase>
+        </Claude>
+      )
+    }
 
-  if (phase === 'research') {
+    if (p === 'analyze') {
+      return (
+        <>
+          {s.map((source) => (
+            <Subagent key={source.id} name={`analyzer-${source.id}`}>
+              <Claude onFinished={(result) => {
+                 setAnalyses(prev => ({ ...prev, [source.id]: result }))
+                 if (Object.keys(analyses()).length === s.length) {
+                   setPhase('write')
+                 }
+              }}>
+                Analyze: {source.url}
+                Identify: main argument, evidence quality, potential biases
+              </Claude>
+            </Subagent>
+          ))}
+        </>
+      )
+    }
+
     return (
-      <Claude tools={[webSearch]} onFinished={(result) => setSources(result.sources)}>
-        <Phase name="research">
-          <Step>Search for recent articles about {topic}</Step>
-          <Step>Find at least 5 credible sources</Step>
+      <Claude tools={[filesystem]}>
+        <Phase name="write">
+          Write a research report synthesizing: {JSON.stringify(Object.values(a))}
+          Save to output/report.md
         </Phase>
       </Claude>
     )
   }
-
-  if (phase === 'analyze') {
-    return (
-      <>
-        {sources.map((source) => (
-          <Subagent key={source.id} name={`analyzer-${source.id}`}>
-            <Claude onFinished={(result) => addAnalysis(source.id, result)}>
-              Analyze: {source.url}
-              Identify: main argument, evidence quality, potential biases
-            </Claude>
-          </Subagent>
-        ))}
-      </>
-    )
-  }
-
-  return (
-    <Claude tools={[filesystem]}>
-      <Phase name="write">
-        Write a research report synthesizing: {JSON.stringify(Object.values(analyses))}
-        Save to output/report.md
-      </Phase>
-    </Claude>
-  )
 }
 
 // Preview the XML plan
-const xml = await renderPlan(<ResearchAgent topic="quantum computing" />)
+const xml = await renderPlan(() => <ResearchAgent topic="quantum computing" />)
 console.log(xml)
 
 // Execute the agent
-const result = await executePlan(<ResearchAgent topic="quantum computing" />)
+const result = await executePlan(() => <ResearchAgent topic="quantum computing" />)
 ```
 
 ## Why Smithers?
 
-**Agents are just UIs for LLMs.** The same problems you solved with React for user interfaces—composition, state management, conditional rendering—apply to agent orchestration. Smithers brings the React mental model to AI agents.
+**Agents are just UIs for LLMs.** The same problems you solved with component frameworks for user interfaces—composition, state management, conditional rendering—apply to agent orchestration. Smithers brings the SolidJS mental model to AI agents.
 
 | Without Smithers | With Smithers |
 |--------------|-----------|
 | Imperative chains of API calls | Declarative component trees |
-| Scattered state across functions | Centralized React state |
+| Scattered state across functions | Centralized Solid signals |
 | Copy-paste prompt templates | Reusable, composable components |
 | Hard to visualize agent flow | Preview the plan before execution |
 | Manual parallel orchestration | `<Subagent parallel>` |
@@ -85,7 +88,7 @@ const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 
 ✨ **Desktop App** - Real-time execution visualization with the Smithers Desktop (Tauri)
 🔄 **The Ralph Wiggum Loop** - Automatic re-execution until your agent completes its goals
-⚛️ **React State Management** - Use useState, Zustand, or any React state library
+Signal **SolidJS State Management** - Use signals, stores, and effects
 🎯 **Terraform-Style Approval** - Preview the plan before execution
 🧩 **Component Composition** - Build complex agents from simple, reusable pieces
 ⚡ **Parallel Execution** - Run multiple agents concurrently with `<Subagent parallel>`
@@ -105,9 +108,9 @@ const result = await executePlan(<ResearchAgent topic="quantum computing" />)
 
 ```bash
 # Install the core library
-npm install @evmts/smithers
+npm install @evmts/smithers solid-js
 # or with bun
-bun add @evmts/smithers
+bun add @evmts/smithers solid-js
 
 # Install the CLI (globally)
 npm install -g @evmts/smithers-cli
@@ -124,7 +127,7 @@ Create `review-agent.tsx`:
 ```tsx
 import { Claude, Constraints, OutputFormat } from '@evmts/smithers'
 
-export function ReviewAgent({ files }) {
+export default function ReviewAgent(props) {
   return (
     <Claude tools={[filesystem, grep]}>
       <Constraints>
@@ -133,7 +136,7 @@ export function ReviewAgent({ files }) {
         - Ignore formatting (that's what linters are for)
       </Constraints>
 
-      Review these files for issues: {files.join(', ')}
+      Review these files for issues: {props.files.join(', ')}
 
       <OutputFormat>
         Return JSON: { issues: [{ file, line, severity, message }] }
@@ -219,7 +222,7 @@ This is the flagship example showing how to build production-grade features with
 - **Test-driven development** flow
 
 ```tsx
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 import { executePlan, Claude, Phase, Step, Persona, Constraints, OutputFormat, Human, Stop } from '@evmts/smithers'
 
 type WorkflowPhase =
@@ -228,197 +231,194 @@ type WorkflowPhase =
   | 'api-impl' | 'test-impl' | 'test-verify' | 'implementation'
   | 'done' | 'cancelled'
 
-const useWorkflowStore = create((set, get) => ({
-  phase: 'prompt-input' as WorkflowPhase,
-  prompt: '',
-  fileResearch: [],
-  initialPlan: null,
-  refinedPlan: null,
-  pocResult: null,
+function FeatureWorkflow(props) {
+  const [state, setState] = createStore({
+    phase: 'prompt-input' as WorkflowPhase,
+    prompt: '',
+    fileResearch: [],
+    initialPlan: null,
+    refinedPlan: null,
+    pocResult: null,
+  })
 
-  setPhase: (phase) => set({ phase }),
-  setPrompt: (prompt) => set({ prompt }),
-  // ... other setters
-  nextPhase: () => {
+  const nextPhase = () => {
     const phases = ['prompt-input', 'research', 'planning', 'plan-review', 'poc', 'poc-analysis', 'refined-review', 'api-impl', 'test-impl', 'test-verify', 'implementation', 'done']
-    const idx = phases.indexOf(get().phase)
-    if (idx < phases.length - 1) set({ phase: phases[idx + 1] })
-  },
-}))
+    const idx = phases.indexOf(state.phase)
+    if (idx < phases.length - 1) setState('phase', phases[idx + 1] as WorkflowPhase)
+  }
 
-function FeatureWorkflow({ prompt: initialPrompt }) {
-  const { phase, nextPhase, setPhase, setPrompt } = useWorkflowStore()
+  return () => {
+    switch (state.phase) {
+      // Phase 1: Human confirms the feature request
+      case 'prompt-input':
+        return (
+          <Human
+            message="Review the feature request before proceeding"
+            onApprove={() => { setState('prompt', props.prompt); nextPhase() }}
+            onReject={() => setState('phase', 'cancelled')}
+          >
+            Feature: {props.prompt}
+          </Human>
+        )
 
-  switch (phase) {
-    // Phase 1: Human confirms the feature request
-    case 'prompt-input':
-      return (
-        <Human
-          message="Review the feature request before proceeding"
-          onApprove={() => { setPrompt(initialPrompt); nextPhase() }}
-          onReject={() => setPhase('cancelled')}
-        >
-          Feature: {initialPrompt}
-        </Human>
-      )
+      // Phase 2: Research the codebase
+      case 'research':
+        return (
+          <Claude
+            allowedTools={['Read', 'Glob', 'Grep']}
+            onFinished={(result) => {
+              setState('fileResearch', result.files)
+              nextPhase()
+            }}
+          >
+            <Persona role="senior software architect">
+              You explore codebases thoroughly before acting.
+            </Persona>
+            <Phase name="research">
+              <Step>Search for relevant file paths</Step>
+              <Step>Find existing patterns and conventions</Step>
+              <Step>Identify integration points</Step>
+            </Phase>
+            Feature to implement: {state.prompt}
+          </Claude>
+        )
 
-    // Phase 2: Research the codebase
-    case 'research':
-      return (
-        <Claude
-          allowedTools={['Read', 'Glob', 'Grep']}
-          onFinished={(result) => {
-            useWorkflowStore.setState({ fileResearch: result.files })
-            nextPhase()
-          }}
-        >
-          <Persona role="senior software architect">
-            You explore codebases thoroughly before acting.
-          </Persona>
-          <Phase name="research">
-            <Step>Search for relevant file paths</Step>
-            <Step>Find existing patterns and conventions</Step>
-            <Step>Identify integration points</Step>
-          </Phase>
-          Feature to implement: {useWorkflowStore.getState().prompt}
-        </Claude>
-      )
+      // Phase 3: Create implementation plan
+      case 'planning':
+        return (
+          <Claude onFinished={(plan) => { setState('initialPlan', plan); nextPhase() }}>
+            <Persona role="software architect">Create detailed, actionable plans.</Persona>
+            <Phase name="planning">
+              <Step>Analyze research findings</Step>
+              <Step>Break down into concrete steps</Step>
+              <Step>Identify test cases including edge cases</Step>
+              <Step>Define public API surface</Step>
+            </Phase>
+            <OutputFormat schema={{ summary: 'string', steps: 'array', testCases: 'array', apis: 'array' }}>
+              Return a JSON implementation plan.
+            </OutputFormat>
+          </Claude>
+        )
 
-    // Phase 3: Create implementation plan
-    case 'planning':
-      return (
-        <Claude onFinished={(plan) => { useWorkflowStore.setState({ initialPlan: plan }); nextPhase() }}>
-          <Persona role="software architect">Create detailed, actionable plans.</Persona>
-          <Phase name="planning">
-            <Step>Analyze research findings</Step>
-            <Step>Break down into concrete steps</Step>
-            <Step>Identify test cases including edge cases</Step>
-            <Step>Define public API surface</Step>
-          </Phase>
-          <OutputFormat schema={{ summary: 'string', steps: 'array', testCases: 'array', apis: 'array' }}>
-            Return a JSON implementation plan.
-          </OutputFormat>
-        </Claude>
-      )
+      // Phase 4: Human reviews the plan
+      case 'plan-review':
+        return (
+          <Human
+            message="Review the implementation plan"
+            onApprove={() => nextPhase()}
+            onReject={() => setState('phase', 'cancelled')}
+          >
+            {JSON.stringify(state.initialPlan, null, 2)}
+          </Human>
+        )
 
-    // Phase 4: Human reviews the plan
-    case 'plan-review':
-      return (
-        <Human
-          message="Review the implementation plan"
-          onApprove={() => nextPhase()}
-          onReject={() => setPhase('cancelled')}
-        >
-          {JSON.stringify(useWorkflowStore.getState().initialPlan, null, 2)}
-        </Human>
-      )
+      // Phase 5: Build a proof of concept
+      case 'poc':
+        return (
+          <Claude
+            allowedTools={['Read', 'Write', 'Edit', 'Bash']}
+            onFinished={(result) => { setState('pocResult', result); nextPhase() }}
+          >
+            <Persona role="rapid prototyping engineer">
+              Build quick, working prototypes to validate approaches.
+            </Persona>
+            <Constraints>
+              - Build a WORKING proof of concept, not production code
+              - Goal is to validate the approach and discover unknowns
+              - Document discoveries and suggestions for the real implementation
+            </Constraints>
+          </Claude>
+        )
 
-    // Phase 5: Build a proof of concept
-    case 'poc':
-      return (
-        <Claude
-          allowedTools={['Read', 'Write', 'Edit', 'Bash']}
-          onFinished={(result) => { useWorkflowStore.setState({ pocResult: result }); nextPhase() }}
-        >
-          <Persona role="rapid prototyping engineer">
-            Build quick, working prototypes to validate approaches.
-          </Persona>
-          <Constraints>
-            - Build a WORKING proof of concept, not production code
-            - Goal is to validate the approach and discover unknowns
-            - Document discoveries and suggestions for the real implementation
-          </Constraints>
-        </Claude>
-      )
+      // Phase 6: Deep analysis with extended thinking
+      case 'poc-analysis':
+        return (
+          <Claude
+            maxThinkingTokens={16000}
+            onFinished={(result) => {
+              setState('refinedPlan', result.refinedPlan)
+              nextPhase()
+            }}
+          >
+            <Persona role="senior architect">Deep analysis of POC results.</Persona>
+            <Phase name="poc-analysis">
+              <Step>Analyze POC discoveries</Step>
+              <Step>Update plan based on learnings</Step>
+              <Step>Add detailed test cases from POC findings</Step>
+            </Phase>
+            POC Result: {JSON.stringify(state.pocResult)}
+          </Claude>
+        )
 
-    // Phase 6: Deep analysis with extended thinking
-    case 'poc-analysis':
-      return (
-        <Claude
-          maxThinkingTokens={16000}
-          onFinished={(result) => {
-            useWorkflowStore.setState({ refinedPlan: result.refinedPlan })
-            nextPhase()
-          }}
-        >
-          <Persona role="senior architect">Deep analysis of POC results.</Persona>
-          <Phase name="poc-analysis">
-            <Step>Analyze POC discoveries</Step>
-            <Step>Update plan based on learnings</Step>
-            <Step>Add detailed test cases from POC findings</Step>
-          </Phase>
-          POC Result: {JSON.stringify(useWorkflowStore.getState().pocResult)}
-        </Claude>
-      )
+      // Phase 7: Human reviews refined plan
+      case 'refined-review':
+        return (
+          <Human
+            message="Review the refined plan with APIs and test cases"
+            onApprove={() => nextPhase()}
+            onReject={() => setState('phase', 'cancelled')}
+          >
+            {JSON.stringify(state.refinedPlan, null, 2)}
+          </Human>
+        )
 
-    // Phase 7: Human reviews refined plan
-    case 'refined-review':
-      return (
-        <Human
-          message="Review the refined plan with APIs and test cases"
-          onApprove={() => nextPhase()}
-          onReject={() => setPhase('cancelled')}
-        >
-          {JSON.stringify(useWorkflowStore.getState().refinedPlan, null, 2)}
-        </Human>
-      )
+      // Phase 8: Implement types and JSDoc (throw not implemented)
+      case 'api-impl':
+        return (
+          <Claude allowedTools={['Read', 'Write', 'Edit']} onFinished={() => nextPhase()}>
+            <Phase name="api-impl">
+              <Step>Create TypeScript interfaces and types</Step>
+              <Step>Write comprehensive JSDoc documentation</Step>
+              <Step>All function bodies throw new Error('Not implemented')</Step>
+            </Phase>
+          </Claude>
+        )
 
-    // Phase 8: Implement types and JSDoc (throw not implemented)
-    case 'api-impl':
-      return (
-        <Claude allowedTools={['Read', 'Write', 'Edit']} onFinished={() => nextPhase()}>
-          <Phase name="api-impl">
-            <Step>Create TypeScript interfaces and types</Step>
-            <Step>Write comprehensive JSDoc documentation</Step>
-            <Step>All function bodies throw new Error('Not implemented')</Step>
-          </Phase>
-        </Claude>
-      )
+      // Phase 9: Write tests
+      case 'test-impl':
+        return (
+          <Claude allowedTools={['Read', 'Write', 'Edit']} onFinished={() => nextPhase()}>
+            <Phase name="test-impl">
+              <Step>Write tests for all test cases from plan</Step>
+              <Step>Tests should FAIL at this point</Step>
+            </Phase>
+          </Claude>
+        )
 
-    // Phase 9: Write tests
-    case 'test-impl':
-      return (
-        <Claude allowedTools={['Read', 'Write', 'Edit']} onFinished={() => nextPhase()}>
-          <Phase name="test-impl">
-            <Step>Write tests for all test cases from plan</Step>
-            <Step>Tests should FAIL at this point</Step>
-          </Phase>
-        </Claude>
-      )
+      // Phase 10: Verify tests fail
+      case 'test-verify':
+        return (
+          <Claude allowedTools={['Bash']} onFinished={() => nextPhase()}>
+            <Phase name="test-verify">
+              <Step>Run test suite</Step>
+              <Step>Verify tests fail with "Not implemented"</Step>
+            </Phase>
+          </Claude>
+        )
 
-    // Phase 10: Verify tests fail
-    case 'test-verify':
-      return (
-        <Claude allowedTools={['Bash']} onFinished={() => nextPhase()}>
-          <Phase name="test-verify">
-            <Step>Run test suite</Step>
-            <Step>Verify tests fail with "Not implemented"</Step>
-          </Phase>
-        </Claude>
-      )
+      // Phase 11: Implement the actual code
+      case 'implementation':
+        return (
+          <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>
+            <Phase name="implementation">
+              <Step>Replace stubs with real implementation</Step>
+              <Step>Run tests until they pass</Step>
+            </Phase>
+          </Claude>
+        )
 
-    // Phase 11: Implement the actual code
-    case 'implementation':
-      return (
-        <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>
-          <Phase name="implementation">
-            <Step>Replace stubs with real implementation</Step>
-            <Step>Run tests until they pass</Step>
-          </Phase>
-        </Claude>
-      )
+      case 'done':
+        return null
 
-    case 'done':
-      return null
-
-    case 'cancelled':
-      return <Stop reason="Workflow cancelled by user" />
+      case 'cancelled':
+        return <Stop reason="Workflow cancelled by user" />
+    }
   }
 }
 
 // Run the workflow
 await executePlan(
-  <FeatureWorkflow prompt="Add user authentication" />,
+  () => <FeatureWorkflow prompt="Add user authentication" />,
   {
     onHumanPrompt: async (message, content) => {
       console.log(message, content)
@@ -454,7 +454,7 @@ Every Smithers component renders to part of a prompt. The `<Claude>` component m
     - Suggest tests for any code changes
   </Constraints>
 
-  Review this architecture proposal: {proposal}
+  Review this architecture proposal: {props.proposal}
 </Claude>
 ```
 
@@ -475,42 +475,46 @@ Renders to:
 
 ### State Drives Behavior
 
-Use Zustand (or any React state) to control what your agent does. When state changes, the component re-renders with a new plan.
+Use SolidJS signals or stores to control what your agent does. When state changes, the plan automatically updates.
 
 ```tsx
-import { create } from 'zustand'
+import { createSignal } from 'solid-js'
 
-const useAgentStore = create((set) => ({
-  phase: 'research',
-  findings: null,
-  setFindings: (findings) => set({ findings, phase: 'synthesize' }),
-  complete: () => set({ phase: 'done' }),
-}))
+function ResearchAgent(props) {
+  const [phase, setPhase] = createSignal('research')
+  const [findings, setFindings] = createSignal(null)
 
-function ResearchAgent({ topic }) {
-  const { phase, findings, setFindings, complete } = useAgentStore()
+  const complete = () => setPhase('done')
 
-  if (phase === 'research') {
-    return (
-      <Claude tools={[webSearch]} onFinished={setFindings}>
-        Research {topic}. Find 5 authoritative sources.
-      </Claude>
-    )
+  // Return a closure to create a reactive effect
+  return () => {
+    const p = phase()
+
+    if (p === 'research') {
+      return (
+        <Claude tools={[webSearch]} onFinished={(result) => {
+          setFindings(result)
+          setPhase('synthesize')
+        }}>
+          Research {props.topic}. Find 5 authoritative sources.
+        </Claude>
+      )
+    }
+
+    if (p === 'synthesize') {
+      return (
+        <Claude onFinished={complete}>
+          Synthesize these findings into a report: {JSON.stringify(findings())}
+        </Claude>
+      )
+    }
+
+    return <div>Research complete!</div>
   }
-
-  if (phase === 'synthesize') {
-    return (
-      <Claude onFinished={complete}>
-        Synthesize these findings into a report: {JSON.stringify(findings)}
-      </Claude>
-    )
-  }
-
-  return <div>Research complete!</div>
 }
 ```
 
-The agent automatically progresses through phases as `onFinished` callbacks update state. Zustand ensures no stale closures—the store always has the latest state.
+The agent automatically progresses through phases as `onFinished` callbacks update state.
 
 ### Composition
 
@@ -518,27 +522,27 @@ Build complex agents from simple, reusable pieces:
 
 ```tsx
 // Reusable persona component
-function SecurityExpert({ children }) {
+function SecurityExpert(props) {
   return (
     <Persona role="Security Expert">
       You are a senior application security engineer with expertise
       in OWASP Top 10, secure coding practices, and threat modeling.
-      {children}
+      {props.children}
     </Persona>
   )
 }
 
 // Reusable output format
-function JSONOutput({ schema }) {
+function JSONOutput(props) {
   return (
-    <OutputFormat schema={schema}>
+    <OutputFormat schema={props.schema}>
       Respond with valid JSON matching the schema. No markdown, no explanation.
     </OutputFormat>
   )
 }
 
 // Composed agent
-function SecurityAudit({ codebase }) {
+function SecurityAudit(props) {
   return (
     <Claude tools={[filesystem, grep]}>
       <SecurityExpert />
@@ -547,7 +551,7 @@ function SecurityAudit({ codebase }) {
         - Provide actionable remediation steps
       </Constraints>
 
-      Audit {codebase} for security vulnerabilities.
+      Audit {props.codebase} for security vulnerabilities.
 
       <JSONOutput schema={{
         vulnerabilities: [{
@@ -567,36 +571,40 @@ function SecurityAudit({ codebase }) {
 Use `<Subagent>` to run multiple agents concurrently:
 
 ```tsx
-function ParallelResearch({ topics }) {
-  const [results, setResults] = useState({})
+import { createStore } from 'solid-js/store'
 
-  const pendingTopics = topics.filter(t => !results[t])
+function ParallelResearch(props) {
+  const [results, setResults] = createStore({})
 
-  if (pendingTopics.length > 0) {
+  return () => {
+    const pendingTopics = props.topics.filter(t => !results[t])
+
+    if (pendingTopics.length > 0) {
+      return (
+        <>
+          {pendingTopics.map(topic => (
+            <Subagent key={topic} name={`researcher-${topic}`}>
+              <Claude
+                tools={[webSearch]}
+                onFinished={(result) => {
+                  setResults(topic, result)
+                }}
+              >
+                Research: {topic}
+              </Claude>
+            </Subagent>
+          ))}
+        </>
+      )
+    }
+
     return (
-      <>
-        {pendingTopics.map(topic => (
-          <Subagent key={topic} name={`researcher-${topic}`}>
-            <Claude
-              tools={[webSearch]}
-              onFinished={(result) => {
-                setResults(prev => ({ ...prev, [topic]: result }))
-              }}
-            >
-              Research: {topic}
-            </Claude>
-          </Subagent>
-        ))}
-      </>
+      <Claude>
+        Combine these research results into a unified report:
+        {JSON.stringify(results)}
+      </Claude>
     )
   }
-
-  return (
-    <Claude>
-      Combine these research results into a unified report:
-      {JSON.stringify(results)}
-    </Claude>
-  )
 }
 ```
 
@@ -609,57 +617,64 @@ All `<Subagent>` components execute in parallel. The parent waits for all to com
 An architect designs the solution, then multiple developers implement in parallel:
 
 ```tsx
-function FeatureTeam({ feature }) {
-  const [plan, setPlan] = useState(null)
-  const [implementations, setImplementations] = useState({})
+import { createSignal } from 'solid-js'
+import { createStore } from 'solid-js/store'
 
-  // Phase 1: Architect designs the plan
-  if (!plan) {
+function FeatureTeam(props) {
+  const [plan, setPlan] = createSignal(null)
+  const [implementations, setImplementations] = createStore({})
+
+  return () => {
+    const p = plan()
+
+    // Phase 1: Architect designs the plan
+    if (!p) {
+      return (
+        <Claude onFinished={setPlan}>
+          <Persona role="Software Architect" />
+          Design an implementation plan for: {props.feature}
+
+          Break it into independent subtasks that can be worked on in parallel.
+          <OutputFormat schema={{ subtasks: [{ id: 'string', description: 'string' }] }} />
+        </Claude>
+      )
+    }
+
+    // Phase 2: Developers implement in parallel
+    const pendingTasks = p.subtasks.filter(t => !implementations[t.id])
+
+    if (pendingTasks.length > 0) {
+      return (
+        <>
+          {pendingTasks.map(task => (
+            <Subagent key={task.id} name={`dev-${task.id}`}>
+              <Claude
+                tools={[filesystem, terminal]}
+                onFinished={(code) => {
+                  setImplementations(task.id, code)
+                }}
+              >
+                <Persona role="Senior Developer" />
+                Implement this subtask: {task.description}
+                Write clean, tested code.
+              </Claude>
+            </Subagent>
+          ))}
+        </>
+      )
+    }
+
+    // Phase 3: Integration
     return (
-      <Claude onFinished={setPlan}>
-        <Persona role="Software Architect" />
-        Design an implementation plan for: {feature}
+      <Claude tools={[filesystem, terminal]}>
+        <Persona role="Tech Lead" />
+        Review and integrate these implementations:
+        {JSON.stringify(implementations)}
 
-        Break it into independent subtasks that can be worked on in parallel.
-        <OutputFormat schema={{ subtasks: [{ id: 'string', description: 'string' }] }} />
+        Ensure everything works together and tests pass.
       </Claude>
     )
   }
-
-  // Phase 2: Developers implement in parallel
-  const pendingTasks = plan.subtasks.filter(t => !implementations[t.id])
-
-  if (pendingTasks.length > 0) {
-    return (
-      <>
-        {pendingTasks.map(task => (
-          <Subagent key={task.id} name={`dev-${task.id}`}>
-            <Claude
-              tools={[filesystem, terminal]}
-              onFinished={(code) => {
-                setImplementations(prev => ({ ...prev, [task.id]: code }))
-              }}
-            >
-              <Persona role="Senior Developer" />
-              Implement this subtask: {task.description}
-              Write clean, tested code.
-            </Claude>
-          </Subagent>
-        ))}
-      </>
-    )
-  }
-
-  // Phase 3: Integration
-  return (
-    <Claude tools={[filesystem, terminal]}>
-      <Persona role="Tech Lead" />
-      Review and integrate these implementations:
-      {JSON.stringify(implementations)}
-
-      Ensure everything works together and tests pass.
-    </Claude>
-  )
 }
 ```
 
@@ -668,77 +683,89 @@ function FeatureTeam({ feature }) {
 Process data through multiple stages with error handling:
 
 ```tsx
-function DataPipeline({ source }) {
-  const [stage, setStage] = useState('extract')
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (error) {
-    return (
-      <Claude onFinished={() => { setError(null); setStage('extract') }}>
-        This error occurred: {error.message}
-        Suggest how to fix it and retry.
-      </Claude>
-    )
+function DataPipeline(props) {
+  const [stage, setStage] = createSignal('extract')
+  const [data, setData] = createSignal(null)
+  const [error, setError] = createSignal(null)
+
+  return () => {
+    const s = stage()
+    const d = data()
+    const err = error()
+
+    if (err) {
+      return (
+        <Claude onFinished={() => { setError(null); setStage('extract') }}>
+          This error occurred: {err.message}
+          Suggest how to fix it and retry.
+        </Claude>
+      )
+    }
+
+    if (s === 'extract') {
+      return (
+        <Claude
+          tools={[database, api]}
+          onFinished={(res) => { setData(res); setStage('transform') }}
+          onError={setError}
+        >
+          <Phase name="extract">
+            Extract data from {props.source}.
+            Handle pagination and rate limits.
+          </Phase>
+        </Claude>
+      )
+    }
+
+    if (s === 'transform') {
+      return (
+        <Claude
+          onFinished={(res) => { setData(res); setStage('validate') }}
+          onError={setError}
+        >
+          <Phase name="transform">
+            Clean and normalize this data: {JSON.stringify(d)}
+            - Remove duplicates
+            - Standardize date formats
+            - Fill missing values where possible
+          </Phase>
+        </Claude>
+      )
+    }
+
+    if (s === 'validate') {
+      return (
+        <Claude
+          onFinished={(res) => { setData(res); setStage('load') }}
+          onError={setError}
+        >
+          <Phase name="validate">
+            Validate this data: {JSON.stringify(d)}
+            Check for: completeness, consistency, accuracy
+          </Phase>
+        </Claude>
+      )
+    }
+
+    if (s === 'load') {
+      return (
+        <Claude
+          tools={[database]}
+          onFinished={() => setStage('done')}
+          onError={setError}
+        >
+          <Phase name="load">
+            Load this validated data into the target database:
+            {JSON.stringify(d)}
+          </Phase>
+        </Claude>
+      )
+    }
+
+    return <div>Pipeline complete!</div>
   }
-
-  const stages = {
-    extract: (
-      <Claude
-        tools={[database, api]}
-        onFinished={(d) => { setData(d); setStage('transform') }}
-        onError={setError}
-      >
-        <Phase name="extract">
-          Extract data from {source}.
-          Handle pagination and rate limits.
-        </Phase>
-      </Claude>
-    ),
-
-    transform: (
-      <Claude
-        onFinished={(d) => { setData(d); setStage('validate') }}
-        onError={setError}
-      >
-        <Phase name="transform">
-          Clean and normalize this data: {JSON.stringify(data)}
-          - Remove duplicates
-          - Standardize date formats
-          - Fill missing values where possible
-        </Phase>
-      </Claude>
-    ),
-
-    validate: (
-      <Claude
-        onFinished={(d) => { setData(d); setStage('load') }}
-        onError={setError}
-      >
-        <Phase name="validate">
-          Validate this data: {JSON.stringify(data)}
-          Check for: completeness, consistency, accuracy
-        </Phase>
-      </Claude>
-    ),
-
-    load: (
-      <Claude
-        tools={[database]}
-        onFinished={() => setStage('done')}
-        onError={setError}
-      >
-        <Phase name="load">
-          Load this validated data into the target database:
-          {JSON.stringify(data)}
-        </Phase>
-      </Claude>
-    ),
-
-    done: <div>Pipeline complete!</div>
-  }
-
-  return stages[stage]
 }
 ```
 
@@ -747,54 +774,62 @@ function DataPipeline({ source }) {
 An agent that iterates based on feedback:
 
 ```tsx
-function WritingAssistant({ assignment }) {
-  const [draft, setDraft] = useState(null)
-  const [feedback, setFeedback] = useState(null)
-  const [iteration, setIteration] = useState(0)
+import { createSignal } from 'solid-js'
 
-  // Initial draft
-  if (!draft) {
+function WritingAssistant(props) {
+  const [draft, setDraft] = createSignal(null)
+  const [feedback, setFeedback] = createSignal(null)
+  const [iteration, setIteration] = createSignal(0)
+
+  return () => {
+    const d = draft()
+    const f = feedback()
+    const i = iteration()
+
+    // Initial draft
+    if (!d) {
+      return (
+        <Claude onFinished={setDraft}>
+          Write a first draft for: {props.assignment}
+        </Claude>
+      )
+    }
+
+    // Get feedback
+    if (!f) {
+      return (
+        <Claude onFinished={setFeedback}>
+          <Persona role="Editor" />
+          Review this draft and provide specific, actionable feedback:
+          {d}
+        </Claude>
+      )
+    }
+
+    // Refine based on feedback (max 3 iterations)
+    if (i < 3 && f.needsWork) {
+      return (
+        <Claude
+          onFinished={(newDraft) => {
+            setDraft(newDraft)
+            setFeedback(null)
+            setIteration(prev => prev + 1)
+          }}
+        >
+          Revise this draft based on the feedback:
+
+          Draft: {d}
+          Feedback: {JSON.stringify(f)}
+        </Claude>
+      )
+    }
+
     return (
-      <Claude onFinished={setDraft}>
-        Write a first draft for: {assignment}
+      <Claude>
+        Polish this final draft for publication: {d}
       </Claude>
     )
   }
-
-  // Get feedback
-  if (!feedback) {
-    return (
-      <Claude onFinished={setFeedback}>
-        <Persona role="Editor" />
-        Review this draft and provide specific, actionable feedback:
-        {draft}
-      </Claude>
-    )
-  }
-
-  // Refine based on feedback (max 3 iterations)
-  if (iteration < 3 && feedback.needsWork) {
-    return (
-      <Claude
-        onFinished={(newDraft) => {
-          setDraft(newDraft)
-          setFeedback(null)
-          setIteration(i => i + 1)
-        }}
-      >
-        Revise this draft based on the feedback:
-
-        Draft: {draft}
-        Feedback: {JSON.stringify(feedback)}
-      </Claude>
-    )
-  }
-
-  return (
-    <Claude>
-      Polish this final draft for publication: {draft}
-    </Claude>
-  )
 }
 ```
 
@@ -1100,10 +1135,10 @@ interface MyAgentProps {
   maxResults?: number
 }
 
-function MyAgent({ topic, maxResults = 10 }: MyAgentProps) {
+function MyAgent(props: MyAgentProps) {
   return (
     <Claude tools={[searchTool]}>
-      Search for {maxResults} results about: {topic}
+      Search for {props.maxResults || 10} results about: {props.topic}
     </Claude>
   )
 }
@@ -1111,17 +1146,17 @@ function MyAgent({ topic, maxResults = 10 }: MyAgentProps) {
 
 ## How It Works
 
-Smithers uses a custom React renderer (like react-dom, but for AI agents):
+Smithers uses a custom SolidJS renderer:
 
-1. **Render**: Your JSX components render to an internal tree
-2. **Serialize**: The tree is converted to an XML plan
-3. **Preview**: You see the plan before execution (unless `--auto-approve`)
-4. **Execute**: `<Claude>` nodes are executed via the Claude API
-5. **Update**: `onFinished` callbacks update React state
-6. **Loop**: State changes trigger re-render, back to step 1
-7. **Complete**: When no pending `<Claude>` nodes remain, execution finishes
+1.  **Render**: Your JSX components render to an internal `SmithersNode` tree using Solid's fine-grained reactivity.
+2.  **Serialize**: The tree is converted to an XML plan.
+3.  **Preview**: You see the plan before execution (unless `--auto-approve`).
+4.  **Execute**: `<Claude>` nodes are executed via the Claude API.
+5.  **Update**: `onFinished` callbacks update Solid signals.
+6.  **Loop**: Signal changes trigger fine-grained updates to the tree, back to step 2.
+7.  **Complete**: When no pending `<Claude>` nodes remain, execution finishes.
 
-This "render loop" model means your agent's behavior emerges from your React component logic—conditionals, state machines, composition—all the patterns you already know.
+This "render loop" model means your agent's behavior emerges from your SolidJS component logic—conditionals, state machines, composition—all the patterns you already know.
 
 ## Documentation
 
@@ -1137,12 +1172,12 @@ Smithers is organized as a pnpm monorepo:
 ```
 smithers/
 ├── packages/
-│   ├── smithers/           # @evmts/smithers - Core library
+│   ├── smithers/           # @evmts/smithers - Core library (SolidJS)
 │   ├── cli/                # @evmts/smithers-cli - CLI tool
 │   └── protocol/           # @evmts/smithers-protocol - WebSocket protocol
 ├── apps/
 │   └── tauri-app/          # @evmts/smithers-desktop - Desktop app (Tauri + Solid.js)
-├── evals/                  # Test suite (663 tests)
+├── evals/                  # Test suite
 ├── examples/               # Example agents
 └── docs/                   # Documentation
 ```

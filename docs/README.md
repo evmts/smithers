@@ -12,7 +12,7 @@ docs/
 │
 ├── concepts/                    # Core concepts
 │   ├── ralph-wiggum-loop.mdx    # The execution model
-│   └── state-management.mdx     # Zustand integration
+│   └── state-management.mdx     # Solid Signals/Stores
 │
 ├── components/                  # Component reference
 │   ├── claude.mdx               # Claude component (Agent SDK)

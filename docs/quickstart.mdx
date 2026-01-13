@@ -14,7 +14,7 @@ This guide will walk you through installing Smithers and creating your first AI 
 - An Anthropic API key
 
 <Note>
-The `smithers` CLI requires Bun because it uses OpenTUI for the interactive terminal interface, which depends on Bun's FFI. If you're only using Smithers as a library in your code, Node.js 18+ will work fine.
+The `smithers` CLI currently requires Bun as a runtime. If you're only using Smithers as a library in your code, Node.js 18+ will work fine.
 </Note>
 
 ## Installation
@@ -22,19 +22,15 @@ The `smithers` CLI requires Bun because it uses OpenTUI for the interactive term
 <CodeGroup>
 
 ```bash npm
-npm install @evmts/smithers
+npm install @evmts/smithers solid-js
 ```
 
 ```bash bun
-bun add @evmts/smithers
+bun add @evmts/smithers solid-js
 ```
 
 ```bash pnpm
-pnpm add smithers
-```
-
-```bash yarn
-yarn add smithers
+pnpm add @evmts/smithers solid-js
 ```
 
 </CodeGroup>
@@ -54,7 +50,7 @@ Create a file called `review-agent.tsx`:
 ```tsx
 import { Claude, Constraints, OutputFormat } from '@evmts/smithers'
 
-export function ReviewAgent({ files }) {
+export default function ReviewAgent(props) {
   return (
     <Claude tools={[filesystem, grep]}>
       <Constraints>
@@ -63,7 +59,7 @@ export function ReviewAgent({ files }) {
         - Ignore formatting (that's what linters are for)
       </Constraints>
 
-      Review these files for issues: {files.join(', ')}
+      Review these files for issues: {props.files.join(', ')}
 
       <OutputFormat>
         Return JSON: {"{"} issues: [{"{"} file, line, severity, message {"}"}] {"}"}
@@ -180,7 +176,7 @@ Result:
     Understand how Smithers executes multi-step agents
   </Card>
   <Card title="State Management" icon="database" href="/concepts/state-management">
-    Learn Zustand patterns for complex agent workflows
+    Learn SolidJS patterns for complex agent workflows
   </Card>
   <Card title="Claude Component" icon="cube" href="/components/claude">
     Explore the full Claude component API

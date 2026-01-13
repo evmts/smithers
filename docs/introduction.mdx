@@ -1,11 +1,11 @@
 ---
 title: Introduction
-description: Build AI agents the way you build user interfaces - with React
+description: Build AI agents the way you build user interfaces - with SolidJS
 ---
 
 # Welcome to Smithers
 
-Smithers is a declarative framework for building AI agents using React and JSX. Build complex agent workflows from simple, reusable components - the same way you build user interfaces.
+Smithers is a declarative framework for building AI agents using SolidJS and JSX. Build complex agent workflows from simple, reusable components - the same way you build user interfaces.
 
 ## Features
 
@@ -13,7 +13,7 @@ Smithers is a declarative framework for building AI agents using React and JSX. 
 - ▲ **First-class Vercel AI SDK support** - Integrate seamlessly with Vercel AI SDK tools and patterns
 - 🔷 **Zod schema validation** - Define structured outputs with Zod schemas
 - 📝 **JSX/TSX & MDX support** - Author agents in `.tsx` or `.mdx` files
-- ⚛️ **React state management** - Use Zustand, useState, or any React state to control agent flow
+- ⚛️ **SolidJS state management** - Use signals and stores to control agent flow
 - 🧩 **Composable components** - Build reusable personas, constraints, and output formats
 - 👀 **Preview before execution** - Render to XML plans for Terraform-style approval workflows
 - ⚡ **Parallel execution** - Run multiple agents concurrently with `<Subagent parallel>`
@@ -39,29 +39,29 @@ Smithers is a declarative framework for building AI agents using React and JSX. 
 
 ## Why Smithers?
 
-**Agents are just UIs for LLMs.** The same problems you solved with React for user interfaces - composition, state management, conditional rendering - apply to agent orchestration. Smithers brings the React mental model to AI agents.
+**Agents are just UIs for LLMs.** The same problems you solved with component frameworks for user interfaces - composition, state management, conditional rendering - apply to agent orchestration. Smithers brings the SolidJS mental model to AI agents.
 
 | Without Smithers | With Smithers |
 |------------------|---------------|
 | Imperative chains of API calls | Declarative component trees |
-| Scattered state across functions | Centralized React state |
+| Scattered state across functions | Centralized Solid signals |
 | Copy-paste prompt templates | Reusable, composable components |
 | Hard to visualize agent flow | Preview the plan before execution |
 | Manual parallel orchestration | `<Subagent parallel>` |
 
 ## How It Works
 
-Smithers uses a custom React renderer (like react-dom, but for AI agents):
+Smithers uses a custom SolidJS renderer:
 
-1. **Render**: Your JSX components render to an internal tree
-2. **Serialize**: The tree is converted to an XML plan
-3. **Preview**: You see the plan before execution (unless `--auto-approve`)
-4. **Execute**: `<Claude>` nodes are executed via the Claude API
-5. **Update**: `onFinished` callbacks update React state
-6. **Loop**: State changes trigger re-render, back to step 1
-7. **Complete**: When no pending `<Claude>` nodes remain, execution finishes
+1. **Render**: Your JSX components render to an internal `SmithersNode` tree using Solid's fine-grained reactivity.
+2. **Serialize**: The tree is converted to an XML plan.
+3. **Preview**: You see the plan before execution (unless `--auto-approve`).
+4. **Execute**: `<Claude>` nodes are executed via the Claude API.
+5. **Update**: `onFinished` callbacks update Solid signals.
+6. **Loop**: Signal changes trigger fine-grained updates to the tree, back to step 2.
+7. **Complete**: When no pending `<Claude>` nodes remain, execution finishes.
 
-This "render loop" model means your agent's behavior emerges from your React component logic - conditionals, state machines, composition - all the patterns you already know.
+This "render loop" model means your agent's behavior emerges from your SolidJS component logic - conditionals, state machines, composition - all the patterns you already know.
 
 ## CLI
 
@@ -91,90 +91,89 @@ This flagship example shows how production-grade features are built with Smither
 - **Test-driven development** flow
 
 ```tsx
-import { create } from 'zustand'
+import { createStore } from 'solid-js/store'
 import { executePlan, Claude, Phase, Step, Human, Stop } from '@evmts/smithers'
 
 type WorkflowPhase = 'prompt-input' | 'research' | 'planning' | 'plan-review' | 'poc' | 'poc-analysis' | 'refined-review' | 'api-impl' | 'test-impl' | 'test-verify' | 'implementation' | 'done' | 'cancelled'
 
-const useWorkflowStore = create((set, get) => ({
-  phase: 'prompt-input' as WorkflowPhase,
-  prompt: '',
-  initialPlan: null,
-  refinedPlan: null,
-  setPhase: (phase: WorkflowPhase) => set({ phase }),
-  setPrompt: (prompt: string) => set({ prompt }),
-  nextPhase: () => {
+function FeatureWorkflow(props) {
+  const [state, setState] = createStore({
+    phase: 'prompt-input' as WorkflowPhase,
+    prompt: '',
+    initialPlan: null,
+    refinedPlan: null
+  })
+
+  const nextPhase = () => {
     const phases: WorkflowPhase[] = ['prompt-input', 'research', 'planning', 'plan-review', 'poc', 'poc-analysis', 'refined-review', 'api-impl', 'test-impl', 'test-verify', 'implementation', 'done']
-    const idx = phases.indexOf(get().phase)
-    if (idx < phases.length - 1) set({ phase: phases[idx + 1] })
-  },
-}))
+    const idx = phases.indexOf(state.phase)
+    if (idx < phases.length - 1) setState('phase', phases[idx + 1] as WorkflowPhase)
+  }
 
-function FeatureWorkflow({ prompt: initialPrompt }) {
-  const { phase, nextPhase, setPhase, setPrompt } = useWorkflowStore()
+  return () => {
+    switch (state.phase) {
+      case 'prompt-input':
+        return (
+          <Human message="Review feature request" onApprove={() => { setState('prompt', props.prompt); nextPhase() }} onReject={() => setState('phase', 'cancelled')}>
+            Feature: {props.prompt}
+          </Human>
+        )
 
-  switch (phase) {
-    case 'prompt-input':
-      return (
-        <Human message="Review feature request" onApprove={() => { setPrompt(initialPrompt); nextPhase() }} onReject={() => setPhase('cancelled')}>
-          Feature: {initialPrompt}
-        </Human>
-      )
+      case 'research':
+        return (
+          <Claude allowedTools={['Read', 'Glob', 'Grep']} onFinished={() => nextPhase()}>
+            <Phase name="research">
+              <Step>Search for relevant files</Step>
+              <Step>Find existing patterns</Step>
+            </Phase>
+          </Claude>
+        )
 
-    case 'research':
-      return (
-        <Claude allowedTools={['Read', 'Glob', 'Grep']} onFinished={() => nextPhase()}>
-          <Phase name="research">
-            <Step>Search for relevant files</Step>
-            <Step>Find existing patterns</Step>
-          </Phase>
-        </Claude>
-      )
+      case 'planning':
+        return (
+          <Claude onFinished={(plan) => { setState('initialPlan', plan); nextPhase() }}>
+            <Phase name="planning">
+              <Step>Create implementation plan</Step>
+              <Step>Identify test cases</Step>
+            </Phase>
+          </Claude>
+        )
 
-    case 'planning':
-      return (
-        <Claude onFinished={(plan) => { useWorkflowStore.setState({ initialPlan: plan }); nextPhase() }}>
-          <Phase name="planning">
-            <Step>Create implementation plan</Step>
-            <Step>Identify test cases</Step>
-          </Phase>
-        </Claude>
-      )
+      case 'plan-review':
+        return <Human message="Review plan" onApprove={() => nextPhase()} onReject={() => setState('phase', 'cancelled')} />
 
-    case 'plan-review':
-      return <Human message="Review plan" onApprove={() => nextPhase()} onReject={() => setPhase('cancelled')} />
+      case 'poc':
+        return (
+          <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>
+            Build a working proof of concept to validate the approach.
+          </Claude>
+        )
 
-    case 'poc':
-      return (
-        <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>
-          Build a working proof of concept to validate the approach.
-        </Claude>
-      )
+      case 'poc-analysis':
+        return (
+          <Claude maxThinkingTokens={16000} onFinished={(result) => { setState('refinedPlan', result.refinedPlan); nextPhase() }}>
+            Deep analysis of POC - update plan based on learnings.
+          </Claude>
+        )
 
-    case 'poc-analysis':
-      return (
-        <Claude maxThinkingTokens={16000} onFinished={(result) => { useWorkflowStore.setState({ refinedPlan: result.refinedPlan }); nextPhase() }}>
-          Deep analysis of POC - update plan based on learnings.
-        </Claude>
-      )
+      case 'api-impl':
+        return <Claude onFinished={() => nextPhase()}>Implement types + JSDoc (throw not implemented)</Claude>
 
-    case 'api-impl':
-      return <Claude onFinished={() => nextPhase()}>Implement types + JSDoc (throw not implemented)</Claude>
+      case 'test-impl':
+        return <Claude onFinished={() => nextPhase()}>Write tests (should fail)</Claude>
 
-    case 'test-impl':
-      return <Claude onFinished={() => nextPhase()}>Write tests (should fail)</Claude>
+      case 'test-verify':
+        return <Claude allowedTools={['Bash']} onFinished={() => nextPhase()}>Verify tests fail</Claude>
 
-    case 'test-verify':
-      return <Claude allowedTools={['Bash']} onFinished={() => nextPhase()}>Verify tests fail</Claude>
+      case 'implementation':
+        return <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>Implement until tests pass</Claude>
 
-    case 'implementation':
-      return <Claude allowedTools={['Read', 'Write', 'Edit', 'Bash']} onFinished={() => nextPhase()}>Implement until tests pass</Claude>
+      case 'done':
+        return null
 
-    case 'done':
-      return null
-
-    case 'cancelled':
-      return <Stop reason="Cancelled" />
+      case 'cancelled':
+        return <Stop reason="Cancelled" />
+    }
   }
 }
 ```
@@ -192,38 +191,39 @@ This workflow demonstrates how senior engineers build features:
 ## A Simple Example
 
 ```tsx
-import { create } from 'zustand'
+import { createSignal } from 'solid-js'
 import { Claude, Phase, Step } from '@evmts/smithers'
 
-// Define agent state with Zustand
-const useAgentStore = create((set) => ({
-  phase: 'research' as 'research' | 'write',
-  findings: null,
-  setFindings: (findings) => set({ findings, phase: 'write' }),
-}))
+function ResearchAgent(props) {
+  const [phase, setPhase] = createSignal('research')
+  const [findings, setFindings] = createSignal(null)
 
-function ResearchAgent({ topic }) {
-  const { phase, findings, setFindings } = useAgentStore()
+  return () => {
+    const p = phase()
 
-  if (phase === 'research') {
+    if (p === 'research') {
+      return (
+        <Claude tools={[webSearch]} onFinished={(result) => {
+          setFindings(result)
+          setPhase('write')
+        }}>
+          <Phase name="research">
+            <Step>Search for recent articles about {props.topic}</Step>
+            <Step>Find at least 5 credible sources</Step>
+          </Phase>
+        </Claude>
+      )
+    }
+
     return (
-      <Claude tools={[webSearch]} onFinished={setFindings}>
-        <Phase name="research">
-          <Step>Search for recent articles about {topic}</Step>
-          <Step>Find at least 5 credible sources</Step>
+      <Claude tools={[filesystem]}>
+        <Phase name="write">
+          Write a research report synthesizing: {JSON.stringify(findings())}
+          Save to output/report.md
         </Phase>
       </Claude>
     )
   }
-
-  return (
-    <Claude tools={[filesystem]}>
-      <Phase name="write">
-        Write a research report synthesizing: {JSON.stringify(findings)}
-        Save to output/report.md
-      </Phase>
-    </Claude>
-  )
 }
 ```
 
@@ -233,8 +233,8 @@ function ResearchAgent({ topic }) {
   <Card title="JSX Renders to XML" icon="code">
     Components produce XML plans that Claude executes. Preview before running.
   </Card>
-  <Card title="React State Drives Behavior" icon="arrows-spin">
-    Use Zustand or useState to control agent flow. State changes trigger re-renders.
+  <Card title="SolidJS State Drives Behavior" icon="arrows-spin">
+    Use signals and stores to control agent flow. State changes trigger re-renders.
   </Card>
   <Card title="Composable Components" icon="puzzle-piece">
     Build reusable personas, constraints, and output formats. Mix and match.
