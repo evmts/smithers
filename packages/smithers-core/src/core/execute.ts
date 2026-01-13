@@ -1804,10 +1804,10 @@ export async function executeNode(
         node.props._mockMode === true
     }
 
-    // Require API key if not in mock mode
-    if (!apiKeyAvailable && !useMockMode) {
-      throw new Error(
-        'ANTHROPIC_API_KEY not found. Set it in your environment or enable mock mode with SMITHERS_MOCK_MODE=true.'
+    // Warn if no API key (claude-cli uses its own auth via CLAUDE_CODE_OAUTH_TOKEN)
+    if (!apiKeyAvailable && !useMockMode && node.type !== 'claude-cli') {
+      console.warn(
+        'Warning: ANTHROPIC_API_KEY not found. Claude API calls will fail. Set it in your environment or use claude-cli component.'
       )
     }
 

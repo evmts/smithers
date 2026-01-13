@@ -47,8 +47,8 @@ export async function executeWithClaudeCli(node: SmithersNode): Promise<string> 
     args.push('--system-prompt', systemPrompt)
   }
 
-  // Add the prompt as the final positional argument
-  args.push('--prompt', prompt)
+  // Add the prompt as the final positional argument (no flag needed)
+  args.push(prompt)
 
   // Get working directory
   const cwd = (node.props.cwd as string | undefined) || process.cwd()
@@ -57,9 +57,14 @@ export async function executeWithClaudeCli(node: SmithersNode): Promise<string> 
   const nodePath = getNodePath(node)
 
   try {
+    // Build environment: inherit all but remove ANTHROPIC_API_KEY to let CLI use its own auth
+    const env = { ...process.env }
+    delete env.ANTHROPIC_API_KEY
+
     // Spawn the CLI process
     const proc = Bun.spawn(args, {
       cwd,
+      env,
       stdout: 'pipe',
       stderr: 'pipe',
     })
