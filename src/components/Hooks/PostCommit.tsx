@@ -2,7 +2,7 @@
 // Installs a git post-commit hook and polls db.state for triggers
 
 import { createSignal, onMount, onCleanup, useContext, type JSX } from 'solid-js'
-import { useSmithers } from '../../../smithers-orchestrator/src/components/SmithersProvider'
+import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { RalphContext } from '../Ralph'
 
 export interface PostCommitProps {
@@ -33,7 +33,7 @@ async function installPostCommitHook(): Promise<void> {
   const hookPath = '.git/hooks/post-commit'
   const hookContent = `#!/bin/bash
 COMMIT_HASH=$(git rev-parse HEAD)
-bunx smithers-orchestrator hook-trigger post-commit "$COMMIT_HASH"
+bunx smithers hook-trigger post-commit "$COMMIT_HASH"
 `
   await Bun.write(hookPath, hookContent)
   await Bun.$`chmod +x ${hookPath}`
@@ -55,7 +55,7 @@ async function hasSmithersMetadata(commitHash: string): Promise<boolean> {
  * PostCommit - Hook component that triggers on git commits
  *
  * On mount, installs a git post-commit hook that calls:
- *   bunx smithers-orchestrator hook-trigger post-commit "$COMMIT_HASH"
+ *   bunx smithers hook-trigger post-commit "$COMMIT_HASH"
  *
  * Then polls db.state for 'last_hook_trigger' to detect new commits.
  * When a commit is detected, renders children.

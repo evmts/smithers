@@ -1,6 +1,6 @@
 import { createSignal, onMount, useContext, type JSX } from 'solid-js'
 import { RalphContext } from '../Ralph'
-import { useSmithers } from '../../../smithers-orchestrator/src/components/SmithersProvider'
+import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { getJJStatus } from '../../utils/vcs'
 
 export interface StatusProps {

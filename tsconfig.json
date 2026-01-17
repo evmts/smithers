@@ -36,8 +36,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
 
-    // Don't include all @types automatically
-    "types": []
+    // Include bun types
+    "types": ["bun"]
   },
   "include": [
     "src/**/*"

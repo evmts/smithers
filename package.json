@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "smithers": "./bin/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -22,6 +25,10 @@
       "types": "./dist/components/index.d.ts",
       "import": "./dist/components/index.js"
     },
+    "./orchestrator": {
+      "types": "./dist/orchestrator/components/index.d.ts",
+      "import": "./dist/orchestrator/components/index.js"
+    },
     "./debug": {
       "types": "./dist/debug/index.d.ts",
       "import": "./dist/debug/index.js"
@@ -32,26 +39,36 @@
   },
   "files": [
     "dist",
+    "bin",
+    "skills",
+    "templates",
+    "plugin.json",
+    "postinstall.cjs",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && bun build bin/cli.ts --outdir bin --target node",
+    "build:cli": "bun build bin/cli.ts --outdir bin --target node",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "postinstall": "node postinstall.cjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.76",
     "@anthropic-ai/sdk": "^0.71.2",
+    "@electric-sql/pglite": "^0.3.15",
+    "commander": "^12.0.0",
     "solid-js": "^1.9.10",
     "zod": "^4.3.5",
     "zustand": "^5.0.10"
   },
   "peerDependencies": {
-    "solid-js": "^1.9.10"
+    "solid-js": "^1.9.10",
+    "bun": ">=1.0.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -69,12 +86,18 @@
     "jsx",
     "llm",
     "claude",
-    "anthropic"
+    "anthropic",
+    "orchestration",
+    "multi-agent",
+    "workflow"
   ],
-  "author": "Your Name",
+  "author": "William Cory",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/evmts/smithers.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

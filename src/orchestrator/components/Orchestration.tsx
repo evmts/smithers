@@ -3,7 +3,7 @@
 
 import { onMount, onCleanup, type JSX } from 'solid-js'
 import { useSmithers } from './SmithersProvider'
-import { jjSnapshot } from '../../../src/utils/vcs'
+import { jjSnapshot } from '../../utils/vcs'
 
 // ============================================================================
 // TYPES

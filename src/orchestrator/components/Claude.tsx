@@ -2,7 +2,7 @@
 // Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
 
 import { createSignal, onMount, useContext, type JSX } from 'solid-js'
-import { RalphContext } from '../../../src/components/Ralph'
+import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config'

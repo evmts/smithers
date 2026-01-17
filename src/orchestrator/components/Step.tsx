@@ -2,10 +2,10 @@
 // Wraps base smithers Step component
 
 import { onMount, onCleanup, createSignal, useContext, type JSX } from 'solid-js'
-import { Step as BaseStep } from '../../../src/components/Step'
-import { RalphContext } from '../../../src/components/Ralph'
+import { Step as BaseStep } from '../../components/Step'
+import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
-import { jjSnapshot, jjCommit, getJJChangeId } from '../../../src/utils/vcs'
+import { jjSnapshot, jjCommit, getJJChangeId } from '../../utils/vcs'
 
 export interface StepProps {
   /**

@@ -2,7 +2,7 @@
 // Currently supports GitHub Actions
 
 import { createSignal, onMount, onCleanup, useContext, type JSX } from 'solid-js'
-import { useSmithers } from '../../../smithers-orchestrator/src/components/SmithersProvider'
+import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { RalphContext } from '../Ralph'
 
 export interface CIFailure {

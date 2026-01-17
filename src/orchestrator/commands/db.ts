@@ -316,7 +316,7 @@ async function showRecovery(db: any) {
 }
 
 function showHelp() {
-  console.log('Usage: smithers-orchestrator db <subcommand> [options]')
+  console.log('Usage: smithers db <subcommand> [options]')
   console.log('')
   console.log('Subcommands:')
   console.log('  state        Show current state')

@@ -18,7 +18,7 @@ export async function run(fileArg?: string, options: RunOptions = {}) {
   if (!fs.existsSync(filePath)) {
     console.error(`❌ File not found: ${filePath}`)
     console.log('')
-    console.log('Did you run `smithers-orchestrator init` first?')
+    console.log('Did you run `smithers init` first?')
     console.log('')
     process.exit(1)
   }

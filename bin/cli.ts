@@ -1,17 +1,17 @@
 #!/usr/bin/env bun
 
 import { Command } from 'commander'
-import { init } from '../src/commands/init.js'
-import { run } from '../src/commands/run.js'
-import { monitor } from '../src/commands/monitor.js'
-import { dbCommand } from '../src/commands/db.js'
+import { init } from '../src/orchestrator/commands/init.js'
+import { run } from '../src/orchestrator/commands/run.js'
+import { monitor } from '../src/orchestrator/commands/monitor.js'
+import { dbCommand } from '../src/orchestrator/commands/db.js'
 
 const program = new Command()
 
 program
-  .name('smithers-orchestrator')
+  .name('smithers')
   .description('CLI tool for multi-agent AI orchestration with Smithers framework')
-  .version('1.0.0')
+  .version('0.1.0')
 
 program
   .command('init')
@@ -46,7 +46,7 @@ program
   .action(async (type: string, data: string, options: { path: string }) => {
     try {
       // Dynamically import to avoid loading DB on every CLI call
-      const { createSmithersDB } = await import('../src/db/index.js')
+      const { createSmithersDB } = await import('../src/orchestrator/db/index.js')
 
       const db = await createSmithersDB({ path: options.path })
 

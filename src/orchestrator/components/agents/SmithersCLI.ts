@@ -96,16 +96,9 @@ const SCRIPT_TEMPLATE = `#!/usr/bin/env bun
  * Generated at: {{TIMESTAMP}}
  */
 
-import { createSmithersRoot } from 'smithers2/src'
-import { createSmithersDB } from 'smithers2/smithers-orchestrator/src/db'
-import { Ralph } from 'smithers2/src/components/Ralph'
-import { SmithersProvider } from 'smithers2/smithers-orchestrator/src/components/SmithersProvider'
-import { Orchestration } from 'smithers2/smithers-orchestrator/src/components/Orchestration'
-import { Claude } from 'smithers2/smithers-orchestrator/src/components/Claude'
-import { Phase } from 'smithers2/smithers-orchestrator/src/components/Phase'
-import { Step } from 'smithers2/smithers-orchestrator/src/components/Step'
-import { Review } from 'smithers2/src/components/Review'
-import { Commit, Notes } from 'smithers2/src/components/Git'
+import { createSmithersRoot } from 'smithers'
+import { createSmithersDB, SmithersProvider, Orchestration, Claude, Phase, Step } from 'smithers/orchestrator'
+import { Ralph, Review, Commit, Notes } from 'smithers/components'
 
 {{SCRIPT_BODY}}
 `

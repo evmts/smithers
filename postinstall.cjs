@@ -4,12 +4,12 @@ const fs = require('fs')
 const path = require('path')
 const os = require('os')
 
-const pluginName = 'smithers-orchestrator'
+const pluginName = 'smithers'
 const pluginDir = path.join(os.homedir(), '.claude', 'plugins', pluginName)
 const sourceDir = __dirname
 
 console.log('')
-console.log('🔧 Installing Smithers Orchestrator plugin to Claude Code...')
+console.log('🔧 Installing Smithers plugin to Claude Code...')
 console.log('')
 
 try {
@@ -19,9 +19,9 @@ try {
   // Files to copy
   const filesToCopy = [
     'plugin.json',
-    'skills/smithers-orchestrator/SKILL.md',
-    'skills/smithers-orchestrator/REFERENCE.md',
-    'skills/smithers-orchestrator/EXAMPLES.md',
+    'skills/smithers/SKILL.md',
+    'skills/smithers/REFERENCE.md',
+    'skills/smithers/EXAMPLES.md',
   ]
 
   // Copy each file
@@ -44,7 +44,7 @@ try {
   console.log('')
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log('')
-  console.log('✅ Smithers Orchestrator plugin installed successfully!')
+  console.log('✅ Smithers plugin installed successfully!')
   console.log('')
   console.log(`   Plugin location: ${pluginDir}`)
   console.log('')
@@ -53,12 +53,12 @@ try {
   console.log('   1. Restart Claude Code (if running) to load the plugin')
   console.log('')
   console.log('   2. Create your first orchestration:')
-  console.log('      bunx smithers-orchestrator init')
+  console.log('      bunx smithers init')
   console.log('')
   console.log('   3. Edit .smithers/main.tsx to define your workflow')
   console.log('')
   console.log('   4. Run with monitoring:')
-  console.log('      bunx smithers-orchestrator monitor')
+  console.log('      bunx smithers monitor')
   console.log('')
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log('')

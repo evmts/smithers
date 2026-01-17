@@ -32,7 +32,7 @@ export async function init(options: InitOptions = {}) {
   // Get template path
   const __filename = fileURLToPath(import.meta.url)
   const __dirname = path.dirname(__filename)
-  const templatePath = path.join(__dirname, '../../templates/main.tsx.template')
+  const templatePath = path.join(__dirname, '../../../templates/main.tsx.template')
 
   // Copy template
   if (!fs.existsSync(templatePath)) {
@@ -62,10 +62,10 @@ export async function init(options: InitOptions = {}) {
   console.log('   cd .smithers && bun install smithers zustand')
   console.log('')
   console.log('3. Run with monitoring (recommended):')
-  console.log('   bunx smithers-orchestrator monitor')
+  console.log('   bunx smithers monitor')
   console.log('')
   console.log('Or run directly:')
-  console.log('   bunx smithers-orchestrator run')
+  console.log('   bunx smithers run')
   console.log('')
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log('')

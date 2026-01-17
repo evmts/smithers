@@ -2,8 +2,8 @@
 // Wraps base smithers Phase component
 
 import { onMount, onCleanup, createSignal, useContext, type JSX } from 'solid-js'
-import { Phase as BasePhase } from '../../../src/components/Phase'
-import { RalphContext } from '../../../src/components/Ralph'
+import { Phase as BasePhase } from '../../components/Phase'
+import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 
 export interface PhaseProps {

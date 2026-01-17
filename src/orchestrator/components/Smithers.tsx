@@ -2,7 +2,7 @@
 // Launches a new Smithers instance to plan and execute a task
 
 import { createSignal, onMount, useContext, type JSX } from 'solid-js'
-import { RalphContext } from '../../../src/components/Ralph'
+import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI'
 import type { ClaudeModel } from './agents/types'
