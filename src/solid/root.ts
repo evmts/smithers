@@ -36,7 +36,8 @@ export function createSmithersRoot(): SmithersRoot {
         disposeFunction()
         rootNode.children = []
       }
-      disposeFunction = render(App, rootNode)
+      // The renderer handles JSX.Element → SmithersNode conversion internally
+      disposeFunction = render(App as any, rootNode)
     },
 
     getTree(): SmithersNode {

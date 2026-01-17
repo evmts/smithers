@@ -1,5 +1,4 @@
 import type { SmithersNode, ExecuteOptions, ExecutionResult } from './types.js'
-import { serialize } from './serialize.js'
 
 /**
  * Execute a SmithersNode tree using the Ralph Wiggum loop.
@@ -58,16 +57,16 @@ export async function executePlan(
   }
 }
 
-function findPendingExecutables(tree: SmithersNode): SmithersNode[] {
+function findPendingExecutables(_tree: SmithersNode): SmithersNode[] {
   // TODO: Implement pending node detection
   return []
 }
 
-async function executeNode(node: SmithersNode, options: ExecuteOptions): Promise<void> {
+async function executeNode(_node: SmithersNode, _options: ExecuteOptions): Promise<void> {
   // TODO: Implement node execution
 }
 
-function extractOutput(tree: SmithersNode): unknown {
+function extractOutput(_tree: SmithersNode): unknown {
   // TODO: Implement output extraction
   return null
 }
