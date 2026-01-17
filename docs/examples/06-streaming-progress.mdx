@@ -324,8 +324,10 @@ function AnalyzerUI({ document }) {
 ## Advanced: Streaming with Tool Calls
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function StreamingWithTools({ query }: { query: string }) {
-  const [toolCalls, setToolCalls] = useState<any[]>([])
+  const [toolCalls, setToolCalls] = createSignal<any[]>([])
 
   const handleStream = (chunk: StreamChunk) => {
     // Handle tool use chunks

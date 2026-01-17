@@ -124,11 +124,13 @@ The Ralph loop also adopts this model at the top level:
 ### Simple Nested Execution
 
 ```tsx
-function CodeReviewer() {
-  const [analysis, setAnalysis] = useState(null)
-  const [result, setResult] = useState(null)
+import { createSignal } from 'solid-js'
 
-  return (
+function CodeReviewer() {
+  const [analysis, setAnalysis] = createSignal(null)
+  const [result, setResult] = createSignal(null)
+
+  return () => (
     <Claude
       allowedTools={['Read', 'Grep']}
       onFinished={setResult}
@@ -139,9 +141,9 @@ function CodeReviewer() {
         First, analyze the file structure and identify sensitive files.
       </Claude>
 
-      {analysis && (
+      {analysis() && (
         <Claude onFinished={setResult}>
-          Based on: {JSON.stringify(analysis)}
+          Based on: {JSON.stringify(analysis())}
           Now check each sensitive file for vulnerabilities.
         </Claude>
       )}
@@ -163,11 +165,13 @@ function CodeReviewer() {
 ### Multi-Phase with Conditional Execution
 
 ```tsx
-function SmartRefactorer() {
-  const [issues, setIssues] = useState([])
-  const [fixed, setFixed] = useState([])
+import { createSignal } from 'solid-js'
 
-  return (
+function SmartRefactorer() {
+  const [issues, setIssues] = createSignal([])
+  const [fixed, setFixed] = createSignal([])
+
+  return () => (
     <Claude allowedTools={['Read', 'Edit']} onFinished={console.log}>
       Refactor this codebase. Only fix critical issues.
 
@@ -177,7 +181,7 @@ function SmartRefactorer() {
         </Claude>
       </Phase>
 
-      {issues.filter(i => i.severity === 'critical').map((issue, idx) => (
+      {issues().filter(i => i.severity === 'critical').map((issue, idx) => (
         <Phase key={issue.id} name={`fix-${issue.id}`}>
           <Claude onFinished={(result) => setFixed(f => [...f, result])}>
             Fix this critical issue: {JSON.stringify(issue)}
@@ -185,7 +189,7 @@ function SmartRefactorer() {
         </Phase>
       ))}
 
-      {fixed.length > 0 && <Stop reason="All critical issues fixed" />}
+      {fixed().length > 0 && <Stop reason="All critical issues fixed" />}
     </Claude>
   )
 }

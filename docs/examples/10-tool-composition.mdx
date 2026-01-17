@@ -417,16 +417,17 @@ export function OrchestratedTeam({
   project: string
   projectPath: string
 }) {
-  const [phase, setPhase] = useState<'research' | 'implement' | 'review'>('research')
-  const [researchFindings, setResearchFindings] = useState(null)
-  const [implementation, setImplementation] = useState(null)
+  const [phase, setPhase] = createSignal<'research' | 'implement' | 'review'>('research')
+  const [researchFindings, setResearchFindings] = createSignal(null)
+  const [implementation, setImplementation] = createSignal(null)
 
   const sharedMcp = createMCPConfigs([
     MCPPresets.filesystem([projectPath]),
     MCPPresets.memory(), // Shared memory between agents
   ])
 
-  if (phase === 'research') {
+  return () => {
+    if (phase() === 'research') {
     return (
       <Subagent name="researcher">
         <Claude
@@ -443,40 +444,41 @@ export function OrchestratedTeam({
           </Phase>
         </Claude>
       </Subagent>
-    )
-  }
+      )
+    }
 
-  if (phase === 'implement') {
+    if (phase() === 'implement') {
+      return (
+        <Subagent name="implementer">
+          <Claude
+            mcpServers={sharedMcp}
+            tools={[jsonValidatorTool, calculatorTool]}
+            onFinished={(result) => {
+              setImplementation(result)
+              setPhase('review')
+            }}
+          >
+            <Phase name="implement">
+              Retrieve research from memory.
+              Implement based on findings.
+              Validate outputs with tools.
+            </Phase>
+          </Claude>
+        </Subagent>
+      )
+    }
+
     return (
-      <Subagent name="implementer">
-        <Claude
-          mcpServers={sharedMcp}
-          tools={[jsonValidatorTool, calculatorTool]}
-          onFinished={(result) => {
-            setImplementation(result)
-            setPhase('review')
-          }}
-        >
-          <Phase name="implement">
-            Retrieve research from memory.
-            Implement based on findings.
-            Validate outputs with tools.
+      <Subagent name="reviewer">
+        <Claude mcpServers={sharedMcp}>
+          <Phase name="review">
+            Review implementation against research findings.
+            Both should be in shared memory.
           </Phase>
         </Claude>
       </Subagent>
     )
   }
-
-  return (
-    <Subagent name="reviewer">
-      <Claude mcpServers={sharedMcp}>
-        <Phase name="review">
-          Review implementation against research findings.
-          Both should be in shared memory.
-        </Phase>
-      </Claude>
-    </Subagent>
-  )
 }
 ```
 

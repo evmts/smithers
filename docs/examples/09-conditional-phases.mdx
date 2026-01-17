@@ -317,6 +317,8 @@ export function ConditionalTaskAgent({
 }
 
 // Example: Multi-path conditional workflow
+import { createSignal } from 'solid-js'
+
 export function MultipathAgent({
   input,
   mode,
@@ -324,7 +326,7 @@ export function MultipathAgent({
   input: string
   mode: 'fast' | 'thorough' | 'balanced'
 }) {
-  const [result, setResult] = useState(null)
+  const [result, setResult] = createSignal(null)
 
   // Different paths based on mode
   if (mode === 'fast') {

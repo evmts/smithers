@@ -160,12 +160,17 @@ function TaskAgent() {
 Create workflows that branch based on intermediate results:
 
 ```tsx
-function BranchingAgent({ input }) {
-  const [phase, setPhase] = useState<'analyze' | 'simple' | 'complex' | 'done'>('analyze')
-  const [complexity, setComplexity] = useState<string | null>(null)
-  const [result, setResult] = useState(null)
+import { createSignal } from 'solid-js'
 
-  if (phase === 'analyze') {
+function BranchingAgent({ input }) {
+  const [phase, setPhase] = createSignal<'analyze' | 'simple' | 'complex' | 'done'>('analyze')
+  const [complexity, setComplexity] = createSignal<string | null>(null)
+  const [result, setResult] = createSignal(null)
+
+  return () => {
+    const p = phase()
+
+    if (p === 'analyze') {
     return (
       <Claude
         onFinished={(analysis) => {
@@ -180,19 +185,19 @@ function BranchingAgent({ input }) {
         <OutputFormat schema={{ complexity: 'low | medium | high', reason: 'string' }} />
       </Claude>
     )
-  }
+    }
 
-  if (phase === 'simple') {
-    return (
-      <Claude onFinished={(r) => { setResult(r); setPhase('done') }}>
-        <Phase name="simple-processing">
-          Apply simple processing to: {JSON.stringify(input)}
-        </Phase>
-      </Claude>
-    )
-  }
+    if (p === 'simple') {
+      return (
+        <Claude onFinished={(r) => { setResult(r); setPhase('done') }}>
+          <Phase name="simple-processing">
+            Apply simple processing to: {JSON.stringify(input)}
+          </Phase>
+        </Claude>
+      )
+    }
 
-  if (phase === 'complex') {
+    if (p === 'complex') {
     return (
       <Claude
         tools={[analysisTools, transformTools]}
@@ -205,10 +210,11 @@ function BranchingAgent({ input }) {
         </Phase>
         Input: {JSON.stringify(input)}
       </Claude>
-    )
-  }
+      )
+    }
 
-  return null
+    return null
+  }
 }
 ```
 
@@ -278,41 +284,45 @@ function RetryableAgent({ task }) {
 Skip phases based on input or previous results:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function ConditionalWorkflow({ config }) {
-  const [phase, setPhase] = useState('init')
-  const [data, setData] = useState({})
+  const [phase, setPhase] = createSignal('init')
+  const [data, setData] = createSignal({})
 
-  // Skip validation if config.skipValidation is true
-  const phases = [
-    'init',
-    ...(config.skipValidation ? [] : ['validate']),
-    'process',
-    ...(config.generateReport ? ['report'] : []),
-    'done'
-  ]
+  return () => {
+    // Skip validation if config.skipValidation is true
+    const phases = [
+      'init',
+      ...(config.skipValidation ? [] : ['validate']),
+      'process',
+      ...(config.generateReport ? ['report'] : []),
+      'done'
+    ]
 
-  const currentIndex = phases.indexOf(phase)
-  const nextPhase = () => setPhase(phases[currentIndex + 1] || 'done')
+    const currentIndex = phases.indexOf(phase())
+    const nextPhase = () => setPhase(phases[currentIndex + 1] || 'done')
 
-  if (phase === 'init') {
-    return (
-      <Claude onFinished={(d) => { setData(d); nextPhase() }}>
-        Initialize workflow with config: {JSON.stringify(config)}
-      </Claude>
-    )
+    if (phase() === 'init') {
+      return (
+        <Claude onFinished={(d) => { setData(d); nextPhase() }}>
+          Initialize workflow with config: {JSON.stringify(config)}
+        </Claude>
+      )
+    }
+
+    if (phase() === 'validate') {
+      return (
+        <Claude onFinished={(d) => { setData({...data(), ...d}); nextPhase() }}>
+          Validate data: {JSON.stringify(data())}
+        </Claude>
+      )
+    }
+
+    // ... other phases
+
+    return null
   }
-
-  if (phase === 'validate') {
-    return (
-      <Claude onFinished={(d) => { setData({...data, ...d}); nextPhase() }}>
-        Validate data: {JSON.stringify(data)}
-      </Claude>
-    )
-  }
-
-  // ... other phases
-
-  return null
 }
 ```
 
@@ -323,9 +333,11 @@ function ConditionalWorkflow({ config }) {
 Process items in parallel, then aggregate:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function FanOutFanIn({ items }) {
-  const [phase, setPhase] = useState<'process' | 'aggregate' | 'done'>('process')
-  const [results, setResults] = useState<Record<string, any>>({})
+  const [phase, setPhase] = createSignal<'process' | 'aggregate' | 'done'>('process')
+  const [results, setResults] = createSignal<Record<string, any>>({})
 
   const addResult = (id: string, result: any) => {
     setResults(prev => {
@@ -338,7 +350,8 @@ function FanOutFanIn({ items }) {
     })
   }
 
-  if (phase === 'process') {
+  return () => {
+    if (phase() === 'process') {
     return (
       <>
         {items.map(item => (
@@ -349,21 +362,22 @@ function FanOutFanIn({ items }) {
           </Subagent>
         ))}
       </>
-    )
-  }
+      )
+    }
 
-  if (phase === 'aggregate') {
-    return (
-      <Claude onFinished={() => setPhase('done')}>
-        <Phase name="aggregate">
-          Combine these results into a final output:
-          {JSON.stringify(results, null, 2)}
-        </Phase>
-      </Claude>
-    )
-  }
+    if (phase() === 'aggregate') {
+      return (
+        <Claude onFinished={() => setPhase('done')}>
+          <Phase name="aggregate">
+            Combine these results into a final output:
+            {JSON.stringify(results(), null, 2)}
+          </Phase>
+        </Claude>
+      )
+    }
 
-  return null
+    return null
+  }
 }
 ```
 
@@ -372,6 +386,8 @@ function FanOutFanIn({ items }) {
 Execute tasks respecting dependencies:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 interface Task {
   id: string
   dependencies: string[]
@@ -379,59 +395,61 @@ interface Task {
 }
 
 function DependencyAwareExecutor({ tasks }: { tasks: Task[] }) {
-  const [completed, setCompleted] = useState<Set<string>>(new Set())
-  const [results, setResults] = useState<Record<string, any>>({})
+  const [completed, setCompleted] = createSignal<Set<string>>(new Set())
+  const [results, setResults] = createSignal<Record<string, any>>({})
 
   const completeTask = (id: string, result: any) => {
     setCompleted(prev => new Set([...prev, id]))
     setResults(prev => ({ ...prev, [id]: result }))
   }
 
-  // Find tasks ready to execute (all dependencies met)
-  const readyTasks = tasks.filter(
-    task =>
-      !completed.has(task.id) &&
-      task.dependencies.every(dep => completed.has(dep))
-  )
+  return () => {
+    // Find tasks ready to execute (all dependencies met)
+    const readyTasks = tasks.filter(
+      task =>
+        !completed().has(task.id) &&
+        task.dependencies.every(dep => completed().has(dep))
+    )
 
-  if (readyTasks.length === 0) {
-    if (completed.size === tasks.length) {
-      return null // All done
+    if (readyTasks.length === 0) {
+      if (completed().size === tasks.length) {
+        return null // All done
+      }
+      // Circular dependency or error
+      return (
+        <Claude>
+          <Phase name="error">
+            Cannot proceed - possible circular dependency detected.
+            Completed: {[...completed()].join(', ')}
+            Remaining: {tasks.filter(t => !completed().has(t.id)).map(t => t.id).join(', ')}
+          </Phase>
+        </Claude>
+      )
     }
-    // Circular dependency or error
+
     return (
-      <Claude>
-        <Phase name="error">
-          Cannot proceed - possible circular dependency detected.
-          Completed: {[...completed].join(', ')}
-          Remaining: {tasks.filter(t => !completed.has(t.id)).map(t => t.id).join(', ')}
-        </Phase>
-      </Claude>
+      <>
+        {readyTasks.map(task => (
+          <Subagent key={task.id} name={`task-${task.id}`}>
+            <Claude onFinished={(r) => completeTask(task.id, r)}>
+              <Phase name={`execute-${task.id}`}>
+                Task: {task.description}
+
+                {task.dependencies.length > 0 && (
+                  <>
+                    Dependency results:
+                    {task.dependencies.map(dep => (
+                      <Step key={dep}>{dep}: {JSON.stringify(results()[dep])}</Step>
+                    ))}
+                  </>
+                )}
+              </Phase>
+            </Claude>
+          </Subagent>
+        ))}
+      </>
     )
   }
-
-  return (
-    <>
-      {readyTasks.map(task => (
-        <Subagent key={task.id} name={`task-${task.id}`}>
-          <Claude onFinished={(r) => completeTask(task.id, r)}>
-            <Phase name={`execute-${task.id}`}>
-              Task: {task.description}
-
-              {task.dependencies.length > 0 && (
-                <>
-                  Dependency results:
-                  {task.dependencies.map(dep => (
-                    <Step key={dep}>{dep}: {JSON.stringify(results[dep])}</Step>
-                  ))}
-                </>
-              )}
-            </Phase>
-          </Claude>
-        </Subagent>
-      ))}
-    </>
-  )
 }
 ```
 
@@ -440,10 +458,12 @@ function DependencyAwareExecutor({ tasks }: { tasks: Task[] }) {
 Control concurrency to avoid overwhelming resources:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function RateLimitedExecutor({ items, maxConcurrent = 3 }) {
-  const [pending, setPending] = useState(items)
-  const [running, setRunning] = useState<string[]>([])
-  const [completed, setCompleted] = useState<Record<string, any>>({})
+  const [pending, setPending] = createSignal(items)
+  const [running, setRunning] = createSignal<string[]>([])
+  const [completed, setCompleted] = createSignal<Record<string, any>>({})
 
   const startItem = (id: string) => {
     setRunning(prev => [...prev, id])
@@ -455,31 +475,33 @@ function RateLimitedExecutor({ items, maxConcurrent = 3 }) {
     setCompleted(prev => ({ ...prev, [id]: result }))
   }
 
-  // Calculate how many more we can start
-  const availableSlots = maxConcurrent - running.length
-  const toStart = pending.slice(0, availableSlots)
+  return () => {
+    // Calculate how many more we can start
+    const availableSlots = maxConcurrent - running().length
+    const toStart = pending().slice(0, availableSlots)
 
-  if (toStart.length === 0 && running.length === 0) {
-    return null // All done
+    if (toStart.length === 0 && running().length === 0) {
+      return null // All done
+    }
+
+    // Start new items
+    toStart.forEach(item => startItem(item.id))
+
+    return (
+      <>
+        {running().map(id => {
+          const item = items.find(i => i.id === id)!
+          return (
+            <Subagent key={id} name={`worker-${id}`}>
+              <Claude onFinished={(r) => finishItem(id, r)}>
+                Process: {JSON.stringify(item)}
+              </Claude>
+            </Subagent>
+          )
+        })}
+      </>
+    )
   }
-
-  // Start new items
-  toStart.forEach(item => startItem(item.id))
-
-  return (
-    <>
-      {running.map(id => {
-        const item = items.find(i => i.id === id)!
-        return (
-          <Subagent key={id} name={`worker-${id}`}>
-            <Claude onFinished={(r) => finishItem(id, r)}>
-              Process: {JSON.stringify(item)}
-            </Claude>
-          </Subagent>
-        )
-      })}
-    </>
-  )
 }
 ```
 
@@ -490,10 +512,12 @@ function RateLimitedExecutor({ items, maxConcurrent = 3 }) {
 Continue with partial results when some operations fail:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function GracefulAgent({ sources }) {
-  const [results, setResults] = useState<Record<string, any>>({})
-  const [errors, setErrors] = useState<Record<string, Error>>({})
-  const [phase, setPhase] = useState<'fetch' | 'process' | 'done'>('fetch')
+  const [results, setResults] = createSignal<Record<string, any>>({})
+  const [errors, setErrors] = createSignal<Record<string, Error>>({})
+  const [phase, setPhase] = createSignal<'fetch' | 'process' | 'done'>('fetch')
 
   const recordResult = (id: string, result: any) => {
     setResults(prev => ({ ...prev, [id]: result }))
@@ -506,13 +530,14 @@ function GracefulAgent({ sources }) {
   }
 
   const checkCompletion = () => {
-    const total = Object.keys(results).length + Object.keys(errors).length
+    const total = Object.keys(results()).length + Object.keys(errors()).length
     if (total === sources.length) {
       setPhase('process')
     }
   }
 
-  if (phase === 'fetch') {
+  return () => {
+    if (phase() === 'fetch') {
     return (
       <>
         {sources.map(source => (
@@ -526,35 +551,36 @@ function GracefulAgent({ sources }) {
           </Subagent>
         ))}
       </>
-    )
+      )
+    }
+
+    if (phase() === 'process') {
+      const successCount = Object.keys(results()).length
+      const failCount = Object.keys(errors()).length
+
+      return (
+        <Claude onFinished={() => setPhase('done')}>
+          <Phase name="process-with-partial">
+            Process available data ({successCount} succeeded, {failCount} failed):
+
+            Successful results:
+            {JSON.stringify(results(), null, 2)}
+
+            {failCount > 0 && (
+              <>
+                Note: These sources failed and were skipped:
+                {Object.entries(errors()).map(([id, err]) => (
+                  <Step key={id}>{id}: {err.message}</Step>
+                ))}
+              </>
+            )}
+          </Phase>
+        </Claude>
+      )
+    }
+
+    return null
   }
-
-  if (phase === 'process') {
-    const successCount = Object.keys(results).length
-    const failCount = Object.keys(errors).length
-
-    return (
-      <Claude onFinished={() => setPhase('done')}>
-        <Phase name="process-with-partial">
-          Process available data ({successCount} succeeded, {failCount} failed):
-
-          Successful results:
-          {JSON.stringify(results, null, 2)}
-
-          {failCount > 0 && (
-            <>
-              Note: These sources failed and were skipped:
-              {Object.entries(errors).map(([id, err]) => (
-                <Step key={id}>{id}: {err.message}</Step>
-              ))}
-            </>
-          )}
-        </Phase>
-      </Claude>
-    )
-  }
-
-  return null
 }
 ```
 

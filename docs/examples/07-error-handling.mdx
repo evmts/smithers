@@ -317,16 +317,16 @@ export function ResilientAgent({
 // Wrapper component with automatic fallback
 export function AutoFallbackAgent({ task }: { task: string }) {
   const { status } = useErrorStore()
-  const [useFallback, setUseFallback] = useState(false)
+  const [useFallback, setUseFallback] = createSignal(false)
 
   // After 3 failures, switch to fallback mode
-  useEffect(() => {
+  createEffect(() => {
     if (status === 'failed') {
       setUseFallback(true)
     }
-  }, [status])
+  })
 
-  return <ResilientAgent task={task} fallbackMode={useFallback} />
+  return () => <ResilientAgent task={task} fallbackMode={useFallback()} />
 }
 ```
 
@@ -442,8 +442,8 @@ export function GracefulDegradationAgent({
   task: string
   tools: Tool[]
 }) {
-  const [availableTools, setAvailableTools] = useState(tools)
-  const [degradedMode, setDegradedMode] = useState(false)
+  const [availableTools, setAvailableTools] = createSignal(tools)
+  const [degradedMode, setDegradedMode] = createSignal(false)
 
   const handleError = (error: Error) => {
     // If a tool fails, remove it and continue with remaining tools
@@ -451,20 +451,20 @@ export function GracefulDegradationAgent({
       const failedTool = extractToolName(error.message)
       setAvailableTools((prev) => prev.filter((t) => t.name !== failedTool))
 
-      if (availableTools.length <= 1) {
+      if (availableTools().length <= 1) {
         setDegradedMode(true)
       }
 
-      console.log(`Tool ${failedTool} disabled, continuing with ${availableTools.length - 1} tools`)
+      console.log(`Tool ${failedTool} disabled, continuing with ${availableTools().length - 1} tools`)
     }
   }
 
-  return (
+  return () => (
     <Claude
-      tools={availableTools}
+      tools={availableTools()}
       onError={handleError}
     >
-      {degradedMode && (
+      {degradedMode() && (
         <Constraints>
           DEGRADED MODE: Some tools are unavailable.
           Complete the task with reduced capabilities.
@@ -474,7 +474,7 @@ export function GracefulDegradationAgent({
       <Phase name="execute">
         {task}
 
-        Available tools: {availableTools.map((t) => t.name).join(', ')}
+        Available tools: {availableTools().map((t) => t.name).join(', ')}
       </Phase>
     </Claude>
   )

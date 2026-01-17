@@ -10,28 +10,31 @@ The `<Human>` component pauses the Ralph Wiggum loop and waits for human approva
 ## Basic Usage
 
 ```tsx
+import { createSignal } from 'solid-js'
 import { Claude, Human } from '@evmts/smithers'
 
 function ReviewAgent({ changes }) {
-  const [approved, setApproved] = useState(false)
+  const [approved, setApproved] = createSignal(false)
 
-  if (!approved) {
+  return () => {
+    if (!approved()) {
+      return (
+        <Human
+          message="Review the changes before deploying"
+          onApprove={() => setApproved(true)}
+        >
+          The following changes will be deployed:
+          {JSON.stringify(changes, null, 2)}
+        </Human>
+      )
+    }
+
     return (
-      <Human
-        message="Review the changes before deploying"
-        onApprove={() => setApproved(true)}
-      >
-        The following changes will be deployed:
-        {JSON.stringify(changes, null, 2)}
-      </Human>
+      <Claude>
+        Deploy the approved changes
+      </Claude>
     )
   }
-
-  return (
-    <Claude>
-      Deploy the approved changes
-    </Claude>
-  )
 }
 ```
 

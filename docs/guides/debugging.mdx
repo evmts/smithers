@@ -90,28 +90,32 @@ If your agent seems stuck, check these:
 If you hit max frames, check for:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 // PROBLEM: State keeps changing but renders same node
 function BadAgent() {
-  const [count, setCount] = useState(0)
+  const [count, setCount] = createSignal(0)
 
-  return (
-    <Claude onFinished={() => setCount(count + 1)}>
-      Count: {count}  {/* Content changes but Claude keeps running */}
+  return () => (
+    <Claude onFinished={() => setCount(count() + 1)}>
+      Count: {count()}  {/* Content changes but Claude keeps running */}
     </Claude>
   )
 }
 
 // SOLUTION: Add completion condition
 function GoodAgent() {
-  const [count, setCount] = useState(0)
+  const [count, setCount] = createSignal(0)
 
-  if (count >= 5) return null  // Exit condition
+  return () => {
+    if (count() >= 5) return null  // Exit condition
 
-  return (
-    <Claude onFinished={() => setCount(count + 1)}>
-      Count: {count}
-    </Claude>
-  )
+    return (
+      <Claude onFinished={() => setCount(count() + 1)}>
+        Count: {count()}
+      </Claude>
+    )
+  }
 }
 ```
 

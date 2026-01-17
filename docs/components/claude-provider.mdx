@@ -329,8 +329,10 @@ interface UsageStats {
 Set hard budget limits to prevent unexpected charges:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function BudgetControlledApp() {
-  const [paused, setPaused] = useState(false)
+  const [paused, setPaused] = createSignal(false)
 
   return (
     <ClaudeProvider
@@ -351,7 +353,7 @@ function BudgetControlledApp() {
         },
       }}
     >
-      {paused ? (
+      {paused() ? (
         <div>Daily budget exceeded. Try again tomorrow.</div>
       ) : (
         <Claude>Your agent here</Claude>
@@ -397,8 +399,10 @@ function RateLimitedBatchJob({ items }) {
 Track and log usage statistics:
 
 ```tsx
+import { createSignal } from 'solid-js'
+
 function MonitoredApp() {
-  const [usage, setUsage] = useState<UsageStats | null>(null)
+  const [usage, setUsage] = createSignal<UsageStats | null>(null)
 
   return (
     <ClaudeProvider
@@ -411,7 +415,7 @@ function MonitoredApp() {
       }}
     >
       <div>
-        <UsageDashboard usage={usage} />
+        <UsageDashboard usage={usage()} />
         <Claude>Your agent here</Claude>
       </div>
     </ClaudeProvider>
