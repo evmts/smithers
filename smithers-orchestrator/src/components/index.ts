@@ -13,9 +13,13 @@ export type { PhaseProps } from './Phase'
 export { Step } from './Step'
 export type { StepProps } from './Step'
 
-// Agent components (will be added by parallel agent)
-// export { Claude } from './Claude'
-// export type { ClaudeProps } from './Claude'
+// Agent components
+export { Claude } from './Claude'
+export type { ClaudeProps, AgentResult } from './agents/types'
+
+// Smithers subagent component
+export { Smithers, executeSmithers } from './Smithers'
+export type { SmithersProps, SmithersResult } from './Smithers'
 
 // Re-export agent types
-// export * from './agents/types'
+export * from './agents/types'
