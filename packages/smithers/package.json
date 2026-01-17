@@ -1,7 +1,7 @@
 {
   "name": "@evmts/smithers",
   "version": "1.0.0",
-  "description": "Build AI agents in Solid. Declarative JSX components for orchestrating Claude agents with signal-based state management and parallel execution.",
+  "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -11,43 +11,43 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./jsx-runtime": {
-      "types": "./dist/solid-js-jsx-runtime/jsx-runtime.d.ts",
-      "import": "./dist/solid-js-jsx-runtime/jsx-runtime.js"
-    },
-    "./jsx-dev-runtime": {
-      "types": "./dist/solid-js-jsx-runtime/jsx-dev-runtime.d.ts",
-      "import": "./dist/solid-js-jsx-runtime/jsx-dev-runtime.js"
+    "./renderer": {
+      "import": "./src/renderer.js"
     }
   },
   "files": [
     "dist",
-    "src"
+    "README.md"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "bun --conditions=browser test",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@evmts/smithers": "workspace:*",
     "solid-js": "^1.9.10"
   },
   "dependencies": {
-    "@evmts/smithers-core": "workspace:*"
+    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
+    "solid-js": "^1.9.10"
   },
   "devDependencies": {
-    "@evmts/smithers": "workspace:*",
+    "@solidjs/testing-library": "^0.8.10",
     "@types/bun": "latest",
-    "solid-js": "^1.9.10",
-    "typescript": "^5.7.2"
+    "@types/jsdom": "^27.0.0",
+    "jsdom": "^27.4.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.3.1",
+    "vite-plugin-solid": "^2.11.10",
+    "vitest": "^4.0.17"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/evmts/smithers.git",
-    "directory": "packages/smithers-solid"
+    "directory": "packages/smithers"
   },
   "homepage": "https://github.com/evmts/smithers#readme",
   "bugs": {
@@ -62,7 +62,8 @@
     "llm",
     "claude",
     "anthropic",
-    "smithers"
+    "smithers",
+    "ralph"
   ],
   "author": "William Cory",
   "license": "MIT"

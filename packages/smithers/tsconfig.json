@@ -3,9 +3,11 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "jsx": "react-jsx",
-    "jsxImportSource": "@evmts/smithers"
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "lib": ["ES2020", "DOM"],
+    "types": ["vitest/globals", "@solidjs/testing-library"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "evals"]
+  "exclude": ["node_modules", "dist", "test", "examples"]
 }
