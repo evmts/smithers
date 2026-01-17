@@ -390,39 +390,13 @@ const all = await db.state.getAll()
 
 ## Contributing
 
-We accept **vibe-coded contributions** as long as you include your original prompt.
-
-### How to Contribute
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes (AI-assisted or not)
-4. **Add a git note with your original prompt:**
-   ```bash
-   git notes add -m "User prompt: Add support for streaming responses"
-   ```
-5. Commit your changes following our commit format
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-### Commit Message Format
-
-```
-feat: Add streaming response support
-
-Detailed description of changes.
-
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
-
-### Development Setup
+We accept **vibe-coded contributions** as long as you include your original prompt in a git note:
 
 ```bash
-git clone https://github.com/evmts/smithers.git
-cd smithers
-bun install
-bun test
+git notes add -m "User prompt: <your prompt here>"
 ```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 
 ---
 
