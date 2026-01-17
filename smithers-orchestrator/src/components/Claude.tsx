@@ -5,6 +5,7 @@ import { createSignal, onMount, useContext, type JSX } from 'solid-js'
 import { RalphContext } from '../../../src/components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI'
+import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config'
 import type { ClaudeProps, AgentResult } from './agents/types'
 
 // ============================================================================
@@ -66,7 +67,23 @@ export function Claude(props: ClaudeProps): JSX.Element {
         setStatus('running')
 
         // Extract prompt from children
-        const prompt = String(props.children)
+        const childrenString = String(props.children)
+
+        // Check for MCP tool components
+        const { configs: mcpConfigs, cleanPrompt, toolInstructions } = extractMCPConfigs(childrenString)
+
+        // Build final prompt with tool instructions
+        let prompt = cleanPrompt
+        if (toolInstructions) {
+          prompt = `${toolInstructions}\n\n---\n\n${cleanPrompt}`
+        }
+
+        // Generate MCP config file if needed
+        let mcpConfigPath = props.mcpConfig
+        if (mcpConfigs.length > 0) {
+          const mcpConfig = generateMCPServerConfig(mcpConfigs)
+          mcpConfigPath = await writeMCPConfigFile(mcpConfig)
+        }
 
         // Log agent start to database if reporting is enabled
         if (props.reportingEnabled !== false) {
@@ -95,7 +112,7 @@ export function Claude(props: ClaudeProps): JSX.Element {
               maxTurns: props.maxTurns,
               systemPrompt: props.systemPrompt,
               outputFormat: props.outputFormat,
-              mcpConfig: props.mcpConfig,
+              mcpConfig: mcpConfigPath,
               allowedTools: props.allowedTools,
               disallowedTools: props.disallowedTools,
               timeout: props.timeout,
