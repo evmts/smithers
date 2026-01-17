@@ -121,6 +121,8 @@ export function Claude(props: ClaudeProps): JSX.Element {
               resume: props.resumeSession,
               onProgress: props.onProgress,
               onToolCall: props.onToolCall,
+              schema: props.schema,
+              schemaRetries: props.schemaRetries,
             })
 
             // Check for execution errors

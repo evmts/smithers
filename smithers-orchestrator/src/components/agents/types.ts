@@ -2,6 +2,7 @@
 // Defines interfaces for tools, MCP servers, stop conditions, and agent props
 
 import type { JSX } from 'solid-js'
+import type { z } from 'zod'
 
 // ============================================================================
 // JSON Schema type (simplified)
@@ -144,16 +145,17 @@ export interface StopCondition {
 
 export type StopReason = 'completed' | 'stop_condition' | 'error' | 'cancelled'
 
-export interface AgentResult {
+export interface AgentResult<T = any> {
   /**
    * Raw text output from the agent
    */
   output: string
 
   /**
-   * Structured output (if JSON output was requested)
+   * Structured output (if JSON output was requested or schema was provided)
+   * When a Zod schema is provided, this will be typed according to the schema.
    */
-  structured?: any
+  structured?: T
 
   /**
    * Token usage
@@ -182,6 +184,11 @@ export interface AgentResult {
    * Exit code from CLI (if applicable)
    */
   exitCode?: number
+
+  /**
+   * Session ID for resuming the conversation
+   */
+  sessionId?: string
 }
 
 // ============================================================================
@@ -279,7 +286,7 @@ export type ClaudePermissionMode = 'default' | 'acceptEdits' | 'bypassPermission
 
 export type ClaudeOutputFormat = 'text' | 'json' | 'stream-json'
 
-export interface ClaudeProps extends BaseAgentProps {
+export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends BaseAgentProps {
   /**
    * Claude model to use
    * - 'opus': Claude Opus (most capable)
@@ -329,6 +336,19 @@ export interface ClaudeProps extends BaseAgentProps {
    * Resume a specific session
    */
   resumeSession?: string
+
+  /**
+   * Zod schema for structured output validation.
+   * When provided, the output will be parsed and validated against this schema.
+   * If validation fails, the session will be resumed with error feedback.
+   */
+  schema?: TSchema
+
+  /**
+   * Maximum retries for schema validation failures.
+   * @default 2
+   */
+  schemaRetries?: number
 }
 
 // ============================================================================
@@ -415,4 +435,15 @@ export interface CLIExecutionOptions {
    * Tool call callback
    */
   onToolCall?: (tool: string, input: any) => void
+
+  /**
+   * Zod schema for structured output validation
+   */
+  schema?: z.ZodType
+
+  /**
+   * Maximum retries for schema validation failures
+   * @default 2
+   */
+  schemaRetries?: number
 }

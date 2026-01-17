@@ -9,6 +9,11 @@ import type {
   ClaudePermissionMode,
   ClaudeOutputFormat,
 } from './types'
+import {
+  generateStructuredOutputPrompt,
+  generateRetryPrompt,
+  parseStructuredOutput,
+} from '../../utils/structured-output'
 
 // ============================================================================
 // CLI Command Builder
@@ -266,10 +271,12 @@ export function parseClaudeOutput(
 // ============================================================================
 
 /**
- * Execute Claude CLI command and return structured result
+ * Execute a single Claude CLI invocation (internal helper)
  */
-export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<AgentResult> {
-  const startTime = Date.now()
+async function executeClaudeCLIOnce(
+  options: CLIExecutionOptions,
+  startTime: number
+): Promise<AgentResult & { sessionId?: string }> {
   const args = buildClaudeArgs(options)
 
   // Build the command
@@ -384,6 +391,10 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
     // Parse the output
     const parsed = parseClaudeOutput(stdout, options.outputFormat)
 
+    // Try to extract session ID from stderr (Claude CLI outputs session info there)
+    const sessionMatch = stderr.match(/session[_-]?id[:\s]+([a-f0-9-]+)/i)
+    const sessionId = sessionMatch?.[1]
+
     // Determine stop reason
     let stopReason: AgentResult['stopReason'] = 'completed'
     if (exitCode !== 0) {
@@ -398,6 +409,7 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
       stopReason,
       durationMs,
       exitCode,
+      sessionId,
     }
   } catch (error) {
     const durationMs = Date.now() - startTime
@@ -412,6 +424,90 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
       exitCode: -1,
     }
   }
+}
+
+/**
+ * Execute Claude CLI command and return structured result.
+ * If a schema is provided, validates the output and retries with --continue on failure.
+ */
+export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<AgentResult> {
+  const startTime = Date.now()
+  const maxSchemaRetries = options.schemaRetries ?? 2
+
+  // If schema is provided, add structured output instructions to system prompt
+  let effectiveOptions = { ...options }
+  if (options.schema) {
+    const schemaPrompt = generateStructuredOutputPrompt(options.schema)
+    effectiveOptions.systemPrompt = options.systemPrompt
+      ? `${options.systemPrompt}\n\n${schemaPrompt}`
+      : schemaPrompt
+  }
+
+  // Execute the initial request
+  let result = await executeClaudeCLIOnce(effectiveOptions, startTime)
+
+  // If no schema, just return the result
+  if (!options.schema) {
+    return result
+  }
+
+  // Validate against schema and retry on failure
+  let schemaRetryCount = 0
+  while (schemaRetryCount < maxSchemaRetries) {
+    // Skip validation if there was an execution error
+    if (result.stopReason === 'error') {
+      return result
+    }
+
+    // Parse and validate the output
+    const parseResult = parseStructuredOutput(result.output, options.schema)
+
+    if (parseResult.success) {
+      // Validation passed - return result with typed structured data
+      return {
+        ...result,
+        structured: parseResult.data,
+      }
+    }
+
+    // Validation failed - retry by continuing the session
+    schemaRetryCount++
+    options.onProgress?.(
+      `Schema validation failed (attempt ${schemaRetryCount}/${maxSchemaRetries}): ${parseResult.error}`
+    )
+
+    // Generate retry prompt with error feedback
+    const retryPrompt = generateRetryPrompt(result.output, parseResult.error!)
+
+    // Continue the session with the error feedback
+    const retryOptions: CLIExecutionOptions = {
+      ...effectiveOptions,
+      prompt: retryPrompt,
+      continue: true, // Use --continue to maintain context
+    }
+
+    result = await executeClaudeCLIOnce(retryOptions, startTime)
+  }
+
+  // Final validation attempt after all retries
+  if (result.stopReason !== 'error') {
+    const finalParseResult = parseStructuredOutput(result.output, options.schema)
+    if (finalParseResult.success) {
+      return {
+        ...result,
+        structured: finalParseResult.data,
+      }
+    }
+
+    // All retries exhausted - return error
+    return {
+      ...result,
+      stopReason: 'error',
+      output: `Schema validation failed after ${maxSchemaRetries} retries: ${finalParseResult.error}\n\nLast output: ${result.output}`,
+    }
+  }
+
+  return result
 }
 
 /**
