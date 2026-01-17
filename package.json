@@ -25,6 +25,9 @@
     "./debug": {
       "types": "./dist/debug/index.d.ts",
       "import": "./dist/debug/index.js"
+    },
+    "./renderer": {
+      "import": "./src/solid/renderer.js"
     }
   },
   "files": [
