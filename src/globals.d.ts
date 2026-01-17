@@ -6,6 +6,8 @@ declare global {
       NODE_ENV?: string
       MOCK_MODE?: string
     }
+
+    type Timeout = ReturnType<typeof setTimeout>
   }
 
   var process: {

@@ -1,19 +1,19 @@
 import type { JSX } from 'solid-js'
 
-export interface PhaseProps {
+export interface StepProps {
   name?: string
   children?: JSX.Element
   [key: string]: unknown
 }
 
 /**
- * Phase component - groups steps semantically.
+ * Step component - represents a single step within a phase.
  * Provides semantic structure to agent workflows.
  */
-export function Phase(props: PhaseProps): JSX.Element {
+export function Step(props: StepProps): JSX.Element {
   return (
-    <phase name={props.name}>
+    <step name={props.name}>
       {props.children}
-    </phase>
+    </step>
   )
 }
