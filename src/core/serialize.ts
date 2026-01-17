@@ -14,14 +14,15 @@ export function serialize(node: SmithersNode): string {
   }
 
   const tag = node.type.toLowerCase()
+  const keyAttr = node.key !== undefined ? ` key="${escapeXml(String(node.key))}"` : ''
   const attrs = serializeProps(node.props)
   const children = node.children.map(serialize).join('\n')
 
   if (children) {
-    return `<${tag}${attrs}>\n${indent(children)}\n</${tag}>`
+    return `<${tag}${keyAttr}${attrs}>\n${indent(children)}\n</${tag}>`
   }
 
-  return `<${tag}${attrs} />`
+  return `<${tag}${keyAttr}${attrs} />`
 }
 
 function serializeProps(props: Record<string, unknown>): string {

@@ -1,6 +1,7 @@
 import type { JSX } from 'solid-js'
 import { render } from './renderer.js'
 import type { SmithersNode } from '../core/types.js'
+import { serialize } from '../core/serialize.js'
 
 /**
  * Smithers root for mounting Solid components.
@@ -9,6 +10,11 @@ export interface SmithersRoot {
   mount(App: () => JSX.Element): void
   getTree(): SmithersNode
   dispose(): void
+  /**
+   * Serialize the tree to XML for display/approval.
+   * This is crucial for showing users the agent plan before execution.
+   */
+  toXML(): string
 }
 
 /**
@@ -43,6 +49,10 @@ export function createSmithersRoot(): SmithersRoot {
         disposeFunction = null
       }
       rootNode.children = []
+    },
+
+    toXML(): string {
+      return serialize(rootNode)
     },
   }
 }

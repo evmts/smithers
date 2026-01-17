@@ -1,6 +1,11 @@
 /**
  * Core type definitions for Smithers execution engine.
  * These types are framework-agnostic and work with any renderer.
+ *
+ * Key architectural principle: Components execute themselves via onMount,
+ * not via external orchestrators. State changes (via Solid signals) trigger
+ * re-renders, which trigger re-execution. This is the "Ralph Wiggum loop"
+ * pattern - change the key prop to force unmount/remount.
  */
 
 export interface SmithersNode {
@@ -12,6 +17,12 @@ export interface SmithersNode {
   children: SmithersNode[]
   /** Reference to parent node (null for root) */
   parent: SmithersNode | null
+  /**
+   * Unique key for reconciliation.
+   * CRITICAL for the "Ralph Wiggum loop" - changing this forces unmount/remount,
+   * which triggers re-execution of onMount handlers.
+   */
+  key?: string | number
   /** Runtime execution state */
   _execution?: ExecutionState
 }

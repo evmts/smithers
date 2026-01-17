@@ -30,9 +30,17 @@ export function createSmithersRenderer() {
     },
 
     setProperty(node: SmithersNode, name: string, value: unknown): void {
-      if (name !== 'children') {
-        node.props[name] = value
+      if (name === 'children') {
+        // Children are handled by insertNode, not setProperty
+        return
       }
+      if (name === 'key') {
+        // Key is stored on the node itself for the Ralph Wiggum loop
+        node.key = value as string | number
+        return
+      }
+      // All other props go into props object
+      node.props[name] = value
     },
 
     insertNode(parent: SmithersNode, node: SmithersNode, anchor?: SmithersNode): void {
