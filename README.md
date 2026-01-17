@@ -50,40 +50,32 @@ I wanted a tool that allows me to:
 
 ## Installation
 
-### With Claude Code (Recommended)
+### 1. Install Claude Code
 
-Add to your project's `CLAUDE.md`:
-
-```markdown
-This project uses Smithers for AI orchestration.
-When the user asks for agentic workflows, generate Smithers scripts.
-
-See the Smithers documentation at: ./node_modules/smithers/README.md
+```bash
+npm install -g @anthropic-ai/claude-code
 ```
 
-Then install:
+### 2. Install Smithers in your project
 
 ```bash
 bun add smithers
 ```
 
-### npm / yarn / pnpm
+Or with npm/yarn/pnpm:
 
 ```bash
 npm install smithers
-# or
-yarn add smithers
-# or
-pnpm add smithers
 ```
 
-### From Source
+### 3. Add to your CLAUDE.md (optional but recommended)
 
-```bash
-git clone https://github.com/evmts/smithers.git
-cd smithers
-bun install
+```markdown
+This project uses Smithers for AI orchestration.
+When the user asks for agentic workflows, generate Smithers scripts.
 ```
+
+That's it. Now just ask Claude Code to write Smithers workflows for you.
 
 ---
 
@@ -92,13 +84,13 @@ bun install
 ### Required
 
 - **[Bun](https://bun.sh/)** - JavaScript runtime (v1.0+)
-- **[Claude Code](https://claude.ai/code)** - CLI for Claude (`npm install -g @anthropic-ai/claude-code`)
+- **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** - `npm install -g @anthropic-ai/claude-code`
 
 ### Optional
 
-- **[Gemini CLI](https://github.com/google/generative-ai-cli)** - For Gemini model support (coming soon)
-- **[Codex CLI](https://github.com/openai/codex)** - For OpenAI model support (coming soon)
 - **[jj (Jujutsu)](https://github.com/martinvonz/jj)** - Alternative VCS with better snapshot support
+- **Gemini CLI** - For Gemini model support (coming soon)
+- **Codex CLI** - For OpenAI model support (coming soon)
 
 ---
 
