@@ -80,7 +80,7 @@ pnpm add smithers
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/smithers.git
+git clone https://github.com/evmts/smithers.git
 cd smithers
 bun install
 ```
@@ -426,7 +426,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ### Development Setup
 
 ```bash
-git clone https://github.com/yourusername/smithers.git
+git clone https://github.com/evmts/smithers.git
 cd smithers
 bun install
 bun test
