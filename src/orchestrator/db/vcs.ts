@@ -32,7 +32,7 @@ export class VCSManager {
     smithers_metadata?: Record<string, any>
     agent_id?: string
   }): Promise<string> {
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO commits (
         execution_id,
         agent_id,
@@ -63,7 +63,7 @@ export class VCSManager {
       ]
     )
 
-    return result.rows[0].id
+    return result.rows[0]?.id ?? ''
   }
 
   /**
@@ -105,7 +105,7 @@ export class VCSManager {
     files_deleted?: string[]
     has_conflicts?: boolean
   }): Promise<string> {
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO snapshots (
         execution_id,
         change_id,
@@ -130,7 +130,7 @@ export class VCSManager {
       ]
     )
 
-    return result.rows[0].id
+    return result.rows[0]?.id ?? ''
   }
 
   /**
@@ -164,7 +164,7 @@ export class VCSManager {
     blocking?: boolean
     agent_id?: string
   }): Promise<string> {
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO reviews (
         execution_id,
         agent_id,
@@ -195,7 +195,7 @@ export class VCSManager {
       ]
     )
 
-    return result.rows[0].id
+    return result.rows[0]?.id ?? ''
   }
 
   /**
@@ -272,7 +272,7 @@ export class VCSManager {
     severity?: 'info' | 'warning' | 'critical'
     agent_id?: string
   }): Promise<string> {
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO reports (
         execution_id,
         agent_id,
@@ -295,7 +295,7 @@ export class VCSManager {
       ]
     )
 
-    return result.rows[0].id
+    return result.rows[0]?.id ?? ''
   }
 
   /**

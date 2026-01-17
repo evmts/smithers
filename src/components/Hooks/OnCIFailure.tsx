@@ -138,7 +138,7 @@ export function OnCIFailure(props: OnCIFailureProps): JSX.Element {
       const checkCI = async () => {
         try {
           if (props.provider !== 'github-actions') {
-            setError(`Unsupported CI provider: ${props.provider}`)
+            setError(() => `Unsupported CI provider: ${props.provider}`)
             return
           }
 

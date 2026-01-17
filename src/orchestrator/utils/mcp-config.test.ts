@@ -1,4 +1,4 @@
-import { test, expect, describe } from 'bun:test'
+import { test, expect, describe } from 'vitest'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from './mcp-config'
 import * as fs from 'fs/promises'
 
@@ -130,7 +130,7 @@ describe('writeMCPConfigFile', () => {
     const configPath = await writeMCPConfigFile(config)
 
     expect(configPath).toContain('smithers-mcp-')
-    expect(configPath).toEndWith('.json')
+    expect(configPath.endsWith('.json')).toBe(true)
 
     // Verify file contents
     const contents = await fs.readFile(configPath, 'utf-8')

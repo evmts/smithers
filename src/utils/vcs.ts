@@ -291,7 +291,7 @@ export function parseDiffStats(output: string): {
     // Match pattern like: "file.ts | 10 +++++++---"
     const match = line.match(/^\s*(.+?)\s*\|\s*(\d+)\s+([+\-]+)/)
     if (match) {
-      const [, file, changes, symbols] = match
+      const [, file, _changes, symbols] = match
       files.push(file.trim())
 
       for (const symbol of symbols) {

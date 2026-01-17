@@ -212,8 +212,8 @@ export function parseStructuredOutput<T extends z.ZodType>(
   const result = schema.safeParse(parsed)
 
   if (!result.success) {
-    // Zod 4 uses 'issues' instead of 'errors'
-    const issues = result.error?.issues || result.error?.errors || []
+    // Zod 4 uses 'issues'
+    const issues = result.error?.issues || []
     const errorMessages = issues
       .map((issue: any) => `- ${(issue.path || []).join('.')}: ${issue.message}`)
       .join('\n')

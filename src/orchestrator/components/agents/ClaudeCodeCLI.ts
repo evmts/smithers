@@ -5,7 +5,6 @@ import type {
   CLIExecutionOptions,
   AgentResult,
   StopCondition,
-  ClaudeModel,
   ClaudePermissionMode,
   ClaudeOutputFormat,
 } from './types'
@@ -309,6 +308,9 @@ async function executeClaudeCLIOnce(
     let stderr = ''
 
     // Read stdout
+    if (!proc.stdout || typeof proc.stdout === 'number') {
+      throw new Error('stdout is not a readable stream')
+    }
     const stdoutReader = proc.stdout.getReader()
     const decoder = new TextDecoder()
 
@@ -330,14 +332,14 @@ async function executeClaudeCLIOnce(
           durationMs: elapsed,
         }
 
-        const { shouldStop, reason } = checkStopConditions(
+        const { shouldStop, reason: _reason } = checkStopConditions(
           options.stopConditions,
           partialResult
         )
 
         if (shouldStop) {
           killed = true
-          proc.kill()
+          proc?.kill()
           clearTimeout(timeoutId)
 
           return {
@@ -355,7 +357,10 @@ async function executeClaudeCLIOnce(
 
     // Read stderr
     const stderrPromise = (async () => {
-      const reader = proc!.stderr.getReader()
+      if (!proc?.stderr || typeof proc.stderr === 'number') {
+        return
+      }
+      const reader = proc.stderr.getReader()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break

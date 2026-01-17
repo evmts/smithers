@@ -1,85 +1,18 @@
-import { createRenderer } from 'solid-js/universal'
 import type { SmithersNode } from '../core/types.js'
+import { rendererMethods } from './renderer-methods.js'
 
-/**
- * Renderer configuration methods.
- * Exported separately for direct testing without JSX.
- */
-export const rendererMethods = {
-  createElement(type: string): SmithersNode {
-    return {
-      type,
-      props: {},
-      children: [],
-      parent: null,
-    }
-  },
+// Re-export rendererMethods for backwards compatibility
+export { rendererMethods }
 
-  createTextNode(text: string): SmithersNode {
-    return {
-      type: 'TEXT',
-      props: { value: text },
-      children: [],
-      parent: null,
-    }
-  },
+// Lazy-loaded solid-js renderer to avoid import errors in test environments
+let _solidRenderer: ReturnType<typeof import('solid-js/universal').createRenderer<SmithersNode>> | null = null
 
-  replaceText(node: SmithersNode, text: string): void {
-    node.props.value = text
-  },
-
-  setProperty(node: SmithersNode, name: string, value: unknown): void {
-    if (name === 'children') {
-      // Children are handled by insertNode, not setProperty
-      return
-    }
-    if (name === 'key') {
-      // Key is stored on the node itself for the Ralph Wiggum loop
-      node.key = value as string | number
-      return
-    }
-    // All other props go into props object
-    node.props[name] = value
-  },
-
-  insertNode(parent: SmithersNode, node: SmithersNode, anchor?: SmithersNode): void {
-    node.parent = parent
-    if (anchor) {
-      const idx = parent.children.indexOf(anchor)
-      if (idx !== -1) {
-        parent.children.splice(idx, 0, node)
-        return
-      }
-    }
-    parent.children.push(node)
-  },
-
-  removeNode(parent: SmithersNode, node: SmithersNode): void {
-    const idx = parent.children.indexOf(node)
-    if (idx >= 0) {
-      parent.children.splice(idx, 1)
-    }
-    node.parent = null
-  },
-
-  isTextNode(node: SmithersNode): boolean {
-    return node.type === 'TEXT'
-  },
-
-  getParentNode(node: SmithersNode): SmithersNode | undefined {
-    return node.parent ?? undefined
-  },
-
-  getFirstChild(node: SmithersNode): SmithersNode | undefined {
-    return node.children[0]
-  },
-
-  getNextSibling(node: SmithersNode): SmithersNode | undefined {
-    if (!node.parent) return undefined
-    const idx = node.parent.children.indexOf(node)
-    if (idx === -1) return undefined
-    return node.parent.children[idx + 1]
-  },
+async function getSolidRenderer() {
+  if (!_solidRenderer) {
+    const { createRenderer } = await import('solid-js/universal')
+    _solidRenderer = createRenderer<SmithersNode>(rendererMethods)
+  }
+  return _solidRenderer
 }
 
 /**
@@ -87,9 +20,30 @@ export const rendererMethods = {
  * Converts JSX → SmithersNode tree using Solid's fine-grained reactivity.
  */
 export function createSmithersRenderer() {
-  return createRenderer<SmithersNode>(rendererMethods)
+  // Try synchronous import first (works in runtime environments)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const solidUniversal = require('solid-js/universal') as typeof import('solid-js/universal')
+    return solidUniversal.createRenderer<SmithersNode>(rendererMethods)
+  } catch {
+    // In test environments, return a placeholder that will be populated later
+    return {
+      render: () => { throw new Error('Solid renderer not available in this environment') },
+      effect: () => { throw new Error('Solid renderer not available in this environment') },
+      memo: () => { throw new Error('Solid renderer not available in this environment') },
+      createComponent: () => { throw new Error('Solid renderer not available in this environment') },
+    }
+  }
 }
 
-export const { render, effect, memo, createComponent } = createSmithersRenderer()
+// Export async helper for environments that need it
+export { getSolidRenderer }
+
+// Try to create the renderer synchronously for normal usage
+const _renderer = createSmithersRenderer()
+export const render = _renderer.render
+export const effect = _renderer.effect
+export const memo = _renderer.memo
+export const createComponent = _renderer.createComponent
 
 export type { SmithersNode }

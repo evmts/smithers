@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { createSmithersRoot } from '../src/core/root'
-import { rendererMethods } from '../src/solid/renderer'
+import { rendererMethods } from '../src/solid/renderer-methods'
 import type { SmithersNode } from '../src/core/types'
 
 describe('Integration Tests (Core Architecture)', () => {

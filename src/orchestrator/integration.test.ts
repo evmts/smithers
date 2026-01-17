@@ -7,7 +7,7 @@
  * 3. Component imports and basic functionality
  */
 
-import { test, expect, beforeAll, afterAll, describe } from 'bun:test'
+import { test, expect, beforeAll, afterAll, describe } from 'vitest'
 import { createSmithersDB, type SmithersDB } from './db'
 import { VCSManager } from './db/vcs'
 import { rmSync, mkdirSync } from 'fs'
@@ -133,7 +133,7 @@ describe('Smithers Orchestrator Integration', () => {
     })
 
     test('steps table exists and works', async () => {
-      const stepId = await db.steps.start(executionId, 'test-step')
+      const stepId = await db.steps.start('test-step')
       expect(stepId).toBeTruthy()
 
       await db.steps.complete(stepId)

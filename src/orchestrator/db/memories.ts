@@ -23,7 +23,7 @@ export class MemoryManager {
    * Add a new memory
    */
   async add(input: MemoryInput): Promise<string> {
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO memories (
         category,
         scope,
@@ -56,7 +56,7 @@ export class MemoryManager {
       ]
     )
 
-    return result.rows[0].id
+    return result.rows[0]?.id ?? ''
   }
 
   /**

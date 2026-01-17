@@ -5,7 +5,7 @@ import { onMount, onCleanup, createSignal, useContext, type JSX } from 'solid-js
 import { Step as BaseStep } from '../../components/Step'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
-import { jjSnapshot, jjCommit, getJJChangeId } from '../../utils/vcs'
+import { jjSnapshot, jjCommit } from '../../utils/vcs'
 
 export interface StepProps {
   /**
@@ -63,7 +63,7 @@ export function Step(props: StepProps): JSX.Element {
   const { db } = useSmithers()
   const ralph = useContext(RalphContext)
   const [stepId, setStepId] = createSignal<string | null>(null)
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'completed' | 'failed'>('pending')
+  const [, setStatus] = createSignal<'pending' | 'running' | 'completed' | 'failed'>('pending')
 
   let snapshotBeforeId: string | undefined
   let snapshotAfterId: string | undefined

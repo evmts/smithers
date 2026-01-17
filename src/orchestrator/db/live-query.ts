@@ -47,7 +47,7 @@ export function createLiveQueryHelpers(): LiveQueryHelpers {
   // For now, we provide a stub that can be implemented when Solid.js is available
 
   return {
-    createLiveQuery<T>(pg: PGlite, sql: string, params: any[] = []): () => T[] {
+    createLiveQuery<T>(_pg: PGlite, _sql: string, _params: any[] = []): () => T[] {
       // In Solid.js:
       // const [data, setData] = createSignal<T[]>([])
       // const { unsubscribe } = pg.live.query(sql, params, (res) => {
@@ -60,7 +60,7 @@ export function createLiveQueryHelpers(): LiveQueryHelpers {
       throw new Error('createLiveQuery requires Solid.js context')
     },
 
-    createLiveValue<T>(pg: PGlite, sql: string, params: any[] = []): () => T | null {
+    createLiveValue<T>(_pg: PGlite, _sql: string, _params: any[] = []): () => T | null {
       // In Solid.js:
       // const rows = createLiveQuery<{ value: T }>(pg, sql, params)
       // return () => rows()[0]?.value ?? null
@@ -68,7 +68,7 @@ export function createLiveQueryHelpers(): LiveQueryHelpers {
       throw new Error('createLiveValue requires Solid.js context')
     },
 
-    createLiveRow<T>(pg: PGlite, sql: string, params: any[] = []): () => T | null {
+    createLiveRow<T>(_pg: PGlite, _sql: string, _params: any[] = []): () => T | null {
       // In Solid.js:
       // const rows = createLiveQuery<T>(pg, sql, params)
       // return () => rows()[0] ?? null

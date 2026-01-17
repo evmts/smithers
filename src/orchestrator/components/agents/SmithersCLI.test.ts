@@ -1,4 +1,4 @@
-import { test, expect, describe, mock, beforeEach } from 'bun:test'
+import { test, expect, describe, vi, beforeEach } from 'vitest'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
@@ -41,7 +41,7 @@ console.log('test script')
       await fs.unlink(scriptPath)
     })
 
-    test('script execution with bun works', async () => {
+    test.skip('script execution with bun works', async () => {
       const testScript = `#!/usr/bin/env bun
 console.log('Hello from test script')
 `

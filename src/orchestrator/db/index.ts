@@ -4,6 +4,7 @@
 import { PGlite } from '@electric-sql/pglite'
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { fileURLToPath } from 'url'
 import { StateManager } from './state.js'
 import { MemoryManager } from './memories.js'
 import { ExecutionManager } from './execution.js'
@@ -284,7 +285,7 @@ export interface SmithersDB {
     /**
      * Start a new step
      */
-    start: (executionId: string, name?: string) => Promise<string>
+    start: (name?: string) => Promise<string>
 
     /**
      * Complete a step
@@ -595,7 +596,7 @@ export async function createSmithersDB(
     },
 
     steps: {
-      start: (_executionId: string, name?: string) => executionManager.startStep(name),
+      start: (name?: string) => executionManager.startStep(name),
       complete: (id: string, vcsInfo?: any) => executionManager.completeStep(id, vcsInfo),
       fail: (id: string) => executionManager.failStep(id),
       current: () => executionManager.getCurrentStep(),
@@ -651,8 +652,22 @@ export async function createSmithersDB(
  * Initialize database schema
  */
 async function initializeSchema(pg: PGlite, customSchema?: string): Promise<void> {
-  // Read schema SQL file
-  const schemaPath = new URL('./schema.sql', import.meta.url).pathname
+  // Read schema SQL file - handle both runtime and test environments
+  let schemaPath: string
+  try {
+    // Try URL-based resolution first (works in normal runtime)
+    const currentFileUrl = import.meta.url
+    if (currentFileUrl.startsWith('file://')) {
+      const currentDir = path.dirname(fileURLToPath(currentFileUrl))
+      schemaPath = path.join(currentDir, 'schema.sql')
+    } else {
+      // Fallback for test environments
+      schemaPath = path.resolve(process.cwd(), 'src/orchestrator/db/schema.sql')
+    }
+  } catch {
+    // Ultimate fallback
+    schemaPath = path.resolve(process.cwd(), 'src/orchestrator/db/schema.sql')
+  }
   const schemaSql = await fs.readFile(schemaPath, 'utf-8')
 
   // Execute schema

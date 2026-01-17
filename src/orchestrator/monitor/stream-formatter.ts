@@ -126,7 +126,7 @@ export class StreamFormatter {
     return output + '\n'
   }
 
-  private formatLog(time: string, message: string): string {
+  private formatLog(_time: string, message: string): string {
     // Don't show timestamp for regular logs to reduce noise
     return `           ${message}\n`
   }

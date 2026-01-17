@@ -34,7 +34,7 @@ export class ExecutionManager {
     filePath: string,
     config: Record<string, any> = {}
   ): Promise<string> {
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO executions (
         name,
         file_path,
@@ -47,7 +47,7 @@ export class ExecutionManager {
       [name, filePath, JSON.stringify(config)]
     )
 
-    this.currentExecutionId = result.rows[0].id
+    this.currentExecutionId = result.rows[0]?.id ?? ''
     return this.currentExecutionId
   }
 
@@ -187,7 +187,7 @@ export class ExecutionManager {
       throw new Error('No active execution')
     }
 
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO phases (
         execution_id,
         name,
@@ -200,7 +200,7 @@ export class ExecutionManager {
       [this.currentExecutionId, name, iteration]
     )
 
-    this.currentPhaseId = result.rows[0].id
+    this.currentPhaseId = result.rows[0]?.id ?? ''
     return this.currentPhaseId
   }
 
@@ -269,7 +269,7 @@ export class ExecutionManager {
       throw new Error('No active execution')
     }
 
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO agents (
         execution_id,
         phase_id,
@@ -290,7 +290,7 @@ export class ExecutionManager {
       ]
     )
 
-    this.currentAgentId = result.rows[0].id
+    this.currentAgentId = result.rows[0]?.id ?? ''
 
     // Update execution agent count
     await this.pg.query(
@@ -390,7 +390,7 @@ export class ExecutionManager {
       throw new Error('No active execution')
     }
 
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO tool_calls (
         agent_id,
         execution_id,
@@ -416,7 +416,7 @@ export class ExecutionManager {
       ),
     ])
 
-    return result.rows[0].id
+    return result.rows[0]?.id ?? ''
   }
 
   /**
@@ -564,7 +564,7 @@ export class ExecutionManager {
       // File doesn't exist yet or git not available
     }
 
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO artifacts (
         execution_id,
         agent_id,
@@ -593,7 +593,7 @@ export class ExecutionManager {
       ]
     )
 
-    return result.rows[0].id
+    return result.rows[0]?.id ?? ''
   }
 
   /**
@@ -618,7 +618,7 @@ export class ExecutionManager {
       throw new Error('No active execution')
     }
 
-    const result = await this.pg.query(
+    const result = await this.pg.query<{ id: string }>(
       `INSERT INTO steps (
         execution_id,
         phase_id,
@@ -631,7 +631,7 @@ export class ExecutionManager {
       [this.currentExecutionId, this.currentPhaseId, name]
     )
 
-    this.currentStepId = result.rows[0].id
+    this.currentStepId = result.rows[0]?.id ?? ''
     return this.currentStepId
   }
 

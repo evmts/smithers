@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { rendererMethods } from './renderer'
+import { rendererMethods } from './renderer-methods'
 import type { SmithersNode } from '../core/types'
 
 describe('Smithers Renderer Core (Direct Method Calls)', () => {

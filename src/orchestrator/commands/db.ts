@@ -1,7 +1,6 @@
 // Database inspection command
 
 import { createSmithersDB } from '../db/index.js'
-import * as path from 'path'
 
 interface DbOptions {
   path?: string
@@ -201,9 +200,9 @@ async function showStats(db: any) {
   ]
 
   for (const table of tables) {
-    const result = await db.query<{ count: number }>(
+    const result = await db.query(
       `SELECT COUNT(*) as count FROM ${table}`
-    )
+    ) as Array<{ count: number }>
     const count = result[0]?.count || 0
     console.log(`  ${table.padEnd(15)}: ${count}`)
   }
