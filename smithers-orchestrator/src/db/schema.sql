@@ -395,3 +395,35 @@ CREATE INDEX IF NOT EXISTS idx_reviews_approved ON reviews(approved);
 CREATE INDEX IF NOT EXISTS idx_reviews_target ON reviews(target_type);
 CREATE INDEX IF NOT EXISTS idx_reviews_blocking ON reviews(blocking);
 CREATE INDEX IF NOT EXISTS idx_reviews_created ON reviews(created_at DESC);
+
+-- ============================================================================
+-- 13. STEPS - Fine-grained step tracking
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS steps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  execution_id UUID NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  phase_id UUID REFERENCES phases(id) ON DELETE SET NULL,
+
+  -- Identity
+  name TEXT,
+
+  -- Status
+  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'running', 'completed', 'failed', 'skipped'
+
+  -- Timing
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  duration_ms INTEGER,
+
+  -- VCS integration
+  snapshot_before TEXT,  -- JJ commit ID before step
+  snapshot_after TEXT,   -- JJ commit ID after step
+  commit_created TEXT    -- Commit hash if commitAfter was used
+);
+
+CREATE INDEX IF NOT EXISTS idx_steps_execution ON steps(execution_id);
+CREATE INDEX IF NOT EXISTS idx_steps_phase ON steps(phase_id);
+CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(status);
+CREATE INDEX IF NOT EXISTS idx_steps_created ON steps(created_at DESC);

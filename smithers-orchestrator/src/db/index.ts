@@ -21,6 +21,7 @@ import type {
   Snapshot,
   Review,
   Report,
+  Step,
 } from './types.js'
 
 export interface SmithersDB {
@@ -269,6 +270,40 @@ export interface SmithersDB {
      * Get tool call output (handles inline and file-based)
      */
     getOutput: (id: string) => Promise<string | null>
+  }
+
+  /**
+   * Step tracking
+   */
+  steps: {
+    /**
+     * Start a new step
+     */
+    start: (name?: string) => Promise<string>
+
+    /**
+     * Complete a step
+     */
+    complete: (id: string, vcsInfo?: {
+      snapshot_before?: string
+      snapshot_after?: string
+      commit_created?: string
+    }) => Promise<void>
+
+    /**
+     * Mark step as failed
+     */
+    fail: (id: string) => Promise<void>
+
+    /**
+     * Get current step
+     */
+    current: () => Promise<Step | null>
+
+    /**
+     * Get steps for phase
+     */
+    list: (phaseId: string) => Promise<Step[]>
   }
 
   /**
@@ -539,6 +574,14 @@ export async function createSmithersDB(
       list: (executionId: string) => executionManager.getAgents(executionId),
     },
 
+    steps: {
+      start: (name?: string) => executionManager.startStep(name),
+      complete: (id: string, vcsInfo?: any) => executionManager.completeStep(id, vcsInfo),
+      fail: (id: string) => executionManager.failStep(id),
+      current: () => executionManager.getCurrentStep(),
+      list: (phaseId: string) => executionManager.getSteps(phaseId),
+    },
+
     tools: {
       start: (agentId: string, toolName: string, input: Record<string, any>) =>
         executionManager.startToolCall(agentId, toolName, input),
@@ -605,6 +648,7 @@ async function initializeSchema(pg: PGlite, customSchema?: string): Promise<void
  */
 async function resetDatabase(pg: PGlite): Promise<void> {
   await pg.exec(`
+    DROP TABLE IF EXISTS steps CASCADE;
     DROP TABLE IF EXISTS reviews CASCADE;
     DROP TABLE IF EXISTS snapshots CASCADE;
     DROP TABLE IF EXISTS commits CASCADE;

@@ -201,3 +201,18 @@ export interface ReviewApproval {
   aspect: string
   reason: string
 }
+
+export interface Step {
+  id: string
+  execution_id: string
+  phase_id?: string
+  name?: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+  started_at?: Date
+  completed_at?: Date
+  created_at: Date
+  duration_ms?: number
+  snapshot_before?: string
+  snapshot_after?: string
+  commit_created?: string
+}
