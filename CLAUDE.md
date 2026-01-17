@@ -14,6 +14,29 @@ Default to using Bun instead of Node.js.
 - Use `bunx <package> <command>` instead of `npx <package> <command>`
 - Bun automatically loads .env, so don't use dotenv.
 
+## Git Commit Protocol
+
+ALWAYS commit changes after making them. Every change to the codebase must be committed.
+
+After creating a commit, attach a git note containing the original user prompt that led to the changes:
+
+```sh
+git notes add -m "User prompt: <the exact user prompt>"
+```
+
+Example workflow:
+1. Make changes to files
+2. Stage and commit the changes with a descriptive message
+3. Add a git note with the original prompt
+
+```sh
+git add .
+git commit -m "Add feature X"
+git notes add -m "User prompt: Add feature X to the application"
+```
+
+This creates a traceable history linking each commit to its originating request.
+
 ## APIs
 
 - `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
