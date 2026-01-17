@@ -1,0 +1,149 @@
+// Tools registry - built-in and custom tool support
+
+import type { SmithersDB } from '../db/index.js'
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface JSONSchema {
+  type: string
+  properties?: Record<string, JSONSchema>
+  required?: string[]
+  description?: string
+  enum?: string[]
+  items?: JSONSchema
+  [key: string]: any
+}
+
+export interface ToolContext {
+  db: SmithersDB
+  agentId: string
+  executionId: string
+}
+
+export interface Tool {
+  name: string
+  description: string
+  inputSchema: JSONSchema
+  execute: (input: any, context: ToolContext) => Promise<any>
+}
+
+export interface MCPServer {
+  name: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+}
+
+// ============================================================================
+// BUILT-IN TOOLS REGISTRY
+// ============================================================================
+
+/**
+ * Registry of built-in tools available in different CLIs
+ */
+export const BUILTIN_TOOLS = {
+  // Claude Code built-in tools
+  Read: { cli: 'claude', builtin: true, description: 'Read file contents' },
+  Edit: { cli: 'claude', builtin: true, description: 'Edit file contents' },
+  Write: { cli: 'claude', builtin: true, description: 'Write new files' },
+  Bash: { cli: 'claude', builtin: true, description: 'Execute shell commands' },
+  Glob: { cli: 'claude', builtin: true, description: 'Find files by pattern' },
+  Grep: { cli: 'claude', builtin: true, description: 'Search file contents' },
+  Task: { cli: 'claude', builtin: true, description: 'Launch subagent tasks' },
+  WebFetch: { cli: 'claude', builtin: true, description: 'Fetch web content' },
+  WebSearch: { cli: 'claude', builtin: true, description: 'Search the web' },
+  TodoWrite: { cli: 'claude', builtin: true, description: 'Manage todo lists' },
+
+  // Smithers-specific tools
+  Report: { cli: 'smithers', builtin: true, description: 'Report progress to orchestration' },
+  Memory: { cli: 'smithers', builtin: true, description: 'Store/retrieve long-term memory' },
+  Snapshot: { cli: 'smithers', builtin: true, description: 'Create VCS snapshot' },
+} as const
+
+export type BuiltinToolName = keyof typeof BUILTIN_TOOLS
+
+/**
+ * Check if a tool name is a built-in tool
+ */
+export function isBuiltinTool(name: string): name is BuiltinToolName {
+  return name in BUILTIN_TOOLS
+}
+
+/**
+ * Get tool information
+ */
+export function getToolInfo(name: string): (typeof BUILTIN_TOOLS)[BuiltinToolName] | null {
+  if (isBuiltinTool(name)) {
+    return BUILTIN_TOOLS[name]
+  }
+  return null
+}
+
+// ============================================================================
+// TOOL SPECIFICATION HELPERS
+// ============================================================================
+
+export type ToolSpec = string | Tool | MCPServer
+
+/**
+ * Check if a tool spec is a custom Tool object
+ */
+export function isCustomTool(spec: ToolSpec): spec is Tool {
+  return typeof spec === 'object' && 'execute' in spec
+}
+
+/**
+ * Check if a tool spec is an MCP Server
+ */
+export function isMCPServer(spec: ToolSpec): spec is MCPServer {
+  return typeof spec === 'object' && 'command' in spec && !('execute' in spec)
+}
+
+/**
+ * Check if a tool spec is a built-in tool name
+ */
+export function isToolName(spec: ToolSpec): spec is string {
+  return typeof spec === 'string'
+}
+
+/**
+ * Parse tool specifications into categorized lists
+ */
+export function parseToolSpecs(specs: ToolSpec[]): {
+  builtinTools: string[]
+  customTools: Tool[]
+  mcpServers: MCPServer[]
+} {
+  const builtinTools: string[] = []
+  const customTools: Tool[] = []
+  const mcpServers: MCPServer[] = []
+
+  for (const spec of specs) {
+    if (isToolName(spec)) {
+      builtinTools.push(spec)
+    } else if (isCustomTool(spec)) {
+      customTools.push(spec)
+    } else if (isMCPServer(spec)) {
+      mcpServers.push(spec)
+    }
+  }
+
+  return { builtinTools, customTools, mcpServers }
+}
+
+/**
+ * Build CLI tool flags from tool specs
+ */
+export function buildToolFlags(specs: ToolSpec[]): string[] {
+  const { builtinTools } = parseToolSpecs(specs)
+  const flags: string[] = []
+
+  // Add --allowedTools flag for built-in tools
+  if (builtinTools.length > 0) {
+    flags.push('--allowedTools', builtinTools.join(','))
+  }
+
+  return flags
+}

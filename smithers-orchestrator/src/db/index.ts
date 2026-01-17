@@ -31,6 +31,11 @@ export interface SmithersDB {
   pg: PGlite
 
   /**
+   * Get VCS manager for a specific execution
+   */
+  getVCSManager: (executionId: string) => VCSManager
+
+  /**
    * State management (replaces Zustand)
    * All state changes are logged to transitions table
    */
@@ -279,7 +284,7 @@ export interface SmithersDB {
     /**
      * Start a new step
      */
-    start: (name?: string) => Promise<string>
+    start: (executionId: string, name?: string) => Promise<string>
 
     /**
      * Complete a step
@@ -304,6 +309,11 @@ export interface SmithersDB {
      * Get steps for phase
      */
     list: (phaseId: string) => Promise<Step[]>
+
+    /**
+     * Get steps for execution
+     */
+    getByExecution: (executionId: string) => Promise<Step[]>
   }
 
   /**
@@ -497,9 +507,19 @@ export async function createSmithersDB(
     return vcsManager
   }
 
+  // VCS manager cache keyed by executionId
+  const vcsManagers = new Map<string, VCSManager>()
+
   // Build the public API
   const db: SmithersDB = {
     pg,
+
+    getVCSManager: (executionId: string) => {
+      if (!vcsManagers.has(executionId)) {
+        vcsManagers.set(executionId, new VCSManager(pg, executionId))
+      }
+      return vcsManagers.get(executionId)!
+    },
 
     state: {
       get: <T>(key: string) => stateManager.get<T>(key),
@@ -575,11 +595,12 @@ export async function createSmithersDB(
     },
 
     steps: {
-      start: (name?: string) => executionManager.startStep(name),
+      start: (_executionId: string, name?: string) => executionManager.startStep(name),
       complete: (id: string, vcsInfo?: any) => executionManager.completeStep(id, vcsInfo),
       fail: (id: string) => executionManager.failStep(id),
       current: () => executionManager.getCurrentStep(),
       list: (phaseId: string) => executionManager.getSteps(phaseId),
+      getByExecution: (executionId: string) => executionManager.getStepsByExecution(executionId),
     },
 
     tools: {

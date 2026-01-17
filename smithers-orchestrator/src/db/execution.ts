@@ -698,4 +698,14 @@ export class ExecutionManager {
       [phaseId]
     )
   }
+
+  /**
+   * Get steps for execution
+   */
+  async getStepsByExecution(executionId: string): Promise<Step[]> {
+    return this.queries.query<Step>(
+      'SELECT * FROM steps WHERE execution_id = $1 ORDER BY created_at',
+      [executionId]
+    )
+  }
 }

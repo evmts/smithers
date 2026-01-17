@@ -1,0 +1,21 @@
+{
+  "name": "smithers-orchestrator",
+  "version": "1.0.0",
+  "description": "Multi-agent orchestration framework using Smithers. Create complex AI agent workflows with declarative JSX.",
+  "author": "Smithers Framework Contributors",
+  "license": "MIT",
+  "repository": "https://github.com/smithers-framework/smithers-orchestrator",
+  "keywords": [
+    "orchestration",
+    "multi-agent",
+    "smithers",
+    "workflow",
+    "ai-agents",
+    "claude",
+    "jsx",
+    "reactive"
+  ],
+  "skills": [
+    "skills/smithers-orchestrator"
+  ]
+}
