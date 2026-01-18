@@ -84,9 +84,46 @@ src/hooks/
 
 ## Implementation Order
 
-1. **Create custom hooks for side-effects** (no behavior change)
-2. **Refactor SmithersProvider** - most critical
-3. **Refactor Phase.tsx** - phase lifecycle
-4. **Refactor TUI components** - lower priority, simpler
-5. **Update tests**
-6. **Verify lint/typecheck/tests pass**
+1. **Create custom hooks for side-effects** (no behavior change) ✅
+2. **Refactor SmithersProvider** - most critical ✅
+3. **Refactor Phase.tsx** - phase lifecycle ✅
+4. **Refactor TUI components** - lower priority, simpler ✅
+5. **Update tests** ✅ (all 898 tests pass)
+6. **Verify lint/typecheck/tests pass** ✅
+
+---
+
+## Migration Complete
+
+### Summary of Changes
+
+**Effects Removed (State Machine Logic):**
+
+| Component | Pattern | Replacement |
+|-----------|---------|-------------|
+| SmithersProvider | DB init sync effect | `useMount()` - runs once |
+| SmithersProvider | Local state fallback | Removed `localRalphCount` - use DB exclusively |
+| SmithersProvider | `useState` for stop/rebase | Reactive DB queries via `useQueryValue` |
+| Phase | Two separate lifecycle effects | Single effect tracking `prevIsActiveRef` |
+| Phase | Unused `setPhaseId` state | Removed - phaseIdRef sufficient |
+| ExecutionTimeline | Inline polling effect | `usePollEvents` custom hook |
+| ExecutionTimeline | Scroll sync effect | Moved to keyboard handler |
+| DatabaseExplorer | Table data load effect | `usePollTableData` custom hook |
+| ScrollableList | Clamp selection effect | Computed value (derive, don't sync) |
+| ScrollableList | Scroll sync effect | Moved to keyboard handler |
+
+**New Custom Hooks for Side-Effects:**
+
+| Hook | Purpose |
+|------|---------|
+| `useCaptureRenderFrame` | XML tree snapshot capture |
+| `usePollEvents` | Poll timeline events from DB |
+| `usePollTableData` | Load table columns/data for DB explorer |
+
+**Patterns to Follow Going Forward:**
+
+1. **No effects as state machines** - Don't `useEffect` to watch state A and set state B
+2. **All state transitions in store actions** - Use `db.state.set()` or explicit action calls
+3. **Side-effects only in named hooks** - `useSubscribeToX`, `usePollY`, `useSyncZ`
+4. **Derive, don't sync** - Compute values instead of storing derived state
+5. **Use `useMount`/`useUnmount`** from `reconciler/hooks.ts` for lifecycle
