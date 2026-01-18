@@ -35,6 +35,7 @@ interface Task {
 }
 
 const PRIORITY_MAP: Record<string, number> = {
+  CRITICAL: 0,
   P0: 0,
   P1: 1,
   P2: 2,
@@ -156,7 +157,9 @@ Examples:
  */
 function extractPriority(content: string): number {
   // Look for Priority: P0, P1, P2, P3
-  const priorityMatch = content.match(/(?:Priority|Status)[:\s]*\*{0,2}(P[0-3]|HIGH|MEDIUM|LOW)(?:\s+PRIORITY)?\*{0,2}/i)
+  const priorityMatch = content.match(
+    /(?:Priority|Status|Severity)[:\s]*\*{0,2}(P[0-3]|HIGH|MEDIUM|LOW|CRITICAL)(?:\s+PRIORITY)?\*{0,2}/i
+  )
   if (priorityMatch?.[1]) {
     const key = priorityMatch[1].toUpperCase()
     return PRIORITY_MAP[key] ?? 2
