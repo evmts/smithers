@@ -2,15 +2,15 @@
 // Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
 
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from './SmithersProvider'
-import { useRalphCount } from '../hooks/useRalphCount'
-import { executeClaudeCLI } from './agents/ClaudeCodeCLI'
-import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config'
-import type { ClaudeProps, AgentResult } from './agents/types'
-import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks'
-import { LogWriter } from '../monitor/log-writer'
-import { uuid } from '../db/utils'
-import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser'
+import { useSmithers } from './SmithersProvider.js'
+import { useRalphCount } from '../hooks/useRalphCount.js'
+import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
+import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
+import type { ClaudeProps, AgentResult } from './agents/types.js'
+import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
+import { LogWriter } from '../monitor/log-writer.js'
+import { uuid } from '../db/utils.js'
+import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
 
 // ============================================================================
 // CLAUDE COMPONENT
@@ -40,6 +40,9 @@ import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/
  * </Claude>
  * ```
  */
+// Default throttle interval for tail log updates (ms)
+const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
+
 export function Claude(props: ClaudeProps): ReactNode {
   const { db, executionId, isStopRequested } = useSmithers()
   const ralphCount = useRalphCount()
@@ -52,8 +55,14 @@ export function Claude(props: ClaudeProps): ReactNode {
 
   // Track task ID for this component
   const taskIdRef = useRef<string | null>(null)
-  const messageParserRef = useRef<MessageParser>(new MessageParser())
+  // Limit stored entries in MessageParser to prevent unbounded growth
+  const maxEntries = props.tailLogCount ?? 10
+  const messageParserRef = useRef<MessageParser>(new MessageParser(maxEntries * 2))
   const isMounted = useMountedState()
+
+  // Throttle refs for tail log updates to reduce re-renders
+  const lastTailLogUpdateRef = useRef<number>(0)
+  const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
   useEffectOnValueChange(ralphCount, () => {
@@ -125,18 +134,21 @@ export function Claude(props: ClaudeProps): ReactNode {
             // Execute via Claude CLI
             agentResult = await executeClaudeCLI({
               prompt,
-              model: props.model,
-              permissionMode: props.permissionMode,
-              maxTurns: props.maxTurns,
-              systemPrompt: props.systemPrompt,
-              outputFormat: props.outputFormat,
-              mcpConfig: mcpConfigPath,
-              allowedTools: props.allowedTools,
-              disallowedTools: props.disallowedTools,
-              timeout: props.timeout,
-              stopConditions: props.stopConditions,
-              continue: props.continueConversation,
-              resume: props.resumeSession,
+              ...(props.model !== undefined ? { model: props.model } : {}),
+              ...(props.permissionMode !== undefined ? { permissionMode: props.permissionMode } : {}),
+              ...(props.maxTurns !== undefined ? { maxTurns: props.maxTurns } : {}),
+              ...(props.systemPrompt !== undefined ? { systemPrompt: props.systemPrompt } : {}),
+              ...(props.outputFormat !== undefined ? { outputFormat: props.outputFormat } : {}),
+              ...(mcpConfigPath !== undefined ? { mcpConfig: mcpConfigPath } : {}),
+              ...(props.allowedTools !== undefined ? { allowedTools: props.allowedTools } : {}),
+              ...(props.disallowedTools !== undefined ? { disallowedTools: props.disallowedTools } : {}),
+              ...(props.timeout !== undefined ? { timeout: props.timeout } : {}),
+              ...(props.stopConditions !== undefined ? { stopConditions: props.stopConditions } : {}),
+              ...(props.continueConversation !== undefined ? { continue: props.continueConversation } : {}),
+              ...(props.resumeSession !== undefined ? { resume: props.resumeSession } : {}),
+              ...(props.onToolCall !== undefined ? { onToolCall: props.onToolCall } : {}),
+              ...(props.schema !== undefined ? { schema: props.schema } : {}),
+              ...(props.schemaRetries !== undefined ? { schemaRetries: props.schemaRetries } : {}),
               onProgress: (chunk) => {
                 // Stream to log file
                 if (logFilename) {
@@ -145,14 +157,31 @@ export function Claude(props: ClaudeProps): ReactNode {
 
                 // Parse for tail log
                 messageParserRef.current.parseChunk(chunk)
-                setTailLog([...messageParserRef.current.getEntries()])
+
+                // Throttle tail log updates to reduce re-renders
+                const now = Date.now()
+                const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
+
+                if (timeSinceLastUpdate >= DEFAULT_TAIL_LOG_THROTTLE_MS) {
+                  // Enough time has passed, update immediately
+                  lastTailLogUpdateRef.current = now
+                  if (isMounted()) {
+                    setTailLog(messageParserRef.current.getLatestEntries(maxEntries))
+                  }
+                } else if (!pendingTailLogUpdateRef.current) {
+                  // Schedule an update for later
+                  pendingTailLogUpdateRef.current = setTimeout(() => {
+                    pendingTailLogUpdateRef.current = null
+                    lastTailLogUpdateRef.current = Date.now()
+                    if (isMounted()) {
+                      setTailLog(messageParserRef.current.getLatestEntries(maxEntries))
+                    }
+                  }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
+                }
 
                 // Call original onProgress
                 props.onProgress?.(chunk)
               },
-              onToolCall: props.onToolCall,
-              schema: props.schema,
-              schemaRetries: props.schemaRetries,
             })
 
             // Check for execution errors
@@ -194,7 +223,12 @@ export function Claude(props: ClaudeProps): ReactNode {
 
         // Flush message parser to capture any remaining content
         messageParserRef.current.flush()
-        setTailLog([...messageParserRef.current.getEntries()])
+        // Cancel any pending throttled update
+        if (pendingTailLogUpdateRef.current) {
+          clearTimeout(pendingTailLogUpdateRef.current)
+          pendingTailLogUpdateRef.current = null
+        }
+        setTailLog(messageParserRef.current.getLatestEntries(maxEntries))
 
         // Log completion to database
         if (props.reportingEnabled !== false && currentAgentId) {
@@ -208,8 +242,8 @@ export function Claude(props: ClaudeProps): ReactNode {
 
         // Add report if there's notable output
         if (props.reportingEnabled !== false && agentResult.output) {
-          await db.vcs.addReport({
-            type: 'progress',
+          const reportData = {
+            type: 'progress' as const,
             title: `Claude ${props.model ?? 'sonnet'} completed`,
             content: agentResult.output.slice(0, 500), // First 500 chars
             data: {
@@ -217,8 +251,15 @@ export function Claude(props: ClaudeProps): ReactNode {
               turnsUsed: agentResult.turnsUsed,
               durationMs: agentResult.durationMs,
             },
-            agent_id: currentAgentId ?? undefined,
-          })
+          }
+          if (currentAgentId) {
+            await db.vcs.addReport({
+              ...reportData,
+              agent_id: currentAgentId,
+            })
+          } else {
+            await db.vcs.addReport(reportData)
+          }
         }
 
         if (isMounted()) {
@@ -239,20 +280,27 @@ export function Claude(props: ClaudeProps): ReactNode {
 
           // Add error report
           if (props.reportingEnabled !== false) {
-            await db.vcs.addReport({
-              type: 'error',
+            const errorData = {
+              type: 'error' as const,
               title: `Claude ${props.model ?? 'sonnet'} failed`,
               content: errorObj.message,
-              severity: 'warning',
-              agent_id: currentAgentId ?? undefined,
-            })
+              severity: 'warning' as const,
+            }
+            if (currentAgentId) {
+              await db.vcs.addReport({
+                ...errorData,
+                agent_id: currentAgentId,
+              })
+            } else {
+              await db.vcs.addReport(errorData)
+            }
           }
 
           props.onError?.(errorObj)
         }
       } finally {
-        // Close log stream
-        logWriter.closeStream(logFilename)
+        // Flush log stream to ensure all writes complete before exit
+        await logWriter.flushStream(logFilename)
         // Always complete task
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
@@ -262,7 +310,6 @@ export function Claude(props: ClaudeProps): ReactNode {
   })
 
   // Render custom element for XML serialization
-  const maxEntries = props.tailLogCount ?? 10
   const maxLines = props.tailLogLines ?? 10
   const displayEntries = status === 'complete'
     ? tailLog.slice(-1)
@@ -274,11 +321,11 @@ export function Claude(props: ClaudeProps): ReactNode {
       agent-id={agentId}
       execution-id={executionId}
       model={props.model ?? 'sonnet'}
-      error={error?.message}
-      tokens-input={result?.tokensUsed?.input}
-      tokens-output={result?.tokensUsed?.output}
-      turns-used={result?.turnsUsed}
-      duration-ms={result?.durationMs}
+      {...(error?.message ? { error: error.message } : {})}
+      {...(result?.tokensUsed?.input !== undefined ? { 'tokens-input': result.tokensUsed.input } : {})}
+      {...(result?.tokensUsed?.output !== undefined ? { 'tokens-output': result.tokensUsed.output } : {})}
+      {...(result?.turnsUsed !== undefined ? { 'turns-used': result.turnsUsed } : {})}
+      {...(result?.durationMs !== undefined ? { 'duration-ms': result.durationMs } : {})}
     >
       {displayEntries.length > 0 && (
         <messages count={displayEntries.length}>
@@ -305,4 +352,4 @@ export function Claude(props: ClaudeProps): ReactNode {
 // ============================================================================
 
 export type { ClaudeProps, AgentResult }
-export { executeClaudeCLI } from './agents/ClaudeCodeCLI'
+export { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
