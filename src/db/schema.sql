@@ -469,3 +469,29 @@ CREATE TABLE IF NOT EXISTS human_interactions (
 
 CREATE INDEX IF NOT EXISTS idx_human_status ON human_interactions(status);
 CREATE INDEX IF NOT EXISTS idx_human_execution ON human_interactions(execution_id);
+
+-- ============================================================================
+-- 16. RENDER_FRAMES - Render frame snapshots for time-travel debugging
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS render_frames (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+
+  -- Frame ordering
+  sequence_number INTEGER NOT NULL,
+
+  -- Frame content
+  tree_xml TEXT NOT NULL,           -- Serialized SmithersNode tree as XML
+  ralph_count INTEGER NOT NULL DEFAULT 0,  -- Current Ralph iteration count
+
+  -- Timing
+  created_at TEXT DEFAULT (datetime('now')),
+
+  -- Ensure unique sequence per execution
+  UNIQUE(execution_id, sequence_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_render_frames_execution ON render_frames(execution_id);
+CREATE INDEX IF NOT EXISTS idx_render_frames_sequence ON render_frames(execution_id, sequence_number);
+CREATE INDEX IF NOT EXISTS idx_render_frames_created ON render_frames(created_at DESC);

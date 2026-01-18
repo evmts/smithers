@@ -6,7 +6,7 @@
  */
 
 // Root creation and mounting
-export { createSmithersRoot } from "./root.js";
+export { createSmithersRoot, getCurrentTreeXML } from "./root.js";
 export type { SmithersRoot } from "./root.js";
 
 // Low-level renderer methods (for testing without JSX)

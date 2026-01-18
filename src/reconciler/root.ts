@@ -7,6 +7,18 @@ import { createOrchestrationPromise } from '../components/Ralph.jsx'
 // Type for the fiber root container
 type FiberRoot = ReturnType<typeof SmithersReconciler.createContainer>
 
+// Module-level reference to the current root for frame capture
+let currentRootNode: SmithersNode | null = null
+
+/**
+ * Get the current tree serialized as XML.
+ * Used by SmithersProvider to capture render frames.
+ */
+export function getCurrentTreeXML(): string | null {
+  if (!currentRootNode) return null
+  return serialize(currentRootNode)
+}
+
 /**
  * Smithers root for mounting React components.
  */
@@ -35,6 +47,9 @@ export function createSmithersRoot(): SmithersRoot {
     children: [],
     parent: null,
   }
+
+  // Set module-level reference for frame capture
+  currentRootNode = rootNode
 
   let fiberRoot: FiberRoot | null = null
 

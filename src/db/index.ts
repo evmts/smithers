@@ -20,6 +20,7 @@ import { createArtifactsModule, type ArtifactsModule } from './artifacts.js'
 import { createHumanModule, type HumanModule } from './human.js'
 import { createVcsModule, type VcsModule } from './vcs.js'
 import { createQueryModule, type QueryFunction } from './query.js'
+import { createRenderFramesModule, type RenderFramesModule } from './render-frames.js'
 
 export interface SmithersDB {
   /**
@@ -83,6 +84,11 @@ export interface SmithersDB {
   vcs: VcsModule
 
   /**
+   * Render frame snapshots for time-travel debugging
+   */
+  renderFrames: RenderFramesModule
+
+  /**
    * Raw query access
    */
   query: QueryFunction
@@ -137,8 +143,8 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
 
   // Reset if requested
   if (options.reset) {
-    const tables = ['tasks', 'steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
-                    'transitions', 'state', 'tool_calls', 'agents', 'phases', 'executions', 'memories']
+    const tables = ['render_frames', 'tasks', 'steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
+                    'transitions', 'state', 'tool_calls', 'agents', 'phases', 'executions', 'memories', 'human_interactions']
     for (const table of tables) {
       try { rdb.exec(`DROP TABLE IF EXISTS ${table}`) } catch {}
     }
@@ -179,6 +185,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   const artifacts = createArtifactsModule({ rdb, getCurrentExecutionId })
   const human = createHumanModule({ rdb, getCurrentExecutionId })
   const vcs = createVcsModule({ rdb, getCurrentExecutionId })
+  const renderFrames = createRenderFramesModule({ rdb, getCurrentExecutionId })
   const query = createQueryModule({ rdb })
 
   const db: SmithersDB = {
@@ -194,6 +201,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     artifacts,
     human,
     vcs,
+    renderFrames,
     query,
     close: () => {
       rdb.close()
@@ -221,4 +229,5 @@ export type { ToolsModule } from './tools.js'
 export type { ArtifactsModule } from './artifacts.js'
 export type { HumanModule } from './human.js'
 export type { VcsModule } from './vcs.js'
+export type { RenderFramesModule } from './render-frames.js'
 export type { QueryFunction } from './query.js'

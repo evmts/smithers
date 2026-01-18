@@ -8,6 +8,7 @@ import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { DatabaseProvider } from '../reactive-sqlite/hooks/context.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { PhaseRegistryProvider } from './PhaseRegistry.js'
+import { getCurrentTreeXML } from '../reconciler/root.js'
 
 // ============================================================================
 // GLOBAL STORE (for universal renderer compatibility)
@@ -317,6 +318,25 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   const completeTask = useMemo(() => () => {
     console.warn('[SmithersProvider] completeTask is deprecated. Use db.tasks.complete() instead.')
   }, [])
+
+  // Capture render frame on each Ralph iteration
+  useEffect(() => {
+    const captureFrame = () => {
+      try {
+        const treeXml = getCurrentTreeXML()
+        if (treeXml) {
+          props.db.renderFrames.store(treeXml, ralphCount)
+        }
+      } catch (e) {
+        // Ignore frame capture errors
+        console.warn('[SmithersProvider] Frame capture failed:', e)
+      }
+    }
+
+    // Capture frame after a short delay to ensure tree is fully rendered
+    const timeoutId = setTimeout(captureFrame, 50)
+    return () => clearTimeout(timeoutId)
+  }, [ralphCount, props.db])
 
   // Ralph iteration monitoring effect - now uses DB-backed state
   useEffect(() => {

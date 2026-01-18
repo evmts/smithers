@@ -5,6 +5,7 @@ import { init } from "../src/commands/init.ts";
 import { run } from "../src/commands/run.ts";
 import { monitor } from "../src/commands/monitor.ts";
 import { dbCommand } from "../src/commands/db.ts";
+import { launchTUI } from "../src/tui/index.tsx";
 
 const program = new Command();
 
@@ -51,6 +52,14 @@ program
   .description("Inspect and manage the SQLite database")
   .option("--path <path>", "Database path", ".smithers/data/smithers.db")
   .action(dbCommand);
+
+program
+  .command("tui")
+  .description("Launch observability TUI dashboard")
+  .option("-p, --path <path>", "Database path", ".smithers/data")
+  .action(async (options: { path: string }) => {
+    await launchTUI({ dbPath: options.path });
+  });
 
 // Hook trigger command - called by git hooks to notify orchestration
 program
