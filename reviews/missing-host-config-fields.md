@@ -1,7 +1,8 @@
 # Missing Host Config Fields
 
+**Scope:** trivial
 **Severity:** Medium
-**File:** `src/reconciler/host-config.ts`
+**File:** `/Users/williamcory/smithers/src/reconciler/host-config.ts`
 **Status:** Open
 
 ## Problem
@@ -23,29 +24,57 @@ Depending on which `react-reconciler` build is used, this can range from "fine" 
 - Ambiguous capability detection (undefined vs explicitly false)
 - Compatibility issues across reconciler versions
 
+## Current State
+
+The host config already has most capability flags:
+- ✅ `supportsMutation: true` (line 29)
+- ✅ `supportsPersistence: false` (line 30)
+- ✅ `supportsHydration: false` (line 31)
+- ✅ `supportsMicrotasks: true` (line 236)
+- ✅ Has React 19 resource methods (`resetFormInstance`, `requestPostPaintCallback`, etc. - lines 260-284)
+
+Still missing:
+- `warnsIfNotActing` - optional boolean flag (controls test warnings)
+- `supportsResources` - capability flag for React 19 resources
+- `supportsSingletons` - capability flag for React 19 singletons
+
+Note: `resolveEventType`, `resolveEventTimeStamp`, `HostTransitionContext`, `bindToConsole` are likely internal/undocumented fields not in `@types/react-reconciler@0.28.9` and may not be needed for React 19.0.0 / react-reconciler@0.32.0.
+
 ## Recommended Fix
 
-Audit host config against the pinned `react-reconciler` version:
-
-1. **Start from the shim's export list** and stub everything not supported with safe defaults
-2. **Explicitly set optional capability flags** to `false` rather than relying on `undefined`:
+Add missing capability flags to host config object (after line 32):
 
 ```ts
-export const supportsResources = false
-export const supportsSingletons = false
-export const supportsMutation = true
-export const supportsPersistence = false
-export const supportsHydration = false
+const hostConfig = {
+  // Core configuration
+  supportsMutation: true,
+  supportsPersistence: false,
+  supportsHydration: false,
+  isPrimaryRenderer: true,
+
+  // Optional capability flags
+  warnsIfNotActing: false,  // Don't warn about missing act() - we're not DOM
+  supportsResources: false, // No resource loading/preloading
+  supportsSingletons: false, // No singleton instances
+
+  // ... rest of config
+}
 ```
 
-3. **Use React's internal stubs as guidance** on what should throw vs no-op (e.g., "WithNoResources/WithNoX" patterns)
+This makes capabilities explicit rather than relying on `undefined` checks.
 
-## Workflow
+## Implementation Steps
 
-1. Check `node_modules/react-reconciler/src/forks/ReactFiberConfig.custom.js`
-2. List all expected exports
-3. Add stubs for any missing exports with appropriate defaults
-4. Test that reconciler doesn't crash on code paths that check these fields
+1. Add three missing capability flags to host config object (after line 32):
+   - `warnsIfNotActing: false`
+   - `supportsResources: false`
+   - `supportsSingletons: false`
+
+2. Run `bun run typecheck` to verify no type errors
+
+3. Run `bun test src/reconciler` to verify tests still pass
+
+This is a trivial change - just adding three boolean properties. No logic changes needed.
 
 ## References
 
