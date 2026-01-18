@@ -11,20 +11,6 @@ export interface CommitProps {
 }
 
 /**
- * Generate commit message using Claude based on diff.
- * This is a placeholder - will integrate with actual Claude SDK.
- */
-async function generateCommitMessage(diff: string): Promise<string> {
-  // TODO: Integrate with Claude SDK for auto-describe
-  if (process.env.NODE_ENV === 'test' || process.env.MOCK_MODE === 'true') {
-    return `Auto-generated commit message for diff with ${diff.split('\n').length} lines`
-  }
-
-  // For now, return a generic message
-  return 'Changes made by Smithers orchestration'
-}
-
-/**
  * JJ Commit component - creates a JJ commit with optional auto-describe.
  *
  * React pattern: Uses useEffect with empty deps and async IIFE inside.
@@ -51,10 +37,11 @@ export function Commit(props: CommitProps): ReactNode {
 
         let message = props.message
 
-        // Auto-describe using Claude if requested
+        // Auto-describe if requested
         if (props.autoDescribe && !message) {
           const diffResult = await Bun.$`jj diff`.text()
-          message = await generateCommitMessage(diffResult)
+          const lines = diffResult.split('\n').length
+          message = `Auto-generated commit: ${lines} lines changed`
         }
 
         // Default message if still none

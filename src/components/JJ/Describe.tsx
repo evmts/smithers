@@ -9,26 +9,7 @@ export interface DescribeProps {
 }
 
 /**
- * Generate commit message using Claude based on diff.
- * This is a placeholder - will integrate with actual Claude SDK.
- */
-async function generateDescriptionWithClaude(
-  diff: string,
-  template?: string
-): Promise<string> {
-  // TODO: Integrate with Claude SDK for auto-describe
-  if (process.env.NODE_ENV === 'test' || process.env.MOCK_MODE === 'true') {
-    const templatePart = template ? ` using template: ${template}` : ''
-    return `Auto-generated description for diff with ${diff.split('\n').length} lines${templatePart}`
-  }
-
-  // For now, return a generic description
-  const templatePart = template ? ` (template: ${template})` : ''
-  return `Changes made by Smithers orchestration${templatePart}`
-}
-
-/**
- * JJ Describe component - auto-generates commit message using AI.
+ * JJ Describe component - auto-generates commit message.
  *
  * React pattern: Uses useEffect with empty deps and async IIFE inside.
  * Registers with Ralph for task tracking.
@@ -54,16 +35,9 @@ export function Describe(props: DescribeProps): ReactNode {
         // Get the current diff
         const diff = await Bun.$`jj diff`.text()
 
-        let generatedDescription: string
-
-        // Generate description based on agent
-        if (props.useAgent === 'claude') {
-          generatedDescription = await generateDescriptionWithClaude(diff, props.template)
-        } else {
-          // Default: simple description
-          const lines = diff.split('\n').length
-          generatedDescription = `Changes: ${lines} lines modified`
-        }
+        // Generate description
+        const lines = diff.split('\n').length
+        const generatedDescription = `Changes: ${lines} lines modified`
 
         // Update JJ description
         await Bun.$`jj describe -m ${generatedDescription}`.quiet()

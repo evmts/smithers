@@ -1,6 +1,6 @@
 # ChatTransport Abstraction for Smithers
 
-> **FUTURE ENHANCEMENT** - Needs coordination with other work in progress
+> **FUTURE ENHANCEMENT** - This feature is not considered vital for first release
 
 ---
 

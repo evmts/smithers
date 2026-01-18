@@ -4,27 +4,10 @@ Incomplete work, stubs, and placeholders in the codebase.
 
 ---
 
-## Critical - Core Functionality
-
-### Core Execution Engine (`src/core/execute.ts`)
-The "Ralph Wiggum loop" execution engine has three stubbed functions that make it non-functional:
-
-- [ ] **`findPendingExecutables(tree)`** (line 61) - Returns `[]`. Should walk the SmithersNode tree and find components ready to execute (status = 'pending', dependencies satisfied).
-- [ ] **`executeNode(node, options)`** (line 65) - Empty function. Should dispatch execution based on node type (Claude, Subagent, etc.).
-- [ ] **`extractOutput(tree)`** (line 69) - Returns `null`. Should extract the final result from the executed tree.
-
----
-
 ## Medium - SDK Integration
 
 ### Claude SDK Integration (`src/components/Claude.tsx`)
 - [ ] **`executeWithClaudeSDK(config)`** (lines 9-31) - Integrate with `@anthropic-ai/claude-agent-sdk`. Currently throws `'Claude SDK integration not yet implemented'` in production, returns mock in test mode.
-
-### JJ Auto-Describe (`src/components/JJ/Commit.tsx`)
-- [ ] **`generateCommitMessage(diff)`** (lines 18-26) - Integrate with Claude SDK to generate meaningful commit messages from diffs. Currently returns generic `'Changes made by Smithers orchestration'`.
-
-### JJ Auto-Describe (`src/components/JJ/Describe.tsx`)
-- [ ] **`generateDescriptionWithClaude(diff, template?)`** (lines 16-29) - Integrate with Claude SDK for AI-generated descriptions. Currently returns generic message.
 
 ---
 
