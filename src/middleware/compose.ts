@@ -36,8 +36,9 @@ export function composeMiddleware(...middlewares: (SmithersMiddleware | null | u
     return {}
   }
 
-  return {
-    name: active.map((mw) => mw.name).filter(Boolean).join('+') || undefined,
+  const name = active.map((mw) => mw.name).filter(Boolean).join('+')
+
+  const composed: SmithersMiddleware = {
     transformParams: async ({ type, params }) => {
       let nextParams = params
       for (const mw of active) {
@@ -50,25 +51,13 @@ export function composeMiddleware(...middlewares: (SmithersMiddleware | null | u
     },
     wrapExecute: async ({ doExecute, params }) => {
       let wrapped = doExecute
-      for (let i = active.length - 1; i >= 0; i -= 1) {
-        const mw = active[i]
+      for (const mw of [...active].reverse()) {
         if (!mw.wrapExecute) continue
         const previous = wrapped
         wrapped = () => mw.wrapExecute!({ doExecute: previous, params })
       }
       return wrapped()
     },
-    transformChunk: active.some((mw) => mw.transformChunk)
-      ? (chunk: string) => {
-          let nextChunk = chunk
-          for (const mw of active) {
-            if (mw.transformChunk) {
-              nextChunk = mw.transformChunk(nextChunk)
-            }
-          }
-          return nextChunk
-        }
-      : undefined,
     transformResult: async (result: AgentResult) => {
       let nextResult = result
       for (const mw of active) {
@@ -79,6 +68,24 @@ export function composeMiddleware(...middlewares: (SmithersMiddleware | null | u
       return nextResult
     },
   }
+
+  if (active.some((mw) => mw.transformChunk)) {
+    composed.transformChunk = (chunk: string) => {
+      let nextChunk = chunk
+      for (const mw of active) {
+        if (mw.transformChunk) {
+          nextChunk = mw.transformChunk(nextChunk)
+        }
+      }
+      return nextChunk
+    }
+  }
+
+  if (name) {
+    composed.name = name
+  }
+
+  return composed
 }
 
 /**
@@ -107,8 +114,7 @@ export async function applyMiddleware(
   }
 
   let wrappedExecute = execute
-  for (let i = active.length - 1; i >= 0; i -= 1) {
-    const mw = active[i]
+  for (const mw of [...active].reverse()) {
     if (!mw.wrapExecute) continue
     const previous = wrappedExecute
     wrappedExecute = () => mw.wrapExecute!({ doExecute: previous, params: nextParams })

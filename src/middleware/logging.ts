@@ -51,9 +51,12 @@ export function loggingMiddleware(options: LoggingMiddlewareOptions = {}): Smith
       try {
         const result = await doExecute()
         const durationMs = Date.now() - start
-        const tokens = options.includeTokens ? result.tokensUsed : undefined
         if (levelOrder[level] <= levelOrder.info) {
-          logFn({ level, phase: 'finish', type: 'execute', durationMs, tokens })
+          const entry: LogEntry = { level, phase: 'finish', type: 'execute', durationMs }
+          if (options.includeTokens) {
+            entry.tokens = result.tokensUsed
+          }
+          logFn(entry)
         }
         return result
       } catch (error) {
