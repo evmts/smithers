@@ -9,6 +9,7 @@ type Props = Record<string, unknown>
 type Container = SmithersNode
 type Instance = SmithersNode
 type TextInstance = SmithersNode
+type SuspenseInstance = never // Not supporting Suspense boundaries
 type HydratableInstance = never
 type PublicInstance = SmithersNode
 type HostContext = object
@@ -27,6 +28,7 @@ const hostConfig: Reconciler.HostConfig<
   Container, // Container
   Instance, // Instance
   TextInstance, // TextInstance
+  SuspenseInstance, // SuspenseInstance (unused)
   HydratableInstance, // HydratableInstance (unused)
   PublicInstance, // PublicInstance
   HostContext, // HostContext
