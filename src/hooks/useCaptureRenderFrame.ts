@@ -1,19 +1,21 @@
-import { useEffect } from 'react'
 import type { SmithersDB } from '../db/index.js'
-import { getCurrentTreeXML } from '../reconciler/root.js'
+import { useEffectOnValueChange } from '../reconciler/hooks.js'
 
 /**
  * Captures render frame on each Ralph iteration.
  * This is a side-effect hook that stores XML tree snapshots.
  */
-export function useCaptureRenderFrame(db: SmithersDB, ralphCount: number): void {
-  useEffect(() => {
+export function useCaptureRenderFrame(
+  db: SmithersDB,
+  ralphCount: number,
+  getTreeXML?: () => string | null
+): void {
+  useEffectOnValueChange(ralphCount, () => {
     const captureFrame = () => {
       try {
-        const treeXml = getCurrentTreeXML()
-        if (treeXml) {
-          db.renderFrames.store(treeXml, ralphCount)
-        }
+        const treeXml = getTreeXML?.()
+        if (!treeXml) return
+        db.renderFrames.store(treeXml, ralphCount)
       } catch (e) {
         console.warn('[useCaptureRenderFrame] Frame capture failed:', e)
       }
@@ -21,5 +23,5 @@ export function useCaptureRenderFrame(db: SmithersDB, ralphCount: number): void 
 
     const timeoutId = setTimeout(captureFrame, 50)
     return () => clearTimeout(timeoutId)
-  }, [ralphCount, db])
+  }, [db, getTreeXML])
 }

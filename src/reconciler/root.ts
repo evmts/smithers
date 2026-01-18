@@ -10,18 +10,6 @@ import {
 // Type for the fiber root container
 type FiberRoot = ReturnType<typeof SmithersReconciler.createContainer>
 
-// Module-level reference to the current root for frame capture
-let currentRootNode: SmithersNode | null = null
-
-/**
- * Get the current tree serialized as XML.
- * Used by SmithersProvider to capture render frames.
- */
-export function getCurrentTreeXML(): string | null {
-  if (!currentRootNode) return null
-  return serialize(currentRootNode)
-}
-
 /**
  * Smithers root for mounting React components.
  */
@@ -47,6 +35,24 @@ export interface SmithersRoot {
   toXML(): string
 }
 
+// Optional legacy global frame capture (not concurrency-safe).
+let globalFrameCaptureRoot: SmithersRoot | null = null
+
+/**
+ * Opt-in global frame capture for legacy callers (not concurrency-safe).
+ */
+export function setGlobalFrameCaptureRoot(root: SmithersRoot | null): void {
+  globalFrameCaptureRoot = root
+}
+
+/**
+ * Get the globally registered tree serialized as XML (not concurrency-safe).
+ */
+export function getCurrentTreeXML(): string | null {
+  if (!globalFrameCaptureRoot) return null
+  return globalFrameCaptureRoot.toXML()
+}
+
 /**
  * Create a Smithers root for rendering React components to SmithersNode trees.
  */
@@ -57,9 +63,6 @@ export function createSmithersRoot(): SmithersRoot {
     children: [],
     parent: null,
   }
-
-  // Set module-level reference for frame capture
-  currentRootNode = rootNode
 
   let fiberRoot: FiberRoot | null = null
 
@@ -78,6 +81,12 @@ export function createSmithersRoot(): SmithersRoot {
       const errorPromise = new Promise<void>((resolve) => {
         errorResolve = resolve
       })
+      const handleFatalError = (error: unknown) => {
+        fatalError = error
+        if (errorResolve) errorResolve()
+        const err = error instanceof Error ? error : new Error(String(error))
+        signalOrchestrationError(err)
+      }
 
       // Check if App returns a Promise
       const result = App()
@@ -95,13 +104,6 @@ export function createSmithersRoot(): SmithersRoot {
       // Create the fiber root container
       // createContainer(containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, transitionCallbacks)
       // NOTE: @types/react-reconciler 0.32 has 8 params, but runtime 0.33 has 10
-      const handleFatalError = (error: unknown) => {
-        fatalError = error
-        if (errorResolve) errorResolve()
-        const err = error instanceof Error ? error : new Error(String(error))
-        signalOrchestrationError(err)
-      }
-
       fiberRoot = (SmithersReconciler.createContainer as any)(
         rootNode, // containerInfo
         0, // tag: LegacyRoot (ConcurrentRoot = 1)
@@ -161,10 +163,6 @@ export function createSmithersRoot(): SmithersRoot {
       if (fiberRoot) {
         SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
         fiberRoot = null
-      }
-      // Clear global singleton if this is the current root
-      if (currentRootNode === rootNode) {
-        currentRootNode = null
       }
       // Defensive cleanup: recursively clear all parent pointers and empty children array
       function clearTree(node: SmithersNode) {
