@@ -109,27 +109,24 @@ export function createSmithersRoot(): SmithersRoot {
 
     render(element: ReactNode): Promise<void> {
       return new Promise((resolve) => {
-        // Clean up previous render (synchronous in LegacyRoot mode)
-        if (fiberRoot) {
-          SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
-          // React calls clearContainer/removeNode to clean up children
+        // Create fiber root if needed
+        if (!fiberRoot) {
+          fiberRoot = (SmithersReconciler.createContainer as any)(
+            rootNode, // containerInfo
+            0, // tag: LegacyRoot (ConcurrentRoot = 1)
+            null, // hydrationCallbacks
+            false, // isStrictMode
+            null, // concurrentUpdatesByDefaultOverride
+            '', // identifierPrefix
+            (error: unknown) => console.error('Smithers uncaught error:', error),
+            (error: unknown) => console.error('Smithers caught error:', error),
+            (error: unknown) => console.error('Smithers recoverable error:', error),
+            null // transitionCallbacks
+          )
         }
 
-        // Create the fiber root container
-        fiberRoot = (SmithersReconciler.createContainer as any)(
-          rootNode, // containerInfo
-          0, // tag: LegacyRoot (ConcurrentRoot = 1)
-          null, // hydrationCallbacks
-          false, // isStrictMode
-          null, // concurrentUpdatesByDefaultOverride
-          '', // identifierPrefix
-          (error: unknown) => console.error('Smithers uncaught error:', error),
-          (error: unknown) => console.error('Smithers caught error:', error),
-          (error: unknown) => console.error('Smithers recoverable error:', error),
-          null // transitionCallbacks
-        )
-
-        // Render the element and resolve when commit completes
+        // Update container with element (or null to unmount)
+        // The callback is invoked when React has finished committing the update
         SmithersReconciler.updateContainer(element, fiberRoot, null, () => {
           resolve()
         })
