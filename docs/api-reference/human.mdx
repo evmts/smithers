@@ -1,0 +1,199 @@
+---
+title: Human API
+description: Human-in-the-loop interaction management
+---
+
+# Human API
+
+The `db.human` module handles requests for human input, confirmation, or approval within workflows.
+
+## Overview
+
+```tsx
+import { createSmithersDB } from "smithers-orchestrator/db";
+
+const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+
+// Create a human interaction request
+const requestId = db.human.request("confirmation", "Deploy to production?");
+
+// External harness resolves the request
+db.human.resolve(requestId, "approved", { confirmed: true });
+```
+
+## Methods
+
+### request
+
+Creates a human interaction request.
+
+```tsx
+const requestId = db.human.request(
+  type: string,
+  prompt: string,
+  options?: string[]
+): string
+```
+
+<ParamField path="type" type="string" required>
+  The type of interaction (e.g., "confirmation", "select", "input").
+</ParamField>
+
+<ParamField path="prompt" type="string" required>
+  The prompt to display to the human.
+</ParamField>
+
+<ParamField path="options" type="string[]">
+  Optional list of choices for selection-type interactions.
+</ParamField>
+
+**Returns:** The request ID.
+
+### resolve
+
+Resolves a pending request (called by external harness or UI).
+
+```tsx
+db.human.resolve(
+  id: string,
+  status: 'approved' | 'rejected',
+  response?: unknown
+): void
+```
+
+<ParamField path="id" type="string" required>
+  The request ID to resolve.
+</ParamField>
+
+<ParamField path="status" type="'approved' | 'rejected'" required>
+  Whether the human approved or rejected the request.
+</ParamField>
+
+<ParamField path="response" type="unknown">
+  Optional response data from the human.
+</ParamField>
+
+### get
+
+Gets a request by ID.
+
+```tsx
+const request = db.human.get(id: string): HumanInteraction | null
+```
+
+### listPending
+
+Lists all pending requests for the current execution.
+
+```tsx
+const pending = db.human.listPending(): HumanInteraction[]
+```
+
+## HumanInteraction Type
+
+```tsx
+interface HumanInteraction {
+  id: string;
+  execution_id: string;
+  type: string;
+  prompt: string;
+  options: string[] | null;
+  status: 'pending' | 'approved' | 'rejected' | 'timeout';
+  response: any | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+```
+
+## useHuman Hook
+
+For components, use the `useHuman` hook for a more ergonomic API:
+
+```tsx
+import { useHuman } from "smithers-orchestrator/hooks";
+
+function DeploymentWorkflow() {
+  const { ask, status } = useHuman();
+
+  const handleDeploy = async () => {
+    const approved = await ask<boolean>("Deploy to production?", {
+      options: ["Yes", "No"],
+    });
+
+    if (approved) {
+      // Proceed with deployment
+    }
+  };
+
+  return (
+    <button onClick={handleDeploy} disabled={status === "pending"}>
+      Deploy
+    </button>
+  );
+}
+```
+
+### useHuman API
+
+```tsx
+interface UseHumanResult {
+  ask: <T = any>(prompt: string, options?: AskOptions) => Promise<T>;
+  status: 'idle' | 'pending' | 'resolved';
+  requestId: string | null;
+}
+
+interface AskOptions {
+  options?: string[];
+}
+```
+
+## Integration Pattern
+
+Human interaction typically follows this pattern:
+
+1. **Workflow creates request** - `db.human.request()` or `useHuman().ask()`
+2. **UI polls for pending requests** - `db.human.listPending()`
+3. **Human responds via UI** - User clicks approve/reject
+4. **UI resolves request** - `db.human.resolve()`
+5. **Workflow continues** - Promise resolves with response
+
+## Example: Approval Workflow
+
+```tsx
+function ApprovalWorkflow() {
+  const { ask } = useHuman();
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Claude
+        onFinished={async (result) => {
+          // Ask for human approval before committing
+          const approved = await ask<boolean>(
+            `Ready to commit these changes?\n\n${result.output}`,
+            { options: ["Approve", "Reject"] }
+          );
+
+          if (approved) {
+            await db.state.set("phase", "commit");
+          } else {
+            await db.state.set("phase", "revise");
+          }
+        }}
+      >
+        Implement the feature.
+      </Claude>
+    </SmithersProvider>
+  );
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Human Component" icon="user" href="/components/human">
+    Human component reference
+  </Card>
+  <Card title="Hooks API" icon="hook" href="/api-reference/hooks">
+    React hooks for Smithers
+  </Card>
+</CardGroup>

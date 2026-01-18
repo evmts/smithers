@@ -1,0 +1,267 @@
+---
+title: Reactive Hooks
+description: React hooks for reactive SQLite queries
+---
+
+# Reactive Hooks
+
+Smithers includes a reactive SQLite layer that provides React hooks for automatic query re-execution when underlying data changes.
+
+## useQuery
+
+Hook to execute a reactive query that automatically re-runs when relevant tables are mutated.
+
+```tsx
+import { useQuery } from "smithers-orchestrator/reactive-sqlite";
+
+function UserList() {
+  const { data: users, isLoading, error, refetch } = useQuery(
+    db,
+    "SELECT * FROM users WHERE active = ?",
+    [true]
+  );
+
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <ul>
+      {users.map((user) => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### Signature
+
+```tsx
+function useQuery<T>(
+  db: ReactiveDatabase,
+  sql: string,
+  params?: any[],
+  options?: UseQueryOptions
+): UseQueryResult<T>
+```
+
+### Options
+
+```tsx
+interface UseQueryOptions {
+  skip?: boolean;    // Skip query execution
+  deps?: any[];      // Additional dependencies to trigger refetch
+}
+```
+
+### Return Type
+
+```tsx
+interface UseQueryResult<T> {
+  data: T[];           // Query results
+  isLoading: boolean;  // Always false for SQLite (sync)
+  error: Error | null; // Query error if any
+  refetch: () => void; // Manual refetch function
+}
+```
+
+## useQueryOne
+
+Hook to get a single row from a query.
+
+```tsx
+import { useQueryOne } from "smithers-orchestrator/reactive-sqlite";
+
+function UserProfile({ userId }: { userId: number }) {
+  const { data: user } = useQueryOne(
+    db,
+    "SELECT * FROM users WHERE id = ?",
+    [userId]
+  );
+
+  if (!user) return <div>User not found</div>;
+
+  return <div>{user.name}</div>;
+}
+```
+
+### Signature
+
+```tsx
+function useQueryOne<T>(
+  db: ReactiveDatabase,
+  sql: string,
+  params?: any[],
+  options?: UseQueryOptions
+): UseQueryResult<T> & { data: T | null }
+```
+
+## useQueryValue
+
+Hook to get a single value from a query.
+
+```tsx
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
+function UserCount() {
+  const { data: count } = useQueryValue<number>(
+    db,
+    "SELECT COUNT(*) as count FROM users"
+  );
+
+  return <div>Total users: {count ?? 0}</div>;
+}
+```
+
+### Signature
+
+```tsx
+function useQueryValue<T>(
+  db: ReactiveDatabase,
+  sql: string,
+  params?: any[],
+  options?: UseQueryOptions
+): UseQueryResult<T> & { data: T | null }
+```
+
+## useMutation
+
+Hook to execute mutations with automatic query invalidation.
+
+```tsx
+import { useMutation } from "smithers-orchestrator/reactive-sqlite";
+
+function AddUser() {
+  const { mutate, isLoading, error } = useMutation(
+    db,
+    "INSERT INTO users (name, email) VALUES (?, ?)"
+  );
+
+  const handleAdd = () => {
+    mutate("Alice", "alice@example.com");
+    // All useQuery hooks watching the users table will re-run
+  };
+
+  return (
+    <button onClick={handleAdd} disabled={isLoading}>
+      Add User
+    </button>
+  );
+}
+```
+
+### Signature
+
+```tsx
+function useMutation<TParams extends any[]>(
+  db: ReactiveDatabase,
+  sql: string,
+  options?: UseMutationOptions
+): UseMutationResult<TParams>
+```
+
+### Options
+
+```tsx
+interface UseMutationOptions {
+  invalidateTables?: string[]; // Manual table invalidation
+  onSuccess?: () => void;       // Success callback
+  onError?: (error: Error) => void; // Error callback
+}
+```
+
+### Return Type
+
+```tsx
+interface UseMutationResult<TParams> {
+  mutate: (...params: TParams) => void;      // Sync mutation
+  mutateAsync: (...params: TParams) => Promise<void>; // Async mutation
+  isLoading: boolean;
+  error: Error | null;
+}
+```
+
+## How Reactivity Works
+
+1. **Table Tracking**: The SQL parser extracts table names from queries
+2. **Subscription**: Each `useQuery` subscribes to its relevant tables
+3. **Mutation Detection**: When `db.run()` modifies a table, subscribers are notified
+4. **Re-execution**: Affected queries automatically re-run
+
+```tsx
+// This query subscribes to the 'users' table
+const { data: users } = useQuery(db, "SELECT * FROM users");
+
+// This mutation notifies 'users' subscribers
+db.run("INSERT INTO users (name) VALUES (?)", ["Alice"]);
+// ^ users query automatically re-runs
+```
+
+## DatabaseProvider
+
+Optionally wrap your app in `DatabaseProvider` for implicit db access:
+
+```tsx
+import { DatabaseProvider, useQuery } from "smithers-orchestrator/reactive-sqlite";
+
+function App() {
+  return (
+    <DatabaseProvider db={db}>
+      <UserList />
+    </DatabaseProvider>
+  );
+}
+
+// Inside DatabaseProvider, db is implicit
+function UserList() {
+  const { data: users } = useQuery("SELECT * FROM users");
+  return <ul>{users.map(u => <li key={u.id}>{u.name}</li>)}</ul>;
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use specific queries">
+    Select only the columns you need to minimize re-renders:
+    ```tsx
+    // Good - specific columns
+    useQuery(db, "SELECT id, name FROM users WHERE active = 1")
+
+    // Less efficient - selects everything
+    useQuery(db, "SELECT * FROM users")
+    ```
+  </Accordion>
+
+  <Accordion title="Use skip for conditional queries">
+    ```tsx
+    const { data } = useQuery(
+      db,
+      "SELECT * FROM users WHERE id = ?",
+      [userId],
+      { skip: !userId }
+    );
+    ```
+  </Accordion>
+
+  <Accordion title="Use useQueryOne for single rows">
+    ```tsx
+    // Good - returns T | null
+    const { data: user } = useQueryOne(db, "SELECT * FROM users WHERE id = ?", [id]);
+
+    // Less clear - returns T[]
+    const { data: users } = useQuery(db, "SELECT * FROM users WHERE id = ?", [id]);
+    const user = users[0];
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Database API" icon="database" href="/api-reference/database">
+    Database creation and management
+  </Card>
+  <Card title="State API" icon="toggle-on" href="/api-reference/state">
+    Key-value state storage
+  </Card>
+</CardGroup>

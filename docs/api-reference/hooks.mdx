@@ -1,0 +1,206 @@
+---
+title: Smithers Hooks
+description: React hooks for Smithers workflows
+---
+
+# Smithers Hooks
+
+Smithers provides React hooks for common workflow patterns.
+
+## useHuman
+
+Hook to pause execution and request human input.
+
+```tsx
+import { useHuman } from "smithers-orchestrator/hooks";
+
+function DeployWorkflow() {
+  const { ask, status, requestId } = useHuman();
+
+  const handleDeploy = async () => {
+    const approved = await ask<boolean>("Deploy to production?", {
+      options: ["Yes", "No"],
+    });
+
+    if (approved) {
+      // Proceed with deployment
+    }
+  };
+
+  return (
+    <button onClick={handleDeploy} disabled={status === "pending"}>
+      {status === "pending" ? "Waiting for approval..." : "Deploy"}
+    </button>
+  );
+}
+```
+
+### API
+
+```tsx
+interface UseHumanResult {
+  ask: <T = any>(prompt: string, options?: AskOptions) => Promise<T>;
+  status: 'idle' | 'pending' | 'resolved';
+  requestId: string | null;
+}
+
+interface AskOptions {
+  options?: string[];
+}
+```
+
+### How it Works
+
+1. `ask()` creates a request in `db.human`
+2. Returns a promise that resolves when an external harness calls `db.human.resolve()`
+3. Uses reactive queries to detect when the request status changes
+
+### Example: Multi-Choice Input
+
+```tsx
+const { ask } = useHuman();
+
+const environment = await ask<string>("Select deployment target:", {
+  options: ["staging", "production", "development"],
+});
+
+console.log(`Deploying to ${environment}`);
+```
+
+## useRalphCount
+
+Hook to get the current Ralph iteration count reactively.
+
+```tsx
+import { useRalphCount } from "smithers-orchestrator/hooks";
+
+function IterationDisplay() {
+  const count = useRalphCount();
+
+  return <div>Current iteration: {count}</div>;
+}
+```
+
+### API
+
+```tsx
+function useRalphCount(): number
+```
+
+Returns the current Ralph iteration count (0-indexed). The hook subscribes to the database state, so components re-render when the count changes.
+
+### How it Works
+
+Uses `useQueryValue` to reactively subscribe to the `ralphCount` state key:
+
+```tsx
+const { data } = useQueryValue<number>(
+  reactiveDb,
+  "SELECT CAST(value AS INTEGER) as count FROM state WHERE key = 'ralphCount'"
+);
+return data ?? 0;
+```
+
+### Usage with Components
+
+The `useRalphCount` hook is used internally by components like `<Claude>` to detect when Ralph increments the iteration:
+
+```tsx
+// Inside Claude component
+const ralphCount = useRalphCount();
+
+useEffectOnValueChange(ralphCount, () => {
+  // Re-execute when Ralph increments
+  executeClaudeCLI({ ... });
+});
+```
+
+### Example: Conditional Rendering Based on Iteration
+
+```tsx
+function IterationAwareComponent() {
+  const count = useRalphCount();
+
+  return (
+    <div>
+      {count === 0 && <InitialSetup />}
+      {count > 0 && count < 5 && <MainWorkflow iteration={count} />}
+      {count >= 5 && <FinalReview />}
+    </div>
+  );
+}
+```
+
+## useSmithers
+
+Hook to access the Smithers context (database, execution ID, etc.).
+
+```tsx
+import { useSmithers } from "smithers-orchestrator/components";
+
+function MyComponent() {
+  const { db, executionId, isStopRequested } = useSmithers();
+
+  if (isStopRequested()) {
+    return <div>Workflow stopped</div>;
+  }
+
+  return <div>Execution: {executionId}</div>;
+}
+```
+
+### API
+
+```tsx
+interface SmithersContextValue {
+  db: SmithersDB;
+  reactiveDb: ReactiveDatabase;
+  executionId: string | null;
+  isStopRequested: () => boolean;
+}
+```
+
+### Usage
+
+The `useSmithers` hook provides access to:
+
+- **db**: The full Smithers database with all modules (`db.state`, `db.agents`, etc.)
+- **reactiveDb**: The underlying ReactiveDatabase for custom queries
+- **executionId**: Current execution ID
+- **isStopRequested**: Function to check if stop has been requested
+
+## Custom Hooks Pattern
+
+Create custom hooks for your workflow patterns:
+
+```tsx
+import { useSmithers, useRalphCount } from "smithers-orchestrator";
+
+function useWorkflowProgress() {
+  const { db, executionId } = useSmithers();
+  const iteration = useRalphCount();
+
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (!executionId) return;
+
+    const phases = db.phases.list(executionId);
+    const completed = phases.filter((p) => p.status === "completed").length;
+    setProgress(phases.length > 0 ? completed / phases.length : 0);
+  }, [executionId, iteration]);
+
+  return { progress, iteration };
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Human API" icon="user" href="/api-reference/human">
+    Human interaction database API
+  </Card>
+  <Card title="Reactive Hooks" icon="bolt" href="/api-reference/reactive-hooks">
+    SQLite reactive query hooks
+  </Card>
+</CardGroup>

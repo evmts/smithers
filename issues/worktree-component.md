@@ -9,7 +9,9 @@
     - src/components/Claude.tsx
     - src/components/Smithers.tsx
     - src/components/agents/claude-cli/executor.ts
+    - src/components/agents/types/agents.ts
     - src/utils/vcs/git.ts
+    - src/utils/vcs/types.ts
   </dependencies>
 </metadata>
 
@@ -216,6 +218,30 @@ export function Claude(props: ClaudeProps): ReactNode {
 
 ## Implementation Plan
 
+### Phase 0: Add Types to VCS Types
+
+First, add worktree types to `src/utils/vcs/types.ts`:
+
+```typescript
+// Add to src/utils/vcs/types.ts
+
+/**
+ * Information about a git worktree
+ */
+export interface WorktreeInfo {
+  /** Absolute path to the worktree directory */
+  path: string
+  /** Branch name (null for detached HEAD) */
+  branch: string | null
+  /** Commit hash at HEAD */
+  head: string
+  /** Whether the worktree is locked */
+  locked?: boolean
+  /** Whether the worktree can be pruned */
+  prunable?: boolean
+}
+```
+
 ### Phase 1: Git Worktree Utilities
 
 Add worktree management functions to `src/utils/vcs/git.ts`:
@@ -223,18 +249,53 @@ Add worktree management functions to `src/utils/vcs/git.ts`:
 ```typescript
 // src/utils/vcs/git.ts
 
-export interface WorktreeInfo {
-  path: string
-  branch: string
-  head: string
+import * as path from 'node:path'
+import type { WorktreeInfo } from './types.js'
+
+/**
+ * Parse git worktree list --porcelain output
+ */
+function parseWorktreeList(output: string): WorktreeInfo[] {
+  const worktrees: WorktreeInfo[] = []
+  let current: Partial<WorktreeInfo> = {}
+
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      // Start of new worktree entry
+      if (current.path) {
+        worktrees.push(current as WorktreeInfo)
+      }
+      current = { path: line.slice(9) }
+    } else if (line.startsWith('HEAD ')) {
+      current.head = line.slice(5)
+    } else if (line.startsWith('branch ')) {
+      // Extract branch name from refs/heads/...
+      current.branch = line.slice(7).replace('refs/heads/', '')
+    } else if (line === 'detached') {
+      current.branch = null
+    } else if (line === 'locked') {
+      current.locked = true
+    } else if (line === 'prunable') {
+      current.prunable = true
+    }
+  }
+
+  // Don't forget the last entry
+  if (current.path) {
+    worktrees.push(current as WorktreeInfo)
+  }
+
+  return worktrees
 }
 
 /**
  * List all worktrees for the repository
  */
 export async function listWorktrees(cwd?: string): Promise<WorktreeInfo[]> {
-  const result = await Bun.$`git ${cwd ? ['-C', cwd] : []} worktree list --porcelain`.quiet()
-  // Parse porcelain output
+  const args = cwd
+    ? ['-C', cwd, 'worktree', 'list', '--porcelain']
+    : ['worktree', 'list', '--porcelain']
+  const result = await Bun.$`git ${args}`.quiet()
   return parseWorktreeList(result.stdout.toString())
 }
 
@@ -242,7 +303,7 @@ export async function listWorktrees(cwd?: string): Promise<WorktreeInfo[]> {
  * Add a new worktree
  */
 export async function addWorktree(
-  path: string,
+  worktreePath: string,
   branch: string,
   options?: {
     base?: string
@@ -250,13 +311,19 @@ export async function addWorktree(
     cwd?: string
   }
 ): Promise<void> {
-  const args = ['worktree', 'add']
+  const args: string[] = []
+
+  if (options?.cwd) {
+    args.push('-C', options.cwd)
+  }
+
+  args.push('worktree', 'add')
 
   if (options?.createBranch) {
     args.push('-b', branch)
   }
 
-  args.push(path)
+  args.push(worktreePath)
 
   if (!options?.createBranch) {
     args.push(branch)
@@ -264,23 +331,31 @@ export async function addWorktree(
     args.push(options.base)
   }
 
-  const gitArgs = options?.cwd ? ['-C', options.cwd, ...args] : args
-  await Bun.$`git ${gitArgs}`.quiet()
+  await Bun.$`git ${args}`.quiet()
 }
 
 /**
  * Remove a worktree
  */
 export async function removeWorktree(
-  path: string,
+  worktreePath: string,
   options?: { force?: boolean; cwd?: string }
 ): Promise<void> {
-  const args = ['worktree', 'remove']
-  if (options?.force) args.push('--force')
-  args.push(path)
+  const args: string[] = []
 
-  const gitArgs = options?.cwd ? ['-C', options.cwd, ...args] : args
-  await Bun.$`git ${gitArgs}`.quiet()
+  if (options?.cwd) {
+    args.push('-C', options.cwd)
+  }
+
+  args.push('worktree', 'remove')
+
+  if (options?.force) {
+    args.push('--force')
+  }
+
+  args.push(worktreePath)
+
+  await Bun.$`git ${args}`.quiet()
 }
 
 /**
@@ -288,8 +363,9 @@ export async function removeWorktree(
  */
 export async function branchExists(branch: string, cwd?: string): Promise<boolean> {
   try {
-    const args = cwd ? ['-C', cwd, 'rev-parse', '--verify', `refs/heads/${branch}`] :
-                       ['rev-parse', '--verify', `refs/heads/${branch}`]
+    const args = cwd
+      ? ['-C', cwd, 'rev-parse', '--verify', `refs/heads/${branch}`]
+      : ['rev-parse', '--verify', `refs/heads/${branch}`]
     await Bun.$`git ${args}`.quiet()
     return true
   } catch {
@@ -299,10 +375,12 @@ export async function branchExists(branch: string, cwd?: string): Promise<boolea
 
 /**
  * Check if a worktree exists at path
+ * Uses path.resolve() to normalize paths before comparison
  */
-export async function worktreeExists(path: string, cwd?: string): Promise<boolean> {
+export async function worktreeExists(worktreePath: string, cwd?: string): Promise<boolean> {
   const worktrees = await listWorktrees(cwd)
-  return worktrees.some(wt => wt.path === path)
+  const normalizedPath = path.resolve(worktreePath)
+  return worktrees.some(wt => path.resolve(wt.path) === normalizedPath)
 }
 ```
 
@@ -343,10 +421,22 @@ export function WorktreeProvider(props: {
 
 Create the main component:
 
+> **Design Decision: Ralph Iteration Behavior**
+>
+> The `Worktree` component uses `useMount` (runs once on mount) rather than
+> `useEffectOnValueChange(ralphCount, ...)` (runs on each Ralph iteration).
+> This means **worktrees persist across Ralph iterations** - they are created
+> once and reused. This is intentional because:
+> 1. Worktree creation is expensive (git operations, disk I/O)
+> 2. Most use cases want agents to iterate on changes within the same worktree
+> 3. If per-iteration worktrees are needed, use dynamic branch names:
+>    `<Worktree branch={\`iteration-${ralphCount}\`}>`
+
 ```typescript
 // src/components/Worktree.tsx
 
 import { useState, useRef, type ReactNode } from 'react'
+import * as path from 'node:path'
 import { useSmithers } from './SmithersProvider.js'
 import { WorktreeProvider, type WorktreeContextValue } from './WorktreeProvider.js'
 import { useMount, useUnmount } from '../reconciler/hooks.js'
@@ -355,9 +445,7 @@ import {
   removeWorktree,
   worktreeExists,
   branchExists,
-  listWorktrees,
 } from '../utils/vcs/git.js'
-import path from 'node:path'
 
 export interface WorktreeProps {
   branch: string
@@ -471,7 +559,26 @@ export function Worktree(props: WorktreeProps): ReactNode {
 
 ### Phase 4: Update Agent Components
 
-Modify `Claude.tsx` to use worktree context:
+#### 4a. Add `cwd` prop to `ClaudeProps`
+
+First, add the `cwd` property to `ClaudeProps` in `src/components/agents/types/agents.ts`:
+
+```typescript
+// In src/components/agents/types/agents.ts - add to ClaudeProps interface
+
+export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends BaseAgentProps {
+  // ... existing props ...
+
+  /**
+   * Working directory for agent execution.
+   * If inside a <Worktree>, this defaults to the worktree's cwd.
+   * Explicit cwd prop takes precedence over worktree context.
+   */
+  cwd?: string
+}
+```
+
+#### 4b. Modify `Claude.tsx` to use worktree context
 
 ```typescript
 // In Claude.tsx - add import
@@ -480,15 +587,17 @@ import { useWorktree } from './WorktreeProvider.js'
 // In Claude function - add hook
 const worktree = useWorktree()
 
-// In executeClaudeCLI call - add cwd option
+// In executeClaudeCLI call - add cwd option (props override context)
 const agentResult = await executeClaudeCLI({
   prompt,
-  cwd: worktree?.cwd,  // Use worktree cwd if in worktree context
+  cwd: props.cwd ?? worktree?.cwd,  // Explicit prop > worktree context > undefined
   // ... rest of options
 })
 ```
 
-Modify `Smithers.tsx` similarly:
+#### 4c. Modify `Smithers.tsx` similarly
+
+`SmithersProps` already has `cwd?: string`, so just add the worktree hook:
 
 ```typescript
 // In Smithers.tsx - add import
@@ -497,10 +606,10 @@ import { useWorktree } from './WorktreeProvider.js'
 // In Smithers function - add hook
 const worktree = useWorktree()
 
-// In executeSmithers call - use worktree cwd as default
+// In executeSmithers call - use worktree cwd as default (props already supported)
 const smithersResult = await executeSmithers({
   task,
-  cwd: props.cwd ?? worktree?.cwd,  // Props override worktree context
+  cwd: props.cwd ?? worktree?.cwd,  // Explicit prop > worktree context > undefined
   // ... rest of options
 })
 ```
@@ -675,19 +784,40 @@ Props always take precedence over context:
 
 ## Acceptance Criteria
 
+### Types & Interfaces
+- [ ] `WorktreeInfo` type added to `src/utils/vcs/types.ts`
+- [ ] `cwd?: string` prop added to `ClaudeProps` interface
+
+### Git Utilities
+- [ ] `listWorktrees()` parses porcelain output correctly
+- [ ] `addWorktree()` creates worktree with optional branch creation
+- [ ] `removeWorktree()` removes worktree with optional force flag
+- [ ] `branchExists()` checks if branch exists
+- [ ] `worktreeExists()` normalizes paths before comparison
+
+### Worktree Component
 - [ ] `Worktree` component creates git worktree on mount if it doesn't exist
 - [ ] `Worktree` component reuses existing worktree if path already exists
 - [ ] `Worktree` creates branch from base ref if branch doesn't exist
+- [ ] `Worktree` persists across Ralph iterations (doesn't recreate on each iteration)
+- [ ] `cleanup` prop removes worktree on unmount (only if component created it)
+- [ ] Error states render error element without crashing
+
+### Context Propagation
 - [ ] `WorktreeContext` provides `cwd`, `branch`, and `isWorktree` to children
 - [ ] `useWorktree()` hook returns context value or `null`
-- [ ] `Claude` component uses worktree `cwd` when in worktree context
-- [ ] `Smithers` component uses worktree `cwd` when in worktree context
-- [ ] `cleanup` prop removes worktree on unmount (only if component created it)
 - [ ] Nested worktrees correctly shadow parent context
-- [ ] Explicit `cwd` prop overrides worktree context
-- [ ] Error states render error element without crashing
-- [ ] Git worktree utilities (`addWorktree`, `removeWorktree`, etc.) work correctly
-- [ ] Components exported from `src/components/index.ts`
+
+### Agent Integration
+- [ ] `Claude` component uses worktree `cwd` when in worktree context
+- [ ] `Claude` component allows explicit `cwd` prop to override worktree context
+- [ ] `Smithers` component uses worktree `cwd` when in worktree context
+- [ ] `Smithers` component allows explicit `cwd` prop to override worktree context
+
+### Exports
+- [ ] `Worktree`, `WorktreeProps` exported from `src/components/index.ts`
+- [ ] `useWorktree`, `WorktreeProvider`, `WorktreeContextValue` exported
+- [ ] `WorktreeInfo` exported from `src/utils/vcs/index.ts`
 
 </section>
 
@@ -697,47 +827,141 @@ Props always take precedence over context:
 
 ## Testing Strategy
 
-### Unit Tests
+### Unit Tests: Git Utilities
+
+```typescript
+// src/utils/vcs/git.test.ts
+import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test'
+import * as path from 'node:path'
+
+describe('parseWorktreeList', () => {
+  test('parses single worktree', () => {
+    const output = `worktree /path/to/repo
+HEAD abc123
+branch refs/heads/main
+`
+    // Verify parsing
+  })
+
+  test('parses detached HEAD worktree', () => {
+    const output = `worktree /path/to/worktree
+HEAD def456
+detached
+`
+    // Verify branch is null
+  })
+
+  test('parses multiple worktrees', () => {
+    // ...
+  })
+})
+
+describe('worktreeExists', () => {
+  test('normalizes paths before comparison', async () => {
+    // Mock listWorktrees to return paths
+    // Test that relative vs absolute paths match correctly
+  })
+})
+```
+
+### Unit Tests: Worktree Component
 
 ```typescript
 // src/components/Worktree.test.tsx
-import { test, expect, mock, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, mock } from 'bun:test'
 import { Worktree } from './Worktree'
 import { renderToStaticMarkup } from '../reconciler/serialize'
 
-test('creates worktree on mount', async () => {
-  // Mock git commands
-  // Verify addWorktree called with correct args
+describe('Worktree component', () => {
+  test('creates worktree on mount', async () => {
+    // Mock git commands
+    // Verify addWorktree called with correct args
+  })
+
+  test('reuses existing worktree', async () => {
+    // Mock worktreeExists to return true
+    // Verify addWorktree NOT called
+  })
+
+  test('cleans up worktree on unmount when cleanup=true', async () => {
+    // Verify removeWorktree called with force: true
+  })
+
+  test('does not clean up if cleanup=false', async () => {
+    // Verify removeWorktree NOT called
+  })
+
+  test('does not clean up worktrees it did not create', async () => {
+    // Mock worktreeExists to return true (pre-existing)
+    // Unmount with cleanup=true
+    // Verify removeWorktree NOT called
+  })
+
+  test('renders pending state while setting up', async () => {
+    // Verify renders <worktree status="pending">
+  })
+
+  test('renders error state on failure', async () => {
+    // Mock addWorktree to throw
+    // Verify renders <worktree status="error">
+  })
+
+  test('calls onReady when worktree is ready', async () => {
+    const onReady = mock(() => {})
+    // Render and wait
+    // Verify onReady called with path
+  })
+
+  test('calls onError on failure', async () => {
+    const onError = mock(() => {})
+    // Mock failure
+    // Verify onError called
+  })
 })
 
-test('reuses existing worktree', async () => {
-  // Mock worktreeExists to return true
-  // Verify addWorktree NOT called
-})
+describe('WorktreeContext', () => {
+  test('provides context to children', async () => {
+    // Render with useWorktree consumer
+    // Verify receives { cwd, branch, isWorktree: true }
+  })
 
-test('cleans up worktree on unmount when cleanup=true', async () => {
-  // Verify removeWorktree called
-})
-
-test('does not clean up if cleanup=false', async () => {
-  // Verify removeWorktree NOT called
-})
-
-test('provides context to children', async () => {
-  // Render with Claude child
-  // Verify Claude receives correct cwd
+  test('nested worktrees shadow parent context', async () => {
+    // Render nested Worktrees
+    // Inner child should see inner worktree's cwd
+  })
 })
 ```
 
 ### Integration Tests
 
 ```typescript
-// Create actual worktree, run agent, verify isolation
-test('agents operate in worktree directory', async () => {
-  // 1. Create worktree
-  // 2. Run Claude that creates a file
-  // 3. Verify file exists in worktree, not main repo
-  // 4. Clean up
+// src/components/Worktree.integration.test.tsx
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import * as fs from 'node:fs/promises'
+import * as path from 'node:path'
+
+describe('Worktree integration', () => {
+  const testDir = path.join(process.cwd(), '.test-worktrees')
+
+  beforeAll(async () => {
+    await fs.mkdir(testDir, { recursive: true })
+  })
+
+  afterAll(async () => {
+    await fs.rm(testDir, { recursive: true, force: true })
+  })
+
+  test('agents operate in worktree directory', async () => {
+    // 1. Create actual worktree using component
+    // 2. Run Claude that creates a file (mocked to just write)
+    // 3. Verify file exists in worktree, not main repo
+    // 4. Cleanup removes worktree
+  })
+
+  test('explicit cwd prop overrides worktree context', async () => {
+    // Render Claude with explicit cwd inside Worktree
+    // Verify Claude uses explicit cwd, not worktree cwd
+  })
 })
 ```
 
@@ -783,6 +1007,46 @@ Support for worktrees on remote machines via SSH.
 
 ---
 
+<section name="implementation-notes">
+
+## Implementation Notes
+
+### Key Gotchas
+
+1. **Bun.$ array interpolation**: When passing arrays to `Bun.$`, build the complete args array first rather than conditionally interpolating. The template literal interpolation handles arrays by spreading them into the command.
+
+2. **Path normalization**: Always use `path.resolve()` when comparing paths from git output with user-provided paths. Git may return absolute paths differently than `path.join()` produces.
+
+3. **React Strict Mode**: The `useMount` hook should handle strict mode's double invocation. Verify the ref pattern (`createdWorktreeRef`) prevents double worktree creation.
+
+4. **Async cleanup**: The `useUnmount` callback runs synchronously, but worktree removal is async. The cleanup is fire-and-forget by design - if cleanup fails, it logs a warning but doesn't block unmount.
+
+5. **ClaudeProps changes**: Adding `cwd` to `ClaudeProps` is a non-breaking change since it's optional. Existing code will continue to work.
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `src/utils/vcs/types.ts` | Add `WorktreeInfo` interface |
+| `src/utils/vcs/git.ts` | Add worktree utilities |
+| `src/utils/vcs/index.ts` | Export new utilities and types |
+| `src/components/agents/types/agents.ts` | Add `cwd` to `ClaudeProps` |
+| `src/components/WorktreeProvider.tsx` | NEW - Context provider |
+| `src/components/Worktree.tsx` | NEW - Main component |
+| `src/components/Claude.tsx` | Add `useWorktree()` hook, pass `cwd` |
+| `src/components/Smithers.tsx` | Add `useWorktree()` hook |
+| `src/components/index.ts` | Export new components |
+
+</section>
+
+---
+
 ## Summary
 
 The `<Worktree>` component provides a declarative way to isolate agent execution into git worktrees. Through React context propagation, all nested components automatically operate in the worktree's directory without requiring explicit configuration. This enables parallel branch execution, safe experimentation, and clean phase isolation while maintaining backward compatibility with existing Smithers components.
+
+Key design decisions:
+- **Worktrees persist across Ralph iterations** - Created once on mount, not recreated per iteration
+- **Explicit `cwd` prop overrides context** - Maintains flexibility for edge cases
+- **Cleanup is opt-in and best-effort** - Only removes worktrees the component created, logs warnings on failure
+- **Path normalization** - Uses `path.resolve()` to handle different path representations

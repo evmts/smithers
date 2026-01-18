@@ -1,0 +1,164 @@
+---
+title: Tasks API
+description: Task tracking for Ralph iteration management
+---
+
+# Tasks API
+
+The `db.tasks` module provides task tracking for Ralph iteration management. It tracks component-level tasks within the execution lifecycle.
+
+## Overview
+
+```tsx
+import { createSmithersDB } from "smithers-orchestrator/db";
+
+const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+
+// Start a task
+const taskId = db.tasks.start("claude", "code-analyzer");
+
+// Complete the task
+db.tasks.complete(taskId);
+
+// Or mark as failed
+db.tasks.fail(taskId);
+```
+
+## Methods
+
+### start
+
+Starts a new task and returns its ID.
+
+```tsx
+const taskId = db.tasks.start(componentType: string, componentName?: string): string
+```
+
+<ParamField path="componentType" type="string" required>
+  The type of component (e.g., "claude", "review", "commit").
+</ParamField>
+
+<ParamField path="componentName" type="string">
+  Optional name for the component instance.
+</ParamField>
+
+**Returns:** The task ID.
+
+### complete
+
+Marks a task as completed.
+
+```tsx
+db.tasks.complete(id: string): void
+```
+
+<ParamField path="id" type="string" required>
+  The task ID to complete.
+</ParamField>
+
+### fail
+
+Marks a task as failed.
+
+```tsx
+db.tasks.fail(id: string): void
+```
+
+<ParamField path="id" type="string" required>
+  The task ID to mark as failed.
+</ParamField>
+
+### getRunningCount
+
+Gets the count of running tasks for a specific iteration.
+
+```tsx
+const count = db.tasks.getRunningCount(iteration: number): number
+```
+
+<ParamField path="iteration" type="number" required>
+  The Ralph iteration number.
+</ParamField>
+
+### getTotalCount
+
+Gets the count of all tasks for a specific iteration.
+
+```tsx
+const count = db.tasks.getTotalCount(iteration: number): number
+```
+
+### list
+
+Gets all tasks for the current execution.
+
+```tsx
+const tasks = db.tasks.list(): Task[]
+```
+
+### getCurrentIteration
+
+Gets the current Ralph iteration from the state table.
+
+```tsx
+const iteration = db.tasks.getCurrentIteration(): number
+```
+
+## Task Type
+
+```tsx
+interface Task {
+  id: string;
+  execution_id: string;
+  iteration: number;
+  component_type: string;
+  component_name: string | null;
+  status: 'running' | 'completed' | 'failed';
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+}
+```
+
+## Usage in Components
+
+The Claude component automatically uses the tasks module:
+
+```tsx
+// Inside Claude component (simplified)
+const taskId = db.tasks.start('claude', props.model);
+try {
+  // Execute Claude CLI...
+  db.tasks.complete(taskId);
+} catch {
+  db.tasks.fail(taskId);
+}
+```
+
+## Querying Tasks
+
+```tsx
+// List all tasks
+const allTasks = db.tasks.list();
+
+// Count running tasks in current iteration
+const iteration = db.tasks.getCurrentIteration();
+const runningCount = db.tasks.getRunningCount(iteration);
+
+// Check if all tasks completed
+const totalCount = db.tasks.getTotalCount(iteration);
+if (runningCount === 0 && totalCount > 0) {
+  console.log("All tasks completed for this iteration");
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Phases API" icon="layer-group" href="/api-reference/phases">
+    Phase tracking
+  </Card>
+  <Card title="Steps API" icon="shoe-prints" href="/api-reference/steps">
+    Step tracking
+  </Card>
+</CardGroup>

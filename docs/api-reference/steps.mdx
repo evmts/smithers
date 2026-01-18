@@ -1,0 +1,201 @@
+---
+title: Steps API
+description: Step tracking within workflow phases
+---
+
+# Steps API
+
+The `db.steps` module tracks individual steps within workflow phases. Steps represent discrete units of work that can be tracked for progress and VCS operations.
+
+## Overview
+
+```tsx
+import { createSmithersDB } from "smithers-orchestrator/db";
+
+const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+
+// Start a step
+const stepId = db.steps.start("implement-feature");
+
+// Complete with VCS info
+db.steps.complete(stepId, {
+  snapshot_before: "abc123",
+  snapshot_after: "def456",
+  commit_created: "ghi789",
+});
+```
+
+## Methods
+
+### start
+
+Starts a new step within the current phase.
+
+```tsx
+const stepId = db.steps.start(name?: string): string
+```
+
+<ParamField path="name" type="string">
+  Optional name for the step.
+</ParamField>
+
+**Returns:** The step ID.
+
+### complete
+
+Completes a step, optionally recording VCS information.
+
+```tsx
+db.steps.complete(
+  id: string,
+  vcsInfo?: {
+    snapshot_before?: string;
+    snapshot_after?: string;
+    commit_created?: string;
+  }
+): void
+```
+
+<ParamField path="id" type="string" required>
+  The step ID to complete.
+</ParamField>
+
+<ParamField path="vcsInfo" type="object">
+  Optional VCS tracking information:
+  - `snapshot_before`: JJ change ID before the step
+  - `snapshot_after`: JJ change ID after the step
+  - `commit_created`: Commit hash if a commit was made
+</ParamField>
+
+### fail
+
+Marks a step as failed.
+
+```tsx
+db.steps.fail(id: string): void
+```
+
+### current
+
+Gets the currently active step.
+
+```tsx
+const step = db.steps.current(): Step | null
+```
+
+### list
+
+Lists all steps in a phase.
+
+```tsx
+const steps = db.steps.list(phaseId: string): Step[]
+```
+
+### getByExecution
+
+Gets all steps for an execution.
+
+```tsx
+const steps = db.steps.getByExecution(executionId: string): Step[]
+```
+
+## Step Type
+
+```tsx
+interface Step {
+  id: string;
+  execution_id: string;
+  phase_id: string | null;
+  name: string | null;
+  status: 'running' | 'completed' | 'failed';
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  snapshot_before: string | null;
+  snapshot_after: string | null;
+  commit_created: string | null;
+  created_at: string;
+}
+```
+
+## Usage with the Step Component
+
+The `<Step>` component automatically integrates with this module:
+
+```tsx
+import { Step } from "smithers-orchestrator/components";
+
+<Phase name="implementation">
+  <Step name="setup-database">
+    <Claude>Set up the database schema.</Claude>
+  </Step>
+
+  <Step name="implement-api">
+    <Claude>Implement the API endpoints.</Claude>
+  </Step>
+
+  <Step name="write-tests">
+    <Claude>Write tests for the API.</Claude>
+  </Step>
+</Phase>
+```
+
+## VCS Tracking Example
+
+Steps can track VCS snapshots for rollback capabilities:
+
+```tsx
+async function trackedStep() {
+  // Create snapshot before
+  const beforeSnapshot = await jjSnapshot("Before refactoring");
+
+  // Start step
+  const stepId = db.steps.start("refactoring");
+
+  try {
+    // Do work...
+
+    // Create snapshot after
+    const afterSnapshot = await jjSnapshot("After refactoring");
+
+    // Complete with VCS info
+    db.steps.complete(stepId, {
+      snapshot_before: beforeSnapshot.changeId,
+      snapshot_after: afterSnapshot.changeId,
+    });
+  } catch (error) {
+    db.steps.fail(stepId);
+    // Can rollback to beforeSnapshot if needed
+    throw error;
+  }
+}
+```
+
+## Querying Steps
+
+```tsx
+// Get current step
+const currentStep = db.steps.current();
+if (currentStep) {
+  console.log(`Working on: ${currentStep.name}`);
+}
+
+// List steps in a phase
+const phaseSteps = db.steps.list(phaseId);
+const completedSteps = phaseSteps.filter((s) => s.status === "completed");
+console.log(`Progress: ${completedSteps.length}/${phaseSteps.length}`);
+
+// Get all steps for execution
+const allSteps = db.steps.getByExecution(executionId);
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Phases API" icon="layer-group" href="/api-reference/phases">
+    Phase tracking
+  </Card>
+  <Card title="Step Component" icon="shoe-prints" href="/components/step">
+    Step component reference
+  </Card>
+</CardGroup>
