@@ -47,6 +47,38 @@ This creates a traceable history linking each commit to its originating request.
 - Prefer `Bun.file` over `node:fs`'s readFile/writeFile
 - Bun.$`ls` instead of execa.
 
+## React Hooks
+
+Avoid using `useEffect` directly. Use the vendored hooks from `src/reconciler/hooks` instead:
+
+```tsx
+import { useMount, useUnmount, useMountedState } from '../reconciler/hooks'
+
+// Instead of: useEffect(() => { ... }, [])
+useMount(() => {
+  // runs once on mount
+})
+
+// Instead of: useEffect(() => { return () => { ... } }, [])
+useUnmount(() => {
+  // runs on unmount, always uses latest callback (no stale closures)
+})
+
+// Instead of: let cancelled = false; return () => { cancelled = true }
+const isMounted = useMountedState()
+useMount(() => {
+  fetchData().then(data => {
+    if (isMounted()) setState(data)  // safe async state updates
+  })
+})
+```
+
+**When to use each:**
+- `useMount` - code that runs once when component mounts
+- `useUnmount` - cleanup code that needs the latest props/state (avoids stale closures)
+- `useMountedState` - async operations that set state (prevents "setState on unmounted component")
+- `useEffect` with deps array - only when you need to re-run on dependency changes (e.g., reactive queries, state watchers)
+
 ## Testing
 
 Use `bun test` to run tests.
