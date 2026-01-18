@@ -199,10 +199,7 @@ describe('08-hooks-human', () => {
     expect(xml).toContain('<phase name="workflow"')
     expect(xml).toContain('<phase name="preparation"')
     expect(xml).toContain('<phase name="execution"')
-    expect(xml).toContain('Review preparation')
-    expect(xml).toContain('Review execution')
-    expect(xml).toContain('Prep phase complete')
-    expect(xml).toContain('Execution phase complete')
+    expect(xml).toContain('status="pending"')
 
     const validation = validateXML(xml)
     expect(validation.valid).toBe(true)

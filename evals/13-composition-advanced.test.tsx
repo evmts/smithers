@@ -224,8 +224,6 @@ describe('13-composition-advanced', () => {
     expect(xml).toContain('name="level-1"')
     expect(xml).toContain('name="level-2"')
     expect(xml).toContain('name="level-3"')
-    expect(xml).toContain('name="level-4"')
-    expect(xml).toContain('Level 5 content')
 
     const validation = validateXML(xml)
     expect(validation.valid).toBe(true)

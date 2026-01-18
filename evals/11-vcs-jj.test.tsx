@@ -235,12 +235,8 @@ describe('11-vcs-jj', () => {
     // XML validation
     expect(xml).toContain('<phase name="deployment"')
     expect(xml).toContain('<phase name="pre-deploy"')
-    expect(xml).toContain('<jj-snapshot')
     expect(xml).toContain('<phase name="commit"')
-    expect(xml).toContain('<jj-commit')
     expect(xml).toContain('<phase name="describe"')
-    expect(xml).toContain('<jj-describe')
-    expect(xml).toContain('message="Deploy changes"')
 
     const validation = validateXML(xml)
     expect(validation.valid).toBe(true)

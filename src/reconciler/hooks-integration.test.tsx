@@ -262,6 +262,7 @@ describe('Hooks Integration', () => {
   test('useMount/useUnmount work', async () => {
     let mounted = false
     let unmounted = false
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
     function Lifecycle() {
       useMount(() => {
@@ -275,11 +276,13 @@ describe('Hooks Integration', () => {
 
     const root = createSmithersRoot()
     await root.render(<Lifecycle />)
+    await flush()
 
     expect(mounted).toBe(true)
     expect(unmounted).toBe(false)
 
     await root.render(null)
+    await flush()
     expect(unmounted).toBe(true)
 
     root.dispose()

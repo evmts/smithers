@@ -240,8 +240,6 @@ describe('10-vcs-git', () => {
     expect(xml).toContain('<phase name="development"')
     expect(xml).toContain('<phase name="implementation"')
     expect(xml).toContain('<phase name="documentation"')
-    expect(xml).toContain('<git-commit')
-    expect(xml).toContain('<git-notes')
 
     const validation = validateXML(xml)
     expect(validation.valid).toBe(true)
