@@ -232,6 +232,10 @@ export function Smithers(props: SmithersProps): ReactNode {
           throw new Error(smithersResult.output || 'Smithers subagent execution failed')
         }
 
+        if (!isMounted()) {
+          return
+        }
+
         // Log completion to database (this also sets status to 'completed')
         if (props.reportingEnabled !== false && subagentIdRef.current) {
           await db.agents.complete(
@@ -264,20 +268,22 @@ export function Smithers(props: SmithersProps): ReactNode {
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err))
 
-        // Log failure to database (this also sets status to 'failed')
-        if (props.reportingEnabled !== false && subagentIdRef.current) {
-          await db.agents.fail(subagentIdRef.current, errorObj.message)
-        }
+        if (isMounted()) {
+          // Log failure to database (this also sets status to 'failed')
+          if (props.reportingEnabled !== false && subagentIdRef.current) {
+            await db.agents.fail(subagentIdRef.current, errorObj.message)
+          }
 
-        // Add error report
-        if (props.reportingEnabled !== false) {
-          await db.vcs.addReport({
-            type: 'error',
-            title: 'Smithers subagent failed',
-            content: errorObj.message,
-            severity: 'warning',
-            ...(subagentIdRef.current ? { agent_id: subagentIdRef.current } : {}),
-          })
+          // Add error report
+          if (props.reportingEnabled !== false) {
+            await db.vcs.addReport({
+              type: 'error',
+              title: 'Smithers subagent failed',
+              content: errorObj.message,
+              severity: 'warning',
+              ...(subagentIdRef.current ? { agent_id: subagentIdRef.current } : {}),
+            })
+          }
         }
 
         if (isMounted()) {
@@ -285,7 +291,7 @@ export function Smithers(props: SmithersProps): ReactNode {
         }
       } finally {
         // Complete task
-        if (taskIdRef.current) {
+        if (taskIdRef.current && isMounted()) {
           db.tasks.complete(taskIdRef.current)
         }
       }

@@ -94,46 +94,58 @@ describe('14-kitchen-sink', () => {
 
     await delay(100)
 
-    const xml = env.root.toXML()
+    const researchXml = env.root.toXML()
+
+    env.db.state.set('currentPhaseIndex', 1, 'kitchen-sink-advance')
+    await delay(100)
+    const planningXml = env.root.toXML()
+
+    env.db.state.set('currentPhaseIndex', 2, 'kitchen-sink-advance')
+    await delay(100)
+    const implementationXml = env.root.toXML()
+
+    const combinedXml = `${researchXml}\n${planningXml}\n${implementationXml}`
     const duration = Date.now() - startTime
 
     // ========================================================================
     // CHECK 1: All phases present in XML
     // ========================================================================
     validationChecks.all_phases_present =
-      xml.includes('name="Research"') &&
-      xml.includes('name="Planning"') &&
-      xml.includes('name="Implementation"')
+      researchXml.includes('name="Research"') &&
+      researchXml.includes('name="Planning"') &&
+      researchXml.includes('name="Implementation"')
 
     expect(validationChecks.all_phases_present).toBe(true)
 
     // ========================================================================
     // CHECK 2: Parallel structure renders (at least 1 in active phase)
     // ========================================================================
-    const parallelMatches = xml.match(/<parallel/g)
+    const parallelMatches = combinedXml.match(/<parallel/g)
     const parallelCount = parallelMatches ? parallelMatches.length : 0
-    validationChecks.parallel_structures = parallelCount >= 1
+    validationChecks.parallel_structures = parallelCount >= 2
 
-    expect(parallelCount).toBeGreaterThanOrEqual(1)
+    expect(parallelCount).toBeGreaterThanOrEqual(2)
 
     // ========================================================================
     // CHECK 3: Claude agents rendered in active phase (Research has 3)
     // ========================================================================
-    const claudeMatches = xml.match(/<claude/g)
+    const claudeMatches = combinedXml.match(/<claude/g)
     const claudeCount = claudeMatches ? claudeMatches.length : 0
     validationChecks.multiple_claude_agents = claudeCount >= 3
 
     expect(claudeCount).toBeGreaterThanOrEqual(3)
 
     // ========================================================================
-    // CHECK 4: Human component not in Research (first phase) - skip check
+    // CHECK 4: Human component in Planning phase
     // ========================================================================
-    validationChecks.human_component = true // Human is in Planning phase, not active yet
+    validationChecks.human_component = planningXml.includes('<human')
+    expect(planningXml).toContain('<human')
+    expect(planningXml).toContain('Review the research findings')
 
     // ========================================================================
     // CHECK 5: Steps rendered in active phase (Research has 3)
     // ========================================================================
-    const stepMatches = xml.match(/<step/g)
+    const stepMatches = combinedXml.match(/<step/g)
     const stepCount = stepMatches ? stepMatches.length : 0
     validationChecks.steps_rendered = stepCount >= 3
 
@@ -142,9 +154,14 @@ describe('14-kitchen-sink', () => {
     // ========================================================================
     // CHECK 6: XML is valid
     // ========================================================================
-    const validation = validateXML(xml)
-    validationChecks.xml_valid = validation.valid
-    expect(validation.valid).toBe(true)
+    const validations = [
+      validateXML(researchXml),
+      validateXML(planningXml),
+      validateXML(implementationXml),
+    ]
+    const validationErrors = validations.flatMap((result) => result.errors)
+    validationChecks.xml_valid = validations.every((result) => result.valid)
+    expect(validationChecks.xml_valid).toBe(true)
 
     // ========================================================================
     // CHECK 7: Database has phases
@@ -167,19 +184,21 @@ describe('14-kitchen-sink', () => {
     // CHECK 9: XML contains all phase names
     // ========================================================================
     const phaseNames = ['Research', 'Planning', 'Implementation']
-    validationChecks.all_phase_names = phaseNames.every(name => xml.includes(`name="${name}"`))
+    validationChecks.all_phase_names = phaseNames.every(name => researchXml.includes(`name="${name}"`))
 
-    expect(phaseNames.every(name => xml.includes(`name="${name}"`))).toBe(true)
+    expect(phaseNames.every(name => researchXml.includes(`name="${name}"`))).toBe(true)
 
     // ========================================================================
     // CHECK 10: Structure is well-formed (nested properly)
     // Active phase (Research) has: phase, step, parallel, claude
     // ========================================================================
     validationChecks.well_formed_structure =
-      xml.includes('<phase') &&
-      xml.includes('<step') &&
-      xml.includes('<parallel') &&
-      xml.includes('<claude')
+      combinedXml.includes('<phase') &&
+      combinedXml.includes('<step') &&
+      combinedXml.includes('<parallel') &&
+      combinedXml.includes('<claude') &&
+      combinedXml.includes('<human') &&
+      combinedXml.includes('<task')
 
     expect(validationChecks.well_formed_structure).toBe(true)
 
@@ -187,13 +206,14 @@ describe('14-kitchen-sink', () => {
     // ADDITIONAL VALIDATION CHECKS
     // ========================================================================
 
-    // Check Claude models in active phase (Research has sonnet and haiku)
-    const hasSonnet = xml.includes('model="sonnet"')
-    const hasHaiku = xml.includes('model="haiku"')
-    validationChecks.multiple_claude_models = hasSonnet && hasHaiku
+    // Check different Claude models used
+    const hasOpus = combinedXml.includes('model="opus"')
+    const hasSonnet = combinedXml.includes('model="sonnet"')
+    const hasHaiku = combinedXml.includes('model="haiku"')
+    validationChecks.multiple_claude_models = hasOpus && hasSonnet && hasHaiku
 
-    // Check Task components - they're in Planning phase (not active yet)
-    const taskMatches = xml.match(/<task/g)
+    // Check Task components rendered
+    const taskMatches = combinedXml.match(/<task/g)
     const taskCount = taskMatches ? taskMatches.length : 0
     validationChecks.tasks_rendered = true // Tasks are in inactive phase
 
@@ -203,12 +223,13 @@ describe('14-kitchen-sink', () => {
       'analyze-frontend',
       'analyze-backend',
     ]
-    validationChecks.all_step_names = stepNames.every(name => xml.includes(`name="${name}"`))
+    validationChecks.all_step_names = stepNames.every(name => combinedXml.includes(`name="${name}"`))
 
     // Check content text is preserved
     validationChecks.content_preserved =
-      xml.includes('Research') &&
-      xml.includes('codebase')
+      combinedXml.includes('Research') &&
+      combinedXml.includes('Review') &&
+      combinedXml.includes('plan')
 
     // ========================================================================
     // OUTPUT COMPREHENSIVE RESULT
@@ -268,12 +289,12 @@ describe('14-kitchen-sink', () => {
 
         // XML metadata
         xml_metadata: {
-          valid: validation.valid,
-          length: xml.length,
-          has_root: xml.includes('<smithers-root'),
+          valid: validationChecks.xml_valid,
+          length: combinedXml.length,
+          has_root: combinedXml.includes('<smithers-root'),
         },
       },
-      errors: validation.errors,
+      errors: validationErrors,
     })
 
     // Final assertions
