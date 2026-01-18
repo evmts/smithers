@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
   "author": {
-    "name": "William Cory"
+    "name": "William Cory",
+    "email": "will@tevm.tech",
+    "url": "https://github.com/roninjin10"
   },
-  "license": "MIT",
+  "homepage": "https://github.com/evmts/smithers",
   "repository": "https://github.com/evmts/smithers",
+  "license": "MIT",
   "keywords": [
     "orchestration",
     "multi-agent",
