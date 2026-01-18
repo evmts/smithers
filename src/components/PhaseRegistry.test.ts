@@ -40,7 +40,7 @@ describe('PhaseRegistry', () => {
   describe('PhaseRegistryContextValue interface', () => {
     test('has registerPhase function', () => {
       const ctx: Partial<PhaseRegistryContextValue> = {
-        registerPhase: (name: string) => 0,
+        registerPhase: (_name: string) => 0,
       }
       expect(typeof ctx.registerPhase).toBe('function')
     })

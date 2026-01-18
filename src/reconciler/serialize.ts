@@ -163,7 +163,7 @@ function serializeProps(props: Record<string, unknown>): string {
       if (typeof value === 'object') {
         try {
           return ` ${key}="${escapeXml(JSON.stringify(value))}"`
-        } catch (error) {
+        } catch (_error) {
           // Handle circular references and other stringify errors
           return ` ${key}="${escapeXml('[Object (circular or non-serializable)]')}"`
         }
