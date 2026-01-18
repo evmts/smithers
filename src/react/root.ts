@@ -59,7 +59,7 @@ export function createSmithersRoot(): SmithersRoot {
         element = await (result as Promise<ReactNode>)
       } else {
         // App is sync
-        element = result
+        element = result as ReactNode
       }
 
       // Create the fiber root container

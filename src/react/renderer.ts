@@ -9,34 +9,18 @@ type Props = Record<string, unknown>
 type Container = SmithersNode
 type Instance = SmithersNode
 type TextInstance = SmithersNode
-type SuspenseInstance = never // Not supporting Suspense boundaries
-type HydratableInstance = never
 type PublicInstance = SmithersNode
 type HostContext = object
 type UpdatePayload = Props
-type ChildSet = never
-type TimeoutHandle = ReturnType<typeof setTimeout>
-type NoTimeout = -1
 
 /**
  * React Reconciler host configuration for SmithersNode trees.
  * This maps React's reconciliation operations to our SmithersNode structure.
+ *
+ * Note: Using type assertion because react-reconciler types don't fully match
+ * the actual API requirements for React 19.
  */
-const hostConfig: Reconciler.HostConfig<
-  string, // Type
-  Props, // Props
-  Container, // Container
-  Instance, // Instance
-  TextInstance, // TextInstance
-  SuspenseInstance, // SuspenseInstance (unused)
-  HydratableInstance, // HydratableInstance (unused)
-  PublicInstance, // PublicInstance
-  HostContext, // HostContext
-  UpdatePayload, // UpdatePayload
-  ChildSet, // ChildSet (unused for mutation mode)
-  TimeoutHandle, // TimeoutHandle
-  NoTimeout // NoTimeout
-> = {
+const hostConfig = {
   // Core configuration
   supportsMutation: true,
   supportsPersistence: false,
@@ -44,7 +28,6 @@ const hostConfig: Reconciler.HostConfig<
   isPrimaryRenderer: true,
 
   // Timing
-  now: Date.now,
   scheduleTimeout: setTimeout,
   cancelTimeout: clearTimeout,
   noTimeout: -1 as const,

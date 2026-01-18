@@ -1,6 +1,7 @@
-import 'react'
+import type React from 'react'
 
-declare module 'react' {
+// Declare JSX namespace globally for custom jsx-runtime
+declare global {
   namespace JSX {
     interface IntrinsicElements {
       // Agent execution elements
@@ -113,5 +114,16 @@ declare module 'react' {
       // Catch-all for any custom element
       [key: string]: any
     }
+
+    // Required JSX types - allow all ReactNode types for React 19 compatibility
+    type Element = React.ReactNode
+    interface ElementChildrenAttribute {
+      children: {}
+    }
+    interface ElementAttributesProperty {
+      props: {}
+    }
   }
 }
+
+export {}

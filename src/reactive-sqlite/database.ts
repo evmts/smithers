@@ -4,14 +4,17 @@
  * Provides automatic query invalidation when data changes.
  */
 
-import { Database } from 'bun:sqlite'
-import { extractReadTables, extractWriteTables, isWriteOperation } from './parser'
+import { Database } from "bun:sqlite";
+import {
+  extractReadTables,
+  extractWriteTables,
+  isWriteOperation,
+} from "./parser";
 import type {
   QuerySubscription,
   SubscriptionCallback,
   ReactiveDatabaseConfig,
-  DatabaseEvent,
-} from './types'
+} from "./types";
 
 /**
  * ReactiveDatabase wraps bun:sqlite with reactive subscriptions
@@ -31,41 +34,41 @@ import type {
  * ```
  */
 export class ReactiveDatabase {
-  private db: Database
-  private subscriptions: Map<string, QuerySubscription> = new Map()
-  private nextSubscriptionId = 0
-  private closed = false
+  private db: Database;
+  private subscriptions: Map<string, QuerySubscription> = new Map();
+  private nextSubscriptionId = 0;
+  private closed = false;
 
   constructor(config: ReactiveDatabaseConfig | string) {
-    const options = typeof config === 'string' ? { path: config } : config
+    const options = typeof config === "string" ? { path: config } : config;
 
     this.db = new Database(options.path, {
       create: options.create ?? true,
       readonly: options.readonly ?? false,
-    })
+    });
 
     // Enable WAL mode for better concurrent performance
-    this.db.exec('PRAGMA journal_mode = WAL')
+    this.db.exec("PRAGMA journal_mode = WAL");
   }
 
   /**
    * Get the underlying bun:sqlite Database instance
    */
   get raw(): Database {
-    return this.db
+    return this.db;
   }
 
   /**
    * Execute raw SQL (for schema, pragmas, etc.)
    */
   exec(sql: string): void {
-    this.db.exec(sql)
+    this.db.exec(sql);
 
     // Check if this affects any tables
     if (isWriteOperation(sql)) {
-      const tables = extractWriteTables(sql)
+      const tables = extractWriteTables(sql);
       if (tables.length > 0) {
-        this.invalidate(tables)
+        this.invalidate(tables);
       }
     }
   }
@@ -74,50 +77,56 @@ export class ReactiveDatabase {
    * Prepare a statement for repeated execution
    */
   prepare<T = unknown>(sql: string) {
-    return this.db.prepare<T, any[]>(sql)
+    return this.db.prepare<T, any[]>(sql);
   }
 
   /**
    * Run a write operation (INSERT, UPDATE, DELETE)
    * Auto-invalidates affected queries
    */
-  run(sql: string, params: any[] = []): Database['run'] extends (...args: any[]) => infer R ? R : never {
-    const stmt = this.db.prepare(sql)
-    const result = stmt.run(...params)
+  run(
+    sql: string,
+    params: any[] = [],
+  ): Database["run"] extends (...args: any[]) => infer R ? R : never {
+    const stmt = this.db.prepare(sql);
+    const result = stmt.run(...params);
 
     // Auto-invalidate affected tables
-    const tables = extractWriteTables(sql)
+    const tables = extractWriteTables(sql);
     if (tables.length > 0) {
-      this.invalidate(tables)
+      this.invalidate(tables);
     }
 
-    return result as any
+    return result as any;
   }
 
   /**
    * Execute a query and return all rows
    */
   query<T = Record<string, unknown>>(sql: string, params: any[] = []): T[] {
-    const stmt = this.db.prepare<T, any[]>(sql)
-    return stmt.all(...params)
+    const stmt = this.db.prepare<T, any[]>(sql);
+    return stmt.all(...params);
   }
 
   /**
    * Execute a query and return the first row
    */
-  queryOne<T = Record<string, unknown>>(sql: string, params: any[] = []): T | null {
-    const stmt = this.db.prepare<T, any[]>(sql)
-    return stmt.get(...params) ?? null
+  queryOne<T = Record<string, unknown>>(
+    sql: string,
+    params: any[] = [],
+  ): T | null {
+    const stmt = this.db.prepare<T, any[]>(sql);
+    return stmt.get(...params) ?? null;
   }
 
   /**
    * Execute a query and return a single value
    */
   queryValue<T = unknown>(sql: string, params: any[] = []): T | null {
-    const row = this.queryOne<Record<string, T>>(sql, params)
-    if (!row) return null
-    const values = Object.values(row)
-    return values[0] ?? null
+    const row = this.queryOne<Record<string, T>>(sql, params);
+    if (!row) return null;
+    const values = Object.values(row);
+    return values[0] ?? null;
   }
 
   /**
@@ -125,18 +134,18 @@ export class ReactiveDatabase {
    * Returns unsubscribe function
    */
   subscribe(tables: string[], callback: SubscriptionCallback): () => void {
-    const id = String(this.nextSubscriptionId++)
+    const id = String(this.nextSubscriptionId++);
     const subscription: QuerySubscription = {
       id,
-      tables: new Set(tables.map(t => t.toLowerCase())),
+      tables: new Set(tables.map((t) => t.toLowerCase())),
       callback,
-    }
+    };
 
-    this.subscriptions.set(id, subscription)
+    this.subscriptions.set(id, subscription);
 
     return () => {
-      this.subscriptions.delete(id)
-    }
+      this.subscriptions.delete(id);
+    };
   }
 
   /**
@@ -144,8 +153,8 @@ export class ReactiveDatabase {
    * Automatically detects which tables are involved
    */
   subscribeQuery(sql: string, callback: SubscriptionCallback): () => void {
-    const tables = extractReadTables(sql)
-    return this.subscribe(tables, callback)
+    const tables = extractReadTables(sql);
+    return this.subscribe(tables, callback);
   }
 
   /**
@@ -153,18 +162,18 @@ export class ReactiveDatabase {
    * If no tables specified, invalidates all queries
    */
   invalidate(tables?: string[]): void {
-    const normalizedTables = tables?.map(t => t.toLowerCase())
+    const normalizedTables = tables?.map((t) => t.toLowerCase());
 
     for (const subscription of this.subscriptions.values()) {
       if (!normalizedTables) {
         // Invalidate all
-        subscription.callback()
+        subscription.callback();
       } else {
         // Check if subscription depends on any of the invalidated tables
         for (const table of normalizedTables) {
           if (subscription.tables.has(table)) {
-            subscription.callback()
-            break
+            subscription.callback();
+            break;
           }
         }
       }
@@ -175,7 +184,7 @@ export class ReactiveDatabase {
    * Run a function in a transaction
    */
   transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn)()
+    return this.db.transaction(fn)();
   }
 
   /**
@@ -183,9 +192,9 @@ export class ReactiveDatabase {
    */
   close(): void {
     if (!this.closed) {
-      this.subscriptions.clear()
-      this.db.close()
-      this.closed = true
+      this.subscriptions.clear();
+      this.db.close();
+      this.closed = true;
     }
   }
 
@@ -193,13 +202,15 @@ export class ReactiveDatabase {
    * Check if database is closed
    */
   get isClosed(): boolean {
-    return this.closed
+    return this.closed;
   }
 }
 
 /**
  * Create a new ReactiveDatabase instance
  */
-export function createReactiveDatabase(config: ReactiveDatabaseConfig | string): ReactiveDatabase {
-  return new ReactiveDatabase(config)
+export function createReactiveDatabase(
+  config: ReactiveDatabaseConfig | string,
+): ReactiveDatabase {
+  return new ReactiveDatabase(config);
 }

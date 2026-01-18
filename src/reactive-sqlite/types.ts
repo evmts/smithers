@@ -2,8 +2,6 @@
  * Types for the reactive SQLite library
  */
 
-import type { Database, Statement } from 'bun:sqlite'
-
 /**
  * Subscription callback type
  */
