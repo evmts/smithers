@@ -1,0 +1,155 @@
+---
+title: Execution API
+description: Track workflow executions
+---
+
+# Execution API
+
+The execution API tracks workflow runs, enabling resume and observability.
+
+## Methods
+
+### start
+
+Start a new execution.
+
+```tsx
+const executionId = await db.execution.start(
+  "Feature Implementation",  // name
+  "scripts/feature.tsx",     // file path
+  { timeout: 3600000 }       // optional config
+);
+```
+
+### complete
+
+Mark execution as complete.
+
+```tsx
+await db.execution.complete(executionId, {
+  summary: "Feature implemented successfully",
+  output: result,
+});
+```
+
+### fail
+
+Mark execution as failed.
+
+```tsx
+await db.execution.fail(executionId, new Error("Tests failed"));
+```
+
+### cancel
+
+Cancel an execution.
+
+```tsx
+await db.execution.cancel(executionId);
+```
+
+### current
+
+Get the current execution.
+
+```tsx
+const current = await db.execution.current();
+if (current) {
+  console.log(`Running: ${current.name}`);
+}
+```
+
+### get
+
+Get a specific execution.
+
+```tsx
+const execution = await db.execution.get(executionId);
+```
+
+### list
+
+List recent executions.
+
+```tsx
+const recent = await db.execution.list(10);
+```
+
+### findIncomplete
+
+Find an incomplete execution (for resume).
+
+```tsx
+const incomplete = await db.execution.findIncomplete();
+if (incomplete) {
+  console.log("Resuming:", incomplete.id);
+}
+```
+
+## Usage Patterns
+
+### Resume on Startup
+
+```tsx
+async function main() {
+  const db = await createSmithersDB({ path: ".smithers/data" });
+
+  // Check for interrupted execution
+  let executionId: string;
+  const incomplete = await db.execution.findIncomplete();
+
+  if (incomplete) {
+    executionId = incomplete.id;
+    console.log(`Resuming execution: ${executionId}`);
+  } else {
+    executionId = await db.execution.start("New Task", "task.tsx");
+  }
+
+  // ... run workflow ...
+
+  await db.execution.complete(executionId);
+  await db.close();
+}
+```
+
+### Track Multiple Executions
+
+```tsx
+// List recent executions
+const executions = await db.execution.list(10);
+
+for (const exec of executions) {
+  console.log(`${exec.name}: ${exec.status}`);
+  console.log(`  Started: ${exec.startedAt}`);
+  if (exec.completedAt) {
+    console.log(`  Completed: ${exec.completedAt}`);
+  }
+}
+```
+
+## Types
+
+```tsx
+interface Execution {
+  id: string;
+  name: string;
+  filePath: string;
+  status: "pending" | "running" | "complete" | "failed" | "cancelled";
+  config?: Record<string, any>;
+  result?: Record<string, any>;
+  error?: string;
+  startedAt: Date;
+  completedAt?: Date;
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Agents API" icon="robot" href="/api-reference/agents">
+    Track agents
+  </Card>
+  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs">
+    Version control
+  </Card>
+</CardGroup>

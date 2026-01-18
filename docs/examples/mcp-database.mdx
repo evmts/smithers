@@ -1,0 +1,158 @@
+---
+title: MCP Database Access
+description: Give Claude access to SQLite databases
+---
+
+# MCP Database Access
+
+Use the Sqlite component to let Claude query databases.
+
+## Code
+
+```tsx
+#!/usr/bin/env bun
+
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { Sqlite } from "smithers/components/MCP";
+
+async function main() {
+  const db = await createSmithersDB({ path: ".smithers/data-analysis" });
+  const executionId = await db.execution.start("Data Analysis", "data-analysis.tsx");
+
+  function DataAnalysis() {
+    return (
+      <SmithersProvider db={db} executionId={executionId}>
+        <Claude
+          model="sonnet"
+          maxTurns={10}
+          allowedTools={["Write"]}
+          onFinished={(result) => {
+            console.log("Analysis complete!");
+            console.log(result.output);
+          }}
+        >
+          <Sqlite path="./ecommerce.db" readOnly>
+            E-commerce database with the following schema:
+
+            users(id, name, email, created_at, country)
+            orders(id, user_id, total, status, created_at)
+            order_items(id, order_id, product_id, quantity, price)
+            products(id, name, category, price, stock)
+          </Sqlite>
+
+          Generate a comprehensive business report:
+
+          1. Revenue Analysis
+             - Total revenue by month (last 12 months)
+             - Revenue by product category
+             - Average order value trends
+
+          2. Customer Analysis
+             - Top 10 customers by lifetime value
+             - Customer acquisition by country
+             - Repeat customer rate
+
+          3. Product Performance
+             - Best selling products
+             - Products with low stock
+             - Category performance comparison
+
+          Save the report as a markdown file: reports/business-report.md
+        </Claude>
+      </SmithersProvider>
+    );
+  }
+
+  const root = createSmithersRoot();
+  await root.mount(DataAnalysis);
+
+  await db.execution.complete(executionId);
+  await db.close();
+}
+
+main();
+```
+
+## Multiple Databases
+
+```tsx
+<Claude model="sonnet" maxTurns={15}>
+  <Sqlite path="./users.db" readOnly>
+    User database: users, profiles, preferences
+  </Sqlite>
+
+  <Sqlite path="./analytics.db" readOnly>
+    Analytics database: events, sessions, pageviews
+  </Sqlite>
+
+  Cross-reference data between the two databases:
+
+  1. Find users who signed up but never logged an event
+  2. Identify most active users by session count
+  3. Correlate user preferences with behavior patterns
+</Claude>
+```
+
+## Read-Only for Safety
+
+```tsx
+<Sqlite path="./production.db" readOnly>
+  Production database - read-only access for safety.
+</Sqlite>
+```
+
+## Workflow with Database
+
+```tsx
+function DataWorkflow() {
+  const [phase, setPhase] = createSignal("analyze");
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={5}>
+        {phase() === "analyze" && (
+          <Claude
+            model="sonnet"
+            onFinished={(result) => {
+              // Store findings
+              db.state.set("findings", result.output);
+              setPhase("report");
+            }}
+          >
+            <Sqlite path="./data.db" readOnly>
+              Sales database.
+            </Sqlite>
+            Analyze Q4 sales performance.
+          </Claude>
+        )}
+
+        {phase() === "report" && (
+          <Claude
+            allowedTools={["Write"]}
+            onFinished={() => setPhase("done")}
+          >
+            Create a formatted report from these findings:
+            {db.state.get("findings")}
+
+            Save to reports/q4-analysis.md
+          </Claude>
+        )}
+      </Ralph>
+    </SmithersProvider>
+  );
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Sqlite Component" icon="database" href="/components/sqlite">
+    Sqlite API reference
+  </Card>
+  <Card title="MCP Integration" icon="plug" href="/guides/mcp-integration">
+    MCP guide
+  </Card>
+</CardGroup>

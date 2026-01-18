@@ -1,0 +1,332 @@
+---
+title: Smithers (Subagent)
+description: Spawn a new Smithers instance for complex subtasks
+---
+
+# Smithers Subagent
+
+The `<Smithers>` component spawns a new Smithers instance to plan and execute complex subtasks. It uses a planner model to generate the orchestration script and an execution model to run the agents.
+
+## Basic Usage
+
+```tsx
+import { Smithers } from "smithers/smithers-orchestrator/src/components/Smithers";
+
+<Smithers
+  plannerModel="opus"
+  executionModel="sonnet"
+  onFinished={(result) => console.log(result.output)}
+>
+  Create a comprehensive test suite for the authentication module.
+  Include unit tests, integration tests, and edge cases.
+</Smithers>
+```
+
+## Props
+
+<ParamField path="plannerModel" type="'opus' | 'sonnet' | 'haiku'" default="opus">
+  Model used to plan/generate the orchestration script.
+
+  ```tsx
+  <Smithers plannerModel="opus">
+    Complex task requiring careful planning.
+  </Smithers>
+  ```
+</ParamField>
+
+<ParamField path="executionModel" type="'opus' | 'sonnet' | 'haiku'" default="sonnet">
+  Model used by agents in the generated script.
+
+  ```tsx
+  <Smithers plannerModel="opus" executionModel="sonnet">
+    Plan with Opus, execute with Sonnet.
+  </Smithers>
+  ```
+</ParamField>
+
+<ParamField path="maxPlanningTurns" type="number" default="10">
+  Maximum turns for the planning phase.
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Timeout in milliseconds for the entire subagent execution.
+
+  ```tsx
+  <Smithers timeout={600000}>  {/* 10 minutes */}
+    Time-limited task.
+  </Smithers>
+  ```
+</ParamField>
+
+<ParamField path="context" type="string">
+  Additional context to provide to the planner.
+
+  ```tsx
+  <Smithers
+    context="This is a Next.js project using Prisma ORM"
+  >
+    Add user profile editing.
+  </Smithers>
+  ```
+</ParamField>
+
+<ParamField path="cwd" type="string">
+  Working directory for the subagent.
+
+  ```tsx
+  <Smithers cwd="/path/to/subproject">
+    Work in the subproject.
+  </Smithers>
+  ```
+</ParamField>
+
+<ParamField path="keepScript" type="boolean" default="false">
+  Keep the generated script for debugging.
+
+  ```tsx
+  <Smithers keepScript>
+    Task (script will be saved).
+  </Smithers>
+  ```
+</ParamField>
+
+<ParamField path="scriptPath" type="string">
+  Custom path for the generated script.
+
+  ```tsx
+  <Smithers keepScript scriptPath="./debug/generated-workflow.tsx">
+    Task with custom script path.
+  </Smithers>
+  ```
+</ParamField>
+
+<ParamField path="reportingEnabled" type="boolean" default="true">
+  Enable progress reporting to database.
+</ParamField>
+
+### Callbacks
+
+<ParamField path="onFinished" type="(result: SmithersResult) => void">
+  Called when the subagent completes.
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Called on execution error.
+</ParamField>
+
+<ParamField path="onProgress" type="(message: string) => void">
+  Called with progress updates.
+</ParamField>
+
+<ParamField path="onScriptGenerated" type="(script: string) => void">
+  Called when the planning phase generates the script.
+
+  ```tsx
+  <Smithers
+    onScriptGenerated={(script) => {
+      console.log("Generated script:", script);
+    }}
+  >
+    Plan and execute.
+  </Smithers>
+  ```
+</ParamField>
+
+## How It Works
+
+The Smithers subagent operates in two phases:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 1: Planning (plannerModel)                           │
+│                                                             │
+│  Claude (Opus) analyzes the task and generates a            │
+│  Smithers orchestration script (TSX/JSX)                    │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 2: Execution (executionModel)                        │
+│                                                             │
+│  The generated script is executed, with <Claude>            │
+│  components using the executionModel                        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Complex Task Example
+
+```tsx
+<Smithers
+  plannerModel="opus"
+  executionModel="sonnet"
+  timeout={1800000}  // 30 minutes
+  keepScript
+  context={`
+    This is a TypeScript monorepo with:
+    - packages/core: Core business logic
+    - packages/api: REST API server
+    - packages/web: React frontend
+    Testing uses Jest with coverage requirements.
+  `}
+  onScriptGenerated={(script) => {
+    db.vcs.addReport({
+      type: "progress",
+      severity: "info",
+      title: "Script Generated",
+      content: script,
+    });
+  }}
+  onFinished={(result) => {
+    console.log("Subagent completed");
+    console.log(`Tokens used: ${result.tokensUsed.input + result.tokensUsed.output}`);
+  }}
+>
+  Implement a new user notification system:
+  1. Add a notifications table to the database
+  2. Create CRUD API endpoints
+  3. Add real-time WebSocket updates
+  4. Build a notification dropdown in the UI
+  5. Write comprehensive tests for all layers
+</Smithers>
+```
+
+## Generated Script Example
+
+The planner might generate something like:
+
+```tsx
+// Auto-generated by Smithers planner
+import { createSmithersRoot, SmithersProvider, Ralph, Phase, Claude } from "smithers";
+
+async function NotificationWorkflow() {
+  const [phase, setPhase] = createSignal("database");
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={10}>
+        {phase() === "database" && (
+          <Phase name="Database">
+            <Claude
+              model="sonnet"
+              allowedTools={["Edit", "Write", "Bash"]}
+              onFinished={() => setPhase("api")}
+            >
+              Create the notifications table migration.
+              Run the migration.
+            </Claude>
+          </Phase>
+        )}
+
+        {phase() === "api" && (
+          <Phase name="API">
+            <Claude
+              model="sonnet"
+              onFinished={() => setPhase("websocket")}
+            >
+              Implement notification CRUD endpoints.
+            </Claude>
+          </Phase>
+        )}
+
+        {/* ... more phases ... */}
+      </Ralph>
+    </SmithersProvider>
+  );
+}
+```
+
+## Debugging Generated Scripts
+
+Use `keepScript` to inspect what was generated:
+
+```tsx
+<Smithers
+  keepScript
+  scriptPath="./.smithers/debug/last-script.tsx"
+  onError={(err) => {
+    console.error("Script failed:", err);
+    // The script is at ./.smithers/debug/last-script.tsx
+  }}
+>
+  Complex task.
+</Smithers>
+```
+
+## Nested Subagents
+
+Subagents can spawn their own subagents:
+
+```tsx
+<Smithers plannerModel="opus" executionModel="sonnet">
+  Implement the feature. If you encounter a complex subtask,
+  you may spawn additional Smithers subagents to handle it.
+</Smithers>
+```
+
+## Progress Tracking
+
+Monitor subagent progress:
+
+```tsx
+<Smithers
+  onProgress={(msg) => {
+    console.log(msg);
+    // "Planning task..."
+    // "Generated script with 5 phases"
+    // "Starting Phase: Database"
+    // "Completed Phase: Database"
+    // ...
+  }}
+  onFinished={(result) => {
+    console.log(`Duration: ${result.durationMs}ms`);
+    console.log(`Agents run: ${result.agentsRun}`);
+  }}
+>
+  Multi-phase task.
+</Smithers>
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Opus for planning complex tasks">
+    The planner benefits from stronger reasoning:
+    ```tsx
+    <Smithers plannerModel="opus" executionModel="sonnet">
+    ```
+  </Accordion>
+
+  <Accordion title="Provide context for better plans">
+    Help the planner understand your project:
+    ```tsx
+    <Smithers context="TypeScript monorepo, Jest tests, PostgreSQL">
+    ```
+  </Accordion>
+
+  <Accordion title="Set appropriate timeouts">
+    Complex tasks need time:
+    ```tsx
+    <Smithers timeout={1800000}>  {/* 30 min */}
+    ```
+  </Accordion>
+
+  <Accordion title="Use keepScript for debugging">
+    Inspect generated scripts when things go wrong:
+    ```tsx
+    <Smithers keepScript scriptPath="./debug/script.tsx">
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    Core agent component
+  </Card>
+  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+    Top-level workflow control
+  </Card>
+</CardGroup>

@@ -1,0 +1,132 @@
+---
+title: Agents API
+description: Track Claude agent invocations
+---
+
+# Agents API
+
+The agents API tracks Claude invocations within executions.
+
+## Methods
+
+### start
+
+Log the start of an agent.
+
+```tsx
+const agentId = await db.agents.start(
+  "Implement the feature",      // prompt
+  "sonnet",                      // model
+  "You are a senior engineer"    // system prompt
+);
+```
+
+### complete
+
+Mark agent as complete.
+
+```tsx
+await db.agents.complete(
+  agentId,
+  "Feature implemented",         // output
+  { success: true, files: 3 },   // structured result
+  { input: 1000, output: 500 }   // tokens
+);
+```
+
+### fail
+
+Mark agent as failed.
+
+```tsx
+await db.agents.fail(agentId, new Error("Timeout exceeded"));
+```
+
+### current
+
+Get the currently running agent.
+
+```tsx
+const agent = await db.agents.current();
+if (agent) {
+  console.log(`Running: ${agent.prompt.substring(0, 50)}...`);
+}
+```
+
+### list
+
+List agents for an execution.
+
+```tsx
+const agents = await db.agents.list(executionId);
+
+for (const agent of agents) {
+  console.log(`${agent.model}: ${agent.status}`);
+  console.log(`  Tokens: ${agent.tokensUsed?.input} in, ${agent.tokensUsed?.output} out`);
+}
+```
+
+## Tool Calls
+
+Track tools used by agents:
+
+```tsx
+// Start a tool call
+const toolId = await db.tools.start(
+  agentId,
+  "Edit",
+  { file: "src/main.ts", changes: "..." }
+);
+
+// Complete the tool call
+await db.tools.complete(
+  toolId,
+  "File edited successfully",
+  "Edited src/main.ts: added 15 lines"
+);
+
+// List tool calls for an agent
+const tools = await db.tools.list(agentId);
+```
+
+## Types
+
+```tsx
+interface Agent {
+  id: string;
+  executionId: string;
+  phaseId?: string;
+  prompt: string;
+  model: string;
+  systemPrompt?: string;
+  status: "pending" | "running" | "complete" | "failed";
+  output?: string;
+  structuredResult?: Record<string, any>;
+  tokensUsed?: { input: number; output: number };
+  startedAt: Date;
+  completedAt?: Date;
+}
+
+interface ToolCall {
+  id: string;
+  agentId: string;
+  toolName: string;
+  input: Record<string, any>;
+  output?: string;
+  summary?: string;
+  status: "pending" | "running" | "complete" | "failed";
+  startedAt: Date;
+  completedAt?: Date;
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Execution API" icon="play" href="/api-reference/execution">
+    Execution tracking
+  </Card>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    Claude component
+  </Card>
+</CardGroup>

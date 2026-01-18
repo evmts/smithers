@@ -1,0 +1,236 @@
+---
+title: Memories API
+description: Long-term knowledge storage across workflows
+---
+
+# Memories API
+
+The memories API stores long-term knowledge that persists across workflow sessions.
+
+## Categories
+
+| Category | Purpose |
+|----------|---------|
+| `fact` | Discovered facts about the codebase |
+| `learning` | Lessons learned from past executions |
+| `preference` | User preferences and conventions |
+| `context` | Contextual information |
+| `skill` | Reusable patterns or procedures |
+
+## Scopes
+
+| Scope | Visibility |
+|-------|------------|
+| `global` | All projects and sessions |
+| `project` | Current project only |
+| `session` | Current session only |
+
+## Methods
+
+### addFact
+
+Store a discovered fact.
+
+```tsx
+await db.memories.addFact(
+  "api-endpoint",                    // key
+  "The API is at /api/v2/users",     // content
+  "discovered in auth.ts"            // source
+);
+```
+
+### addLearning
+
+Store a lesson learned.
+
+```tsx
+await db.memories.addLearning(
+  "test-pattern",
+  "Use vitest for unit tests in this project",
+  "package.json analysis"
+);
+```
+
+### addPreference
+
+Store a user preference.
+
+```tsx
+await db.memories.addPreference(
+  "commit-style",
+  "Use conventional commits with scope",
+  "project"  // scope
+);
+```
+
+### add
+
+Generic memory addition.
+
+```tsx
+await db.memories.add({
+  category: "skill",
+  key: "deploy-process",
+  content: "1. Run tests\n2. Build\n3. Push to main\n4. Deploy triggers automatically",
+  scope: "project",
+  source: "CONTRIBUTING.md",
+});
+```
+
+### get
+
+Retrieve a specific memory.
+
+```tsx
+const memory = await db.memories.get("fact", "api-endpoint");
+// { id, category, key, content, source, scope, ... }
+```
+
+### list
+
+List memories by category and/or scope.
+
+```tsx
+// All facts
+const facts = await db.memories.list("fact");
+
+// Project-scoped preferences
+const prefs = await db.memories.list("preference", "project");
+
+// All memories, limited
+const all = await db.memories.list(undefined, undefined, 100);
+```
+
+### search
+
+Search memories by content.
+
+```tsx
+const relevant = await db.memories.search("API endpoint", "fact", 5);
+// Returns memories matching the search query
+```
+
+### update
+
+Update an existing memory.
+
+```tsx
+await db.memories.update(memoryId, {
+  content: "Updated content",
+});
+```
+
+### delete
+
+Remove a memory.
+
+```tsx
+await db.memories.delete(memoryId);
+```
+
+### stats
+
+Get memory statistics.
+
+```tsx
+const stats = await db.memories.stats();
+// {
+//   total: 42,
+//   byCategory: { fact: 20, learning: 15, preference: 7 },
+//   byScope: { global: 10, project: 30, session: 2 }
+// }
+```
+
+## Usage Patterns
+
+### Store Discoveries
+
+```tsx
+<Claude
+  onFinished={async (result) => {
+    // Extract and store discoveries
+    if (result.output.includes("found endpoint")) {
+      await db.memories.addFact(
+        "discovered-endpoint",
+        result.output,
+        "codebase exploration"
+      );
+    }
+  }}
+>
+  Explore the API structure.
+</Claude>
+```
+
+### Learn from Failures
+
+```tsx
+<Claude
+  onError={async (error) => {
+    await db.memories.addLearning(
+      `error-${Date.now()}`,
+      `Encountered error: ${error.message}. Solution: ...`,
+      "error handler"
+    );
+  }}
+>
+  Attempt the task.
+</Claude>
+```
+
+### Retrieve Context
+
+```tsx
+async function InformedWorkflow() {
+  // Load relevant memories
+  const facts = await db.memories.list("fact", "project");
+  const prefs = await db.memories.list("preference", "project");
+
+  const context = [
+    "Known facts:",
+    ...facts.map(f => `- ${f.content}`),
+    "Preferences:",
+    ...prefs.map(p => `- ${p.content}`),
+  ].join("\n");
+
+  return (
+    <Claude systemPrompt={context}>
+      Work with knowledge of the project.
+    </Claude>
+  );
+}
+```
+
+## Types
+
+```tsx
+interface Memory {
+  id: string;
+  category: "fact" | "learning" | "preference" | "context" | "skill";
+  key: string;
+  content: string;
+  source?: string;
+  scope: "global" | "project" | "session";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface MemoryInput {
+  category: Memory["category"];
+  key: string;
+  content: string;
+  source?: string;
+  scope?: Memory["scope"];
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="State API" icon="database" href="/api-reference/state">
+    Short-term state
+  </Card>
+  <Card title="Database" icon="server" href="/api-reference/database">
+    Database overview
+  </Card>
+</CardGroup>

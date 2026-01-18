@@ -1,0 +1,206 @@
+---
+title: State API
+description: Key-value state storage with history and time-travel
+---
+
+# State API
+
+The state API provides key-value storage with full history tracking and time-travel capabilities.
+
+## Methods
+
+### get
+
+Get a value by key.
+
+```tsx
+const phase = await db.state.get<string>("phase");
+// "review" | null
+```
+
+### set
+
+Set a value with optional trigger.
+
+```tsx
+await db.state.set("phase", "review");
+
+// With trigger for tracking what caused the change
+await db.state.set("phase", "review", "tests_passed");
+```
+
+### setMany
+
+Set multiple values atomically.
+
+```tsx
+await db.state.setMany({
+  phase: "complete",
+  completedAt: Date.now(),
+  result: { success: true },
+});
+
+// With trigger
+await db.state.setMany(
+  { phase: "review", reviewer: "claude" },
+  "implementation_done"
+);
+```
+
+### getAll
+
+Get all state as an object.
+
+```tsx
+const state = await db.state.getAll();
+// { phase: "review", attempts: 3, data: {...} }
+```
+
+### reset
+
+Clear all state.
+
+```tsx
+await db.state.reset();
+```
+
+### history
+
+Get state transition history.
+
+```tsx
+// History for a specific key
+const phaseHistory = await db.state.history("phase", 10);
+// [
+//   { id: "t1", key: "phase", value: "start", trigger: "init", timestamp: ... },
+//   { id: "t2", key: "phase", value: "review", trigger: "tests_passed", ... },
+// ]
+
+// All history
+const allHistory = await db.state.history(undefined, 50);
+```
+
+### replayTo
+
+Time-travel: restore state to a previous transition.
+
+```tsx
+// Get history
+const history = await db.state.history("phase");
+
+// Replay to an earlier state
+await db.state.replayTo(history[0].id);
+// State is now what it was at that transition
+```
+
+### snapshot
+
+Take a complete state snapshot.
+
+```tsx
+const snapshot = await db.state.snapshot();
+// { phase: "review", attempts: 3, data: {...} }
+```
+
+### restore
+
+Restore from a snapshot.
+
+```tsx
+const snapshot = await db.state.snapshot();
+
+// ... do some work ...
+
+// Restore to the snapshot
+await db.state.restore(snapshot, "rollback");
+```
+
+## Usage Patterns
+
+### Initialize from Database
+
+```tsx
+async function Workflow() {
+  // Load persisted state
+  const savedPhase = await db.state.get("phase");
+  const [phase, setPhase] = createSignal(savedPhase ?? "start");
+
+  // Sync updates to database
+  const updatePhase = async (newPhase: string) => {
+    setPhase(newPhase);
+    await db.state.set("phase", newPhase);
+  };
+
+  return (
+    <Ralph maxIterations={10}>
+      {phase() === "start" && (
+        <Claude onFinished={() => updatePhase("done")}>
+          Complete the task.
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+### Track Causality with Triggers
+
+```tsx
+<Claude
+  onFinished={async (result) => {
+    if (result.output.includes("PASS")) {
+      await db.state.set("phase", "complete", "tests_passed");
+    } else {
+      await db.state.set("phase", "retry", "tests_failed");
+    }
+  }}
+>
+  Run tests.
+</Claude>
+```
+
+### Checkpoint and Rollback
+
+```tsx
+// Save checkpoint
+const checkpoint = await db.state.snapshot();
+
+// Try risky operation
+try {
+  await riskyOperation();
+  await db.state.set("status", "success");
+} catch (error) {
+  // Rollback on failure
+  await db.state.restore(checkpoint, "error_rollback");
+}
+```
+
+## Types
+
+```tsx
+interface StateEntry {
+  key: string;
+  value: any;
+  updatedAt: Date;
+}
+
+interface Transition {
+  id: string;
+  key: string;
+  previousValue: any;
+  value: any;
+  trigger?: string;
+  timestamp: Date;
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="State Management" icon="database" href="/concepts/state-management">
+    State management concepts
+  </Card>
+  <Card title="Database Persistence" icon="hard-drive" href="/concepts/database-persistence">
+    Persistence overview
+  </Card>
+</CardGroup>

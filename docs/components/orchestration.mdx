@@ -1,0 +1,152 @@
+---
+title: Orchestration
+description: Top-level workflow control with timeouts and stop conditions
+---
+
+# Orchestration Component
+
+The `<Orchestration>` component provides top-level control over workflows, including global timeouts, stop conditions, VCS snapshots, and cleanup.
+
+## Basic Usage
+
+```tsx
+import { Orchestration } from "smithers/smithers-orchestrator/src/components/Orchestration";
+
+<SmithersProvider db={db} executionId={executionId}>
+  <Orchestration
+    globalTimeout={3600000}
+    onComplete={() => console.log("Done")}
+  >
+    <Claude>Do the work.</Claude>
+  </Orchestration>
+</SmithersProvider>
+```
+
+## Props
+
+<ParamField path="globalTimeout" type="number">
+  Maximum time in milliseconds for the entire workflow.
+
+  ```tsx
+  <Orchestration globalTimeout={3600000}>  {/* 1 hour */}
+  ```
+</ParamField>
+
+<ParamField path="stopConditions" type="StopCondition[]">
+  Conditions that stop the workflow early.
+
+  ```tsx
+  <Orchestration
+    stopConditions={[
+      { type: "total_tokens", value: 100000 },
+      { type: "total_agents", value: 50 },
+    ]}
+  >
+  ```
+</ParamField>
+
+<ParamField path="snapshotBeforeStart" type="boolean">
+  Create a VCS snapshot before starting.
+</ParamField>
+
+<ParamField path="cleanupOnComplete" type="boolean">
+  Run cleanup when workflow completes.
+</ParamField>
+
+<ParamField path="onComplete" type="() => void">
+  Called on successful completion.
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Called on workflow failure.
+</ParamField>
+
+<ParamField path="onStopRequested" type="() => void">
+  Called when stop is requested.
+</ParamField>
+
+## Stop Conditions
+
+### Token Limit
+
+```tsx
+{ type: "total_tokens", value: 100000 }
+```
+
+### Agent Limit
+
+```tsx
+{ type: "total_agents", value: 20 }
+```
+
+### Time Limit
+
+```tsx
+{ type: "total_time", value: 1800000 }  // 30 minutes
+```
+
+### Report Severity
+
+```tsx
+{ type: "report_severity", value: "critical" }
+```
+
+### CI Failure
+
+```tsx
+{ type: "ci_failure" }
+```
+
+### Custom
+
+```tsx
+{
+  type: "custom",
+  fn: (result) => result.output.includes("ABORT"),
+  message: "Abort requested"
+}
+```
+
+## Full Example
+
+```tsx
+<SmithersProvider db={db} executionId={executionId}>
+  <Orchestration
+    globalTimeout={3600000}
+    snapshotBeforeStart
+    stopConditions={[
+      { type: "total_tokens", value: 50000 },
+      { type: "report_severity", value: "critical" },
+    ]}
+    onComplete={() => {
+      console.log("Workflow completed successfully");
+    }}
+    onError={async (error) => {
+      await db.vcs.addReport({
+        type: "error",
+        severity: "critical",
+        title: "Workflow Failed",
+        content: error.message,
+      });
+    }}
+    onStopRequested={() => {
+      console.log("Stop condition triggered");
+    }}
+  >
+    <Ralph maxIterations={10}>
+      <WorkflowContent />
+    </Ralph>
+  </Orchestration>
+</SmithersProvider>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Ralph" icon="rotate" href="/components/ralph">
+    Loop control
+  </Card>
+  <Card title="SmithersProvider" icon="box" href="/components/smithers-provider">
+    Context provider
+  </Card>
+</CardGroup>

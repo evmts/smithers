@@ -1,0 +1,180 @@
+---
+title: Structured Output
+description: Get typed, validated responses with Zod schemas
+---
+
+# Structured Output
+
+Use Zod schemas to get typed, validated responses from Claude.
+
+## Code
+
+```tsx
+#!/usr/bin/env bun
+
+import { z } from "zod";
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+
+// Define the schema
+const AnalysisSchema = z.object({
+  summary: z.string().describe("Brief summary of the analysis"),
+  issues: z.array(z.object({
+    severity: z.enum(["low", "medium", "high", "critical"]),
+    file: z.string(),
+    line: z.number().optional(),
+    description: z.string(),
+    suggestion: z.string().optional(),
+  })),
+  recommendations: z.array(z.string()),
+  score: z.number().min(0).max(100).describe("Overall code quality score"),
+});
+
+type Analysis = z.infer<typeof AnalysisSchema>;
+
+async function main() {
+  const db = await createSmithersDB({ path: ".smithers/analysis" });
+  const executionId = await db.execution.start("Code Analysis", "analysis.tsx");
+
+  function AnalysisWorkflow() {
+    return (
+      <SmithersProvider db={db} executionId={executionId}>
+        <Claude
+          model="sonnet"
+          schema={AnalysisSchema}
+          maxRetries={2}
+          allowedTools={["Read", "Glob", "Grep"]}
+          onFinished={(result) => {
+            const analysis: Analysis = result.structured!;
+
+            console.log("\n📊 Code Analysis Results\n");
+            console.log(`Summary: ${analysis.summary}`);
+            console.log(`Score: ${analysis.score}/100\n`);
+
+            console.log("Issues Found:");
+            for (const issue of analysis.issues) {
+              const icon = {
+                critical: "🔴",
+                high: "🟠",
+                medium: "🟡",
+                low: "🟢",
+              }[issue.severity];
+              console.log(`  ${icon} [${issue.severity}] ${issue.file}:${issue.line ?? "?"}`);
+              console.log(`     ${issue.description}`);
+              if (issue.suggestion) {
+                console.log(`     → ${issue.suggestion}`);
+              }
+            }
+
+            console.log("\nRecommendations:");
+            for (const rec of analysis.recommendations) {
+              console.log(`  • ${rec}`);
+            }
+          }}
+          onError={(err) => {
+            console.error("Analysis failed:", err);
+          }}
+        >
+          Analyze this codebase for code quality issues.
+          Focus on:
+          - Security vulnerabilities
+          - Performance problems
+          - Code maintainability
+          - Best practices violations
+
+          Return a structured analysis.
+        </Claude>
+      </SmithersProvider>
+    );
+  }
+
+  const root = createSmithersRoot();
+  await root.mount(AnalysisWorkflow);
+
+  await db.execution.complete(executionId);
+  await db.close();
+}
+
+main();
+```
+
+## Output
+
+```
+📊 Code Analysis Results
+
+Summary: The codebase follows good practices overall but has some security and performance concerns.
+Score: 72/100
+
+Issues Found:
+  🟠 [high] src/auth.ts:42
+     SQL query constructed with string concatenation
+     → Use parameterized queries to prevent SQL injection
+  🟡 [medium] src/api/users.ts:15
+     No input validation on user data
+     → Add Zod schema validation for request bodies
+  🟢 [low] src/utils/helpers.ts:88
+     Unused import statement
+     → Remove unused imports
+
+Recommendations:
+  • Implement rate limiting on API endpoints
+  • Add comprehensive error handling middleware
+  • Consider adding TypeScript strict mode
+```
+
+## Schema Tips
+
+### Use Descriptions
+
+```tsx
+const Schema = z.object({
+  severity: z.enum(["low", "high"]).describe("Impact level of the issue"),
+  confidence: z.number().min(0).max(1).describe("How confident (0-1)"),
+});
+```
+
+### Complex Nested Schemas
+
+```tsx
+const ReportSchema = z.object({
+  metadata: z.object({
+    analyzedAt: z.string(),
+    filesScanned: z.number(),
+    duration: z.number(),
+  }),
+  sections: z.array(z.object({
+    title: z.string(),
+    findings: z.array(z.object({
+      type: z.enum(["security", "performance", "style"]),
+      message: z.string(),
+    })),
+  })),
+});
+```
+
+### Validation with Custom Logic
+
+```tsx
+<Claude
+  schema={Schema}
+  validate={(result) => {
+    // Additional validation beyond schema
+    return result.issues.length > 0 && result.score <= 100;
+  }}
+  maxRetries={2}
+>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Structured Output Guide" icon="code" href="/guides/structured-output">
+    Deep dive into schemas
+  </Card>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    Claude API reference
+  </Card>
+</CardGroup>

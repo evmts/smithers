@@ -1,0 +1,249 @@
+---
+title: VCS API
+description: Version control operations tracking
+---
+
+# VCS API
+
+The VCS API tracks version control operations including commits, snapshots, reviews, and reports.
+
+## Commits
+
+### logCommit
+
+Log a git commit.
+
+```tsx
+await db.vcs.logCommit({
+  hash: "abc123def",
+  message: "feat: Add user authentication",
+  author: "claude",
+  timestamp: new Date(),
+  filesChanged: 5,
+  insertions: 150,
+  deletions: 20,
+  vcsType: "git",
+});
+```
+
+### getCommits
+
+List recent commits.
+
+```tsx
+const commits = await db.vcs.getCommits(10);
+```
+
+### getCommit
+
+Get a specific commit.
+
+```tsx
+const commit = await db.vcs.getCommit("abc123def", "git");
+```
+
+## Snapshots
+
+For jj (Jujutsu) VCS:
+
+### logSnapshot
+
+Log a snapshot.
+
+```tsx
+await db.vcs.logSnapshot({
+  snapshotId: "xyz789",
+  description: "Before refactoring auth module",
+  timestamp: new Date(),
+  commitRef: "abc123",
+});
+```
+
+### getSnapshots
+
+List snapshots.
+
+```tsx
+const snapshots = await db.vcs.getSnapshots(10);
+```
+
+## Reviews
+
+### logReview
+
+Log a code review.
+
+```tsx
+await db.vcs.logReview({
+  reviewId: "r1",
+  target: "abc123",
+  targetType: "commit",
+  approved: false,
+  summary: "Security issues found",
+  issues: [
+    {
+      severity: "high",
+      file: "src/auth.ts",
+      line: 42,
+      description: "SQL injection vulnerability",
+      suggestion: "Use parameterized queries",
+    },
+  ],
+  reviewerModel: "sonnet",
+});
+```
+
+### updateReview
+
+Update a review.
+
+```tsx
+await db.vcs.updateReview(reviewId, {
+  approved: true,
+  summary: "Issues resolved",
+});
+```
+
+### getReviews
+
+List reviews.
+
+```tsx
+const reviews = await db.vcs.getReviews(10);
+```
+
+### getBlockingReviews
+
+Get unapproved blocking reviews.
+
+```tsx
+const blocking = await db.vcs.getBlockingReviews();
+if (blocking.length > 0) {
+  console.log("Cannot proceed - blocking reviews exist");
+}
+```
+
+## Reports
+
+### addReport
+
+Add a workflow report.
+
+```tsx
+await db.vcs.addReport({
+  type: "progress",
+  severity: "info",
+  title: "Phase Complete",
+  content: "Research phase completed successfully",
+  metadata: { phase: "research", duration: 5000 },
+});
+
+await db.vcs.addReport({
+  type: "finding",
+  severity: "warning",
+  title: "Potential Issue",
+  content: "Found deprecated API usage",
+  agentId: agentId,
+});
+
+await db.vcs.addReport({
+  type: "error",
+  severity: "critical",
+  title: "Build Failed",
+  content: "TypeScript compilation errors",
+});
+```
+
+### getReports
+
+List reports.
+
+```tsx
+// All reports
+const reports = await db.vcs.getReports();
+
+// By type
+const errors = await db.vcs.getReports("error", 10);
+```
+
+### getCriticalReports
+
+Get critical severity reports.
+
+```tsx
+const critical = await db.vcs.getCriticalReports();
+if (critical.length > 0) {
+  console.error("Critical issues detected!");
+}
+```
+
+## Types
+
+```tsx
+interface Commit {
+  id: string;
+  hash: string;
+  message: string;
+  author: string;
+  timestamp: Date;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  vcsType: "git" | "jj";
+  executionId?: string;
+  stepId?: string;
+}
+
+interface Snapshot {
+  id: string;
+  snapshotId: string;
+  description?: string;
+  timestamp: Date;
+  commitRef?: string;
+  executionId?: string;
+}
+
+interface Review {
+  id: string;
+  reviewId: string;
+  target: string;
+  targetType: "commit" | "diff" | "pr" | "files";
+  approved: boolean;
+  blocking?: boolean;
+  summary: string;
+  issues: ReviewIssue[];
+  reviewerModel?: string;
+  executionId?: string;
+}
+
+interface ReviewIssue {
+  severity: "low" | "medium" | "high" | "critical";
+  file: string;
+  line?: number;
+  description: string;
+  suggestion?: string;
+}
+
+interface Report {
+  id: string;
+  type: "progress" | "finding" | "warning" | "error" | "metric" | "decision";
+  severity: "info" | "warning" | "critical";
+  title: string;
+  content: string;
+  metadata?: Record<string, any>;
+  agentId?: string;
+  executionId?: string;
+  createdAt: Date;
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Commit Component" icon="code-commit" href="/components/commit">
+    Create commits
+  </Card>
+  <Card title="Review Component" icon="magnifying-glass" href="/components/review">
+    Code reviews
+  </Card>
+</CardGroup>

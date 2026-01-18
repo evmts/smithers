@@ -1,0 +1,290 @@
+---
+title: SmithersProvider
+description: Root context provider for database and execution state
+---
+
+# SmithersProvider
+
+The `<SmithersProvider>` component provides database and execution context to all child components. It's required at the root of every Smithers workflow.
+
+## Basic Usage
+
+```tsx
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+
+const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+const executionId = await db.execution.start("My Workflow", "workflow.tsx");
+
+function Workflow() {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Claude model="sonnet">
+        Do the work.
+      </Claude>
+    </SmithersProvider>
+  );
+}
+```
+
+## Props
+
+<ParamField path="db" type="SmithersDB" required>
+  The PGlite database instance for state persistence.
+
+  ```tsx
+  const db = await createSmithersDB({ path: ".smithers/data" });
+  <SmithersProvider db={db} executionId={executionId}>
+  ```
+</ParamField>
+
+<ParamField path="executionId" type="string" required>
+  Unique identifier for the current execution.
+
+  ```tsx
+  const executionId = await db.execution.start("Task", "task.tsx");
+  <SmithersProvider db={db} executionId={executionId}>
+  ```
+</ParamField>
+
+<ParamField path="config" type="SmithersConfig">
+  Optional configuration for the workflow.
+
+  ```tsx
+  <SmithersProvider
+    db={db}
+    executionId={executionId}
+    config={{
+      defaultModel: "sonnet",
+      maxRetries: 3,
+      verbose: true,
+    }}
+  >
+  ```
+</ParamField>
+
+## Context Values
+
+Child components can access the context using the `useSmithers` hook:
+
+```tsx
+import { useSmithers } from "smithers";
+
+function MyComponent() {
+  const {
+    db,              // Database instance
+    executionId,     // Current execution ID
+    config,          // Configuration
+    requestStop,     // Request workflow stop
+    requestRebase,   // Request rebase operation
+    isStopRequested, // Check if stop was requested
+    isRebaseRequested, // Check if rebase was requested
+  } = useSmithers();
+
+  return (
+    <Claude onFinished={() => {
+      if (someCondition) {
+        requestStop();
+      }
+    }}>
+      Work with context access.
+    </Claude>
+  );
+}
+```
+
+## Request Stop
+
+Stop the workflow programmatically:
+
+```tsx
+function EmergencyStop() {
+  const { requestStop, isStopRequested } = useSmithers();
+
+  return (
+    <Claude
+      onFinished={(result) => {
+        if (result.output.includes("CRITICAL")) {
+          requestStop();
+        }
+      }}
+    >
+      Check for critical issues.
+    </Claude>
+  );
+}
+
+function ConditionalWork() {
+  const { isStopRequested } = useSmithers();
+
+  // Don't render if stop was requested
+  if (isStopRequested()) {
+    return null;
+  }
+
+  return (
+    <Claude>Continue working.</Claude>
+  );
+}
+```
+
+## Request Rebase
+
+Request a VCS rebase operation:
+
+```tsx
+function RebaseWorkflow() {
+  const { requestRebase, isRebaseRequested } = useSmithers();
+
+  return (
+    <Claude
+      onFinished={(result) => {
+        if (result.output.includes("conflicts detected")) {
+          requestRebase();
+        }
+      }}
+    >
+      Check for merge conflicts.
+    </Claude>
+  );
+}
+```
+
+## Accessing the Database
+
+Access the database directly from any child component:
+
+```tsx
+function DatabaseAccessExample() {
+  const { db, executionId } = useSmithers();
+
+  onMount(async () => {
+    // Read state
+    const phase = await db.state.get("phase");
+
+    // Write state
+    await db.state.set("lastAccess", Date.now());
+
+    // Log an agent
+    await db.agents.start("Custom agent", "sonnet");
+  });
+
+  return <Claude>Work with database access.</Claude>;
+}
+```
+
+## Complete Example
+
+```tsx
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider, useSmithers } from "smithers";
+
+async function main() {
+  const db = await createSmithersDB({ path: ".smithers/example" });
+
+  // Check for incomplete execution to resume
+  let executionId: string;
+  const incomplete = await db.execution.findIncomplete();
+
+  if (incomplete) {
+    executionId = incomplete.id;
+    console.log("Resuming execution:", executionId);
+  } else {
+    executionId = await db.execution.start("Example", "example.tsx");
+  }
+
+  function Workflow() {
+    return (
+      <SmithersProvider db={db} executionId={executionId}>
+        <Orchestration globalTimeout={3600000}>
+          <WorkflowContent />
+        </Orchestration>
+      </SmithersProvider>
+    );
+  }
+
+  const root = createSmithersRoot();
+  await root.mount(Workflow);
+
+  await db.execution.complete(executionId);
+  await db.close();
+}
+
+function WorkflowContent() {
+  const { db, requestStop, isStopRequested } = useSmithers();
+  const [phase, setPhase] = createSignal("start");
+
+  onMount(async () => {
+    const savedPhase = await db.state.get("phase");
+    if (savedPhase) setPhase(savedPhase);
+  });
+
+  const updatePhase = async (newPhase: string) => {
+    setPhase(newPhase);
+    await db.state.set("phase", newPhase);
+  };
+
+  if (isStopRequested()) {
+    return <Stop reason="Stop requested" />;
+  }
+
+  return (
+    <Ralph maxIterations={10}>
+      {phase() === "start" && (
+        <Claude onFinished={() => updatePhase("done")}>
+          Complete the task.
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+
+main();
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always wrap with SmithersProvider">
+    All Smithers components require the provider:
+    ```tsx
+    // Correct
+    <SmithersProvider db={db} executionId={executionId}>
+      <Claude>...</Claude>
+    </SmithersProvider>
+
+    // Error - no context
+    <Claude>...</Claude>
+    ```
+  </Accordion>
+
+  <Accordion title="Close the database when done">
+    Ensure writes are flushed:
+    ```tsx
+    const root = createSmithersRoot();
+    await root.mount(Workflow);
+    await db.close();  // Always close
+    ```
+  </Accordion>
+
+  <Accordion title="Check for incomplete executions">
+    Resume interrupted workflows:
+    ```tsx
+    const incomplete = await db.execution.findIncomplete();
+    const executionId = incomplete?.id ??
+      await db.execution.start("New", "file.tsx");
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Database API" icon="database" href="/api-reference/database">
+    Full database API reference
+  </Card>
+  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+    Top-level workflow control
+  </Card>
+</CardGroup>

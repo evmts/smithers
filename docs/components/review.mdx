@@ -1,0 +1,214 @@
+---
+title: Review
+description: AI-powered code review with configurable criteria
+---
+
+# Review Component
+
+The `<Review>` component performs AI-powered code reviews against specified criteria, with options to post to GitHub or git notes.
+
+## Basic Usage
+
+```tsx
+import { Review } from "smithers";
+
+<Review
+  target={{ type: "diff", ref: "main" }}
+  criteria={[
+    "No security vulnerabilities",
+    "Tests cover edge cases",
+  ]}
+  onFinished={(review) => {
+    if (review.approved) {
+      console.log("Review passed!");
+    } else {
+      console.log("Issues found:", review.issues);
+    }
+  }}
+/>
+```
+
+## Props
+
+<ParamField path="target" type="ReviewTarget" required>
+  What to review.
+
+  ```tsx
+  // Review diff against a branch
+  { type: "diff", ref: "main" }
+
+  // Review a specific commit
+  { type: "commit", ref: "abc123" }
+
+  // Review a pull request
+  { type: "pr", ref: "123" }
+
+  // Review specific files
+  { type: "files", paths: ["src/auth.ts", "src/api.ts"] }
+  ```
+</ParamField>
+
+<ParamField path="criteria" type="string[]">
+  Review criteria to check against.
+
+  ```tsx
+  criteria={[
+    "No hardcoded secrets",
+    "Input is validated",
+    "Error handling is comprehensive",
+    "Code follows project conventions",
+  ]}
+  ```
+</ParamField>
+
+<ParamField path="agent" type="Claude props">
+  Custom agent configuration for the review.
+</ParamField>
+
+<ParamField path="model" type="'opus' | 'sonnet' | 'haiku'" default="sonnet">
+  Model to use for the review.
+</ParamField>
+
+<ParamField path="blocking" type="boolean" default="false">
+  Whether failures should block the workflow.
+</ParamField>
+
+<ParamField path="postToGitHub" type="boolean" default="false">
+  Post review comments to GitHub PR.
+</ParamField>
+
+<ParamField path="postToGitNotes" type="boolean" default="false">
+  Store review in git notes.
+</ParamField>
+
+### Callbacks
+
+<ParamField path="onFinished" type="(result: ReviewResult) => void">
+  Called when review completes.
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Called on error.
+</ParamField>
+
+## ReviewResult Type
+
+```tsx
+interface ReviewResult {
+  approved: boolean;
+  summary: string;
+  issues: ReviewIssue[];
+}
+
+interface ReviewIssue {
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  file: string;
+  line?: number;
+  description: string;
+  suggestion?: string;
+}
+```
+
+## Review Workflow Example
+
+```tsx
+function ReviewWorkflow() {
+  const [phase, setPhase] = createSignal("implement");
+
+  return (
+    <Ralph maxIterations={5}>
+      {phase() === "implement" && (
+        <Claude
+          allowedTools={["Edit", "Write"]}
+          onFinished={() => setPhase("review")}
+        >
+          Implement the feature.
+        </Claude>
+      )}
+
+      {phase() === "review" && (
+        <Review
+          target={{ type: "diff", ref: "main" }}
+          criteria={[
+            "No security vulnerabilities",
+            "No hardcoded secrets",
+            "Tests are included",
+            "Code is documented",
+          ]}
+          onFinished={(review) => {
+            if (review.approved) {
+              setPhase("done");
+            } else {
+              // Log issues and go back to implement
+              console.log("Issues:", review.issues);
+              setPhase("implement");
+            }
+          }}
+        />
+      )}
+    </Ralph>
+  );
+}
+```
+
+## PR Review Example
+
+```tsx
+<Review
+  target={{ type: "pr", ref: "123" }}
+  model="opus"
+  criteria={[
+    "Changes are backwards compatible",
+    "Performance impact is acceptable",
+    "Security considerations addressed",
+  ]}
+  postToGitHub
+  onFinished={(review) => {
+    if (!review.approved) {
+      // Block merge
+      process.exit(1);
+    }
+  }}
+/>
+```
+
+## Blocking Reviews
+
+Make reviews gate the workflow:
+
+```tsx
+<SmithersProvider db={db} executionId={executionId}>
+  <Orchestration
+    stopConditions={[
+      { type: "report_severity", value: "critical" }
+    ]}
+  >
+    <Review
+      blocking
+      target={{ type: "diff", ref: "main" }}
+      criteria={["No critical security issues"]}
+      onFinished={async (review) => {
+        if (!review.approved) {
+          await db.vcs.addReport({
+            type: "finding",
+            severity: "critical",
+            title: "Review Failed",
+            content: review.summary,
+          });
+        }
+      }}
+    />
+  </Orchestration>
+</SmithersProvider>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Commit" icon="code-commit" href="/components/commit">
+    Create commits
+  </Card>
+  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs">
+    VCS database operations
+  </Card>
+</CardGroup>

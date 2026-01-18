@@ -1,0 +1,144 @@
+---
+title: Sqlite
+description: Give Claude access to SQLite databases via MCP
+---
+
+# Sqlite Component
+
+The `<Sqlite>` component configures an MCP (Model Context Protocol) server that gives Claude access to SQLite databases.
+
+## Basic Usage
+
+```tsx
+import { Sqlite } from "smithers/components/MCP";
+
+<Claude model="sonnet" maxTurns={5}>
+  <Sqlite path="./analytics.db">
+    The database contains user_events and sessions tables.
+  </Sqlite>
+  What are the top 10 most common user actions this week?
+</Claude>
+```
+
+## Props
+
+<ParamField path="path" type="string" required>
+  Path to the SQLite database file.
+
+  ```tsx
+  <Sqlite path="./data/app.db" />
+  ```
+</ParamField>
+
+<ParamField path="readOnly" type="boolean" default="false">
+  Open database in read-only mode.
+
+  ```tsx
+  <Sqlite path="./data.db" readOnly>
+    Query-only access.
+  </Sqlite>
+  ```
+</ParamField>
+
+<ParamField path="children" type="string">
+  Schema description or context for Claude.
+</ParamField>
+
+## Query Example
+
+```tsx
+<Claude model="sonnet" maxTurns={10}>
+  <Sqlite path="./ecommerce.db">
+    Schema:
+    - users(id, name, email, created_at)
+    - orders(id, user_id, total, status, created_at)
+    - order_items(id, order_id, product_id, quantity, price)
+    - products(id, name, category, price)
+  </Sqlite>
+
+  Generate a report showing:
+  1. Total revenue by category
+  2. Top 10 customers by lifetime value
+  3. Monthly order trends for the past year
+
+  Export the results to a markdown file.
+</Claude>
+```
+
+## Read-Only Analysis
+
+```tsx
+<Claude model="sonnet" maxTurns={5}>
+  <Sqlite path="./production.db" readOnly>
+    Production database - read-only access.
+    Tables: users, transactions, audit_log
+  </Sqlite>
+
+  Analyze the audit log for unusual patterns.
+  Do not modify any data.
+</Claude>
+```
+
+## Multiple Databases
+
+```tsx
+<Claude model="sonnet" maxTurns={10}>
+  <Sqlite path="./users.db">
+    User database: users, profiles, preferences
+  </Sqlite>
+
+  <Sqlite path="./analytics.db">
+    Analytics database: events, sessions, pageviews
+  </Sqlite>
+
+  Cross-reference user activity between the two databases.
+  Find users who signed up but never logged an event.
+</Claude>
+```
+
+## Data Pipeline Example
+
+```tsx
+function DataWorkflow() {
+  const [phase, setPhase] = createSignal("analyze");
+
+  return (
+    <Ralph maxIterations={5}>
+      {phase() === "analyze" && (
+        <Claude
+          model="sonnet"
+          onFinished={() => setPhase("report")}
+        >
+          <Sqlite path="./data.db" readOnly>
+            Sales database with orders and customers.
+          </Sqlite>
+
+          Analyze Q4 sales performance.
+          Identify trends and anomalies.
+        </Claude>
+      )}
+
+      {phase() === "report" && (
+        <Claude
+          allowedTools={["Write"]}
+          onFinished={() => setPhase("done")}
+        >
+          Create a formatted markdown report with the findings.
+          Save to reports/q4-analysis.md
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MCP Integration" icon="plug" href="/guides/mcp-integration">
+    MCP server guide
+  </Card>
+  <Card title="Claude" icon="robot" href="/components/claude">
+    Claude component
+  </Card>
+</CardGroup>

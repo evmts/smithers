@@ -1,0 +1,111 @@
+---
+title: Phase
+description: Group related steps in a workflow phase
+---
+
+# Phase Component
+
+The `<Phase>` component groups related steps semantically, providing structure and observability to workflows.
+
+## Basic Usage
+
+```tsx
+import { Phase } from "smithers";
+
+<Phase name="Research">
+  <Claude allowedTools={["Read", "Glob", "Grep"]}>
+    Research the codebase.
+  </Claude>
+</Phase>
+```
+
+## Props
+
+<ParamField path="name" type="string">
+  Name of the phase for logging and tracking.
+
+  ```tsx
+  <Phase name="Implementation">
+    <Claude>Implement the feature.</Claude>
+  </Phase>
+  ```
+</ParamField>
+
+## Multi-Phase Workflow
+
+```tsx
+function FeatureWorkflow() {
+  const [phase, setPhase] = createSignal("research");
+
+  return (
+    <Ralph maxIterations={10}>
+      {phase() === "research" && (
+        <Phase name="Research">
+          <Step name="find-files">
+            <Claude
+              allowedTools={["Glob", "Grep"]}
+              onFinished={() => setPhase("implement")}
+            >
+              Find relevant files.
+            </Claude>
+          </Step>
+        </Phase>
+      )}
+
+      {phase() === "implement" && (
+        <Phase name="Implementation">
+          <Step name="write-code">
+            <Claude
+              allowedTools={["Edit", "Write"]}
+              onFinished={() => setPhase("test")}
+            >
+              Implement the solution.
+            </Claude>
+          </Step>
+        </Phase>
+      )}
+
+      {phase() === "test" && (
+        <Phase name="Testing">
+          <Claude
+            allowedTools={["Bash"]}
+            onFinished={(r) => {
+              if (r.output.includes("PASS")) {
+                setPhase("done");
+              } else {
+                setPhase("implement");
+              }
+            }}
+          >
+            Run the tests.
+          </Claude>
+        </Phase>
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Database Tracking
+
+Phases are tracked in the database:
+
+```tsx
+// Phases are automatically tracked when using SmithersProvider
+const phases = await db.phases.list(executionId);
+// [
+//   { id: "p1", name: "Research", status: "complete", ... },
+//   { id: "p2", name: "Implementation", status: "running", ... },
+// ]
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Step" icon="shoe-prints" href="/components/step">
+    Individual steps within phases
+  </Card>
+  <Card title="Ralph" icon="rotate" href="/components/ralph">
+    Loop control
+  </Card>
+</CardGroup>

@@ -1,0 +1,104 @@
+---
+title: Step
+description: Individual step within a workflow phase
+---
+
+# Step Component
+
+The `<Step>` component represents an individual step within a workflow phase, providing fine-grained tracking.
+
+## Basic Usage
+
+```tsx
+import { Step } from "smithers";
+
+<Phase name="Implementation">
+  <Step name="Create API">
+    <Claude>Create the API endpoint.</Claude>
+  </Step>
+  <Step name="Add Tests">
+    <Claude>Write tests for the API.</Claude>
+  </Step>
+</Phase>
+```
+
+## Props
+
+<ParamField path="name" type="string">
+  Name of the step for tracking.
+
+  ```tsx
+  <Step name="Initialize Database">
+    <Claude>Run the migration.</Claude>
+  </Step>
+  ```
+</ParamField>
+
+## Structured Workflow
+
+```tsx
+<Orchestration globalTimeout={3600000}>
+  <Phase name="Setup">
+    <Step name="Check Environment">
+      <Claude allowedTools={["Bash"]}>
+        Verify dependencies are installed.
+      </Claude>
+    </Step>
+    <Step name="Create Branch">
+      <Claude allowedTools={["Bash"]}>
+        Create a feature branch.
+      </Claude>
+    </Step>
+  </Phase>
+
+  <Phase name="Development">
+    <Step name="Implement Feature">
+      <Claude allowedTools={["Edit", "Write"]}>
+        Write the code.
+      </Claude>
+    </Step>
+    <Step name="Add Tests">
+      <Claude allowedTools={["Write"]}>
+        Create test files.
+      </Claude>
+    </Step>
+  </Phase>
+
+  <Phase name="Verification">
+    <Step name="Run Tests">
+      <Claude allowedTools={["Bash"]}>
+        Execute the test suite.
+      </Claude>
+    </Step>
+    <Step name="Run Linter">
+      <Claude allowedTools={["Bash"]}>
+        Check code style.
+      </Claude>
+    </Step>
+  </Phase>
+</Orchestration>
+```
+
+## Database Tracking
+
+Steps are tracked in the database:
+
+```tsx
+const steps = await db.steps.getByExecution(executionId);
+// [
+//   { id: "s1", name: "Check Environment", status: "complete", ... },
+//   { id: "s2", name: "Create Branch", status: "complete", ... },
+//   { id: "s3", name: "Implement Feature", status: "running", ... },
+// ]
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Phase" icon="list" href="/components/phase">
+    Group steps into phases
+  </Card>
+  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+    Top-level control
+  </Card>
+</CardGroup>

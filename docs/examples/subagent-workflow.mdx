@@ -1,0 +1,217 @@
+---
+title: Subagent Workflow
+description: Spawn Smithers subagents for complex subtasks
+---
+
+# Subagent Workflow
+
+Use the Smithers component to spawn subagents that plan and execute complex tasks autonomously.
+
+## Code
+
+```tsx
+#!/usr/bin/env bun
+
+import { createSignal } from "solid-js";
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+import { Orchestration } from "smithers/smithers-orchestrator/src/components/Orchestration";
+import { Ralph } from "smithers/components/Ralph";
+import { Phase } from "smithers/components/Phase";
+import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { Smithers } from "smithers/smithers-orchestrator/src/components/Smithers";
+
+async function main() {
+  const db = await createSmithersDB({ path: ".smithers/feature-dev" });
+  const executionId = await db.execution.start("Feature Development", "feature-dev.tsx");
+
+  function FeatureWorkflow() {
+    const [phase, setPhase] = createSignal("plan");
+    const [plan, setPlan] = createSignal<string | null>(null);
+
+    return (
+      <SmithersProvider db={db} executionId={executionId}>
+        <Orchestration globalTimeout={7200000}>
+          <Ralph maxIterations={5}>
+            {/* Phase 1: High-level planning */}
+            {phase() === "plan" && (
+              <Phase name="Planning">
+                <Claude
+                  model="opus"
+                  allowedTools={["Read", "Glob", "Grep"]}
+                  onFinished={(result) => {
+                    setPlan(result.output);
+                    setPhase("implement");
+                  }}
+                >
+                  Analyze the codebase and create a high-level implementation plan for:
+
+                  "Add a notification system with:
+                   - Database schema for notifications
+                   - REST API endpoints
+                   - Real-time WebSocket updates
+                   - React UI components"
+
+                  Identify the key files, patterns, and technologies used.
+                  Output a structured plan with phases.
+                </Claude>
+              </Phase>
+            )}
+
+            {/* Phase 2: Subagent implements the feature */}
+            {phase() === "implement" && (
+              <Phase name="Implementation">
+                <Smithers
+                  plannerModel="opus"
+                  executionModel="sonnet"
+                  timeout={3600000}
+                  keepScript
+                  context={`
+                    Previous analysis:
+                    ${plan()}
+
+                    This is a TypeScript project using:
+                    - Bun runtime
+                    - React frontend
+                    - PostgreSQL database
+                    - WebSocket for real-time updates
+                  `}
+                  onScriptGenerated={(script) => {
+                    console.log("Generated implementation script");
+                    db.vcs.addReport({
+                      type: "progress",
+                      severity: "info",
+                      title: "Script Generated",
+                      content: script.substring(0, 500) + "...",
+                    });
+                  }}
+                  onProgress={(msg) => console.log(`[Subagent] ${msg}`)}
+                  onFinished={(result) => {
+                    console.log("Subagent completed!");
+                    console.log(`Duration: ${result.durationMs}ms`);
+                    console.log(`Tokens: ${result.tokensUsed.input + result.tokensUsed.output}`);
+                    setPhase("test");
+                  }}
+                  onError={(err) => {
+                    console.error("Subagent failed:", err);
+                    setPhase("plan");  // Go back to planning
+                  }}
+                >
+                  Implement the notification system based on the plan.
+
+                  Requirements:
+                  1. Create database migration for notifications table
+                  2. Implement CRUD API endpoints
+                  3. Add WebSocket handler for real-time updates
+                  4. Create React components for notification UI
+                  5. Write tests for each layer
+
+                  Follow existing patterns and conventions.
+                </Smithers>
+              </Phase>
+            )}
+
+            {/* Phase 3: Verify implementation */}
+            {phase() === "test" && (
+              <Phase name="Verification">
+                <Claude
+                  model="sonnet"
+                  allowedTools={["Bash", "Read"]}
+                  onFinished={(result) => {
+                    if (result.output.includes("All tests pass")) {
+                      setPhase("done");
+                    } else {
+                      setPhase("implement");
+                    }
+                  }}
+                >
+                  Run the test suite and verify the notification system works:
+                  1. Run unit tests: bun test
+                  2. Check TypeScript compilation: bun run typecheck
+                  3. Verify the API endpoints exist
+                </Claude>
+              </Phase>
+            )}
+          </Ralph>
+        </Orchestration>
+      </SmithersProvider>
+    );
+  }
+
+  const root = createSmithersRoot();
+  await root.mount(FeatureWorkflow);
+
+  await db.execution.complete(executionId);
+  await db.close();
+}
+
+main();
+```
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Parent Workflow                                            │
+│                                                             │
+│  ┌────────────┐   ┌──────────────────────────────────────┐ │
+│  │  Planning  │──▶│           Smithers Subagent          │ │
+│  │  (Opus)    │   │                                      │ │
+│  └────────────┘   │  ┌────────────┐   ┌──────────────┐  │ │
+│                   │  │  Planner   │──▶│  Generated   │  │ │
+│                   │  │  (Opus)    │   │   Script     │  │ │
+│                   │  └────────────┘   └──────────────┘  │ │
+│                   │                          │           │ │
+│                   │                          ▼           │ │
+│                   │  ┌──────────────────────────────┐   │ │
+│                   │  │   Execution (multiple        │   │ │
+│                   │  │   Claude Sonnet agents)      │   │ │
+│                   │  └──────────────────────────────┘   │ │
+│                   │                                      │ │
+│                   └──────────────────────────────────────┘ │
+│                              │                              │
+│                              ▼                              │
+│                   ┌──────────────────┐                     │
+│                   │  Verification    │                     │
+│                   │  (Sonnet)        │                     │
+│                   └──────────────────┘                     │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Debugging Subagents
+
+Use `keepScript` to inspect what was generated:
+
+```tsx
+<Smithers
+  keepScript
+  scriptPath="./.smithers/debug/generated.tsx"
+  onError={(err) => {
+    console.error("Failed. Check script at ./.smithers/debug/generated.tsx");
+  }}
+>
+```
+
+## Nested Subagents
+
+Subagents can spawn their own subagents:
+
+```tsx
+<Smithers>
+  Implement the feature. For complex subtasks, you may spawn
+  additional Smithers subagents to handle them independently.
+</Smithers>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Smithers Component" icon="robot" href="/components/smithers">
+    Smithers API reference
+  </Card>
+  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+    Workflow control
+  </Card>
+</CardGroup>

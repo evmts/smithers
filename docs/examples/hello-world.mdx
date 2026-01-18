@@ -1,0 +1,83 @@
+---
+title: Hello World
+description: Your first Smithers workflow
+---
+
+# Hello World
+
+The simplest Smithers workflow.
+
+## Code
+
+```tsx
+#!/usr/bin/env bun
+
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+
+async function main() {
+  // Create database for state persistence
+  const db = await createSmithersDB({ path: ".smithers/hello-world" });
+  const executionId = await db.execution.start("Hello World", "hello-world.tsx");
+
+  function HelloWorld() {
+    return (
+      <SmithersProvider db={db} executionId={executionId}>
+        <Claude
+          model="haiku"
+          maxTurns={1}
+          onFinished={(result) => {
+            console.log("Claude says:", result.output);
+          }}
+        >
+          Say "Hello from Smithers!" in a creative way.
+        </Claude>
+      </SmithersProvider>
+    );
+  }
+
+  const root = createSmithersRoot();
+  await root.mount(HelloWorld);
+
+  await db.execution.complete(executionId);
+  await db.close();
+}
+
+main();
+```
+
+## Run It
+
+```bash
+bun hello-world.tsx
+```
+
+## Output
+
+```
+Claude says: 🎭 *adjusts monocle* Greetings, distinguished user!
+From the depths of the Smithers framework, I emerge to proclaim:
+"Hello from Smithers!" May your orchestrations be ever reactive
+and your agents perpetually productive! 🎩
+```
+
+## What's Happening
+
+1. **Database Creation**: PGlite database stores execution state
+2. **Execution Tracking**: Each run gets a unique ID for observability
+3. **SmithersProvider**: Provides context to child components
+4. **Claude Component**: Executes a prompt with Claude Haiku
+5. **Cleanup**: Database is closed to flush writes
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-Phase Review" icon="list-check" href="/examples/multi-phase-review">
+    Build a more complex workflow
+  </Card>
+  <Card title="Structured Output" icon="code" href="/examples/structured-output">
+    Get typed responses
+  </Card>
+</CardGroup>

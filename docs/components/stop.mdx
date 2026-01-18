@@ -1,0 +1,87 @@
+---
+title: Stop
+description: Signal workflow termination
+---
+
+# Stop Component
+
+The `<Stop>` component signals that the workflow should terminate.
+
+## Basic Usage
+
+```tsx
+import { Stop } from "smithers";
+
+<Stop reason="Task completed successfully" />
+```
+
+## Props
+
+<ParamField path="reason" type="string">
+  Reason for stopping the workflow.
+
+  ```tsx
+  <Stop reason="Critical error encountered" />
+  ```
+</ParamField>
+
+## Conditional Stop
+
+```tsx
+function ConditionalWorkflow() {
+  const [status, setStatus] = createSignal("running");
+
+  return (
+    <Ralph maxIterations={10}>
+      {status() === "running" && (
+        <Claude
+          onFinished={(result) => {
+            if (result.output.includes("CRITICAL")) {
+              setStatus("error");
+            } else if (result.output.includes("DONE")) {
+              setStatus("complete");
+            }
+          }}
+        >
+          Process the task.
+        </Claude>
+      )}
+
+      {status() === "error" && (
+        <Stop reason="Critical error detected" />
+      )}
+
+      {status() === "complete" && (
+        <Stop reason="Task completed" />
+      )}
+    </Ralph>
+  );
+}
+```
+
+## With Human Rejection
+
+```tsx
+<Human
+  message="Approve?"
+  onApprove={() => setPhase("continue")}
+  onReject={() => setPhase("cancelled")}
+>
+  Review the changes.
+</Human>
+
+{phase() === "cancelled" && (
+  <Stop reason="Rejected by human" />
+)}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Human" icon="user" href="/components/human">
+    Human approval
+  </Card>
+  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+    Workflow control
+  </Card>
+</CardGroup>

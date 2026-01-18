@@ -1,0 +1,303 @@
+---
+title: Error Handling
+description: Handle errors gracefully in Smithers workflows
+---
+
+# Error Handling Guide
+
+Strategies for handling errors in Smithers workflows.
+
+## Basic Error Handling
+
+Use the `onError` callback:
+
+```tsx
+<Claude
+  onFinished={(result) => console.log("Success:", result.output)}
+  onError={(error) => console.error("Failed:", error.message)}
+>
+  Perform the task.
+</Claude>
+```
+
+## Retry with State
+
+Implement retry logic with signals:
+
+```tsx
+function RetryWorkflow() {
+  const [attempts, setAttempts] = createSignal(0);
+  const [lastError, setLastError] = createSignal<Error | null>(null);
+
+  return (
+    <Ralph maxIterations={5}>
+      {attempts() < 3 && (
+        <Claude
+          onFinished={() => setLastError(null)}
+          onError={(err) => {
+            setLastError(err);
+            setAttempts(a => a + 1);
+          }}
+        >
+          {lastError() && (
+            <>Previous attempt failed: {lastError()!.message}</>
+          )}
+          Attempt the task (attempt {attempts() + 1}/3).
+        </Claude>
+      )}
+
+      {attempts() >= 3 && (
+        <Stop reason={`Failed after 3 attempts: ${lastError()?.message}`} />
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Orchestration-Level Errors
+
+Handle errors at the orchestration level:
+
+```tsx
+<Orchestration
+  globalTimeout={3600000}
+  onError={async (error) => {
+    // Log to database
+    await db.vcs.addReport({
+      type: "error",
+      severity: "critical",
+      title: "Workflow Failed",
+      content: error.message,
+    });
+
+    // Send notification
+    await sendAlert(`Workflow failed: ${error.message}`);
+  }}
+>
+  <WorkflowContent />
+</Orchestration>
+```
+
+## Stop Conditions
+
+Use stop conditions to catch issues early:
+
+```tsx
+<Orchestration
+  stopConditions={[
+    { type: "total_tokens", value: 50000 },
+    { type: "report_severity", value: "critical" },
+    {
+      type: "custom",
+      fn: (result) => result.output.includes("FATAL"),
+      message: "Fatal error detected",
+    },
+  ]}
+  onStopRequested={() => {
+    console.log("Workflow stopped by condition");
+  }}
+>
+```
+
+## Database Logging
+
+Log errors to the database for debugging:
+
+```tsx
+<Claude
+  onError={async (error) => {
+    // Log the failure
+    await db.vcs.addReport({
+      type: "error",
+      severity: "warning",
+      title: "Agent Failed",
+      content: error.message,
+      metadata: {
+        phase: phase(),
+        attempts: attempts(),
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // Store learning for future
+    await db.memories.addLearning(
+      `error-${Date.now()}`,
+      `Encountered error: ${error.message}`,
+      "error handler"
+    );
+  }}
+>
+```
+
+## Graceful Degradation
+
+Fall back to simpler approaches:
+
+```tsx
+function ResilientWorkflow() {
+  const [approach, setApproach] = createSignal<"full" | "simple" | "manual">("full");
+
+  return (
+    <Ralph maxIterations={5}>
+      {approach() === "full" && (
+        <Claude
+          model="opus"
+          maxTurns={20}
+          onFinished={() => setApproach("done")}
+          onError={() => setApproach("simple")}
+        >
+          Comprehensive analysis with full toolset.
+        </Claude>
+      )}
+
+      {approach() === "simple" && (
+        <Claude
+          model="sonnet"
+          maxTurns={5}
+          allowedTools={["Read"]}
+          onFinished={() => setApproach("done")}
+          onError={() => setApproach("manual")}
+        >
+          Simplified analysis, read-only.
+        </Claude>
+      )}
+
+      {approach() === "manual" && (
+        <Human
+          message="Automated analysis failed"
+          onApprove={() => setApproach("done")}
+        >
+          Both automated approaches failed.
+          Please review manually.
+        </Human>
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Validation Errors
+
+Handle schema validation failures:
+
+```tsx
+<Claude
+  schema={StrictSchema}
+  maxRetries={2}
+  onFinished={(result) => {
+    if (!result.structured) {
+      console.warn("No structured output");
+      return;
+    }
+    // Use structured output
+  }}
+  onError={(error) => {
+    if (error.message.includes("validation")) {
+      console.error("Schema validation failed after retries");
+      // Fall back to unstructured output
+    }
+  }}
+>
+```
+
+## Timeout Handling
+
+Handle timeouts explicitly:
+
+```tsx
+<Claude
+  timeout={60000}  // 1 minute
+  onError={(error) => {
+    if (error.message.includes("timeout")) {
+      console.log("Agent timed out, trying shorter task");
+      setApproach("shorter");
+    }
+  }}
+>
+```
+
+## Complete Error Handling Pattern
+
+```tsx
+function RobustWorkflow() {
+  const [state, setState] = createStore({
+    phase: "start",
+    attempts: 0,
+    errors: [] as string[],
+  });
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Orchestration
+        globalTimeout={3600000}
+        stopConditions={[
+          { type: "total_tokens", value: 100000 },
+        ]}
+        onError={async (error) => {
+          await db.vcs.addReport({
+            type: "error",
+            severity: "critical",
+            title: "Workflow Error",
+            content: error.message,
+          });
+        }}
+      >
+        <Ralph
+          maxIterations={10}
+          onMaxIterations={() => {
+            console.error("Max iterations reached");
+          }}
+        >
+          {state.phase === "start" && state.attempts < 3 && (
+            <Claude
+              onFinished={() => setState("phase", "done")}
+              onError={(error) => {
+                setState("errors", [...state.errors, error.message]);
+                setState("attempts", state.attempts + 1);
+
+                if (state.attempts >= 2) {
+                  setState("phase", "fallback");
+                }
+              }}
+            >
+              Primary task.
+              {state.errors.length > 0 && (
+                <>Previous errors: {state.errors.join(", ")}</>
+              )}
+            </Claude>
+          )}
+
+          {state.phase === "fallback" && (
+            <Human
+              message="Automated task failed"
+              onApprove={() => setState("phase", "done")}
+              onReject={() => setState("phase", "cancelled")}
+            >
+              Failed {state.attempts} times.
+              Errors: {state.errors.join("; ")}
+            </Human>
+          )}
+
+          {state.phase === "cancelled" && (
+            <Stop reason="Cancelled after failures" />
+          )}
+        </Ralph>
+      </Orchestration>
+    </SmithersProvider>
+  );
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+    Workflow-level control
+  </Card>
+  <Card title="Ralph" icon="rotate" href="/components/ralph">
+    Iteration control
+  </Card>
+  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs">
+    Error logging
+  </Card>
+</CardGroup>

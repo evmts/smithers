@@ -1,0 +1,393 @@
+---
+title: Claude
+description: The core agent component for executing Claude with full tool access
+---
+
+# Claude Component
+
+The `<Claude>` component is the core of Smithers. It executes Claude via Claude Code CLI with full tool access, database logging, and structured output support.
+
+## Basic Usage
+
+```tsx
+import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+
+<Claude
+  model="sonnet"
+  maxTurns={10}
+  onFinished={(result) => console.log(result.output)}
+>
+  Analyze this codebase and suggest improvements.
+</Claude>
+```
+
+## Props
+
+### Model Configuration
+
+<ParamField path="model" type="'opus' | 'sonnet' | 'haiku'" default="sonnet">
+  The Claude model to use.
+
+  ```tsx
+  <Claude model="opus">Complex reasoning task</Claude>
+  <Claude model="sonnet">Standard task</Claude>
+  <Claude model="haiku">Quick, simple task</Claude>
+  ```
+</ParamField>
+
+<ParamField path="maxTurns" type="number">
+  Maximum number of agentic turns (tool use cycles).
+
+  ```tsx
+  <Claude maxTurns={5}>Limited iteration task</Claude>
+  ```
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens for the response.
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Timeout in milliseconds.
+
+  ```tsx
+  <Claude timeout={60000}>Task with 1 minute timeout</Claude>
+  ```
+</ParamField>
+
+### System Prompt
+
+<ParamField path="systemPrompt" type="string">
+  Custom system prompt for Claude.
+
+  ```tsx
+  <Claude systemPrompt="You are a security expert. Focus on vulnerabilities.">
+    Review this code.
+  </Claude>
+  ```
+</ParamField>
+
+### Tool Configuration
+
+<ParamField path="tools" type="Tool[]">
+  Custom tools to provide to Claude.
+
+  ```tsx
+  <Claude tools={[myCustomTool]}>
+    Use the custom tool.
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="allowedTools" type="string[]">
+  Restrict Claude to only these built-in tools.
+
+  ```tsx
+  <Claude allowedTools={["Read", "Glob", "Grep"]}>
+    Research only - no edits.
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="disallowedTools" type="string[]">
+  Prevent Claude from using these tools.
+
+  ```tsx
+  <Claude disallowedTools={["Bash"]}>
+    No shell commands.
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="permissionMode" type="'default' | 'acceptEdits' | 'plan'">
+  Permission handling mode.
+
+  ```tsx
+  <Claude permissionMode="acceptEdits">
+    Auto-accept file edits.
+  </Claude>
+  ```
+</ParamField>
+
+### Structured Output
+
+<ParamField path="schema" type="ZodSchema">
+  Zod schema for structured output validation.
+
+  ```tsx
+  const ResultSchema = z.object({
+    summary: z.string(),
+    issues: z.array(z.string()),
+  });
+
+  <Claude schema={ResultSchema}>
+    Return structured analysis.
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="validate" type="(output: T) => boolean">
+  Custom validation function.
+
+  ```tsx
+  <Claude validate={(r) => r.issues.length > 0}>
+    Must find at least one issue.
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="retryOnValidationFailure" type="boolean" default="true">
+  Retry if validation fails.
+</ParamField>
+
+<ParamField path="maxRetries" type="number" default="2">
+  Maximum validation retries.
+</ParamField>
+
+### Callbacks
+
+<ParamField path="onFinished" type="(result: AgentResult) => void">
+  Called when execution completes.
+
+  ```tsx
+  <Claude onFinished={(result) => {
+    console.log(result.output);
+    console.log(result.structured);  // If schema provided
+    console.log(result.tokensUsed);
+  }}>
+    Task
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Called on execution error.
+
+  ```tsx
+  <Claude onError={(err) => console.error(err)}>
+    Risky task
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="onProgress" type="(message: string) => void">
+  Called with progress updates.
+</ParamField>
+
+<ParamField path="onToolCall" type="(tool: string, input: any) => void">
+  Called when Claude uses a tool.
+</ParamField>
+
+### Stop Conditions
+
+<ParamField path="stopConditions" type="StopCondition[]">
+  Conditions that can stop execution early.
+
+  ```tsx
+  <Claude
+    stopConditions={[
+      { type: "token_limit", value: 10000 },
+      { type: "pattern", value: /DONE/i },
+    ]}
+  >
+    Task with stop conditions
+  </Claude>
+  ```
+</ParamField>
+
+## AgentResult Type
+
+```tsx
+interface AgentResult<T = any> {
+  output: string;              // Raw text output
+  structured?: T;              // Validated structured output
+  tokensUsed: {
+    input: number;
+    output: number;
+  };
+  turnsUsed: number;
+  stopReason: 'completed' | 'stop_condition' | 'error' | 'cancelled';
+  durationMs: number;
+  exitCode?: number;
+  sessionId?: string;
+}
+```
+
+## Structured Output with Zod
+
+Get typed, validated responses:
+
+```tsx
+import { z } from 'zod';
+
+const AnalysisSchema = z.object({
+  summary: z.string(),
+  issues: z.array(z.object({
+    severity: z.enum(['low', 'medium', 'high', 'critical']),
+    file: z.string(),
+    description: z.string(),
+  })),
+  recommendations: z.array(z.string()),
+});
+
+<Claude
+  model="sonnet"
+  schema={AnalysisSchema}
+  maxRetries={2}
+  onFinished={(result) => {
+    // result.structured is typed as z.infer<typeof AnalysisSchema>
+    for (const issue of result.structured.issues) {
+      console.log(`[${issue.severity}] ${issue.file}: ${issue.description}`);
+    }
+  }}
+>
+  Analyze this codebase for security issues.
+  Return a structured analysis.
+</Claude>
+```
+
+## Tool Restrictions
+
+Control what Claude can do:
+
+```tsx
+// Research only - no modifications
+<Claude allowedTools={["Read", "Glob", "Grep"]}>
+  Find all files that import the auth module.
+</Claude>
+
+// Full edit access
+<Claude
+  allowedTools={["Read", "Edit", "Write", "Bash"]}
+  permissionMode="acceptEdits"
+>
+  Implement the feature.
+</Claude>
+
+// No shell access
+<Claude disallowedTools={["Bash"]}>
+  Analyze the code (no commands).
+</Claude>
+```
+
+## Conditional Rendering
+
+Use signals to control when Claude runs:
+
+```tsx
+function ConditionalClaude() {
+  const [phase, setPhase] = createSignal("research");
+
+  return (
+    <Ralph maxIterations={5}>
+      {phase() === "research" && (
+        <Claude
+          allowedTools={["Read", "Glob"]}
+          onFinished={() => setPhase("implement")}
+        >
+          Research the codebase.
+        </Claude>
+      )}
+
+      {phase() === "implement" && (
+        <Claude
+          allowedTools={["Edit", "Write"]}
+          onFinished={() => setPhase("done")}
+        >
+          Implement the solution.
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Nested Prompt Components
+
+Compose prompts with child components:
+
+```tsx
+<Claude model="sonnet">
+  <Sqlite path="./data.db">
+    Database contains users and orders tables.
+  </Sqlite>
+
+  Find the top 10 customers by order value.
+  Export results to a CSV file.
+</Claude>
+```
+
+## Error Handling
+
+```tsx
+function ResilientClaude() {
+  const [attempts, setAttempts] = createSignal(0);
+  const [error, setError] = createSignal<Error | null>(null);
+
+  return (
+    <Ralph maxIterations={3}>
+      {error() && attempts() < 3 && (
+        <Claude
+          onFinished={() => setError(null)}
+          onError={(err) => {
+            setError(err);
+            setAttempts(a => a + 1);
+          }}
+        >
+          Previous attempt failed: {error()?.message}
+          Try a different approach.
+        </Claude>
+      )}
+
+      {!error() && (
+        <Claude
+          onFinished={(r) => console.log("Success:", r.output)}
+          onError={setError}
+        >
+          Complete the task.
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always set maxTurns for agentic tasks">
+    Prevent runaway iterations:
+    ```tsx
+    <Claude maxTurns={10}>...</Claude>
+    ```
+  </Accordion>
+
+  <Accordion title="Use allowedTools to restrict access">
+    Follow principle of least privilege:
+    ```tsx
+    // Research phase - read only
+    <Claude allowedTools={["Read", "Glob", "Grep"]}>
+
+    // Implementation phase - edit access
+    <Claude allowedTools={["Read", "Edit", "Write"]}>
+    ```
+  </Accordion>
+
+  <Accordion title="Use schemas for predictable output">
+    Validate responses with Zod:
+    ```tsx
+    <Claude schema={MySchema} maxRetries={2}>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Structured Output Guide" icon="code" href="/guides/structured-output">
+    Deep dive into Zod schemas
+  </Card>
+  <Card title="MCP Integration" icon="plug" href="/guides/mcp-integration">
+    Add external tools
+  </Card>
+</CardGroup>

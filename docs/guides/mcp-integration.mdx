@@ -1,0 +1,174 @@
+---
+title: MCP Integration
+description: Connect Claude to external tools via Model Context Protocol
+---
+
+# MCP Integration Guide
+
+Model Context Protocol (MCP) allows Claude to interact with external systems through standardized tool interfaces.
+
+## Built-in MCP Components
+
+### Sqlite
+
+Give Claude access to SQLite databases:
+
+```tsx
+import { Sqlite } from "smithers/components/MCP";
+
+<Claude model="sonnet" maxTurns={10}>
+  <Sqlite path="./data.db" readOnly>
+    Database schema:
+    - users(id, name, email)
+    - orders(id, user_id, total)
+  </Sqlite>
+
+  Find users who have placed orders over $100.
+</Claude>
+```
+
+### Read-Only for Safety
+
+```tsx
+<Sqlite path="./production.db" readOnly>
+  Production data - read only access.
+</Sqlite>
+```
+
+## Multiple MCP Servers
+
+```tsx
+<Claude model="sonnet" maxTurns={15}>
+  <Sqlite path="./users.db">User database</Sqlite>
+  <Sqlite path="./analytics.db">Analytics database</Sqlite>
+
+  Cross-reference user signups with analytics events.
+</Claude>
+```
+
+## Custom MCP Configuration
+
+For advanced MCP setups, configure tools directly:
+
+```tsx
+<Claude
+  tools={[
+    {
+      name: "query_database",
+      description: "Query the PostgreSQL database",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "SQL query to execute" },
+        },
+        required: ["query"],
+      },
+      execute: async (input, context) => {
+        const result = await db.query(input.query);
+        return JSON.stringify(result);
+      },
+    },
+  ]}
+>
+  Query the database for user statistics.
+</Claude>
+```
+
+## Common Patterns
+
+### Data Analysis Pipeline
+
+```tsx
+function DataPipeline() {
+  const [phase, setPhase] = createSignal("query");
+  const [data, setData] = createSignal<string | null>(null);
+
+  return (
+    <Ralph maxIterations={5}>
+      {phase() === "query" && (
+        <Claude
+          model="sonnet"
+          onFinished={(result) => {
+            setData(result.output);
+            setPhase("analyze");
+          }}
+        >
+          <Sqlite path="./sales.db" readOnly>
+            Sales database with orders and products.
+          </Sqlite>
+
+          Query the top 10 products by revenue.
+        </Claude>
+      )}
+
+      {phase() === "analyze" && (
+        <Claude
+          model="sonnet"
+          allowedTools={["Write"]}
+          onFinished={() => setPhase("done")}
+        >
+          Analyze this data and write a report:
+          {data()}
+
+          Save to reports/sales-analysis.md
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+### Database with File Output
+
+```tsx
+<Claude model="sonnet" maxTurns={10} allowedTools={["Write"]}>
+  <Sqlite path="./analytics.db" readOnly>
+    Event tracking database.
+  </Sqlite>
+
+  Generate a CSV export of daily active users.
+  Save to exports/dau.csv
+</Claude>
+```
+
+## Security Considerations
+
+<Warning>
+Always use `readOnly` for production databases to prevent accidental modifications.
+</Warning>
+
+```tsx
+// Safe - read only
+<Sqlite path="./prod.db" readOnly>...</Sqlite>
+
+// Risky - allows writes
+<Sqlite path="./prod.db">...</Sqlite>
+```
+
+## Tool Restrictions
+
+Combine MCP with tool restrictions:
+
+```tsx
+<Claude
+  allowedTools={["query_database"]}  // Only database access
+  disallowedTools={["Bash"]}         // No shell commands
+>
+  <Sqlite path="./data.db" readOnly>
+    Schema here.
+  </Sqlite>
+
+  Analyze the data (no shell commands needed).
+</Claude>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Sqlite Component" icon="database" href="/components/sqlite">
+    Sqlite API reference
+  </Card>
+  <Card title="MCP Database Example" icon="code" href="/examples/mcp-database">
+    Complete example
+  </Card>
+</CardGroup>

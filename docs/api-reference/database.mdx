@@ -1,0 +1,71 @@
+---
+title: Database
+description: PGlite database API for workflow persistence
+---
+
+# Database API
+
+The Smithers database provides persistent storage using PGlite (embedded PostgreSQL).
+
+## Creating a Database
+
+```tsx
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+
+const db = await createSmithersDB({
+  path: ".smithers/my-workflow"
+});
+
+// Always close when done
+await db.close();
+```
+
+## Database Structure
+
+| Namespace | Purpose |
+|-----------|---------|
+| `db.state` | Key-value state storage |
+| `db.memories` | Long-term knowledge storage |
+| `db.execution` | Execution tracking |
+| `db.phases` | Phase tracking |
+| `db.steps` | Step tracking |
+| `db.agents` | Agent invocation tracking |
+| `db.tools` | Tool call tracking |
+| `db.artifacts` | Artifact tracking |
+| `db.vcs` | VCS operations (commits, reviews) |
+
+## Raw Queries
+
+For advanced use cases:
+
+```tsx
+const results = await db.query<{ count: number }>(
+  "SELECT COUNT(*) as count FROM agents WHERE model = $1",
+  ["sonnet"]
+);
+```
+
+## Closing
+
+Always close the database to ensure writes are flushed:
+
+```tsx
+await db.close();
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="State API" icon="database" href="/api-reference/state">
+    Key-value storage
+  </Card>
+  <Card title="Memories API" icon="brain" href="/api-reference/memories">
+    Long-term knowledge
+  </Card>
+  <Card title="Execution API" icon="play" href="/api-reference/execution">
+    Execution tracking
+  </Card>
+  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs">
+    Version control
+  </Card>
+</CardGroup>

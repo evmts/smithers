@@ -1,0 +1,207 @@
+---
+title: Multi-Phase Review
+description: Implement → Review → Iterate workflow
+---
+
+# Multi-Phase Review Workflow
+
+A workflow that implements features, reviews them, and iterates until approved.
+
+## Code
+
+```tsx
+#!/usr/bin/env bun
+
+import { createSignal } from "solid-js";
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+import { Orchestration } from "smithers/smithers-orchestrator/src/components/Orchestration";
+import { Ralph } from "smithers/components/Ralph";
+import { Phase } from "smithers/components/Phase";
+import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { Review } from "smithers/components/Review";
+
+async function main() {
+  const db = await createSmithersDB({ path: ".smithers/review-workflow" });
+
+  // Resume if incomplete execution exists
+  let executionId: string;
+  const incomplete = await db.execution.findIncomplete();
+  if (incomplete) {
+    executionId = incomplete.id;
+    console.log("Resuming execution:", executionId);
+  } else {
+    executionId = await db.execution.start("Review Workflow", "review-workflow.tsx");
+  }
+
+  // Load persisted state
+  const savedPhase = await db.state.get<string>("phase");
+
+  function ReviewWorkflow() {
+    const [phase, setPhase] = createSignal(savedPhase ?? "implement");
+
+    // Sync phase changes to database
+    const updatePhase = async (newPhase: string) => {
+      setPhase(newPhase);
+      await db.state.set("phase", newPhase, `transition_to_${newPhase}`);
+    };
+
+    return (
+      <SmithersProvider db={db} executionId={executionId}>
+        <Orchestration
+          globalTimeout={3600000}
+          onComplete={() => console.log("Workflow complete!")}
+        >
+          <Ralph maxIterations={10}>
+            {phase() === "implement" && (
+              <Phase name="Implementation">
+                <Claude
+                  model="sonnet"
+                  allowedTools={["Read", "Edit", "Write", "Glob", "Grep"]}
+                  onFinished={() => updatePhase("review")}
+                >
+                  Implement the user authentication feature:
+                  1. Create a login form component
+                  2. Add authentication API endpoint
+                  3. Implement session management
+
+                  Follow existing patterns in the codebase.
+                </Claude>
+              </Phase>
+            )}
+
+            {phase() === "review" && (
+              <Phase name="Code Review">
+                <Review
+                  target={{ type: "diff", ref: "main" }}
+                  model="sonnet"
+                  criteria={[
+                    "No security vulnerabilities",
+                    "No hardcoded secrets or credentials",
+                    "Input validation is comprehensive",
+                    "Error handling covers edge cases",
+                    "Code follows project conventions",
+                  ]}
+                  onFinished={(review) => {
+                    if (review.approved) {
+                      console.log("Review passed!");
+                      updatePhase("complete");
+                    } else {
+                      console.log("Review failed. Issues:");
+                      review.issues.forEach(issue => {
+                        console.log(`  [${issue.severity}] ${issue.file}: ${issue.description}`);
+                      });
+                      updatePhase("implement");
+                    }
+                  }}
+                />
+              </Phase>
+            )}
+
+            {/* When phase is "complete", nothing renders, loop ends */}
+          </Ralph>
+        </Orchestration>
+      </SmithersProvider>
+    );
+  }
+
+  const root = createSmithersRoot();
+  await root.mount(ReviewWorkflow);
+
+  await db.execution.complete(executionId);
+  await db.close();
+}
+
+main();
+```
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  ┌──────────────┐         ┌──────────────┐                 │
+│  │  Implement   │────────▶│    Review    │                 │
+│  │   (Claude)   │         │   (Review)   │                 │
+│  └──────────────┘         └──────────────┘                 │
+│         ▲                        │                          │
+│         │                        │                          │
+│         │    ┌───────────┐      │                          │
+│         └────│ Not       │◀─────┘                          │
+│              │ Approved  │       │                          │
+│              └───────────┘       │                          │
+│                                  │ Approved                 │
+│                                  ▼                          │
+│                          ┌──────────────┐                  │
+│                          │   Complete   │                  │
+│                          └──────────────┘                  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## State Persistence
+
+The workflow state is persisted to the database:
+
+```tsx
+// State is saved on each transition
+await db.state.set("phase", "review", "transition_to_review");
+
+// On restart, state is restored
+const savedPhase = await db.state.get<string>("phase");
+const [phase, setPhase] = createSignal(savedPhase ?? "implement");
+```
+
+## Inspecting State
+
+```bash
+# View current state
+smithers-orchestrator db state
+
+# View transition history
+smithers-orchestrator db query "SELECT * FROM transitions ORDER BY timestamp DESC LIMIT 10"
+```
+
+## Customization
+
+### Stricter Review Criteria
+
+```tsx
+<Review
+  criteria={[
+    "No security vulnerabilities (OWASP Top 10)",
+    "100% test coverage for new code",
+    "All public APIs documented",
+    "No TODO comments",
+    "Performance considerations addressed",
+  ]}
+/>
+```
+
+### Human Checkpoint
+
+Add human approval before review:
+
+```tsx
+{phase() === "pre-review" && (
+  <Human
+    message="Review implementation before AI review?"
+    onApprove={() => updatePhase("review")}
+    onReject={() => updatePhase("implement")}
+  >
+    Implementation complete. Ready for AI review?
+  </Human>
+)}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Review Component" icon="magnifying-glass" href="/components/review">
+    Review API reference
+  </Card>
+  <Card title="State Management" icon="database" href="/concepts/state-management">
+    State persistence
+  </Card>
+</CardGroup>

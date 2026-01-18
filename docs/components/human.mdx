@@ -1,0 +1,157 @@
+---
+title: Human
+description: Pause workflow for human input or approval
+---
+
+# Human Component
+
+The `<Human>` component pauses the workflow to request human input or approval.
+
+## Basic Usage
+
+```tsx
+import { Human } from "smithers";
+
+<Human
+  message="Review the implementation"
+  onApprove={() => setPhase("continue")}
+  onReject={() => setPhase("cancelled")}
+>
+  The agent has implemented the feature.
+  Please review the changes before continuing.
+</Human>
+```
+
+## Props
+
+<ParamField path="message" type="string">
+  Short message shown to the human.
+
+  ```tsx
+  <Human message="Approve deployment?">
+  ```
+</ParamField>
+
+<ParamField path="onApprove" type="() => void">
+  Called when human approves.
+</ParamField>
+
+<ParamField path="onReject" type="() => void">
+  Called when human rejects.
+</ParamField>
+
+<ParamField path="children" type="JSX.Element">
+  Detailed content shown to the human.
+</ParamField>
+
+## Approval Workflow
+
+```tsx
+function ApprovalWorkflow() {
+  const [phase, setPhase] = createSignal("implement");
+
+  return (
+    <Ralph maxIterations={10}>
+      {phase() === "implement" && (
+        <Claude onFinished={() => setPhase("review")}>
+          Implement the feature.
+        </Claude>
+      )}
+
+      {phase() === "review" && (
+        <Human
+          message="Review Implementation"
+          onApprove={() => setPhase("deploy")}
+          onReject={() => setPhase("implement")}
+        >
+          The feature has been implemented.
+          Please review the changes in the diff.
+        </Human>
+      )}
+
+      {phase() === "deploy" && (
+        <Claude
+          allowedTools={["Bash"]}
+          onFinished={() => setPhase("done")}
+        >
+          Deploy the changes.
+        </Claude>
+      )}
+
+      {phase() === "cancelled" && (
+        <Stop reason="Human rejected changes" />
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Multi-Checkpoint Workflow
+
+```tsx
+function StrictWorkflow() {
+  const [phase, setPhase] = createSignal("prompt-input");
+
+  return (
+    <Ralph maxIterations={20}>
+      {phase() === "prompt-input" && (
+        <Human
+          message="Confirm Feature Request"
+          onApprove={() => setPhase("research")}
+          onReject={() => setPhase("cancelled")}
+        >
+          Feature: Add user authentication
+          Are you sure you want to proceed?
+        </Human>
+      )}
+
+      {phase() === "research" && (
+        <Claude onFinished={() => setPhase("plan-review")}>
+          Research the implementation approach.
+        </Claude>
+      )}
+
+      {phase() === "plan-review" && (
+        <Human
+          message="Approve Plan"
+          onApprove={() => setPhase("implement")}
+          onReject={() => setPhase("research")}
+        >
+          Review the implementation plan.
+        </Human>
+      )}
+
+      {phase() === "implement" && (
+        <Claude onFinished={() => setPhase("final-review")}>
+          Implement the feature.
+        </Claude>
+      )}
+
+      {phase() === "final-review" && (
+        <Human
+          message="Final Review"
+          onApprove={() => setPhase("done")}
+          onReject={() => setPhase("implement")}
+        >
+          Final review before completion.
+        </Human>
+      )}
+
+      {phase() === "cancelled" && (
+        <Stop reason="Workflow cancelled by human" />
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Stop" icon="stop" href="/components/stop">
+    Halt workflow execution
+  </Card>
+  <Card title="Phase" icon="list" href="/components/phase">
+    Workflow phases
+  </Card>
+</CardGroup>
