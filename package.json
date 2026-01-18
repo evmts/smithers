@@ -31,7 +31,8 @@
     "./monitor": "./src/monitor/index.ts",
     "./tools": "./src/tools/index.ts",
     "./reactive-sqlite": "./src/reactive-sqlite/index.ts",
-    "./hooks": "./src/hooks/index.ts"
+    "./hooks": "./src/hooks/index.ts",
+    "./hooks/ai-sdk": "./src/hooks/ai-sdk.ts"
   },
   "files": [
     "src",
@@ -54,6 +55,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.41",
+    "ai": "^6.0.39",
     "@anthropic-ai/claude-agent-sdk": "^0.1.76",
     "@anthropic-ai/sdk": "^0.71.2",
     "@babel/core": "^7.28.6",

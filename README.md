@@ -21,6 +21,7 @@ I use Smithers for both long-term (weeks) agentic work, as well as one-off scrip
 - [Installation](#installation)
 - [Dependencies](#dependencies)
 - [Usage](#usage)
+- [AI SDK React Hooks](#ai-sdk-react-hooks)
 - [Recipes](#recipes)
 - [Features](#features)
   - [Claude Component](#claude-component)
@@ -157,6 +158,41 @@ Run it:
 
 ```bash
 bun my-workflow.tsx
+```
+
+---
+
+## AI SDK React Hooks
+
+Smithers re-exports the Vercel AI SDK React hooks so you can import everything
+from a single package:
+
+```tsx
+import { useChat, useCompletion, useSmithers } from "smithers-orchestrator";
+
+function ChatUI() {
+  const { messages, sendMessage, status } = useChat({ api: "/api/chat" });
+  const { db } = useSmithers();
+
+  return (
+    <div>
+      <p>Status: {status}</p>
+      {messages.map((message) => (
+        <div key={message.id}>{message.content}</div>
+      ))}
+      <button onClick={() => sendMessage({ role: "user", content: "Hi" })}>
+        Send
+      </button>
+    </div>
+  );
+}
+```
+
+You can also import directly from the hooks subpath:
+
+```tsx
+import { useChat } from "smithers-orchestrator/hooks";
+import { useChat as useAiChat } from "smithers-orchestrator/hooks/ai-sdk";
 ```
 
 ---
