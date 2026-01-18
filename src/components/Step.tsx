@@ -207,6 +207,7 @@ export function Step(props: StepProps): ReactNode {
   const isActive = registry ? registry.isStepActive(myIndex) : true
   const isCompleted = registry ? registry.isStepCompleted(myIndex) : false
   const status = isActive ? 'active' : isCompleted ? 'completed' : 'pending'
+  const isDbClosed = () => db.db.isClosed
 
   // Monitor child tasks for this step (only when started)
   // Uses the same pattern as SmithersProvider for reactive task counting
@@ -224,10 +225,12 @@ export function Step(props: StepProps): ReactNode {
   // Pattern from Claude.tsx:110, Smithers.tsx:170
   useEffectOnValueChange(isActive, () => {
     if (!isActive || hasStartedRef.current) return
+    if (isDbClosed()) return
     hasStartedRef.current = true
 
     ;(async () => {
       // Register task with database
+      if (isDbClosed()) return
       taskIdRef.current = db.tasks.start('step', props.name)
 
       try {
@@ -243,6 +246,7 @@ export function Step(props: StepProps): ReactNode {
         }
 
         // Start step in database
+        if (isDbClosed()) return
         const id = db.steps.start(props.name)
         stepIdRef.current = id
 
@@ -254,11 +258,15 @@ export function Step(props: StepProps): ReactNode {
         console.error(`[Step] Error starting step:`, errorObj)
 
         if (stepIdRef.current) {
-          db.steps.fail(stepIdRef.current)
+          if (!isDbClosed()) {
+            db.steps.fail(stepIdRef.current)
+          }
         }
 
         if (taskIdRef.current) {
-          db.tasks.complete(taskIdRef.current)
+          if (!isDbClosed()) {
+            db.tasks.complete(taskIdRef.current)
+          }
         }
 
         props.onError?.(errorObj)
@@ -269,6 +277,7 @@ export function Step(props: StepProps): ReactNode {
   // Helper to complete the step
   const completeStep = useCallback(async () => {
     if (!hasStartedRef.current || hasCompletedRef.current) return
+    if (isDbClosed()) return
     hasCompletedRef.current = true
 
     if (db.db.isClosed) return
