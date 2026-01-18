@@ -1,91 +1,44 @@
 # Smithers Orchestration Examples
 
-Complete working examples demonstrating various Smithers patterns.
+Complete working examples demonstrating Smithers patterns with automatic phase/step state management.
 
 ## Example 1: Simple Sequential Workflow
 
-A basic three-phase workflow that executes sequentially.
+A basic three-phase workflow that executes sequentially. No manual state management needed!
 
 ```tsx
 /**
  * Simple Sequential Workflow
  *
- * Phases:
- * 1. Research - Gather information
- * 2. Implement - Build solution
- * 3. Test - Verify implementation
- *
- * Max iterations: 3
+ * Phases execute automatically in declaration order.
+ * When one phase completes, the next begins.
  */
 
 import { Ralph, Claude, Phase } from "smithers";
-import { create } from "zustand";
-
-interface WorkflowState {
-  phase: string;
-  setPhase: (phase: string) => void;
-}
-
-const useStore = create<WorkflowState>((set) => ({
-  phase: "research",
-  setPhase: (phase) => set({ phase }),
-}));
 
 export default function SequentialWorkflow() {
-  const { phase, setPhase } = useStore();
-
   return (
     <Ralph maxIterations={3}>
-      {phase === "research" && (
-        <Phase name="Research">
-          <Claude
-            model="sonnet"
-            onFinished={() => {
-              console.log("Research phase complete");
-              setPhase("implement");
-            }}
-          >
-            Research best practices for building a REST API with Node.js. Focus
-            on security, performance, and scalability.
-          </Claude>
-        </Phase>
-      )}
+      <Phase name="Research">
+        <Claude model="sonnet">
+          Research best practices for building a REST API with Node.js.
+          Focus on security, performance, and scalability.
+        </Claude>
+      </Phase>
 
-      {phase === "implement" && (
-        <Phase name="Implementation">
-          <Claude
-            model="sonnet"
-            onFinished={() => {
-              console.log("Implementation phase complete");
-              setPhase("test");
-            }}
-          >
-            Implement a REST API based on the research findings. Include proper
-            error handling and validation.
-          </Claude>
-        </Phase>
-      )}
+      <Phase name="Implementation">
+        <Claude model="sonnet">
+          Implement a REST API based on the research findings.
+          Include proper error handling and validation.
+        </Claude>
+      </Phase>
 
-      {phase === "test" && (
-        <Phase name="Testing">
-          <Claude
-            model="sonnet"
-            onFinished={() => {
-              console.log("Testing phase complete");
-              setPhase("done");
-            }}
-          >
-            Write comprehensive tests for the API. Verify all endpoints work
-            correctly.
-          </Claude>
-        </Phase>
-      )}
-
-      {phase === "done" && (
-        <Phase name="Complete">
-          <div>✅ Workflow complete!</div>
-        </Phase>
-      )}
+      <Phase name="Testing">
+        <Claude model="sonnet">
+          Write comprehensive tests for the API.
+          Verify all endpoints work correctly.
+        </Claude>
+      </Phase>
     </Ralph>
   );
 }
@@ -93,129 +46,51 @@ export default function SequentialWorkflow() {
 
 ---
 
-## Example 2: Conditional Branching
+## Example 2: Conditional Phase Skipping
 
-Workflow that branches based on validation results.
+Use `skipIf` to conditionally skip phases based on runtime conditions.
 
 ```tsx
 /**
- * Conditional Branching Workflow
+ * Conditional Phase Skipping
  *
- * Phases:
- * 1. Analyze - Assess the codebase
- * 2a. Fix Issues - If problems found
- * 2b. Optimize - If no problems found
- * 3. Verify - Confirm success
- *
- * Max iterations: 5
+ * The skipIf prop lets you skip phases based on conditions.
+ * Skipped phases still appear in the output but don't execute.
  */
 
 import { Ralph, Claude, Phase } from "smithers";
-import { create } from "zustand";
 
-interface WorkflowState {
-  phase: string;
-  hasIssues: boolean;
-  setPhase: (phase: string) => void;
-  setHasIssues: (hasIssues: boolean) => void;
-}
-
-const useStore = create<WorkflowState>((set) => ({
-  phase: "analyze",
-  hasIssues: false,
-  setPhase: (phase) => set({ phase }),
-  setHasIssues: (hasIssues) => set({ hasIssues }),
-}));
+// Check if tests already exist
+const testsExist = () => Bun.file("./src/tests/api.test.ts").exists();
 
 export default function ConditionalWorkflow() {
-  const { phase, hasIssues, setPhase, setHasIssues } = useStore();
-
   return (
-    <Ralph maxIterations={5}>
-      {phase === "analyze" && (
-        <Phase name="Analysis">
-          <Claude
-            model="opus"
-            onFinished={(result: any) => {
-              const foundIssues = result.issues?.length > 0;
-              setHasIssues(foundIssues);
+    <Ralph maxIterations={3}>
+      <Phase name="Analyze">
+        <Claude model="opus">
+          Analyze the codebase in src/ for potential issues.
+          Return findings as structured output.
+        </Claude>
+      </Phase>
 
-              if (foundIssues) {
-                console.log("Issues found, moving to fix phase");
-                setPhase("fix");
-              } else {
-                console.log("No issues, moving to optimize phase");
-                setPhase("optimize");
-              }
-            }}
-          >
-            Analyze the codebase in src/ for potential issues: - Security
-            vulnerabilities - Performance problems - Code quality issues Return
-            a JSON object with an "issues" array.
-          </Claude>
-        </Phase>
-      )}
+      <Phase name="Fix Issues">
+        <Claude model="sonnet">
+          Fix any issues identified in the analysis phase.
+        </Claude>
+      </Phase>
 
-      {phase === "fix" && (
-        <Phase name="Fix Issues">
-          <Claude
-            model="sonnet"
-            onFinished={() => {
-              console.log("Issues fixed, moving to verify");
-              setPhase("verify");
-            }}
-          >
-            Fix the issues identified in the analysis phase. Make sure to test
-            each fix.
-          </Claude>
-        </Phase>
-      )}
+      <Phase name="Write Tests" skipIf={testsExist}>
+        <Claude model="sonnet">
+          Write tests for the codebase.
+          Skip if tests already exist.
+        </Claude>
+      </Phase>
 
-      {phase === "optimize" && (
-        <Phase name="Optimize">
-          <Claude
-            model="sonnet"
-            onFinished={() => {
-              console.log("Optimization complete, moving to verify");
-              setPhase("verify");
-            }}
-          >
-            The codebase looks good! Apply performance optimizations: - Bundle
-            size reduction - Lazy loading - Caching strategies
-          </Claude>
-        </Phase>
-      )}
-
-      {phase === "verify" && (
-        <Phase name="Verification">
-          <Claude
-            model="sonnet"
-            validate={async (result: any) => {
-              return result.all_tests_passing === true;
-            }}
-            onFinished={() => {
-              console.log("Verification successful");
-              setPhase("done");
-            }}
-            onError={(error) => {
-              console.error("Verification failed, retrying fixes");
-              setPhase("fix");
-            }}
-          >
-            Run all tests and verify the {hasIssues ? "fixes" : "optimizations"}{" "}
-            work correctly. Return JSON with "all_tests_passing" boolean.
-          </Claude>
-        </Phase>
-      )}
-
-      {phase === "done" && (
-        <Phase name="Complete">
-          <div>
-            ✅ Workflow complete!{" "}
-            {hasIssues ? "Issues fixed" : "Code optimized"}
-          </div>
-        </Phase>
-      )}
+      <Phase name="Verify">
+        <Claude model="sonnet">
+          Run all tests and verify the fixes work correctly.
+        </Claude>
+      </Phase>
     </Ralph>
   );
 }
@@ -223,151 +98,116 @@ export default function ConditionalWorkflow() {
 
 ---
 
-## Example 3: Parallel Execution
+## Example 3: Sequential Steps Within Phases
 
-Multiple agents working in parallel within a phase.
+Steps within a phase execute sequentially by default.
 
 ```tsx
 /**
- * Parallel Execution Workflow
+ * Sequential Steps
  *
- * Phases:
- * 1. Setup - Initialize parallel workers
- * 2. Parallel Work - Multiple agents running simultaneously
- * 3. Consolidate - Merge results
- *
- * Max iterations: 3
+ * Steps within a Phase execute one after another.
+ * Each step waits for the previous to complete.
  */
 
 import { Ralph, Claude, Phase, Step } from "smithers";
-import { create } from "zustand";
 
-interface WorkflowState {
-  phase: string;
-  completedTasks: number;
-  results: Record<string, any>;
-  setPhase: (phase: string) => void;
-  incrementCompleted: () => void;
-  setResult: (task: string, result: any) => void;
-}
-
-const useStore = create<WorkflowState>((set) => ({
-  phase: "setup",
-  completedTasks: 0,
-  results: {},
-
-  setPhase: (phase) => set({ phase }),
-
-  incrementCompleted: () =>
-    set((state) => ({
-      completedTasks: state.completedTasks + 1,
-    })),
-
-  setResult: (task, result) =>
-    set((state) => ({
-      results: { ...state.results, [task]: result },
-    })),
-}));
-
-export default function ParallelWorkflow() {
-  const {
-    phase,
-    completedTasks,
-    results,
-    setPhase,
-    incrementCompleted,
-    setResult,
-  } = useStore();
-
-  // When all 3 tasks complete, move to consolidate phase
-  if (phase === "parallel" && completedTasks === 3) {
-    setPhase("consolidate");
-  }
-
+export default function StepsWorkflow() {
   return (
     <Ralph maxIterations={3}>
-      {phase === "setup" && (
-        <Phase name="Setup">
-          <Claude
-            onFinished={() => {
-              console.log("Setup complete, starting parallel work");
-              setPhase("parallel");
-            }}
-          >
-            Initialize the environment for parallel task execution. Verify all
-            dependencies are available.
-          </Claude>
-        </Phase>
-      )}
+      <Phase name="Setup">
+        <Claude>Initialize the project environment.</Claude>
+      </Phase>
 
-      {phase === "parallel" && (
-        <Phase name="Parallel Execution">
+      <Phase name="Implementation">
+        <Step name="Write Models">
+          <Claude model="sonnet">
+            Create the database models for User, Post, and Comment.
+          </Claude>
+        </Step>
+
+        <Step name="Write Controllers">
+          <Claude model="sonnet">
+            Create controllers for each model with CRUD operations.
+          </Claude>
+        </Step>
+
+        <Step name="Write Routes">
+          <Claude model="sonnet">
+            Set up API routes connecting to the controllers.
+          </Claude>
+        </Step>
+      </Phase>
+
+      <Phase name="Testing">
+        <Claude model="sonnet">
+          Write integration tests for all API endpoints.
+        </Claude>
+      </Phase>
+    </Ralph>
+  );
+}
+```
+
+---
+
+## Example 4: Parallel Execution
+
+Use the `<Parallel>` component for concurrent step execution.
+
+```tsx
+/**
+ * Parallel Execution
+ *
+ * Wrap steps in <Parallel> to execute them concurrently.
+ * All parallel steps run simultaneously.
+ */
+
+import { Ralph, Claude, Phase, Step, Parallel } from "smithers";
+
+export default function ParallelWorkflow() {
+  return (
+    <Ralph maxIterations={3}>
+      <Phase name="Setup">
+        <Claude>Initialize the environment for parallel work.</Claude>
+      </Phase>
+
+      <Phase name="Build">
+        <Parallel>
           <Step name="Frontend">
-            <Claude
-              model="sonnet"
-              onFinished={(result) => {
-                console.log("Frontend task complete");
-                setResult("frontend", result);
-                incrementCompleted();
-              }}
-            >
-              Build the frontend components: - User dashboard - Login form -
-              Navigation
+            <Claude model="sonnet">
+              Build the frontend components:
+              - User dashboard
+              - Login form
+              - Navigation
             </Claude>
           </Step>
 
           <Step name="Backend">
-            <Claude
-              model="sonnet"
-              onFinished={(result) => {
-                console.log("Backend task complete");
-                setResult("backend", result);
-                incrementCompleted();
-              }}
-            >
-              Build the backend API: - Authentication endpoints - User
-              management - Data validation
+            <Claude model="sonnet">
+              Build the backend API:
+              - Authentication endpoints
+              - User management
+              - Data validation
             </Claude>
           </Step>
 
           <Step name="Database">
-            <Claude
-              model="sonnet"
-              onFinished={(result) => {
-                console.log("Database task complete");
-                setResult("database", result);
-                incrementCompleted();
-              }}
-            >
-              Set up the database: - Schema design - Migrations - Seed data
+            <Claude model="sonnet">
+              Set up the database:
+              - Schema design
+              - Migrations
+              - Seed data
             </Claude>
           </Step>
-        </Phase>
-      )}
+        </Parallel>
+      </Phase>
 
-      {phase === "consolidate" && (
-        <Phase name="Consolidation">
-          <Claude
-            model="opus"
-            onFinished={() => {
-              console.log("Consolidation complete");
-              setPhase("done");
-            }}
-          >
-            Review and integrate the results from all three parallel tasks:
-            Frontend: {JSON.stringify(results.frontend)}
-            Backend: {JSON.stringify(results.backend)}
-            Database: {JSON.stringify(results.database)}
-            Ensure everything works together correctly.
-          </Claude>
-        </Phase>
-      )}
-
-      {phase === "done" && (
-        <Phase name="Complete">
-          <div>✅ All parallel tasks complete and consolidated!</div>
-        </Phase>
-      )}
+      <Phase name="Integration">
+        <Claude model="opus">
+          Integrate all components and verify they work together.
+        </Claude>
+      </Phase>
     </Ralph>
   );
 }
@@ -375,124 +215,59 @@ export default function ParallelWorkflow() {
 
 ---
 
-## Example 4: Error Handling and Retry
+## Example 5: Mixed Sequential and Parallel
 
-Robust error handling with automatic retry logic.
+Combine sequential phases with parallel steps for complex workflows.
 
 ```tsx
 /**
- * Error Handling and Retry Workflow
+ * Mixed Sequential and Parallel
  *
- * Phases:
- * 1. Attempt - Try the task
- * 2. Retry - If failed and retries remaining
- * 3. Recovery - If all retries exhausted
- * 4. Success - If any attempt succeeds
- *
- * Max iterations: 5 (3 retries + recovery + success)
+ * Phases are sequential, but steps within can be parallel or sequential.
  */
 
-import { Ralph, Claude, Phase } from "smithers";
-import { create } from "zustand";
+import { Ralph, Claude, Phase, Step, Parallel } from "smithers";
 
-interface WorkflowState {
-  phase: string;
-  retryCount: number;
-  maxRetries: number;
-  lastError: string | null;
-  setPhase: (phase: string) => void;
-  incrementRetry: () => void;
-  setLastError: (error: string) => void;
-}
-
-const useStore = create<WorkflowState>((set) => ({
-  phase: "attempt",
-  retryCount: 0,
-  maxRetries: 3,
-  lastError: null,
-
-  setPhase: (phase) => set({ phase }),
-  incrementRetry: () => set((state) => ({ retryCount: state.retryCount + 1 })),
-  setLastError: (error) => set({ lastError: error }),
-}));
-
-export default function ErrorHandlingWorkflow() {
-  const {
-    phase,
-    retryCount,
-    maxRetries,
-    lastError,
-    setPhase,
-    incrementRetry,
-    setLastError,
-  } = useStore();
-
+export default function MixedWorkflow() {
   return (
     <Ralph maxIterations={5}>
-      {phase === "attempt" && (
-        <Phase name={`Attempt ${retryCount + 1}`}>
-          <Claude
-            model="sonnet"
-            validate={async (result: any) => {
-              // Simulate validation that might fail
-              return result.success === true && result.tests_passing === true;
-            }}
-            onFinished={() => {
-              console.log("Task succeeded!");
-              setPhase("success");
-            }}
-            onError={(error) => {
-              console.error(`Attempt ${retryCount + 1} failed:`, error.message);
-              setLastError(error.message);
+      <Phase name="Research">
+        <Parallel>
+          <Step name="Research Frontend">
+            <Claude>Research React best practices for 2024.</Claude>
+          </Step>
+          <Step name="Research Backend">
+            <Claude>Research Bun server patterns and APIs.</Claude>
+          </Step>
+        </Parallel>
+      </Phase>
 
-              if (retryCount < maxRetries) {
-                console.log(`Retrying... (${retryCount + 1}/${maxRetries})`);
-                incrementRetry();
-                setPhase("attempt");
-              } else {
-                console.log("All retries exhausted, moving to recovery");
-                setPhase("recovery");
-              }
-            }}
-          >
-            Perform a critical task that might fail: - Connect to external API -
-            Process data - Validate results Return JSON with: - success: boolean
-            - tests_passing: boolean - data: any results
-          </Claude>
-        </Phase>
-      )}
+      <Phase name="Implementation">
+        {/* Sequential steps - each waits for the previous */}
+        <Step name="Setup Project">
+          <Claude>Initialize the project with Bun and React.</Claude>
+        </Step>
 
-      {phase === "recovery" && (
-        <Phase name="Recovery">
-          <Claude
-            model="opus"
-            onFinished={() => {
-              console.log("Recovery complete");
-              setPhase("done");
-            }}
-          >
-            The task failed after {maxRetries} attempts. Last error: {lastError}
-            Implement a recovery strategy: 1. Use fallback data source 2. Apply
-            default configuration 3. Document the issue for manual review
-          </Claude>
-        </Phase>
-      )}
+        <Step name="Core Features">
+          <Parallel>
+            <Claude>Build authentication system.</Claude>
+            <Claude>Build data management layer.</Claude>
+          </Parallel>
+        </Step>
 
-      {phase === "success" && (
-        <Phase name="Success">
-          <div>
-            ✅ Task completed successfully after {retryCount + 1} attempt(s)!
-          </div>
-        </Phase>
-      )}
+        <Step name="Polish">
+          <Claude>Add error handling and loading states.</Claude>
+        </Step>
+      </Phase>
 
-      {phase === "done" && (
-        <Phase name="Complete">
-          <div>
-            ⚠️ Task completed with recovery after {maxRetries} failed attempts
-          </div>
-        </Phase>
-      )}
+      <Phase name="Deploy">
+        <Step name="Build">
+          <Claude>Create production build.</Claude>
+        </Step>
+        <Step name="Deploy">
+          <Claude>Deploy to production server.</Claude>
+        </Step>
+      </Phase>
     </Ralph>
   );
 }
@@ -500,177 +275,72 @@ export default function ErrorHandlingWorkflow() {
 
 ---
 
-## Example 5: Data Flow Between Phases
+## Example 6: Error Handling with Validation
 
-Complex workflow with data passing between phases.
+Use validation and callbacks for robust error handling.
 
 ```tsx
 /**
- * Data Flow Workflow
+ * Error Handling with Validation
  *
- * Phases:
- * 1. Research - Gather requirements
- * 2. Design - Create architecture based on requirements
- * 3. Implement - Build based on design
- * 4. Test - Verify against original requirements
- *
- * Max iterations: 4
+ * Use validate prop to check results and onError for failures.
  */
 
-import { Ralph, Claude, Phase } from "smithers";
-import { create } from "zustand";
+import { Ralph, Claude, Phase, Step } from "smithers";
 
-interface Requirements {
-  features: string[];
-  constraints: string[];
-  performance: string[];
-}
-
-interface Design {
-  architecture: string;
-  components: string[];
-  dependencies: string[];
-}
-
-interface Implementation {
-  files: string[];
-  tests: string[];
-  documentation: string;
-}
-
-interface WorkflowState {
-  phase: string;
-  requirements: Requirements | null;
-  design: Design | null;
-  implementation: Implementation | null;
-
-  setPhase: (phase: string) => void;
-  setRequirements: (reqs: Requirements) => void;
-  setDesign: (design: Design) => void;
-  setImplementation: (impl: Implementation) => void;
-}
-
-const useStore = create<WorkflowState>((set) => ({
-  phase: "research",
-  requirements: null,
-  design: null,
-  implementation: null,
-
-  setPhase: (phase) => set({ phase }),
-  setRequirements: (reqs) => set({ requirements: reqs }),
-  setDesign: (design) => set({ design }),
-  setImplementation: (impl) => set({ implementation: impl }),
-}));
-
-export default function DataFlowWorkflow() {
-  const {
-    phase,
-    requirements,
-    design,
-    implementation,
-    setPhase,
-    setRequirements,
-    setDesign,
-    setImplementation,
-  } = useStore();
-
+export default function ValidationWorkflow() {
   return (
-    <Ralph maxIterations={4}>
-      {phase === "research" && (
-        <Phase name="Requirements Research">
+    <Ralph maxIterations={5}>
+      <Phase name="Implementation">
+        <Claude
+          model="sonnet"
+          validate={async (result) => {
+            // Validate the implementation meets requirements
+            return result.includes("export") && result.includes("function");
+          }}
+          onError={(error) => {
+            console.error("Implementation failed:", error.message);
+          }}
+        >
+          Implement a utility function that exports a named function.
+          The code must compile and follow best practices.
+        </Claude>
+      </Phase>
+
+      <Phase name="Testing">
+        <Claude
+          model="sonnet"
+          validate={async (result) => {
+            return result.includes("test(") || result.includes("it(");
+          }}
+        >
+          Write tests for the utility function.
+          Tests must use Bun's test framework.
+        </Claude>
+      </Phase>
+
+      <Phase name="Verification">
+        <Step name="Run Tests">
           <Claude
-            model="opus"
-            onFinished={(result: any) => {
-              console.log("Requirements gathered:", result);
-              setRequirements(result);
-              setPhase("design");
+            validate={async (result) => {
+              return result.toLowerCase().includes("pass");
             }}
           >
-            Gather requirements for building a task management system: 1. What
-            features are needed? 2. What are the constraints (budget, timeline)?
-            3. What are the performance requirements? Return JSON with:
-            features[], constraints[], performance[]
+            Run bun test and report results.
+            All tests must pass.
           </Claude>
-        </Phase>
-      )}
+        </Step>
 
-      {phase === "design" && requirements && (
-        <Phase name="Architecture Design">
+        <Step name="Type Check">
           <Claude
-            model="opus"
-            onFinished={(result: any) => {
-              console.log("Design complete:", result);
-              setDesign(result);
-              setPhase("implement");
+            validate={async (result) => {
+              return !result.toLowerCase().includes("error");
             }}
           >
-            Create an architecture design based on these requirements: Features:{" "}
-            {JSON.stringify(requirements.features)}
-            Constraints: {JSON.stringify(requirements.constraints)}
-            Performance: {JSON.stringify(requirements.performance)}
-            Return JSON with: architecture (string), components[],
-            dependencies[]
+            Run bun build --dry-run to check for type errors.
           </Claude>
-        </Phase>
-      )}
-
-      {phase === "implement" && design && (
-        <Phase name="Implementation">
-          <Claude
-            model="sonnet"
-            onFinished={(result: any) => {
-              console.log("Implementation complete:", result);
-              setImplementation(result);
-              setPhase("test");
-            }}
-          >
-            Implement the system based on this design: Architecture:{" "}
-            {design.architecture}
-            Components: {JSON.stringify(design.components)}
-            Dependencies: {JSON.stringify(design.dependencies)}
-            Return JSON with: files[], tests[], documentation
-          </Claude>
-        </Phase>
-      )}
-
-      {phase === "test" && requirements && implementation && (
-        <Phase name="Testing & Verification">
-          <Claude
-            model="sonnet"
-            validate={async (result: any) => {
-              return result.all_requirements_met === true;
-            }}
-            onFinished={() => {
-              console.log("All tests passed!");
-              setPhase("done");
-            }}
-            onError={(error) => {
-              console.error("Tests failed, returning to implementation");
-              setPhase("implement");
-            }}
-          >
-            Test the implementation against the original requirements: Original
-            Requirements: - Features: {JSON.stringify(requirements.features)}-
-            Constraints: {JSON.stringify(requirements.constraints)}-
-            Performance: {JSON.stringify(requirements.performance)}
-            Implementation: - Files: {JSON.stringify(implementation.files)}-
-            Tests: {JSON.stringify(implementation.tests)}
-            Verify all requirements are met. Return JSON with:
-            all_requirements_met (boolean), issues[]
-          </Claude>
-        </Phase>
-      )}
-
-      {phase === "done" && (
-        <Phase name="Complete">
-          <div>
-            ✅ Full workflow complete! - {requirements?.features.length}{" "}
-            features implemented - {design?.components.length} components
-            created - {implementation?.files.length} files written - All tests
-            passing
-          </div>
-        </Phase>
-      )}
+        </Step>
+      </Phase>
     </Ralph>
   );
 }
@@ -678,11 +348,80 @@ export default function DataFlowWorkflow() {
 
 ---
 
-## Running These Examples
+## Example 7: VCS Integration with Steps
+
+Use step-level VCS integration for granular commits.
+
+```tsx
+/**
+ * VCS Integration
+ *
+ * Steps can create snapshots and commits automatically.
+ */
+
+import { Ralph, Claude, Phase, Step } from "smithers";
+
+export default function VCSWorkflow() {
+  return (
+    <Ralph maxIterations={3}>
+      <Phase name="Feature Development">
+        <Step
+          name="Add Models"
+          snapshotBefore
+          commitAfter
+          commitMessage="feat: add user and post models"
+        >
+          <Claude model="sonnet">
+            Create User and Post models in src/models/
+          </Claude>
+        </Step>
+
+        <Step
+          name="Add Controllers"
+          snapshotBefore
+          commitAfter
+          commitMessage="feat: add user and post controllers"
+        >
+          <Claude model="sonnet">
+            Create controllers for User and Post in src/controllers/
+          </Claude>
+        </Step>
+
+        <Step
+          name="Add Routes"
+          snapshotBefore
+          commitAfter
+          commitMessage="feat: add API routes"
+        >
+          <Claude model="sonnet">
+            Set up routes in src/routes/index.ts
+          </Claude>
+        </Step>
+      </Phase>
+
+      <Phase name="Testing">
+        <Step
+          name="Write Tests"
+          commitAfter
+          commitMessage="test: add integration tests"
+        >
+          <Claude model="sonnet">
+            Write integration tests for all new endpoints.
+          </Claude>
+        </Step>
+      </Phase>
+    </Ralph>
+  );
+}
+```
+
+---
+
+## Running Examples
 
 ### Setup
 
-1. Create a new directory:
+1. Create a `.smithers` directory:
 
 ```bash
 mkdir .smithers && cd .smithers
@@ -694,10 +433,10 @@ mkdir .smithers && cd .smithers
 bun init -y
 ```
 
-3. Install dependencies:
+3. Install Smithers:
 
 ```bash
-bun add smithers zustand
+bun add smithers
 ```
 
 4. Copy example to `main.tsx`
@@ -708,9 +447,9 @@ bun add smithers zustand
 bun run main.tsx
 ```
 
-### Testing Examples
+### Testing
 
-For testing without real API calls, set mock mode:
+For testing without real API calls:
 
 ```bash
 MOCK_MODE=true bun run main.tsx
@@ -726,91 +465,93 @@ bash ../scripts/monitor.sh main.tsx
 
 ---
 
-## Tips for Writing Workflows
+## Key Concepts
 
-1. **Start Simple** - Begin with sequential workflows
-2. **Add Error Handling** - Always include onError callbacks
-3. **Use Validation** - Validate results when quality matters
-4. **Pass Data Forward** - Store results in Zustand for later phases
-5. **Set Limits** - Always use maxIterations
-6. **Log Progress** - Use console.log to track execution
-7. **Test Locally** - Use MOCK_MODE for testing
-8. **Document Intent** - Add comments explaining phase logic
+### Automatic Phase Sequencing
+
+Phases execute in declaration order. No manual state management needed:
+
+```tsx
+<Ralph>
+  <Phase name="First">...</Phase>   {/* Executes first */}
+  <Phase name="Second">...</Phase>  {/* Executes after First completes */}
+  <Phase name="Third">...</Phase>   {/* Executes after Second completes */}
+</Ralph>
+```
+
+### Automatic Step Sequencing
+
+Steps within a phase execute sequentially by default:
+
+```tsx
+<Phase name="Build">
+  <Step name="A">...</Step>  {/* Executes first */}
+  <Step name="B">...</Step>  {/* Waits for A */}
+  <Step name="C">...</Step>  {/* Waits for B */}
+</Phase>
+```
+
+### Parallel Execution
+
+Use `<Parallel>` to execute steps concurrently:
+
+```tsx
+<Phase name="Build">
+  <Parallel>
+    <Step name="A">...</Step>  {/* All three */}
+    <Step name="B">...</Step>  {/* execute at */}
+    <Step name="C">...</Step>  {/* the same time */}
+  </Parallel>
+</Phase>
+```
+
+### Skip Conditions
+
+Use `skipIf` to conditionally skip phases:
+
+```tsx
+<Phase name="Optional" skipIf={() => someCondition}>
+  ...
+</Phase>
+```
 
 ---
 
 ## Common Pitfalls
 
-### Infinite Loop
-
-❌ **Wrong:**
+### Don't Use External State for Phase Control
 
 ```tsx
-<Ralph maxIterations={10}>
-  <Claude onFinished={() => setPhase("same")}>Task</Claude>
-</Ralph>
+// WRONG - Don't use Zustand or useState for phase control
+const [phase, setPhase] = useState("research");
+{phase === "research" && <Phase name="Research">...</Phase>}
 ```
 
-✅ **Right:**
+### Let Smithers Manage Phase State
 
 ```tsx
-<Ralph maxIterations={10}>
-  {phase === "start" && (
-    <Claude onFinished={() => setPhase("done")}>Task</Claude>
-  )}
-  {phase === "done" && <div>Complete</div>}
-</Ralph>
+// RIGHT - Declare all phases, Smithers manages which is active
+<Phase name="Research">...</Phase>
+<Phase name="Implement">...</Phase>
 ```
 
-### Using Solid Signals
-
-❌ **Wrong:**
+### Don't Manually Advance Phases
 
 ```tsx
-const [phase, setPhase] = createSignal("start");
+// WRONG - Don't use callbacks to change phase
+<Claude onFinished={() => setPhase("next")}>...</Claude>
 ```
 
-✅ **Right:**
+### Phases Auto-Advance on Completion
 
 ```tsx
-const useStore = create((set) => ({
-  phase: "start",
-  setPhase: (phase) => set({ phase }),
-}));
-```
-
-### Missing Terminal State
-
-❌ **Wrong:**
-
-```tsx
-{
-  phase === "task1" && (
-    <Claude onFinished={() => setPhase("task2")}>...</Claude>
-  );
-}
-{
-  phase === "task2" && (
-    <Claude onFinished={() => setPhase("task3")}>...</Claude>
-  );
-}
-{
-  phase === "task3" && (
-    <Claude onFinished={() => setPhase("task1")}>...</Claude>
-  );
-}
-// Loops forever!
-```
-
-✅ **Right:**
-
-```tsx
-{
-  phase === "task3" && <Claude onFinished={() => setPhase("done")}>...</Claude>;
-}
-{
-  phase === "done" && <div>Complete</div>;
-}
+// RIGHT - Phase automatically advances when children complete
+<Phase name="Current">
+  <Claude>Work here...</Claude>
+</Phase>
+<Phase name="Next">
+  {/* Automatically becomes active when Current completes */}
+</Phase>
 ```
 
 ---
