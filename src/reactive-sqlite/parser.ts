@@ -68,6 +68,12 @@ export function extractWriteTables(sql: string): string[] {
     tables.add(match[1]!)
   }
 
+  // REPLACE INTO table_name (standalone, not INSERT OR REPLACE which is handled by insertRegex)
+  const replaceRegex = /\breplace\s+into\s+([a-z_][a-z0-9_]*)/gi
+  while ((match = replaceRegex.exec(normalized)) !== null) {
+    tables.add(match[1]!)
+  }
+
   // CREATE TABLE table_name
   const createRegex = /\bcreate\s+(?:temp\s+|temporary\s+)?table\s+(?:if\s+not\s+exists\s+)?([a-z_][a-z0-9_]*)/gi
   while ((match = createRegex.exec(normalized)) !== null) {
