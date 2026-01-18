@@ -1,272 +1,116 @@
-// Memory operations - long-term agent knowledge
+// Memory CRUD operations module for Smithers DB
 
-import type { PGlite } from '@electric-sql/pglite'
-import { QueryHelpers } from './live-query.jsx'
+import type { ReactiveDatabase } from '../../reactive-sqlite'
 import type { Memory, MemoryInput } from './types.js'
+import { uuid, now } from './utils.js'
 
-export class MemoryManager {
-  private queries: QueryHelpers
-  private currentExecutionId: string | null = null
+export interface MemoriesModule {
+  add: (memory: MemoryInput) => string
+  get: (category: string, key: string, scope?: string) => Memory | null
+  list: (category?: string, scope?: string, limit?: number) => Memory[]
+  search: (query: string, category?: string, limit?: number) => Memory[]
+  update: (id: string, updates: Partial<Pick<Memory, 'content' | 'confidence' | 'expires_at'>>) => void
+  delete: (id: string) => void
+  addFact: (key: string, content: string, source?: string) => string
+  addLearning: (key: string, content: string, source?: string) => string
+  addPreference: (key: string, content: string, scope?: 'global' | 'project' | 'session') => string
+  stats: () => { total: number; byCategory: Record<string, number>; byScope: Record<string, number> }
+}
 
-  constructor(private pg: PGlite) {
-    this.queries = new QueryHelpers(pg)
-  }
+export interface MemoriesModuleContext {
+  rdb: ReactiveDatabase
+  getCurrentExecutionId: () => string | null
+}
 
-  /**
-   * Set the current execution ID for source tracking
-   */
-  setExecutionContext(executionId: string | null) {
-    this.currentExecutionId = executionId
-  }
+export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule {
+  const { rdb, getCurrentExecutionId } = ctx
 
-  /**
-   * Add a new memory
-   */
-  async add(input: MemoryInput): Promise<string> {
-    const result = await this.pg.query<{ id: string }>(
-      `INSERT INTO memories (
-        category,
-        scope,
-        key,
-        content,
-        confidence,
-        source,
-        source_execution_id,
-        created_at,
-        updated_at,
-        accessed_at,
-        expires_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), NOW(), $8)
-      ON CONFLICT (category, scope, key) DO UPDATE
-      SET
-        content = $4,
-        confidence = $5,
-        source = $6,
-        updated_at = NOW()
-      RETURNING id`,
-      [
-        input.category,
-        input.scope || 'global',
-        input.key,
-        input.content,
-        input.confidence ?? 1.0,
-        input.source,
-        this.currentExecutionId,
-        input.expires_at,
-      ]
-    )
-
-    return result.rows[0]?.id ?? ''
-  }
-
-  /**
-   * Get a specific memory
-   */
-  async get(category: string, key: string, scope: string = 'global'): Promise<Memory | null> {
-    const memory = await this.queries.queryOne<Memory>(
-      `SELECT * FROM memories
-       WHERE category = $1 AND key = $2 AND scope = $3`,
-      [category, key, scope]
-    )
-
-    if (memory) {
-      // Update accessed_at
-      await this.pg.query(
-        `UPDATE memories SET accessed_at = NOW() WHERE id = $1`,
-        [memory.id]
+  const memories: MemoriesModule = {
+    add: (memory: MemoryInput): string => {
+      const id = uuid()
+      rdb.run(
+        `INSERT INTO memories (id, category, scope, key, content, confidence, source, source_execution_id, created_at, updated_at, accessed_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, memory.category, memory.scope ?? 'global', memory.key, memory.content,
+         memory.confidence ?? 1.0, memory.source ?? null, getCurrentExecutionId(),
+         now(), now(), now(), memory.expires_at?.toISOString() ?? null]
       )
-    }
+      return id
+    },
 
-    return memory
-  }
+    get: (category: string, key: string, scope?: string): Memory | null => {
+      const row = rdb.queryOne<Memory>(
+        `SELECT * FROM memories WHERE category = ? AND key = ? AND (scope = ? OR ? IS NULL)`,
+        [category, key, scope ?? null, scope ?? null]
+      )
+      if (row) {
+        rdb.run('UPDATE memories SET accessed_at = ? WHERE id = ?', [now(), row.id])
+      }
+      return row
+    },
 
-  /**
-   * List memories by category and/or scope
-   */
-  async list(
-    category?: string,
-    scope?: string,
-    limit: number = 100
-  ): Promise<Memory[]> {
-    let sql = 'SELECT * FROM memories WHERE 1=1'
-    const params: any[] = []
+    list: (category?: string, scope?: string, limit: number = 100): Memory[] => {
+      let sql = 'SELECT * FROM memories WHERE 1=1'
+      const params: any[] = []
+      if (category) { sql += ' AND category = ?'; params.push(category) }
+      if (scope) { sql += ' AND scope = ?'; params.push(scope) }
+      sql += ' ORDER BY created_at DESC LIMIT ?'
+      params.push(limit)
+      return rdb.query<Memory>(sql, params)
+    },
 
-    if (category) {
-      params.push(category)
-      sql += ` AND category = $${params.length}`
-    }
+    search: (query: string, category?: string, limit: number = 20): Memory[] => {
+      let sql = 'SELECT * FROM memories WHERE content LIKE ?'
+      const params: any[] = [`%${query}%`]
+      if (category) { sql += ' AND category = ?'; params.push(category) }
+      sql += ' ORDER BY created_at DESC LIMIT ?'
+      params.push(limit)
+      return rdb.query<Memory>(sql, params)
+    },
 
-    if (scope) {
-      params.push(scope)
-      sql += ` AND scope = $${params.length}`
-    }
+    update: (id: string, updates: any) => {
+      const sets: string[] = ['updated_at = ?']
+      const params: any[] = [now()]
+      if (updates.content !== undefined) { sets.push('content = ?'); params.push(updates.content) }
+      if (updates.confidence !== undefined) { sets.push('confidence = ?'); params.push(updates.confidence) }
+      if (updates.expires_at !== undefined) { sets.push('expires_at = ?'); params.push(updates.expires_at?.toISOString() ?? null) }
+      params.push(id)
+      rdb.run(`UPDATE memories SET ${sets.join(', ')} WHERE id = ?`, params)
+    },
 
-    // Exclude expired memories
-    sql += ' AND (expires_at IS NULL OR expires_at > NOW())'
+    delete: (id: string) => {
+      rdb.run('DELETE FROM memories WHERE id = ?', [id])
+    },
 
-    sql += ` ORDER BY accessed_at DESC LIMIT $${params.length + 1}`
-    params.push(limit)
+    addFact: (key: string, content: string, source?: string): string => {
+      return memories.add({ category: 'fact', key, content, source })
+    },
 
-    return this.queries.query<Memory>(sql, params)
-  }
+    addLearning: (key: string, content: string, source?: string): string => {
+      return memories.add({ category: 'learning', key, content, source })
+    },
 
-  /**
-   * Search memories by content (simple text search)
-   * For more advanced search, consider adding pgvector embeddings
-   */
-  async search(
-    query: string,
-    category?: string,
-    limit: number = 10
-  ): Promise<Memory[]> {
-    let sql = `
-      SELECT *,
-        ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)) as rank
-      FROM memories
-      WHERE to_tsvector('english', content) @@ plainto_tsquery('english', $1)
-    `
-    const params: any[] = [query]
+    addPreference: (key: string, content: string, scope?: 'global' | 'project' | 'session'): string => {
+      return memories.add({ category: 'preference', key, content, scope })
+    },
 
-    if (category) {
-      params.push(category)
-      sql += ` AND category = $${params.length}`
-    }
-
-    // Exclude expired
-    sql += ' AND (expires_at IS NULL OR expires_at > NOW())'
-
-    sql += ` ORDER BY rank DESC LIMIT $${params.length + 1}`
-    params.push(limit)
-
-    return this.queries.query<Memory>(sql, params)
-  }
-
-  /**
-   * Update a memory's content
-   */
-  async update(
-    id: string,
-    updates: Partial<Pick<Memory, 'content' | 'confidence' | 'expires_at'>>
-  ): Promise<void> {
-    const sets: string[] = ['updated_at = NOW()']
-    const params: any[] = []
-
-    if (updates.content !== undefined) {
-      params.push(updates.content)
-      sets.push(`content = $${params.length}`)
-    }
-
-    if (updates.confidence !== undefined) {
-      params.push(updates.confidence)
-      sets.push(`confidence = $${params.length}`)
-    }
-
-    if (updates.expires_at !== undefined) {
-      params.push(updates.expires_at)
-      sets.push(`expires_at = $${params.length}`)
-    }
-
-    params.push(id)
-
-    await this.pg.query(
-      `UPDATE memories SET ${sets.join(', ')} WHERE id = $${params.length}`,
-      params
-    )
-  }
-
-  /**
-   * Delete a memory
-   */
-  async delete(id: string): Promise<void> {
-    await this.pg.query('DELETE FROM memories WHERE id = $1', [id])
-  }
-
-  /**
-   * Delete memories by category/key
-   */
-  async deleteByKey(category: string, key: string, scope: string = 'global'): Promise<void> {
-    await this.pg.query(
-      'DELETE FROM memories WHERE category = $1 AND key = $2 AND scope = $3',
-      [category, key, scope]
-    )
-  }
-
-  /**
-   * Clean up expired memories
-   */
-  async cleanupExpired(): Promise<number> {
-    const result = await this.pg.query(
-      'DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < NOW()'
-    )
-    return result.affectedRows ?? 0
-  }
-
-  /**
-   * Get memory statistics
-   */
-  async getStats(): Promise<{
-    total: number
-    byCategory: Record<string, number>
-    byScope: Record<string, number>
-  }> {
-    const [totalResult, categoryResult, scopeResult] = await Promise.all([
-      this.queries.queryValue<number>('SELECT COUNT(*) as value FROM memories'),
-      this.queries.query<{ category: string; count: number }>(
+    stats: () => {
+      const total = rdb.queryValue<number>('SELECT COUNT(*) FROM memories') ?? 0
+      const byCategory: Record<string, number> = {}
+      const byCategoryRows = rdb.query<{ category: string; count: number }>(
         'SELECT category, COUNT(*) as count FROM memories GROUP BY category'
-      ),
-      this.queries.query<{ scope: string; count: number }>(
+      )
+      for (const row of byCategoryRows) byCategory[row.category] = row.count
+
+      const byScope: Record<string, number> = {}
+      const byScopeRows = rdb.query<{ scope: string; count: number }>(
         'SELECT scope, COUNT(*) as count FROM memories GROUP BY scope'
-      ),
-    ])
+      )
+      for (const row of byScopeRows) byScope[row.scope] = row.count
 
-    return {
-      total: totalResult ?? 0,
-      byCategory: Object.fromEntries(
-        categoryResult.map((r) => [r.category, r.count])
-      ),
-      byScope: Object.fromEntries(
-        scopeResult.map((r) => [r.scope, r.count])
-      ),
-    }
+      return { total, byCategory, byScope }
+    },
   }
 
-  /**
-   * Create a fact memory (convenience method)
-   */
-  async addFact(key: string, content: string, source?: string): Promise<string> {
-    return this.add({
-      category: 'fact',
-      key,
-      content,
-      source,
-    })
-  }
-
-  /**
-   * Create a learning memory (convenience method)
-   */
-  async addLearning(key: string, content: string, source?: string): Promise<string> {
-    return this.add({
-      category: 'learning',
-      key,
-      content,
-      source,
-    })
-  }
-
-  /**
-   * Create a preference memory (convenience method)
-   */
-  async addPreference(
-    key: string,
-    content: string,
-    scope: 'global' | 'project' | 'session' = 'project'
-  ): Promise<string> {
-    return this.add({
-      category: 'preference',
-      key,
-      content,
-      scope,
-    })
-  }
+  return memories
 }
