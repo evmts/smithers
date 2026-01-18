@@ -27,12 +27,8 @@ export interface PhaseRegistryContextValue {
 
 const PhaseRegistryContext = createContext<PhaseRegistryContextValue | undefined>(undefined)
 
-export function usePhaseRegistry(): PhaseRegistryContextValue {
-  const ctx = useContext(PhaseRegistryContext)
-  if (!ctx) {
-    throw new Error('usePhaseRegistry must be used within PhaseRegistryProvider')
-  }
-  return ctx
+export function usePhaseRegistry(): PhaseRegistryContextValue | undefined {
+  return useContext(PhaseRegistryContext)
 }
 
 // Hook for phases to get their index during registration
@@ -40,7 +36,7 @@ export function usePhaseIndex(name: string): number {
   const registry = usePhaseRegistry()
   const indexRef = useRef<number | null>(null)
   if (indexRef.current === null) {
-    indexRef.current = registry.registerPhase(name)
+    indexRef.current = registry ? registry.registerPhase(name) : 0
   }
   return indexRef.current
 }
