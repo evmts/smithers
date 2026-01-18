@@ -148,6 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_agents_execution ON agents(execution_id);
 CREATE INDEX IF NOT EXISTS idx_agents_phase ON agents(phase_id);
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
 CREATE INDEX IF NOT EXISTS idx_agents_created ON agents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agents_execution_tokens ON agents(execution_id, tokens_input, tokens_output);
 
 -- ============================================================================
 -- 4b. AGENT_STREAM_EVENTS - Typed Stream Events
@@ -323,6 +324,30 @@ CREATE INDEX IF NOT EXISTS idx_reports_agent ON reports(agent_id);
 CREATE INDEX IF NOT EXISTS idx_reports_type ON reports(type);
 CREATE INDEX IF NOT EXISTS idx_reports_severity ON reports(severity);
 CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC);
+
+-- ============================================================================
+-- 9.5 RATE_LIMIT_SNAPSHOTS - Provider rate limit snapshots
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS rate_limit_snapshots (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  requests_limit INTEGER,
+  requests_remaining INTEGER,
+  requests_reset_at TEXT,
+  input_tokens_limit INTEGER,
+  input_tokens_remaining INTEGER,
+  input_tokens_reset_at TEXT,
+  output_tokens_limit INTEGER,
+  output_tokens_remaining INTEGER,
+  output_tokens_reset_at TEXT,
+  tier TEXT,
+  captured_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_snapshots_provider_model
+  ON rate_limit_snapshots(provider, model, captured_at DESC);
 
 -- ============================================================================
 -- 10. COMMITS - Version Control Commits
