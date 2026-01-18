@@ -212,8 +212,8 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   // Reset if requested
   if (options.reset) {
     const tables = ['render_frames', 'tasks', 'steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
-                    'transitions', 'state', 'tool_calls', 'agent_stream_events', 'agents', 'phases', 'executions',
-                    'memories', 'human_interactions']
+                    'transitions', 'state', 'tool_calls', 'agents', 'phases', 'executions', 'memories',
+                    'human_interactions', 'rate_limit_snapshots']
     for (const table of tables) {
       try { 
         rdb.exec(`DROP TABLE IF EXISTS ${table}`) 
