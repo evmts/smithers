@@ -367,10 +367,9 @@ describe('Ralph backwards compatibility', () => {
   })
 
   test('RalphContextType is re-exported from Ralph.tsx', async () => {
-    const { RalphContextType } = await import('./Ralph.js')
-    void RalphContextType
-    // This is a type, so we just verify the module exports something
-    expect(true).toBe(true)
+    const module = await import('./Ralph.js')
+    // RalphContextType is a type export; runtime only needs module load.
+    expect(module).toBeDefined()
   })
 
   test('orchestration signals are re-exported from Ralph.tsx', async () => {
