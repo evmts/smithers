@@ -1,5 +1,5 @@
 {
-  "name": "smithers",
+  "name": "smithers-orchestrator",
   "version": "0.1.0",
   "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
   "type": "module",
