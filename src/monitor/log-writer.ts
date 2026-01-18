@@ -5,6 +5,7 @@ export class LogWriter {
   private logDir: string
   private counter: number = 0
   private sessionId: string
+  private streams: Map<string, fs.WriteStream> = new Map()
 
   constructor(logDir: string = '.smithers/logs', executionId?: string) {
     if (executionId) {
@@ -48,13 +49,43 @@ export class LogWriter {
   }
 
   /**
-   * Append content to a log file. Creates the file if it doesn't exist.
+   * Append content to a log file using a persistent WriteStream for efficiency.
+   * Creates the file if it doesn't exist.
    * Returns the full path to the log file.
    */
   appendLog(filename: string, content: string): string {
     const filepath = path.join(this.logDir, filename)
-    fs.appendFileSync(filepath, content, 'utf-8')
+    
+    // Get or create a WriteStream for this file
+    let stream = this.streams.get(filename)
+    if (!stream) {
+      stream = fs.createWriteStream(filepath, { flags: 'a', encoding: 'utf-8' })
+      this.streams.set(filename, stream)
+    }
+    
+    stream.write(content)
     return filepath
+  }
+
+  /**
+   * Close a specific log stream. Call when done writing to a log file.
+   */
+  closeStream(filename: string): void {
+    const stream = this.streams.get(filename)
+    if (stream) {
+      stream.end()
+      this.streams.delete(filename)
+    }
+  }
+
+  /**
+   * Close all open streams. Call when done with the LogWriter.
+   */
+  closeAllStreams(): void {
+    for (const [filename, stream] of this.streams) {
+      stream.end()
+      this.streams.delete(filename)
+    }
   }
 
   writeToolCall(toolName: string, input: any, output: string): string {

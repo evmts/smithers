@@ -1,16 +1,107 @@
 ---
-title: Ralph
-description: Loop controller component that prevents runaway iterations
+title: Ralph (Deprecated)
+description: Legacy loop controller component - use SmithersProvider instead
 ---
 
 # Ralph Component
 
-The `<Ralph>` component controls iterative loops in Smithers workflows. Named after Ralph Wiggum's "I'm in danger" catchphrase, it provides safety rails for loops that could potentially run away.
+<Warning>
+**Deprecated**: The Ralph component is deprecated. Its functionality has been consolidated into SmithersProvider.
 
-## Basic Usage
+Use `<SmithersProvider maxIterations={...} onComplete={...}>` instead of wrapping with `<Ralph>`.
+</Warning>
+
+The `<Ralph>` component was the original loop controller in Smithers workflows. It's now a thin backwards-compatibility wrapper that delegates to SmithersProvider.
+
+## Migration Guide
+
+<CodeGroup>
+```tsx Before (with Ralph)
+<SmithersProvider db={db} executionId={executionId}>
+  <Orchestration>
+    <Ralph maxIterations={10} onComplete={() => console.log("Done")}>
+      <Claude>Do work</Claude>
+    </Ralph>
+  </Orchestration>
+</SmithersProvider>
+```
+
+```tsx After (unified provider)
+<SmithersProvider
+  db={db}
+  executionId={executionId}
+  maxIterations={10}
+  onComplete={() => console.log("Done")}
+>
+  <Orchestration>
+    <Claude>Do work</Claude>
+  </Orchestration>
+</SmithersProvider>
+```
+</CodeGroup>
+
+### Task Registration Migration
+
+<CodeGroup>
+```tsx Before (Ralph context)
+import { useContext } from 'react';
+import { RalphContext } from 'smithers/components';
+
+function CustomStep() {
+  const ralph = useContext(RalphContext);
+
+  useMount(() => {
+    ralph?.registerTask();
+    fetchData().then(() => {
+      ralph?.completeTask();
+    });
+  });
+}
+```
+
+```tsx After (db.tasks)
+import { useSmithers } from 'smithers/components';
+import { useRef } from 'react';
+
+function CustomStep() {
+  const { db } = useSmithers();
+  const taskIdRef = useRef<string | null>(null);
+
+  useMount(() => {
+    taskIdRef.current = db.tasks.start('custom-step');
+    fetchData().then(() => {
+      if (taskIdRef.current) {
+        db.tasks.complete(taskIdRef.current);
+      }
+    });
+  });
+}
+```
+</CodeGroup>
+
+### Accessing Iteration Count
+
+<CodeGroup>
+```tsx Before (Ralph context)
+const ralph = useContext(RalphContext);
+const iteration = ralph?.ralphCount ?? 0;
+```
+
+```tsx After (useRalphCount hook)
+import { useRalphCount } from 'smithers/hooks';
+const ralphCount = useRalphCount();
+
+// Or via useSmithers
+const { ralphCount } = useSmithers();
+```
+</CodeGroup>
+
+## Legacy Usage (Still Supported)
+
+The Ralph component still works for backwards compatibility:
 
 ```tsx
-import { Ralph } from "smithers";
+import { Ralph } from "smithers/components";
 
 <Ralph maxIterations={10}>
   <Claude onFinished={() => { /* state change triggers re-render */ }}>
@@ -19,315 +110,44 @@ import { Ralph } from "smithers";
 </Ralph>
 ```
 
-## Props
+## Props (Deprecated)
 
-<ParamField path="maxIterations" type="number" default="10">
-  Maximum number of loop iterations before stopping.
-
-  ```tsx
-  <Ralph maxIterations={5}>
-    {/* Will stop after 5 iterations */}
-  </Ralph>
-  ```
+<ParamField path="maxIterations" type="number" default="100">
+  **Deprecated**: Use `SmithersProvider.maxIterations` instead.
 </ParamField>
 
 <ParamField path="onIteration" type="(iteration: number) => void">
-  Called at the start of each iteration.
-
-  ```tsx
-  <Ralph
-    maxIterations={10}
-    onIteration={(i) => console.log(`Starting iteration ${i}`)}
-  >
-  ```
+  **Deprecated**: Use `SmithersProvider.onIteration` instead.
 </ParamField>
 
 <ParamField path="onComplete" type="() => void">
-  Called when the loop completes normally (no more pending work).
-
-  ```tsx
-  <Ralph onComplete={() => console.log("Loop finished")}>
-  ```
+  **Deprecated**: Use `SmithersProvider.onComplete` instead.
 </ParamField>
 
-<ParamField path="onMaxIterations" type="() => void">
-  Called when maxIterations is reached.
-
-  ```tsx
-  <Ralph
-    maxIterations={10}
-    onMaxIterations={() => console.log("I'm in danger!")}
-  >
-  ```
+<ParamField path="db" type="ReactiveDatabase">
+  **Deprecated**: Database is now provided via SmithersProvider.
 </ParamField>
 
-## How It Works
+## Why Ralph Was Deprecated
 
-Ralph tracks iterations and pending tasks:
+The original architecture required three separate providers:
+1. `SmithersProvider` - database and execution context
+2. `Ralph` - iteration loop and task tracking
+3. `DatabaseProvider` - reactive query support
 
-```
-┌──────────────────────────────────────────────────┐
-│  Ralph Loop                                       │
-│                                                   │
-│  Iteration 1:                                    │
-│    → Render children                              │
-│    → <Claude> mounts and executes                │
-│    → onFinished updates signal                   │
-│    → Signal change triggers re-render            │
-│                                                   │
-│  Iteration 2:                                    │
-│    → Render children (new state)                 │
-│    → Different <Claude> may mount                │
-│    → Continue until no pending work or maxIter   │
-│                                                   │
-└──────────────────────────────────────────────────┘
-```
-
-## State-Driven Iterations
-
-The power of Ralph comes from combining it with Solid.js signals:
-
-```tsx
-function TestFixWorkflow() {
-  const [testsPass, setTestsPass] = createSignal(false);
-  const [attempts, setAttempts] = createSignal(0);
-
-  return (
-    <Ralph
-      maxIterations={5}
-      onIteration={(i) => console.log(`Attempt ${i}`)}
-      onMaxIterations={() => console.log("Giving up after 5 attempts")}
-    >
-      {!testsPass() && (
-        <Claude
-          allowedTools={["Read", "Edit", "Bash"]}
-          onFinished={(result) => {
-            setAttempts(a => a + 1);
-            if (result.output.includes("All tests pass")) {
-              setTestsPass(true);
-            }
-          }}
-        >
-          Fix the failing tests.
-          Current attempt: {attempts()}
-        </Claude>
-      )}
-    </Ralph>
-  );
-}
-```
-
-## Phase Transitions
-
-Use Ralph for multi-phase workflows:
-
-```tsx
-function PhaseWorkflow() {
-  const [phase, setPhase] = createSignal<"research" | "implement" | "test" | "done">("research");
-
-  return (
-    <Ralph maxIterations={20}>
-      {phase() === "research" && (
-        <Phase name="Research">
-          <Claude
-            allowedTools={["Read", "Glob", "Grep"]}
-            onFinished={() => setPhase("implement")}
-          >
-            Research the problem.
-          </Claude>
-        </Phase>
-      )}
-
-      {phase() === "implement" && (
-        <Phase name="Implementation">
-          <Claude
-            allowedTools={["Edit", "Write"]}
-            onFinished={() => setPhase("test")}
-          >
-            Implement the solution.
-          </Claude>
-        </Phase>
-      )}
-
-      {phase() === "test" && (
-        <Phase name="Testing">
-          <Claude
-            allowedTools={["Bash"]}
-            onFinished={(result) => {
-              if (result.output.includes("PASS")) {
-                setPhase("done");
-              } else {
-                setPhase("implement");  // Loop back
-              }
-            }}
-          >
-            Run tests.
-          </Claude>
-        </Phase>
-      )}
-
-      {/* When phase is "done", nothing renders, loop ends */}
-    </Ralph>
-  );
-}
-```
-
-## Task Registration
-
-For custom async operations, use the Ralph context:
-
-```tsx
-import { useRalph } from "smithers";
-
-function CustomAsyncStep() {
-  const ralph = useRalph();
-
-  onMount(() => {
-    // Register that we have pending work
-    const taskId = ralph.registerTask();
-
-    // Do async work
-    fetchData().then((data) => {
-      processData(data);
-      // Mark task complete so Ralph knows we're done
-      ralph.completeTask(taskId);
-    });
-  });
-
-  return <step-node />;
-}
-```
-
-## Combining with Orchestration
-
-Ralph works inside Orchestration for additional controls:
-
-```tsx
-<SmithersProvider db={db} executionId={executionId}>
-  <Orchestration
-    globalTimeout={3600000}
-    stopConditions={[{ type: "total_tokens", value: 50000 }]}
-  >
-    <Ralph
-      maxIterations={10}
-      onMaxIterations={() => {
-        db.vcs.addReport({
-          type: "warning",
-          severity: "warning",
-          title: "Max iterations reached",
-          content: "Workflow did not complete within iteration limit",
-        });
-      }}
-    >
-      <WorkflowContent />
-    </Ralph>
-  </Orchestration>
-</SmithersProvider>
-```
-
-## Nested Ralph Components
-
-You can nest Ralph components for sub-loops:
-
-```tsx
-<Ralph maxIterations={5}>
-  {phase() === "refine" && (
-    <Ralph
-      maxIterations={3}
-      onMaxIterations={() => setPhase("review")}
-    >
-      <Claude onFinished={handleRefinement}>
-        Refine the implementation.
-      </Claude>
-    </Ralph>
-  )}
-</Ralph>
-```
-
-## Debugging
-
-Track what's happening in the loop:
-
-```tsx
-<Ralph
-  maxIterations={10}
-  onIteration={(i) => {
-    console.log(`--- Iteration ${i} ---`);
-    console.log(`Phase: ${phase()}`);
-    console.log(`Attempts: ${attempts()}`);
-  }}
-  onComplete={() => console.log("Loop completed normally")}
-  onMaxIterations={() => {
-    console.error("Max iterations reached!");
-    console.log(`Final phase: ${phase()}`);
-  }}
->
-```
-
-## Best Practices
-
-<AccordionGroup>
-  <Accordion title="Always set maxIterations">
-    Prevent infinite loops:
-    ```tsx
-    // Good - has limit
-    <Ralph maxIterations={10}>...</Ralph>
-
-    // Dangerous - could run forever
-    <Ralph>...</Ralph>
-    ```
-  </Accordion>
-
-  <Accordion title="Handle maxIterations callback">
-    Know when you've hit the limit:
-    ```tsx
-    <Ralph
-      maxIterations={10}
-      onMaxIterations={() => {
-        console.error("Loop did not complete");
-        db.state.set("status", "incomplete");
-      }}
-    >
-    ```
-  </Accordion>
-
-  <Accordion title="Use signals for loop control">
-    Let reactivity drive the loop:
-    ```tsx
-    const [done, setDone] = createSignal(false);
-
-    <Ralph maxIterations={10}>
-      {!done() && (
-        <Claude onFinished={() => setDone(true)}>
-          Work until done.
-        </Claude>
-      )}
-    </Ralph>
-    ```
-  </Accordion>
-
-  <Accordion title="Design for early exit">
-    Structure so the loop can end before max iterations:
-    ```tsx
-    // The loop ends when phase() === "done" because nothing renders
-    {phase() !== "done" && (
-      <Claude onFinished={() => {
-        if (success) setPhase("done");
-      }}>
-        Try to complete.
-      </Claude>
-    )}
-    ```
-  </Accordion>
-</AccordionGroup>
+This led to deep nesting and split concerns. The consolidated `SmithersProvider`:
+- Provides a single source of truth
+- Simplifies the component tree
+- Uses database-backed task tracking for better reliability
+- Enables reactive monitoring of task state
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Ralph Wiggum Loop" icon="rotate" href="/concepts/ralph-wiggum-loop">
-    Understand the execution model
+  <Card title="SmithersProvider" icon="cube" href="/components/smithers-provider">
+    The unified provider (use this instead)
   </Card>
-  <Card title="State Management" icon="database" href="/concepts/state-management">
-    Control loops with signals
+  <Card title="Orchestration Model" icon="sitemap" href="/concepts/orchestration">
+    How the execution loop works
   </Card>
 </CardGroup>

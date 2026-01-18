@@ -1,9 +1,8 @@
 /**
  * Tests for React Context Provider for ReactiveDatabase
  *
- * NOTE: React component rendering tests are skipped because they use @testing-library/react
- * which requires react-dom, but this project uses a custom React reconciler.
- * We test exports and basic functionality that doesn't require rendering.
+ * NOTE: This project uses a custom React reconciler (SmithersNode trees), not react-dom.
+ * We test exports and basic functionality that doesn't require DOM rendering.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
@@ -55,17 +54,6 @@ describe('DatabaseProvider element creation', () => {
     const element = React.createElement(DatabaseProvider, { db }, child)
     expect(element.props.children).toBe(child)
   })
-})
-
-// Note: The rendering tests below are skipped because they require react-dom
-// which conflicts with the project's custom JSX runtime
-
-describe.skip('DatabaseProvider rendering', () => {
-  // These tests would verify that:
-  // - Provider renders children correctly
-  // - useDatabase() returns the db instance from context
-  // - useDatabase() throws when used outside provider
-  // - useQuery/useMutation work with context
 })
 
 describe('hook exports from index', () => {

@@ -54,16 +54,21 @@ describe('LogWriter', () => {
     expect(fileContent).toContain('test content')
   })
 
-  it('should append to log file', () => {
+  it('should append to log file', async () => {
     const writer = new LogWriter(TEST_LOG_DIR)
     const filename = 'append-test.log'
-    
+
     const path1 = writer.appendLog(filename, 'chunk 1\n')
+    writer.appendLog(filename, 'chunk 2\n')
+
+    // Close the stream to flush content to disk
+    writer.closeStream(filename)
+
+    // Wait a bit for file system operations to complete
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
     expect(fs.existsSync(path1)).toBe(true)
-    expect(fs.readFileSync(path1, 'utf-8')).toBe('chunk 1\n')
-    
-    const path2 = writer.appendLog(filename, 'chunk 2\n')
-    expect(path2).toBe(path1)
-    expect(fs.readFileSync(path1, 'utf-8')).toBe('chunk 1\nchunk 2\n')
+    const content = fs.readFileSync(path1, 'utf-8')
+    expect(content).toBe('chunk 1\nchunk 2\n')
   })
 })

@@ -17,6 +17,7 @@ import { createStepsModule, type StepsModule } from './steps.js'
 import { createTasksModule, type TasksModule } from './tasks.js'
 import { createToolsModule, type ToolsModule } from './tools.js'
 import { createArtifactsModule, type ArtifactsModule } from './artifacts.js'
+import { createHumanModule, type HumanModule } from './human.js'
 import { createVcsModule, type VcsModule } from './vcs.js'
 import { createQueryModule, type QueryFunction } from './query.js'
 
@@ -72,6 +73,11 @@ export interface SmithersDB {
   artifacts: ArtifactsModule
 
   /**
+   * Human interaction tracking
+   */
+  human: HumanModule
+
+  /**
    * VCS tracking
    */
   vcs: VcsModule
@@ -90,6 +96,19 @@ export interface SmithersDB {
 export interface SmithersDBOptions {
   path?: string
   reset?: boolean
+}
+
+/**
+ * Run database migrations for existing databases.
+ * This ensures new columns are added to tables that were created before schema updates.
+ */
+function runMigrations(rdb: ReactiveDatabase): void {
+  // Migration: Add log_path column to agents table if it doesn't exist
+  const agentsColumns = rdb.query<{ name: string }>('PRAGMA table_info(agents)')
+  const hasLogPath = agentsColumns.some((col) => col.name === 'log_path')
+  if (!hasLogPath) {
+    rdb.exec('ALTER TABLE agents ADD COLUMN log_path TEXT')
+  }
 }
 
 /**
@@ -129,6 +148,9 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   const schemaSql = fs.readFileSync(schemaPath, 'utf-8')
   rdb.exec(schemaSql)
 
+  // Run migrations for existing databases
+  runMigrations(rdb)
+
   // Track current execution context
   let currentExecutionId: string | null = null
   let currentPhaseId: string | null = null
@@ -155,6 +177,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   const tasks = createTasksModule({ rdb, getCurrentExecutionId })
   const tools = createToolsModule({ rdb, getCurrentExecutionId })
   const artifacts = createArtifactsModule({ rdb, getCurrentExecutionId })
+  const human = createHumanModule({ rdb, getCurrentExecutionId })
   const vcs = createVcsModule({ rdb, getCurrentExecutionId })
   const query = createQueryModule({ rdb })
 
@@ -169,6 +192,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     tasks,
     tools,
     artifacts,
+    human,
     vcs,
     query,
     close: () => {
@@ -195,5 +219,6 @@ export type { StepsModule } from './steps.js'
 export type { TasksModule } from './tasks.js'
 export type { ToolsModule } from './tools.js'
 export type { ArtifactsModule } from './artifacts.js'
+export type { HumanModule } from './human.js'
 export type { VcsModule } from './vcs.js'
 export type { QueryFunction } from './query.js'

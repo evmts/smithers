@@ -444,3 +444,28 @@ CREATE INDEX IF NOT EXISTS idx_steps_execution ON steps(execution_id);
 CREATE INDEX IF NOT EXISTS idx_steps_phase ON steps(phase_id);
 CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(status);
 CREATE INDEX IF NOT EXISTS idx_steps_created ON steps(created_at DESC);
+
+-- ============================================================================
+-- 15. HUMAN - Human Interactions
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS human_interactions (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+
+  -- Request
+  type TEXT NOT NULL,            -- 'confirmation', 'text', 'select'
+  prompt TEXT NOT NULL,
+  options TEXT,                  -- JSON array of strings
+
+  -- Response
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected', 'timeout'
+  response TEXT,                 -- JSON string
+
+  -- Timing
+  created_at TEXT DEFAULT (datetime('now')),
+  resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_human_status ON human_interactions(status);
+CREATE INDEX IF NOT EXISTS idx_human_execution ON human_interactions(execution_id);

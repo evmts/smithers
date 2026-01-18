@@ -1,27 +1,33 @@
 ---
 title: SmithersProvider
-description: Root context provider for database and execution state
+description: Unified context provider for database, execution state, and task orchestration
 ---
 
 # SmithersProvider
 
-The `<SmithersProvider>` component provides database and execution context to all child components. It's required at the root of every Smithers workflow.
+The `<SmithersProvider>` component provides unified context to all child components, including database access, execution state, and task orchestration (previously handled by Ralph). It's required at the root of every Smithers workflow.
+
+<Note>
+As of the latest version, SmithersProvider consolidates SmithersProvider, RalphContext, and DatabaseProvider into a single provider. You no longer need to wrap your components in `<Ralph>` - SmithersProvider handles iteration and task tracking automatically.
+</Note>
 
 ## Basic Usage
 
 ```tsx
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+import { createSmithersDB } from "smithers/db";
+import { SmithersProvider, Orchestration, Claude } from "smithers/components";
 
 const db = await createSmithersDB({ path: ".smithers/my-workflow" });
 const executionId = await db.execution.start("My Workflow", "workflow.tsx");
 
 function Workflow() {
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Claude model="sonnet">
-        Do the work.
-      </Claude>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+      <Orchestration>
+        <Claude model="sonnet">
+          Do the work.
+        </Claude>
+      </Orchestration>
     </SmithersProvider>
   );
 }
@@ -30,7 +36,7 @@ function Workflow() {
 ## Props
 
 <ParamField path="db" type="SmithersDB" required>
-  The PGlite database instance for state persistence.
+  The database instance for state persistence.
 
   ```tsx
   const db = await createSmithersDB({ path: ".smithers/data" });
@@ -56,9 +62,42 @@ function Workflow() {
     executionId={executionId}
     config={{
       defaultModel: "sonnet",
-      maxRetries: 3,
       verbose: true,
     }}
+  >
+  ```
+</ParamField>
+
+<ParamField path="maxIterations" type="number" default="100">
+  Maximum number of iteration loops before stopping. This replaces the `maxIterations` prop from Ralph.
+
+  ```tsx
+  <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+    {/* Will stop after 10 iterations */}
+  </SmithersProvider>
+  ```
+</ParamField>
+
+<ParamField path="onIteration" type="(iteration: number) => void">
+  Called at the start of each iteration. Useful for logging or progress tracking.
+
+  ```tsx
+  <SmithersProvider
+    db={db}
+    executionId={executionId}
+    onIteration={(i) => console.log(`Starting iteration ${i}`)}
+  >
+  ```
+</ParamField>
+
+<ParamField path="onComplete" type="() => void">
+  Called when orchestration completes (all tasks finished or max iterations reached).
+
+  ```tsx
+  <SmithersProvider
+    db={db}
+    executionId={executionId}
+    onComplete={() => console.log("Workflow finished")}
   >
   ```
 </ParamField>
@@ -68,23 +107,25 @@ function Workflow() {
 Child components can access the context using the `useSmithers` hook:
 
 ```tsx
-import { useSmithers } from "smithers";
+import { useSmithers } from "smithers/components";
 
 function MyComponent() {
   const {
-    db,              // Database instance
-    executionId,     // Current execution ID
-    config,          // Configuration
-    requestStop,     // Request workflow stop
-    requestRebase,   // Request rebase operation
-    isStopRequested, // Check if stop was requested
+    db,                // Database instance (SmithersDB)
+    executionId,       // Current execution ID
+    config,            // Configuration
+    requestStop,       // Request workflow stop
+    requestRebase,     // Request rebase operation
+    isStopRequested,   // Check if stop was requested
     isRebaseRequested, // Check if rebase was requested
+    ralphCount,        // Current iteration count
+    reactiveDb,        // Raw ReactiveDatabase for useQuery
   } = useSmithers();
 
   return (
     <Claude onFinished={() => {
       if (someCondition) {
-        requestStop();
+        requestStop("Condition met");
       }
     }}>
       Work with context access.
@@ -92,6 +133,38 @@ function MyComponent() {
   );
 }
 ```
+
+## Task Tracking
+
+Components can register and complete tasks using the database-backed task system:
+
+```tsx
+import { useSmithers } from "smithers/components";
+import { useRef } from "react";
+import { useMount } from "smithers/reconciler/hooks";
+
+function CustomAsyncStep() {
+  const { db } = useSmithers();
+  const taskIdRef = useRef<string | null>(null);
+
+  useMount(() => {
+    // Register a task with the database
+    taskIdRef.current = db.tasks.start('custom-step', 'Processing data');
+
+    fetchData().then((data) => {
+      processData(data);
+      // Mark task complete
+      if (taskIdRef.current) {
+        db.tasks.complete(taskIdRef.current);
+      }
+    });
+  });
+
+  return <step-node />;
+}
+```
+
+The orchestration loop monitors the tasks table and automatically advances to the next iteration when all running tasks complete.
 
 ## Request Stop
 
@@ -105,7 +178,7 @@ function EmergencyStop() {
     <Claude
       onFinished={(result) => {
         if (result.output.includes("CRITICAL")) {
-          requestStop();
+          requestStop("Critical issue found");
         }
       }}
     >
@@ -128,28 +201,6 @@ function ConditionalWork() {
 }
 ```
 
-## Request Rebase
-
-Request a VCS rebase operation:
-
-```tsx
-function RebaseWorkflow() {
-  const { requestRebase, isRebaseRequested } = useSmithers();
-
-  return (
-    <Claude
-      onFinished={(result) => {
-        if (result.output.includes("conflicts detected")) {
-          requestRebase();
-        }
-      }}
-    >
-      Check for merge conflicts.
-    </Claude>
-  );
-}
-```
-
 ## Accessing the Database
 
 Access the database directly from any child component:
@@ -158,7 +209,7 @@ Access the database directly from any child component:
 function DatabaseAccessExample() {
   const { db, executionId } = useSmithers();
 
-  onMount(async () => {
+  useMount(async () => {
     // Read state
     const phase = await db.state.get("phase");
 
@@ -167,18 +218,46 @@ function DatabaseAccessExample() {
 
     // Log an agent
     await db.agents.start("Custom agent", "sonnet");
+
+    // Track a task
+    const taskId = db.tasks.start("database-example", "Fetching data");
+    // ... do work ...
+    db.tasks.complete(taskId);
   });
 
   return <Claude>Work with database access.</Claude>;
 }
 ```
 
+## Reactive Queries
+
+Use reactive database queries with the `useQuery` hook:
+
+```tsx
+import { useQuery } from "smithers/reactive-sqlite";
+
+function TaskMonitor() {
+  const { reactiveDb } = useSmithers();
+
+  // Automatically re-renders when tasks table changes
+  const { data: runningTasks } = useQuery(
+    reactiveDb,
+    "SELECT * FROM tasks WHERE status = 'running'"
+  );
+
+  return (
+    <div>
+      Running tasks: {runningTasks?.length ?? 0}
+    </div>
+  );
+}
+```
+
 ## Complete Example
 
 ```tsx
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider, useSmithers } from "smithers";
+import { createSmithersRoot, createSmithersDB } from "smithers";
+import { SmithersProvider, Orchestration, Claude, useSmithers } from "smithers/components";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/example" });
@@ -196,7 +275,13 @@ async function main() {
 
   function Workflow() {
     return (
-      <SmithersProvider db={db} executionId={executionId}>
+      <SmithersProvider
+        db={db}
+        executionId={executionId}
+        maxIterations={10}
+        onIteration={(i) => console.log(`Iteration ${i}`)}
+        onComplete={() => console.log("Workflow complete")}
+      >
         <Orchestration globalTimeout={3600000}>
           <WorkflowContent />
         </Orchestration>
@@ -213,9 +298,9 @@ async function main() {
 
 function WorkflowContent() {
   const { db, requestStop, isStopRequested } = useSmithers();
-  const [phase, setPhase] = createSignal("start");
+  const [phase, setPhase] = useState("start");
 
-  onMount(async () => {
+  useMount(async () => {
     const savedPhase = await db.state.get("phase");
     if (savedPhase) setPhase(savedPhase);
   });
@@ -230,18 +315,68 @@ function WorkflowContent() {
   }
 
   return (
-    <Ralph maxIterations={10}>
-      {phase() === "start" && (
+    <>
+      {phase === "start" && (
         <Claude onFinished={() => updatePhase("done")}>
           Complete the task.
         </Claude>
       )}
-    </Ralph>
+    </>
   );
 }
 
 main();
 ```
+
+## Migration from Ralph
+
+If you're migrating from the old Ralph-based pattern:
+
+<CodeGroup>
+```tsx Before (with Ralph)
+<SmithersProvider db={db} executionId={executionId}>
+  <Orchestration>
+    <Ralph maxIterations={10} onComplete={() => console.log("Done")}>
+      <Claude>Do work</Claude>
+    </Ralph>
+  </Orchestration>
+</SmithersProvider>
+```
+
+```tsx After (unified provider)
+<SmithersProvider
+  db={db}
+  executionId={executionId}
+  maxIterations={10}
+  onComplete={() => console.log("Done")}
+>
+  <Orchestration>
+    <Claude>Do work</Claude>
+  </Orchestration>
+</SmithersProvider>
+```
+</CodeGroup>
+
+For task tracking in custom components:
+
+<CodeGroup>
+```tsx Before (Ralph context)
+const ralph = useContext(RalphContext);
+ralph?.registerTask();
+// ... work ...
+ralph?.completeTask();
+```
+
+```tsx After (db.tasks)
+const { db } = useSmithers();
+const taskId = db.tasks.start('component-type', 'description');
+try {
+  // ... work ...
+} finally {
+  db.tasks.complete(taskId);
+}
+```
+</CodeGroup>
 
 ## Best Practices
 
@@ -259,21 +394,35 @@ main();
     ```
   </Accordion>
 
+  <Accordion title="Set maxIterations to prevent runaway loops">
+    Always set a reasonable iteration limit:
+    ```tsx
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      maxIterations={10}  // Prevents infinite loops
+    >
+    ```
+  </Accordion>
+
+  <Accordion title="Use db.tasks for task tracking">
+    Register async work with the database for proper orchestration:
+    ```tsx
+    const taskId = db.tasks.start('async-work');
+    try {
+      await doAsyncWork();
+    } finally {
+      db.tasks.complete(taskId);
+    }
+    ```
+  </Accordion>
+
   <Accordion title="Close the database when done">
     Ensure writes are flushed:
     ```tsx
     const root = createSmithersRoot();
     await root.mount(Workflow);
     await db.close();  // Always close
-    ```
-  </Accordion>
-
-  <Accordion title="Check for incomplete executions">
-    Resume interrupted workflows:
-    ```tsx
-    const incomplete = await db.execution.findIncomplete();
-    const executionId = incomplete?.id ??
-      await db.execution.start("New", "file.tsx");
     ```
   </Accordion>
 </AccordionGroup>
@@ -286,5 +435,8 @@ main();
   </Card>
   <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
     Top-level workflow control
+  </Card>
+  <Card title="Ralph (Legacy)" icon="rotate" href="/components/ralph">
+    Legacy loop controller (deprecated)
   </Card>
 </CardGroup>
