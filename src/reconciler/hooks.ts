@@ -7,10 +7,29 @@
 import {
   DependencyList,
   EffectCallback,
+  ReactNode,
+  createElement,
+  createContext,
+  useContext,
   useCallback,
   useEffect,
   useRef,
 } from "react";
+
+export interface ExecutionGateProviderProps {
+  enabled: boolean;
+  children: ReactNode;
+}
+
+const ExecutionGateContext = createContext<boolean>(true);
+
+export function ExecutionGateProvider(props: ExecutionGateProviderProps): ReactNode {
+  return createElement(ExecutionGateContext.Provider, { value: props.enabled }, props.children);
+}
+
+export function useExecutionGate(): boolean {
+  return useContext(ExecutionGateContext);
+}
 
 /**
  * Runs an effect exactly once when the component mounts.
@@ -27,9 +46,16 @@ export const useEffectOnce = (effect: EffectCallback) => {
  * - Is easier to grep for mount behavior
  */
 export const useMount = (fn: () => void) => {
-  useEffectOnce(() => {
+  const enabled = useExecutionGate();
+  const hasRunRef = useRef(false);
+
+  useEffect(() => {
+    if (!enabled || hasRunRef.current) {
+      return;
+    }
+    hasRunRef.current = true;
     fn();
-  });
+  }, [enabled, fn]);
 };
 
 /**
@@ -40,11 +66,20 @@ export const useMount = (fn: () => void) => {
  */
 export const useUnmount = (fn: () => void): void => {
   const fnRef = useRef(fn);
+  const enabled = useExecutionGate();
+  const hasEnabledRef = useRef(enabled);
 
   // Update the ref each render so if it changes, the newest callback will be invoked
   fnRef.current = fn;
+  if (enabled) {
+    hasEnabledRef.current = true;
+  }
 
-  useEffectOnce(() => () => fnRef.current());
+  useEffectOnce(() => () => {
+    if (hasEnabledRef.current) {
+      fnRef.current();
+    }
+  });
 };
 
 /**
@@ -135,13 +170,17 @@ export function useEffectOnValueChange<T>(
   deps: DependencyList = []
 ): void {
   const lastValueRef = useRef<T | typeof UNSET>(UNSET);
+  const enabled = useExecutionGate();
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     if (lastValueRef.current !== UNSET && Object.is(lastValueRef.current, value)) {
       return;
     }
     lastValueRef.current = value;
     return effect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, ...deps]);
+  }, [enabled, value, ...deps]);
 }

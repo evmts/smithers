@@ -47,4 +47,6 @@ export {
   useUnmount,
   useFirstMountState,
   useMountedState,
+  useExecutionGate,
+  ExecutionGateProvider,
 } from "./hooks.js";
