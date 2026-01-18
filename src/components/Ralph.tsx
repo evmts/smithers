@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useMemo, type ReactNode } from 'react'
+import { createContext, useState, useEffect, useMemo, useReducer, type ReactNode } from 'react'
 
 /**
  * Ralph context for task tracking.
@@ -69,7 +69,7 @@ export interface RalphProps {
 export function Ralph(props: RalphProps): ReactNode {
   const [iteration, setIteration] = useState(0)
   const [pendingTasks, setPendingTasks] = useState(0)
-  const [key, setKey] = useState(0)
+  const [key, incrementKey] = useReducer((k: number) => k + 1, 0)
   const [hasStartedTasks, setHasStartedTasks] = useState(false)
 
   const maxIterations = props.maxIterations || 100
@@ -133,7 +133,7 @@ export function Ralph(props: RalphProps): ReactNode {
       // Trigger remount for next iteration
       const nextIteration = iteration + 1
       setIteration(nextIteration)
-      setKey((k: number) => k + 1)
+      incrementKey()
       setHasStartedTasks(false) // Reset for next iteration
       stableCount = 0
 
