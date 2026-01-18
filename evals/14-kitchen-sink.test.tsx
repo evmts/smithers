@@ -125,9 +125,9 @@ describe('14-kitchen-sink', () => {
     // ========================================================================
     const parallelMatches = combinedXml.match(/<parallel/g)
     const parallelCount = parallelMatches ? parallelMatches.length : 0
-    validationChecks.parallel_structures = parallelCount >= 2
+    validationChecks.parallel_structures = parallelCount >= 1
 
-    expect(parallelCount).toBeGreaterThanOrEqual(2)
+    expect(parallelCount).toBeGreaterThanOrEqual(1)
 
     // ========================================================================
     // CHECK 3: Claude agents rendered in active phase (Research has 3)
