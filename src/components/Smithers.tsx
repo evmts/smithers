@@ -4,14 +4,13 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
-import { usePhaseContext } from './PhaseContext.js'
-import { useStepContext } from './StepContext.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI.js'
 import type { ClaudeModel } from './agents/types.js'
 import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
 import { extractText } from '../utils/extract-text.js'
+import { useExecutionScope } from './ExecutionScope.js'
 
 // ============================================================================
 // Types
@@ -125,10 +124,7 @@ export interface SmithersProps {
 export function Smithers(props: SmithersProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
   const worktree = useWorktree()
-  const phase = usePhaseContext()
-  const phaseActive = phase?.isActive ?? true
-  const step = useStepContext()
-  const stepActive = step?.isActive ?? true
+  const executionScope = useExecutionScope()
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
 
@@ -177,11 +173,10 @@ export function Smithers(props: SmithersProps): ReactNode {
   }
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
-  const shouldExecute = phaseActive && stepActive
-  const executionKey = `${ralphCount}:${shouldExecute ? 'active' : 'inactive'}`
+  const executionToken = executionScope.enabled ? ralphCount : null
 
-  useEffectOnValueChange(executionKey, () => {
-    if (!shouldExecute) return
+  useEffectOnValueChange(executionToken, () => {
+    if (!executionScope.enabled) return
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database

@@ -182,7 +182,7 @@ export function Commit(props: CommitProps): ReactNode {
         }
       } finally {
         // Complete task
-        if (taskIdRef.current) {
+        if (taskIdRef.current && isMounted()) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
       }
