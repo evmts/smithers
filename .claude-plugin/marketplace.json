@@ -10,7 +10,7 @@
     {
       "name": "smithers",
       "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
-      "source": ".",
+      "source": "./plugins/smithers",
       "category": "development"
     }
   ]
