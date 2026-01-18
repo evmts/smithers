@@ -1,6 +1,58 @@
 import type { SmithersNode } from './types.js'
 
 /**
+ * Known component types that have meaning in Smithers.
+ * If a known type appears under an unknown parent, we add a warning.
+ */
+const KNOWN_TYPES = new Set([
+  'claude',
+  'ralph',
+  'phase',
+  'step',
+  'task',
+  'persona',
+  'constraints',
+  'human',
+  'smithers-stop',
+  'subagent',
+  'orchestration',
+  'review',
+  'text',
+  'root',
+])
+
+/**
+ * Add warnings to nodes when known components appear inside unknown elements.
+ * This helps detect accidental nesting like <loop><Claude>...</Claude></loop>
+ * where the user likely didn't want Claude to execute.
+ */
+function addWarningsForUnknownParents(node: SmithersNode): void {
+  const type = node.type.toLowerCase()
+  const isKnown = KNOWN_TYPES.has(type)
+
+  // Walk up to find unknown parent
+  let parent = node.parent
+  while (parent) {
+    const parentType = parent.type.toLowerCase()
+    if (parent.type !== 'ROOT' && !KNOWN_TYPES.has(parentType)) {
+      if (isKnown) {
+        node.warnings = node.warnings || []
+        node.warnings.push(
+          `<${node.type}> rendered inside unknown element <${parent.type}>`
+        )
+      }
+      break
+    }
+    parent = parent.parent
+  }
+
+  // Recurse to children
+  for (const child of node.children) {
+    addWarningsForUnknownParents(child)
+  }
+}
+
+/**
  * Serialize a SmithersNode tree to XML string.
  * This XML is the "plan" shown to users before execution.
  *
@@ -18,6 +70,21 @@ export function serialize(node: SmithersNode): string {
     return ''
   }
 
+  // Add warnings for known components under unknown parents (once at root)
+  addWarningsForUnknownParents(node)
+
+  return serializeNode(node)
+}
+
+/**
+ * Internal recursive serialization (doesn't add warnings).
+ */
+function serializeNode(node: SmithersNode): string {
+  // Skip null/undefined nodes
+  if (!node || !node.type) {
+    return ''
+  }
+
   // TEXT nodes: just escape and return the value
   if (node.type === 'TEXT') {
     return escapeXml(String(node.props.value ?? ''))
@@ -25,7 +92,7 @@ export function serialize(node: SmithersNode): string {
 
   // ROOT nodes: serialize children without wrapper tags
   if (node.type === 'ROOT') {
-    return node.children.filter(c => c && c.type).map(serialize).filter(s => s).join('\n')
+    return node.children.filter(c => c && c.type).map(serializeNode).filter(s => s).join('\n')
   }
 
   const tag = node.type.toLowerCase()
@@ -37,7 +104,7 @@ export function serialize(node: SmithersNode): string {
   const attrs = serializeProps(node.props)
 
   // Serialize children recursively
-  const children = node.children.filter(c => c && c.type).map(serialize).filter(s => s).join('\n')
+  const children = node.children.filter(c => c && c.type).map(serializeNode).filter(s => s).join('\n')
 
   // Self-closing tag if no children
   if (!children) {

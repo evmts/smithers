@@ -25,6 +25,8 @@ export interface SmithersNode {
   key?: string | number
   /** Runtime execution state */
   _execution?: ExecutionState
+  /** Validation warnings (e.g., known component inside unknown element) */
+  warnings?: string[]
 }
 
 export interface ExecutionState {

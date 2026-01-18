@@ -203,3 +203,62 @@ describe('serialize', () => {
     expect(xml).toContain('name="test"')
   })
 })
+
+describe('unknown parent warnings', () => {
+  test('serializes arbitrary elements like <loop> correctly', () => {
+    const node = createNode('loop', { iterations: '3' }, ['Do work'])
+    const xml = serialize(node)
+
+    expect(xml).toContain('<loop iterations="3">')
+    expect(xml).toContain('Do work')
+    expect(xml).toContain('</loop>')
+  })
+
+  test('adds warning when known type is inside unknown parent', () => {
+    const phase = createNode('phase', { name: 'test' })
+    const loop = createNode('loop', {}, [phase])
+    serialize(loop)
+
+    expect(phase.warnings).toBeDefined()
+    expect(phase.warnings).toHaveLength(1)
+    expect(phase.warnings![0]).toBe('<phase> rendered inside unknown element <loop>')
+  })
+
+  test('no warning when unknown type is inside unknown parent', () => {
+    const myelem = createNode('myelem', {}, ['text'])
+    const loop = createNode('loop', {}, [myelem])
+    serialize(loop)
+
+    expect(myelem.warnings).toBeUndefined()
+  })
+
+  test('no warning when known type is inside known parent', () => {
+    const step = createNode('step', {}, ['Do work'])
+    const phase = createNode('phase', { name: 'main' }, [step])
+    serialize(phase)
+
+    expect(step.warnings).toBeUndefined()
+  })
+
+  test('adds warning for deeply nested known type under unknown parent', () => {
+    const claude = createNode('claude', { model: 'test' })
+    const inner = createNode('inner', {}, [claude])
+    const loop = createNode('loop', {}, [inner])
+    serialize(loop)
+
+    expect(claude.warnings).toBeDefined()
+    expect(claude.warnings![0]).toContain('<claude> rendered inside unknown element')
+  })
+
+  test('arbitrary nested XML serializes correctly', () => {
+    const task = createNode('mytask', {}, ['Do work'])
+    const condition = createNode('if', { condition: 'test-pass' }, [task])
+    const loop = createNode('loop', { iterations: '3' }, [condition])
+    const xml = serialize(loop)
+
+    expect(xml).toContain('<loop iterations="3">')
+    expect(xml).toContain('<if condition="test-pass">')
+    expect(xml).toContain('<mytask>')
+    expect(xml).toContain('Do work')
+  })
+})
