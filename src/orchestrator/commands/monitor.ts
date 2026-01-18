@@ -42,7 +42,7 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}) {
 
   // Start execution
   const startTime = Date.now()
-  const child = spawn('bun', ['-i', filePath], {
+  const child = spawn('bun', ['--install=fallback', filePath], {
     stdio: ['inherit', 'pipe', 'pipe'],
     shell: true,
   })

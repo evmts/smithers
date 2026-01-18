@@ -9403,7 +9403,7 @@ async function run2(fileArg, options = {}) {
   }
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("");
-  const child = spawn("bun", ["-i", filePath], {
+  const child = spawn("bun", ["--install=fallback", filePath], {
     stdio: "inherit",
     shell: true
   });
@@ -13730,7 +13730,7 @@ async function monitor(fileArg, options = {}) {
   const logWriter = new LogWriter;
   console.log(formatter.formatHeader(filePath));
   const startTime = Date.now();
-  const child = spawn2("bun", ["-i", filePath], {
+  const child = spawn2("bun", ["--install=fallback", filePath], {
     stdio: ["inherit", "pipe", "pipe"],
     shell: true
   });

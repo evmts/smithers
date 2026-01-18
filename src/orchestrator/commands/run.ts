@@ -35,7 +35,7 @@ export async function run(fileArg?: string, options: RunOptions = {}) {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log('')
 
-  const child = spawn('bun', ['-i', filePath], {
+  const child = spawn('bun', ['--install=fallback', filePath], {
     stdio: 'inherit',
     shell: true,
   })
