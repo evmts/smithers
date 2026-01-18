@@ -172,9 +172,14 @@ export function SmithersProvider(props: SmithersProviderProps): JSX.Element {
     isRebaseRequested: rebaseRequested,
   }
 
+  // Use a function to render children lazily after context is established
+  // This is important for Solid.js universal renderer where children may
+  // be evaluated eagerly before the context provider is set up
+  const renderChildren = () => props.children
+
   return (
     <SmithersContext.Provider value={value}>
-      {props.children}
+      {renderChildren()}
     </SmithersContext.Provider>
   )
 }

@@ -1,6 +1,25 @@
 import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
+import { fileURLToPath } from 'url'
+
+/**
+ * Find the preload.ts file from the smithers-orchestrator package
+ */
+function findPreloadPath(): string {
+  const __filename = fileURLToPath(import.meta.url)
+  const __dirname = path.dirname(__filename)
+  // Navigate up from src/orchestrator/commands to package root
+  let dir = __dirname
+  while (dir !== path.dirname(dir)) {
+    const preloadPath = path.join(dir, 'preload.ts')
+    if (fs.existsSync(preloadPath)) {
+      return preloadPath
+    }
+    dir = path.dirname(dir)
+  }
+  throw new Error('Could not find preload.ts - smithers-orchestrator may be incorrectly installed')
+}
 
 interface RunOptions {
   file?: string
@@ -35,7 +54,8 @@ export async function run(fileArg?: string, options: RunOptions = {}) {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log('')
 
-  const child = spawn('bun', ['--install=fallback', filePath], {
+  const preloadPath = findPreloadPath()
+  const child = spawn('bun', ['--preload', preloadPath, '--install=fallback', filePath], {
     stdio: 'inherit',
     shell: true,
   })
