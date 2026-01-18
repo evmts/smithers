@@ -66,6 +66,7 @@ export function Claude(props: ClaudeProps): ReactNode {
   const step = useStepContext()
   const stepActive = step?.isActive ?? true
   const ralphCount = useRalphCount()
+  const cwd = props.cwd ?? worktree?.cwd
 
   // agentId stored in ref (set once, non-reactive until set)
   const agentIdRef = useRef<string | null>(null)
@@ -194,7 +195,7 @@ export function Claude(props: ClaudeProps): ReactNode {
               ...(mcpConfigPath !== undefined ? { mcpConfig: mcpConfigPath } : {}),
               ...(props.allowedTools !== undefined ? { allowedTools: props.allowedTools } : {}),
               ...(props.disallowedTools !== undefined ? { disallowedTools: props.disallowedTools } : {}),
-              ...(props.cwd !== undefined || worktree?.cwd ? { cwd: props.cwd ?? worktree?.cwd } : {}),
+              ...(cwd !== undefined ? { cwd } : {}),
               ...(props.timeout !== undefined ? { timeout: props.timeout } : {}),
               ...(props.stopConditions !== undefined ? { stopConditions: props.stopConditions } : {}),
               ...(props.continueConversation !== undefined ? { continue: props.continueConversation } : {}),

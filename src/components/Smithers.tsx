@@ -129,6 +129,7 @@ export function Smithers(props: SmithersProps): ReactNode {
   const step = useStepContext()
   const stepActive = step?.isActive ?? true
   const ralphCount = useRalphCount()
+  const cwd = props.cwd ?? worktree?.cwd
 
   const subagentIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
@@ -213,7 +214,7 @@ export function Smithers(props: SmithersProps): ReactNode {
           ...(props.maxPlanningTurns !== undefined ? { maxPlanningTurns: props.maxPlanningTurns } : {}),
           ...(props.timeout !== undefined ? { timeout: props.timeout } : {}),
           ...(props.context !== undefined ? { context: props.context } : {}),
-          ...(props.cwd !== undefined || worktree?.cwd ? { cwd: props.cwd ?? worktree?.cwd } : {}),
+          ...(cwd !== undefined ? { cwd } : {}),
           keepScript: props.keepScript || !!props.scriptPath,
           ...(props.scriptPath !== undefined ? { scriptPath: props.scriptPath } : {}),
           ...(props.onProgress !== undefined ? { onProgress: props.onProgress } : {}),

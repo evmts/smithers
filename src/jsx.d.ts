@@ -116,6 +116,16 @@ declare module 'react' {
         [key: string]: unknown
       }
 
+      worktree: {
+        branch?: string
+        path?: string
+        status?: string
+        error?: string
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
       // Generic elements for tests
       task: {
         children?: React.ReactNode

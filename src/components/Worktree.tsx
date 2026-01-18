@@ -105,7 +105,7 @@ export function Worktree(props: WorktreeProps): ReactNode {
 
   if (state.status === 'error') {
     return (
-      <worktree branch={props.branch} status="error" error={state.error ?? undefined}>
+      <worktree branch={props.branch} status="error" {...(state.error ? { error: state.error } : {})}>
         {state.error ?? 'Failed to set up worktree'}
       </worktree>
     )
@@ -118,7 +118,7 @@ export function Worktree(props: WorktreeProps): ReactNode {
   }
 
   return (
-    <worktree branch={props.branch} path={state.path ?? undefined} status="ready">
+    <worktree branch={props.branch} status="ready" {...(state.path ? { path: state.path } : {})}>
       <WorktreeProvider value={contextValue}>
         {props.children}
       </WorktreeProvider>
