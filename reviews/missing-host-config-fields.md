@@ -76,7 +76,17 @@ This makes capabilities explicit rather than relying on `undefined` checks.
 
 This is a trivial change - just adding three boolean properties. No logic changes needed.
 
+## Context: Why This Matters
+
+While the current implementation works (tests pass, no type errors), explicitly declaring these flags:
+1. **Prevents future bugs** - React may check these flags instead of treating `undefined` as falsy
+2. **Self-documents** - makes clear we don't support resources/singletons/act-warnings
+3. **Matches React conventions** - official renderers explicitly declare all capabilities
+4. **Version safety** - protects against reconciler updates that assume these exist
+
 ## References
 
+- `@types/react-reconciler@0.28.9` type definitions: `node_modules/@types/react-reconciler/index.d.ts`
+- `warnsIfNotActing` mentioned at line 257 of type definitions
 - ReactFiberConfig.custom.js: https://collected.press/github/facebook/react@3ed64f8232d0709f93f096c6fb9f7a16865b0ff5/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js
 - ReactFiberConfigWithNoResources.js: https://collected.press/github/facebook/react@18eaf51bd51fed8dfed661d64c306759101d0bfd/packages/react-reconciler/src/ReactFiberConfigWithNoResources.js
