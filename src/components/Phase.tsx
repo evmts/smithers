@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
+import { StepRegistryProvider } from './Step.js'
 import { useMount } from '../reconciler/hooks.js'
 
 export interface PhaseProps {
@@ -134,18 +135,20 @@ export function Phase(props: PhaseProps): ReactNode {
         console.log(`[Phase] Completed: ${props.name}`)
 
         props.onComplete?.()
-
-        // Advance to next phase
-        registry.advancePhase()
       }
     }
-  }, [isActive, isCompleted, db, props.name, props.onComplete, registry])
+  }, [isActive, isCompleted, db, props.name, props.onComplete])
 
   // Always render the phase element (visible in plan output)
   // Only render children when active (executes work)
+  // Wrap children in StepRegistryProvider to enforce sequential step execution
   return (
     <phase name={props.name} status={status}>
-      {isActive && props.children}
+      {isActive && (
+        <StepRegistryProvider phaseId={props.name}>
+          {props.children}
+        </StepRegistryProvider>
+      )}
     </phase>
   )
 }
