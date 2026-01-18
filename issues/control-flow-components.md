@@ -34,8 +34,8 @@ The current Phase component supports sequential execution with `skipIf` for simp
 
 ### Design Principles
 
-1. **Unconditional rendering** - All control flow components render their structure in the plan output, even when branches are inactive
-2. **Declarative over imperative** - Use props and children to express flow, not callbacks that mutate state
+1. **Unconditional rendering** - All control flow components render their structure in the plan output, even when branches are inactive. This is important for the plan being legible on any given render frame.
+2. **Declarative over imperative** - Use props and children to express flow, not callbacks that mutate state. Though you can still mount new components if they are new additions to plan. As a best practice the happy path should be rendered
 3. **Visible in plan output** - The workflow structure is always visible, making debugging easier
 4. **Database-backed state** - Conditions can query SQLite state for durable, resumable workflows
 5. **Minimal API surface** - Only add what's necessary; avoid replicating React's full conditional rendering
@@ -92,16 +92,6 @@ interface IfProps {
    * Use <Else> component for cleaner syntax.
    */
   else?: ReactNode
-
-  /**
-   * Callback when condition evaluates to true
-   */
-  onTrue?: () => void
-
-  /**
-   * Callback when condition evaluates to false
-   */
-  onFalse?: () => void
 }
 ```
 
@@ -185,12 +175,6 @@ export function If(props: IfProps): ReactNode {
       const conditionResult = await props.condition()
       setResult(conditionResult)
       setEvaluated(true)
-
-      if (conditionResult) {
-        props.onTrue?.()
-      } else {
-        props.onFalse?.()
-      }
     })()
   })
 
@@ -634,7 +618,6 @@ Conditions can query database state for resumable workflows:
 - [ ] Renders else children when condition is false
 - [ ] `<Else>` child component works as alternative to `else` prop
 - [ ] Plan output shows both branches with active/inactive status
-- [ ] Callbacks `onTrue` and `onFalse` fire correctly
 
 ### `<While>` Component
 - [ ] Evaluates condition before each iteration
