@@ -2,7 +2,10 @@ import type { ReactNode } from 'react'
 import { SmithersReconciler } from './host-config.js'
 import type { SmithersNode } from './types.js'
 import { serialize } from './serialize.js'
-import { createOrchestrationPromise } from '../components/Ralph.jsx'
+import {
+  createOrchestrationPromise,
+  signalOrchestrationError,
+} from '../components/Ralph.jsx'
 
 // Type for the fiber root container
 type FiberRoot = ReturnType<typeof SmithersReconciler.createContainer>
@@ -70,6 +73,11 @@ export function createSmithersRoot(): SmithersRoot {
 
       // Create a promise that Ralph will resolve when orchestration completes
       const completionPromise = createOrchestrationPromise()
+      let fatalError: unknown | null = null
+      let errorResolve: (() => void) | null = null
+      const errorPromise = new Promise<void>((resolve) => {
+        errorResolve = resolve
+      })
 
       // Check if App returns a Promise
       const result = App()
@@ -87,6 +95,13 @@ export function createSmithersRoot(): SmithersRoot {
       // Create the fiber root container
       // createContainer(containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, transitionCallbacks)
       // NOTE: @types/react-reconciler 0.32 has 8 params, but runtime 0.33 has 10
+      const handleFatalError = (error: unknown) => {
+        fatalError = error
+        if (errorResolve) errorResolve()
+        const err = error instanceof Error ? error : new Error(String(error))
+        signalOrchestrationError(err)
+      }
+
       fiberRoot = (SmithersReconciler.createContainer as any)(
         rootNode, // containerInfo
         0, // tag: LegacyRoot (ConcurrentRoot = 1)
@@ -94,8 +109,8 @@ export function createSmithersRoot(): SmithersRoot {
         false, // isStrictMode
         null, // concurrentUpdatesByDefaultOverride
         '', // identifierPrefix
-        (error: unknown) => console.error('Smithers uncaught error:', error), // onUncaughtError
-        (error: unknown) => console.error('Smithers caught error:', error), // onCaughtError
+        handleFatalError, // onUncaughtError
+        handleFatalError, // onCaughtError
         (error: unknown) => console.error('Smithers recoverable error:', error), // onRecoverableError
         null // transitionCallbacks
       )
@@ -104,8 +119,11 @@ export function createSmithersRoot(): SmithersRoot {
       // LegacyRoot mode (tag: 0) provides synchronous updates by default
       SmithersReconciler.updateContainer(element, fiberRoot, null, () => {})
 
-      // Wait for orchestration to complete (Ralph will signal this)
-      await completionPromise
+      // Wait for orchestration to complete or a fatal error to surface
+      await Promise.race([completionPromise.catch(() => {}), errorPromise])
+      if (fatalError) {
+        throw fatalError
+      }
     },
 
     render(element: ReactNode): Promise<void> {
