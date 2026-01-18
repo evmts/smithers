@@ -50,17 +50,35 @@ export function useQueryOne<T = Record<string, unknown>>(
   let options: UseQueryOptions
 
   if (typeof sqlOrDb === 'string') {
-    // New signature: useQueryOne(sql, params?, options?, explicitDb?)
+    // New signature: useQueryOne(sql, params?, optionsOrDb?, db?)
     sql = sqlOrDb
-    params = Array.isArray(sqlOrParams) ? sqlOrParams : []
-    options = (Array.isArray(sqlOrParams) ? paramsOrOptions : sqlOrParams) as UseQueryOptions ?? {}
-    const explicitDb = Array.isArray(sqlOrParams) ? optionsOrDb : paramsOrOptions
 
-    if (explicitDb && typeof explicitDb !== 'object') {
-      throw new Error('Invalid arguments to useQueryOne')
+    // Helper to detect ReactiveDatabase (has subscribe method)
+    const isDb = (obj: unknown): obj is ReactiveDatabase =>
+      obj !== null && typeof obj === 'object' && 'subscribe' in obj && typeof (obj as any).subscribe === 'function'
+
+    if (Array.isArray(sqlOrParams)) {
+      // useQueryOne(sql, params, ...) - 3rd arg could be options or db
+      params = sqlOrParams
+      if (isDb(paramsOrOptions)) {
+        options = {}
+        db = paramsOrOptions
+      } else {
+        options = (paramsOrOptions as UseQueryOptions) ?? {}
+        db = isDb(optionsOrDb) ? optionsOrDb : contextDb!
+      }
+    } else {
+      // useQueryOne(sql) or useQueryOne(sql, options) or useQueryOne(sql, db)
+      params = []
+      if (isDb(sqlOrParams)) {
+        options = {}
+        db = sqlOrParams
+      } else {
+        options = (sqlOrParams as UseQueryOptions) ?? {}
+        db = isDb(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
+      }
     }
 
-    db = (explicitDb as ReactiveDatabase) ?? contextDb!
     if (!db) {
       throw new Error('useQueryOne requires either a DatabaseProvider or an explicit db argument')
     }
