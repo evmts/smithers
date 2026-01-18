@@ -37,6 +37,7 @@ describe('useHumanInteractive', () => {
         <TestComponent onPromise={(p) => { capturedPromise = p }} />
       </SmithersProvider>
     )
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     let session = db.human.listPending().find((row) => row.type === 'interactive_session') ?? null
     const startTime = Date.now()
