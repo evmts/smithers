@@ -30,6 +30,9 @@ const KNOWN_TYPES = new Set([
  * where the user likely didn't want Claude to execute.
  */
 function addWarningsForUnknownParents(node: SmithersNode): void {
+  // Clear previous warnings to ensure idempotency when serialize() is called multiple times
+  node.warnings = []
+
   const type = node.type.toLowerCase()
   const isKnown = KNOWN_TYPES.has(type)
 
@@ -37,9 +40,15 @@ function addWarningsForUnknownParents(node: SmithersNode): void {
   let parent = node.parent
   while (parent) {
     const parentType = parent.type.toLowerCase()
-    if (parent.type !== 'ROOT' && !KNOWN_TYPES.has(parentType)) {
+
+    // If parent is a known type, stop walking - the parent will get its own warning if needed.
+    // This prevents redundant warnings for deeply nested known components.
+    if (KNOWN_TYPES.has(parentType)) {
+      break
+    }
+
+    if (parent.type !== 'ROOT') {
       if (isKnown) {
-        node.warnings = node.warnings || []
         node.warnings.push(
           `<${node.type}> rendered inside unknown element <${parent.type}>`
         )
@@ -47,6 +56,11 @@ function addWarningsForUnknownParents(node: SmithersNode): void {
       break
     }
     parent = parent.parent
+  }
+
+  // Clean up: remove empty warnings array
+  if (node.warnings.length === 0) {
+    delete node.warnings
   }
 
   // Recurse to children
@@ -90,7 +104,7 @@ function serializeNode(node: SmithersNode): string {
 
   // TEXT nodes: just escape and return the value
   if (node.type === 'TEXT') {
-    return escapeXml(String(node.props.value ?? ''))
+    return escapeXml(String(node.props['value'] ?? ''))
   }
 
   // ROOT nodes: serialize children without wrapper tags

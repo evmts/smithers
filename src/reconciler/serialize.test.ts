@@ -2,8 +2,8 @@
  * Unit tests for serialize.ts - SmithersNode to XML serialization.
  */
 import { describe, test, expect } from 'bun:test'
-import { serialize } from './serialize'
-import type { SmithersNode } from './types'
+import { serialize } from './serialize.js'
+import type { SmithersNode } from './types.js'
 
 function createNode(
   type: string,
@@ -260,5 +260,53 @@ describe('unknown parent warnings', () => {
     expect(xml).toContain('<if condition="test-pass">')
     expect(xml).toContain('<mytask>')
     expect(xml).toContain('Do work')
+  })
+
+  test('serialize is idempotent - calling multiple times does not duplicate warnings', () => {
+    const phase = createNode('phase', { name: 'test' })
+    const loop = createNode('loop', {}, [phase])
+
+    // Call serialize multiple times
+    serialize(loop)
+    serialize(loop)
+    serialize(loop)
+
+    // Warnings should not accumulate
+    expect(phase.warnings).toBeDefined()
+    expect(phase.warnings).toHaveLength(1)
+    expect(phase.warnings![0]).toBe('<phase> rendered inside unknown element <loop>')
+  })
+
+  test('no redundant warnings for deeply nested known components under unknown parent', () => {
+    // <loop><phase><claude /></phase></loop>
+    // Only phase should get the warning, not claude (because claude is under a known parent)
+    const claude = createNode('claude', { model: 'test' })
+    const phase = createNode('phase', { name: 'main' }, [claude])
+    const loop = createNode('loop', {}, [phase])
+    serialize(loop)
+
+    // phase should have warning about being inside loop
+    expect(phase.warnings).toBeDefined()
+    expect(phase.warnings).toHaveLength(1)
+    expect(phase.warnings![0]).toBe('<phase> rendered inside unknown element <loop>')
+
+    // claude should NOT have warning because its immediate parent (phase) is a known type
+    expect(claude.warnings).toBeUndefined()
+  })
+
+  test('clears warnings on nodes that no longer warrant them', () => {
+    // First, put a known component inside an unknown parent
+    const phase = createNode('phase', { name: 'test' })
+    const loop = createNode('loop', {}, [phase])
+    serialize(loop)
+    expect(phase.warnings).toHaveLength(1)
+
+    // Now move phase to be a child of a known parent (ROOT)
+    const root = createNode('ROOT', {}, [phase])
+    phase.parent = root
+    serialize(root)
+
+    // Warnings should be cleared since phase is now under ROOT
+    expect(phase.warnings).toBeUndefined()
   })
 })
