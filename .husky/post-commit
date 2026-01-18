@@ -1,23 +1,32 @@
 #!/bin/sh
 
+# Ensure reviews directory exists
+mkdir -p reviews
+
 # Get the commit hash and message
 COMMIT_HASH=$(git rev-parse --short HEAD)
 COMMIT_MSG=$(git log -1 --pretty=%B)
 
-# Get the diff of the last commit
-DIFF=$(git diff HEAD~1 HEAD 2>/dev/null)
+# Get the diff of the last commit (handle initial commit)
+if git rev-parse HEAD~1 >/dev/null 2>&1; then
+  DIFF=$(git diff HEAD~1 HEAD)
+else
+  # Initial commit - get diff against empty tree
+  DIFF=$(git diff --cached 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD 2>/dev/null || git show HEAD)
+fi
 
-# Skip if no diff (e.g., initial commit)
+# Skip if no diff
 if [ -z "$DIFF" ]; then
   exit 0
 fi
 
-# Create a temporary file for the review
+# Create temporary files for the prompt and review
+TEMP_PROMPT=$(mktemp)
 TEMP_REVIEW=$(mktemp)
 
-# Run Gemini CLI to review the code changes
-echo "Running Gemini code review..."
-npx --yes https://github.com/google-gemini/gemini-cli --yolo "Review the following code changes from commit $COMMIT_HASH.
+# Write prompt to file to avoid shell escaping issues
+cat > "$TEMP_PROMPT" << 'PROMPT_END'
+Review the following code changes.
 
 If the changes look good with no issues, respond with just 'LGTM' and nothing else.
 
@@ -26,26 +35,34 @@ If there are suggestions for improvements, security concerns, bugs, or other iss
 - Specific issues found (with file paths and line numbers if applicable)
 - Suggested improvements
 
-Commit message: $COMMIT_MSG
+PROMPT_END
 
-Changes:
-$DIFF" > "$TEMP_REVIEW" 2>/dev/null
+echo "Commit: $COMMIT_HASH" >> "$TEMP_PROMPT"
+echo "Commit message: $COMMIT_MSG" >> "$TEMP_PROMPT"
+echo "" >> "$TEMP_PROMPT"
+echo "Changes:" >> "$TEMP_PROMPT"
+echo "$DIFF" >> "$TEMP_PROMPT"
+
+# Run Gemini CLI to review the code changes
+echo "Running Gemini code review..."
+cat "$TEMP_PROMPT" | npx --yes https://github.com/google-gemini/gemini-cli --yolo > "$TEMP_REVIEW" 2>&1
 
 # Check if review was generated
 if [ ! -s "$TEMP_REVIEW" ]; then
-  rm -f "$TEMP_REVIEW"
+  echo "No review generated"
+  rm -f "$TEMP_PROMPT" "$TEMP_REVIEW"
   exit 0
 fi
 
 # Read the review content
 REVIEW_CONTENT=$(cat "$TEMP_REVIEW")
 
-# Check if it's just LGTM (case insensitive, allowing for whitespace)
-NORMALIZED=$(echo "$REVIEW_CONTENT" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+# Check if it's just LGTM (case insensitive, allowing for whitespace and punctuation)
+NORMALIZED=$(echo "$REVIEW_CONTENT" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:][:punct:]')
 
-if [ "$NORMALIZED" = "lgtm" ] || [ "$NORMALIZED" = "lgtm!" ] || [ "$NORMALIZED" = "lgtm." ]; then
+if [ "$NORMALIZED" = "lgtm" ]; then
   echo "Review: LGTM - no issues found"
-  rm -f "$TEMP_REVIEW"
+  rm -f "$TEMP_PROMPT" "$TEMP_REVIEW"
   exit 0
 fi
 
@@ -65,4 +82,4 @@ $REVIEW_CONTENT
 EOF
 
 echo "Code review saved to $REVIEW_FILE"
-rm -f "$TEMP_REVIEW"
+rm -f "$TEMP_PROMPT" "$TEMP_REVIEW"
