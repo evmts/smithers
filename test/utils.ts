@@ -1,111 +1,66 @@
 /**
- * Test utilities for Smithers tests.
+ * Test Utilities for Smithers
  *
- * Provides helpers for rendering and executing agent plans in tests.
+ * Provides helper functions for testing Smithers components and the renderer.
  */
 
 import type { JSX } from 'solid-js'
-import { createRoot } from 'solid-js'
+import type { SmithersNode, ExecutionResult } from '../src/core/types'
 import { serialize } from '../src/core/serialize'
 import { executePlan } from '../src/core/execute'
-import type { SmithersNode, ExecuteOptions, ExecutionResult } from '../src/core/types'
+import { createSmithersRoot } from '../src/solid/root'
 
 /**
- * Render a JSX element to an XML plan string.
- *
- * This is the main utility for testing component rendering.
- * It creates a root, mounts the component, and returns the serialized XML.
- *
- * @example
- * ```tsx
- * const plan = await renderPlan(<Claude>Hello</Claude>)
- * expect(plan).toContain('<claude>')
- * ```
+ * Render a component to XML string without executing.
+ * This is useful for testing component structure.
  */
-export async function renderPlan(
-  element: JSX.Element | (() => JSX.Element)
-): Promise<string> {
-  const { render } = await import('../src/solid/renderer.js')
+export async function renderPlan(element: JSX.Element | (() => JSX.Element)): Promise<string> {
+  const root = createSmithersRoot()
 
-  // Create root node
-  const rootNode: SmithersNode = {
-    type: 'ROOT',
-    props: {},
-    children: [],
-    parent: null,
-  }
-
-  // Wrap in a function if not already
+  // Handle both direct elements and component functions
   const App = typeof element === 'function' ? element : () => element
 
-  // Use Solid's createRoot for proper reactive context
-  let dispose: (() => void) | undefined
+  // Mount with a short timeout to let the tree render
+  const mountPromise = root.mount(App)
 
-  await new Promise<void>((resolve) => {
-    createRoot((d) => {
-      dispose = d
-      // Render directly
-      render(App as any, rootNode)
-      // Give Solid a tick to finish rendering
-      setTimeout(resolve, 50)
-    })
-  })
+  // Use a race with a timeout to avoid hanging
+  await Promise.race([
+    mountPromise,
+    new Promise<void>(resolve => setTimeout(resolve, 100)),
+  ])
 
-  const xml = serialize(rootNode)
-  dispose?.()
+  const xml = root.toXML()
+  root.dispose()
   return xml
 }
 
 /**
- * Execute a JSX element and return the result.
- *
- * This is the main utility for testing component execution.
- *
- * @example
- * ```tsx
- * const result = await runPlan(<Claude>Hello</Claude>)
- * expect(result.output).toBeDefined()
- * ```
+ * Run a component through the full execution pipeline.
+ * This mounts, renders, and executes the component tree.
  */
-export async function runPlan(
-  element: JSX.Element | (() => JSX.Element),
-  options: ExecuteOptions = {}
-): Promise<ExecutionResult> {
-  const { render } = await import('../src/solid/renderer.js')
+export async function runPlan(element: JSX.Element | (() => JSX.Element)): Promise<ExecutionResult> {
+  const root = createSmithersRoot()
 
-  // Create root node
-  const rootNode: SmithersNode = {
-    type: 'ROOT',
-    props: {},
-    children: [],
-    parent: null,
-  }
-
-  // Wrap in a function if not already
   const App = typeof element === 'function' ? element : () => element
 
-  // Use Solid's createRoot for proper reactive context
-  let dispose: (() => void) | undefined
+  // Mount with a timeout
+  const mountPromise = root.mount(App)
 
-  await new Promise<void>((resolve) => {
-    createRoot((d) => {
-      dispose = d
-      render(App as any, rootNode)
-      setTimeout(resolve, 100)
-    })
-  })
+  await Promise.race([
+    mountPromise,
+    new Promise<void>(resolve => setTimeout(resolve, 2000)),
+  ])
 
-  // Execute the tree
-  const result = await executePlan(rootNode, options)
+  const tree = root.getTree()
+  const result = await executePlan(tree, { maxFrames: 10, timeout: 5000 })
 
-  dispose?.()
+  root.dispose()
   return result
 }
 
 /**
- * Create a SmithersNode manually for testing.
- *
- * Useful for testing serialization and execution without JSX.
+ * Create a SmithersNode directly (without JSX).
+ * Useful for testing serialization without JSX transformation issues.
  */
 export function createNode(
   type: string,
@@ -119,7 +74,6 @@ export function createNode(
     parent: null,
   }
 
-  // Set up parent references
   for (const child of children) {
     child.parent = node
     node.children.push(child)
@@ -129,7 +83,7 @@ export function createNode(
 }
 
 /**
- * Create a text node for testing.
+ * Create a TEXT node directly.
  */
 export function createTextNode(value: string): SmithersNode {
   return {
@@ -144,26 +98,32 @@ export function createTextNode(value: string): SmithersNode {
  * Wait for a condition to be true.
  */
 export async function waitFor(
-  condition: () => boolean,
-  timeout = 5000,
-  interval = 10
+  condition: () => boolean | Promise<boolean>,
+  options: { timeout?: number; interval?: number } = {}
 ): Promise<void> {
+  const { timeout = 5000, interval = 10 } = options
   const start = Date.now()
-  while (!condition()) {
-    if (Date.now() - start > timeout) {
-      throw new Error('waitFor timeout')
+
+  while (Date.now() - start < timeout) {
+    if (await condition()) {
+      return
     }
-    await new Promise(resolve => setTimeout(resolve, interval))
+    await delay(interval)
   }
+
+  throw new Error(`waitFor timeout after ${timeout}ms`)
 }
 
 /**
- * Wait for a specified number of milliseconds.
+ * Simple delay utility.
  */
 export function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-// Re-export common test dependencies for convenience
-export { serialize }
-export type { SmithersNode, ExecuteOptions, ExecutionResult }
+/**
+ * Create a mock component for testing.
+ */
+export function createMockComponent(type: string, props: Record<string, unknown> = {}) {
+  return createNode(type, props)
+}

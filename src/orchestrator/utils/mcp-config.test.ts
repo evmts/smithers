@@ -1,4 +1,4 @@
-import { test, expect, describe } from 'vitest'
+import { test, expect, describe } from 'bun:test'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from './mcp-config'
 import * as fs from 'fs/promises'
 

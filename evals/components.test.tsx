@@ -3,7 +3,7 @@
  *
  * Tests individual component behaviors in isolation.
  */
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect } from 'bun:test'
 import './setup'
 import { renderPlan, runPlan } from '../test/utils'
 import { Claude } from '../src/components/Claude'

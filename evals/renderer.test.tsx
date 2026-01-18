@@ -3,7 +3,7 @@
  *
  * Tests JSX rendering, serialization, and edge cases.
  */
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect } from 'bun:test'
 import './setup'
 import { renderPlan, createNode } from '../test/utils'
 import { serialize } from '../src/core/serialize'

@@ -3,7 +3,7 @@
  *
  * Tests the internal helper functions in execute.ts.
  */
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect } from 'bun:test'
 import './setup'
 import { createNode } from '../test/utils'
 import type { SmithersNode, ExecutionState } from '../src/core/types'

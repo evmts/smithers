@@ -7,7 +7,7 @@
  * This is the #1 gotcha in XML serialization testing!
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'bun:test'
 import { serialize } from './serialize'
 import type { SmithersNode } from './types'
 

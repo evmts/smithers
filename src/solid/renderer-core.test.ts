@@ -8,7 +8,7 @@
  * CRITICAL TEST: replaceText() - ensures signal updates work correctly
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'bun:test'
 import { rendererMethods } from './renderer-methods'
 import type { SmithersNode } from '../core/types'
 

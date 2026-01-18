@@ -25,7 +25,7 @@ jobs:
         run: bun run build
 
       - name: Run tests
-        run: bun test
+        run: bun -c bunfig.toml test
 
       - uses: actions/setup-node@v4
         with:
