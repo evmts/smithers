@@ -8,7 +8,7 @@
  */
 import { describe, test, expect } from 'bun:test'
 
-// Setup import removed - causes Solid JSX loading errors
+// Setup import removed - causes JSX runtime loading errors
 // import './setup'
 import { serialize } from '../src/reconciler/serialize'
 import type { SmithersNode } from '../src/reconciler/types'

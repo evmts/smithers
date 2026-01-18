@@ -43,7 +43,19 @@ export const rendererMethods = {
   },
 
   insertNode(parent: SmithersNode, node: SmithersNode, anchor?: SmithersNode): void {
+    // Remove from old parent if exists (cross-parent move)
+    const oldParent = node.parent
+    if (oldParent) {
+      const oldIdx = oldParent.children.indexOf(node)
+      if (oldIdx !== -1) oldParent.children.splice(oldIdx, 1)
+    }
+
     node.parent = parent
+
+    // Remove from new parent if already present (same-parent reorder)
+    const existingIdx = parent.children.indexOf(node)
+    if (existingIdx !== -1) parent.children.splice(existingIdx, 1)
+
     if (anchor) {
       const idx = parent.children.indexOf(anchor)
       if (idx !== -1) {
@@ -56,10 +68,10 @@ export const rendererMethods = {
 
   removeNode(parent: SmithersNode, node: SmithersNode): void {
     const idx = parent.children.indexOf(node)
-    if (idx >= 0) {
-      parent.children.splice(idx, 1)
-    }
-    node.parent = null
+    if (idx !== -1) parent.children.splice(idx, 1)
+
+    // Only clear parent if it matches (node may have moved)
+    if (node.parent === parent) node.parent = null
   },
 
   isTextNode(node: SmithersNode): boolean {

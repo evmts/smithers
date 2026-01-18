@@ -9,7 +9,7 @@
 
     // JSX configuration - use smithers jsx-runtime
     "jsx": "react-jsx",
-    "jsxImportSource": "smithers-orchestrator",
+    "jsxImportSource": "react",
 
     // Module system
     "module": "NodeNext",

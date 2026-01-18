@@ -28,6 +28,13 @@ export interface SmithersRoot {
    * Returns a Promise that resolves when Ralph signals completion.
    */
   mount(App: () => ReactNode | Promise<ReactNode>): Promise<void>
+
+  /**
+   * Render and wait for initial commit to complete.
+   * Useful for unit tests that don't use SmithersProvider/Ralph.
+   */
+  render(element: ReactNode): Promise<void>
+
   getTree(): SmithersNode
   dispose(): void
   /**
@@ -93,14 +100,40 @@ export function createSmithersRoot(): SmithersRoot {
         null // transitionCallbacks
       )
 
-      // Render the app
+      // Render the app synchronously
       SmithersReconciler.updateContainer(element, fiberRoot, null, () => {})
-
-      // Flush the initial render synchronously
-      SmithersReconciler.flushSync(() => {})
 
       // Wait for orchestration to complete (Ralph will signal this)
       await completionPromise
+    },
+
+    render(element: ReactNode): Promise<void> {
+      return new Promise((resolve) => {
+        // Clean up previous render
+        if (fiberRoot) {
+          SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
+          rootNode.children = []
+        }
+
+        // Create the fiber root container
+        fiberRoot = (SmithersReconciler.createContainer as any)(
+          rootNode, // containerInfo
+          0, // tag: LegacyRoot (ConcurrentRoot = 1)
+          null, // hydrationCallbacks
+          false, // isStrictMode
+          null, // concurrentUpdatesByDefaultOverride
+          '', // identifierPrefix
+          (error: unknown) => console.error('Smithers uncaught error:', error),
+          (error: unknown) => console.error('Smithers caught error:', error),
+          (error: unknown) => console.error('Smithers recoverable error:', error),
+          null // transitionCallbacks
+        )
+
+        // Render the element and resolve when commit completes
+        SmithersReconciler.updateContainer(element, fiberRoot, null, () => {
+          resolve()
+        })
+      })
     },
 
     getTree(): SmithersNode {

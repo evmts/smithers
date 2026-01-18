@@ -43,5 +43,5 @@ describe('StatusProps interface', () => {
   })
 })
 
-// Note: Cannot test Status component directly due to Solid JSX transform mismatch.
+// Note: Component rendering tests require React reconciler test environment setup.
 // The interface tests above verify the prop types work correctly.

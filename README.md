@@ -43,7 +43,7 @@ I wanted a tool that allows me to:
 - **Persist state across sessions** - pick up where I left off, even days later
 - **Mix short scripts with long-running workflows** - same syntax for a quick task or a week-long project
 - **See what my agents are doing** - full observability with database logging and reports
-- **Use reactive primitives** - Solid.js signals mean my workflows respond to state changes automatically
+- **Use reactive primitives** - React state means my workflows respond to state changes automatically
 - **Compose complex behaviors from simple components** - loops, phases, steps, and validation all snap together
 - **Keep everything in version control** - workflows are just TypeScript files
 

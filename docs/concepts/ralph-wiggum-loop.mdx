@@ -140,11 +140,13 @@ When `setPhase("implement")` is called:
 
 ## Fire-and-Forget Pattern
 
-Components use an async IIFE pattern in `onMount`:
+Components use `useMount` to execute when they mount:
 
 ```tsx
+import { useMount } from "smithers";
+
 function Claude(props) {
-  onMount(() => {
+  useMount(() => {
     // Fire-and-forget async execution
     (async () => {
       const result = await executeClaudeAgent(props);
@@ -167,12 +169,12 @@ This means:
 The `<Ralph>` component provides context for task coordination:
 
 ```tsx
-import { useRalph } from "smithers";
+import { useRalph, useMount } from "smithers";
 
 function CustomStep() {
   const ralph = useRalph();
 
-  onMount(() => {
+  useMount(() => {
     const taskId = ralph.registerTask();
 
     doSomeWork().then(() => {

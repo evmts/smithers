@@ -3,16 +3,13 @@
  *
  * Tests individual component behaviors in isolation.
  *
- * NOTE: These tests are skipped because of JSX transform mismatch between
- * Solid renderer and our custom jsx-runtime. The components work correctly
- * at runtime but cannot be tested with renderPlan() until the JSX integration
- * is fixed.
+ * NOTE: These tests are skipped - requires React reconciler test environment setup.
  *
  * Unit tests for component interfaces exist in src/components/*.test.tsx
  */
 import { describe, test, expect } from 'bun:test'
 
-// Setup import removed - causes Solid JSX loading errors
+// Setup import removed - causes JSX runtime loading errors
 // import './setup'
 
 // All tests skipped due to JSX transform mismatch

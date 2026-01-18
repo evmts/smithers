@@ -1,8 +1,8 @@
 /**
  * Unit tests for Ralph.tsx - Ralph orchestration component.
  *
- * NOTE: All tests are skipped because Ralph.tsx contains Solid JSX which
- * cannot be imported in the test environment due to JSX transform mismatch.
+ * NOTE: All tests are skipped because Ralph.tsx contains JSX which
+ * requires React reconciler test environment setup.
  * The component contains both JSX and non-JSX exports, but the module cannot
  * be loaded without triggering the JSX transform.
  *
@@ -11,7 +11,7 @@
  */
 import { describe, test, expect, mock } from 'bun:test'
 
-// Cannot import from './Ralph.js' - contains Solid JSX
+// Cannot import from './Ralph.js' - contains JSX requiring reconciler setup
 // import { RalphContext, createOrchestrationPromise, ... } from './Ralph.js'
 
 describe.skip('RalphContext', () => {

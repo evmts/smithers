@@ -5,10 +5,10 @@
  */
 import { describe, test, expect } from 'bun:test'
 
-// Setup import removed - causes Solid JSX loading errors
+// Setup import removed - causes JSX runtime loading errors
 // import './setup'
 // Using local createNode implementation instead of importing from test/utils
-// (which imports from solid/root which triggers JSX loading)
+// (which imports from reconciler that triggers JSX loading)
 import type { SmithersNode, ExecutionState } from '../src/core/types'
 
 /**

@@ -1,7 +1,8 @@
 import type React from 'react'
 
-// Declare JSX namespace globally for custom jsx-runtime
-declare global {
+// Augment React's JSX namespace to include Smithers custom elements
+declare module 'react' {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
       // Agent execution elements
@@ -16,6 +17,48 @@ declare global {
         onFinished?: (result: unknown) => void
         onError?: (error: Error) => void
         validate?: (result: unknown) => Promise<boolean>
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'claude-api': {
+        status?: string
+        result?: unknown
+        error?: string
+        model?: string | undefined
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'smithers-stop': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      subagent: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      // TUI elements
+      box: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      text: {
+        children?: React.ReactNode
+        key?: string | number
+        content?: string
+        [key: string]: unknown
+      }
+
+      scrollbox: {
         children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
@@ -61,6 +104,18 @@ declare global {
         [key: string]: unknown
       }
 
+      human: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      parallel: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
       // Generic elements for tests
       task: {
         children?: React.ReactNode
@@ -81,6 +136,18 @@ declare global {
       }
 
       message: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      messages: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'tool-call': {
         children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
@@ -111,17 +178,125 @@ declare global {
         [key: string]: unknown
       }
 
-      // Catch-all for any custom element
-      [key: string]: any
-    }
+      // Git elements
+      'git-commit': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
 
-    // Required JSX types - allow all ReactNode types for React 19 compatibility
-    type Element = React.ReactNode
-    interface ElementChildrenAttribute {
-      children: {}
-    }
-    interface ElementAttributesProperty {
-      props: {}
+      'git-notes': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      // JJ (Jujutsu) elements
+      'jj-commit': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'jj-describe': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'jj-rebase': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'jj-snapshot': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'jj-status': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      // Hook elements
+      'ci-failure-hook': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'post-commit-hook': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      // MCP elements
+      'mcp-tool': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      // Review elements
+      review: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      // Test/utility elements - catch-all pattern
+      results: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      status: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      value: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      result: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      data: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      multi: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'inner-result': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'outer-result': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
     }
   }
 }

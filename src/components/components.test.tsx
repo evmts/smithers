@@ -1,5 +1,5 @@
 /**
- * Unit tests for components - using intrinsic elements to avoid Solid JSX issues.
+ * Unit tests for components - using intrinsic elements to test serialization.
  * Component interface tests are in individual *.test.tsx files.
  */
 import { describe, test, expect } from 'bun:test'

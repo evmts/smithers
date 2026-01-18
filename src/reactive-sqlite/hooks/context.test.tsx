@@ -1,14 +1,16 @@
 /**
  * Tests for React Context Provider for ReactiveDatabase
  *
- * NOTE: This project uses a custom React reconciler (SmithersNode trees), not react-dom.
- * We test exports and basic functionality that doesn't require DOM rendering.
+ * Tests validate:
+ * 1. Module exports
+ * 2. Hook functionality through SmithersRoot rendering
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import React from 'react'
 import { DatabaseProvider, useDatabase, useDatabaseOptional, DatabaseContext } from './context.js'
 import { ReactiveDatabase } from '../database.js'
+import { createSmithersRoot } from '../../reconciler/root.js'
 
 describe('DatabaseContext exports', () => {
   test('DatabaseProvider is a function component', () => {
@@ -31,7 +33,7 @@ describe('DatabaseContext exports', () => {
   })
 })
 
-describe('DatabaseProvider element creation', () => {
+describe('DatabaseProvider rendering', () => {
   let db: ReactiveDatabase
 
   beforeEach(() => {
@@ -49,10 +51,118 @@ describe('DatabaseProvider element creation', () => {
     expect(element.props.db).toBe(db)
   })
 
-  test('passes children through', () => {
-    const child = React.createElement('div', null, 'test')
-    const element = React.createElement(DatabaseProvider, { db }, child)
-    expect(element.props.children).toBe(child)
+  test('renders through SmithersRoot', async () => {
+    const root = createSmithersRoot()
+    await root.render(
+      <DatabaseProvider db={db}>
+        <results count={0} />
+      </DatabaseProvider>
+    )
+
+    const tree = root.getTree()
+    expect(tree.children).toHaveLength(1)
+    expect(tree.children[0]!.type).toBe('results')
+
+    root.dispose()
+  })
+})
+
+describe('useDatabase hook', () => {
+  let db: ReactiveDatabase
+
+  beforeEach(() => {
+    db = new ReactiveDatabase(':memory:')
+    db.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
+  })
+
+  afterEach(() => {
+    db.close()
+  })
+
+  test('returns database from context', async () => {
+    let capturedDb: ReactiveDatabase | null = null
+
+    function Consumer() {
+      capturedDb = useDatabase()
+      return <status connected={true} />
+    }
+
+    const root = createSmithersRoot()
+    await root.render(
+      <DatabaseProvider db={db}>
+        <Consumer />
+      </DatabaseProvider>
+    )
+
+    expect(capturedDb).toBe(db)
+    root.dispose()
+  })
+
+  test('throws when used outside provider', async () => {
+    let thrownError: Error | null = null
+
+    function Consumer() {
+      try {
+        useDatabase()
+      } catch (e) {
+        thrownError = e as Error
+      }
+      return <status error={true} />
+    }
+
+    const root = createSmithersRoot()
+    await root.render(<Consumer />)
+
+    expect(thrownError).not.toBeNull()
+    expect(thrownError!.message).toContain('DatabaseProvider')
+    root.dispose()
+  })
+})
+
+describe('useDatabaseOptional hook', () => {
+  let db: ReactiveDatabase
+
+  beforeEach(() => {
+    db = new ReactiveDatabase(':memory:')
+    db.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
+  })
+
+  afterEach(() => {
+    db.close()
+  })
+
+  test('returns database when inside provider', async () => {
+    let capturedDb: ReactiveDatabase | null | undefined = undefined
+
+    function Consumer() {
+      capturedDb = useDatabaseOptional()
+      return <status hasDb={capturedDb !== null} />
+    }
+
+    const root = createSmithersRoot()
+    await root.render(
+      <DatabaseProvider db={db}>
+        <Consumer />
+      </DatabaseProvider>
+    )
+
+    expect(capturedDb).toBe(db)
+    root.dispose()
+  })
+
+  test('returns null when outside provider', async () => {
+    let capturedDb: ReactiveDatabase | null | undefined = undefined
+
+    function Consumer() {
+      capturedDb = useDatabaseOptional()
+      return <status hasDb={capturedDb !== null} />
+    }
+
+    const root = createSmithersRoot()
+    await root.render(<Consumer />)
+
+    expect(capturedDb).toBeNull()
+    root.dispose()
   })
 })
 
@@ -68,18 +178,14 @@ describe('hook exports from index', () => {
   })
 })
 
-describe('useQuery overload detection', () => {
-  test('useQuery accepts string as first argument (new signature)', async () => {
+describe('useQuery/useMutation signatures', () => {
+  test('useQuery accepts string as first argument', async () => {
     const { useQuery } = await import('./useQuery.js')
-    // Verify the function exists and accepts overloaded args
     expect(typeof useQuery).toBe('function')
   })
-})
 
-describe('useMutation overload detection', () => {
-  test('useMutation accepts string as first argument (new signature)', async () => {
+  test('useMutation accepts string as first argument', async () => {
     const { useMutation } = await import('./useMutation.js')
-    // Verify the function exists and accepts overloaded args
     expect(typeof useMutation).toBe('function')
   })
 })

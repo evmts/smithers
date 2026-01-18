@@ -41,7 +41,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 smithers/
 ├── src/                    # Core library
 │   ├── components/         # JSX components (Claude, Ralph, etc.)
-│   ├── solid/              # Solid.js renderer
+│   ├── reconciler/         # React reconciler
 │   └── utils/              # Utilities
 ├── smithers-orchestrator/  # CLI and database
 │   ├── src/
