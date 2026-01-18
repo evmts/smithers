@@ -51,6 +51,9 @@ export class ReactiveDatabase {
 
     // Enable WAL mode for better concurrent performance
     this.db.exec("PRAGMA journal_mode = WAL");
+
+    // Enable foreign key enforcement (SQLite disables by default)
+    this.db.exec("PRAGMA foreign_keys = ON");
   }
 
   /**
