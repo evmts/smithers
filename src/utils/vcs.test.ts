@@ -19,12 +19,22 @@ describe('parseGitStatus', () => {
 
   test('parses added files', () => {
     const output = `A  src/new-file.ts
-AM src/another.ts`
+A  src/another.ts`
 
     const result = parseGitStatus(output)
 
     expect(result.added).toContain('src/new-file.ts')
     expect(result.added).toContain('src/another.ts')
+  })
+
+  test('AM status goes to modified (has M)', () => {
+    // AM = Added then Modified in staging
+    // Current implementation checks M first, so AM goes to modified
+    const output = `AM src/added-modified.ts`
+
+    const result = parseGitStatus(output)
+
+    expect(result.modified).toContain('src/added-modified.ts')
   })
 
   test('parses deleted files', () => {

@@ -42,12 +42,20 @@ Creates `.smithers/main.tsx` with a template.
 
 Modify `.smithers/main.tsx` to define your agent workflow.
 
-### 3. Monitor execution
+### 3. Configure bunfig.toml
 
-**Important:** Always use `-c` flag to load the Solid JSX config:
+Add to your project's `bunfig.toml`:
+
+```toml
+preload = ["./node_modules/smithers-orchestrator/preload.ts"]
+```
+
+This enables Solid JSX transform via bun-plugin-solid.
+
+### 4. Monitor execution
 
 ```bash
-bun -c node_modules/smithers-orchestrator/bunfig.toml node_modules/.bin/smithers monitor
+bunx smithers-orchestrator monitor
 ```
 
 Streams LLM-friendly execution updates.

@@ -1,11 +1,11 @@
 # Bun configuration for Smithers
 # https://bun.sh/docs/runtime/bunfig
 
-jsx = "react-jsx"
-jsxImportSource = "smithers-orchestrator"
+# Use bun-plugin-solid for Solid JSX transform
+preload = ["./preload.ts"]
 
 [install]
 auto = "fallback"
 
 [test]
-preload = ["./test/preload.ts"]
+preload = ["./preload.ts", "./test/preload.ts"]
