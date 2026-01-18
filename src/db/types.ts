@@ -76,6 +76,26 @@ export interface Agent {
   tokens_input: number | undefined
   tokens_output: number | undefined
   tool_calls_count: number
+  stream_summary?: StreamSummary
+}
+
+export interface StreamSummary {
+  textBlocks: number
+  reasoningBlocks: number
+  toolCalls: number
+  toolResults: number
+  errors: number
+}
+
+export interface AgentStreamEvent {
+  id: string
+  agent_id: string
+  event_type: string
+  event_id?: string
+  tool_name?: string
+  content?: string
+  timestamp: number
+  created_at: Date
 }
 
 export interface ToolCall {

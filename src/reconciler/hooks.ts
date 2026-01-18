@@ -6,19 +6,24 @@
 
 import type { ReactNode } from "react";
 import {
+  DependencyList,
+  EffectCallback,
   createElement,
   createContext,
   useCallback,
   useContext,
   useEffect,
   useRef,
-  type DependencyList,
-  type EffectCallback,
 } from "react";
 
-const ExecutionGateContext = createContext(true);
+export interface ExecutionGateProviderProps {
+  enabled: boolean;
+  children: ReactNode;
+}
 
-export function ExecutionGateProvider(props: { enabled: boolean; children: ReactNode }): ReactNode {
+const ExecutionGateContext = createContext<boolean>(true);
+
+export function ExecutionGateProvider(props: ExecutionGateProviderProps): ReactNode {
   return createElement(ExecutionGateContext.Provider, { value: props.enabled }, props.children);
 }
 
@@ -64,11 +69,20 @@ export const useMount = (fn: () => void) => {
  */
 export const useUnmount = (fn: () => void): void => {
   const fnRef = useRef(fn);
+  const enabled = useExecutionGate();
+  const hasEnabledRef = useRef(enabled);
 
   // Update the ref each render so if it changes, the newest callback will be invoked
   fnRef.current = fn;
+  if (enabled) {
+    hasEnabledRef.current = true;
+  }
 
-  useEffectOnce(() => () => fnRef.current());
+  useEffectOnce(() => () => {
+    if (hasEnabledRef.current) {
+      fnRef.current();
+    }
+  });
 };
 
 /**
@@ -161,13 +175,17 @@ export function useEffectOnValueChange<T>(
   const lastValueRef = useRef<T | typeof UNSET>(UNSET);
   const effectRef = useRef(effect);
   effectRef.current = effect;
+  const enabled = useExecutionGate();
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     if (lastValueRef.current !== UNSET && Object.is(lastValueRef.current, value)) {
       return;
     }
     lastValueRef.current = value;
     return effectRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, ...deps]);
+  }, [enabled, value, ...deps]);
 }
