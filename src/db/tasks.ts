@@ -134,7 +134,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
       const result = rdb.queryOne<{ value: string }>(
         "SELECT value FROM state WHERE key = 'ralphCount'"
       )
-      return result ? parseInt(result.value, 10) : 0
+      return result ? JSON.parse(result.value) : 0
     },
   }
 

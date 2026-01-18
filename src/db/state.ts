@@ -60,7 +60,7 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
 
     reset: () => {
       rdb.run('DELETE FROM state')
-      rdb.run("INSERT INTO state (key, value) VALUES ('phase', '\"initial\"'), ('iteration', '0'), ('data', 'null')")
+      rdb.run("INSERT INTO state (key, value) VALUES ('phase', '\"initial\"'), ('ralphCount', '0'), ('data', 'null')")
     },
 
     history: (key?: string, limit: number = 100): any[] => {

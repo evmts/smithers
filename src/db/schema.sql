@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS state (
 -- Initialize default state
 INSERT OR IGNORE INTO state (key, value) VALUES
   ('phase', '"initial"'),
-  ('iteration', '0'),
+  ('ralphCount', '0'),
   ('data', 'null');
 
 -- ============================================================================

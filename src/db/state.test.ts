@@ -347,7 +347,7 @@ describe('StateModule', () => {
 
       // Default values are inserted
       expect(state.get('phase')).toBe('initial')
-      expect(state.get('iteration')).toBe(0)
+      expect(state.get('ralphCount')).toBe(0)
       expect(state.get('data')).toBeNull()
     })
   })

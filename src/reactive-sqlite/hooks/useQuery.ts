@@ -108,11 +108,12 @@ export function useQuery<T = Record<string, unknown>>(
 
       const tables = extractReadTables(sql)
       return db.subscribe(tables, () => {
+        invalidateCache()  // Clear cache so getSnapshot() recomputes
         incrementVersion()
         onStoreChange()
       })
     },
-    [db, sql, skip, incrementVersion]
+    [db, sql, skip, incrementVersion, invalidateCache]
   )
 
   // Get current snapshot
