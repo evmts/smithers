@@ -35,6 +35,7 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
         'INSERT INTO state (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?',
         [key, jsonValue, now(), jsonValue, now()]
       )
+      rdb.invalidate(['state'])
       // Log transition
       const currentExecutionId = getCurrentExecutionId()
       if (currentExecutionId) {
