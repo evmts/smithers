@@ -1,4 +1,4 @@
-import { createContext, createSignal, onMount, type JSX } from 'solid-js'
+import { createContext, useState, useEffect, useMemo, type ReactNode } from 'react'
 
 /**
  * Ralph context for task tracking.
@@ -52,7 +52,7 @@ export interface RalphProps {
   maxIterations?: number
   onIteration?: (iteration: number) => void
   onComplete?: () => void
-  children?: JSX.Element
+  children?: ReactNode
 }
 
 /**
@@ -66,17 +66,17 @@ export interface RalphProps {
  *
  * This is the core orchestration pattern.
  */
-export function Ralph(props: RalphProps): JSX.Element {
-  const [iteration, setIteration] = createSignal(0)
-  const [pendingTasks, setPendingTasks] = createSignal(0)
-  const [key, setKey] = createSignal(0)
-  const [hasStartedTasks, setHasStartedTasks] = createSignal(false)
+export function Ralph(props: RalphProps): ReactNode {
+  const [iteration, setIteration] = useState(0)
+  const [pendingTasks, setPendingTasks] = useState(0)
+  const [key, setKey] = useState(0)
+  const [hasStartedTasks, setHasStartedTasks] = useState(false)
 
   const maxIterations = props.maxIterations || 100
 
   console.log('[Ralph] Component created, maxIterations:', maxIterations)
 
-  const contextValue: RalphContextType = {
+  const contextValue: RalphContextType = useMemo(() => ({
     registerTask: () => {
       console.log('[Ralph] registerTask called')
       setHasStartedTasks(true)
@@ -86,26 +86,23 @@ export function Ralph(props: RalphProps): JSX.Element {
       console.log('[Ralph] completeTask called')
       setPendingTasks((p: number) => p - 1)
     },
-  }
+  }), [])
 
-  onMount(() => {
-    console.log('[Ralph] onMount fired!')
+  useEffect(() => {
+    console.log('[Ralph] useEffect fired!')
     // Monitor pending tasks and trigger remount when all complete
     let checkInterval: NodeJS.Timeout | null = null
     let stableCount = 0 // Count consecutive stable checks (no tasks running)
 
     checkInterval = setInterval(() => {
-      const pending = pendingTasks()
-      const currentIteration = iteration()
-
       // If tasks are running, reset stable counter
-      if (pending > 0) {
+      if (pendingTasks > 0) {
         stableCount = 0
         return
       }
 
       // If no tasks have ever started and we've waited a bit, complete
-      if (!hasStartedTasks()) {
+      if (!hasStartedTasks) {
         stableCount++
         // Wait 500ms (50 checks) before declaring no work to do
         if (stableCount > 50) {
@@ -125,7 +122,7 @@ export function Ralph(props: RalphProps): JSX.Element {
       }
 
       // All tasks complete
-      if (currentIteration >= maxIterations - 1) {
+      if (iteration >= maxIterations - 1) {
         // Max iterations reached
         if (checkInterval) clearInterval(checkInterval)
         signalOrchestrationComplete()
@@ -134,7 +131,7 @@ export function Ralph(props: RalphProps): JSX.Element {
       }
 
       // Trigger remount for next iteration
-      const nextIteration = currentIteration + 1
+      const nextIteration = iteration + 1
       setIteration(nextIteration)
       setKey((k: number) => k + 1)
       setHasStartedTasks(false) // Reset for next iteration
@@ -149,14 +146,14 @@ export function Ralph(props: RalphProps): JSX.Element {
     return () => {
       if (checkInterval) clearInterval(checkInterval)
     }
-  })
+  }, [pendingTasks, hasStartedTasks, iteration, maxIterations, props])
 
   return (
     <RalphContext.Provider value={contextValue}>
       <ralph
-        key={key()}
-        iteration={iteration()}
-        pending={pendingTasks()}
+        key={key}
+        iteration={iteration}
+        pending={pendingTasks}
         maxIterations={maxIterations}
       >
         {props.children}

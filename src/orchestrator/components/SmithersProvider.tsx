@@ -1,7 +1,7 @@
 // SmithersProvider - Context provider for dependency injection
-// Gives all child components access to PGlite database, executionId, and global controls
+// Gives all child components access to database, executionId, and global controls
 
-import { createContext, useContext, createSignal, type JSX } from 'solid-js'
+import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
 import type { SmithersDB } from '../db/index.js'
 
 // ============================================================================
@@ -9,7 +9,7 @@ import type { SmithersDB } from '../db/index.js'
 // ============================================================================
 
 // Module-level store for context value - used as fallback when
-// Solid's Context API doesn't work in universal renderer mode
+// React's Context API doesn't work in universal renderer mode
 let globalSmithersContext: SmithersContextValue | null = null
 
 // ============================================================================
@@ -45,7 +45,7 @@ export interface SmithersConfig {
 
 export interface SmithersContextValue {
   /**
-   * PGlite database instance
+   * Database instance
    */
   db: SmithersDB
 
@@ -84,17 +84,17 @@ export interface SmithersContextValue {
 // CONTEXT
 // ============================================================================
 
-const SmithersContext = createContext<SmithersContextValue>()
+const SmithersContext = createContext<SmithersContextValue | undefined>(undefined)
 
 /**
  * Hook to access Smithers context
  *
- * Uses Solid's Context API, but falls back to module-level store
+ * Uses React's Context API, but falls back to module-level store
  * for universal renderer compatibility where context propagation
  * may not work as expected.
  */
 export function useSmithers() {
-  // Try Solid's Context first
+  // Try React's Context first
   const ctx = useContext(SmithersContext)
   if (ctx) {
     return ctx
@@ -114,7 +114,7 @@ export function useSmithers() {
 
 export interface SmithersProviderProps {
   /**
-   * PGlite database instance
+   * Database instance
    */
   db: SmithersDB
 
@@ -131,7 +131,7 @@ export interface SmithersProviderProps {
   /**
    * Children components
    */
-  children: JSX.Element
+  children: ReactNode
 }
 
 /**
@@ -151,12 +151,12 @@ export interface SmithersProviderProps {
  * </SmithersProvider>
  * ```
  */
-export function SmithersProvider(props: SmithersProviderProps): JSX.Element {
+export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   // Global stop/rebase signals
-  const [stopRequested, setStopRequested] = createSignal(false)
-  const [rebaseRequested, setRebaseRequested] = createSignal(false)
+  const [stopRequested, setStopRequested] = useState(false)
+  const [rebaseRequested, setRebaseRequested] = useState(false)
 
-  const value: SmithersContextValue = {
+  const value: SmithersContextValue = useMemo(() => ({
     db: props.db,
     executionId: props.executionId,
     config: props.config ?? {},
@@ -187,13 +187,13 @@ export function SmithersProvider(props: SmithersProviderProps): JSX.Element {
       console.log(`[Smithers] Rebase requested: ${reason}`)
     },
 
-    isStopRequested: stopRequested,
-    isRebaseRequested: rebaseRequested,
-  }
+    isStopRequested: () => stopRequested,
+    isRebaseRequested: () => rebaseRequested,
+  }), [props.db, props.executionId, props.config, stopRequested, rebaseRequested])
 
   // Set global store BEFORE any children are evaluated
   // This is critical for universal renderer compatibility where
-  // Solid's Context API may not propagate properly
+  // React's Context API may not propagate properly
   globalSmithersContext = value
 
   return (

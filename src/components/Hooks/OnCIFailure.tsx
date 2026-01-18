@@ -1,7 +1,7 @@
 // OnCIFailure hook component - polls CI status and triggers children on failure
 // Currently supports GitHub Actions
 
-import { createSignal, onMount, onCleanup, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useRef, useContext, type ReactNode } from 'react'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { RalphContext } from '../Ralph'
 
@@ -14,7 +14,7 @@ export interface CIFailure {
 }
 
 export interface OnCIFailureProps {
-  children: JSX.Element
+  children: ReactNode
   /**
    * CI provider (currently only github-actions supported)
    */
@@ -104,24 +104,26 @@ async function fetchRunLogs(runId: number): Promise<string> {
  * </OnCIFailure>
  * ```
  */
-export function OnCIFailure(props: OnCIFailureProps): JSX.Element {
+export function OnCIFailure(props: OnCIFailureProps): ReactNode {
   const smithers = useSmithers()
   const ralph = useContext(RalphContext)
 
-  const [ciStatus, setCIStatus] = createSignal<'idle' | 'polling' | 'failed' | 'error'>('idle')
-  const [currentFailure, setCurrentFailure] = createSignal<CIFailure | null>(null)
-  const [triggered, setTriggered] = createSignal(false)
-  const [error, setError] = createSignal<string | null>(null)
+  const [ciStatus, setCIStatus] = useState<'idle' | 'polling' | 'failed' | 'error'>('idle')
+  const [currentFailure, setCurrentFailure] = useState<CIFailure | null>(null)
+  const [triggered, setTriggered] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Track processed run IDs to avoid re-triggering
-  const processedRunIds = new Set<number>()
+  const processedRunIdsRef = useRef(new Set<number>())
 
-  let pollInterval: ReturnType<typeof setInterval> | null = null
   const intervalMs = props.pollInterval ?? 30000
 
-  onMount(() => {
+  useEffect(() => {
+    let pollInterval: ReturnType<typeof setInterval> | null = null
+    const processedRunIds = processedRunIdsRef.current
+
     // Fire-and-forget async IIFE pattern
-    (async () => {
+    ;(async () => {
       setCIStatus('polling')
 
       // Load previously processed run IDs from db state
@@ -138,7 +140,7 @@ export function OnCIFailure(props: OnCIFailureProps): JSX.Element {
       const checkCI = async () => {
         try {
           if (props.provider !== 'github-actions') {
-            setError(() => `Unsupported CI provider: ${props.provider}`)
+            setError(`Unsupported CI provider: ${props.provider}`)
             return
           }
 
@@ -207,27 +209,26 @@ export function OnCIFailure(props: OnCIFailureProps): JSX.Element {
       // Start polling
       pollInterval = setInterval(checkCI, intervalMs)
     })()
-  })
 
-  onCleanup(() => {
-    if (pollInterval) {
-      clearInterval(pollInterval)
-      pollInterval = null
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval)
+      }
     }
-  })
+  }, [props.provider, intervalMs, props.onFailure, ralph, smithers.db.state])
 
   return (
     <ci-failure-hook
       provider={props.provider}
-      status={ciStatus()}
-      triggered={triggered()}
-      run-id={currentFailure()?.runId}
-      workflow-name={currentFailure()?.workflowName}
-      failed-jobs={currentFailure()?.failedJobs?.join(', ')}
+      status={ciStatus}
+      triggered={triggered}
+      run-id={currentFailure?.runId}
+      workflow-name={currentFailure?.workflowName}
+      failed-jobs={currentFailure?.failedJobs?.join(', ')}
       poll-interval={intervalMs}
-      error={error()}
+      error={error}
     >
-      {triggered() ? props.children : null}
+      {triggered ? props.children : null}
     </ci-failure-hook>
   )
 }

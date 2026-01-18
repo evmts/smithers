@@ -1,7 +1,7 @@
 // Smithers Subagent Component
 // Launches a new Smithers instance to plan and execute a task
 
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI'
@@ -15,7 +15,7 @@ export interface SmithersProps {
   /**
    * Task description (as children)
    */
-  children: JSX.Element
+  children: ReactNode
 
   /**
    * Model to use for planning the script
@@ -116,41 +116,44 @@ export interface SmithersProps {
  * </Smithers>
  * ```
  */
-export function Smithers(props: SmithersProps): JSX.Element {
+export function Smithers(props: SmithersProps): ReactNode {
   const { db, executionId } = useSmithers()
   const ralph = useContext(RalphContext)
 
-  const [status, setStatus] = createSignal<'pending' | 'planning' | 'executing' | 'complete' | 'error'>('pending')
-  const [result, setResult] = createSignal<SmithersResult | null>(null)
-  const [error, setError] = createSignal<Error | null>(null)
-  const [subagentId, setSubagentId] = createSignal<string | null>(null)
+  const [status, setStatus] = useState<'pending' | 'planning' | 'executing' | 'complete' | 'error'>('pending')
+  const [result, setResult] = useState<SmithersResult | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+  const [subagentId, setSubagentId] = useState<string | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    (async () => {
+    ;(async () => {
       ralph?.registerTask()
 
+      let currentSubagentId: string | null = null
+
       try {
-        setStatus('planning')
+        if (!cancelled) setStatus('planning')
 
         // Extract task from children
         const task = String(props.children)
 
         // Log subagent start to database
-        let currentSubagentId: string | null = null
         if (props.reportingEnabled !== false) {
           currentSubagentId = await db.agents.start(
             `[Smithers Subagent] ${task.slice(0, 100)}...`,
             props.plannerModel ?? 'sonnet',
             'Smithers subagent planning and execution'
           )
-          setSubagentId(currentSubagentId)
+          if (!cancelled) setSubagentId(currentSubagentId)
         }
 
         props.onProgress?.('Starting Smithers subagent...')
 
         // Execute the subagent
-        setStatus('executing')
+        if (!cancelled) setStatus('executing')
         const smithersResult = await executeSmithers({
           task,
           plannerModel: props.plannerModel,
@@ -195,17 +198,20 @@ export function Smithers(props: SmithersProps): JSX.Element {
           })
         }
 
-        setResult(smithersResult)
-        setStatus('complete')
-        props.onFinished?.(smithersResult)
+        if (!cancelled) {
+          setResult(smithersResult)
+          setStatus('complete')
+          props.onFinished?.(smithersResult)
+        }
 
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
+        if (!cancelled) {
+          setError(errorObj)
+          setStatus('error')
+        }
 
         // Log failure to database
-        const currentSubagentId = subagentId()
         if (props.reportingEnabled !== false && currentSubagentId) {
           await db.agents.fail(currentSubagentId, errorObj.message)
         }
@@ -226,22 +232,24 @@ export function Smithers(props: SmithersProps): JSX.Element {
         ralph?.completeTask()
       }
     })()
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   // Render custom element for XML serialization
   return (
     <smithers-subagent
-      status={status()}
-      subagent-id={subagentId()}
+      status={status}
+      subagent-id={subagentId}
       execution-id={executionId}
       planner-model={props.plannerModel ?? 'sonnet'}
       execution-model={props.executionModel ?? 'sonnet'}
-      script-path={result()?.scriptPath}
-      output={result()?.output?.slice(0, 200)}
-      error={error()?.message}
-      tokens-input={result()?.tokensUsed?.input}
-      tokens-output={result()?.tokensUsed?.output}
-      duration-ms={result()?.durationMs}
+      script-path={result?.scriptPath}
+      output={result?.output?.slice(0, 200)}
+      error={error?.message}
+      tokens-input={result?.tokensUsed?.input}
+      tokens-output={result?.tokensUsed?.output}
+      duration-ms={result?.durationMs}
     >
       {props.children}
     </smithers-subagent>

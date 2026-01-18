@@ -3,7 +3,7 @@ import type { SmithersNode } from '../core/types.js'
 /**
  * Renderer configuration methods.
  * Exported separately for direct testing without JSX.
- * This file has NO solid-js dependencies.
+ * This file has NO React dependencies - it's framework-agnostic.
  */
 export const rendererMethods = {
   createElement(type: string): SmithersNode {

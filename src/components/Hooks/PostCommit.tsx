@@ -1,12 +1,12 @@
 // PostCommit hook component - triggers children when a git commit is made
 // Installs a git post-commit hook and polls db.state for triggers
 
-import { createSignal, onMount, onCleanup, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { RalphContext } from '../Ralph'
 
 export interface PostCommitProps {
-  children: JSX.Element
+  children: ReactNode
   /**
    * Filter which commits trigger the hook
    * - 'all': All commits trigger
@@ -67,21 +67,21 @@ async function hasSmithersMetadata(commitHash: string): Promise<boolean> {
  * </PostCommit>
  * ```
  */
-export function PostCommit(props: PostCommitProps): JSX.Element {
+export function PostCommit(props: PostCommitProps): ReactNode {
   const smithers = useSmithers()
   const ralph = useContext(RalphContext)
 
-  const [triggered, setTriggered] = createSignal(false)
-  const [currentTrigger, setCurrentTrigger] = createSignal<HookTrigger | null>(null)
-  const [lastProcessedTimestamp, setLastProcessedTimestamp] = createSignal(0)
-  const [hookInstalled, setHookInstalled] = createSignal(false)
-  const [error, setError] = createSignal<string | null>(null)
+  const [triggered, setTriggered] = useState(false)
+  const [currentTrigger, setCurrentTrigger] = useState<HookTrigger | null>(null)
+  const [lastProcessedTimestamp, setLastProcessedTimestamp] = useState(0)
+  const [hookInstalled, setHookInstalled] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  let pollInterval: ReturnType<typeof setInterval> | null = null
+  useEffect(() => {
+    let pollInterval: ReturnType<typeof setInterval> | null = null
 
-  onMount(() => {
     // Fire-and-forget async IIFE pattern
-    (async () => {
+    ;(async () => {
       try {
         // Install the git hook
         await installPostCommitHook()
@@ -92,7 +92,7 @@ export function PostCommit(props: PostCommitProps): JSX.Element {
           try {
             const trigger = await smithers.db.state.get<HookTrigger>('last_hook_trigger')
 
-            if (trigger && trigger.type === 'post-commit' && trigger.timestamp > lastProcessedTimestamp()) {
+            if (trigger && trigger.type === 'post-commit' && trigger.timestamp > lastProcessedTimestamp) {
               // Check filter conditions
               let shouldTrigger = true
 
@@ -131,25 +131,24 @@ export function PostCommit(props: PostCommitProps): JSX.Element {
         console.error('[PostCommit] Failed to install hook:', errorMsg)
       }
     })()
-  })
 
-  onCleanup(() => {
-    if (pollInterval) {
-      clearInterval(pollInterval)
-      pollInterval = null
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval)
+      }
     }
-  })
+  }, [lastProcessedTimestamp, props.runOn, props.async, ralph, smithers.db.state])
 
   return (
     <post-commit-hook
-      installed={hookInstalled()}
-      triggered={triggered()}
-      commit-hash={currentTrigger()?.commitHash}
+      installed={hookInstalled}
+      triggered={triggered}
+      commit-hash={currentTrigger?.commitHash}
       run-on={props.runOn || 'all'}
       async={props.async || false}
-      error={error()}
+      error={error}
     >
-      {triggered() ? props.children : null}
+      {triggered ? props.children : null}
     </post-commit-hook>
   )
 }

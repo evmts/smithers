@@ -1,7 +1,7 @@
 // Enhanced Phase component with automatic database logging
 // Wraps base smithers Phase component
 
-import { onMount, onCleanup, createSignal, useContext, type JSX } from 'solid-js'
+import { useEffect, useState, useContext, useRef, type ReactNode } from 'react'
 import { Phase as BasePhase } from '../../components/Phase'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
@@ -15,7 +15,7 @@ export interface PhaseProps {
   /**
    * Children components
    */
-  children: JSX.Element
+  children: ReactNode
 
   /**
    * Skip this phase if condition is true
@@ -43,18 +43,19 @@ export interface PhaseProps {
  * </Phase>
  * ```
  */
-export function Phase(props: PhaseProps): JSX.Element {
+export function Phase(props: PhaseProps): ReactNode {
   const { db } = useSmithers()
   const ralph = useContext(RalphContext)
-  const [phaseId, setPhaseId] = createSignal<string | null>(null)
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'completed' | 'skipped'>('pending')
+  const [phaseId, setPhaseId] = useState<string | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'completed' | 'skipped'>('pending')
+  const phaseIdRef = useRef<string | null>(null)
 
   // Get current iteration from Ralph context (if available)
   const getCurrentIteration = (): number => {
-    return (ralph as any)?.iteration?.() ?? 0
+    return (ralph as any)?.iteration ?? 0
   }
 
-  onMount(() => {
+  useEffect(() => {
     ;(async () => {
       try {
         // Check skip condition
@@ -75,6 +76,7 @@ export function Phase(props: PhaseProps): JSX.Element {
         // Start phase in database
         const id = await db.phases.start(props.name, getCurrentIteration())
         setPhaseId(id)
+        phaseIdRef.current = id
         setStatus('running')
 
         console.log(`[Phase] Started: ${props.name} (iteration ${getCurrentIteration()})`)
@@ -84,28 +86,28 @@ export function Phase(props: PhaseProps): JSX.Element {
         console.error(`[Phase] Error starting phase ${props.name}:`, error)
       }
     })()
-  })
 
-  onCleanup(() => {
-    ;(async () => {
-      const id = phaseId()
-      if (!id || status() === 'skipped') return
+    return () => {
+      ;(async () => {
+        const id = phaseIdRef.current
+        if (!id) return
 
-      try {
-        await db.phases.complete(id)
-        setStatus('completed')
+        try {
+          await db.phases.complete(id)
+          setStatus('completed')
 
-        console.log(`[Phase] Completed: ${props.name}`)
+          console.log(`[Phase] Completed: ${props.name}`)
 
-        props.onComplete?.()
-      } catch (error) {
-        console.error(`[Phase] Error completing phase ${props.name}:`, error)
-      }
-    })()
-  })
+          props.onComplete?.()
+        } catch (error) {
+          console.error(`[Phase] Error completing phase ${props.name}:`, error)
+        }
+      })()
+    }
+  }, [])
 
   // Don't render children if skipped
-  if (status() === 'skipped') {
+  if (status === 'skipped') {
     return <phase name={props.name} status="skipped" />
   }
 

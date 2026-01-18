@@ -1,10 +1,10 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface HumanProps {
   message?: string
   onApprove?: () => void
   onReject?: () => void
-  children?: JSX.Element
+  children?: ReactNode
   [key: string]: unknown
 }
 
@@ -25,7 +25,7 @@ export interface HumanProps {
  * </Human>
  * ```
  */
-export function Human(props: HumanProps): JSX.Element {
+export function Human(props: HumanProps): ReactNode {
   return (
     <human message={props.message}>
       {props.children}

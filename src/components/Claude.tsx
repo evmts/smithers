@@ -1,4 +1,4 @@
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from './Ralph'
 
 /**
@@ -30,7 +30,7 @@ async function executeWithClaudeSDK(config: {
 }
 
 export interface ClaudeProps {
-  children?: JSX.Element
+  children?: ReactNode
   model?: string
   maxTurns?: number
   tools?: string[]
@@ -47,23 +47,22 @@ export interface ClaudeProps {
  * CRITICAL PATTERN: This component is BOTH declaration AND execution.
  * When it mounts, it executes itself. No external orchestrator needed.
  *
- * GOTCHA: Use fire-and-forget async IIFE inside onMount:
- *   onMount(() => {
- *     (async () => { ... })()  // ← Fire and forget
- *   })
- *
- * NOT: onMount(async () => { ... })  // ← Doesn't work!
+ * React pattern: Use useEffect with empty deps and async IIFE inside:
+ *   useEffect(() => {
+ *     (async () => { ... })()
+ *   }, [])
  */
-export function Claude(props: ClaudeProps): JSX.Element {
+export function Claude(props: ClaudeProps): ReactNode {
   const ralph = useContext(RalphContext)
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = createSignal<unknown>(null)
-  const [error, setError] = createSignal<Error | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const [result, setResult] = useState<unknown>(null)
+  const [error, setError] = useState<Error | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    // This is the CRITICAL pattern for async execution in Solid onMount
-    (async () => {
+    ;(async () => {
       // Register with Ralph (if present)
       ralph?.registerTask()
 
@@ -78,6 +77,8 @@ export function Claude(props: ClaudeProps): JSX.Element {
           systemPrompt: props.systemPrompt,
         })
 
+        if (cancelled) return
+
         // Optional validation
         if (props.validate) {
           const isValid = await props.validate(response)
@@ -86,28 +87,33 @@ export function Claude(props: ClaudeProps): JSX.Element {
           }
         }
 
-        setResult(response)
-        setStatus('complete')
-        props.onFinished?.(response)
+        if (!cancelled) {
+          setResult(response)
+          setStatus('complete')
+          props.onFinished?.(response)
+        }
 
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
-        props.onError?.(errorObj)
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
+          props.onError?.(errorObj)
+        }
       } finally {
         // Always complete task with Ralph
         ralph?.completeTask()
       }
     })()
-    // Note: No await, no return - just fire and forget
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <claude
-      status={status()}
-      result={result()}
-      error={error()?.message}
+      status={status}
+      result={result}
+      error={error?.message}
       model={props.model}
     >
       {props.children}

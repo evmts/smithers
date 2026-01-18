@@ -1,8 +1,8 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface StepProps {
   name?: string
-  children?: JSX.Element
+  children?: ReactNode
   [key: string]: unknown
 }
 
@@ -10,7 +10,7 @@ export interface StepProps {
  * Step component - represents a single step within a phase.
  * Provides semantic structure to agent workflows.
  */
-export function Step(props: StepProps): JSX.Element {
+export function Step(props: StepProps): ReactNode {
   return (
     <step name={props.name}>
       {props.children}

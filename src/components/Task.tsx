@@ -1,8 +1,8 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface TaskProps {
   done?: boolean
-  children?: JSX.Element
+  children?: ReactNode
   [key: string]: unknown
 }
 
@@ -20,7 +20,7 @@ export interface TaskProps {
  * </Phase>
  * ```
  */
-export function Task(props: TaskProps): JSX.Element {
+export function Task(props: TaskProps): ReactNode {
   return (
     <task done={props.done}>
       {props.children}

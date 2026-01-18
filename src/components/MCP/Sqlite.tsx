@@ -1,4 +1,4 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface SqliteProps {
   /** Path to SQLite database file */
@@ -6,7 +6,7 @@ export interface SqliteProps {
   /** Open database in read-only mode */
   readOnly?: boolean
   /** Custom instructions for using the database */
-  children?: JSX.Element
+  children?: ReactNode
 }
 
 /**
@@ -23,7 +23,7 @@ export interface SqliteProps {
  *   Query all users and format as a table.
  * </Claude>
  */
-export function Sqlite(props: SqliteProps): JSX.Element {
+export function Sqlite(props: SqliteProps): ReactNode {
   const config = JSON.stringify({
     path: props.path,
     readOnly: props.readOnly ?? false,

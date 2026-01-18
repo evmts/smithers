@@ -1,4 +1,4 @@
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs'
@@ -15,7 +15,7 @@ export interface CommitProps {
   /** Stage all tracked files with -a flag */
   all?: boolean
   /** Children content (used as message if message prop not provided) */
-  children?: JSX.Element
+  children?: ReactNode
   /** Callback when commit is complete */
   onFinished?: (result: CommitResult) => void
   /** Callback on error */
@@ -54,18 +54,20 @@ ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : 
 /**
  * Commit component - creates a git commit with smithers metadata
  *
- * CRITICAL PATTERN: Uses fire-and-forget async IIFE in onMount
+ * React pattern: Uses useEffect with empty deps and async IIFE inside
  */
-export function Commit(props: CommitProps): JSX.Element {
+export function Commit(props: CommitProps): ReactNode {
   const ralph = useContext(RalphContext)
   const smithers = useSmithers()
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = createSignal<CommitResult | null>(null)
-  const [error, setError] = createSignal<Error | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const [result, setResult] = useState<CommitResult | null>(null)
+  const [error, setError] = useState<Error | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    (async () => {
+    ;(async () => {
       ralph?.registerTask()
 
       try {
@@ -106,6 +108,8 @@ export function Commit(props: CommitProps): JSX.Element {
           await Bun.$`git commit -m ${message}`.quiet()
         }
 
+        if (cancelled) return
+
         // Get commit info
         const commitHash = await getCommitHash('HEAD')
         const diffStats = await getDiffStats('HEAD~1')
@@ -139,27 +143,33 @@ export function Commit(props: CommitProps): JSX.Element {
           deletions: diffStats.deletions,
         }
 
-        setResult(commitResult)
-        setStatus('complete')
-        props.onFinished?.(commitResult)
+        if (!cancelled) {
+          setResult(commitResult)
+          setStatus('complete')
+          props.onFinished?.(commitResult)
+        }
 
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
-        props.onError?.(errorObj)
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
+          props.onError?.(errorObj)
+        }
       } finally {
         ralph?.completeTask()
       }
     })()
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <git-commit
-      status={status()}
-      commit-hash={result()?.commitHash}
-      message={result()?.message}
-      error={error()?.message}
+      status={status}
+      commit-hash={result?.commitHash}
+      message={result?.message}
+      error={error?.message}
     >
       {props.children}
     </git-commit>

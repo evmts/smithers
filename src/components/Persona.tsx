@@ -1,8 +1,8 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface PersonaProps {
   role?: string
-  children?: JSX.Element
+  children?: ReactNode
   [key: string]: unknown
 }
 
@@ -22,7 +22,7 @@ export interface PersonaProps {
  * </Claude>
  * ```
  */
-export function Persona(props: PersonaProps): JSX.Element {
+export function Persona(props: PersonaProps): ReactNode {
   return (
     <persona role={props.role}>
       {props.children}

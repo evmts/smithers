@@ -1,7 +1,7 @@
 // Orchestration - Top-level orchestration component
 // Handles global timeouts, stop conditions, CI/CD integration, and cleanup
 
-import { onMount, onCleanup, type JSX } from 'solid-js'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
 import { jjSnapshot } from '../../utils/vcs'
 
@@ -37,7 +37,7 @@ export interface OrchestrationProps {
   /**
    * Children components
    */
-  children: JSX.Element
+  children: ReactNode
 
   /**
    * Global timeout in milliseconds
@@ -93,14 +93,16 @@ export interface OrchestrationProps {
  * </Orchestration>
  * ```
  */
-export function Orchestration(props: OrchestrationProps): JSX.Element {
+export function Orchestration(props: OrchestrationProps): ReactNode {
   const { db, executionId, requestStop, isStopRequested } = useSmithers()
 
-  const startTime = Date.now()
-  let timeoutId: Timer | null = null
-  let checkIntervalId: Timer | null = null
+  const startTimeRef = useRef(Date.now())
 
-  onMount(() => {
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let checkIntervalId: ReturnType<typeof setInterval> | null = null
+    const startTime = startTimeRef.current
+
     ;(async () => {
       try {
         // Create snapshot if requested
@@ -197,40 +199,40 @@ export function Orchestration(props: OrchestrationProps): JSX.Element {
         props.onError?.(error as Error)
       }
     })()
-  })
 
-  onCleanup(() => {
-    // Clear timers
-    if (timeoutId) clearTimeout(timeoutId)
-    if (checkIntervalId) clearInterval(checkIntervalId)
+    return () => {
+      // Clear timers
+      if (timeoutId) clearTimeout(timeoutId)
+      if (checkIntervalId) clearInterval(checkIntervalId)
 
-    // Generate completion result
-    ;(async () => {
-      try {
-        const execution = await db.execution.current()
-        if (!execution) return
+      // Generate completion result
+      ;(async () => {
+        try {
+          const execution = await db.execution.current()
+          if (!execution) return
 
-        const result: OrchestrationResult = {
-          executionId,
-          status: isStopRequested() ? 'stopped' : 'completed',
-          totalAgents: execution.total_agents,
-          totalToolCalls: execution.total_tool_calls,
-          totalTokens: execution.total_tokens_used,
-          durationMs: Date.now() - startTime,
+          const result: OrchestrationResult = {
+            executionId,
+            status: isStopRequested() ? 'stopped' : 'completed',
+            totalAgents: execution.total_agents,
+            totalToolCalls: execution.total_tool_calls,
+            totalTokens: execution.total_tokens_used,
+            durationMs: Date.now() - startTime,
+          }
+
+          props.onComplete?.(result)
+
+          // Cleanup if requested
+          if (props.cleanupOnComplete) {
+            await db.close()
+          }
+        } catch (error) {
+          console.error('[Orchestration] Cleanup error:', error)
+          props.onError?.(error as Error)
         }
-
-        props.onComplete?.(result)
-
-        // Cleanup if requested
-        if (props.cleanupOnComplete) {
-          await db.close()
-        }
-      } catch (error) {
-        console.error('[Orchestration] Cleanup error:', error)
-        props.onError?.(error as Error)
-      }
-    })()
-  })
+      })()
+    }
+  }, [])
 
   return <orchestration execution-id={executionId}>{props.children}</orchestration>
 }

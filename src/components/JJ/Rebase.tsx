@@ -1,4 +1,4 @@
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 
@@ -6,7 +6,7 @@ export interface RebaseProps {
   destination?: string
   source?: string
   onConflict?: (conflicts: string[]) => void
-  children?: JSX.Element
+  children?: ReactNode
 }
 
 /**
@@ -38,19 +38,21 @@ function parseConflicts(output: string): string[] {
 /**
  * JJ Rebase component - performs JJ rebase with conflict handling.
  *
- * Uses the fire-and-forget async IIFE pattern in onMount.
+ * React pattern: Uses useEffect with empty deps and async IIFE inside.
  * Registers with Ralph for task tracking.
  */
-export function Rebase(props: RebaseProps): JSX.Element {
+export function Rebase(props: RebaseProps): ReactNode {
   const ralph = useContext(RalphContext)
   const smithers = useSmithers()
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
-  const [conflicts, setConflicts] = createSignal<string[]>([])
-  const [error, setError] = createSignal<Error | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
+  const [conflicts, setConflicts] = useState<string[]>([])
+  const [error, setError] = useState<Error | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    (async () => {
+    ;(async () => {
       ralph?.registerTask()
 
       try {
@@ -80,6 +82,8 @@ export function Rebase(props: RebaseProps): JSX.Element {
           hasConflicts = rebaseOutput.toLowerCase().includes('conflict')
         }
 
+        if (cancelled) return
+
         // Check for conflicts in output
         const detectedConflicts = parseConflicts(rebaseOutput)
 
@@ -91,8 +95,10 @@ export function Rebase(props: RebaseProps): JSX.Element {
         setConflicts(allConflicts)
 
         if (allConflicts.length > 0 || hasConflicts) {
-          setStatus('conflict')
-          props.onConflict?.(allConflicts)
+          if (!cancelled) {
+            setStatus('conflict')
+            props.onConflict?.(allConflicts)
+          }
 
           // Log conflict to database
           await smithers.db.vcs.addReport({
@@ -107,7 +113,9 @@ export function Rebase(props: RebaseProps): JSX.Element {
             },
           })
         } else {
-          setStatus('complete')
+          if (!cancelled) {
+            setStatus('complete')
+          }
 
           // Log successful rebase
           await smithers.db.vcs.addReport({
@@ -121,11 +129,14 @@ export function Rebase(props: RebaseProps): JSX.Element {
           })
         }
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
+        }
 
         // Log error to database
+        const errorObj = err instanceof Error ? err : new Error(String(err))
         await smithers.db.vcs.addReport({
           type: 'error',
           title: 'JJ Rebase Failed',
@@ -140,15 +151,17 @@ export function Rebase(props: RebaseProps): JSX.Element {
         ralph?.completeTask()
       }
     })()
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <jj-rebase
-      status={status()}
+      status={status}
       destination={props.destination}
       source={props.source}
-      conflicts={conflicts().join(',')}
-      error={error()?.message}
+      conflicts={conflicts.join(',')}
+      error={error?.message}
     >
       {props.children}
     </jj-rebase>

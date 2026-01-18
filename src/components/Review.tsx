@@ -1,4 +1,4 @@
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from './Ralph'
 import { useSmithers } from '../orchestrator/components/SmithersProvider'
 import { addGitNotes } from '../utils/vcs'
@@ -229,18 +229,20 @@ ${issuesText}
 /**
  * Review component - reviews code changes using AI
  *
- * CRITICAL PATTERN: Uses fire-and-forget async IIFE in onMount
+ * React pattern: Uses useEffect with empty deps and async IIFE inside
  */
-export function Review(props: ReviewProps): JSX.Element {
+export function Review(props: ReviewProps): ReactNode {
   const ralph = useContext(RalphContext)
   const smithers = useSmithers()
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = createSignal<ReviewResult | null>(null)
-  const [error, setError] = createSignal<Error | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const [result, setResult] = useState<ReviewResult | null>(null)
+  const [error, setError] = useState<Error | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    (async () => {
+    ;(async () => {
       ralph?.registerTask()
 
       try {
@@ -254,6 +256,8 @@ export function Review(props: ReviewProps): JSX.Element {
 
         // Execute review
         const reviewResult = await executeReview(prompt, props.model)
+
+        if (cancelled) return
 
         // Log to database
         const reviewId = await smithers.db.vcs.logReview({
@@ -285,37 +289,43 @@ export function Review(props: ReviewProps): JSX.Element {
           await smithers.db.vcs.updateReview(reviewId, { posted_to_git_notes: true })
         }
 
-        setResult(reviewResult)
-        setStatus('complete')
-        props.onFinished?.(reviewResult)
+        if (!cancelled) {
+          setResult(reviewResult)
+          setStatus('complete')
+          props.onFinished?.(reviewResult)
 
-        // If blocking and not approved, request stop
-        if (props.blocking && !reviewResult.approved) {
-          const criticalCount = reviewResult.issues.filter(i => i.severity === 'critical').length
-          const majorCount = reviewResult.issues.filter(i => i.severity === 'major').length
-          smithers.requestStop(
-            `Review failed: ${criticalCount} critical, ${majorCount} major issues found. ${reviewResult.summary}`
-          )
+          // If blocking and not approved, request stop
+          if (props.blocking && !reviewResult.approved) {
+            const criticalCount = reviewResult.issues.filter(i => i.severity === 'critical').length
+            const majorCount = reviewResult.issues.filter(i => i.severity === 'major').length
+            smithers.requestStop(
+              `Review failed: ${criticalCount} critical, ${majorCount} major issues found. ${reviewResult.summary}`
+            )
+          }
         }
 
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
-        props.onError?.(errorObj)
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
+          props.onError?.(errorObj)
+        }
       } finally {
         ralph?.completeTask()
       }
     })()
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <review
-      status={status()}
-      approved={result()?.approved}
-      summary={result()?.summary}
-      issue-count={result()?.issues.length}
-      error={error()?.message}
+      status={status}
+      approved={result?.approved}
+      summary={result?.summary}
+      issue-count={result?.issues.length}
+      error={error?.message}
       target-type={props.target.type}
       target-ref={props.target.ref}
       blocking={props.blocking}

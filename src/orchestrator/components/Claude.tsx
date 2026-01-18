@@ -1,7 +1,7 @@
 // Enhanced Claude component for Smithers orchestrator
 // Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
 
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI'
@@ -18,12 +18,10 @@ import type { ClaudeProps, AgentResult } from './agents/types'
  * CRITICAL PATTERN: This component is BOTH declaration AND execution.
  * When it mounts, it executes itself. No external orchestrator needed.
  *
- * GOTCHA: Use fire-and-forget async IIFE inside onMount:
- *   onMount(() => {
- *     (async () => { ... })()  // Fire and forget
- *   })
- *
- * NOT: onMount(async () => { ... })  // Doesn't work!
+ * React pattern: Use useEffect with empty deps and async IIFE inside:
+ *   useEffect(() => {
+ *     (async () => { ... })()
+ *   }, [])
  *
  * Usage:
  * ```tsx
@@ -37,19 +35,20 @@ import type { ClaudeProps, AgentResult } from './agents/types'
  * </Claude>
  * ```
  */
-export function Claude(props: ClaudeProps): JSX.Element {
+export function Claude(props: ClaudeProps): ReactNode {
   const { db, executionId, isStopRequested } = useSmithers()
   const ralph = useContext(RalphContext)
 
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = createSignal<AgentResult | null>(null)
-  const [error, setError] = createSignal<Error | null>(null)
-  const [agentId, setAgentId] = createSignal<string | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const [result, setResult] = useState<AgentResult | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+  const [agentId, setAgentId] = useState<string | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    // This is the CRITICAL pattern for async execution in Solid onMount
-    (async () => {
+    ;(async () => {
       // Register with Ralph (if present)
       ralph?.registerTask()
 
@@ -187,52 +186,57 @@ export function Claude(props: ClaudeProps): JSX.Element {
           })
         }
 
-        setResult(agentResult)
-        setStatus('complete')
-        props.onFinished?.(agentResult)
+        if (!cancelled) {
+          setResult(agentResult)
+          setStatus('complete')
+          props.onFinished?.(agentResult)
+        }
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
 
-        // Log failure to database
-        if (props.reportingEnabled !== false && currentAgentId) {
-          await db.agents.fail(currentAgentId, errorObj.message)
+          // Log failure to database
+          if (props.reportingEnabled !== false && currentAgentId) {
+            await db.agents.fail(currentAgentId, errorObj.message)
+          }
+
+          // Add error report
+          if (props.reportingEnabled !== false) {
+            await db.vcs.addReport({
+              type: 'error',
+              title: `Claude ${props.model ?? 'sonnet'} failed`,
+              content: errorObj.message,
+              severity: 'warning',
+              agent_id: currentAgentId ?? undefined,
+            })
+          }
+
+          props.onError?.(errorObj)
         }
-
-        // Add error report
-        if (props.reportingEnabled !== false) {
-          await db.vcs.addReport({
-            type: 'error',
-            title: `Claude ${props.model ?? 'sonnet'} failed`,
-            content: errorObj.message,
-            severity: 'warning',
-            agent_id: currentAgentId ?? undefined,
-          })
-        }
-
-        props.onError?.(errorObj)
       } finally {
         // Always complete task with Ralph
         ralph?.completeTask()
       }
     })()
-    // Note: No await, no return - just fire and forget
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   // Render custom element for XML serialization
   return (
     <claude
-      status={status()}
-      agent-id={agentId()}
+      status={status}
+      agent-id={agentId}
       execution-id={executionId}
       model={props.model ?? 'sonnet'}
-      result={result()?.output?.slice(0, 200)}
-      error={error()?.message}
-      tokens-input={result()?.tokensUsed?.input}
-      tokens-output={result()?.tokensUsed?.output}
-      turns-used={result()?.turnsUsed}
-      duration-ms={result()?.durationMs}
+      result={result?.output?.slice(0, 200)}
+      error={error?.message}
+      tokens-input={result?.tokensUsed?.input}
+      tokens-output={result?.tokensUsed?.output}
+      turns-used={result?.turnsUsed}
+      duration-ms={result?.durationMs}
     >
       {props.children}
     </claude>

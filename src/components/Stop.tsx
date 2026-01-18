@@ -1,8 +1,8 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface StopProps {
   reason?: string
-  children?: JSX.Element
+  children?: ReactNode
   [key: string]: unknown
 }
 
@@ -20,7 +20,7 @@ export interface StopProps {
  * {done && <Stop reason="Work complete" />}
  * ```
  */
-export function Stop(props: StopProps): JSX.Element {
+export function Stop(props: StopProps): ReactNode {
   return (
     <smithers-stop reason={props.reason}>
       {props.children}

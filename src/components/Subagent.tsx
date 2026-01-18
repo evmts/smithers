@@ -1,9 +1,9 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface SubagentProps {
   name?: string
   parallel?: boolean
-  children?: JSX.Element
+  children?: ReactNode
   [key: string]: unknown
 }
 
@@ -23,7 +23,7 @@ export interface SubagentProps {
  * </Subagent>
  * ```
  */
-export function Subagent(props: SubagentProps): JSX.Element {
+export function Subagent(props: SubagentProps): ReactNode {
   return (
     <subagent name={props.name} parallel={props.parallel}>
       {props.children}

@@ -1,7 +1,7 @@
 // Agent system types for Smithers orchestrator
 // Defines interfaces for tools, MCP servers, stop conditions, and agent props
 
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 import type { z } from 'zod'
 
 // ============================================================================
@@ -199,7 +199,7 @@ export interface BaseAgentProps {
   /**
    * The prompt to send to the agent (usually as children)
    */
-  children: JSX.Element
+  children: ReactNode
 
   /**
    * Tools available to the agent

@@ -1,7 +1,7 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.1.18",
-  "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
+  "version": "0.2.0",
+  "description": "Build AI agents with React - Declarative JSX for Claude orchestration",
   "type": "module",
   "main": "./src/index.ts",
   "bin": {
@@ -12,7 +12,7 @@
     "./jsx-runtime": "./src/jsx-runtime.ts",
     "./jsx-dev-runtime": "./src/jsx-runtime.ts",
     "./core": "./src/core/index.ts",
-    "./solid": "./src/solid/index.ts",
+    "./react": "./src/react/index.ts",
     "./components": "./src/components/index.ts",
     "./components/Ralph": "./src/components/Ralph.tsx",
     "./components/Review": "./src/components/Review.tsx",
@@ -52,9 +52,9 @@
     "@babel/core": "^7.28.6",
     "@babel/preset-typescript": "^7.28.5",
     "@electric-sql/pglite": "^0.3.15",
-    "babel-preset-solid": "^1.9.10",
     "commander": "^12.0.0",
-    "solid-js": "^1.9.10",
+    "react": "^19.0.0",
+    "react-reconciler": "^0.32.0",
     "zod": "^4.3.5"
   },
   "peerDependencies": {
@@ -62,13 +62,14 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "@types/react-reconciler": "^0.28.9",
     "typescript": "^5.7.2"
   },
   "keywords": [
     "ai",
     "agent",
-    "solid",
-    "solidjs",
+    "react",
     "jsx",
     "llm",
     "claude",

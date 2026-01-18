@@ -1,8 +1,8 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface PhaseProps {
   name?: string
-  children?: JSX.Element
+  children?: ReactNode
   [key: string]: unknown
 }
 
@@ -10,7 +10,7 @@ export interface PhaseProps {
  * Phase component - groups steps semantically.
  * Provides semantic structure to agent workflows.
  */
-export function Phase(props: PhaseProps): JSX.Element {
+export function Phase(props: PhaseProps): ReactNode {
   const { children, ...rest } = props
   return (
     <phase {...rest}>

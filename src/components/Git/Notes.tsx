@@ -1,4 +1,4 @@
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { addGitNotes, getGitNotes } from '../../utils/vcs'
@@ -25,18 +25,20 @@ export interface NotesResult {
 /**
  * Notes component - adds/appends git notes with smithers tracking
  *
- * CRITICAL PATTERN: Uses fire-and-forget async IIFE in onMount
+ * React pattern: Uses useEffect with empty deps and async IIFE inside
  */
-export function Notes(props: NotesProps): JSX.Element {
+export function Notes(props: NotesProps): ReactNode {
   const ralph = useContext(RalphContext)
   const smithers = useSmithers()
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = createSignal<NotesResult | null>(null)
-  const [error, setError] = createSignal<Error | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const [result, setResult] = useState<NotesResult | null>(null)
+  const [error, setError] = useState<Error | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    (async () => {
+    ;(async () => {
       ralph?.registerTask()
 
       try {
@@ -66,26 +68,32 @@ export function Notes(props: NotesProps): JSX.Element {
           previousNotes,
         }
 
-        setResult(notesResult)
-        setStatus('complete')
-        props.onFinished?.(notesResult)
+        if (!cancelled) {
+          setResult(notesResult)
+          setStatus('complete')
+          props.onFinished?.(notesResult)
+        }
 
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
-        props.onError?.(errorObj)
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
+          props.onError?.(errorObj)
+        }
       } finally {
         ralph?.completeTask()
       }
     })()
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <git-notes
-      status={status()}
-      commit-ref={result()?.commitRef}
-      error={error()?.message}
+      status={status}
+      commit-ref={result?.commitRef}
+      error={error?.message}
     />
   )
 }

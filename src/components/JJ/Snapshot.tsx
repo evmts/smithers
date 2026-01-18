@@ -1,29 +1,31 @@
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { jjSnapshot, getJJStatus } from '../../utils/vcs'
 
 export interface SnapshotProps {
   message?: string
-  children?: JSX.Element
+  children?: ReactNode
 }
 
 /**
  * JJ Snapshot component - creates a JJ snapshot and logs to database.
  *
- * Uses the fire-and-forget async IIFE pattern in onMount.
+ * React pattern: Uses useEffect with empty deps and async IIFE inside.
  * Registers with Ralph for task tracking.
  */
-export function Snapshot(props: SnapshotProps): JSX.Element {
+export function Snapshot(props: SnapshotProps): ReactNode {
   const ralph = useContext(RalphContext)
   const smithers = useSmithers()
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [changeId, setChangeId] = createSignal<string | null>(null)
-  const [error, setError] = createSignal<Error | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const [changeId, setChangeId] = useState<string | null>(null)
+  const [error, setError] = useState<Error | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    (async () => {
+    ;(async () => {
       ralph?.registerTask()
 
       try {
@@ -31,6 +33,9 @@ export function Snapshot(props: SnapshotProps): JSX.Element {
 
         // Create JJ snapshot
         const result = await jjSnapshot(props.message)
+
+        if (cancelled) return
+
         setChangeId(result.changeId)
 
         // Get file status for logging
@@ -45,22 +50,28 @@ export function Snapshot(props: SnapshotProps): JSX.Element {
           files_deleted: fileStatus.deleted,
         })
 
-        setStatus('complete')
+        if (!cancelled) {
+          setStatus('complete')
+        }
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
+        }
       } finally {
         ralph?.completeTask()
       }
     })()
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <jj-snapshot
-      status={status()}
-      change-id={changeId()}
-      error={error()?.message}
+      status={status}
+      change-id={changeId}
+      error={error?.message}
       message={props.message}
     >
       {props.children}

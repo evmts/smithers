@@ -1,4 +1,4 @@
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { getJJStatus } from '../../utils/vcs'
@@ -6,30 +6,32 @@ import { getJJStatus } from '../../utils/vcs'
 export interface StatusProps {
   onDirty?: (status: { modified: string[]; added: string[]; deleted: string[] }) => void
   onClean?: () => void
-  children?: JSX.Element
+  children?: ReactNode
 }
 
 /**
  * JJ Status component - checks JJ working copy status.
  *
- * Uses the fire-and-forget async IIFE pattern in onMount.
+ * React pattern: Uses useEffect with empty deps and async IIFE inside.
  * Registers with Ralph for task tracking.
  */
-export function Status(props: StatusProps): JSX.Element {
+export function Status(props: StatusProps): ReactNode {
   const ralph = useContext(RalphContext)
   const smithers = useSmithers()
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [isDirty, setIsDirty] = createSignal<boolean | null>(null)
-  const [fileStatus, setFileStatus] = createSignal<{
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const [isDirty, setIsDirty] = useState<boolean | null>(null)
+  const [fileStatus, setFileStatus] = useState<{
     modified: string[]
     added: string[]
     deleted: string[]
   } | null>(null)
-  const [error, setError] = createSignal<Error | null>(null)
+  const [error, setError] = useState<Error | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    (async () => {
+    ;(async () => {
       ralph?.registerTask()
 
       try {
@@ -37,6 +39,9 @@ export function Status(props: StatusProps): JSX.Element {
 
         // Get JJ status
         const jjStatus = await getJJStatus()
+
+        if (cancelled) return
+
         setFileStatus(jjStatus)
 
         // Check if working copy is dirty
@@ -54,7 +59,9 @@ export function Status(props: StatusProps): JSX.Element {
           props.onClean?.()
         }
 
-        setStatus('complete')
+        if (!cancelled) {
+          setStatus('complete')
+        }
 
         // Log status check to reports
         await smithers.db.vcs.addReport({
@@ -69,23 +76,27 @@ export function Status(props: StatusProps): JSX.Element {
           },
         })
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
+        }
       } finally {
         ralph?.completeTask()
       }
     })()
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <jj-status
-      status={status()}
-      is-dirty={isDirty()}
-      modified={fileStatus()?.modified?.join(',')}
-      added={fileStatus()?.added?.join(',')}
-      deleted={fileStatus()?.deleted?.join(',')}
-      error={error()?.message}
+      status={status}
+      is-dirty={isDirty}
+      modified={fileStatus?.modified?.join(',')}
+      added={fileStatus?.added?.join(',')}
+      deleted={fileStatus?.deleted?.join(',')}
+      error={error?.message}
     >
       {props.children}
     </jj-status>

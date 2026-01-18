@@ -1,11 +1,11 @@
-import { createSignal, onMount, useContext, type JSX } from 'solid-js'
+import { useState, useEffect, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 
 export interface DescribeProps {
   useAgent?: 'claude'
   template?: string
-  children?: JSX.Element
+  children?: ReactNode
 }
 
 /**
@@ -30,19 +30,21 @@ async function generateDescriptionWithClaude(
 /**
  * JJ Describe component - auto-generates commit message using AI.
  *
- * Uses the fire-and-forget async IIFE pattern in onMount.
+ * React pattern: Uses useEffect with empty deps and async IIFE inside.
  * Registers with Ralph for task tracking.
  */
-export function Describe(props: DescribeProps): JSX.Element {
+export function Describe(props: DescribeProps): ReactNode {
   const ralph = useContext(RalphContext)
   const smithers = useSmithers()
-  const [status, setStatus] = createSignal<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [description, setDescription] = createSignal<string | null>(null)
-  const [error, setError] = createSignal<Error | null>(null)
+  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const [description, setDescription] = useState<string | null>(null)
+  const [error, setError] = useState<Error | null>(null)
 
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+
     // Fire-and-forget async IIFE
-    (async () => {
+    ;(async () => {
       ralph?.registerTask()
 
       try {
@@ -65,8 +67,10 @@ export function Describe(props: DescribeProps): JSX.Element {
         // Update JJ description
         await Bun.$`jj describe -m ${generatedDescription}`.quiet()
 
-        setDescription(generatedDescription)
-        setStatus('complete')
+        if (!cancelled) {
+          setDescription(generatedDescription)
+          setStatus('complete')
+        }
 
         // Log to vcs reports
         await smithers.db.vcs.addReport({
@@ -79,20 +83,24 @@ export function Describe(props: DescribeProps): JSX.Element {
           },
         })
       } catch (err) {
-        const errorObj = err instanceof Error ? err : new Error(String(err))
-        setError(errorObj)
-        setStatus('error')
+        if (!cancelled) {
+          const errorObj = err instanceof Error ? err : new Error(String(err))
+          setError(errorObj)
+          setStatus('error')
+        }
       } finally {
         ralph?.completeTask()
       }
     })()
-  })
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <jj-describe
-      status={status()}
-      description={description()}
-      error={error()?.message}
+      status={status}
+      description={description}
+      error={error?.message}
       use-agent={props.useAgent}
       template={props.template}
     >

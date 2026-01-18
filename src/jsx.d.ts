@@ -1,6 +1,6 @@
-import 'solid-js'
+import 'react'
 
-declare module 'solid-js' {
+declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
       // Agent execution elements
@@ -15,7 +15,7 @@ declare module 'solid-js' {
         onFinished?: (result: unknown) => void
         onError?: (error: Error) => void
         validate?: (result: unknown) => Promise<boolean>
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
@@ -26,21 +26,21 @@ declare module 'solid-js' {
         pending?: number
         maxIterations?: number
         onIteration?: (iteration: number) => void
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
 
       phase: {
         name?: string
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
 
       step: {
         name?: string
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
@@ -49,38 +49,63 @@ declare module 'solid-js' {
       persona: {
         role?: string
         expertise?: string
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
 
       constraints: {
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
 
       // Generic elements for tests
       task: {
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
 
       agent: {
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
 
       container: {
-        children?: JSX.Element
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }
 
       message: {
-        children?: JSX.Element
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      // Smithers orchestrator elements
+      orchestration: {
+        'execution-id'?: string
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'smithers-subagent': {
+        status?: string
+        'subagent-id'?: string | null
+        'execution-id'?: string
+        'planner-model'?: string
+        'execution-model'?: string
+        'script-path'?: string
+        output?: string
+        error?: string
+        'tokens-input'?: number
+        'tokens-output'?: number
+        'duration-ms'?: number
+        children?: React.ReactNode
         key?: string | number
         [key: string]: unknown
       }

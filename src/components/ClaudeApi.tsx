@@ -1,7 +1,7 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface ClaudeApiProps {
-  children?: JSX.Element
+  children?: ReactNode
   model?: string
   maxTurns?: number
   tools?: string[]
@@ -24,7 +24,7 @@ export interface ClaudeApiProps {
  * </ClaudeApi>
  * ```
  */
-export function ClaudeApi(props: ClaudeApiProps): JSX.Element {
+export function ClaudeApi(props: ClaudeApiProps): ReactNode {
   return (
     <claude-api model={props.model}>
       {props.children}

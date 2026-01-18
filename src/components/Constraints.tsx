@@ -1,7 +1,7 @@
-import type { JSX } from 'solid-js'
+import type { ReactNode } from 'react'
 
 export interface ConstraintsProps {
-  children?: JSX.Element
+  children?: ReactNode
   [key: string]: unknown
 }
 
@@ -22,7 +22,7 @@ export interface ConstraintsProps {
  * </Claude>
  * ```
  */
-export function Constraints(props: ConstraintsProps): JSX.Element {
+export function Constraints(props: ConstraintsProps): ReactNode {
   return (
     <constraints>
       {props.children}

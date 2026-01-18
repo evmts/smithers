@@ -1,7 +1,5 @@
-import { render } from '../solid/renderer.js'
 import { serialize } from './serialize.js'
 import type { SmithersNode } from './types.js'
-import type { JSX } from 'solid-js'
 
 /**
  * Root interface for mounting Smithers applications.
@@ -9,8 +7,9 @@ import type { JSX } from 'solid-js'
 export interface SmithersRoot {
   /**
    * Mount a component tree.
+   * The component function should return a SmithersNode (from jsx-runtime).
    */
-  mount: (component: () => JSX.Element) => void
+  mount: (component: () => SmithersNode | any) => void
 
   /**
    * Get the current SmithersNode tree.
@@ -29,7 +28,18 @@ export interface SmithersRoot {
 }
 
 /**
+ * Type guard for SmithersNode
+ */
+function isSmithersNode(value: any): value is SmithersNode {
+  return value && typeof value === 'object' && 'type' in value && 'props' in value && 'children' in value
+}
+
+/**
  * Create a Smithers root for mounting components.
+ *
+ * This is a synchronous version that works with the jsx-runtime which
+ * directly creates SmithersNode trees. For async React rendering with
+ * hooks, use createSmithersRoot from 'smithers/react'.
  */
 export function createSmithersRoot(): SmithersRoot {
   // Create a ROOT node
@@ -40,18 +50,27 @@ export function createSmithersRoot(): SmithersRoot {
     parent: null,
   }
 
-  let disposeFunction: (() => void) | null = null
-
   return {
-    mount(component: () => JSX.Element) {
-      // Clean up any previous render
-      if (disposeFunction) {
-        disposeFunction()
-      }
+    mount(component: () => SmithersNode | any) {
+      // Clear previous children
+      rootNode.children = []
 
-      // Render the component into the root node
-      // The renderer handles JSX.Element → SmithersNode conversion internally
-      disposeFunction = render(component as any, rootNode)
+      // Call the component function to get the tree
+      const result = component()
+
+      // Add result to root if it's a SmithersNode
+      if (isSmithersNode(result)) {
+        result.parent = rootNode
+        rootNode.children.push(result)
+      } else if (Array.isArray(result)) {
+        // Handle array of nodes (fragment)
+        for (const child of result) {
+          if (isSmithersNode(child)) {
+            child.parent = rootNode
+            rootNode.children.push(child)
+          }
+        }
+      }
     },
 
     getTree() {
@@ -63,10 +82,6 @@ export function createSmithersRoot(): SmithersRoot {
     },
 
     dispose() {
-      if (disposeFunction) {
-        disposeFunction()
-        disposeFunction = null
-      }
       rootNode.children = []
     },
   }
