@@ -2,7 +2,7 @@
 
 **Severity:** Critical
 **File:** `src/reconciler/root.ts`
-**Status:** Open
+**Status:** Fixed (4022633)
 
 ## Problem
 
