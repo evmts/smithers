@@ -175,13 +175,17 @@ export function useEffectOnValueChange<T>(
   deps: DependencyList = []
 ): void {
   const lastValueRef = useRef<T | typeof UNSET>(UNSET);
+  const isEnabled = useExecutionGate();
 
   useEffect(() => {
+    if (!isEnabled) {
+      return;
+    }
     if (lastValueRef.current !== UNSET && Object.is(lastValueRef.current, value)) {
       return;
     }
     lastValueRef.current = value;
     return effect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, ...deps]);
+  }, [value, isEnabled, ...deps]);
 }

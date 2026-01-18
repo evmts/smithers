@@ -5,7 +5,7 @@ import { createContext, useContext, useRef, useEffect, type ReactNode } from 're
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
-import { useMount } from '../reconciler/hooks.js'
+import { ExecutionGateProvider, useMount } from '../reconciler/hooks.js'
 
 export interface PhaseProps {
   /**
@@ -90,7 +90,8 @@ export function Phase(props: PhaseProps): ReactNode {
         ? 'completed'
         : 'pending'
 
-  const shouldRenderChildren = !isSkipped && (isActive || isParentActive)
+  const shouldRenderChildren = !isSkipped
+  const shouldExecuteChildren = !isSkipped && (isActive || isParentActive)
 
   // Handle skipped phases on mount
   useMount(() => {
@@ -144,9 +145,11 @@ export function Phase(props: PhaseProps): ReactNode {
     <phase name={props.name} status={status}>
       <PhaseRenderContext.Provider value={{ parentActive: isActive || isParentActive }}>
         {shouldRenderChildren && (
-          <StepRegistryProvider phaseId={props.name}>
-            {props.children}
-          </StepRegistryProvider>
+          <ExecutionGateProvider enabled={shouldExecuteChildren}>
+            <StepRegistryProvider phaseId={props.name} phaseActive={shouldExecuteChildren}>
+              {props.children}
+            </StepRegistryProvider>
+          </ExecutionGateProvider>
         )}
       </PhaseRenderContext.Provider>
     </phase>

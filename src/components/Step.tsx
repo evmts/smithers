@@ -4,7 +4,7 @@
 import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
-import { useMount, useUnmount } from '../reconciler/hooks.js'
+import { ExecutionGateProvider, useMount, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 
 // ============================================================================
@@ -43,11 +43,13 @@ export interface StepRegistryProviderProps {
   children: ReactNode
   phaseId?: string
   isParallel?: boolean
+  phaseActive?: boolean
 }
 
 export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
   const { db, reactiveDb } = useSmithers()
   const stateKey = `stepIndex_${props.phaseId ?? 'default'}`
+  const phaseActive = props.phaseActive ?? true
 
   // Track registered steps using ref for synchronous updates during render
   // This avoids race conditions when multiple Step components mount simultaneously
@@ -83,22 +85,24 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   }, []) // No dependencies needed - ref is mutable
 
   const advanceStep = useCallback(() => {
-    if (props.isParallel) return
+    if (props.isParallel || !phaseActive) return
     const nextIndex = currentStepIndex + 1
     if (nextIndex < stepsRef.current.length) {
       db.state.set(stateKey, nextIndex, 'step_advance')
     }
-  }, [db, stateKey, currentStepIndex, props.isParallel])
+  }, [db, stateKey, currentStepIndex, props.isParallel, phaseActive])
 
   const isStepActive = useCallback((index: number): boolean => {
+    if (!phaseActive) return false
     if (props.isParallel) return true // All steps active in parallel mode
     return index === currentStepIndex
-  }, [currentStepIndex, props.isParallel])
+  }, [currentStepIndex, props.isParallel, phaseActive])
 
   const isStepCompleted = useCallback((index: number): boolean => {
+    if (!phaseActive) return false
     if (props.isParallel) return false
     return index < currentStepIndex
-  }, [currentStepIndex, props.isParallel])
+  }, [currentStepIndex, props.isParallel, phaseActive])
 
   const value = useMemo((): StepRegistryContextValue => ({
     registerStep,
@@ -304,10 +308,12 @@ export function Step(props: StepProps): ReactNode {
     })()
   })
 
-  // Always render the step element, only render children when active
+  // Always render the step element for the plan output
   return (
     <step {...(props.name ? { name: props.name } : {})} status={status}>
-      {isActive && props.children}
+      <ExecutionGateProvider enabled={isActive}>
+        {props.children}
+      </ExecutionGateProvider>
     </step>
   )
 }
