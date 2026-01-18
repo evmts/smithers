@@ -77,7 +77,7 @@ const mapSnapshot = (row: any): Snapshot | null => {
     files_modified: parseJson(row.files_modified, undefined),
     files_added: parseJson(row.files_added, undefined),
     files_deleted: parseJson(row.files_deleted, undefined),
-    has_conflicts: Boolean(row.has_conflicts),
+    has_conflicts: row.has_conflicts === 1,
   }
 }
 
@@ -85,12 +85,12 @@ const mapReview = (row: any): Review | null => {
   if (!row) return null
   return {
     ...row,
-    approved: Boolean(row.approved),
+    approved: row.approved === 1,
     issues: parseJson(row.issues, []),
     approvals: parseJson(row.approvals, undefined),
-    blocking: Boolean(row.blocking),
-    posted_to_github: Boolean(row.posted_to_github),
-    posted_to_git_notes: Boolean(row.posted_to_git_notes),
+    blocking: row.blocking === 1,
+    posted_to_github: row.posted_to_github === 1,
+    posted_to_git_notes: row.posted_to_git_notes === 1,
   }
 }
 
