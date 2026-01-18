@@ -1,6 +1,8 @@
 // Type declarations for @opentui/core and @opentui/react
 // These help TypeScript understand the module exports
 
+import type { ReactNode, CSSProperties } from 'react'
+
 declare module '@opentui/core' {
   export const TextAttributes: {
     NONE: number
@@ -84,35 +86,61 @@ declare module '@opentui/react' {
   export { createElement } from 'react'
 }
 
-// JSX intrinsic elements for OpenTUI components
-declare global {
+// Extend React's CSSProperties to include OpenTUI terminal properties
+declare module 'react' {
+  interface CSSProperties {
+    // Terminal-specific color properties
+    fg?: string
+    bg?: string
+    // Terminal text attributes
+    bold?: boolean
+    dim?: boolean
+    italic?: boolean
+    inverse?: boolean
+    strikethrough?: boolean
+    // Terminal layout properties
+    focusedBackgroundColor?: string
+    // Allow any additional OpenTUI properties
+    [key: string]: unknown
+  }
+}
+
+// OpenTUI style type - allows custom terminal properties like fg, bg
+export interface OpenTUIStyle extends CSSProperties {
+  fg?: string
+  bg?: string
+  bold?: boolean
+  dim?: boolean
+  italic?: boolean
+  underline?: boolean
+  inverse?: boolean
+  hidden?: boolean
+  strikethrough?: boolean
+  border?: 'single' | 'double' | 'round' | 'bold' | 'singleDouble' | 'doubleSingle' | 'classic' | 'none'
+  borderColor?: string
+  focusedBackgroundColor?: string
+  [key: string]: unknown
+}
+
+// Augment React's JSX namespace for OpenTUI elements
+declare module 'react' {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
+      // OpenTUI box element
       box: {
         key?: string | number
-        style?: Record<string, unknown>
+        style?: OpenTUIStyle
         children?: ReactNode
+        [key: string]: unknown
       }
-      text: {
-        key?: string | number
-        content?: string
-        style?: Record<string, unknown>
-        children?: ReactNode
-      }
+      // OpenTUI scrollbox element
       scrollbox: {
         key?: string | number
         focused?: boolean
-        style?: Record<string, unknown>
+        style?: OpenTUIStyle
         children?: ReactNode
-      }
-      input: {
-        key?: string | number
-        value?: string
-        placeholder?: string
-        focused?: boolean
-        onInput?: (value: string) => void
-        onSubmit?: () => void
-        style?: Record<string, unknown>
+        [key: string]: unknown
       }
     }
   }
