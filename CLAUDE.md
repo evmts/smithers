@@ -95,6 +95,63 @@ Avoid using `useEffect` directly. Use the vendored hooks from `src/reconciler/ho
 - `useMountedState` - async operations that set state (prevents "setState on unmounted component")
 - `useEffect` with deps array - only when you need to re-run on dependency changes (e.g., reactive queries, state watchers)
 
+## State Management - NO useState
+
+**NEVER use useState.** All state must be in one of:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. SQLite (db.state/db.agents/db.vcs)  │ Durable, survives restart │
+│ 2. useRef                               │ Ephemeral, non-reactive   │
+│ 3. Derived/computed                     │ Calculate, don't store    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Pattern: Replace useState with useQueryValue
+
+```typescript
+// ❌ WRONG - useState
+const [status, setStatus] = useState<'pending' | 'running' | 'complete'>('pending')
+
+// ✅ CORRECT - SQLite + useQueryValue
+const status = useQueryValue<string>(db.db, 
+  "SELECT status FROM agents WHERE id = ?", [agentId]) ?? 'pending'
+
+// To update:
+db.db.run("UPDATE agents SET status = ? WHERE id = ?", ['running', agentId])
+```
+
+### Decision Tree
+
+| State Type | Store In | Example |
+|------------|----------|---------|
+| Agent execution (status/result/error) | `db.agents` table | Claude, Smithers |
+| VCS operations | `db.vcs` table | Git/*, JJ/* |
+| Hook triggers | `db.state` k/v | PostCommit, OnCIFailure |
+| Phase/step indices | `db.state` k/v | PhaseRegistry, Step |
+| Task lifecycle | `db.tasks` table | All async components |
+| Non-reactive IDs | `useRef` | taskIdRef, agentIdRef |
+| Lifecycle guards | `useRef` | hasStartedRef, isMounted |
+
+### Reactivity via useQueryValue
+
+```typescript
+import { useQueryValue } from 'smithers-orchestrator/db'
+
+// Auto-rerenders when DB changes
+const count = useQueryValue<number>(db.db, 
+  "SELECT COUNT(*) as c FROM tasks WHERE status = 'running'", [])
+```
+
+### Why No Zustand?
+
+SQLite provides:
+- Persistence across restarts
+- Query-based reactivity via `useQueryValue`
+- Single source of truth
+- Time-travel debugging via `transitions` table
+- Already exists - no new dependency
+
 ## Reference Libraries
 
 The `reference/` folder contains git submodules of external libraries. These are **NOT dependencies** - they exist solely as documentation and context for AI assistants to:

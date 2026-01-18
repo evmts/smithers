@@ -1,5 +1,6 @@
 # Stop Handling Starts Task Even When Stopping
 
+**Scope:** easy
 **Severity:** P0 - Critical
 **Files:** `src/components/Claude.tsx`, `src/components/SmithersProvider.tsx`
 **Status:** Open
@@ -110,7 +111,79 @@ Implement **Option 1 + Option 3**:
 
 Option 2 changes semantics of "totalTaskCount" which may have other uses.
 
+## Implementation Guide
+
+### Pattern to Apply Across All Components
+
+Replace the current pattern:
+```tsx
+useMount(() => {
+  ;(async () => {
+    taskIdRef.current = db.tasks.start('component-name', ...)
+    // ... rest of code
+  })()
+})
+```
+
+With:
+```tsx
+useMount(() => {
+  ;(async () => {
+    // Check stop BEFORE starting task
+    if (isStopRequested()) {
+      return
+    }
+    taskIdRef.current = db.tasks.start('component-name', ...)
+    // ... rest of code
+  })()
+})
+```
+
+### SmithersProvider Defense-in-Depth
+
+Add stop check in the interval loop at `SmithersProvider.tsx:336`:
+```tsx
+checkInterval = setInterval(() => {
+  // Check for stop request first
+  if (isStopRequested()) {
+    if (!hasCompletedRef.current) {
+      hasCompletedRef.current = true
+      if (checkInterval) clearInterval(checkInterval)
+      signalOrchestrationComplete()
+      props.onComplete?.()
+    }
+    return
+  }
+
+  // Re-check values from database (reactive queries will have updated)
+  const currentPendingTasks = pendingTasks
+  // ... rest of existing logic
+}, 10)
+```
+
+### Files Requiring Changes
+
+**High Priority** (directly affected):
+1. `/Users/williamcory/smithers/src/components/Claude.tsx:72` - Add stop check before `db.tasks.start()`
+2. `/Users/williamcory/smithers/src/components/SmithersProvider.tsx:336` - Add stop check in interval loop
+
+**Medium Priority** (same pattern, should be fixed for consistency):
+3. `/Users/williamcory/smithers/src/components/Smithers.tsx:137`
+4. `/Users/williamcory/smithers/src/components/Review/Review.tsx:196`
+5. `/Users/williamcory/smithers/src/components/Git/Commit.tsx:72`
+6. `/Users/williamcory/smithers/src/components/Git/Notes.tsx:43`
+7. `/Users/williamcory/smithers/src/components/Step.tsx:210`
+8. All JJ components: `/Users/williamcory/smithers/src/components/JJ/Commit.tsx:33`, `Rebase.tsx`, `Snapshot.tsx`, `Describe.tsx`, `Status.tsx`
+
+## Context Notes
+
+- `isStopRequested()` is available via `useSmithers()` context
+- Claude.tsx already imports and uses it (line 75), just needs to be moved BEFORE task start
+- SmithersProvider defines `isStopRequested` at line 418 but doesn't use it in iteration logic
+- The `runningTaskCount` query was updated to filter by `status = 'running'` (line 280), but `totalTaskCount` still counts all tasks (line 287), so the issue persists
+
 ## Related
 
-- SmithersProvider iteration logic: lines 359-394
+- SmithersProvider iteration logic: lines 336-378
 - Tasks table schema: `src/db/schema.sql:399-414`
+- isStopRequested definition: `SmithersProvider.tsx:418`
