@@ -1,6 +1,6 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
   "type": "module",
   "main": "./dist/index.js",
@@ -103,7 +103,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc && bun build bin/cli.ts --outdir bin --target node",
+    "build": "tsc && cp src/orchestrator/db/schema.sql dist/orchestrator/db/ && bun build bin/cli.ts --outdir bin --target node",
     "build:cli": "bun build bin/cli.ts --outdir bin --target node",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
