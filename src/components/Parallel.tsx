@@ -2,6 +2,7 @@
 // When placed inside a Phase, all child Steps/Claude components execute simultaneously
 
 import type { ReactNode } from 'react'
+import { StepRegistryProvider } from './Step.js'
 
 export interface ParallelProps {
   /**
@@ -27,11 +28,13 @@ export interface ParallelProps {
  * ```
  */
 export function Parallel(props: ParallelProps): ReactNode {
-  // Simply render all children - they execute in parallel by React's nature
+  // Wrap children in StepRegistryProvider with isParallel to enable concurrent execution
   // The <parallel> intrinsic element marks this in the output tree
   return (
     <parallel>
-      {props.children}
+      <StepRegistryProvider isParallel>
+        {props.children}
+      </StepRegistryProvider>
     </parallel>
   )
 }

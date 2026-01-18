@@ -22,11 +22,11 @@ interface StepRegistryContextValue {
 
 const StepRegistryContext = createContext<StepRegistryContextValue | undefined>(undefined)
 
-function useStepRegistry(): StepRegistryContextValue | undefined {
+export function useStepRegistry(): StepRegistryContextValue | undefined {
   return useContext(StepRegistryContext)
 }
 
-function useStepIndex(name: string | undefined): number {
+export function useStepIndex(name: string | undefined): number {
   const registry = useStepRegistry()
   const [index] = useState(() => {
     if (!registry) return 0

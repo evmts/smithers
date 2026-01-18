@@ -26,7 +26,12 @@ export {
 } from './PhaseRegistry.js'
 
 // Step registry for sequential step execution within phases
-export { StepRegistryProvider, type StepRegistryProviderProps } from './Step.js'
+export {
+  StepRegistryProvider,
+  useStepRegistry,
+  useStepIndex,
+  type StepRegistryProviderProps
+} from './Step.js'
 
 // Basic workflow components
 export { Stop, type StopProps } from './Stop.js'
