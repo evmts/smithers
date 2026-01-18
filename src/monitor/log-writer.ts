@@ -6,8 +6,12 @@ export class LogWriter {
   private counter: number = 0
   private sessionId: string
 
-  constructor(logDir: string = '.smithers/logs') {
-    this.logDir = path.resolve(logDir)
+  constructor(logDir: string = '.smithers/logs', executionId?: string) {
+    if (executionId) {
+      this.logDir = path.resolve('.smithers/executions', executionId, 'logs')
+    } else {
+      this.logDir = path.resolve(logDir)
+    }
     this.sessionId = new Date().toISOString().replace(/[:.]/g, '-')
 
     // Create logs directory if it doesn't exist
@@ -40,6 +44,16 @@ export class LogWriter {
 
     fs.writeFileSync(filepath, output, 'utf-8')
 
+    return filepath
+  }
+
+  /**
+   * Append content to a log file. Creates the file if it doesn't exist.
+   * Returns the full path to the log file.
+   */
+  appendLog(filename: string, content: string): string {
+    const filepath = path.join(this.logDir, filename)
+    fs.appendFileSync(filepath, content, 'utf-8')
     return filepath
   }
 

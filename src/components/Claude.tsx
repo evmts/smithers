@@ -8,6 +8,8 @@ import { executeClaudeCLI } from './agents/ClaudeCodeCLI'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config'
 import type { ClaudeProps, AgentResult } from './agents/types'
 import { useMountedState } from '../reconciler/hooks'
+import { LogWriter } from '../monitor/log-writer'
+import { uuid } from '../db/utils'
 
 // ============================================================================
 // CLAUDE COMPONENT
@@ -78,6 +80,11 @@ export function Claude(props: ClaudeProps): ReactNode {
       let retryCount = 0
       const maxRetries = props.maxRetries ?? 3
 
+      // Initialize LogWriter
+      const logWriter = new LogWriter(undefined, executionId ?? undefined)
+      const logFilename = `agent-${uuid()}.log`
+      let logPath: string | undefined
+
       try {
         setStatus('running')
 
@@ -102,10 +109,14 @@ export function Claude(props: ClaudeProps): ReactNode {
 
         // Log agent start to database if reporting is enabled
         if (props.reportingEnabled !== false) {
+          // Initialize log file
+          logPath = logWriter.appendLog(logFilename, '')
+          
           currentAgentId = await db.agents.start(
             prompt,
             props.model ?? 'sonnet',
-            props.systemPrompt
+            props.systemPrompt,
+            logPath
           )
           setAgentId(currentAgentId)
         }
@@ -134,7 +145,14 @@ export function Claude(props: ClaudeProps): ReactNode {
               stopConditions: props.stopConditions,
               continue: props.continueConversation,
               resume: props.resumeSession,
-              onProgress: props.onProgress,
+              onProgress: (chunk) => {
+                // Stream to log file
+                if (logFilename) {
+                  logWriter.appendLog(logFilename, chunk)
+                }
+                // Call original onProgress
+                props.onProgress?.(chunk)
+              },
               onToolCall: props.onToolCall,
               schema: props.schema,
               schemaRetries: props.schemaRetries,

@@ -5,7 +5,7 @@ import type { Agent } from './types.js'
 import { uuid, now, parseJson } from './utils.js'
 
 export interface AgentsModule {
-  start: (prompt: string, model?: string, systemPrompt?: string) => string
+  start: (prompt: string, model?: string, systemPrompt?: string, logPath?: string) => string
   complete: (id: string, result: string, structuredResult?: Record<string, any>, tokens?: { input: number; output: number }) => void
   fail: (id: string, error: string) => void
   current: () => Agent | null
@@ -33,15 +33,15 @@ export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
   const { rdb, getCurrentExecutionId, getCurrentPhaseId, getCurrentAgentId, setCurrentAgentId } = ctx
 
   const agents: AgentsModule = {
-    start: (prompt: string, model: string = 'sonnet', systemPrompt?: string): string => {
+    start: (prompt: string, model: string = 'sonnet', systemPrompt?: string, logPath?: string): string => {
       const currentExecutionId = getCurrentExecutionId()
       const currentPhaseId = getCurrentPhaseId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
       rdb.run(
-        `INSERT INTO agents (id, execution_id, phase_id, model, system_prompt, prompt, status, started_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)`,
-        [id, currentExecutionId, currentPhaseId, model, systemPrompt ?? null, prompt, now(), now()]
+        `INSERT INTO agents (id, execution_id, phase_id, model, system_prompt, prompt, status, started_at, created_at, log_path)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
+        [id, currentExecutionId, currentPhaseId, model, systemPrompt ?? null, prompt, now(), now(), logPath ?? null]
       )
       rdb.run('UPDATE executions SET total_agents = total_agents + 1 WHERE id = ?', [currentExecutionId])
       setCurrentAgentId(id)

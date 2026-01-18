@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS agents (
   -- Output
   result TEXT,                   -- Agent's response
   result_structured TEXT,        -- JSON: Parsed/structured result
+  log_path TEXT,                 -- Path to execution log file
   error TEXT,
 
   -- Timing
