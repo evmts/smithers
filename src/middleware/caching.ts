@@ -31,7 +31,7 @@ function stableStringify(value: unknown): string {
 }
 
 function defaultCacheKey(params: ClaudeExecutionParams): string {
-  const { onProgress, onToolCall, schema, ...rest } = params
+  const { onProgress: _onProgress, onToolCall: _onToolCall, schema, ...rest } = params
   return stableStringify({ ...rest, schema: schema ? '[schema]' : undefined })
 }
 
