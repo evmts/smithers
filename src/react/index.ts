@@ -13,4 +13,12 @@ export {
   createContext,
 } from "react";
 
+export {
+  useEffectOnce,
+  useMount,
+  useUnmount,
+  useFirstMountState,
+  useMountedState,
+} from "./hooks.js";
+
 export type { SmithersNode } from "../core/types.js";
