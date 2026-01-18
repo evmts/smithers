@@ -98,10 +98,12 @@ describe('14-kitchen-sink', () => {
     const researchXml = env.root.toXML()
 
     env.db.state.set('currentPhaseIndex', 1, 'kitchen-sink-advance')
+    await env.root.render(app)
     await delay(100)
     const planningXml = env.root.toXML()
 
     env.db.state.set('currentPhaseIndex', 2, 'kitchen-sink-advance')
+    await env.root.render(app)
     await delay(100)
     const implementationXml = env.root.toXML()
 
