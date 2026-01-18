@@ -14,9 +14,9 @@ Use Zod schemas to get typed, validated responses from Claude.
 
 import { z } from "zod";
 import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Claude } from "smithers-orchestrator/components/Claude";
 
 // Define the schema
 const AnalysisSchema = z.object({

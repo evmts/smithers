@@ -13,10 +13,10 @@ Use the Sqlite component to let Claude query databases.
 #!/usr/bin/env bun
 
 import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
-import { Sqlite } from "smithers/components/MCP";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Claude } from "smithers-orchestrator/components/Claude";
+import { Sqlite } from "smithers-orchestrator/components/MCP";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/data-analysis" });
@@ -108,12 +108,12 @@ main();
 
 ```tsx
 function DataWorkflow() {
-  const [phase, setPhase] = createSignal("analyze");
+  const [phase, setPhase] = useState("analyze");
 
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={5}>
-        {phase() === "analyze" && (
+        {phase === "analyze" && (
           <Claude
             model="sonnet"
             onFinished={(result) => {
@@ -129,7 +129,7 @@ function DataWorkflow() {
           </Claude>
         )}
 
-        {phase() === "report" && (
+        {phase === "report" && (
           <Claude
             allowedTools={["Write"]}
             onFinished={() => setPhase("done")}

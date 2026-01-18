@@ -13,9 +13,9 @@ The simplest Smithers workflow.
 #!/usr/bin/env bun
 
 import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Claude } from "smithers-orchestrator/components/Claude";
 
 async function main() {
   // Create database for state persistence
@@ -65,7 +65,7 @@ and your agents perpetually productive! 🎩
 
 ## What's Happening
 
-1. **Database Creation**: PGlite database stores execution state
+1. **Database Creation**: SQLite database stores execution state
 2. **Execution Tracking**: Each run gets a unique ID for observability
 3. **SmithersProvider**: Provides context to child components
 4. **Claude Component**: Executes a prompt with Claude Haiku

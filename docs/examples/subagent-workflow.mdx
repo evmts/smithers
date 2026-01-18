@@ -12,30 +12,30 @@ Use the Smithers component to spawn subagents that plan and execute complex task
 ```tsx
 #!/usr/bin/env bun
 
-import { createSignal } from "solid-js";
+import { useState } from "react";
 import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
-import { Orchestration } from "smithers/smithers-orchestrator/src/components/Orchestration";
-import { Ralph } from "smithers/components/Ralph";
-import { Phase } from "smithers/components/Phase";
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
-import { Smithers } from "smithers/smithers-orchestrator/src/components/Smithers";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Orchestration } from "smithers-orchestrator/components/Orchestration";
+import { Ralph } from "smithers-orchestrator/components/Ralph";
+import { Phase } from "smithers-orchestrator/components/Phase";
+import { Claude } from "smithers-orchestrator/components/Claude";
+import { Smithers } from "smithers-orchestrator/components/Smithers";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/feature-dev" });
   const executionId = await db.execution.start("Feature Development", "feature-dev.tsx");
 
   function FeatureWorkflow() {
-    const [phase, setPhase] = createSignal("plan");
-    const [plan, setPlan] = createSignal<string | null>(null);
+    const [phase, setPhase] = useState("plan");
+    const [plan, setPlan] = useState<string | null>(null);
 
     return (
       <SmithersProvider db={db} executionId={executionId}>
         <Orchestration globalTimeout={7200000}>
           <Ralph maxIterations={5}>
             {/* Phase 1: High-level planning */}
-            {phase() === "plan" && (
+            {phase === "plan" && (
               <Phase name="Planning">
                 <Claude
                   model="opus"
@@ -60,7 +60,7 @@ async function main() {
             )}
 
             {/* Phase 2: Subagent implements the feature */}
-            {phase() === "implement" && (
+            {phase === "implement" && (
               <Phase name="Implementation">
                 <Smithers
                   plannerModel="opus"
@@ -69,7 +69,7 @@ async function main() {
                   keepScript
                   context={`
                     Previous analysis:
-                    ${plan()}
+                    ${plan}
 
                     This is a TypeScript project using:
                     - Bun runtime
@@ -113,7 +113,7 @@ async function main() {
             )}
 
             {/* Phase 3: Verify implementation */}
-            {phase() === "test" && (
+            {phase === "test" && (
               <Phase name="Verification">
                 <Claude
                   model="sonnet"

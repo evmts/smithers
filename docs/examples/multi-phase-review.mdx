@@ -12,15 +12,15 @@ A workflow that implements features, reviews them, and iterates until approved.
 ```tsx
 #!/usr/bin/env bun
 
-import { createSignal } from "solid-js";
+import { useState } from "react";
 import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
-import { Orchestration } from "smithers/smithers-orchestrator/src/components/Orchestration";
-import { Ralph } from "smithers/components/Ralph";
-import { Phase } from "smithers/components/Phase";
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
-import { Review } from "smithers/components/Review";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Orchestration } from "smithers-orchestrator/components/Orchestration";
+import { Ralph } from "smithers-orchestrator/components/Ralph";
+import { Phase } from "smithers-orchestrator/components/Phase";
+import { Claude } from "smithers-orchestrator/components/Claude";
+import { Review } from "smithers-orchestrator/components/Review";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/review-workflow" });
@@ -39,7 +39,7 @@ async function main() {
   const savedPhase = await db.state.get<string>("phase");
 
   function ReviewWorkflow() {
-    const [phase, setPhase] = createSignal(savedPhase ?? "implement");
+    const [phase, setPhase] = useState(savedPhase ?? "implement");
 
     // Sync phase changes to database
     const updatePhase = async (newPhase: string) => {
@@ -54,7 +54,7 @@ async function main() {
           onComplete={() => console.log("Workflow complete!")}
         >
           <Ralph maxIterations={10}>
-            {phase() === "implement" && (
+            {phase === "implement" && (
               <Phase name="Implementation">
                 <Claude
                   model="sonnet"
@@ -71,7 +71,7 @@ async function main() {
               </Phase>
             )}
 
-            {phase() === "review" && (
+            {phase === "review" && (
               <Phase name="Code Review">
                 <Review
                   target={{ type: "diff", ref: "main" }}
@@ -150,7 +150,7 @@ await db.state.set("phase", "review", "transition_to_review");
 
 // On restart, state is restored
 const savedPhase = await db.state.get<string>("phase");
-const [phase, setPhase] = createSignal(savedPhase ?? "implement");
+const [phase, setPhase] = useState(savedPhase ?? "implement");
 ```
 
 ## Inspecting State
@@ -184,7 +184,7 @@ smithers-orchestrator db query "SELECT * FROM transitions ORDER BY timestamp DES
 Add human approval before review:
 
 ```tsx
-{phase() === "pre-review" && (
+{phase === "pre-review" && (
   <Human
     message="Review implementation before AI review?"
     onApprove={() => updatePhase("review")}
