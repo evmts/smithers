@@ -1,117 +1,46 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.1.9",
+  "version": "0.1.11",
   "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
   "bin": {
-    "smithers": "./bin/cli.js"
+    "smithers": "./bin/cli.ts"
   },
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./core": {
-      "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js"
-    },
-    "./solid": {
-      "types": "./dist/solid/index.d.ts",
-      "import": "./dist/solid/index.js"
-    },
-    "./components": {
-      "types": "./dist/components/index.d.ts",
-      "import": "./dist/components/index.js"
-    },
-    "./components/Ralph": {
-      "types": "./dist/components/Ralph.d.ts",
-      "import": "./dist/components/Ralph.jsx"
-    },
-    "./components/Review": {
-      "types": "./dist/components/Review.d.ts",
-      "import": "./dist/components/Review.jsx"
-    },
-    "./components/Phase": {
-      "types": "./dist/components/Phase.d.ts",
-      "import": "./dist/components/Phase.jsx"
-    },
-    "./components/Step": {
-      "types": "./dist/components/Step.d.ts",
-      "import": "./dist/components/Step.jsx"
-    },
-    "./components/JJ": {
-      "types": "./dist/components/JJ/index.d.ts",
-      "import": "./dist/components/JJ/index.js"
-    },
-    "./components/Git": {
-      "types": "./dist/components/Git/index.d.ts",
-      "import": "./dist/components/Git/index.js"
-    },
-    "./components/Hooks": {
-      "types": "./dist/components/Hooks/index.d.ts",
-      "import": "./dist/components/Hooks/index.js"
-    },
-    "./components/MCP": {
-      "types": "./dist/components/MCP/index.d.ts",
-      "import": "./dist/components/MCP/index.js"
-    },
-    "./orchestrator": {
-      "types": "./dist/orchestrator/components/index.d.ts",
-      "import": "./dist/orchestrator/components/index.js"
-    },
-    "./orchestrator/SmithersProvider": {
-      "types": "./dist/orchestrator/components/SmithersProvider.d.ts",
-      "import": "./dist/orchestrator/components/SmithersProvider.jsx"
-    },
-    "./orchestrator/Orchestration": {
-      "types": "./dist/orchestrator/components/Orchestration.d.ts",
-      "import": "./dist/orchestrator/components/Orchestration.jsx"
-    },
-    "./orchestrator/Claude": {
-      "types": "./dist/orchestrator/components/Claude.d.ts",
-      "import": "./dist/orchestrator/components/Claude.jsx"
-    },
-    "./orchestrator/Phase": {
-      "types": "./dist/orchestrator/components/Phase.d.ts",
-      "import": "./dist/orchestrator/components/Phase.jsx"
-    },
-    "./orchestrator/Step": {
-      "types": "./dist/orchestrator/components/Step.d.ts",
-      "import": "./dist/orchestrator/components/Step.jsx"
-    },
-    "./db": {
-      "types": "./dist/orchestrator/db/index.d.ts",
-      "import": "./dist/orchestrator/db/index.js"
-    },
-    "./debug": {
-      "types": "./dist/debug/index.d.ts",
-      "import": "./dist/debug/index.js"
-    },
-    "./renderer": {
-      "import": "./src/solid/renderer.js"
-    }
+    ".": "./src/index.ts",
+    "./core": "./src/core/index.ts",
+    "./solid": "./src/solid/index.ts",
+    "./components": "./src/components/index.ts",
+    "./components/Ralph": "./src/components/Ralph.tsx",
+    "./components/Review": "./src/components/Review.tsx",
+    "./components/Phase": "./src/components/Phase.tsx",
+    "./components/Step": "./src/components/Step.tsx",
+    "./components/JJ": "./src/components/JJ/index.ts",
+    "./components/Git": "./src/components/Git/index.ts",
+    "./components/Hooks": "./src/components/Hooks/index.ts",
+    "./components/MCP": "./src/components/MCP/index.ts",
+    "./orchestrator": "./src/orchestrator/components/index.ts",
+    "./orchestrator/SmithersProvider": "./src/orchestrator/components/SmithersProvider.tsx",
+    "./orchestrator/Orchestration": "./src/orchestrator/components/Orchestration.tsx",
+    "./orchestrator/Claude": "./src/orchestrator/components/Claude.tsx",
+    "./orchestrator/Phase": "./src/orchestrator/components/Phase.tsx",
+    "./orchestrator/Step": "./src/orchestrator/components/Step.tsx",
+    "./db": "./src/orchestrator/db/index.ts"
   },
   "files": [
-    "dist",
+    "src",
     "bin",
     "skills",
     "templates",
+    "bunfig.toml",
     "plugin.json",
-    "postinstall.cjs",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc && cp src/orchestrator/db/schema.sql dist/orchestrator/db/ && bun build bin/cli.ts --outdir bin --target node",
-    "build:cli": "bun build bin/cli.ts --outdir bin --target node",
-    "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "postinstall": "node postinstall.cjs"
+    "test": "bun test",
+    "test:watch": "bun test --watch"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.76",
@@ -119,20 +48,14 @@
     "@electric-sql/pglite": "^0.3.15",
     "commander": "^12.0.0",
     "solid-js": "^1.9.10",
-    "zod": "^4.3.5",
-    "zustand": "^5.0.10"
+    "zod": "^4.3.5"
   },
   "peerDependencies": {
-    "solid-js": "^1.9.10",
     "bun": ">=1.0.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "^25.0.9",
-    "happy-dom": "^20.3.1",
-    "typescript": "^5.7.2",
-    "vite-plugin-solid": "^2.11.10",
-    "vitest": "^4.0.17"
+    "typescript": "^5.7.2"
   },
   "keywords": [
     "ai",
@@ -144,16 +67,12 @@
     "claude",
     "anthropic",
     "orchestration",
-    "multi-agent",
-    "workflow"
+    "bun"
   ],
   "author": "William Cory",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/evmts/smithers.git"
-  },
-  "engines": {
-    "node": ">=18.0.0"
   }
 }

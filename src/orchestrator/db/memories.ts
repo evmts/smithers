@@ -1,7 +1,7 @@
 // Memory operations - long-term agent knowledge
 
 import type { PGlite } from '@electric-sql/pglite'
-import { QueryHelpers } from './live-query.js'
+import { QueryHelpers } from './live-query.jsx'
 import type { Memory, MemoryInput } from './types.js'
 
 export class MemoryManager {

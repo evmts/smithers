@@ -1,7 +1,7 @@
 // VCS tracking - commits, snapshots, reviews, reports
 
 import type { PGlite } from '@electric-sql/pglite'
-import { QueryHelpers } from './live-query.js'
+import { QueryHelpers } from './live-query.jsx'
 import type { Commit, Snapshot, Review, Report } from './types.js'
 
 export class VCSManager {

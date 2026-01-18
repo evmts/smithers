@@ -21,10 +21,19 @@ export default defineConfig({
   },
   test: {
     environment: 'happy-dom',
-    include: ['**/*.{test,spec}.ts'],  // Temporarily exclude .tsx until JSX config is fixed
+    include: ['**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['**/node_modules/**', '**/dist/**'],
     globals: true,
+    setupFiles: ['./test/setup.ts'],
     env: {
       NODE_ENV: 'test',
+      SMITHERS_MOCK_MODE: 'true',
+    },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.d.ts', 'src/**/index.ts'],
     },
   },
 })

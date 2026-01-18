@@ -13,6 +13,11 @@ import type { SmithersNode } from './types.js'
  * - node.key appears FIRST in attributes (before other props)
  */
 export function serialize(node: SmithersNode): string {
+  // Skip null/undefined nodes
+  if (!node || !node.type) {
+    return ''
+  }
+
   // TEXT nodes: just escape and return the value
   if (node.type === 'TEXT') {
     return escapeXml(String(node.props.value ?? ''))
@@ -20,7 +25,7 @@ export function serialize(node: SmithersNode): string {
 
   // ROOT nodes: serialize children without wrapper tags
   if (node.type === 'ROOT') {
-    return node.children.map(serialize).join('\n')
+    return node.children.filter(c => c && c.type).map(serialize).filter(s => s).join('\n')
   }
 
   const tag = node.type.toLowerCase()
@@ -32,7 +37,7 @@ export function serialize(node: SmithersNode): string {
   const attrs = serializeProps(node.props)
 
   // Serialize children recursively
-  const children = node.children.map(serialize).join('\n')
+  const children = node.children.filter(c => c && c.type).map(serialize).filter(s => s).join('\n')
 
   // Self-closing tag if no children
   if (!children) {

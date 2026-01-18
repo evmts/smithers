@@ -2,7 +2,7 @@
 // ALL state lives in PGlite with full audit trail
 
 import type { PGlite } from '@electric-sql/pglite'
-import { QueryHelpers } from './live-query.js'
+import { QueryHelpers } from './live-query.jsx'
 import type { StateEntry, Transition } from './types.js'
 
 export class StateManager {

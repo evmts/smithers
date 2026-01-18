@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 
 import { Command } from 'commander'
-import { init } from '../src/orchestrator/commands/init.js'
-import { run } from '../src/orchestrator/commands/run.js'
-import { monitor } from '../src/orchestrator/commands/monitor.js'
-import { dbCommand } from '../src/orchestrator/commands/db.js'
+import { init } from '../src/orchestrator/commands/init.ts'
+import { run } from '../src/orchestrator/commands/run.ts'
+import { monitor } from '../src/orchestrator/commands/monitor.ts'
+import { dbCommand } from '../src/orchestrator/commands/db.ts'
 
 const program = new Command()
 
@@ -46,7 +46,7 @@ program
   .action(async (type: string, data: string, options: { path: string }) => {
     try {
       // Dynamically import to avoid loading DB on every CLI call
-      const { createSmithersDB } = await import('../src/orchestrator/db/index.js')
+      const { createSmithersDB } = await import('../src/orchestrator/db/index.ts')
 
       const db = await createSmithersDB({ path: options.path })
 

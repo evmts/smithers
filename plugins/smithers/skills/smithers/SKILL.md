@@ -29,9 +29,10 @@ Use this skill when the user wants to:
 
 ## Quick Start
 
-### 1. Initialize a new orchestration
+### 1. Install and initialize
 
 ```bash
+bun add smithers-orchestrator
 bunx smithers-orchestrator init
 ```
 
@@ -43,8 +44,10 @@ Modify `.smithers/main.tsx` to define your agent workflow.
 
 ### 3. Monitor execution
 
+**Important:** Always use `-c` flag to load the Solid JSX config:
+
 ```bash
-bunx smithers-orchestrator monitor
+bun -c node_modules/smithers-orchestrator/bunfig.toml node_modules/.bin/smithers monitor
 ```
 
 Streams LLM-friendly execution updates.

@@ -20,6 +20,6 @@ export {
   isToolName,
   parseToolSpecs,
   buildToolFlags,
-} from './registry.js'
+} from './registry.jsx'
 
-export { createReportTool, getReportToolDescription } from './ReportTool.js'
+export { createReportTool, getReportToolDescription } from './ReportTool.jsx'

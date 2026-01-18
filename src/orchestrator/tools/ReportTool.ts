@@ -1,6 +1,6 @@
 // Report Tool - Allows agents to write structured reports to the database
 
-import type { Tool, ToolContext, JSONSchema } from './registry.js'
+import type { Tool, ToolContext, JSONSchema } from './registry.jsx'
 
 /**
  * Report tool input schema

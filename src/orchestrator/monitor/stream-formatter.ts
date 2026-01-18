@@ -1,4 +1,4 @@
-import type { ParsedEvent } from './output-parser.js'
+import type { ParsedEvent } from './output-parser.jsx'
 
 export interface FormatterStats {
   phasesCompleted: number

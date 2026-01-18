@@ -45,22 +45,26 @@ export function createSmithersRoot(): SmithersRoot {
       // Create a promise that Ralph will resolve when orchestration completes
       const completionPromise = createOrchestrationPromise()
 
-      // Handle async App functions by awaiting them first
+      // Check if App returns a Promise
       const result = App()
-      let element: JSX.Element
 
       if (result && typeof (result as any).then === 'function') {
-        // App is async - await the promise to get the JSX
-        element = await (result as Promise<JSX.Element>)
+        // App is async - we need to await the JSX first, then create a wrapper
+        // that renders it. Use a signal to trigger re-render when ready.
+        const jsxElement = await (result as Promise<JSX.Element>)
+
+        // Create a simple wrapper component that just returns the awaited element
+        // We use Object.assign to avoid Solid treating this as the same element
+        const AppSync = () => {
+          // Return the JSX element - Solid will handle the rendering
+          return jsxElement
+        }
+
+        disposeFunction = render(AppSync as any, rootNode)
       } else {
-        element = result as JSX.Element
+        // App is sync - render directly
+        disposeFunction = render(App as any, rootNode)
       }
-
-      // Wrap in a sync function for the renderer
-      const AppWrapper = () => element
-
-      // The renderer handles JSX.Element → SmithersNode conversion internally
-      disposeFunction = render(AppWrapper as any, rootNode)
 
       // Wait for orchestration to complete (Ralph will signal this)
       await completionPromise

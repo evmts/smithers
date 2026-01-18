@@ -5,11 +5,11 @@ import { PGlite } from '@electric-sql/pglite'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
-import { StateManager } from './state.js'
-import { MemoryManager } from './memories.js'
-import { ExecutionManager } from './execution.js'
-import { VCSManager } from './vcs.js'
-import { QueryHelpers } from './live-query.js'
+import { StateManager } from './state.jsx'
+import { MemoryManager } from './memories.jsx'
+import { ExecutionManager } from './execution.jsx'
+import { VCSManager } from './vcs.jsx'
+import { QueryHelpers } from './live-query.jsx'
 import type {
   Memory,
   MemoryInput,

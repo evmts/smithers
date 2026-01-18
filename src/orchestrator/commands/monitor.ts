@@ -1,10 +1,10 @@
 import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
-import { OutputParser } from '../monitor/output-parser.js'
-import { StreamFormatter } from '../monitor/stream-formatter.js'
-import { LogWriter } from '../monitor/log-writer.js'
-import { summarizeWithHaiku } from '../monitor/haiku-summarizer.js'
+import { OutputParser } from '../monitor/output-parser.jsx'
+import { StreamFormatter } from '../monitor/stream-formatter.jsx'
+import { LogWriter } from '../monitor/log-writer.jsx'
+import { summarizeWithHaiku } from '../monitor/haiku-summarizer.jsx'
 
 interface MonitorOptions {
   file?: string

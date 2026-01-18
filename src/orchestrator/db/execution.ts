@@ -1,7 +1,7 @@
 // Execution tracking - orchestration runs, phases, agents, tool calls
 
 import type { PGlite } from '@electric-sql/pglite'
-import { QueryHelpers } from './live-query.js'
+import { QueryHelpers } from './live-query.jsx'
 import type { Execution, Phase, Agent, ToolCall, Artifact, Step } from './types.js'
 import * as fs from 'fs/promises'
 import { exec as execCallback } from 'child_process'

@@ -83,6 +83,30 @@ export function getNextSibling(node) {
   return node.parent.children[idx + 1]
 }
 
+// Alias for insert - some Solid code may use this name
+export function insert(parent, node, anchor) {
+  insertNode(parent, node, anchor)
+}
+
+// Alias for setProp - some Solid code may use this name
+export function setProp(node, name, value) {
+  setProperty(node, name, value)
+}
+
+// Spread function for spreading props
+export function spread(node, props) {
+  if (props) {
+    for (const [key, value] of Object.entries(props)) {
+      setProperty(node, key, value)
+    }
+  }
+}
+
+// Template function for server-side rendering
+export function template(str) {
+  return () => createElement('template')
+}
+
 // Create and export the renderer using solid-js/universal
 const rendererInstance = createRenderer({
   createElement,
@@ -99,3 +123,6 @@ const rendererInstance = createRenderer({
 
 // Export render, effect, memo, createComponent for runtime use
 export const { render, effect, memo, createComponent } = rendererInstance
+
+// Also export insert from the instance if available
+export { insertNode as insert2 }

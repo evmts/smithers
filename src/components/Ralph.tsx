@@ -74,17 +74,22 @@ export function Ralph(props: RalphProps): JSX.Element {
 
   const maxIterations = props.maxIterations || 100
 
+  console.log('[Ralph] Component created, maxIterations:', maxIterations)
+
   const contextValue: RalphContextType = {
     registerTask: () => {
+      console.log('[Ralph] registerTask called')
       setHasStartedTasks(true)
       setPendingTasks((p: number) => p + 1)
     },
     completeTask: () => {
+      console.log('[Ralph] completeTask called')
       setPendingTasks((p: number) => p - 1)
     },
   }
 
   onMount(() => {
+    console.log('[Ralph] onMount fired!')
     // Monitor pending tasks and trigger remount when all complete
     let checkInterval: NodeJS.Timeout | null = null
     let stableCount = 0 // Count consecutive stable checks (no tasks running)

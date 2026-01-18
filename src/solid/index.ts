@@ -3,7 +3,7 @@
  */
 
 export { createSmithersRoot } from './root.js'
-export { render, effect, memo, createComponent } from './renderer.js'
+export { render, effect, memo, createComponent } from './renderer.jsx'
 
 // Re-export Solid primitives for convenience
 export {
