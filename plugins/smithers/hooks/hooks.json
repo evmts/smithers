@@ -1,0 +1,27 @@
+{
+  "description": "Smithers hooks for agent orchestration",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/capture-prompt.ts",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/ralph-check.ts",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
