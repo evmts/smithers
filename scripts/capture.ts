@@ -137,7 +137,11 @@ function parseArgs(): CaptureConfig {
         printHelp()
         process.exit(0)
       default:
-        if (!arg.startsWith('-')) {
+        // Check if it looks like a flag (starts with -- or single -)
+        if (arg.startsWith('--') || (arg.startsWith('-') && arg.length === 2)) {
+          // Unknown flag, skip
+        } else {
+          // Content (even if starts with - like checkbox items)
           positional.push(arg)
         }
     }
