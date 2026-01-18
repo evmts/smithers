@@ -1,0 +1,18 @@
+// Help display for database inspection command
+
+export function showHelp() {
+  console.log('Usage: smithers db <subcommand> [options]')
+  console.log('')
+  console.log('Subcommands:')
+  console.log('  state        Show current state')
+  console.log('  transitions  Show state transition history')
+  console.log('  executions   Show recent executions')
+  console.log('  memories     Show memories')
+  console.log('  stats        Show database statistics')
+  console.log('  current      Show current execution details')
+  console.log('  recovery     Check for incomplete executions (crash recovery)')
+  console.log('')
+  console.log('Options:')
+  console.log('  --path <path>  Database path (default: .smithers/data)')
+  console.log('')
+}
