@@ -34,7 +34,17 @@ export const rendererMethods = {
       return
     }
     if (name === 'key') {
-      // Key is stored on the node itself for the Ralph Wiggum loop
+      // NOTE: This code is currently UNREACHABLE when using React's jsx-runtime
+      // because React's special `key` prop is never passed to the reconciler.
+      // It's only used internally by React's fiber reconciliation algorithm.
+      //
+      // Kept here for:
+      // - Direct testing via rendererMethods (bypassing React)
+      // - Potential future custom JSX runtime implementations
+      // - Explicit manual SmithersNode construction
+      //
+      // If you need keys in serialized XML output, use a different prop name
+      // like `planKey`, `loopKey`, or `iteration` instead.
       node.key = value as string | number
       return
     }

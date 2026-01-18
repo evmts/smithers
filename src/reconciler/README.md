@@ -27,15 +27,15 @@ src/reconciler/
 │                              YOUR JSX CODE                                      │
 │                                                                                 │
 │   function MyAgent() {                                                          │
-│     const [count, setCount] = useState(0)                                       │
+│     const { ralphCount } = useSmithers()                                        │
 │     return (                                                                    │
-│       <Ralph key={count}>                                                       │
+│       <Orchestration>                                                           │
 │         <Phase name="build">                                                    │
-│           <Claude onFinished={() => setCount(c => c + 1)}>                      │
-│             Fix the bug in auth.ts                                              │
+│           <Claude>                                                              │
+│             Fix the bug in auth.ts (iteration {ralphCount})                     │
 │           </Claude>                                                             │
 │         </Phase>                                                                │
-│       </Ralph>                                                                  │
+│       </Orchestration>                                                          │
 │     )                                                                           │
 │   }                                                                             │
 └─────────────────────────────────────────────────────────────────────────────────┘
@@ -45,11 +45,14 @@ src/reconciler/
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                         JSX RUNTIME (jsx-runtime.ts)                            │
 │                                                                                 │
-│   // Babel transforms <Ralph key={0}> into:                                     │
-│   jsx(Ralph, { children: jsx(Phase, { ... }) }, 0)                              │
+│   // This file simply re-exports React's JSX runtime:                           │
+│   export { jsx, jsxs, Fragment } from 'react/jsx-runtime'                       │
 │                                                                                 │
-│   // For function components: call them                                         │
-│   // For intrinsic elements: create SmithersNode                                │
+│   // React handles component calls and hook dispatcher setup.                   │
+│   // Our hostConfig transforms React elements → SmithersNode trees.             │
+│                                                                                 │
+│   // Note: React's special props (key, ref) are NOT passed to components        │
+│   // or the reconciler - they're consumed by React's internal fiber system.     │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                         │
                                         │ React processes component tree
@@ -170,39 +173,36 @@ src/reconciler/
 
 ## The Ralph Wiggum Loop
 
-The key insight is how React's reconciliation enables the "Ralph Wiggum loop":
+The key insight is how React's reconciliation enables iterative orchestration:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                          THE RALPH WIGGUM LOOP                               │
 │                                                                              │
-│   1. Initial render                                                          │
-│      ┌────────────────┐                                                      │
-│      │ <Ralph key={0}>│  ← key=0 on first iteration                          │
-│      │   <Claude />   │                                                      │
-│      └────────────────┘                                                      │
+│   1. Initial render (managed by SmithersProvider)                            │
+│      ┌─────────────────────┐                                                 │
+│      │ <ralph iteration={0}>│  ← iteration=0 on first pass                   │
+│      │   <Claude />         │                                                │
+│      └─────────────────────┘                                                 │
 │              │                                                               │
 │              ▼                                                               │
-│   2. Claude mounts, executes, calls onFinished                               │
-│      onFinished triggers: setCount(c => c + 1)                               │
+│   2. Claude mounts, executes, signals completion                             │
+│      Completion triggers: ralphCount++ in SmithersProvider                   │
 │              │                                                               │
 │              ▼                                                               │
-│   3. State change triggers re-render                                         │
-│      ┌────────────────┐                                                      │
-│      │ <Ralph key={1}>│  ← key changed! React sees this as NEW component     │
-│      │   <Claude />   │                                                      │
-│      └────────────────┘                                                      │
+│   3. State change triggers re-render with new iteration                      │
+│      ┌─────────────────────┐                                                 │
+│      │ <ralph iteration={1}>│  ← iteration incremented                       │
+│      │   <Claude />         │                                                │
+│      └─────────────────────┘                                                 │
 │              │                                                               │
 │              ▼                                                               │
-│   4. Old Ralph UNMOUNTS (cleanup runs)                                       │
-│      New Ralph MOUNTS (fresh state, useMount runs again)                     │
-│              │                                                               │
-│              ▼                                                               │
-│   5. Claude executes again with potentially different context                │
-│      Loop continues until completion condition met                           │
+│   4. Components can react to iteration changes and re-execute                │
+│      Loop continues until max iterations or explicit completion              │
 │                                                                              │
-│   This is React's reconciliation doing the heavy lifting!                    │
-│   We just change a key prop, and React handles unmount/remount.              │
+│   Note: React's `key` prop can force remounts but is NOT accessible to      │
+│   components or the reconciler. Use regular props (like `iteration`) for    │
+│   state that components need to access.                                     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -227,10 +227,43 @@ You could build SmithersNode trees manually, but React gives you:
 5. **Context** - Dependency injection without prop drilling
 6. **Familiar API** - Leverage existing React knowledge
 
+## Understanding React's `key` Prop vs SmithersNode.key
+
+**Important distinction:**
+
+- **React's `key` prop** - Used by React's reconciliation algorithm to track component identity. When a component's key changes, React unmounts the old instance and mounts a new one. **This prop is NEVER passed to your component or the reconciler** - it's consumed internally by React's fiber system.
+
+- **SmithersNode.key** - An optional field on our SmithersNode data structure that gets serialized to XML as `key="..."` attribute for display purposes.
+
+### How to use keys correctly:
+
+```tsx
+// ❌ WRONG - trying to access React's key
+function MyComponent({ key }) {  // key is always undefined!
+  return <phase key={key}>...</phase>
+}
+
+// ✅ RIGHT - use a regular prop for data you need to access
+function MyComponent({ planKey, iteration }) {
+  // You can manually set SmithersNode.key if needed via a ref or prop
+  return <phase planKey={planKey} iteration={iteration}>...</phase>
+}
+
+// React's key is still useful for forcing remounts:
+<MyComponent key={count} planKey={count} iteration={count} />
+//           ^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+//           Forces       Available       Available
+//           remount      in component    in component
+```
+
+### Current implementation:
+
+The `methods.ts` file contains code to handle `key` as a prop (line 36-40), but this code is **never executed** because React doesn't pass `key` as a regular prop. If you need keys in your serialized XML output, use a different prop name like `planKey`, `loopKey`, or `iteration`.
+
 ## Key Files Explained
 
 ### `jsx-runtime.ts`
-Called by Babel when it transforms JSX. Converts `<phase name="test">` into `SmithersNode` objects.
+Re-exports React's JSX runtime. React handles component calls and sets up the hook dispatcher context, then our host-config transforms React elements into SmithersNode objects.
 
 ### `host-config.ts`
 Implements React's reconciler interface. React calls `createInstance()`, `appendChild()`, etc. and we create/modify SmithersNodes.
