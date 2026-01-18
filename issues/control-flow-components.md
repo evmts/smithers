@@ -166,15 +166,25 @@ The `<If>` component always renders its structure, showing both branches with th
 
 ```tsx
 export function If(props: IfProps): ReactNode {
-  const [evaluated, setEvaluated] = useState(false)
-  const [result, setResult] = useState<boolean | null>(null)
-  const { db } = useSmithers()
+  const { db, reactiveDb } = useSmithers()
+  const ifId = useRef(`if_${Math.random().toString(36).slice(2)}`).current
+  const stateKey = `if_result_${ifId}`
+
+  // Read condition result from SQLite reactively
+  const { data: dbResult } = useQueryValue<boolean>(
+    reactiveDb,
+    `SELECT CAST(value AS INTEGER) as result FROM state WHERE key = ?`,
+    [stateKey]
+  )
+
+  const result = dbResult ?? null
+  const evaluated = result !== null
 
   useMount(() => {
     ;(async () => {
       const conditionResult = await props.condition()
-      setResult(conditionResult)
-      setEvaluated(true)
+      // Store result in database for durability
+      db.state.set(stateKey, conditionResult ? 1 : 0, 'if_condition_evaluated')
     })()
   })
 
@@ -310,20 +320,40 @@ interface WhileProps {
 
 ```tsx
 export function While(props: WhileProps): ReactNode {
-  const [iteration, setIteration] = useState(0)
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete'>('pending')
-  const [shouldContinue, setShouldContinue] = useState(true)
+  const { db, reactiveDb } = useSmithers()
+  const whileId = useRef(`while_${Math.random().toString(36).slice(2)}`).current
+  const iterationKey = `while_iteration_${whileId}`
+  const statusKey = `while_status_${whileId}`
   const maxIterations = props.maxIterations ?? 10
+
+  // Read iteration count from SQLite reactively
+  const { data: dbIteration } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT CAST(value AS INTEGER) as iteration FROM state WHERE key = ?`,
+    [iterationKey]
+  )
+
+  // Read status from SQLite reactively
+  const { data: dbStatus } = useQueryValue<string>(
+    reactiveDb,
+    `SELECT value as status FROM state WHERE key = ?`,
+    [statusKey]
+  )
+
+  const iteration = dbIteration ?? 0
+  const status = (dbStatus as 'pending' | 'running' | 'complete') ?? 'pending'
 
   useMount(() => {
     ;(async () => {
+      // Initialize state in database
+      db.state.set(iterationKey, 0, 'while_init')
+
       const conditionResult = await props.condition()
-      setShouldContinue(conditionResult)
       if (conditionResult) {
-        setStatus('running')
+        db.state.set(statusKey, 'running', 'while_start')
         props.onIteration?.(0)
       } else {
-        setStatus('complete')
+        db.state.set(statusKey, 'complete', 'while_skip')
         props.onComplete?.(0, 'condition')
       }
     })()
@@ -334,19 +364,19 @@ export function While(props: WhileProps): ReactNode {
     const nextIteration = iteration + 1
 
     if (nextIteration >= maxIterations) {
-      setStatus('complete')
+      db.state.set(statusKey, 'complete', 'while_max_reached')
       props.onComplete?.(nextIteration, 'max')
       return
     }
 
     const conditionResult = await props.condition()
     if (!conditionResult) {
-      setStatus('complete')
+      db.state.set(statusKey, 'complete', 'while_condition_false')
       props.onComplete?.(nextIteration, 'condition')
       return
     }
 
-    setIteration(nextIteration)
+    db.state.set(iterationKey, nextIteration, 'while_advance')
     props.onIteration?.(nextIteration)
   }
 
@@ -356,7 +386,7 @@ export function While(props: WhileProps): ReactNode {
       iteration={iteration}
       status={status}
     >
-      {status === 'running' && shouldContinue && (
+      {status === 'running' && (
         <WhileIterationProvider onComplete={handleIterationComplete}>
           {props.children}
         </WhileIterationProvider>
@@ -467,6 +497,107 @@ interface DefaultProps {
     <phase name="Standard Flow" status="skipped">...</phase>
   </default>
 </switch>
+```
+
+### Implementation Sketch
+
+```tsx
+export function Switch<T = string>(props: SwitchProps<T>): ReactNode {
+  const { db, reactiveDb } = useSmithers()
+  const switchId = useRef(`switch_${Math.random().toString(36).slice(2)}`).current
+  const valueKey = `switch_value_${switchId}`
+
+  // Read evaluated value from SQLite reactively
+  const { data: dbValue } = useQueryValue<T>(
+    reactiveDb,
+    `SELECT value as val FROM state WHERE key = ?`,
+    [valueKey]
+  )
+
+  const evaluatedValue = dbValue ?? null
+
+  useMount(() => {
+    ;(async () => {
+      const value = typeof props.value === 'function'
+        ? await (props.value as () => T | Promise<T>)()
+        : props.value
+
+      // Store evaluated value in database for durability
+      db.state.set(valueKey, value, 'switch_value_evaluated')
+    })()
+  })
+
+  // Extract Case and Default children
+  const cases: Array<{ match: T | T[], children: ReactNode }> = []
+  let defaultChildren: ReactNode = null
+
+  React.Children.forEach(props.children, (child) => {
+    if (React.isValidElement(child)) {
+      if (child.type === Case) {
+        cases.push({
+          match: child.props.match,
+          children: child.props.children,
+        })
+      } else if (child.type === Default) {
+        defaultChildren = child.props.children
+      }
+    }
+  })
+
+  // Find matching case
+  let activeCase: ReactNode = null
+  let matchedIndex = -1
+
+  if (evaluatedValue !== null) {
+    for (let i = 0; i < cases.length; i++) {
+      const caseMatch = cases[i].match
+      const matches = Array.isArray(caseMatch)
+        ? caseMatch.includes(evaluatedValue)
+        : caseMatch === evaluatedValue
+
+      if (matches) {
+        activeCase = cases[i].children
+        matchedIndex = i
+        break
+      }
+    }
+
+    // Use default if no match
+    if (matchedIndex === -1 && defaultChildren) {
+      activeCase = defaultChildren
+    }
+  }
+
+  // Always render structure, show all cases with active/inactive status
+  return (
+    <switch value={String(evaluatedValue)}>
+      {cases.map((c, i) => (
+        <case
+          key={i}
+          match={Array.isArray(c.match) ? c.match.join(',') : String(c.match)}
+          active={i === matchedIndex}
+        >
+          {i === matchedIndex && c.children}
+        </case>
+      ))}
+      {defaultChildren && (
+        <default active={matchedIndex === -1 && evaluatedValue !== null}>
+          {matchedIndex === -1 && evaluatedValue !== null && defaultChildren}
+        </default>
+      )}
+    </switch>
+  )
+}
+
+export function Case<T = string>(props: CaseProps<T>): ReactNode {
+  // This is a marker component that gets processed by Switch
+  return null
+}
+
+export function Default(props: DefaultProps): ReactNode {
+  // This is a marker component that gets processed by Switch
+  return null
+}
 ```
 
 </section>
