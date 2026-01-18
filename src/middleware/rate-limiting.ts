@@ -1,4 +1,3 @@
-import type { AgentResult } from '../components/agents/types.js'
 import type { SmithersMiddleware } from './types.js'
 
 interface TokenBucketOptions {
@@ -15,7 +14,9 @@ class TokenBucket {
 
   constructor(options: TokenBucketOptions) {
     this.requestCapacity = options.requestsPerMinute
-    this.tokenCapacity = options.tokensPerMinute
+    if (options.tokensPerMinute !== undefined) {
+      this.tokenCapacity = options.tokensPerMinute
+    }
     this.requestTokens = options.requestsPerMinute
     this.tokenTokens = options.tokensPerMinute ?? Infinity
     this.lastRefill = Date.now()

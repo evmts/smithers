@@ -24,7 +24,9 @@ export class LRUCache implements CacheStore {
 
   constructor(options: LRUCacheOptions) {
     this.max = options.max
-    this.ttlMs = options.ttlMs
+    if (options.ttlMs !== undefined) {
+      this.ttlMs = options.ttlMs
+    }
   }
 
   get(key: string): AgentResult | null {
@@ -42,15 +44,16 @@ export class LRUCache implements CacheStore {
   }
 
   set(key: string, value: AgentResult, ttlMs?: number): void {
-    const expiresAt = (ttlMs ?? this.ttlMs) !== undefined
-      ? Date.now() + (ttlMs ?? this.ttlMs!)
-      : undefined
+    const ttl = ttlMs ?? this.ttlMs
+    const entry: CacheEntry = ttl === undefined
+      ? { value }
+      : { value, expiresAt: Date.now() + ttl }
 
     if (this.store.has(key)) {
       this.store.delete(key)
     }
 
-    this.store.set(key, { value, expiresAt })
+    this.store.set(key, entry)
 
     while (this.store.size > this.max) {
       const oldestKey = this.store.keys().next().value

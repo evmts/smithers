@@ -35,12 +35,13 @@ export function loggingMiddleware(options?: {
   return {
     name: 'logging',
     transformOptions: (opts: CLIExecutionOptions) => {
-      logger({
+      const entry: LogEntry = {
         type: 'start',
-        model: opts.model,
-        promptPreview: opts.prompt?.slice(0, 100),
         timestamp: Date.now(),
-      })
+        ...(opts.model !== undefined ? { model: opts.model } : {}),
+        ...(opts.prompt !== undefined ? { promptPreview: opts.prompt.slice(0, 100) } : {}),
+      }
+      logger(entry)
       return opts
     },
     wrapExecute: async (doExecute) => {
@@ -57,13 +58,16 @@ export function loggingMiddleware(options?: {
       }
     },
     transformResult: (result: AgentResult) => {
-      logger({
+      const entry: LogEntry = {
         type: 'complete',
-        tokensUsed: options?.includeTokens ? result.tokensUsed : undefined,
-        durationMs: result.durationMs,
-        stopReason: result.stopReason,
         timestamp: Date.now(),
-      })
+        ...(options?.includeTokens && result.tokensUsed !== undefined
+          ? { tokensUsed: result.tokensUsed }
+          : {}),
+        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+        ...(result.stopReason !== undefined ? { stopReason: result.stopReason } : {}),
+      }
+      logger(entry)
       return result
     },
   }
