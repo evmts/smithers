@@ -16,6 +16,9 @@ import { extractText } from '../utils/extract-text.js'
 import { composeMiddleware } from '../middleware/compose.js'
 import { retryMiddleware } from '../middleware/retry.js'
 import { validationMiddleware, ValidationError } from '../middleware/validation.js'
+import { ClaudeStreamParser } from '../streaming/claude-parser.js'
+import type { SmithersStreamPart } from '../streaming/types.js'
+import type { StreamSummary } from '../db/types.js'
 
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
 
@@ -107,7 +110,21 @@ export function Claude(props: ClaudeProps): ReactNode {
       let currentAgentId: string | null = null
 
       const logWriter = new LogWriter(undefined, executionId ?? undefined)
-      const logFilename = `agent-${uuid()}.log`
+      const logId = uuid()
+      const typedStreamingEnabled = props.experimentalTypedStreaming ?? false
+      const useLegacyLogFormat = typedStreamingEnabled && (props.legacyLogFormat ?? false)
+      const recordStreamEvents = props.recordStreamEvents ?? props.reportingEnabled !== false
+      const streamLogFilename = typedStreamingEnabled ? `agent-${logId}.ndjson` : `agent-${logId}.log`
+      const legacyLogFilename = useLegacyLogFormat ? `agent-${logId}.log.legacy.txt` : null
+      const streamParser = typedStreamingEnabled ? new ClaudeStreamParser() : null
+      const streamSummary: StreamSummary = {
+        textBlocks: 0,
+        reasoningBlocks: 0,
+        toolCalls: 0,
+        toolResults: 0,
+        errors: 0,
+      }
+      const logFilename = streamLogFilename
       let logPath: string | undefined
 
       try {
@@ -177,6 +194,7 @@ export function Claude(props: ClaudeProps): ReactNode {
         if (props.schema !== undefined) baseOptions.schema = props.schema
         if (props.schemaRetries !== undefined) baseOptions.schemaRetries = props.schemaRetries
         if (props.useSubscription !== undefined) baseOptions.useSubscription = props.useSubscription
+        if (typedStreamingEnabled && props.outputFormat === undefined) baseOptions.outputFormat = 'stream-json'
 
         const executionOptions = composed.transformOptions
           ? await composed.transformOptions(baseOptions)
@@ -185,6 +203,9 @@ export function Claude(props: ClaudeProps): ReactNode {
         // Log agent start to database if reporting is enabled
         if (props.reportingEnabled !== false) {
           logPath = logWriter.appendLog(logFilename, '')
+          if (legacyLogFilename) {
+            logWriter.appendLog(legacyLogFilename, '')
+          }
 
           currentAgentId = await db.agents.start(
             executionOptions.prompt,
@@ -198,8 +219,80 @@ export function Claude(props: ClaudeProps): ReactNode {
         // Report progress
         props.onProgress?.(`Starting Claude agent with model: ${executionOptions.model ?? 'sonnet'}`)
 
+        // Stream part handler for typed streaming
+        const handleStreamPart = (part: SmithersStreamPart) => {
+          logWriter.appendStreamPart(logFilename, part)
+
+          if (recordStreamEvents && currentAgentId) {
+            db.agents.recordStreamEvent(currentAgentId, part)
+          }
+
+          if (part.type === 'text-end') {
+            streamSummary.textBlocks += 1
+          } else if (part.type === 'reasoning-end') {
+            streamSummary.reasoningBlocks += 1
+          } else if (part.type === 'tool-call') {
+            streamSummary.toolCalls += 1
+          } else if (part.type === 'tool-result') {
+            streamSummary.toolResults += 1
+          } else if (part.type === 'error') {
+            streamSummary.errors += 1
+          }
+
+          props.onStreamPart?.(part)
+        }
+
+        // Tail log update handler
+        const handleTailLogUpdate = () => {
+          const now = Date.now()
+          const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
+
+          if (timeSinceLastUpdate >= DEFAULT_TAIL_LOG_THROTTLE_MS) {
+            lastTailLogUpdateRef.current = now
+            if (isMounted()) {
+              tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+              forceUpdate()
+            }
+          } else if (!pendingTailLogUpdateRef.current) {
+            pendingTailLogUpdateRef.current = setTimeout(() => {
+              pendingTailLogUpdateRef.current = null
+              lastTailLogUpdateRef.current = Date.now()
+              if (isMounted()) {
+                tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+                forceUpdate()
+              }
+            }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
+          }
+        }
+
         const upstreamOnProgress = executionOptions.onProgress
         const onProgress = (chunk: string) => {
+          // Handle typed streaming
+          if (typedStreamingEnabled && streamParser) {
+            const parts = streamParser.parse(chunk)
+            if (useLegacyLogFormat && legacyLogFilename) {
+              logWriter.appendLog(legacyLogFilename, chunk)
+            }
+            for (const part of parts) {
+              handleStreamPart(part)
+              if (part.type === 'text-delta') {
+                messageParserRef.current.parseChunk(part.delta)
+                handleTailLogUpdate()
+              } else if (part.type === 'tool-call') {
+                messageParserRef.current.parseChunk(`Tool: ${part.toolName}\n${part.input}\n\n`)
+                handleTailLogUpdate()
+                if (props.onToolCall) {
+                  try {
+                    props.onToolCall(part.toolName, JSON.parse(part.input))
+                  } catch {
+                    props.onToolCall(part.toolName, part.input)
+                  }
+                }
+              }
+            }
+            return
+          }
+
           const transformedChunk = composed.transformChunk
             ? composed.transformChunk(chunk)
             : chunk
@@ -211,29 +304,7 @@ export function Claude(props: ClaudeProps): ReactNode {
 
           // Parse for tail log
           messageParserRef.current.parseChunk(transformedChunk)
-
-          // Throttle tail log updates to reduce re-renders
-          const now = Date.now()
-          const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
-
-          if (timeSinceLastUpdate >= DEFAULT_TAIL_LOG_THROTTLE_MS) {
-            // Enough time has passed, update immediately
-            lastTailLogUpdateRef.current = now
-            if (isMounted()) {
-              tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-              forceUpdate()
-            }
-          } else if (!pendingTailLogUpdateRef.current) {
-            // Schedule an update for later
-            pendingTailLogUpdateRef.current = setTimeout(() => {
-              pendingTailLogUpdateRef.current = null
-              lastTailLogUpdateRef.current = Date.now()
-              if (isMounted()) {
-                tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-                forceUpdate()
-              }
-            }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
-          }
+          handleTailLogUpdate()
 
           upstreamOnProgress?.(transformedChunk)
           props.onProgress?.(transformedChunk)
@@ -262,6 +333,26 @@ export function Claude(props: ClaudeProps): ReactNode {
           agentResult = await composed.transformResult(agentResult)
         }
 
+        // Finalize typed streaming
+        if (typedStreamingEnabled && streamParser) {
+          const remainingParts = streamParser.flush()
+          for (const part of remainingParts) {
+            handleStreamPart(part)
+          }
+          if (agentResult.sessionId) {
+            handleStreamPart({
+              type: 'session-info',
+              sessionId: agentResult.sessionId,
+              model: props.model ?? 'sonnet',
+            })
+          }
+          if (props.reportingEnabled !== false && currentAgentId) {
+            db.agents.setStreamSummary(currentAgentId, streamSummary)
+          }
+          logWriter.writeStreamSummaryFromCounts(logFilename, streamSummary)
+        }
+
+        // Flush message parser to capture any remaining content
         messageParserRef.current.flush()
         if (pendingTailLogUpdateRef.current) {
           clearTimeout(pendingTailLogUpdateRef.current)
@@ -333,6 +424,9 @@ export function Claude(props: ClaudeProps): ReactNode {
       } finally {
         // Flush log stream to ensure all writes complete before exit
         await logWriter.flushStream(logFilename)
+        if (legacyLogFilename) {
+          await logWriter.flushStream(legacyLogFilename)
+        }
         // Always complete task
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
