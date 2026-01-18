@@ -39,7 +39,7 @@ describe('14-kitchen-sink', () => {
     const startTime = Date.now()
     const validationChecks: Record<string, boolean> = {}
 
-    await env.root.render(
+    const app = (
       <SmithersProvider db={env.db} executionId={env.executionId}>
         <Phase name="Research">
           <Step name="gather">
@@ -92,15 +92,20 @@ describe('14-kitchen-sink', () => {
       </SmithersProvider>
     )
 
+    // Render comprehensive workflow
+    await env.root.render(app)
+
     await delay(100)
 
     const researchXml = env.root.toXML()
 
     env.db.state.set('currentPhaseIndex', 1, 'kitchen-sink-advance')
+    await env.root.render(app)
     await delay(100)
     const planningXml = env.root.toXML()
 
     env.db.state.set('currentPhaseIndex', 2, 'kitchen-sink-advance')
+    await env.root.render(app)
     await delay(100)
     const implementationXml = env.root.toXML()
 
