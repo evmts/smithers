@@ -28,7 +28,8 @@
     "./orchestrator/Claude": "./src/orchestrator/components/Claude.tsx",
     "./orchestrator/Phase": "./src/orchestrator/components/Phase.tsx",
     "./orchestrator/Step": "./src/orchestrator/components/Step.tsx",
-    "./db": "./src/orchestrator/db/index.ts"
+    "./db": "./src/orchestrator/db/index.ts",
+    "./reactive-sqlite": "./src/reactive-sqlite/index.ts"
   },
   "files": [
     "src",
@@ -51,7 +52,6 @@
     "@anthropic-ai/sdk": "^0.71.2",
     "@babel/core": "^7.28.6",
     "@babel/preset-typescript": "^7.28.5",
-    "@electric-sql/pglite": "^0.3.15",
     "commander": "^12.0.0",
     "react": "^19.0.0",
     "react-reconciler": "^0.32.0",
