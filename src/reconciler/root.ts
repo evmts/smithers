@@ -78,15 +78,18 @@ export function createSmithersRoot(): SmithersRoot {
       }
 
       // Create the fiber root container
-      // createContainer signature: (containerInfo, tag, hydrate, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, transitionCallbacks)
-      fiberRoot = SmithersReconciler.createContainer(
-        rootNode, // container
-        0, // LegacyRoot tag (ConcurrentRoot = 1)
+      // createContainer(containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, transitionCallbacks)
+      // NOTE: @types/react-reconciler 0.32 has 8 params, but runtime 0.33 has 10
+      fiberRoot = (SmithersReconciler.createContainer as any)(
+        rootNode, // containerInfo
+        0, // tag: LegacyRoot (ConcurrentRoot = 1)
         null, // hydrationCallbacks
         false, // isStrictMode
         null, // concurrentUpdatesByDefaultOverride
         '', // identifierPrefix
-        (error: Error) => console.error('Smithers recoverable error:', error), // onRecoverableError
+        (error: unknown) => console.error('Smithers uncaught error:', error), // onUncaughtError
+        (error: unknown) => console.error('Smithers caught error:', error), // onCaughtError
+        (error: unknown) => console.error('Smithers recoverable error:', error), // onRecoverableError
         null // transitionCallbacks
       )
 
