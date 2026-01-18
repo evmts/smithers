@@ -65,11 +65,7 @@ describe('LogWriter', () => {
     const path1 = writer.appendLog(filename, 'chunk 1\n')
     writer.appendLog(filename, 'chunk 2\n')
 
-    // Close the stream to flush content to disk
-    writer.closeStream(filename)
-
-    // Wait a bit for file system operations to complete
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await writer.flushStream(filename)
 
     expect(fs.existsSync(path1)).toBe(true)
     const content = fs.readFileSync(path1, 'utf-8')
