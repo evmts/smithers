@@ -10,6 +10,7 @@
 I use Smithers for both long-term (weeks) agentic work, as well as one-off scripts.
 
 <!-- TODO: Add GIF demo -->
+
 ![Smithers Demo](https://via.placeholder.com/800x400?text=Demo+GIF+Coming+Soon)
 
 ---
@@ -50,32 +51,26 @@ I wanted a tool that allows me to:
 
 ## Installation
 
-### 1. Install Claude Code
+### Install the Smithers Plugin for Claude Code
 
 ```bash
-npm install -g @anthropic-ai/claude-code
+claude plugin install smithers@https://github.com/evmts/smithers
 ```
 
-### 2. Install Smithers in your project
+Or add it via the plugin UI:
+```bash
+/plugin install smithers@https://github.com/evmts/smithers
+```
+
+This gives Claude Code the `smithers-orchestrator` skill for creating multi-agent workflows.
+
+### Optional: Install the npm package for programmatic use
+
+If you want to use Smithers components directly in your own scripts:
 
 ```bash
 bun add smithers
 ```
-
-Or with npm/yarn/pnpm:
-
-```bash
-npm install smithers
-```
-
-### 3. Add to your CLAUDE.md (optional but recommended)
-
-```markdown
-This project uses Smithers for AI orchestration.
-When the user asks for agentic workflows, generate Smithers scripts.
-```
-
-That's it. Now just ask Claude Code to write Smithers workflows for you.
 
 ---
 
@@ -128,13 +123,13 @@ smithers-orchestrator db query "SELECT * FROM agents ORDER BY started_at DESC LI
 ```tsx
 #!/usr/bin/env bun
 
-import { createSmithersRoot } from 'smithers'
-import { createSmithersDB } from 'smithers/smithers-orchestrator/src/db'
-import { SmithersProvider } from 'smithers/smithers-orchestrator/src/components/SmithersProvider'
-import { Claude } from 'smithers/smithers-orchestrator/src/components/Claude'
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
 
-const db = await createSmithersDB({ path: '.smithers/my-task' })
-const executionId = await db.execution.start('My Task', 'scripts/my-task.tsx')
+const db = await createSmithersDB({ path: ".smithers/my-task" });
+const executionId = await db.execution.start("My Task", "scripts/my-task.tsx");
 
 async function MyWorkflow() {
   return (
@@ -142,17 +137,17 @@ async function MyWorkflow() {
       <Claude
         model="sonnet"
         maxTurns={10}
-        onFinished={(result) => console.log('Done:', result.output)}
+        onFinished={(result) => console.log("Done:", result.output)}
       >
         Analyze this codebase and suggest three improvements.
       </Claude>
     </SmithersProvider>
-  )
+  );
 }
 
-const root = createSmithersRoot()
-await root.mount(MyWorkflow)
-await db.close()
+const root = createSmithersRoot();
+await root.mount(MyWorkflow);
+await db.close();
 ```
 
 Run it:
@@ -169,37 +164,37 @@ bun my-workflow.tsx
 
 ```tsx
 async function ReviewWorkflow() {
-  const phase = await db.state.get('phase') ?? 'implement'
+  const phase = (await db.state.get("phase")) ?? "implement";
 
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Orchestration globalTimeout={3600000}>
         <Ralph maxIterations={10}>
-          {phase === 'implement' && (
+          {phase === "implement" && (
             <Phase name="Implementation">
               <Claude
                 model="sonnet"
-                onFinished={() => db.state.set('phase', 'review')}
+                onFinished={() => db.state.set("phase", "review")}
               >
                 Implement the user authentication feature.
               </Claude>
             </Phase>
           )}
 
-          {phase === 'review' && (
+          {phase === "review" && (
             <Phase name="Code Review">
               <Review
-                target={{ type: 'diff', ref: 'main' }}
+                target={{ type: "diff", ref: "main" }}
                 criteria={[
-                  'No security vulnerabilities',
-                  'Tests cover edge cases',
-                  'Types are properly defined',
+                  "No security vulnerabilities",
+                  "Tests cover edge cases",
+                  "Types are properly defined",
                 ]}
                 onFinished={(review) => {
                   if (review.approved) {
-                    db.state.set('phase', 'complete')
+                    db.state.set("phase", "complete");
                   } else {
-                    db.state.set('phase', 'implement')
+                    db.state.set("phase", "implement");
                   }
                 }}
               />
@@ -208,7 +203,7 @@ async function ReviewWorkflow() {
         </Ralph>
       </Orchestration>
     </SmithersProvider>
-  )
+  );
 }
 ```
 
@@ -247,10 +242,9 @@ const AnalysisSchema = z.object({
 ```tsx
 <Claude model="sonnet" maxTurns={5}>
   <Sqlite path="./analytics.db">
-    The database contains user_events and sessions tables.
-    Use this to answer questions about user behavior.
+    The database contains user_events and sessions tables. Use this to answer
+    questions about user behavior.
   </Sqlite>
-
   What are the top 10 most common user actions this week?
 </Claude>
 ```
@@ -263,9 +257,9 @@ const AnalysisSchema = z.object({
   executionModel="sonnet"
   onFinished={(result) => console.log(result.output)}
 >
-  Create a comprehensive test suite for the authentication module.
-  Include unit tests, integration tests, and edge cases.
-  Set up proper mocking for external dependencies.
+  Create a comprehensive test suite for the authentication module. Include unit
+  tests, integration tests, and edge cases. Set up proper mocking for external
+  dependencies.
 </Smithers>
 ```
 
@@ -279,14 +273,14 @@ The core agent component that executes Claude with full tool access:
 
 ```tsx
 <Claude
-  model="sonnet"           // opus | sonnet | haiku
-  maxTurns={10}            // Limit agentic loops
-  permissionMode="acceptEdits"  // Auto-accept file edits
+  model="sonnet" // opus | sonnet | haiku
+  maxTurns={10} // Limit agentic loops
+  permissionMode="acceptEdits" // Auto-accept file edits
   systemPrompt="You are a senior engineer..."
-  allowedTools={['Read', 'Edit', 'Bash']}
+  allowedTools={["Read", "Edit", "Bash"]}
   stopConditions={[
-    { type: 'token_limit', value: 50000 },
-    { type: 'pattern', value: /DONE/i },
+    { type: "token_limit", value: 50000 },
+    { type: "pattern", value: /DONE/i },
   ]}
   onProgress={(msg) => console.log(msg)}
   onFinished={(result) => handleResult(result)}
@@ -303,7 +297,11 @@ Named after Ralph Wiggum's "I'm in danger" catchphrase - controls iterative loop
 ```tsx
 <Ralph maxIterations={10} onMaxIterations={() => console.log("I'm in danger!")}>
   {/* Children re-render on each iteration */}
-  <Claude onFinished={() => {/* state change triggers next iteration */}}>
+  <Claude
+    onFinished={() => {
+      /* state change triggers next iteration */
+    }}
+  >
     Keep improving until tests pass.
   </Claude>
 </Ralph>
@@ -334,7 +332,6 @@ Give Claude access to external tools via Model Context Protocol:
   <Sqlite path="./data.db" readOnly>
     Database schema: users(id, name, email), orders(id, user_id, total)
   </Sqlite>
-
   Generate a report of top customers by order value.
 </Claude>
 ```
@@ -345,13 +342,13 @@ Spawn a new Smithers instance to plan and execute complex subtasks:
 
 ```tsx
 <Smithers
-  plannerModel="opus"      // Model for planning the script
-  executionModel="sonnet"  // Model for agents in the script
-  timeout={600000}         // 10 minute timeout
-  keepScript               // Save the generated script for debugging
+  plannerModel="opus" // Model for planning the script
+  executionModel="sonnet" // Model for agents in the script
+  timeout={600000} // 10 minute timeout
+  keepScript // Save the generated script for debugging
 >
-  Create a new REST API endpoint with full CRUD operations,
-  database migrations, and comprehensive test coverage.
+  Create a new REST API endpoint with full CRUD operations, database migrations,
+  and comprehensive test coverage.
 </Smithers>
 ```
 
@@ -374,16 +371,16 @@ Persistent state that survives restarts:
 
 ```tsx
 // Set state
-await db.state.set('phase', 'review', 'code_complete')
+await db.state.set("phase", "review", "code_complete");
 
 // Get state
-const phase = await db.state.get('phase')
+const phase = await db.state.get("phase");
 
 // Query history
-const history = await db.state.getHistory('phase')
+const history = await db.state.getHistory("phase");
 
 // View all state
-const all = await db.state.getAll()
+const all = await db.state.getAll();
 ```
 
 ---
