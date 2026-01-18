@@ -1,5 +1,4 @@
-import { useState, useContext, type ReactNode } from 'react'
-import { RalphContext } from '../Ralph'
+import { useState, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs'
 import { useMount, useMountedState } from '../../reconciler/hooks'
@@ -32,8 +31,8 @@ async function generateCommitMessage(diff: string): Promise<string> {
  * Registers with Ralph for task tracking.
  */
 export function Commit(props: CommitProps): ReactNode {
-  const ralph = useContext(RalphContext)
   const smithers = useSmithers()
+  const { registerTask, completeTask } = smithers
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [commitHash, setCommitHash] = useState<string | null>(null)
   const [changeId, setChangeId] = useState<string | null>(null)

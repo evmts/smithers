@@ -1,9 +1,8 @@
 // OnCIFailure hook component - polls CI status and triggers children on failure
 // Currently supports GitHub Actions
 
-import { useState, useRef, useContext, type ReactNode } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
-import { RalphContext } from '../Ralph'
 import { useMount, useUnmount } from '../../reconciler/hooks'
 
 export interface CIFailure {
@@ -107,7 +106,7 @@ async function fetchRunLogs(runId: number): Promise<string> {
  */
 export function OnCIFailure(props: OnCIFailureProps): ReactNode {
   const smithers = useSmithers()
-  const ralph = useContext(RalphContext)
+  const { registerTask, completeTask } = smithers
 
   const [ciStatus, setCIStatus] = useState<'idle' | 'polling' | 'failed' | 'error'>('idle')
   const [currentFailure, setCurrentFailure] = useState<CIFailure | null>(null)
@@ -186,12 +185,10 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
             // Call onFailure callback
             props.onFailure?.(failure)
 
-            // Register with Ralph for task tracking
-            if (ralph) {
-              ralph.registerTask()
-              // Children will handle their own task completion
-              ralph.completeTask()
-            }
+            // Register task for tracking
+            registerTask()
+            // Children will handle their own task completion
+            completeTask()
 
             // Log to db state
             await smithers.db.state.set('last_ci_failure', failure, 'ci-failure-hook')

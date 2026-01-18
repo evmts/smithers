@@ -1,5 +1,4 @@
-import { useState, useContext, type ReactNode } from 'react'
-import { RalphContext } from '../Ralph'
+import { useState, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { useMount, useMountedState } from '../../reconciler/hooks'
 
@@ -35,8 +34,8 @@ async function generateDescriptionWithClaude(
  * Registers with Ralph for task tracking.
  */
 export function Describe(props: DescribeProps): ReactNode {
-  const ralph = useContext(RalphContext)
   const smithers = useSmithers()
+  const { registerTask, completeTask } = smithers
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [description, setDescription] = useState<string | null>(null)
   const [error, setError] = useState<Error | null>(null)

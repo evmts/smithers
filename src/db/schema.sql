@@ -393,7 +393,28 @@ CREATE INDEX IF NOT EXISTS idx_reviews_blocking ON reviews(blocking);
 CREATE INDEX IF NOT EXISTS idx_reviews_created ON reviews(created_at DESC);
 
 -- ============================================================================
--- 13. STEPS - Fine-grained step tracking
+-- 13. TASKS - Ralph iteration task tracking
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  iteration INTEGER NOT NULL DEFAULT 0,
+  component_type TEXT NOT NULL,
+  component_name TEXT,
+  status TEXT NOT NULL DEFAULT 'running',
+  started_at TEXT DEFAULT (datetime('now')),
+  completed_at TEXT,
+  duration_ms INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_execution ON tasks(execution_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_iteration_status ON tasks(iteration, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(started_at DESC);
+
+-- ============================================================================
+-- 14. STEPS - Fine-grained step tracking
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS steps (

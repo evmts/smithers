@@ -1,5 +1,4 @@
-import { useState, useContext, type ReactNode } from 'react'
-import { RalphContext } from '../Ralph'
+import { useState, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { useMount, useMountedState } from '../../reconciler/hooks'
 
@@ -43,8 +42,8 @@ function parseConflicts(output: string): string[] {
  * Registers with Ralph for task tracking.
  */
 export function Rebase(props: RebaseProps): ReactNode {
-  const ralph = useContext(RalphContext)
   const smithers = useSmithers()
+  const { registerTask, completeTask } = smithers
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
   const [conflicts, setConflicts] = useState<string[]>([])
   const [error, setError] = useState<Error | null>(null)

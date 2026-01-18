@@ -1,5 +1,4 @@
-import { useState, useContext, type ReactNode } from 'react'
-import { RalphContext } from '../Ralph'
+import { useState, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { jjSnapshot, getJJStatus } from '../../utils/vcs'
 import { useMount, useMountedState } from '../../reconciler/hooks'
@@ -16,8 +15,8 @@ export interface SnapshotProps {
  * Registers with Ralph for task tracking.
  */
 export function Snapshot(props: SnapshotProps): ReactNode {
-  const ralph = useContext(RalphContext)
   const smithers = useSmithers()
+  const { registerTask, completeTask } = smithers
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [changeId, setChangeId] = useState<string | null>(null)
   const [error, setError] = useState<Error | null>(null)

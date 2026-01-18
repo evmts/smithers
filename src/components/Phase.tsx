@@ -1,7 +1,6 @@
 // Enhanced Phase component with automatic database logging
 
-import { useState, useContext, useRef, type ReactNode } from 'react'
-import { RalphContext } from './Ralph'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
 import { useMount, useUnmount } from '../reconciler/hooks'
 
@@ -43,16 +42,13 @@ export interface PhaseProps {
  * ```
  */
 export function Phase(props: PhaseProps): ReactNode {
-  const { db } = useSmithers()
-  const ralph = useContext(RalphContext)
+  const { db, ralphCount } = useSmithers()
   const [, setPhaseId] = useState<string | null>(null)
   const [status, setStatus] = useState<'pending' | 'running' | 'completed' | 'skipped'>('pending')
   const phaseIdRef = useRef<string | null>(null)
 
-  // Get current iteration from Ralph context (if available)
-  const getCurrentIteration = (): number => {
-    return (ralph as any)?.iteration ?? 0
-  }
+  // Get current iteration from SmithersProvider
+  const getCurrentIteration = (): number => ralphCount
 
   useMount(() => {
     ;(async () => {

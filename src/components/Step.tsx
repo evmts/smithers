@@ -1,7 +1,6 @@
 // Enhanced Step component with automatic database logging and VCS integration
 
-import { useState, useContext, useRef, type ReactNode } from 'react'
-import { RalphContext } from './Ralph'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
 import { jjSnapshot, jjCommit } from '../utils/vcs'
 import { useMount, useUnmount } from '../reconciler/hooks'
@@ -59,8 +58,7 @@ export interface StepProps {
  * ```
  */
 export function Step(props: StepProps): ReactNode {
-  const { db } = useSmithers()
-  const ralph = useContext(RalphContext)
+  const { db, registerTask, completeTask } = useSmithers()
   const [, setStepId] = useState<string | null>(null)
   const [, setStatus] = useState<'pending' | 'running' | 'completed' | 'failed'>('pending')
   const stepIdRef = useRef<string | null>(null)
@@ -70,7 +68,7 @@ export function Step(props: StepProps): ReactNode {
 
   useMount(() => {
     ;(async () => {
-      ralph?.registerTask()
+      registerTask()
 
       try {
         // Snapshot before if requested
@@ -101,7 +99,7 @@ export function Step(props: StepProps): ReactNode {
           db.steps.fail(stepIdRef.current)
         }
 
-        ralph?.completeTask()
+        completeTask()
       }
     })()
   })
@@ -160,7 +158,7 @@ export function Step(props: StepProps): ReactNode {
         db.steps.fail(id)
         setStatus('failed')
       } finally {
-        ralph?.completeTask()
+        completeTask()
       }
     })()
   })

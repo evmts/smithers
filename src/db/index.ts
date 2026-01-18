@@ -14,6 +14,7 @@ import { createExecutionModule, type ExecutionModule } from './execution.js'
 import { createPhasesModule, type PhasesModule } from './phases.js'
 import { createAgentsModule, type AgentsModule } from './agents.js'
 import { createStepsModule, type StepsModule } from './steps.js'
+import { createTasksModule, type TasksModule } from './tasks.js'
 import { createToolsModule, type ToolsModule } from './tools.js'
 import { createArtifactsModule, type ArtifactsModule } from './artifacts.js'
 import { createVcsModule, type VcsModule } from './vcs.js'
@@ -54,6 +55,11 @@ export interface SmithersDB {
    * Step tracking
    */
   steps: StepsModule
+
+  /**
+   * Task tracking (for Ralph iteration management)
+   */
+  tasks: TasksModule
 
   /**
    * Tool call tracking
@@ -112,7 +118,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
 
   // Reset if requested
   if (options.reset) {
-    const tables = ['steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
+    const tables = ['tasks', 'steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
                     'transitions', 'state', 'tool_calls', 'agents', 'phases', 'executions', 'memories']
     for (const table of tables) {
       try { rdb.exec(`DROP TABLE IF EXISTS ${table}`) } catch {}
@@ -146,6 +152,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   const phases = createPhasesModule({ rdb, getCurrentExecutionId, getCurrentPhaseId, setCurrentPhaseId })
   const agents = createAgentsModule({ rdb, getCurrentExecutionId, getCurrentPhaseId, getCurrentAgentId, setCurrentAgentId })
   const steps = createStepsModule({ rdb, getCurrentExecutionId, getCurrentPhaseId, getCurrentStepId, setCurrentStepId })
+  const tasks = createTasksModule({ rdb, getCurrentExecutionId })
   const tools = createToolsModule({ rdb, getCurrentExecutionId })
   const artifacts = createArtifactsModule({ rdb, getCurrentExecutionId })
   const vcs = createVcsModule({ rdb, getCurrentExecutionId })
@@ -159,6 +166,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     phases,
     agents,
     steps,
+    tasks,
     tools,
     artifacts,
     vcs,
@@ -184,6 +192,7 @@ export type { ExecutionModule } from './execution.js'
 export type { PhasesModule } from './phases.js'
 export type { AgentsModule } from './agents.js'
 export type { StepsModule } from './steps.js'
+export type { TasksModule } from './tasks.js'
 export type { ToolsModule } from './tools.js'
 export type { ArtifactsModule } from './artifacts.js'
 export type { VcsModule } from './vcs.js'

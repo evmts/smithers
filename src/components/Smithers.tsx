@@ -1,12 +1,11 @@
 // Smithers Subagent Component
 // Launches a new Smithers instance to plan and execute a task
 
-import { useState, useContext, useEffect, useRef, type ReactNode } from 'react'
-import { RalphContext } from './Ralph'
+import { useState, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI'
 import type { ClaudeModel } from './agents/types'
-import { useMountedState } from '../reconciler/hooks'
+import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks'
 
 // ============================================================================
 // Types
@@ -118,8 +117,7 @@ export interface SmithersProps {
  * ```
  */
 export function Smithers(props: SmithersProps): ReactNode {
-  const { db, executionId } = useSmithers()
-  const ralph = useContext(RalphContext)
+  const { db, executionId, registerTask, completeTask, ralphCount } = useSmithers()
 
   const [status, setStatus] = useState<'pending' | 'planning' | 'executing' | 'complete' | 'error'>('pending')
   const [result, setResult] = useState<SmithersResult | null>(null)
@@ -128,24 +126,11 @@ export function Smithers(props: SmithersProps): ReactNode {
 
   const isMounted = useMountedState()
 
-  // Track which ralphCount we've already executed for
-  const lastExecutedCount = useRef<number>(-1)
-
-  // Get current ralphCount from Ralph context
-  const ralphCount = ralph?.ralphCount ?? 0
-
-  useEffect(() => {
-    // Skip if we've already executed for this ralphCount
-    if (lastExecutedCount.current === ralphCount) {
-      return
-    }
-
-    // Mark this count as being executed
-    lastExecutedCount.current = ralphCount
-
+  // Execute once per ralphCount change (idempotent, handles React strict mode)
+  useEffectOnValueChange(ralphCount, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      ralph?.registerTask()
+      registerTask()
 
       let currentSubagentId: string | null = null
 
@@ -244,10 +229,10 @@ export function Smithers(props: SmithersProps): ReactNode {
 
         props.onError?.(errorObj)
       } finally {
-        ralph?.completeTask()
+        completeTask()
       }
     })()
-  }, [ralphCount, ralph, db, executionId, props, isMounted])
+  })
 
   // Render custom element for XML serialization
   return (

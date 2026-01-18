@@ -1,62 +1,22 @@
-import { createContext, useState, useEffect, useMemo, type ReactNode } from 'react'
+import { createContext, type ReactNode } from 'react'
 import type { ReactiveDatabase } from '../reactive-sqlite'
-import { useQueryValue } from '../reactive-sqlite'
+import { useSmithers, type RalphContextType } from './SmithersProvider'
+
+// Re-export RalphContextType for backwards compatibility
+export type { RalphContextType } from './SmithersProvider'
 
 /**
- * Ralph context for task tracking.
- * Components like Claude register with Ralph when they mount.
+ * Ralph context - now just provides access to SmithersProvider context values.
+ * Kept for backwards compatibility with components using useContext(RalphContext).
  */
-export interface RalphContextType {
-  registerTask: () => void
-  completeTask: () => void
-  /**
-   * Current ralph iteration count - components can use this to restart execution
-   */
-  ralphCount: number
-  /**
-   * Database instance for reactive queries
-   */
-  db: ReactiveDatabase | null
-}
-
 export const RalphContext = createContext<RalphContextType | undefined>(undefined)
 
-// Global completion tracking for the root to await
-let _orchestrationResolve: (() => void) | null = null
-let _orchestrationReject: ((err: Error) => void) | null = null
-
-/**
- * Create a promise that resolves when orchestration completes.
- * Called by createSmithersRoot before mounting.
- */
-export function createOrchestrationPromise(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    _orchestrationResolve = resolve
-    _orchestrationReject = reject
-  })
-}
-
-/**
- * Signal that orchestration is complete (called internally by Ralph)
- */
-export function signalOrchestrationComplete(): void {
-  if (_orchestrationResolve) {
-    _orchestrationResolve()
-    _orchestrationResolve = null
-    _orchestrationReject = null
-  }
-}
-
-/**
- * Signal that orchestration failed (called internally by Ralph)
- */
-export function signalOrchestrationError(err: Error): void {
-  if (_orchestrationReject) {
-    _orchestrationReject(err)
-    _orchestrationResolve = null
-    _orchestrationReject = null
-  }
-}
+// Re-export orchestration signals from SmithersProvider
+export {
+  createOrchestrationPromise,
+  signalOrchestrationComplete,
+  signalOrchestrationError,
+} from './SmithersProvider'
 
 export interface RalphProps {
   maxIterations?: number
@@ -64,146 +24,50 @@ export interface RalphProps {
   onComplete?: () => void
   children?: ReactNode
   /**
-   * Database instance for storing ralphCount reactively
-   * When provided, ralphCount is stored in DB and components can subscribe to changes
+   * @deprecated Database is now provided via SmithersProvider
    */
   db?: ReactiveDatabase
 }
 
 /**
- * Ralph component - manages the iteration loop.
+ * Ralph component - Thin wrapper for backwards compatibility
  *
- * The Ralph Wiggum loop:
- * 1. Render children (which may contain Claude components)
- * 2. Claude components execute when ralphCount changes
- * 3. When tasks complete, increment ralphCount in database
- * 4. Components react to ralphCount change and restart explicitly (no remount)
- * 5. Repeat until no more tasks or maxIterations reached
+ * The Ralph loop is now managed by SmithersProvider directly.
+ * This component exists for:
+ * 1. Backwards compatibility with existing code using <Ralph>
+ * 2. Providing RalphContext for components using useContext(RalphContext)
+ * 3. Rendering the <ralph> custom element for XML serialization
  *
- * This avoids the key remounting hack by storing ralphCount in SQLite
- * and letting components subscribe to changes reactively.
+ * New code should use SmithersProvider directly without Ralph:
+ * ```tsx
+ * <SmithersProvider db={db} executionId={id} maxIterations={10}>
+ *   <Orchestration>
+ *     <Claude>...</Claude>
+ *   </Orchestration>
+ * </SmithersProvider>
+ * ```
  */
 export function Ralph(props: RalphProps): ReactNode {
-  const [pendingTasks, setPendingTasks] = useState(0)
-  const [hasStartedTasks, setHasStartedTasks] = useState(false)
+  // Get context from SmithersProvider
+  const smithers = useSmithers()
 
-  const maxIterations = props.maxIterations || 100
-  const db = props.db ?? null
+  // Build RalphContext value from SmithersProvider
+  const contextValue: RalphContextType = {
+    registerTask: smithers.registerTask,
+    completeTask: smithers.completeTask,
+    ralphCount: smithers.ralphCount,
+    db: smithers.reactiveDb,
+  }
 
-  // Read ralphCount from database reactively, or use local state as fallback
-  const { data: dbRalphCount } = db
-    ? useQueryValue<number>(db, "SELECT CAST(value AS INTEGER) as count FROM state WHERE key = 'ralphCount'")
-    : { data: null }
-
-  // Local state fallback when no DB provided
-  const [localRalphCount, setLocalRalphCount] = useState(0)
-
-  // Use DB value if available, otherwise local state
-  const ralphCount = dbRalphCount ?? localRalphCount
-
-  // Initialize ralphCount in DB if needed
-  useEffect(() => {
-    if (db && dbRalphCount === null) {
-      db.run(
-        "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
-      )
-    }
-  }, [db, dbRalphCount])
-
-  console.log('[Ralph] Component created, maxIterations:', maxIterations, 'ralphCount:', ralphCount)
-
-  // Increment ralphCount - either in DB or local state
-  const incrementRalphCount = useMemo(() => () => {
-    const nextCount = ralphCount + 1
-    if (db) {
-      db.run(
-        "UPDATE state SET value = ?, updated_at = datetime('now') WHERE key = 'ralphCount'",
-        [String(nextCount)]
-      )
-    } else {
-      setLocalRalphCount(nextCount)
-    }
-    return nextCount
-  }, [db, ralphCount])
-
-  const contextValue: RalphContextType = useMemo(() => ({
-    registerTask: () => {
-      console.log('[Ralph] registerTask called')
-      setHasStartedTasks(true)
-      setPendingTasks((p: number) => p + 1)
-    },
-    completeTask: () => {
-      console.log('[Ralph] completeTask called')
-      setPendingTasks((p: number) => p - 1)
-    },
-    ralphCount,
-    db,
-  }), [ralphCount, db])
-
-  useEffect(() => {
-    console.log('[Ralph] useEffect fired! ralphCount:', ralphCount)
-    // Monitor pending tasks and trigger next iteration when all complete
-    let checkInterval: NodeJS.Timeout | null = null
-    let stableCount = 0 // Count consecutive stable checks (no tasks running)
-
-    checkInterval = setInterval(() => {
-      // If tasks are running, reset stable counter
-      if (pendingTasks > 0) {
-        stableCount = 0
-        return
-      }
-
-      // If no tasks have ever started and we've waited a bit, complete
-      if (!hasStartedTasks) {
-        stableCount++
-        // Wait 500ms (50 checks) before declaring no work to do
-        if (stableCount > 50) {
-          if (checkInterval) clearInterval(checkInterval)
-          signalOrchestrationComplete()
-          props.onComplete?.()
-        }
-        return
-      }
-
-      // Tasks have completed - check if we should continue or finish
-      stableCount++
-
-      // Wait at least 100ms (10 checks) for any new tasks to register
-      if (stableCount < 10) {
-        return
-      }
-
-      // All tasks complete
-      if (ralphCount >= maxIterations - 1) {
-        // Max iterations reached
-        if (checkInterval) clearInterval(checkInterval)
-        signalOrchestrationComplete()
-        props.onComplete?.()
-        return
-      }
-
-      // Trigger next iteration by incrementing ralphCount
-      const nextIteration = incrementRalphCount()
-      setHasStartedTasks(false) // Reset for next iteration
-      stableCount = 0
-
-      if (props.onIteration) {
-        props.onIteration(nextIteration)
-      }
-    }, 10) // Check every 10ms
-
-    // Cleanup on unmount
-    return () => {
-      if (checkInterval) clearInterval(checkInterval)
-    }
-  }, [pendingTasks, hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount])
+  // Note: maxIterations, onIteration, onComplete from props are ignored here
+  // since they should be passed to SmithersProvider instead.
+  // This component is primarily for backwards compatibility.
 
   return (
     <RalphContext.Provider value={contextValue}>
       <ralph
-        iteration={ralphCount}
-        pending={pendingTasks}
-        maxIterations={maxIterations}
+        iteration={smithers.ralphCount}
+        maxIterations={props.maxIterations ?? smithers.config.maxIterations ?? 100}
       >
         {props.children}
       </ralph>

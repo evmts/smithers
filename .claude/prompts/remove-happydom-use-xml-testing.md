@@ -1,18 +1,46 @@
-# Task: Remove happy-dom and Migrate to XML-based Testing
+# Remove happy-dom and Migrate to XML-based Testing
+
+<metadata>
+  <created>2026-01-18</created>
+  <category>testing-migration</category>
+  <priority>high</priority>
+</metadata>
 
 ## Objective
 
-Remove the `happy-dom` and `@happy-dom/global-registrator` dependencies from this project and migrate any tests that were using DOM-based testing to use the project's native XML serialization approach. Smithers uses a custom React reconciler that renders to `SmithersNode` trees, not DOM elements, so DOM testing libraries are fundamentally incompatible with this architecture.
+<objective>
+Remove `happy-dom` and `@happy-dom/global-registrator` dependencies from this project
+and migrate any tests that were using DOM-based testing to use the project's native
+SmithersNode/XML serialization approach. Smithers uses a custom React reconciler that
+renders to SmithersNode trees, not DOM elements, so DOM testing libraries are
+fundamentally incompatible with this architecture.
+</objective>
 
-## Background Context
+---
 
-### Project Architecture
+## Architecture Overview
 
-Smithers is a React-based orchestration framework that uses a **custom React reconciler** instead of react-dom. Key facts:
+<architecture>
 
-1. **Custom JSX Runtime**: `tsconfig.json` specifies `"jsxImportSource": "smithers-orchestrator"`, meaning JSX transforms to `SmithersNode` objects, not React DOM elements.
+### Custom JSX Runtime
 
-2. **SmithersNode Structure** (from `src/reconciler/types.ts`):
+The `tsconfig.json` specifies `"jsxImportSource": "smithers-orchestrator"`, meaning JSX
+transforms to `SmithersNode` objects, **NOT** React DOM elements.
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "smithers-orchestrator"
+  }
+}
+```
+
+**JSX Runtime Location:** `src/reconciler/jsx-runtime.ts`
+
+### SmithersNode Structure
+
+<type-definition file="src/reconciler/types.ts">
 ```typescript
 interface SmithersNode {
   type: string                    // 'claude', 'phase', 'step', 'TEXT', etc.
@@ -20,27 +48,54 @@ interface SmithersNode {
   children: SmithersNode[]        // Child nodes
   parent: SmithersNode | null     // Parent reference
   key?: string | number           // Reconciliation key
+  warnings?: string[]             // Validation warnings
 }
 ```
+</type-definition>
 
-3. **XML Serialization**: The `serialize()` function in `src/reconciler/serialize.ts` converts SmithersNode trees to readable XML strings for display/testing.
+### XML Serializer
 
-4. **SmithersRoot**: The `createSmithersRoot()` function in `src/reconciler/root.ts` provides:
-   - `mount(App)` - Renders a React component to SmithersNode tree
-   - `getTree()` - Returns the raw SmithersNode tree
-   - `toXML()` - Returns XML string representation
-   - `dispose()` - Cleanup
+The `serialize()` function converts SmithersNode trees to readable XML strings.
+**Use this for test assertions instead of DOM queries.**
 
-### Why DOM Testing Doesn't Work
+<function file="src/reconciler/serialize.ts">
+```typescript
+export function serialize(node: SmithersNode): string
+// Examples:
+// { type: 'task', props: { name: 'test' }, children: [] } → '<task name="test" />'
+// { type: 'ROOT', children: [...] } → children joined with \n (no <ROOT> wrapper)
+```
+</function>
 
-When you write JSX in this project:
+### SmithersRoot
+
+<api file="src/reconciler/root.ts">
+| Method | Description |
+|--------|-------------|
+| `mount(App)` | Renders React component to SmithersNode tree |
+| `getTree()` | Returns raw SmithersNode tree |
+| `toXML()` | Returns XML string representation |
+| `dispose()` | Cleanup |
+</api>
+
+</architecture>
+
+---
+
+## Why DOM Testing Fails
+
+<problem>
+
+When JSX is written in this project:
+
 ```tsx
 <DatabaseProvider db={db}>
   <UserList />
 </DatabaseProvider>
 ```
 
-It transforms to SmithersNode objects like:
+It transforms to SmithersNode objects:
+
 ```typescript
 {
   type: 'DatabaseProvider',
@@ -49,40 +104,103 @@ It transforms to SmithersNode objects like:
 }
 ```
 
-Libraries like `@testing-library/react` expect `react-dom` to render to actual DOM elements, but our reconciler never creates DOM nodes. This causes:
-- "document is not defined" errors
-- "Invalid hook call" errors (hooks try to use react-dom's dispatcher)
+Libraries like `@testing-library/react` expect `react-dom` to render actual DOM nodes,
+but our reconciler **never creates DOM**.
+
+<errors>
+- `"document is not defined"` - No DOM globals exist
+- `"Invalid hook call"` - Hooks try to use react-dom's dispatcher
 - Type mismatches between SmithersNode and ReactElement
+</errors>
 
-## Files to Modify
+</problem>
 
-### 1. Remove Dependencies
+---
 
-**`package.json`**: Remove these dev dependencies:
-- `happy-dom`
-- `@happy-dom/global-registrator`
-- `@testing-library/react` (if present and unused elsewhere)
+## Current State
 
-### 2. Update Test Preload
+<current-state>
 
-**`test/preload.ts`**: Remove the happy-dom setup:
-```typescript
-// REMOVE THESE LINES:
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
-GlobalRegistrator.register()
+### Test Configuration
+
+**Test command** (from `package.json`):
+```bash
+"test": "cd src && bun test ."
 ```
 
-The preload should only contain:
+**Preload file** (`test/preload.ts`) - currently has happy-dom:
 ```typescript
+import { GlobalRegistrator } from '@happy-dom/global-registrator'
+GlobalRegistrator.register()  // ← REMOVE THIS
+
 process.env.SMITHERS_MOCK_MODE = 'true'
 process.env.NODE_ENV = 'test'
 ```
 
-### 3. Migrate Context Tests
+### Dependencies to Remove
 
-**`src/reactive-sqlite/hooks/context.test.tsx`**: This file currently has skipped tests. Migrate to XML-based testing pattern.
+From `package.json` devDependencies:
+- `happy-dom`
+- `@happy-dom/global-registrator`
+- `@testing-library/react` (if unused after migration)
+- `@testing-library/dom` (if unused after migration)
 
-#### Current Pattern (broken):
+### Files Requiring Migration
+
+<file-list>
+| File | Status | Notes |
+|------|--------|-------|
+| `src/reactive-sqlite/hooks/context.test.tsx` | Has skipped tests | Uses @testing-library/react |
+| `src/components/Ralph.test.tsx` | Has skipped tests | JSX import issues |
+| `test/preload.ts` | Needs cleanup | Remove happy-dom setup |
+</file-list>
+
+</current-state>
+
+---
+
+## Migration Tasks
+
+<tasks>
+
+### Task 1: Remove Dependencies
+
+```bash
+bun remove happy-dom @happy-dom/global-registrator @testing-library/react @testing-library/dom
+```
+
+### Task 2: Update Test Preload
+
+**File:** `test/preload.ts`
+
+<before>
+```typescript
+import { GlobalRegistrator } from '@happy-dom/global-registrator'
+GlobalRegistrator.register()
+
+process.env.SMITHERS_MOCK_MODE = 'true'
+process.env.NODE_ENV = 'test'
+```
+</before>
+
+<after>
+```typescript
+/**
+ * Test preload file for Smithers tests.
+ * No DOM required - we use SmithersNode/XML serialization.
+ */
+process.env.SMITHERS_MOCK_MODE = 'true'
+process.env.NODE_ENV = 'test'
+```
+</after>
+
+### Task 3: Migrate Context Tests
+
+**File:** `src/reactive-sqlite/hooks/context.test.tsx`
+
+<migration-example>
+
+**Before (broken):**
 ```tsx
 import { render, screen } from '@testing-library/react'
 
@@ -96,7 +214,7 @@ test('renders children', () => {
 })
 ```
 
-#### New Pattern (works in Bun):
+**After (works in Bun):**
 ```tsx
 import { jsx } from '../../reconciler/jsx-runtime'
 import { serialize } from '../../reconciler/serialize'
@@ -115,24 +233,34 @@ test('renders children', () => {
 })
 ```
 
-#### Alternative: Test SmithersNode Structure Directly
+**Alternative - Test Node Structure:**
 ```tsx
 test('DatabaseProvider wraps children correctly', () => {
   const child = jsx('user-list', {})
   const tree = jsx(DatabaseProvider, { db, children: child })
 
-  // Assert on node structure
-  expect(tree.type).toBe('DatabaseProvider') // or function name
+  // Assert on node structure directly
+  expect(tree.type).toBe('DatabaseProvider')
   expect(tree.props.db).toBe(db)
   expect(tree.children).toHaveLength(1)
   expect(tree.children[0].type).toBe('user-list')
 })
 ```
 
+</migration-example>
+
+</tasks>
+
+---
+
 ## Testing Patterns Reference
 
+<patterns>
+
 ### Pattern 1: Direct JSX Function Calls
+
 From `src/jsx-runtime.test.ts`:
+
 ```typescript
 import { jsx, jsxs, Fragment } from './reconciler/jsx-runtime'
 
@@ -150,17 +278,28 @@ test('handles nested children', () => {
 
   expect(parent.children).toHaveLength(1)
   expect(parent.children[0].type).toBe('step')
-  expect(parent.children[0].parent).toBe(parent)
+  expect(parent.children[0].parent).toBe(parent) // Parent refs work!
+})
+
+test('filters null/undefined/boolean children', () => {
+  const validChild = jsx('step', { children: 'Valid' })
+  const element = jsx('phase', {
+    children: [null, validChild, undefined, false, true]
+  })
+
+  expect(element.children).toHaveLength(1) // Only validChild
 })
 ```
 
 ### Pattern 2: XML Serialization Assertions
+
 From `src/reconciler/serialize.test.ts`:
+
 ```typescript
 import { serialize } from './serialize'
 import type { SmithersNode } from './types'
 
-test('serializes node to XML', () => {
+test('serializes self-closing tag', () => {
   const node: SmithersNode = {
     type: 'task',
     props: { name: 'test' },
@@ -171,29 +310,59 @@ test('serializes node to XML', () => {
   expect(serialize(node)).toBe('<task name="test" />')
 })
 
-test('handles nested structure', () => {
-  const xml = serialize(parentNode)
+test('serializes with children', () => {
+  const child: SmithersNode = {
+    type: 'step',
+    props: {},
+    children: [],
+    parent: null
+  }
+  const parent: SmithersNode = {
+    type: 'phase',
+    props: { name: 'setup' },
+    children: [child],
+    parent: null
+  }
+  child.parent = parent
+
+  const xml = serialize(parent)
   expect(xml).toContain('<phase name="setup">')
-  expect(xml).toContain('<step>')
+  expect(xml).toContain('<step />')
+  expect(xml).toContain('</phase>')
+})
+
+test('escapes XML entities', () => {
+  const node: SmithersNode = {
+    type: 'task',
+    props: { query: 'a < b && c > d' },
+    children: [],
+    parent: null
+  }
+
+  expect(serialize(node)).toContain('&lt;')
+  expect(serialize(node)).toContain('&amp;')
+  expect(serialize(node)).toContain('&gt;')
 })
 ```
 
 ### Pattern 3: Function Component Testing
+
 ```typescript
 test('function component renders correctly', () => {
   function MyComponent({ name }: { name: string }) {
     return jsx('task', { name, children: 'content' })
   }
 
+  // Function components are called during jsx()
   const element = jsx(MyComponent, { name: 'test-task' })
 
-  // Function components are called during jsx()
   expect(element.type).toBe('task')
   expect(element.props.name).toBe('test-task')
 })
 ```
 
 ### Pattern 4: Testing Exports Without Rendering
+
 ```typescript
 describe('module exports', () => {
   test('exports expected functions', async () => {
@@ -210,27 +379,54 @@ describe('module exports', () => {
 })
 ```
 
-## Key Constraints
+</patterns>
 
-1. **No DOM globals needed**: Tests run in plain Bun - no `document`, `window`, or DOM APIs
-2. **Use bun:test**: All tests use `import { describe, test, expect } from 'bun:test'`
-3. **JSX in tests**: Can use JSX syntax OR call `jsx()` function directly - both work
-4. **Avoid React.createElement**: Use the project's `jsx()` function for consistency
-5. **No @testing-library**: These require react-dom which we don't use
+---
 
-## Verification Steps
+## Constraints
 
-After making changes:
+<constraints>
+- **No DOM globals needed** - Tests run in plain Bun environment
+- **Use bun:test** - `import { describe, test, expect } from 'bun:test'`
+- **JSX works both ways** - Can use JSX syntax OR call `jsx()` function directly
+- **Avoid React.createElement** - Use project's `jsx()` for consistency
+- **No @testing-library** - These require react-dom which we don't use
+</constraints>
 
-1. **Remove packages**: `bun remove happy-dom @happy-dom/global-registrator`
-2. **Run tests**: `bun test` should pass without DOM errors
-3. **Run full check**: `bun run check` (typecheck + lint + test)
-4. **Verify no DOM references**: `grep -r "document\." src/` should find nothing in test files
+---
+
+## Verification Checklist
+
+<verification>
+
+```bash
+# 1. Remove packages
+bun remove happy-dom @happy-dom/global-registrator
+
+# 2. Run tests - should pass without DOM errors
+bun run test
+
+# 3. Run full check
+bun run check  # typecheck + lint + test
+
+# 4. Verify no DOM references in test files
+grep -r "document\." src/**/*.test.* || echo "No DOM references found ✓"
+
+# 5. Verify no testing-library imports
+grep -r "@testing-library" src/ || echo "No testing-library imports ✓"
+```
+
+</verification>
+
+---
 
 ## Expected Outcome
 
-- Zero DOM-related dependencies
-- All tests pass in plain Bun environment
-- Tests use SmithersNode/XML patterns instead of DOM queries
-- No skipped tests (convert or remove them)
-- `test/preload.ts` contains only env setup, no DOM polyfills
+<outcome>
+- [ ] Zero DOM-related dependencies
+- [ ] All tests pass in plain Bun environment
+- [ ] Tests use SmithersNode/XML patterns instead of DOM queries
+- [ ] No skipped tests (convert or remove them)
+- [ ] `test/preload.ts` contains only env setup, no DOM polyfills
+- [ ] Pre-commit hook passes: `bun run check`
+</outcome>

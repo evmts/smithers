@@ -1,5 +1,4 @@
-import { useState, useContext, type ReactNode } from 'react'
-import { RalphContext } from '../Ralph'
+import { useState, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs'
 import { useMount, useMountedState } from '../../reconciler/hooks'
@@ -58,8 +57,8 @@ ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : 
  * React pattern: Uses useEffect with empty deps and async IIFE inside
  */
 export function Commit(props: CommitProps): ReactNode {
-  const ralph = useContext(RalphContext)
   const smithers = useSmithers()
+  const { registerTask, completeTask } = smithers
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [result, setResult] = useState<CommitResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -69,7 +68,7 @@ export function Commit(props: CommitProps): ReactNode {
   useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      ralph?.registerTask()
+      registerTask()
 
       try {
         setStatus('running')
@@ -158,7 +157,7 @@ export function Commit(props: CommitProps): ReactNode {
           props.onError?.(errorObj)
         }
       } finally {
-        ralph?.completeTask()
+        completeTask()
       }
     })()
   })

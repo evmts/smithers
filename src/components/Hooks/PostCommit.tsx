@@ -1,9 +1,8 @@
 // PostCommit hook component - triggers children when a git commit is made
 // Installs a git post-commit hook and polls db.state for triggers
 
-import { useState, useContext, useRef, type ReactNode } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
-import { RalphContext } from '../Ralph'
 import { useMount, useUnmount } from '../../reconciler/hooks'
 
 export interface PostCommitProps {
@@ -70,7 +69,7 @@ async function hasSmithersMetadata(commitHash: string): Promise<boolean> {
  */
 export function PostCommit(props: PostCommitProps): ReactNode {
   const smithers = useSmithers()
-  const ralph = useContext(RalphContext)
+  const { registerTask, completeTask } = smithers
 
   const [triggered, setTriggered] = useState(false)
   const [currentTrigger, setCurrentTrigger] = useState<HookTrigger | null>(null)
@@ -111,12 +110,12 @@ export function PostCommit(props: PostCommitProps): ReactNode {
                   processed: true,
                 }, 'post-commit-hook')
 
-                // If running in background (async), register task with Ralph
-                if (props.async && ralph) {
-                  ralph.registerTask()
+                // If running in background (async), register task
+                if (props.async) {
+                  registerTask()
                   // Task will be completed when children finish
                   // For now, we complete immediately as children handle their own task registration
-                  ralph.completeTask()
+                  completeTask()
                 }
               }
             }

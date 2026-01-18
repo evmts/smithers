@@ -1,13 +1,12 @@
 // Enhanced Claude component for Smithers orchestrator
 // Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
 
-import { useState, useContext, useEffect, useRef, type ReactNode } from 'react'
-import { RalphContext } from './Ralph'
+import { useState, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config'
 import type { ClaudeProps, AgentResult } from './agents/types'
-import { useMountedState } from '../reconciler/hooks'
+import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks'
 import { LogWriter } from '../monitor/log-writer'
 import { uuid } from '../db/utils'
 
@@ -40,8 +39,7 @@ import { uuid } from '../db/utils'
  * ```
  */
 export function Claude(props: ClaudeProps): ReactNode {
-  const { db, executionId, isStopRequested } = useSmithers()
-  const ralph = useContext(RalphContext)
+  const { db, executionId, isStopRequested, registerTask, completeTask, ralphCount } = useSmithers()
 
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [result, setResult] = useState<AgentResult | null>(null)
@@ -50,29 +48,16 @@ export function Claude(props: ClaudeProps): ReactNode {
 
   const isMounted = useMountedState()
 
-  // Track which ralphCount we've already executed for
-  const lastExecutedCount = useRef<number>(-1)
-
-  // Get current ralphCount from Ralph context
-  const ralphCount = ralph?.ralphCount ?? 0
-
-  useEffect(() => {
-    // Skip if we've already executed for this ralphCount
-    if (lastExecutedCount.current === ralphCount) {
-      return
-    }
-
-    // Mark this count as being executed
-    lastExecutedCount.current = ralphCount
-
+  // Execute once per ralphCount change (idempotent, handles React strict mode)
+  useEffectOnValueChange(ralphCount, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      // Register with Ralph (if present)
-      ralph?.registerTask()
+      // Register task with SmithersProvider
+      registerTask()
 
       // Check if stop has been requested globally
       if (isStopRequested()) {
-        ralph?.completeTask()
+        completeTask()
         return
       }
 
@@ -250,11 +235,11 @@ export function Claude(props: ClaudeProps): ReactNode {
           props.onError?.(errorObj)
         }
       } finally {
-        // Always complete task with Ralph
-        ralph?.completeTask()
+        // Always complete task
+        completeTask()
       }
     })()
-  }, [ralphCount, ralph, db, executionId, isStopRequested, props, isMounted])
+  })
 
   // Render custom element for XML serialization
   return (
