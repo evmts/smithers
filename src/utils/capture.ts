@@ -35,28 +35,29 @@ export interface GeneratedCapture {
 // Pattern Matching Constants
 // ============================================================================
 
+// Note: Do NOT use /g flag with patterns used in .test() to avoid lastIndex issues
 const PATTERNS = {
   review: {
-    commitHash: /\b[0-9a-f]{7,40}\b/gi,
+    commitHash: /\b[0-9a-f]{7,40}\b/i,
     fileRefs: /[\w/.-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|rb|c|cpp|h):\d+/g,
-    negativeWords: /\b(broken|bug|issue|fix|error|problem|wrong|fail|incorrect)\b/gi,
-    reviewWords: /\b(review|commit|change|diff|patch)\b/gi,
+    negativeWords: /\b(broken|bug|issue|error|problem|wrong|fail|incorrect)\b/i,
+    reviewWords: /\b(review|commit|change|diff|patch)\b/i,
   },
   issue: {
-    futureVerbs: /\b(add|implement|support|create|build|design|develop)\b/gi,
-    modalVerbs: /\b(should|could|would|will|need to|want to)\b/gi,
-    featureWords: /\b(feature|enhancement|improvement|capability|functionality)\b/gi,
-    designWords: /\b(architecture|design|plan|proposal|approach)\b/gi,
+    futureVerbs: /\b(add|implement|support|create|build|design|develop)\b/i,
+    modalVerbs: /\b(should|could|would|will|need to|want to)\b/i,
+    featureWords: /\b(feature|enhancement|improvement|capability|functionality)\b/i,
+    designWords: /\b(architecture|design|plan|proposal|approach)\b/i,
   },
   todo: {
     checkbox: /^-?\s*\[\s*\]\s/m,
-    urgentWords: /\b(must|need|required|critical|now|immediately|asap|urgent|today)\b/gi,
+    urgentWords: /\b(must|need|required|critical|now|immediately|asap|urgent|today)\b/i,
     imperative: /^(fix|update|add|remove|change|implement|refactor|clean)\s/im,
-    actionWords: /\b(todo|action|task|next step)\b/gi,
+    actionWords: /\b(todo|action|task|next step)\b/i,
   },
   prompt: {
-    explicit: /\b(put|add|save|write)\s+(this|it)\s+(in|to)\s+prompt\.md\b/gi,
-    promptMention: /\bprompt\.md\b/gi,
+    explicit: /\b(put|add|save|write)\s+(this|it)\s+(in|to)\s+prompt\.md\b/i,
+    promptMention: /\bprompt\.md\b/i,
   },
 } as const
 
@@ -65,7 +66,9 @@ const PATTERNS = {
 // ============================================================================
 
 function countMatches(text: string, pattern: RegExp): number {
-  const matches = text.match(pattern)
+  // Create global version for counting
+  const globalPattern = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g')
+  const matches = text.match(globalPattern)
   return matches?.length ?? 0
 }
 
