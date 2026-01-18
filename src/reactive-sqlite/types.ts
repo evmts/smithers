@@ -8,11 +8,25 @@
 export type SubscriptionCallback = () => void
 
 /**
+ * Row filter for fine-grained invalidation
+ */
+export interface RowFilter {
+  /** Table name */
+  table: string
+  /** Column used for filtering (e.g., 'id') */
+  column: string
+  /** Value to match */
+  value: string | number
+}
+
+/**
  * Query subscription info
  */
 export interface QuerySubscription {
   id: string
   tables: Set<string>
+  /** Optional row-level filters for fine-grained invalidation */
+  rowFilters?: RowFilter[]
   callback: SubscriptionCallback
 }
 

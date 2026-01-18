@@ -114,3 +114,148 @@ export function extractAllTables(sql: string): { read: string[]; write: string[]
     write: extractWriteTables(sql),
   }
 }
+
+/**
+ * Row filter result for fine-grained invalidation
+ */
+export interface RowFilter {
+  table: string
+  column: string
+  value: string | number
+}
+
+/**
+ * Extract row filter from simple WHERE clauses
+ *
+ * Only extracts filters from simple equality conditions like:
+ * - WHERE id = ?
+ * - WHERE id = 123
+ * - WHERE user_id = ? AND ...
+ *
+ * Returns null for complex conditions (OR, IN, LIKE, subqueries, etc.)
+ */
+export function extractRowFilter(sql: string, params: unknown[] = []): RowFilter | null {
+  const normalized = sql
+    .replace(/--.*$/gm, '') // Remove single-line comments
+    .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim()
+
+  // Don't process INSERT statements (no row filter possible)
+  if (/^\s*insert/i.test(normalized)) {
+    return null
+  }
+
+  // Check for OR conditions - these are too complex for simple row filtering
+  if (/\bwhere\b.*\bor\b/i.test(normalized)) {
+    return null
+  }
+
+  // Check for subqueries
+  if (/\bwhere\b.*\b(in|exists)\s*\(/i.test(normalized)) {
+    return null
+  }
+
+  // Check for LIKE conditions
+  if (/\bwhere\b.*\blike\b/i.test(normalized)) {
+    return null
+  }
+
+  // Check for range/comparison operators (>, <, >=, <=, <>)
+  if (/\bwhere\b[^=]*[<>]/i.test(normalized)) {
+    return null
+  }
+
+  // Extract table name from UPDATE, DELETE, or SELECT
+  let table: string | null = null
+
+  // UPDATE table SET ... WHERE
+  const updateMatch = normalized.match(/\bupdate\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
+  if (updateMatch) {
+    table = (updateMatch[1] || updateMatch[2]).toLowerCase()
+  }
+
+  // DELETE FROM table WHERE
+  const deleteMatch = normalized.match(/\bdelete\s+from\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
+  if (deleteMatch) {
+    table = (deleteMatch[1] || deleteMatch[2]).toLowerCase()
+  }
+
+  // SELECT ... FROM table WHERE
+  const selectMatch = normalized.match(/\bfrom\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
+  if (selectMatch && !table) {
+    table = (selectMatch[1] || selectMatch[2]).toLowerCase()
+  }
+
+  if (!table) {
+    return null
+  }
+
+  // Extract WHERE clause
+  const whereMatch = normalized.match(/\bwhere\s+(.+?)(?:\s+(?:order|group|limit|having)\b|$)/i)
+  if (!whereMatch) {
+    return null
+  }
+
+  const whereClause = whereMatch[1]
+
+  // For AND conditions, take the first simple equality condition
+  // Split by AND and take the first condition
+  const conditions = whereClause.split(/\band\b/i)
+  const firstCondition = conditions[0].trim()
+
+  // Match simple equality: column = ? or column = value
+  // Handle quoted identifiers
+  const equalityMatch = firstCondition.match(
+    /^(?:"([^"]+)"|([a-z_][a-z0-9_]*))\s*=\s*(.+)$/i
+  )
+
+  if (!equalityMatch) {
+    return null
+  }
+
+  const column = (equalityMatch[1] || equalityMatch[2]).toLowerCase()
+  const valueExpr = equalityMatch[3].trim()
+
+  // Determine the value
+  let value: string | number
+
+  if (valueExpr === '?') {
+    // Parameterized query - need to figure out which param
+    // Count ? before the WHERE clause to find the right param index
+    const beforeWhere = normalized.substring(0, normalized.toLowerCase().indexOf('where'))
+    const paramsBefore = (beforeWhere.match(/\?/g) || []).length
+
+    // For AND conditions, count ? in conditions before this one
+    // (but for the first condition, it's just paramsBefore)
+    const paramIndex = paramsBefore
+
+    if (paramIndex >= params.length) {
+      return null
+    }
+
+    value = params[paramIndex] as string | number
+  } else {
+    // Literal value - parse it
+    // Try numeric
+    const numMatch = valueExpr.match(/^(\d+)$/)
+    if (numMatch) {
+      value = parseInt(numMatch[1], 10)
+    } else {
+      // Try quoted string
+      const strMatch = valueExpr.match(/^['"](.+)['"]$/)
+      if (strMatch) {
+        value = strMatch[1]
+      } else {
+        // Unquoted string or other literal
+        value = valueExpr
+      }
+    }
+  }
+
+  return {
+    table,
+    column,
+    value
+  }
+}

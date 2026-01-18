@@ -9,11 +9,13 @@ import {
   extractReadTables,
   extractWriteTables,
   isWriteOperation,
+  extractRowFilter,
 } from "./parser";
 import type {
   QuerySubscription,
   SubscriptionCallback,
   ReactiveDatabaseConfig,
+  RowFilter,
 } from "./types";
 
 /**
@@ -82,7 +84,7 @@ export class ReactiveDatabase {
 
   /**
    * Run a write operation (INSERT, UPDATE, DELETE)
-   * Auto-invalidates affected queries
+   * Auto-invalidates affected queries with row-level granularity when possible
    */
   run(
     sql: string,
@@ -94,7 +96,16 @@ export class ReactiveDatabase {
     // Auto-invalidate affected tables
     const tables = extractWriteTables(sql);
     if (tables.length > 0) {
-      this.invalidate(tables);
+      // Try to extract row filter for fine-grained invalidation
+      const rowFilter = extractRowFilter(sql, params);
+
+      if (rowFilter) {
+        // Row-level invalidation - only notify subscriptions for this specific row
+        this.invalidateWithRowFilter(tables, rowFilter);
+      } else {
+        // Fall back to table-level invalidation
+        this.invalidate(tables);
+      }
     }
 
     return result as any;
@@ -155,6 +166,110 @@ export class ReactiveDatabase {
   subscribeQuery(sql: string, callback: SubscriptionCallback): () => void {
     const tables = extractReadTables(sql);
     return this.subscribe(tables, callback);
+  }
+
+  /**
+   * Subscribe to a query with row-level filtering
+   * Only triggers when the specific row is modified
+   */
+  subscribeWithRowFilter(
+    sql: string,
+    params: unknown[],
+    callback: SubscriptionCallback
+  ): () => void {
+    const id = String(this.nextSubscriptionId++);
+    const tables = extractReadTables(sql);
+    const rowFilter = extractRowFilter(sql, params);
+
+    const subscription: QuerySubscription = {
+      id,
+      tables: new Set(tables.map((t) => t.toLowerCase())),
+      rowFilters: rowFilter ? [rowFilter] : undefined,
+      callback,
+    };
+
+    this.subscriptions.set(id, subscription);
+
+    return () => {
+      this.subscriptions.delete(id);
+    };
+  }
+
+  /**
+   * Invalidate subscriptions for specific rows
+   */
+  invalidateRows(
+    table: string,
+    column: string,
+    values: (string | number)[]
+  ): void {
+    const normalizedTable = table.toLowerCase();
+    const normalizedColumn = column.toLowerCase();
+    const valueSet = new Set(values.map(v => String(v)));
+
+    for (const subscription of this.subscriptions.values()) {
+      // Check if subscription is for this table
+      if (!subscription.tables.has(normalizedTable)) {
+        continue;
+      }
+
+      // If subscription has row filters, check if any match
+      if (subscription.rowFilters && subscription.rowFilters.length > 0) {
+        const matches = subscription.rowFilters.some(
+          (filter) =>
+            filter.table.toLowerCase() === normalizedTable &&
+            filter.column.toLowerCase() === normalizedColumn &&
+            valueSet.has(String(filter.value))
+        );
+
+        if (matches) {
+          subscription.callback();
+        }
+      } else {
+        // No row filters - this is a table-level subscription, trigger it
+        subscription.callback();
+      }
+    }
+  }
+
+  /**
+   * Invalidate with row filter - triggers row-level subscriptions that match
+   * and falls back to table-level for subscriptions without row filters
+   */
+  private invalidateWithRowFilter(tables: string[], rowFilter: RowFilter): void {
+    const normalizedTables = tables.map((t) => t.toLowerCase());
+
+    for (const subscription of this.subscriptions.values()) {
+      // Check if subscription depends on any of the invalidated tables
+      let affectedTable: string | null = null;
+      for (const table of normalizedTables) {
+        if (subscription.tables.has(table)) {
+          affectedTable = table;
+          break;
+        }
+      }
+
+      if (!affectedTable) {
+        continue;
+      }
+
+      // If subscription has row filters, check if this row filter matches
+      if (subscription.rowFilters && subscription.rowFilters.length > 0) {
+        const matches = subscription.rowFilters.some(
+          (filter) =>
+            filter.table.toLowerCase() === rowFilter.table.toLowerCase() &&
+            filter.column.toLowerCase() === rowFilter.column.toLowerCase() &&
+            String(filter.value) === String(rowFilter.value)
+        );
+
+        if (matches) {
+          subscription.callback();
+        }
+      } else {
+        // No row filters - this is a table-level subscription, always trigger
+        subscription.callback();
+      }
+    }
   }
 
   /**
