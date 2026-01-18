@@ -49,8 +49,9 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   const { db, reactiveDb } = useSmithers()
   const stateKey = `stepIndex_${props.phaseId ?? 'default'}`
 
-  // Track registered steps
-  const [steps, setSteps] = useState<string[]>([])
+  // Track registered steps using ref for synchronous updates during render
+  // This avoids race conditions when multiple Step components mount simultaneously
+  const stepsRef = useRef<string[]>([])
 
   // Read current step index from SQLite (for sequential mode)
   const { data: dbStepIndex } = useQueryValue<number>(
@@ -72,26 +73,22 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   })
 
   const registerStep = useCallback((name: string): number => {
-    let index = -1
-    setSteps(prev => {
-      const existingIndex = prev.indexOf(name)
-      if (existingIndex >= 0) {
-        index = existingIndex
-        return prev
-      }
-      index = prev.length
-      return [...prev, name]
-    })
-    return index >= 0 ? index : steps.length
-  }, [steps.length])
+    const existingIndex = stepsRef.current.indexOf(name)
+    if (existingIndex >= 0) {
+      return existingIndex
+    }
+    const index = stepsRef.current.length
+    stepsRef.current.push(name)
+    return index
+  }, []) // No dependencies needed - ref is mutable
 
   const advanceStep = useCallback(() => {
     if (props.isParallel) return
     const nextIndex = currentStepIndex + 1
-    if (nextIndex < steps.length) {
+    if (nextIndex < stepsRef.current.length) {
       db.state.set(stateKey, nextIndex, 'step_advance')
     }
-  }, [db, stateKey, currentStepIndex, steps.length, props.isParallel])
+  }, [db, stateKey, currentStepIndex, props.isParallel])
 
   const isStepActive = useCallback((index: number): boolean => {
     if (props.isParallel) return true // All steps active in parallel mode

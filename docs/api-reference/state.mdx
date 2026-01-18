@@ -123,7 +123,7 @@ await db.state.restore(snapshot, "rollback");
 async function Workflow() {
   // Load persisted state
   const savedPhase = await db.state.get("phase");
-  const [phase, setPhase] = createSignal(savedPhase ?? "start");
+  const [phase, setPhase] = useState(savedPhase ?? "start");
 
   // Sync updates to database
   const updatePhase = async (newPhase: string) => {
@@ -133,7 +133,7 @@ async function Workflow() {
 
   return (
     <Ralph maxIterations={10}>
-      {phase() === "start" && (
+      {phase === "start" && (
         <Claude onFinished={() => updatePhase("done")}>
           Complete the task.
         </Claude>

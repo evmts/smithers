@@ -196,60 +196,68 @@ Steps provide finer-grained organization than phases. Use for:
 
 ## State Management
 
-### Zustand Store
+### Database State (db.state)
 
-Recommended state management for Smithers workflows.
+Smithers uses SQLite for persistent state management, enabling session resumability.
 
 #### Basic Usage
 
 ```tsx
-import { create } from 'zustand'
+import { useState } from 'react'
+import { createSmithersDB } from 'smithers-orchestrator/db'
 
-const useStore = create((set) => ({
-  // State
-  phase: 'start',
-  data: null,
-  count: 0,
+// Initialize database
+const db = await createSmithersDB({ path: '.smithers/db' })
 
-  // Actions
-  setPhase: (phase) => set({ phase }),
-  setData: (data) => set({ data }),
-  increment: () => set((state) => ({ count: state.count + 1 })),
-}))
+// In component - use React state + db.state for persistence
+function Workflow() {
+  const [phase, setPhase] = useState('start')
+  const [data, setData] = useState(null)
+
+  const updatePhase = async (newPhase: string) => {
+    setPhase(newPhase)
+    await db.state.set('phase', newPhase) // Persist to SQLite
+  }
+
+  const updateData = async (newData: unknown) => {
+    setData(newData)
+    await db.state.set('data', newData)
+  }
+
+  // ...
+}
 ```
 
 #### TypeScript
 
 ```tsx
-interface StoreState {
-  phase: string
-  data: unknown | null
-  setPhase: (phase: string) => void
-  setData: (data: unknown) => void
-}
+// State is typed via db.state generic
+const phase = await db.state.get<string>('phase')
+const data = await db.state.get<MyDataType>('data')
 
-const useStore = create<StoreState>((set) => ({
-  phase: 'start',
-  data: null,
-  setPhase: (phase) => set({ phase }),
-  setData: (data) => set({ data }),
-}))
+// Or with default value
+const phase = await db.state.get('phase', 'start')
 ```
 
 #### Usage in Components
 
 ```tsx
 function Workflow() {
-  const { phase, setPhase } = useStore()
+  const [phase, setPhase] = useState('start')
 
   return (
-    <Ralph maxIterations={10}>
-      {phase === 'start' && (
-        <Claude onFinished={() => setPhase('next')}>
-          Start task
-        </Claude>
-      )}
-    </Ralph>
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={10}>
+        {phase === 'start' && (
+          <Claude onFinished={async () => {
+            setPhase('next')
+            await db.state.set('phase', 'next')
+          }}>
+            Start task
+          </Claude>
+        )}
+      </Ralph>
+    </SmithersProvider>
   )
 }
 ```
@@ -258,15 +266,13 @@ function Workflow() {
 
 ```tsx
 // Get current state
-const currentPhase = useStore.getState().phase
+const currentPhase = await db.state.get('phase')
 
 // Update state
-useStore.getState().setPhase('new-phase')
+await db.state.set('phase', 'new-phase')
 
-// Subscribe to changes
-const unsubscribe = useStore.subscribe((state) => {
-  console.log('Phase changed:', state.phase)
-})
+// Get state history
+const history = await db.state.history('phase')
 ```
 
 ---
@@ -278,7 +284,7 @@ const unsubscribe = useStore.subscribe((state) => {
 Used internally by Ralph and Claude components for task tracking.
 
 ```tsx
-import { RalphContext } from 'smithers'
+import { RalphContext } from 'smithers-orchestrator'
 
 interface RalphContextType {
   registerTask: () => void
@@ -291,19 +297,19 @@ interface RalphContextType {
 Typically you don't need to use this directly, but it's available for custom components:
 
 ```tsx
-import { useContext } from 'solid-js'
-import { RalphContext } from 'smithers'
+import { useContext, useEffect } from 'react'
+import { RalphContext } from 'smithers-orchestrator'
 
 function CustomAgent() {
   const ralph = useContext(RalphContext)
 
-  onMount(() => {
+  useEffect(() => {
     ralph?.registerTask()
 
     // Do work...
 
     ralph?.completeTask()
-  })
+  }, [])
 
   return <agent>Custom agent</agent>
 }
@@ -350,7 +356,7 @@ interface ExecutionState {
 Serialize a SmithersNode tree to XML.
 
 ```tsx
-import { serialize } from 'smithers/core'
+import { serialize } from 'smithers-orchestrator/core'
 
 const xml = serialize(node)
 console.log(xml)
@@ -397,26 +403,34 @@ All custom elements support:
 ### Sequential Workflow Pattern
 
 ```tsx
-const useStore = create((set) => ({
-  phase: 'step1',
-  setPhase: (phase) => set({ phase }),
-}))
+import { useState } from 'react'
 
 export default function Workflow() {
-  const { phase, setPhase } = useStore()
+  const [phase, setPhase] = useState('step1')
 
   return (
-    <Ralph maxIterations={5}>
-      {phase === 'step1' && (
-        <Claude onFinished={() => setPhase('step2')}>Task 1</Claude>
-      )}
-      {phase === 'step2' && (
-        <Claude onFinished={() => setPhase('step3')}>Task 2</Claude>
-      )}
-      {phase === 'step3' && (
-        <Claude onFinished={() => setPhase('done')}>Task 3</Claude>
-      )}
-    </Ralph>
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={5}>
+        {phase === 'step1' && (
+          <Claude onFinished={async () => {
+            setPhase('step2')
+            await db.state.set('phase', 'step2')
+          }}>Task 1</Claude>
+        )}
+        {phase === 'step2' && (
+          <Claude onFinished={async () => {
+            setPhase('step3')
+            await db.state.set('phase', 'step3')
+          }}>Task 2</Claude>
+        )}
+        {phase === 'step3' && (
+          <Claude onFinished={async () => {
+            setPhase('done')
+            await db.state.set('phase', 'done')
+          }}>Task 3</Claude>
+        )}
+      </Ralph>
+    </SmithersProvider>
   )
 }
 ```
@@ -448,57 +462,82 @@ export default function Workflow() {
 ### Data Flow Pattern
 
 ```tsx
-const useStore = create((set) => ({
-  researchData: null,
-  implementationResult: null,
+import { useState } from 'react'
 
-  setResearchData: (data) => set({ researchData: data }),
-  setImplementationResult: (result) => set({ implementationResult: result }),
-}))
+function DataWorkflow() {
+  const [phase, setPhase] = useState('research')
+  const [researchData, setResearchData] = useState(null)
+  const [implementationResult, setImplementationResult] = useState(null)
 
-// Phase 1: Collect data
-<Claude onFinished={(result) => {
-  setResearchData(result)
-  setPhase('implement')
-}}>
-  Research the topic
-</Claude>
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={5}>
+        {/* Phase 1: Collect data */}
+        {phase === 'research' && (
+          <Claude onFinished={async (result) => {
+            setResearchData(result)
+            await db.state.set('researchData', result)
+            setPhase('implement')
+            await db.state.set('phase', 'implement')
+          }}>
+            Research the topic
+          </Claude>
+        )}
 
-// Phase 2: Use collected data
-<Claude onFinished={(result) => {
-  setImplementationResult(result)
-  setPhase('done')
-}}>
-  Implement using research: {JSON.stringify(researchData)}
-</Claude>
+        {/* Phase 2: Use collected data */}
+        {phase === 'implement' && (
+          <Claude onFinished={async (result) => {
+            setImplementationResult(result)
+            await db.state.set('implementationResult', result)
+            setPhase('done')
+            await db.state.set('phase', 'done')
+          }}>
+            Implement using research: {JSON.stringify(researchData)}
+          </Claude>
+        )}
+      </Ralph>
+    </SmithersProvider>
+  )
+}
 ```
 
 ### Error Recovery Pattern
 
 ```tsx
-const useStore = create((set) => ({
-  phase: 'attempt',
-  retryCount: 0,
-  maxRetries: 3,
+import { useState } from 'react'
 
-  incrementRetry: () => set((s) => ({ retryCount: s.retryCount + 1 })),
-}))
+function RetryWorkflow() {
+  const [phase, setPhase] = useState('attempt')
+  const [retryCount, setRetryCount] = useState(0)
+  const maxRetries = 3
 
-{phase === 'attempt' && (
-  <Claude
-    onFinished={() => setPhase('success')}
-    onError={(error) => {
-      if (retryCount < maxRetries) {
-        incrementRetry()
-        setPhase('attempt') // Retry
-      } else {
-        setPhase('failed') // Give up
-      }
-    }}
-  >
-    Attempt task
-  </Claude>
-)}
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={10}>
+        {phase === 'attempt' && (
+          <Claude
+            onFinished={async () => {
+              setPhase('success')
+              await db.state.set('phase', 'success')
+            }}
+            onError={async (error) => {
+              if (retryCount < maxRetries) {
+                setRetryCount(retryCount + 1)
+                await db.state.set('retryCount', retryCount + 1)
+                // Phase stays 'attempt' to retry
+              } else {
+                setPhase('failed')
+                await db.state.set('phase', 'failed')
+              }
+            }}
+          >
+            Attempt task
+          </Claude>
+        )}
+      </Ralph>
+    </SmithersProvider>
+  )
+}
 ```
 
 ---
@@ -511,7 +550,7 @@ Ralph checks for task completion every 10ms by default. For very fast tasks, the
 
 ### State Updates
 
-Zustand updates are synchronous, preventing race conditions in state transitions.
+React state updates are batched automatically. Use `db.state.set()` to persist state to SQLite for session resumability.
 
 ### Memory
 
@@ -526,9 +565,10 @@ Each SmithersNode maintains parent/child references. For very large trees (1000+
 ```tsx
 <Ralph
   maxIterations={10}
-  onIteration={(i) => {
+  onIteration={async (i) => {
     console.log(`[Ralph] Iteration ${i}`)
-    console.log('[Ralph] Current phase:', useStore.getState().phase)
+    const phase = await db.state.get('phase')
+    console.log('[Ralph] Current phase:', phase)
   }}
 >
   {/* workflow */}
@@ -554,7 +594,7 @@ Each SmithersNode maintains parent/child references. For very large trees (1000+
 ### Inspect Tree Structure
 
 ```tsx
-import { createSmithersRoot } from 'smithers/core'
+import { createSmithersRoot } from 'smithers-orchestrator'
 
 const root = createSmithersRoot()
 root.mount(() => <MyWorkflow />)
@@ -622,7 +662,7 @@ for (const step of plan) {
 3. **Handle errors** - Always provide onError callbacks
 4. **Validate when needed** - Use validate prop for quality checks
 5. **Organize with Phase/Step** - Improve readability
-6. **Use Zustand for state** - Don't use Solid signals
+6. **Use React useState with db.state** - Persist critical state to SQLite
 7. **Test workflows** - Create test runs with mock executors
 8. **Document phases** - Add comments explaining workflow logic
 

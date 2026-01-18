@@ -1,8 +1,6 @@
 #!/usr/bin/env bun
 import { createSmithersRoot } from 'smithers-orchestrator'
 import { createSmithersDB } from 'smithers-orchestrator/db'
-
-// All components are now in a single flat location
 import {
   Ralph,
   SmithersProvider,
@@ -12,12 +10,7 @@ import {
   Step,
   Review,
 } from 'smithers-orchestrator/components'
-
-// VCS components
-import { Commit, Snapshot, Describe, Status, Rebase } from 'smithers-orchestrator/components/JJ'
-import { Commit as GitCommit, Notes as GitNotes } from 'smithers-orchestrator/components/Git'
-
-// Hooks
+import { Commit, Snapshot, Describe, Status } from 'smithers-orchestrator/components/JJ'
 import { PostCommit, OnCIFailure } from 'smithers-orchestrator/components/Hooks'
 
 /**
@@ -33,7 +26,7 @@ import { PostCommit, OnCIFailure } from 'smithers-orchestrator/components/Hooks'
  */
 
 // ============================================================================
-// DATABASE SETUP - ALL STATE LIVES HERE
+// DATABASE SETUP - ALL DURABLE STATE LIVES HERE
 // ============================================================================
 
 // Create PGlite database (persisted to .smithers/data)
@@ -52,30 +45,10 @@ const executionId = await db.execution.start(
 )
 
 // ============================================================================
-// STATE HELPERS (replaces Zustand)
-// ============================================================================
-
-/**
- * Get current phase from database
- */
-async function getPhase(): Promise<string> {
-  return (await db.state.get<string>('phase')) ?? 'initial'
-}
-
-/**
- * Set phase with audit logging
- */
-async function setPhase(phase: string, trigger: string = 'agent_finished'): Promise<void> {
-  await db.state.set('phase', phase, trigger)
-}
-
-// ============================================================================
 // ORCHESTRATION DEFINITION
 // ============================================================================
 
 async function App() {
-  const phase = await getPhase()
-
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Orchestration
@@ -88,143 +61,114 @@ async function App() {
         <Ralph maxIterations={10}>
           {/* ============================================================ */}
           {/* PHASE 1: IMPLEMENTATION                                      */}
+          {/* Phases are always rendered - only the active one executes.   */}
+          {/* When a phase completes, the next phase automatically starts. */}
           {/* ============================================================ */}
-          {phase === 'initial' && (
-            <Phase name="Implementation">
-              {/* Take a JJ snapshot before starting */}
-              <Snapshot description="Before implementation" />
+          <Phase
+            name="Implementation"
+            onStart={() => console.log('Starting implementation phase')}
+            onComplete={() => console.log('Implementation phase complete')}
+          >
+            {/* Take a JJ snapshot before starting */}
+            <Snapshot description="Before implementation" />
 
-              {/* Check working copy status */}
-              <Status
-                onDirty={(status) => {
-                  console.log('Working copy has changes:', status)
-                }}
-                onClean={() => {
-                  console.log('Working copy is clean')
-                }}
-              />
+            {/* Check working copy status */}
+            <Status
+              onDirty={(status) => console.log('Working copy has changes:', status)}
+              onClean={() => console.log('Working copy is clean')}
+            />
 
-              {/* Main implementation step with Claude */}
-              <Step
-                name="implement-feature"
-                snapshotBefore
-                commitAfter
+            {/* Main implementation step with Claude */}
+            <Step name="implement-feature" snapshotBefore commitAfter>
+              <Claude
+                model="sonnet"
+                reportingEnabled
+                tools={['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep']}
+                stopConditions={[
+                  { type: 'turn_limit', value: 50 },
+                  { type: 'token_limit', value: 100000 },
+                ]}
+                onError={(error) => console.error('Implementation failed:', error)}
               >
-                <Claude
-                  model="sonnet"
-                  reportingEnabled
-                  tools={['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep']}
-                  stopConditions={[
-                    { type: 'turn_limit', value: 50 },
-                    { type: 'token_limit', value: 100000 },
-                  ]}
-                  onFinished={async (result) => {
-                    console.log('Implementation complete')
-                    await setPhase('review', 'implementation_complete')
-                  }}
-                  onError={async (error) => {
-                    console.error('Implementation failed:', error)
-                    await setPhase('error', 'implementation_failed')
-                  }}
-                >
-                  {/* Your implementation prompt here */}
-                  Implement the requested feature. Use the Report tool to log progress.
-                </Claude>
-              </Step>
+                {/* Your implementation prompt here */}
+                Implement the requested feature. Use the Report tool to log progress.
+              </Claude>
+            </Step>
 
-              {/* Auto-generate commit message using AI */}
-              <Describe useAgent="claude" />
+            {/* Auto-generate commit message using AI */}
+            <Describe useAgent="claude" />
 
-              {/* Create JJ commit with metadata */}
-              <Commit autoDescribe notes="implementation-phase" />
-            </Phase>
-          )}
+            {/* Create JJ commit with metadata */}
+            <Commit autoDescribe notes="implementation-phase" />
+          </Phase>
 
           {/* ============================================================ */}
           {/* PHASE 2: CODE REVIEW                                         */}
+          {/* This phase starts automatically when Implementation completes */}
           {/* ============================================================ */}
-          {phase === 'review' && (
-            <Phase name="Review">
-              <Review
-                target={{ type: 'diff', ref: 'main' }}
-                agent="claude"
-                model="sonnet"
-                blocking
-                criteria={[
-                  'No security vulnerabilities',
-                  'Code follows project conventions',
-                  'Tests are included for new functionality',
-                  'No performance regressions',
-                ]}
-                postToGitNotes
-                onFinished={async (review) => {
-                  if (review.approved) {
-                    console.log('Review approved!')
-                    await setPhase('testing', 'review_approved')
-                  } else {
-                    console.log('Review found issues:', review.issues.length)
-                    // Go back to implementation to fix issues
-                    await setPhase('initial', 'review_rejected')
-                  }
-                }}
-              />
-            </Phase>
-          )}
+          <Phase
+            name="Review"
+            onStart={() => console.log('Starting review phase')}
+            onComplete={() => console.log('Review phase complete')}
+          >
+            <Review
+              target={{ type: 'diff', ref: 'main' }}
+              agent="claude"
+              model="sonnet"
+              blocking
+              criteria={[
+                'No security vulnerabilities',
+                'Code follows project conventions',
+                'Tests are included for new functionality',
+                'No performance regressions',
+              ]}
+              postToGitNotes
+              onFinished={(review) => {
+                if (review.approved) {
+                  console.log('Review approved!')
+                } else {
+                  console.log('Review found issues:', review.issues.length)
+                }
+              }}
+            />
+          </Phase>
 
           {/* ============================================================ */}
           {/* PHASE 3: TESTING                                             */}
+          {/* This phase starts automatically when Review completes        */}
           {/* ============================================================ */}
-          {phase === 'testing' && (
-            <Phase name="Testing">
-              <Step name="run-tests">
-                <Claude
-                  model="haiku"
-                  tools={['Bash']}
-                  stopConditions={[
-                    { type: 'turn_limit', value: 10 },
-                  ]}
-                  onFinished={async (result) => {
-                    const passed = result.output.includes('PASS') ||
-                                   result.output.includes('All tests passed')
-                    if (passed) {
-                      await setPhase('done', 'tests_passed')
-                    } else {
-                      await setPhase('initial', 'tests_failed')
-                    }
-                  }}
-                >
-                  Run the test suite with `bun test`. Report the results.
-                </Claude>
-              </Step>
-            </Phase>
-          )}
-
-          {/* ============================================================ */}
-          {/* TERMINAL: SUCCESS                                            */}
-          {/* ============================================================ */}
-          {phase === 'done' && (
-            <Phase name="Complete">
-              <Commit message="Feature complete - all tests passing" />
-              <div>Orchestration complete!</div>
-            </Phase>
-          )}
-
-          {/* ============================================================ */}
-          {/* TERMINAL: ERROR                                              */}
-          {/* ============================================================ */}
-          {phase === 'error' && (
-            <Phase name="Error Recovery">
+          <Phase
+            name="Testing"
+            onStart={() => console.log('Starting testing phase')}
+            onComplete={() => console.log('Testing phase complete')}
+          >
+            <Step name="run-tests">
               <Claude
-                model="sonnet"
-                tools={['Read', 'Bash']}
-                onFinished={async () => {
-                  await setPhase('initial', 'error_diagnosed')
+                model="haiku"
+                tools={['Bash']}
+                stopConditions={[{ type: 'turn_limit', value: 10 }]}
+                onFinished={(result) => {
+                  const passed = result.output.includes('PASS') ||
+                                 result.output.includes('All tests passed')
+                  console.log(passed ? 'Tests passed!' : 'Tests failed')
                 }}
               >
-                An error occurred. Diagnose the issue and suggest fixes.
+                Run the test suite with `bun test`. Report the results.
               </Claude>
-            </Phase>
-          )}
+            </Step>
+          </Phase>
+
+          {/* ============================================================ */}
+          {/* PHASE 4: FINALIZE                                            */}
+          {/* This phase starts automatically when Testing completes       */}
+          {/* ============================================================ */}
+          <Phase
+            name="Finalize"
+            onStart={() => console.log('Starting finalize phase')}
+            onComplete={() => console.log('Orchestration complete!')}
+          >
+            <Commit message="Feature complete - all tests passing" />
+          </Phase>
         </Ralph>
 
         {/* ============================================================ */}

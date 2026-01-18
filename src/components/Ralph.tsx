@@ -1,6 +1,7 @@
 import { createContext, type ReactNode } from 'react'
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { useSmithers, type RalphContextType } from './SmithersProvider.js'
+import { PhaseRegistryProvider } from './PhaseRegistry.js'
 
 // Re-export RalphContextType for backwards compatibility
 export type { RalphContextType } from './SmithersProvider.js'
@@ -102,12 +103,14 @@ export function Ralph(props: RalphProps): ReactNode {
 
   return (
     <RalphContext.Provider value={contextValue}>
-      <ralph
-        iteration={smithers.ralphCount}
-        maxIterations={props.maxIterations ?? smithers.config.maxIterations ?? 100}
-      >
-        {props.children}
-      </ralph>
+      <PhaseRegistryProvider>
+        <ralph
+          iteration={smithers.ralphCount}
+          maxIterations={props.maxIterations ?? smithers.config.maxIterations ?? 100}
+        >
+          {props.children}
+        </ralph>
+      </PhaseRegistryProvider>
     </RalphContext.Provider>
   )
 }

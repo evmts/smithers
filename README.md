@@ -54,11 +54,13 @@ I wanted a tool that allows me to:
 ### Install the Smithers Plugin for Claude Code
 
 **Step 1:** Add the Smithers marketplace:
+
 ```bash
 /plugin marketplace add evmts/smithers
 ```
 
 **Step 2:** Install the plugin:
+
 ```bash
 /plugin install smithers@smithers
 ```
