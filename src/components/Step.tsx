@@ -271,6 +271,7 @@ export function Step(props: StepProps): ReactNode {
     if (!hasStartedRef.current || hasCompletedRef.current) return
     hasCompletedRef.current = true
 
+    if (db.db.isClosed) return
     const id = stepIdRef.current
     if (!id) return
 

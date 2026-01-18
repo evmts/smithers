@@ -80,8 +80,8 @@ export function Phase(props: PhaseProps): ReactNode {
 
   // Determine phase status
   const isSkipped = props.skipIf?.() ?? false
-  const isActive = !isSkipped && registry.isPhaseActive(myIndex)
-  const isCompleted = !isSkipped && registry.isPhaseCompleted(myIndex)
+  const isActive = !isSkipped && (registry ? registry.isPhaseActive(myIndex) : true)
+  const isCompleted = !isSkipped && (registry ? registry.isPhaseCompleted(myIndex) : false)
 
   // Compute status string for output
   const status = getPhaseStatus(isSkipped, isActive, isCompleted)
@@ -102,7 +102,7 @@ export function Phase(props: PhaseProps): ReactNode {
       console.log(`[Phase] Skipped: ${props.name}`)
 
       // Advance to next phase immediately
-      registry.advancePhase()
+      registry?.advancePhase()
     }
   }, [registry.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry])
 
