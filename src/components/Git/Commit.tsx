@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs'
 import { useMount, useMountedState } from '../../reconciler/hooks'
@@ -58,17 +58,18 @@ ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : 
  */
 export function Commit(props: CommitProps): ReactNode {
   const smithers = useSmithers()
-  const { registerTask, completeTask } = smithers
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [result, setResult] = useState<CommitResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
+  const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      registerTask()
+      // Register task with database
+      taskIdRef.current = smithers.db.tasks.start('git-commit')
 
       try {
         setStatus('running')
@@ -157,7 +158,10 @@ export function Commit(props: CommitProps): ReactNode {
           props.onError?.(errorObj)
         }
       } finally {
-        completeTask()
+        // Complete task
+        if (taskIdRef.current) {
+          smithers.db.tasks.complete(taskIdRef.current)
+        }
       }
     })()
   })

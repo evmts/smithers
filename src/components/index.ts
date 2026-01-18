@@ -6,16 +6,8 @@
 export { Claude, type ClaudeProps, type AgentResult, executeClaudeCLI } from './Claude'
 export { ClaudeApi, type ClaudeApiProps } from './ClaudeApi'
 
-// Ralph - Loop controller
-export {
-  Ralph,
-  type RalphProps,
-  RalphContext,
-  type RalphContextType,
-  createOrchestrationPromise,
-  signalOrchestrationComplete,
-  signalOrchestrationError,
-} from './Ralph'
+// Ralph - Loop controller (backwards compatibility)
+export { Ralph, type RalphProps, RalphContext } from './Ralph'
 
 // Phase and Step - Workflow structure
 export { Phase, type PhaseProps } from './Phase'
@@ -30,8 +22,15 @@ export { Task, type TaskProps } from './Task'
 export { Human, type HumanProps } from './Human'
 
 // Smithers Provider and Orchestration (database-integrated)
-export { SmithersProvider, useSmithers } from './SmithersProvider'
-export type { SmithersConfig, SmithersContextValue, SmithersProviderProps } from './SmithersProvider'
+export {
+  SmithersProvider,
+  useSmithers,
+  useRalph,
+  createOrchestrationPromise,
+  signalOrchestrationComplete,
+  signalOrchestrationError,
+} from './SmithersProvider'
+export type { SmithersConfig, SmithersContextValue, SmithersProviderProps, RalphContextType } from './SmithersProvider'
 
 export { Orchestration } from './Orchestration'
 export type { OrchestrationProps, GlobalStopCondition, OrchestrationContext, OrchestrationResult } from './Orchestration'

@@ -1,5 +1,4 @@
-import { useState, useContext, type ReactNode } from 'react'
-import { RalphContext } from '../Ralph'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { addGitNotes } from '../../utils/vcs'
 import type { ReviewTarget, ReviewResult, ReviewProps } from './types'
@@ -182,18 +181,19 @@ ${issuesText}
  * React pattern: Uses useEffect with empty deps and async IIFE inside
  */
 export function Review(props: ReviewProps): ReactNode {
-  const ralph = useContext(RalphContext)
   const smithers = useSmithers()
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [result, setResult] = useState<ReviewResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
+  const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      ralph?.registerTask()
+      // Register task with database
+      taskIdRef.current = smithers.db.tasks.start('review', props.target.type)
 
       try {
         setStatus('running')
@@ -262,7 +262,10 @@ export function Review(props: ReviewProps): ReactNode {
           props.onError?.(errorObj)
         }
       } finally {
-        ralph?.completeTask()
+        // Complete task
+        if (taskIdRef.current) {
+          smithers.db.tasks.complete(taskIdRef.current)
+        }
       }
     })()
   })

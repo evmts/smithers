@@ -1,8 +1,9 @@
 // Smithers Subagent Component
 // Launches a new Smithers instance to plan and execute a task
 
-import { useState, type ReactNode } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
+import { useRalphCount } from '../hooks/useRalphCount'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI'
 import type { ClaudeModel } from './agents/types'
 import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks'
@@ -117,20 +118,23 @@ export interface SmithersProps {
  * ```
  */
 export function Smithers(props: SmithersProps): ReactNode {
-  const { db, executionId, registerTask, completeTask, ralphCount } = useSmithers()
+  const { db, executionId } = useSmithers()
+  const ralphCount = useRalphCount()
 
   const [status, setStatus] = useState<'pending' | 'planning' | 'executing' | 'complete' | 'error'>('pending')
   const [result, setResult] = useState<SmithersResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [subagentId, setSubagentId] = useState<string | null>(null)
 
+  const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
   useEffectOnValueChange(ralphCount, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      registerTask()
+      // Register task with database
+      taskIdRef.current = db.tasks.start('smithers', props.plannerModel ?? 'sonnet')
 
       let currentSubagentId: string | null = null
 
@@ -229,7 +233,10 @@ export function Smithers(props: SmithersProps): ReactNode {
 
         props.onError?.(errorObj)
       } finally {
-        completeTask()
+        // Complete task
+        if (taskIdRef.current) {
+          db.tasks.complete(taskIdRef.current)
+        }
       }
     })()
   })

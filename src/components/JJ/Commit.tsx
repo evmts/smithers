@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs'
 import { useMount, useMountedState } from '../../reconciler/hooks'
@@ -32,18 +32,19 @@ async function generateCommitMessage(diff: string): Promise<string> {
  */
 export function Commit(props: CommitProps): ReactNode {
   const smithers = useSmithers()
-  const { registerTask, completeTask } = smithers
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [commitHash, setCommitHash] = useState<string | null>(null)
   const [changeId, setChangeId] = useState<string | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
+  const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      ralph?.registerTask()
+      // Register task with database
+      taskIdRef.current = smithers.db.tasks.start('jj-commit')
 
       try {
         setStatus('running')
@@ -99,7 +100,10 @@ export function Commit(props: CommitProps): ReactNode {
           setStatus('error')
         }
       } finally {
-        ralph?.completeTask()
+        // Complete task
+        if (taskIdRef.current) {
+          smithers.db.tasks.complete(taskIdRef.current)
+        }
       }
     })()
   })

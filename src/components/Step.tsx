@@ -58,17 +58,19 @@ export interface StepProps {
  * ```
  */
 export function Step(props: StepProps): ReactNode {
-  const { db, registerTask, completeTask } = useSmithers()
+  const { db } = useSmithers()
   const [, setStepId] = useState<string | null>(null)
   const [, setStatus] = useState<'pending' | 'running' | 'completed' | 'failed'>('pending')
   const stepIdRef = useRef<string | null>(null)
+  const taskIdRef = useRef<string | null>(null)
   const snapshotBeforeIdRef = useRef<string | undefined>(undefined)
   const snapshotAfterIdRef = useRef<string | undefined>(undefined)
   const commitHashRef = useRef<string | undefined>(undefined)
 
   useMount(() => {
     ;(async () => {
-      registerTask()
+      // Register task with database
+      taskIdRef.current = db.tasks.start('step', props.name)
 
       try {
         // Snapshot before if requested
@@ -99,7 +101,10 @@ export function Step(props: StepProps): ReactNode {
           db.steps.fail(stepIdRef.current)
         }
 
-        completeTask()
+        // Complete task on error
+        if (taskIdRef.current) {
+          db.tasks.complete(taskIdRef.current)
+        }
       }
     })()
   })
@@ -158,7 +163,10 @@ export function Step(props: StepProps): ReactNode {
         db.steps.fail(id)
         setStatus('failed')
       } finally {
-        completeTask()
+        // Complete task
+        if (taskIdRef.current) {
+          db.tasks.complete(taskIdRef.current)
+        }
       }
     })()
   })

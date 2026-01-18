@@ -106,7 +106,6 @@ async function fetchRunLogs(runId: number): Promise<string> {
  */
 export function OnCIFailure(props: OnCIFailureProps): ReactNode {
   const smithers = useSmithers()
-  const { registerTask, completeTask } = smithers
 
   const [ciStatus, setCIStatus] = useState<'idle' | 'polling' | 'failed' | 'error'>('idle')
   const [currentFailure, setCurrentFailure] = useState<CIFailure | null>(null)
@@ -115,6 +114,7 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
 
   // Track processed run IDs to avoid re-triggering
   const processedRunIdsRef = useRef(new Set<number>())
+  const taskIdRef = useRef<string | null>(null)
 
   const intervalMs = props.pollInterval ?? 30000
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -185,10 +185,10 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
             // Call onFailure callback
             props.onFailure?.(failure)
 
-            // Register task for tracking
-            registerTask()
-            // Children will handle their own task completion
-            completeTask()
+            // Register task for tracking - children will handle completion
+            taskIdRef.current = smithers.db.tasks.start('ci-failure-hook', props.provider)
+            // Complete immediately as children handle their own task registration
+            smithers.db.tasks.complete(taskIdRef.current)
 
             // Log to db state
             await smithers.db.state.set('last_ci_failure', failure, 'ci-failure-hook')

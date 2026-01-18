@@ -1,8 +1,9 @@
 // Enhanced Claude component for Smithers orchestrator
 // Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
 
-import { useState, type ReactNode } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
+import { useRalphCount } from '../hooks/useRalphCount'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config'
 import type { ClaudeProps, AgentResult } from './agents/types'
@@ -39,25 +40,28 @@ import { uuid } from '../db/utils'
  * ```
  */
 export function Claude(props: ClaudeProps): ReactNode {
-  const { db, executionId, isStopRequested, registerTask, completeTask, ralphCount } = useSmithers()
+  const { db, executionId, isStopRequested } = useSmithers()
+  const ralphCount = useRalphCount()
 
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [result, setResult] = useState<AgentResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [agentId, setAgentId] = useState<string | null>(null)
 
+  // Track task ID for this component
+  const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
   useEffectOnValueChange(ralphCount, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      // Register task with SmithersProvider
-      registerTask()
+      // Register task with database
+      taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
 
       // Check if stop has been requested globally
       if (isStopRequested()) {
-        completeTask()
+        db.tasks.complete(taskIdRef.current)
         return
       }
 
@@ -236,7 +240,9 @@ export function Claude(props: ClaudeProps): ReactNode {
         }
       } finally {
         // Always complete task
-        completeTask()
+        if (taskIdRef.current) {
+          db.tasks.complete(taskIdRef.current)
+        }
       }
     })()
   })

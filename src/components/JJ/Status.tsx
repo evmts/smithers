@@ -1,5 +1,4 @@
-import { useState, useContext, type ReactNode } from 'react'
-import { RalphContext } from '../Ralph'
+import { useState, useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider'
 import { getJJStatus } from '../../utils/vcs'
 import { useMount, useMountedState } from '../../reconciler/hooks'
@@ -17,7 +16,6 @@ export interface StatusProps {
  * Registers with Ralph for task tracking.
  */
 export function Status(props: StatusProps): ReactNode {
-  const ralph = useContext(RalphContext)
   const smithers = useSmithers()
   const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
   const [isDirty, setIsDirty] = useState<boolean | null>(null)
@@ -28,12 +26,14 @@ export function Status(props: StatusProps): ReactNode {
   } | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
+  const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
-      ralph?.registerTask()
+      // Register task with database
+      taskIdRef.current = smithers.db.tasks.start('jj-status')
 
       try {
         setStatus('running')
@@ -83,7 +83,10 @@ export function Status(props: StatusProps): ReactNode {
           setStatus('error')
         }
       } finally {
-        ralph?.completeTask()
+        // Complete task
+        if (taskIdRef.current) {
+          smithers.db.tasks.complete(taskIdRef.current)
+        }
       }
     })()
   })
