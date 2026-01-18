@@ -1,20 +1,15 @@
-name: Publish to npm
+name: Publish to npm and GitHub Release
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'npm tag (latest, next, beta)'
-        required: false
-        default: 'latest'
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +33,50 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish to npm
-        run: npm publish --provenance --access public --tag ${{ github.event.inputs.tag || 'latest' }}
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          # Get commits since last tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            NOTES=$(git log --pretty=format:"- %s" $PREV_TAG..HEAD)
+          else
+            NOTES=$(git log --pretty=format:"- %s" -20)
+          fi
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.version.outputs.version }}
+          body: |
+            ## Smithers v${{ steps.version.outputs.version }}
+
+            ### Install
+
+            ```bash
+            # Claude Code plugin
+            /plugin marketplace add evmts/smithers
+            /plugin install smithers@smithers
+
+            # npm package
+            bun add smithers@${{ steps.version.outputs.version }}
+            ```
+
+            ### Changes
+
+            ${{ steps.notes.outputs.notes }}
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
