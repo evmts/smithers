@@ -76,7 +76,7 @@ export function useQuery<T = Record<string, unknown>>(
   const { skip = false, deps = [] } = options
 
   // Track version for forcing re-renders
-  const { incrementVersion, invalidateAndUpdate } = useVersionTracking()
+  const { invalidateAndUpdate } = useVersionTracking()
   const { cacheRef, invalidateCache } = useQueryCache<T>()
 
   // Memoize the query key
@@ -109,16 +109,16 @@ export function useQuery<T = Record<string, unknown>>(
       const tables = extractReadTables(sql)
       return db.subscribe(tables, () => {
         invalidateCache()  // Clear cache so getSnapshot() recomputes
-        incrementVersion()
+        invalidateAndUpdate()  // Force render if store snapshot stays referentially equal
         onStoreChange()
       })
     },
-    [db, sql, skip, incrementVersion, invalidateCache]
+    [db, sql, skip, invalidateCache, invalidateAndUpdate]
   )
 
   // Get current snapshot
   const getSnapshot = useCallback(() => {
-    if (cacheRef.current.key !== queryKey) {
+    if (!cacheRef.current || cacheRef.current.key !== queryKey) {
       const result = executeQuery()
       cacheRef.current = {
         key: queryKey,

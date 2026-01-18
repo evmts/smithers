@@ -30,14 +30,10 @@ export function useVersionTracking() {
  * Hook for managing query cache
  */
 export function useQueryCache<T>() {
-  const cacheRef = useRef<{ key: string; data: T[]; error: Error | null }>({
-    key: '',
-    data: [],
-    error: null,
-  })
+  const cacheRef = useRef<{ key: string; data: T[]; error: Error | null } | null>(null)
 
   const invalidateCache = useCallback(() => {
-    cacheRef.current.key = ''
+    cacheRef.current = null
   }, [])
 
   const updateCache = useCallback((key: string, data: T[], error: Error | null) => {
