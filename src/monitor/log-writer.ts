@@ -62,8 +62,14 @@ export class LogWriter {
       stream = fs.createWriteStream(filepath, { flags: 'a', encoding: 'utf-8' })
       this.streams.set(filename, stream)
     }
-    
-    stream.write(content)
+
+    if (stream.fd === null) {
+      stream.once('open', () => {
+        stream?.write(content)
+      })
+    } else {
+      stream.write(content)
+    }
     return filepath
   }
 
