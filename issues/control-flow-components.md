@@ -1,9 +1,10 @@
 # Control Flow Components: If, While, Switch
 
 <metadata>
-  <priority>medium</priority>
+  <priority>critical</priority>
   <category>feature</category>
-  <estimated-effort>2-3 days</estimated-effort>
+  <estimated-effort>5-7 days</estimated-effort>
+  <status>design-review</status>
   <dependencies>
     - src/components/Phase.tsx
     - src/components/PhaseRegistry.tsx
@@ -11,27 +12,71 @@
     - src/reconciler/hooks.js
   </dependencies>
   <blocked-by>
-    - issues/control-flow-scoping.md (requires design review and approval)
+    - Human review and approval required
+    - Codex review required
   </blocked-by>
 </metadata>
 
 ---
 
-## ⚠️ BLOCKED: Scoping Design Required
+## ⚠️ WARNING: Complex Feature - Review Required
 
-**This feature is blocked pending design review of the scoping mechanism.**
+**This design requires thorough review before implementation:**
 
-See `issues/control-flow-scoping.md` for the full scoping design proposal.
+- **Complexity**: Introduces hierarchical scoping system with deep implications for state management
+- **Risk**: Changes core assumptions about Phase/Step lifecycle and database interactions
+- **Testing**: Requires comprehensive test coverage for nested scenarios and edge cases
+- **Reversibility**: Once implemented, removing scoping would be a breaking change
 
-**Why blocked:** Control flow components require a scoping system to allow phases/steps to re-execute across iterations (e.g., While loops). Without scoping, the database state management breaks after the first iteration.
+**Required Reviews:**
+1. **Human review**: Validate design approach and confirm it solves the right problem
+2. **Codex review**: Verify implementation approach and identify potential issues
 
-**Do not implement this feature until the scoping design is reviewed and approved.**
+**Do not proceed with implementation until reviews are complete.**
 
 ---
 
 ## Executive Summary
 
 Add minimal control flow components (`<If>`, `<While>`, `<Switch>`) to enable conditional and iterative execution within Smithers orchestrations. These components complement the existing `Phase` and `Step` components while maintaining the declarative, unconditional rendering pattern.
+
+**Critical Design Challenge:** Control flow requires a **scoping mechanism** to allow phases/steps to re-execute across iterations without state collision.
+
+---
+
+<section name="problem-statement">
+
+## The Scoping Problem
+
+Control flow components need a scoping mechanism to allow phases and steps to be re-executed within iterations. Without scoping, the database state management breaks:
+
+**Example: While Loop**
+
+```tsx
+<While condition={() => testsNotPassing} maxIterations={5}>
+  <Phase name="Fix and Test">
+    <Step name="Analyze Failures">
+      <Claude>Analyze test failures</Claude>
+    </Step>
+    <Step name="Apply Fix">
+      <Claude>Apply the fix</Claude>
+    </Step>
+  </Phase>
+</While>
+```
+
+**What happens without scoping:**
+1. **Iteration 1**: `Phase "Fix and Test"` starts → completes → marked as `completed` in DB
+2. **Iteration 2**: Same `Phase "Fix and Test"` component mounts, but:
+   - Database already has a row for phase "Fix and Test" with status `completed`
+   - PhaseRegistry's `currentPhaseIndex` state key says we're done
+   - Phase thinks it's already done and skips execution
+   - Steps inside are also marked completed
+   - **Loop is broken**
+
+**This is the core complexity that requires upfront design.**
+
+</section>
 
 ---
 
@@ -49,11 +94,12 @@ The current Phase component supports sequential execution with `skipIf` for simp
 
 ### Design Principles
 
-1. **Unconditional rendering** - All control flow components render their structure in the plan output, even when branches are inactive. This is important for the plan being legible on any given render frame.
-2. **Declarative over imperative** - Use props and children to express flow, not callbacks that mutate state. Though you can still mount new components if they are new unexpected additions to plan. As a best practice the happy path should be rendered
+1. **Unconditional rendering** - All control flow components render their structure in the plan output, even when branches are inactive
+2. **Declarative over imperative** - Use props and children to express flow, not callbacks that mutate state
 3. **Visible in plan output** - The workflow structure is always visible, making debugging easier
 4. **Database-backed state** - Conditions can query SQLite state for durable, resumable workflows
 5. **Minimal API surface** - Only add what's necessary; avoid replicating React's full conditional rendering
+6. **Scoped execution** - Each iteration/branch gets isolated state to enable re-execution
 
 ### Anti-pattern: Conditional Phase Rendering
 
@@ -75,6 +121,240 @@ The current Phase component supports sequential execution with `skipIf` for simp
 </If>
 <Phase name="Implementation">...</Phase>
 ```
+
+</section>
+
+---
+
+<section name="scoping-design">
+
+## Scoping Design
+
+### Current State Management
+
+**Phases:**
+- Identified by: `(execution_id, name, iteration)`
+- `iteration` field: Currently tied to **Ralph iteration count** (outer retry loop)
+- Status tracking: `phases` table with `status` column
+- Sequential execution: `PhaseRegistry` uses `currentPhaseIndex` in state table
+
+**Steps:**
+- Identified by: Phase-local step index
+- Status tracking: `steps` table with `status` column
+- Sequential execution: `StepRegistry` uses `stepIndex_{phaseId}` in state table
+
+**State Table:**
+- Key-value store for transient state
+- Used for: phase indices, step indices, control flow results
+- No built-in scoping mechanism
+
+### Design Requirements
+
+1. **Durable Phase/Step History**: All iterations should be logged to the database
+2. **Fresh Execution Per Iteration**: Each iteration needs clean state for phases/steps
+3. **Resumability**: If orchestration crashes mid-iteration, it should resume correctly
+4. **Visibility**: Plan output should show which iteration is active
+5. **Minimal API Changes**: Existing Phase/Step components should "just work" inside control flow
+
+### Proposed Solution: Hierarchical Scope IDs
+
+Introduce a **scope identifier** that creates isolated execution contexts for control flow components.
+
+A scope ID is a hierarchical string that uniquely identifies an execution context:
+- Root scope: `"root"` (default)
+- While loop iteration 2: `"root.while_abc123.2"`
+- If branch (then): `"root.if_def456.then"`
+- Nested: `"root.while_abc123.2.if_def456.else"`
+
+### Implementation Approach
+
+#### 1. Add Scope to SmithersProvider Context
+
+```tsx
+interface SmithersContextValue {
+  db: SmithersDB
+  reactiveDb: ReactiveDatabase
+  executionId: string
+  ralphCount: number
+  scopeId: string  // NEW: current scope identifier
+  // ... rest
+}
+```
+
+#### 2. Create ScopeProvider Component
+
+```tsx
+interface ScopeProviderProps {
+  scopeId: string
+  children: ReactNode
+}
+
+export function ScopeProvider(props: ScopeProviderProps): ReactNode {
+  const parentContext = useSmithers()
+
+  const scopedContext = useMemo(
+    () => ({
+      ...parentContext,
+      scopeId: props.scopeId,
+    }),
+    [parentContext, props.scopeId]
+  )
+
+  return (
+    <SmithersContext.Provider value={scopedContext}>
+      {props.children}
+    </SmithersContext.Provider>
+  )
+}
+```
+
+#### 3. Control Flow Components Create Child Scopes
+
+Control flow components wrap their children in ScopeProvider to isolate state:
+
+- `<While>`: Each iteration gets scope `${scopeId}.${whileId}.${iteration}`
+- `<If>`: Then branch gets `${scopeId}.${ifId}.then`, else gets `${scopeId}.${ifId}.else`
+- `<Switch>`: Each case gets `${scopeId}.${switchId}.case${index}`
+
+#### 4. Phase and Step Use Scope for Database Keys
+
+**PhaseRegistry scoping:**
+```tsx
+export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactNode {
+  const { db, reactiveDb, scopeId } = useSmithers()
+
+  // Scope-specific phase index key
+  const phaseIndexKey = `currentPhaseIndex_${scopeId}`
+
+  const { data: dbPhaseIndex } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT CAST(value AS INTEGER) as idx FROM state WHERE key = ?`,
+    [phaseIndexKey]
+  )
+
+  // ...
+}
+```
+
+**StepRegistry scoping:**
+```tsx
+export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
+  const { db, reactiveDb, scopeId } = useSmithers()
+
+  // Scope-specific step index key
+  const stateKey = `stepIndex_${scopeId}_${props.phaseId ?? 'default'}`
+
+  const { data: dbStepIndex } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT CAST(value AS INTEGER) as idx FROM state WHERE key = ?`,
+    [stateKey]
+  )
+
+  // ...
+}
+```
+
+**Phase metadata:**
+```tsx
+export function Phase(props: PhaseProps): ReactNode {
+  const { db, ralphCount, scopeId } = useSmithers()
+
+  useEffect(() => {
+    if (isActive && !hasStartedRef.current) {
+      // Create new phase row with scope in metadata (optional for queryability)
+      const id = db.phases.start(props.name, ralphCount, { scope: scopeId })
+      // ...
+    }
+  }, [isActive, scopeId])
+
+  // ...
+}
+```
+
+### Example: Nested Control Flow with Scoping
+
+```tsx
+<Ralph maxIterations={10}>
+  <Phase name="Setup">
+    <Claude>Initial setup</Claude>
+  </Phase>
+
+  <While
+    condition={() => !testsPass}
+    maxIterations={5}
+  >
+    {/* Iteration 0 scope: root.while_xyz.0 */}
+    {/* Iteration 1 scope: root.while_xyz.1 */}
+
+    <Phase name="Attempt Fix">
+      {/* Iteration 0: scope = root.while_xyz.0, phase = "Attempt Fix" */}
+      {/* Iteration 1: scope = root.while_xyz.1, phase = "Attempt Fix" */}
+
+      <If condition={() => hasQuickFix}>
+        {/* Then branch scope: root.while_xyz.N.if_abc.then */}
+        <Phase name="Quick Fix">
+          <Claude>Apply quick fix</Claude>
+        </Phase>
+
+        <Else>
+          {/* Else branch scope: root.while_xyz.N.if_abc.else */}
+          <Phase name="Deep Investigation">
+            <Claude>Investigate root cause</Claude>
+          </Phase>
+        </Else>
+      </If>
+
+      <Phase name="Run Tests">
+        <Claude onFinished={updateTestsPass}>Run tests</Claude>
+      </Phase>
+    </Phase>
+  </While>
+
+  <Phase name="Deploy">
+    <Claude>Deploy to production</Claude>
+  </Phase>
+</Ralph>
+```
+
+**Database state keys:**
+- `currentPhaseIndex_root` - Top-level phase sequencing
+- `currentPhaseIndex_root.while_xyz.0` - Phase sequencing for While iteration 0
+- `currentPhaseIndex_root.while_xyz.1` - Phase sequencing for While iteration 1
+- `currentPhaseIndex_root.while_xyz.0.if_abc.then` - Phase sequencing for If then branch in iteration 0
+- `stepIndex_root.while_xyz.0_Attempt Fix` - Steps in "Attempt Fix" phase, iteration 0
+
+### Alternative Approaches Considered
+
+#### Alternative 1: Add `scope` Column to Phases/Steps Tables
+
+**Rejected because:**
+- Schema migration required
+- Doesn't solve state table scoping (phase indices, step indices)
+- Still need scope propagation through context
+- Scope is better as a context concern, not a database schema concern
+
+#### Alternative 2: Use Iteration Number Only
+
+**Rejected because:**
+- Doesn't work for `<If>` or `<Switch>` (no iteration concept)
+- Requires manual prop threading
+- Breaks for nested control flow
+- Not composable
+
+#### Alternative 3: React Key-Based Scoping
+
+**Rejected because:**
+- Loses durability - database state is tied to component lifecycle
+- Phases/steps get new UUIDs each iteration (hard to track history)
+- Doesn't solve resumability after crash
+- Confusing plan output
+
+#### Alternative 4: Explicit Scope Props (Render Props)
+
+**Rejected because:**
+- Render-prop API is clunky
+- Deviates from declarative children pattern
+- User has to understand scoping concept
 
 </section>
 
@@ -164,8 +444,6 @@ interface IfProps {
 
 ### Plan Output
 
-The `<If>` component always renders its structure, showing both branches with their status:
-
 ```xml
 <if condition="hasTests" status="evaluating">
   <branch type="then" active="true">
@@ -181,7 +459,7 @@ The `<If>` component always renders its structure, showing both branches with th
 
 ```tsx
 export function If(props: IfProps): ReactNode {
-  const { db, reactiveDb } = useSmithers()
+  const { db, reactiveDb, scopeId } = useSmithers()
   const ifId = useRef(`if_${Math.random().toString(36).slice(2)}`).current
   const stateKey = `if_result_${ifId}`
 
@@ -204,14 +482,23 @@ export function If(props: IfProps): ReactNode {
   })
 
   // Always render structure, but only active branch's children execute
+  // Wrap each branch in ScopeProvider for isolated state
   return (
     <if status={evaluated ? 'evaluated' : 'evaluating'} result={result}>
       <branch type="then" active={result === true}>
-        {result === true && props.children}
+        {result === true && (
+          <ScopeProvider scopeId={`${scopeId}.${ifId}.then`}>
+            {props.children}
+          </ScopeProvider>
+        )}
       </branch>
       {(props.else || hasElseChild(props.children)) && (
         <branch type="else" active={result === false}>
-          {result === false && (props.else ?? extractElseChildren(props.children))}
+          {result === false && (
+            <ScopeProvider scopeId={`${scopeId}.${ifId}.else`}>
+              {props.else ?? extractElseChildren(props.children)}
+            </ScopeProvider>
+          )}
         </branch>
       )}
     </if>
@@ -297,30 +584,6 @@ interface WhileProps {
 </While>
 ```
 
-**Iterative refinement:**
-
-```tsx
-<While
-  condition={async () => {
-    const quality = await db.state.get<number>('qualityScore')
-    return (quality ?? 0) < 0.9
-  }}
-  maxIterations={3}
->
-  <Phase name="Improve Quality">
-    <Claude
-      validate={async (result) => {
-        const score = evaluateQuality(result)
-        await db.state.set('qualityScore', score)
-        return score >= 0.9
-      }}
-    >
-      Improve the implementation quality
-    </Claude>
-  </Phase>
-</While>
-```
-
 ### Plan Output
 
 ```xml
@@ -335,7 +598,7 @@ interface WhileProps {
 
 ```tsx
 export function While(props: WhileProps): ReactNode {
-  const { db, reactiveDb } = useSmithers()
+  const { db, reactiveDb, scopeId } = useSmithers()
   const whileId = useRef(`while_${Math.random().toString(36).slice(2)}`).current
   const iterationKey = `while_iteration_${whileId}`
   const statusKey = `while_status_${whileId}`
@@ -395,6 +658,9 @@ export function While(props: WhileProps): ReactNode {
     props.onIteration?.(nextIteration)
   }
 
+  // Each iteration gets its own scope for isolated phase/step state
+  const iterationScopeId = `${scopeId}.${whileId}.${iteration}`
+
   return (
     <while
       maxIterations={maxIterations}
@@ -402,9 +668,11 @@ export function While(props: WhileProps): ReactNode {
       status={status}
     >
       {status === 'running' && (
-        <WhileIterationProvider onComplete={handleIterationComplete}>
-          {props.children}
-        </WhileIterationProvider>
+        <ScopeProvider scopeId={iterationScopeId}>
+          <WhileIterationProvider onComplete={handleIterationComplete}>
+            {props.children}
+          </WhileIterationProvider>
+        </ScopeProvider>
       )}
     </while>
   )
@@ -474,15 +742,6 @@ interface DefaultProps {
     <Phase name="Implementation">
       <Claude model="sonnet">Careful implementation</Claude>
     </Phase>
-    <Phase name="Review">
-      <Claude model="opus">Thorough review</Claude>
-    </Phase>
-  </Case>
-
-  <Case match={['test', 'validate']}>
-    <Phase name="Testing Only">
-      <Claude>Run comprehensive tests</Claude>
-    </Phase>
   </Case>
 
   <Default>
@@ -503,10 +762,6 @@ interface DefaultProps {
   <case match="thorough" active="true">
     <phase name="Research" status="completed">...</phase>
     <phase name="Implementation" status="active">...</phase>
-    <phase name="Review" status="pending">...</phase>
-  </case>
-  <case match="test,validate" active="false">
-    <phase name="Testing Only" status="skipped">...</phase>
   </case>
   <default active="false">
     <phase name="Standard Flow" status="skipped">...</phase>
@@ -518,7 +773,7 @@ interface DefaultProps {
 
 ```tsx
 export function Switch<T = string>(props: SwitchProps<T>): ReactNode {
-  const { db, reactiveDb } = useSmithers()
+  const { db, reactiveDb, scopeId } = useSmithers()
   const switchId = useRef(`switch_${Math.random().toString(36).slice(2)}`).current
   const valueKey = `switch_value_${switchId}`
 
@@ -560,7 +815,6 @@ export function Switch<T = string>(props: SwitchProps<T>): ReactNode {
   })
 
   // Find matching case
-  let activeCase: ReactNode = null
   let matchedIndex = -1
 
   if (evaluatedValue !== null) {
@@ -571,19 +825,14 @@ export function Switch<T = string>(props: SwitchProps<T>): ReactNode {
         : caseMatch === evaluatedValue
 
       if (matches) {
-        activeCase = cases[i].children
         matchedIndex = i
         break
       }
     }
-
-    // Use default if no match
-    if (matchedIndex === -1 && defaultChildren) {
-      activeCase = defaultChildren
-    }
   }
 
   // Always render structure, show all cases with active/inactive status
+  // Wrap matched case in ScopeProvider for isolated state
   return (
     <switch value={String(evaluatedValue)}>
       {cases.map((c, i) => (
@@ -592,12 +841,20 @@ export function Switch<T = string>(props: SwitchProps<T>): ReactNode {
           match={Array.isArray(c.match) ? c.match.join(',') : String(c.match)}
           active={i === matchedIndex}
         >
-          {i === matchedIndex && c.children}
+          {i === matchedIndex && (
+            <ScopeProvider scopeId={`${scopeId}.${switchId}.case${i}`}>
+              {c.children}
+            </ScopeProvider>
+          )}
         </case>
       ))}
       {defaultChildren && (
         <default active={matchedIndex === -1 && evaluatedValue !== null}>
-          {matchedIndex === -1 && evaluatedValue !== null && defaultChildren}
+          {matchedIndex === -1 && evaluatedValue !== null && (
+            <ScopeProvider scopeId={`${scopeId}.${switchId}.default`}>
+              {defaultChildren}
+            </ScopeProvider>
+          )}
         </default>
       )}
     </switch>
@@ -682,36 +939,6 @@ Control flow components integrate with Phase's automatic sequencing:
 </Ralph>
 ```
 
-### Data-Driven Conditions
-
-Conditions can query database state for resumable workflows:
-
-```tsx
-<While
-  condition={async () => {
-    const attempts = await db.state.get<number>('deployAttempts') ?? 0
-    const lastResult = await db.state.get<string>('lastDeployResult')
-    return attempts < 3 && lastResult !== 'success'
-  }}
->
-  <Phase
-    name="Deploy Attempt"
-    onComplete={async () => {
-      const current = await db.state.get<number>('deployAttempts') ?? 0
-      await db.state.set('deployAttempts', current + 1)
-    }}
-  >
-    <Claude
-      onFinished={async (result) => {
-        await db.state.set('lastDeployResult', result.success ? 'success' : 'failed')
-      }}
-    >
-      Deploy to production
-    </Claude>
-  </Phase>
-</While>
-```
-
 </section>
 
 ---
@@ -720,35 +947,88 @@ Conditions can query database state for resumable workflows:
 
 ## Implementation Plan
 
-### Phase 1: `<If>` Component
+### Phase 1: Add Scope Context (2 days)
 
-1. Create `src/components/If.tsx`
+1. Add `scopeId` to `SmithersContextValue`
+2. Create `ScopeProvider` component
+3. Initialize root scope as `"root"` in `SmithersProvider`
+4. Test: Verify scope propagates through context
+
+### Phase 2: Update Phase/Step to Use Scope (2 days)
+
+1. Update `PhaseRegistryProvider` to scope `currentPhaseIndex` key
+2. Update `StepRegistryProvider` to scope step index keys
+3. Update `Phase` component to include scope in phase metadata (optional)
+4. Update `Step` component to include scope in step metadata (optional)
+5. Test: Verify phases/steps work with scoped state keys
+6. Test: Existing orchestrations still work with root scope
+
+### Phase 3: Implement Control Flow Components (3 days)
+
+1. Create `src/components/If.tsx` with scoping
 2. Create `src/components/Else.tsx` (child marker component)
-3. Add tests for condition evaluation, else branches, async conditions
-4. Export from `src/components/index.ts`
+3. Create `src/components/While.tsx` with scoping
+4. Create `WhileIterationContext` for iteration tracking
+5. Create `src/components/Switch.tsx` with scoping
+6. Create `src/components/Case.tsx` and `Default.tsx`
+7. Export from `src/components/index.ts`
 
-### Phase 2: `<While>` Component
+### Phase 4: Testing (2 days)
 
-1. Create `src/components/While.tsx`
-2. Create `WhileIterationContext` for iteration tracking
-3. Add integration with Phase completion detection
-4. Add tests for iteration limits, condition evaluation, early exit
-5. Export from `src/components/index.ts`
+1. Test: While loop with phases executes multiple iterations correctly
+2. Test: If branches execute with isolated state
+3. Test: Switch cases execute with isolated state
+4. Test: Nested control flow works (While inside If, etc.)
+5. Test: Orchestration resumes correctly mid-iteration after crash
+6. Test: Database contains complete history of all iterations
+7. Test: State table keys don't collide
 
-### Phase 3: `<Switch>` Component
-
-1. Create `src/components/Switch.tsx`
-2. Create `src/components/Case.tsx`
-3. Create `src/components/Default.tsx`
-4. Add tests for value matching, array matching, default fallback
-5. Export from `src/components/index.ts`
-
-### Phase 4: Documentation
+### Phase 5: Documentation (1 day)
 
 1. Update SKILL.md with control flow patterns
 2. Update REFERENCE.md with API documentation
 3. Add examples to EXAMPLES.md
-4. Update template to show control flow usage (optional section)
+4. Document scoping behavior (for maintainers)
+
+</section>
+
+---
+
+<section name="open-questions">
+
+## Open Questions
+
+### Q1: Should we automatically clean up old scope state?
+
+When a While loop completes, should we delete state keys for old iterations?
+
+**Recommendation:** Keep everything. State table is cheap storage and provides full audit trail.
+
+### Q2: How deep should scope nesting go?
+
+Should we limit nesting depth to prevent absurdly long scope IDs?
+
+**Recommendation:** No hard limit. Real-world nesting unlikely to exceed 5 levels.
+
+### Q3: Should scope be visible in the API?
+
+Should users be able to manually create scopes or query current scope?
+
+**Recommendation:** Keep it internal. Advanced users can access via `useSmithers()` if needed.
+
+### Q4: How does scope interact with Ralph iterations?
+
+Ralph is the outer retry loop. Should Ralph iterations create scopes?
+
+**Recommendation:** Don't scope Ralph iterations. Keep `iteration` field as-is. Scope is only for control flow components. Ralph is a full workflow restart, not a sub-loop.
+
+### Q5: What happens with resumability mid-iteration?
+
+If orchestration crashes during While iteration 3, how does it resume?
+
+**Analysis:** Control flow state (current iteration) is in database. On resume, While reads `while_iteration_root.while_abc` from state table and knows to create scope `root.while_abc.3` again. Phase/Step state is scoped, so picks up where it left off.
+
+**Recommendation:** Current design handles this. Add test to verify.
 
 </section>
 
@@ -758,12 +1038,20 @@ Conditions can query database state for resumable workflows:
 
 ## Acceptance Criteria
 
+### Scoping System
+- [ ] ScopeProvider component propagates scope via context
+- [ ] PhaseRegistry uses scoped state keys
+- [ ] StepRegistry uses scoped state keys
+- [ ] Existing orchestrations work unchanged with root scope
+- [ ] State table keys are properly scoped and don't collide
+
 ### `<If>` Component
 - [ ] Evaluates sync and async conditions
 - [ ] Renders children when condition is true
 - [ ] Renders else children when condition is false
 - [ ] `<Else>` child component works as alternative to `else` prop
 - [ ] Plan output shows both branches with active/inactive status
+- [ ] Then and else branches have isolated scopes
 
 ### `<While>` Component
 - [ ] Evaluates condition before each iteration
@@ -773,6 +1061,8 @@ Conditions can query database state for resumable workflows:
 - [ ] `onComplete` callback fires with iteration count and reason
 - [ ] Children can signal iteration completion
 - [ ] Plan output shows current iteration number
+- [ ] Each iteration has isolated scope
+- [ ] Phases/steps re-execute correctly across iterations
 
 ### `<Switch>` Component
 - [ ] Matches single values correctly
@@ -781,13 +1071,16 @@ Conditions can query database state for resumable workflows:
 - [ ] Only one branch executes
 - [ ] Plan output shows all branches with active/inactive status
 - [ ] Async value function works
+- [ ] Each case has isolated scope
 
 ### Integration
 - [ ] Control flow components work inside `<Ralph>`
 - [ ] Control flow components work inside `<Phase>`
-- [ ] Nested control flow works correctly
+- [ ] Nested control flow works correctly (While in If, If in While, etc.)
 - [ ] Phase auto-sequencing works around control flow components
 - [ ] Database-backed conditions work for resumability
+- [ ] Orchestration resumes correctly mid-iteration after crash
+- [ ] Database contains complete history of all iterations
 
 </section>
 
@@ -799,12 +1092,6 @@ Conditions can query database state for resumable workflows:
 
 ### Alternative 1: Props-Only Conditional Rendering
 
-Instead of `<If>` component, extend all components with `renderIf` prop:
-
-```tsx
-<Phase name="Optional" renderIf={() => condition}>...</Phase>
-```
-
 **Rejected because:**
 - Duplicates logic across all components
 - Can't express else branches cleanly
@@ -812,24 +1099,12 @@ Instead of `<If>` component, extend all components with `renderIf` prop:
 
 ### Alternative 2: Higher-Order Components
 
-```tsx
-const ConditionalPhase = withCondition(Phase)
-<ConditionalPhase condition={() => ...} name="Research">...</ConditionalPhase>
-```
-
 **Rejected because:**
 - More complex API
 - Less discoverable
 - Harder to compose
 
 ### Alternative 3: Just Use `skipIf`
-
-Extend `skipIf` to handle all conditional cases:
-
-```tsx
-<Phase name="Deploy" skipIf={() => !testsPass}>...</Phase>
-<Phase name="Notify Failure" skipIf={() => testsPass}>...</Phase>
-```
 
 **Rejected because:**
 - Requires duplicate inverse conditions
@@ -880,16 +1155,6 @@ Specialized retry with backoff:
 </Retry>
 ```
 
-### 4. Condition Caching
-
-Cache condition results to avoid re-evaluation:
-
-```tsx
-<If condition={() => expensiveCheck()} cacheKey="expensiveResult">
-  ...
-</If>
-```
-
 </section>
 
 ---
@@ -901,6 +1166,9 @@ Control flow components (`<If>`, `<While>`, `<Switch>`) provide declarative cond
 1. **Always render their structure** in plan output for visibility
 2. **Support async conditions** for database-backed decisions
 3. **Compose naturally** with existing Phase/Step components
-4. **Integrate with PhaseRegistry** for automatic sequencing
+4. **Use hierarchical scoping** to enable re-execution across iterations
+5. **Integrate with PhaseRegistry** for automatic sequencing
 
-Key design decision: These components are **minimal and focused**. They solve the specific problem of control flow without trying to replicate React's full rendering model. Complex conditional logic should still be expressed in the orchestration design, not hidden in runtime branches.
+**Key design decision:** Scoping is the critical complexity. Hierarchical scope IDs (`root.while_abc.2.if_def.then`) isolate state across iterations/branches, enabling durable, resumable control flow without breaking Phase/Step state management.
+
+**This feature requires thorough review before implementation.**
