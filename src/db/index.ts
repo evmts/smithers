@@ -115,31 +115,6 @@ function runMigrations(rdb: ReactiveDatabase): void {
   if (!hasLogPath) {
     rdb.exec('ALTER TABLE agents ADD COLUMN log_path TEXT')
   }
-  const hasStreamSummary = agentsColumns.some((col) => col.name === 'stream_summary')
-  if (!hasStreamSummary) {
-    rdb.exec('ALTER TABLE agents ADD COLUMN stream_summary TEXT')
-  }
-
-  const streamEventsTable = rdb.query<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_stream_events'"
-  )
-  if (streamEventsTable.length === 0) {
-    rdb.exec(`
-      CREATE TABLE IF NOT EXISTS agent_stream_events (
-        id TEXT PRIMARY KEY,
-        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-        event_type TEXT NOT NULL,
-        event_id TEXT,
-        tool_name TEXT,
-        content TEXT,
-        timestamp INTEGER NOT NULL,
-        created_at TEXT NOT NULL
-      )
-    `)
-    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_agent ON agent_stream_events(agent_id)')
-    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_type ON agent_stream_events(event_type)')
-    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_created ON agent_stream_events(created_at DESC)')
-  }
 }
 
 /**
@@ -169,8 +144,8 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   // Reset if requested
   if (options.reset) {
     const tables = ['render_frames', 'tasks', 'steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
-                    'transitions', 'state', 'tool_calls', 'agent_stream_events', 'agents', 'phases', 'executions',
-                    'memories', 'human_interactions']
+                    'transitions', 'state', 'tool_calls', 'agents', 'phases', 'executions', 'memories',
+                    'human_interactions', 'rate_limit_snapshots']
     for (const table of tables) {
       try { rdb.exec(`DROP TABLE IF EXISTS ${table}`) } catch {}
     }
