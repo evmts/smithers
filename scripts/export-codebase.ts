@@ -13,6 +13,7 @@
  */
 
 import { join, relative } from "node:path";
+import { tmpdir } from "node:os";
 
 const MAX_LINES = 500; // Files longer than this get truncated
 const HEAD_LINES = 200; // Show first N lines of large files
@@ -250,8 +251,8 @@ async function exportSection(sectionName: string): Promise<void> {
   proc.stdin.end();
   await proc.exited;
 
-  // Save to file
-  const outputPath = join(ROOT_DIR, "codebase-export.md");
+  // Save to file in temp directory
+  const outputPath = join(tmpdir(), "codebase-export.md");
   await Bun.write(outputPath, markdown);
 
   console.log(`\n✨ Done!`);

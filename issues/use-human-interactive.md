@@ -17,7 +17,7 @@
 
 ## Executive Summary
 
-Add a `useHumanInteractive` hook that pauses orchestration to open an interactive Claude Code session where a human can collaborate with Claude to answer a question or resolve an issue. Unlike `useHuman` which presents simple prompts/options, this hook enables rich, multi-turn conversations with full Claude Code capabilities (file editing, tool use, etc.).
+Add a `useHumanInteractive` hook that requests an interactive Claude Code session where a human can collaborate with Claude to answer a question or resolve an issue. Unlike `useHuman` which presents simple prompts/options, this hook enables rich, multi-turn conversations with full Claude Code capabilities (file editing, tool use, etc.). The hook follows a `useMutation`-like API pattern—callers explicitly trigger the request and decide whether to await the result, giving full control over execution flow.
 
 ---
 
@@ -60,7 +60,7 @@ const approved = await ask('Should we proceed with this refactoring?')
 // Human can only say yes/no, can't explore the actual changes
 
 // Desired: Human can interactively explore with Claude
-const decision = await askInteractive(
+const decision = await mutate(
   'Review the proposed refactoring and decide if we should proceed',
   { context: { files: changedFiles, diffs: proposedDiffs } }
 )
@@ -77,26 +77,47 @@ const decision = await askInteractive(
 
 ### Hook API
 
+The hook follows a `useMutation`-like pattern, giving callers full control over when to trigger requests and how to handle their async nature. It does **not** automatically pause or block execution—the caller decides whether to `await` the result.
+
 ```tsx
-interface UseHumanInteractiveResult {
+interface UseHumanInteractiveResult<T = InteractiveSessionResult> {
   /**
-   * Open an interactive Claude session for human input.
-   * Resolves when the session ends with the session outcome.
+   * Trigger an interactive Claude session request.
+   * Returns a promise that resolves when the session completes.
+   * Callers decide whether to await (blocking that code path) or not.
    */
-  askInteractive: <T = InteractiveSessionResult>(
-    prompt: string,
-    options?: AskInteractiveOptions
-  ) => Promise<T>
+  mutate: (prompt: string, options?: AskInteractiveOptions) => Promise<T>
 
   /**
-   * Current interaction status
+   * Trigger without returning a promise (fire-and-forget).
+   * Use `data` and `status` to reactively track the result.
    */
-  status: 'idle' | 'pending' | 'resolved'
+  mutateAsync: (prompt: string, options?: AskInteractiveOptions) => void
+
+  /**
+   * Current mutation status
+   */
+  status: 'idle' | 'pending' | 'success' | 'error'
+
+  /**
+   * The resolved data (when status === 'success')
+   */
+  data: T | null
+
+  /**
+   * Error if the session failed (when status === 'error')
+   */
+  error: Error | null
 
   /**
    * The current session ID (if any)
    */
   sessionId: string | null
+
+  /**
+   * Reset the hook state back to idle
+   */
+  reset: () => void
 }
 
 interface AskInteractiveOptions {
@@ -171,13 +192,15 @@ interface InteractiveSessionResult {
 
 ### Usage Examples
 
-**Basic interactive session:**
+**Basic usage (awaited):**
 
 ```tsx
-const { askInteractive } = useHumanInteractive()
+const { mutate } = useHumanInteractive()
 
 async function reviewChanges() {
-  const result = await askInteractive(
+  // Awaiting blocks THIS code path until session completes
+  // Other parts of your orchestration continue running
+  const result = await mutate(
     'Please review the proposed database schema changes and approve or reject them.'
   )
 
@@ -187,10 +210,32 @@ async function reviewChanges() {
 }
 ```
 
+**Reactive pattern (non-blocking):**
+
+```tsx
+const { mutateAsync, status, data } = useHumanInteractive()
+
+// Fire off the request without blocking
+useMount(() => {
+  mutateAsync('Review the deployment plan')
+})
+
+// React to status changes
+if (status === 'pending') {
+  return <Text>Waiting for human review...</Text>
+}
+
+if (status === 'success' && data?.response === 'approved') {
+  return <DeploymentExecutor />
+}
+```
+
 **With context and structured outcome:**
 
 ```tsx
-const result = await askInteractive<{ approved: boolean; notes: string }>(
+const { mutate } = useHumanInteractive<{ approved: boolean; notes: string }>()
+
+const result = await mutate(
   'Review the security audit findings and provide approval decision.',
   {
     context: {
@@ -215,10 +260,10 @@ const result = await askInteractive<{ approved: boolean; notes: string }>(
 **Expert consultation:**
 
 ```tsx
-const { askInteractive } = useHumanInteractive()
+const { mutate } = useHumanInteractive()
 
 // Escalate to human expert when AI is uncertain
-const diagnosis = await askInteractive(
+const diagnosis = await mutate(
   'The automated analysis found an unusual pattern. Please investigate.',
   {
     context: {
@@ -305,10 +350,14 @@ import { useSmithers } from '../components/SmithersProvider.js'
 import type { HumanInteraction } from '../db/human.js'
 import { useQueryOne } from '../reactive-sqlite/index.js'
 
-export function useHumanInteractive(): UseHumanInteractiveResult {
+export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInteractiveResult<T> {
   const { db } = useSmithers()
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const resolveRef = useRef<((value: any) => void) | null>(null)
+  const [status, setStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle')
+  const [data, setData] = useState<T | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+  const resolveRef = useRef<((value: T) => void) | null>(null)
+  const rejectRef = useRef<((error: Error) => void) | null>(null)
   const startTimeRef = useRef<number | null>(null)
 
   // Reactive subscription to the current session
@@ -320,9 +369,9 @@ export function useHumanInteractive(): UseHumanInteractiveResult {
     sessionId ? [sessionId] : []
   )
 
-  // Resolve promise when session completes
+  // Resolve/reject when session completes
   useEffect(() => {
-    if (session && session.status !== 'pending' && resolveRef.current) {
+    if (session && session.status !== 'pending' && status === 'pending') {
       const duration = startTimeRef.current
         ? Date.now() - startTimeRef.current
         : 0
@@ -336,52 +385,93 @@ export function useHumanInteractive(): UseHumanInteractiveResult {
         response = session.response
       }
 
-      const result: InteractiveSessionResult = {
+      const result = {
         outcome: session.status === 'approved' ? 'completed'
                : session.status === 'cancelled' ? 'cancelled'
                : 'timeout',
         response,
         transcript: session.session_transcript ?? undefined,
         duration,
-      }
+      } as T
 
-      const resolve = resolveRef.current
-      resolveRef.current = null
+      setData(result)
+      setStatus('success')
       startTimeRef.current = null
-      resolve(result)
-    }
-  }, [session])
 
-  const askInteractive = useCallback(async <T = InteractiveSessionResult>(
+      if (resolveRef.current) {
+        resolveRef.current(result)
+        resolveRef.current = null
+        rejectRef.current = null
+      }
+    }
+  }, [session, status])
+
+  const createSession = useCallback((
+    prompt: string,
+    options?: AskInteractiveOptions
+  ): string => {
+    const config: InteractiveSessionConfig = {
+      systemPrompt: options?.systemPrompt,
+      context: options?.context,
+      model: options?.model,
+      cwd: options?.cwd,
+      mcpConfig: options?.mcpConfig,
+      timeout: options?.timeout,
+      outcomeSchema: options?.outcomeSchema,
+    }
+    return db.human.requestInteractive(prompt, config)
+  }, [db])
+
+  // Returns a promise - caller decides whether to await
+  const mutate = useCallback((
     prompt: string,
     options?: AskInteractiveOptions
   ): Promise<T> => {
-    return new Promise<T>((resolve) => {
-      resolveRef.current = resolve as (value: any) => void
+    return new Promise<T>((resolve, reject) => {
+      resolveRef.current = resolve
+      rejectRef.current = reject
       startTimeRef.current = Date.now()
+      setStatus('pending')
+      setData(null)
+      setError(null)
 
-      // Create interactive session request in DB
-      const config: InteractiveSessionConfig = {
-        systemPrompt: options?.systemPrompt,
-        context: options?.context,
-        model: options?.model,
-        cwd: options?.cwd,
-        mcpConfig: options?.mcpConfig,
-        timeout: options?.timeout,
-        outcomeSchema: options?.outcomeSchema,
-      }
-
-      const id = db.human.requestInteractive(prompt, config)
+      const id = createSession(prompt, options)
       setSessionId(id)
     })
-  }, [db])
+  }, [createSession])
+
+  // Fire-and-forget version - use status/data reactively
+  const mutateAsync = useCallback((
+    prompt: string,
+    options?: AskInteractiveOptions
+  ): void => {
+    startTimeRef.current = Date.now()
+    setStatus('pending')
+    setData(null)
+    setError(null)
+
+    const id = createSession(prompt, options)
+    setSessionId(id)
+  }, [createSession])
+
+  const reset = useCallback(() => {
+    setSessionId(null)
+    setStatus('idle')
+    setData(null)
+    setError(null)
+    resolveRef.current = null
+    rejectRef.current = null
+    startTimeRef.current = null
+  }, [])
 
   return {
-    askInteractive,
-    status: sessionId
-      ? (session?.status === 'pending' ? 'pending' : 'resolved')
-      : 'idle',
+    mutate,
+    mutateAsync,
+    status,
+    data,
+    error,
     sessionId,
+    reset,
   }
 }
 ```
@@ -455,12 +545,14 @@ completeInteractive: (
 
 ## External Harness Integration
 
-The external harness (UI/CLI) is responsible for:
+Like `useHuman`, this hook is **harness-agnostic**. It creates a database record representing the request; how that request is fulfilled is entirely up to the harness. The hook doesn't know or care whether the harness launches Claude Code CLI, opens a web UI, sends a Slack notification, or something else entirely.
+
+The harness is responsible for:
 
 1. **Detecting interactive session requests** - Poll `db.human.listPending()` for `type: 'interactive_session'`
-2. **Launching Claude Code** - Start an interactive `claude` process (without `--print`)
-3. **Providing context** - Inject the session config (system prompt, context) into Claude
-4. **Capturing outcome** - When session ends, call `db.human.completeInteractive()`
+2. **Fulfilling the request** - However it chooses (Claude CLI, custom UI, etc.)
+3. **Providing context** - Inject the session config (system prompt, context) as appropriate
+4. **Completing the interaction** - Call `db.human.completeInteractive()` when done
 
 ### Harness Pseudocode
 
@@ -731,13 +823,16 @@ When resolved:
 
 | Aspect | `useHuman` | `useHumanInteractive` |
 |--------|-----------|----------------------|
+| **API pattern** | `useMutation`-like | `useMutation`-like |
 | **Interaction type** | Simple prompt/response | Multi-turn conversation |
-| **Human capability** | Select from options, confirm, input text | Full Claude Code session (files, tools, commands) |
+| **Human capability** | Select from options, confirm, input text | Rich session (files, tools, commands) |
 | **Duration** | Seconds | Minutes to hours |
 | **Context** | Prompt string only | Rich context object + system prompt |
 | **Outcome** | Direct response | Structured or extracted from conversation |
-| **Claude involvement** | None (pure human input) | Claude assists the human |
+| **Harness dependency** | Harness-agnostic | Harness-agnostic |
 | **Use case** | Approvals, selections, simple inputs | Complex decisions, investigation, consultation |
+
+Both hooks follow the same pattern: create a DB record, let the harness fulfill it, resolve when complete. Neither hook automatically pauses or blocks execution—the caller decides whether to `await` the result.
 
 ### When to Use Each
 
@@ -763,10 +858,12 @@ When resolved:
 ## Acceptance Criteria
 
 ### Hook API
-- [ ] `useHumanInteractive` hook returns `askInteractive`, `status`, `sessionId`
-- [ ] `askInteractive` returns a Promise that resolves when session completes
-- [ ] `status` correctly reflects 'idle' | 'pending' | 'resolved' states
-- [ ] Promise resolves with `InteractiveSessionResult` containing outcome, response, duration
+- [ ] `useHumanInteractive` hook returns `mutate`, `mutateAsync`, `status`, `data`, `error`, `sessionId`, `reset`
+- [ ] `mutate` returns a Promise that resolves when session completes
+- [ ] `mutateAsync` triggers the request without returning a promise (fire-and-forget)
+- [ ] `status` correctly reflects 'idle' | 'pending' | 'success' | 'error' states
+- [ ] `data` contains `InteractiveSessionResult` when status is 'success'
+- [ ] `reset` clears all state back to idle
 
 ### Database
 - [ ] `human_interactions` table supports `type: 'interactive_session'`
@@ -788,9 +885,9 @@ When resolved:
 - [ ] `outcomeSchema` option enables structured response extraction
 
 ### Integration
-- [ ] Harness can detect pending interactive sessions
-- [ ] Harness can launch Claude in interactive mode
-- [ ] Harness can capture session completion and resolve interaction
+- [ ] Harness can detect pending interactive sessions via `listPending()`
+- [ ] Harness can fulfill the request however it chooses (hook is agnostic)
+- [ ] Harness can complete the interaction via `completeInteractive()`
 - [ ] Plan output shows interactive session status
 
 </section>
@@ -841,12 +938,27 @@ If inside a `<Worktree>`, should the interactive session inherit that `cwd`?
 
 ## Future Considerations
 
-### 1. Session Resume
+### 1. Halt All Execution Option
+
+Add an option to pause all orchestration until the interactive session completes:
+
+```tsx
+const { mutate } = useHumanInteractive()
+
+// This would signal to the orchestrator to halt everything
+const result = await mutate('Critical review needed', {
+  haltExecution: true, // Pause all other orchestration
+})
+```
+
+This could integrate with a top-level orchestration context to prevent other components from progressing. However, this adds complexity and coupling—starting simple with caller-controlled blocking is preferred.
+
+### 2. Session Resume
 
 Allow resuming a previous interactive session:
 
 ```tsx
-const result = await askInteractive('Continue reviewing the changes', {
+const result = await mutate('Continue reviewing the changes', {
   resumeSession: previousSessionId,
 })
 ```
@@ -856,7 +968,7 @@ const result = await askInteractive('Continue reviewing the changes', {
 Multiple humans can join the same interactive session:
 
 ```tsx
-const result = await askInteractive('Team review required', {
+const result = await mutate('Team review required', {
   collaborative: true,
   requiredParticipants: ['alice', 'bob'],
 })
@@ -867,7 +979,7 @@ const result = await askInteractive('Team review required', {
 Notify human via external channel (Slack, email) when session is ready:
 
 ```tsx
-const result = await askInteractive('Expert review needed', {
+const result = await mutate('Expert review needed', {
   notify: {
     channel: 'slack',
     users: ['@security-team'],
@@ -880,7 +992,7 @@ const result = await askInteractive('Expert review needed', {
 Save progress during long sessions:
 
 ```tsx
-const result = await askInteractive('Long investigation session', {
+const result = await mutate('Long investigation session', {
   checkpointInterval: 5 * 60 * 1000, // Save every 5 minutes
 })
 ```
@@ -891,15 +1003,17 @@ const result = await askInteractive('Long investigation session', {
 
 ## Summary
 
-The `useHumanInteractive` hook extends Smithers' human-in-the-loop capabilities from simple prompts to rich, multi-turn Claude Code sessions. This enables:
+The `useHumanInteractive` hook extends Smithers' human-in-the-loop capabilities from simple prompts to rich, multi-turn sessions. This enables:
 
 1. **Complex decisions** - Humans can investigate with AI assistance before deciding
-2. **Contextual exploration** - Full access to Claude Code's file/tool capabilities
+2. **Contextual exploration** - Rich context and configuration for the session
 3. **Structured outcomes** - Extract specific response formats from conversations
-4. **Seamless integration** - Same promise-based API as `useHuman`, just richer interaction
+4. **Seamless integration** - Same `useMutation`-like API pattern as `useHuman`
 
 Key design decisions:
-- **External harness launches the session** - Keep the hook simple, let harness handle process management
+- **`useMutation`-like API** - Callers explicitly trigger requests and decide whether to await
+- **No automatic blocking** - The hook doesn't pause execution; the caller controls flow
+- **Harness-agnostic** - Creates DB records; harness fulfills however it chooses
 - **Reactive database updates** - Same pattern as `useHuman` for consistency
 - **Optional transcript capture** - Don't store by default for privacy/storage reasons
 - **Configurable outcomes** - Support both freeform and structured response extraction

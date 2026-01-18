@@ -82,6 +82,7 @@ Update `package.json`:
 ```json
 {
   "dependencies": {
+    // use latest versions though!!!
     "@ai-sdk/react": "^1.0.0",
     "ai": "^4.0.0"
   }
@@ -323,11 +324,9 @@ After implementation, verify:
    import type { UseChatHelpers, UIMessage } from 'smithers-orchestrator';
    ```
 
-4. **No bundle size regression**: Tree-shaking should work - unused hooks shouldn't be bundled.
+4. **TypeScript compiles**: Run `bun run typecheck`
 
-5. **TypeScript compiles**: Run `bun run typecheck`
-
-6. **Tests pass**: Run `bun test`
+5. **Tests pass**: Run `bun test`
 </verification>
 
 ---

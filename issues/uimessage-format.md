@@ -5,6 +5,8 @@
 **Dependencies**: Requires investigation into Claude Code CLI log formats
 **Related**: Streaming protocol issue, agent observability improvements
 
+**BLOCKED** we aren't doing this feature anytime soon
+
 ---
 
 ## Overview

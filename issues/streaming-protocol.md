@@ -1,5 +1,7 @@
 # Adopt Vercel AI SDK V3StreamPart Streaming Protocol
 
+This is considered a non essential feature for future
+
 <metadata>
   <priority>high</priority>
   <category>architecture</category>

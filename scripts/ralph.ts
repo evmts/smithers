@@ -62,9 +62,9 @@ function parseDuration(duration: string): number {
   const minMatch = duration.match(/(\d+)m/)
   const secMatch = duration.match(/(\d+)s/)
 
-  if (hourMatch) totalMs += parseInt(hourMatch[1], 10) * 60 * 60 * 1000
-  if (minMatch) totalMs += parseInt(minMatch[1], 10) * 60 * 1000
-  if (secMatch) totalMs += parseInt(secMatch[1], 10) * 1000
+  if (hourMatch?.[1]) totalMs += parseInt(hourMatch[1], 10) * 60 * 60 * 1000
+  if (minMatch?.[1]) totalMs += parseInt(minMatch[1], 10) * 60 * 1000
+  if (secMatch?.[1]) totalMs += parseInt(secMatch[1], 10) * 1000
 
   if (totalMs === 0) {
     // Try parsing as plain number (assume minutes)
@@ -81,11 +81,11 @@ function parseDuration(duration: string): number {
 function parseConfig(): RalphConfig {
   const args = process.argv.slice(2)
   const config: RalphConfig = {
-    durationMs: parseDuration(process.env.RALPH_DURATION || '6h'),
-    sleepMs: parseDuration(process.env.RALPH_SLEEP || '5m'),
-    model: process.env.RALPH_MODEL || 'opus',
+    durationMs: parseDuration(process.env['RALPH_DURATION'] ?? '6h'),
+    sleepMs: parseDuration(process.env['RALPH_SLEEP'] ?? '5m'),
+    model: process.env['RALPH_MODEL'] ?? 'opus',
     dryRun: false,
-    maxTurns: parseInt(process.env.RALPH_MAX_TURNS || '50', 10),
+    maxTurns: parseInt(process.env['RALPH_MAX_TURNS'] ?? '50', 10),
     cwd: process.cwd(),
   }
 
@@ -93,19 +93,19 @@ function parseConfig(): RalphConfig {
     const arg = args[i]
     switch (arg) {
       case '--duration':
-        config.durationMs = parseDuration(args[++i])
+        config.durationMs = parseDuration(args[++i] ?? '6h')
         break
       case '--sleep':
-        config.sleepMs = parseDuration(args[++i])
+        config.sleepMs = parseDuration(args[++i] ?? '5m')
         break
       case '--model':
-        config.model = args[++i]
+        config.model = args[++i] ?? 'opus'
         break
       case '--dry-run':
         config.dryRun = true
         break
       case '--max-turns':
-        config.maxTurns = parseInt(args[++i], 10)
+        config.maxTurns = parseInt(args[++i] ?? '50', 10)
         break
       case '--help':
       case '-h':
@@ -157,7 +157,7 @@ Examples:
 function extractPriority(content: string): number {
   // Look for Priority: P0, P1, P2, P3
   const priorityMatch = content.match(/(?:Priority|Status)[:\s]*\*{0,2}(P[0-3]|HIGH|MEDIUM|LOW)(?:\s+PRIORITY)?\*{0,2}/i)
-  if (priorityMatch) {
+  if (priorityMatch?.[1]) {
     const key = priorityMatch[1].toUpperCase()
     return PRIORITY_MAP[key] ?? 2
   }
@@ -169,7 +169,7 @@ function extractPriority(content: string): number {
  */
 function extractTitle(content: string): string {
   const match = content.match(/^#\s+(.+)$/m)
-  return match ? match[1].trim() : 'Untitled Task'
+  return match?.[1]?.trim() ?? 'Untitled Task'
 }
 
 /**
@@ -211,10 +211,6 @@ async function discoverTodoTasks(cwd: string): Promise<Task[]> {
   const content = await file.text()
   const tasks: Task[] = []
 
-  // Match unchecked items: - [ ] **`file`** - description
-  const itemRegex = /^- \[ \] \*{0,2}`?([^`*]+)`?\*{0,2}\s*(?:\([^)]+\))?\s*-?\s*(.+)$/gm
-  let match
-
   // Track current section for priority
   let currentPriority = 2
   const lines = content.split('\n')
@@ -227,10 +223,11 @@ async function discoverTodoTasks(cwd: string): Promise<Task[]> {
       else if (line.includes('Low') || line.includes('LOW')) currentPriority = 3
     }
 
-    // Match unchecked items
+    // Match unchecked items: - [ ] **`file`** - description
     const itemMatch = line.match(/^- \[ \] \*{0,2}`?([^`*]+)`?\*{0,2}\s*(?:\([^)]+\))?\s*-?\s*(.*)$/)
     if (itemMatch) {
-      const [_, location, description] = itemMatch
+      const location = itemMatch[1] ?? 'unknown'
+      const description = itemMatch[2] ?? ''
       tasks.push({
         title: description || location,
         file: todoPath,
