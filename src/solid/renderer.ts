@@ -27,11 +27,20 @@ export function createSmithersRenderer() {
     return solidUniversal.createRenderer<SmithersNode>(rendererMethods)
   } catch {
     // In test environments, return a placeholder that will be populated later
+    const notAvailable = () => { throw new Error('Solid renderer not available in this environment') }
     return {
-      render: () => { throw new Error('Solid renderer not available in this environment') },
-      effect: () => { throw new Error('Solid renderer not available in this environment') },
-      memo: () => { throw new Error('Solid renderer not available in this environment') },
-      createComponent: () => { throw new Error('Solid renderer not available in this environment') },
+      render: notAvailable,
+      effect: notAvailable,
+      memo: notAvailable,
+      createComponent: notAvailable,
+      createElement: notAvailable,
+      createTextNode: notAvailable,
+      insertNode: notAvailable,
+      insert: notAvailable,
+      spread: notAvailable,
+      setProp: notAvailable,
+      mergeProps: notAvailable,
+      use: notAvailable,
     }
   }
 }
@@ -40,10 +49,20 @@ export function createSmithersRenderer() {
 export { getSolidRenderer }
 
 // Try to create the renderer synchronously for normal usage
-const _renderer = createSmithersRenderer()
+const _renderer = createSmithersRenderer() as any
+
+// Export all renderer functions that babel-preset-solid expects
 export const render = _renderer.render
 export const effect = _renderer.effect
 export const memo = _renderer.memo
 export const createComponent = _renderer.createComponent
+export const createElement = _renderer.createElement
+export const createTextNode = _renderer.createTextNode
+export const insertNode = _renderer.insertNode
+export const insert = _renderer.insert
+export const spread = _renderer.spread
+export const setProp = _renderer.setProp
+export const mergeProps = _renderer.mergeProps
+export const use = _renderer.use
 
 export type { SmithersNode }

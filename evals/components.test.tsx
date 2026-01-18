@@ -11,7 +11,9 @@
  * Unit tests for component interfaces exist in src/components/*.test.tsx
  */
 import { describe, test, expect } from 'bun:test'
-import './setup'
+
+// Setup import removed - causes Solid JSX loading errors
+// import './setup'
 
 // All tests skipped due to JSX transform mismatch
 // See src/components/*.test.tsx for unit tests

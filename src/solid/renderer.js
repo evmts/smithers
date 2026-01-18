@@ -107,6 +107,22 @@ export function template(str) {
   return () => createElement('template')
 }
 
+// mergeProps - merge multiple props objects
+export function mergeProps(...sources) {
+  const result = {}
+  for (const source of sources) {
+    if (source) {
+      Object.assign(result, source)
+    }
+  }
+  return result
+}
+
+// use - directive-like function for custom behavior
+export function use(fn, element, arg) {
+  return fn(element, arg)
+}
+
 // Create and export the renderer using solid-js/universal
 const rendererInstance = createRenderer({
   createElement,
@@ -121,8 +137,5 @@ const rendererInstance = createRenderer({
   getNextSibling,
 })
 
-// Export render, effect, memo, createComponent for runtime use
+// Export render, effect, memo, createComponent from renderer instance
 export const { render, effect, memo, createComponent } = rendererInstance
-
-// Also export insert from the instance if available
-export { insertNode as insert2 }

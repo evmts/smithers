@@ -4,9 +4,35 @@
  * Tests the internal helper functions in execute.ts.
  */
 import { describe, test, expect } from 'bun:test'
-import './setup'
-import { createNode } from '../test/utils'
+
+// Setup import removed - causes Solid JSX loading errors
+// import './setup'
+// Using local createNode implementation instead of importing from test/utils
+// (which imports from solid/root which triggers JSX loading)
 import type { SmithersNode, ExecutionState } from '../src/core/types'
+
+/**
+ * Local createNode implementation to avoid importing from test/utils.
+ */
+function createNode(
+  type: string,
+  props: Record<string, unknown> = {},
+  children: SmithersNode[] = []
+): SmithersNode {
+  const node: SmithersNode = {
+    type,
+    props,
+    children: [],
+    parent: null,
+  }
+
+  for (const child of children) {
+    child.parent = node
+    node.children.push(child)
+  }
+
+  return node
+}
 
 // Helper to create test nodes with execution state
 function createNodeWithExecution(

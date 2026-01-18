@@ -7,7 +7,9 @@
  * Tests using serialize() directly work fine.
  */
 import { describe, test, expect } from 'bun:test'
-import './setup'
+
+// Setup import removed - causes Solid JSX loading errors
+// import './setup'
 import { serialize } from '../src/core/serialize'
 import type { SmithersNode } from '../src/core/types'
 

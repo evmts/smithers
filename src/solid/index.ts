@@ -3,7 +3,22 @@
  */
 
 export { createSmithersRoot } from './root.js'
-export { render, effect, memo, createComponent } from './renderer.jsx'
+
+// Export all renderer functions for babel-preset-solid universal mode
+export {
+  render,
+  effect,
+  memo,
+  createComponent,
+  createElement,
+  createTextNode,
+  insertNode,
+  insert,
+  spread,
+  setProp,
+  mergeProps,
+  use,
+} from './renderer.js'
 
 // Re-export Solid primitives for convenience
 export {
