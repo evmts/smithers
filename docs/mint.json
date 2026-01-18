@@ -70,15 +70,22 @@
       "pages": [
         "components/smithers-provider",
         "components/claude",
+        "components/claude-api",
         "components/ralph",
         "components/smithers",
         "components/orchestration",
         "components/phase",
         "components/step",
+        "components/task",
+        "components/subagent",
         "components/review",
         "components/human",
         "components/stop",
         "components/commit",
+        "components/jj",
+        "components/hooks",
+        "components/persona",
+        "components/constraints",
         "components/sqlite"
       ]
     },
@@ -99,7 +106,20 @@
         "api-reference/memories",
         "api-reference/execution",
         "api-reference/agents",
+        "api-reference/tasks",
+        "api-reference/phases",
+        "api-reference/steps",
+        "api-reference/tools",
+        "api-reference/artifacts",
+        "api-reference/human",
         "api-reference/vcs"
+      ]
+    },
+    {
+      "group": "React Hooks",
+      "pages": [
+        "api-reference/reactive-hooks",
+        "api-reference/hooks"
       ]
     },
     {
