@@ -26,6 +26,9 @@ export function createStepsModule(ctx: StepsModuleContext): StepsModule {
 
   const steps: StepsModule = {
     start: (name?: string): string => {
+      if (rdb.isClosed) {
+        return uuid()
+      }
       const currentExecutionId = getCurrentExecutionId()
       const currentPhaseId = getCurrentPhaseId()
       if (!currentExecutionId) throw new Error('No active execution')
@@ -40,6 +43,7 @@ export function createStepsModule(ctx: StepsModuleContext): StepsModule {
     },
 
     complete: (id: string, vcsInfo?: { snapshot_before?: string; snapshot_after?: string; commit_created?: string }) => {
+      if (rdb.isClosed) return
       const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM steps WHERE id = ?', [id])
       const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
       rdb.run(
@@ -50,21 +54,25 @@ export function createStepsModule(ctx: StepsModuleContext): StepsModule {
     },
 
     fail: (id: string) => {
+      if (rdb.isClosed) return
       rdb.run(`UPDATE steps SET status = 'failed', completed_at = ? WHERE id = ?`, [now(), id])
       if (getCurrentStepId() === id) setCurrentStepId(null)
     },
 
     current: (): Step | null => {
+      if (rdb.isClosed) return null
       const currentStepId = getCurrentStepId()
       if (!currentStepId) return null
       return rdb.queryOne('SELECT * FROM steps WHERE id = ?', [currentStepId])
     },
 
     list: (phaseId: string): Step[] => {
+      if (rdb.isClosed) return []
       return rdb.query('SELECT * FROM steps WHERE phase_id = ? ORDER BY created_at', [phaseId])
     },
 
     getByExecution: (executionId: string): Step[] => {
+      if (rdb.isClosed) return []
       return rdb.query('SELECT * FROM steps WHERE execution_id = ? ORDER BY created_at', [executionId])
     },
   }

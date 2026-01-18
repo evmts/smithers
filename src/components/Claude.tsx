@@ -3,6 +3,7 @@
 
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
+import { useWorktree } from './WorktreeProvider.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
@@ -57,6 +58,7 @@ type AgentRow = {
 
 export function Claude(props: ClaudeProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
+  const worktree = useWorktree()
   const ralphCount = useRalphCount()
 
   // agentId stored in ref (set once, non-reactive until set)
@@ -182,6 +184,7 @@ export function Claude(props: ClaudeProps): ReactNode {
               ...(mcpConfigPath !== undefined ? { mcpConfig: mcpConfigPath } : {}),
               ...(props.allowedTools !== undefined ? { allowedTools: props.allowedTools } : {}),
               ...(props.disallowedTools !== undefined ? { disallowedTools: props.disallowedTools } : {}),
+              ...(props.cwd !== undefined || worktree?.cwd ? { cwd: props.cwd ?? worktree?.cwd } : {}),
               ...(props.timeout !== undefined ? { timeout: props.timeout } : {}),
               ...(props.stopConditions !== undefined ? { stopConditions: props.stopConditions } : {}),
               ...(props.continueConversation !== undefined ? { continue: props.continueConversation } : {}),

@@ -1,11 +1,15 @@
 // Phase component with automatic SQLite-backed state management
 // Phases are always rendered in output, but only active phase renders children
+import { createContext, useContext, useRef, useEffect, useCallback, type ReactNode } from 'react'
 
-import { useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
+interface PhaseContextValue {
+  isActive: boolean
+}
 
+const PhaseContext = createContext<PhaseContextValue | null>(null)
 
 export interface PhaseProps {
   /**
@@ -62,6 +66,8 @@ export function Phase(props: PhaseProps): ReactNode {
   const { db, ralphCount } = useSmithers()
   const registry = usePhaseRegistry()
   const myIndex = usePhaseIndex(props.name)
+  const parentPhase = useContext(PhaseContext)
+  const isNested = parentPhase !== null
 
   const phaseIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
@@ -70,8 +76,12 @@ export function Phase(props: PhaseProps): ReactNode {
 
   // Determine phase status
   const isSkipped = props.skipIf?.() ?? false
-  const isActive = !isSkipped && registry.isPhaseActive(myIndex)
-  const isCompleted = !isSkipped && registry.isPhaseCompleted(myIndex)
+  const isActive = isSkipped
+    ? false
+    : isNested
+      ? parentPhase?.isActive ?? false
+      : registry.isPhaseActive(myIndex)
+  const isCompleted = isSkipped ? false : isNested ? false : registry.isPhaseCompleted(myIndex)
 
   // Compute status string for output
   const status: 'pending' | 'active' | 'completed' | 'skipped' = isSkipped
@@ -81,7 +91,6 @@ export function Phase(props: PhaseProps): ReactNode {
       : isCompleted
         ? 'completed'
         : 'pending'
-
   // Track if we've already processed the skip for this phase
   const hasSkippedRef = useRef(false)
 
@@ -89,6 +98,11 @@ export function Phase(props: PhaseProps): ReactNode {
   useEffect(() => {
     if (registry.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
       hasSkippedRef.current = true
+
+  // Handle skipped phases on mount
+  useMount(() => {
+    if (isSkipped && !isNested) {
+
       // Log skipped phase to database
       const id = db.phases.start(props.name, ralphCount)
       db.db.run(
@@ -143,11 +157,21 @@ export function Phase(props: PhaseProps): ReactNode {
   // Wrap children in StepRegistryProvider to enforce sequential step execution
   return (
     <phase name={props.name} status={status}>
+
       {isActive && (
         <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
           {props.children}
         </StepRegistryProvider>
       )}
+
+      <PhaseContext.Provider value={{ isActive }}>
+        {isActive && (
+          <StepRegistryProvider phaseId={props.name}>
+            {props.children}
+          </StepRegistryProvider>
+        )}
+      </PhaseContext.Provider>
+
     </phase>
   )
 }

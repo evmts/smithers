@@ -3,6 +3,7 @@
 
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
+import { useWorktree } from './WorktreeProvider.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI.js'
 import type { ClaudeModel } from './agents/types.js'
@@ -120,6 +121,7 @@ export interface SmithersProps {
  */
 export function Smithers(props: SmithersProps): ReactNode {
   const { db, executionId } = useSmithers()
+  const worktree = useWorktree()
   const ralphCount = useRalphCount()
 
   const subagentIdRef = useRef<string | null>(null)
@@ -201,7 +203,7 @@ export function Smithers(props: SmithersProps): ReactNode {
           ...(props.maxPlanningTurns !== undefined ? { maxPlanningTurns: props.maxPlanningTurns } : {}),
           ...(props.timeout !== undefined ? { timeout: props.timeout } : {}),
           ...(props.context !== undefined ? { context: props.context } : {}),
-          ...(props.cwd !== undefined ? { cwd: props.cwd } : {}),
+          ...(props.cwd !== undefined || worktree?.cwd ? { cwd: props.cwd ?? worktree?.cwd } : {}),
           keepScript: props.keepScript || !!props.scriptPath,
           ...(props.scriptPath !== undefined ? { scriptPath: props.scriptPath } : {}),
           ...(props.onProgress !== undefined ? { onProgress: props.onProgress } : {}),

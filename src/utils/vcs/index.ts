@@ -9,6 +9,7 @@ export type {
   CommandResult,
   JJSnapshotResult,
   JJCommitResult,
+  WorktreeInfo,
 } from './types.js'
 
 // Parsers
@@ -26,6 +27,12 @@ export {
   hasGitNotes,
   isGitRepo,
   getCurrentBranch,
+  parseWorktreeList,
+  listWorktrees,
+  addWorktree,
+  removeWorktree,
+  branchExists,
+  worktreeExists,
 } from './git.js'
 
 // Jujutsu operations
