@@ -2,7 +2,7 @@ import { SolidPlugin } from "@dschz/bun-plugin-solid";
 
 await Bun.plugin(
   SolidPlugin({
-    generate: "ssr", // SSR mode doesn't require DOM globals
+    generate: "universal", // For custom renderers using solid-js/universal
     hydratable: false,
     debug: false,
   }),
