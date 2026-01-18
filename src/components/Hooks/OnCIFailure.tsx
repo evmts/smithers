@@ -5,6 +5,7 @@ import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { useMount, useUnmount } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
+import { useExecutionContext } from '../ExecutionContext.js'
 
 export interface CIFailure {
   failed: boolean
@@ -123,6 +124,7 @@ const DEFAULT_CI_STATE: CIFailureState = {
 
 export function OnCIFailure(props: OnCIFailureProps): ReactNode {
   const { db, reactiveDb } = useSmithers()
+  const execution = useExecutionContext()
 
   // Query state from db.state reactively
   const { data: stateJson } = useQueryValue<string>(
@@ -142,6 +144,7 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useMount(() => {
+    if (!execution.isActive) return
     // Initialize state if not present
     const currentState = db.state.get<CIFailureState>('hook:ciFailure')
     if (!currentState) {

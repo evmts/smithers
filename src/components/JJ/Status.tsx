@@ -2,6 +2,7 @@ import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { getJJStatus } from '../../utils/vcs.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useExecutionContext } from '../ExecutionContext.js'
 
 export interface StatusProps {
   onDirty?: (status: { modified: string[]; added: string[]; deleted: string[] }) => void
@@ -17,6 +18,7 @@ export interface StatusProps {
  */
 export function Status(props: StatusProps): ReactNode {
   const smithers = useSmithers()
+  const execution = useExecutionContext()
   const [, forceUpdate] = useReducer((x) => x + 1, 0)
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
@@ -31,6 +33,7 @@ export function Status(props: StatusProps): ReactNode {
   const isMounted = useMountedState()
 
   useMount(() => {
+    if (!execution.isActive) return
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-status')
 

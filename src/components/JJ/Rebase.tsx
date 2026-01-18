@@ -1,6 +1,7 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useExecutionContext } from '../ExecutionContext.js'
 
 export interface RebaseProps {
   destination?: string
@@ -41,6 +42,7 @@ function parseConflicts(output: string): string[] {
  */
 export function Rebase(props: RebaseProps): ReactNode {
   const smithers = useSmithers()
+  const execution = useExecutionContext()
   const [, forceUpdate] = useReducer((x) => x + 1, 0)
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
@@ -50,6 +52,7 @@ export function Rebase(props: RebaseProps): ReactNode {
   const isMounted = useMountedState()
 
   useMount(() => {
+    if (!execution.isActive) return
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-rebase')
 

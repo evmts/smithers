@@ -3,6 +3,7 @@ import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes } from '../../utils/vcs.js'
 import type { ReviewTarget, ReviewResult, ReviewProps } from './types.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useExecutionContext } from '../ExecutionContext.js'
 
 /**
  * Fetch content to review based on target type
@@ -182,6 +183,7 @@ ${issuesText}
  */
 export function Review(props: ReviewProps): ReactNode {
   const smithers = useSmithers()
+  const execution = useExecutionContext()
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const resultRef = useRef<ReviewResult | null>(null)
   const errorRef = useRef<Error | null>(null)
@@ -191,6 +193,7 @@ export function Review(props: ReviewProps): ReactNode {
   const isMounted = useMountedState()
 
   useMount(() => {
+    if (!execution.isActive) return
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
