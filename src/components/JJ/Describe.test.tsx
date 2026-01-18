@@ -1,7 +1,7 @@
 /**
  * Unit tests for JJ/Describe.tsx - JJ describe component interface tests.
  */
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 import type { DescribeProps } from './Describe.js'
 
 describe('DescribeProps interface', () => {

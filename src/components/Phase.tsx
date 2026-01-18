@@ -1,7 +1,7 @@
 // Phase component with automatic SQLite-backed state management
 // Phases are always rendered in output, but only active phase renders children
 
-import { useRef, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useRef, useEffect, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
@@ -35,6 +35,12 @@ export interface PhaseProps {
   onComplete?: () => void
 }
 
+interface PhaseRenderContextValue {
+  parentActive: boolean
+}
+
+const PhaseRenderContext = createContext<PhaseRenderContextValue | null>(null)
+
 /**
  * Phase component with automatic state management
  *
@@ -60,6 +66,8 @@ export interface PhaseProps {
  */
 export function Phase(props: PhaseProps): ReactNode {
   const { db, ralphCount } = useSmithers()
+  const parentContext = useContext(PhaseRenderContext)
+  const isParentActive = parentContext?.parentActive ?? false
   const registry = usePhaseRegistry()
   const myIndex = usePhaseIndex(props.name)
 
@@ -81,6 +89,8 @@ export function Phase(props: PhaseProps): ReactNode {
       : isCompleted
         ? 'completed'
         : 'pending'
+
+  const shouldRenderChildren = !isSkipped && (isActive || isParentActive)
 
   // Handle skipped phases on mount
   useMount(() => {
@@ -132,11 +142,13 @@ export function Phase(props: PhaseProps): ReactNode {
   // Wrap children in StepRegistryProvider to enforce sequential step execution
   return (
     <phase name={props.name} status={status}>
-      {isActive && (
-        <StepRegistryProvider phaseId={props.name}>
-          {props.children}
-        </StepRegistryProvider>
-      )}
+      <PhaseRenderContext.Provider value={{ parentActive: isActive || isParentActive }}>
+        {shouldRenderChildren && (
+          <StepRegistryProvider phaseId={props.name}>
+            {props.children}
+          </StepRegistryProvider>
+        )}
+      </PhaseRenderContext.Provider>
     </phase>
   )
 }

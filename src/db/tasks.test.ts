@@ -3,12 +3,11 @@ import { createSmithersDB, type SmithersDB } from './index.js'
 
 describe('Tasks module', () => {
   let db: SmithersDB
-  let executionId: string
 
   beforeAll(async () => {
     db = await createSmithersDB({ reset: true })
     // Start an execution to work with
-    executionId = await db.execution.start('test-execution', 'test.tsx')
+    await db.execution.start('test-execution', 'test.tsx')
   })
 
   afterAll(() => {

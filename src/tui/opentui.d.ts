@@ -1,5 +1,4 @@
-// Type declarations for @opentui/core and @opentui/react
-// These help TypeScript understand the module exports
+// OpenTUI type declarations + JSX intrinsic element typing for TUI components.
 
 import type { ReactNode, CSSProperties } from 'react'
 
@@ -86,29 +85,26 @@ declare module '@opentui/react' {
   export { createElement } from 'react'
 }
 
-// Extend React's CSSProperties to include OpenTUI terminal properties
-declare module 'react' {
-  interface CSSProperties {
-    // Terminal-specific color properties
-    fg?: string
-    bg?: string
-    // Terminal text attributes
-    bold?: boolean
-    dim?: boolean
-    italic?: boolean
-    inverse?: boolean
-    strikethrough?: boolean
-    // Terminal layout properties
-    focusedBackgroundColor?: string
-    // Allow any additional OpenTUI properties
-    [key: string]: unknown
-  }
-}
+type OpenTUIColor = string | { r: number; g: number; b: number; a?: number }
 
-// OpenTUI style type - allows custom terminal properties like fg, bg
-export interface OpenTUIStyle extends CSSProperties {
-  fg?: string
-  bg?: string
+type OpenTUIBorderStyle =
+  | 'single'
+  | 'double'
+  | 'round'
+  | 'bold'
+  | 'singleDouble'
+  | 'doubleSingle'
+  | 'classic'
+  | 'none'
+
+export type OpenTUIStyle = Omit<CSSProperties, 'border' | 'borderRight'> & {
+  fg?: OpenTUIColor
+  bg?: OpenTUIColor
+  selectionBg?: OpenTUIColor
+  selectionFg?: OpenTUIColor
+  focusedBackgroundColor?: OpenTUIColor
+  focusedBorderColor?: OpenTUIColor
+  attributes?: number | undefined
   bold?: boolean
   dim?: boolean
   italic?: boolean
@@ -116,32 +112,72 @@ export interface OpenTUIStyle extends CSSProperties {
   inverse?: boolean
   hidden?: boolean
   strikethrough?: boolean
-  border?: 'single' | 'double' | 'round' | 'bold' | 'singleDouble' | 'doubleSingle' | 'classic' | 'none'
-  borderColor?: string
-  focusedBackgroundColor?: string
-  [key: string]: unknown
+  border?: boolean | OpenTUIBorderStyle
+  borderRight?: boolean | OpenTUIBorderStyle
 }
 
-// Augment React's JSX namespace for OpenTUI elements
-declare module 'react' {
+export interface OpenTUIBoxProps {
+  key?: string | number
+  style?: OpenTUIStyle
+  children?: ReactNode
+}
+
+export interface OpenTUITextProps {
+  key?: string | number
+  content?: string
+  style?: OpenTUIStyle
+  children?: ReactNode
+}
+
+export interface OpenTUIScrollBoxProps {
+  key?: string | number
+  focused?: boolean
+  style?: OpenTUIStyle
+  children?: ReactNode
+}
+
+export interface OpenTUIInputProps {
+  key?: string | number
+  value?: string
+  placeholder?: string
+  focused?: boolean
+  onInput?: (value: string) => void
+  onSubmit?: (value?: string) => void
+  style?: OpenTUIStyle
+}
+
+declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
-      // OpenTUI box element
-      box: {
-        key?: string | number
-        style?: OpenTUIStyle
-        children?: ReactNode
-        [key: string]: unknown
-      }
-      // OpenTUI scrollbox element
-      scrollbox: {
-        key?: string | number
-        focused?: boolean
-        style?: OpenTUIStyle
-        children?: ReactNode
-        [key: string]: unknown
-      }
+      box: OpenTUIBoxProps
+      text: OpenTUITextProps
+      scrollbox: OpenTUIScrollBoxProps
+      input: OpenTUIInputProps
+    }
+  }
+}
+
+declare module 'react/jsx-runtime' {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace JSX {
+    interface IntrinsicElements {
+      box: OpenTUIBoxProps
+      text: OpenTUITextProps
+      scrollbox: OpenTUIScrollBoxProps
+      input: OpenTUIInputProps
+    }
+  }
+}
+
+declare module 'react/jsx-dev-runtime' {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace JSX {
+    interface IntrinsicElements {
+      box: OpenTUIBoxProps
+      text: OpenTUITextProps
+      scrollbox: OpenTUIScrollBoxProps
+      input: OpenTUIInputProps
     }
   }
 }

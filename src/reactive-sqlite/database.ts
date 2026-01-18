@@ -64,6 +64,7 @@ export class ReactiveDatabase {
    * Execute raw SQL (for schema, pragmas, etc.)
    */
   exec(sql: string): void {
+    if (this.closed) return;
     this.db.exec(sql);
 
     // Check if this affects any tables
@@ -90,6 +91,9 @@ export class ReactiveDatabase {
     sql: string,
     params: any[] = [],
   ): Database["run"] extends (...args: any[]) => infer R ? R : never {
+    if (this.closed) {
+      return undefined as any;
+    }
     const stmt = this.db.prepare(sql);
     const result = stmt.run(...params);
 
@@ -115,6 +119,7 @@ export class ReactiveDatabase {
    * Execute a query and return all rows
    */
   query<T = Record<string, unknown>>(sql: string, params: any[] = []): T[] {
+    if (this.closed) return [];
     const stmt = this.db.prepare<T, any[]>(sql);
     return stmt.all(...params);
   }
@@ -126,6 +131,7 @@ export class ReactiveDatabase {
     sql: string,
     params: any[] = [],
   ): T | null {
+    if (this.closed) return null;
     const stmt = this.db.prepare<T, any[]>(sql);
     return stmt.get(...params) ?? null;
   }
@@ -299,6 +305,9 @@ export class ReactiveDatabase {
    * Run a function in a transaction
    */
   transaction<T>(fn: () => T): T {
+    if (this.closed) {
+      return fn();
+    }
     return this.db.transaction(fn)();
   }
 

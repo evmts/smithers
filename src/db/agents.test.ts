@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { ReactiveDatabase } from '../reactive-sqlite/database.js'
 import { createAgentsModule } from './agents.js'
-import * as fs from 'fs'
 
 describe('AgentsModule', () => {
   let db: ReactiveDatabase

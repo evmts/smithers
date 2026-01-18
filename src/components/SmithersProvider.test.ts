@@ -73,14 +73,14 @@ describe('SmithersProvider', () => {
 
     test('includes requestStop function', () => {
       const ctx: Partial<SmithersContextValue> = {
-        requestStop: (reason: string) => {},
+        requestStop: (_reason: string) => {},
       }
       expect(typeof ctx.requestStop).toBe('function')
     })
 
     test('includes requestRebase function', () => {
       const ctx: Partial<SmithersContextValue> = {
-        requestRebase: (reason: string) => {},
+        requestRebase: (_reason: string) => {},
       }
       expect(typeof ctx.requestRebase).toBe('function')
     })
@@ -367,7 +367,7 @@ describe('Ralph backwards compatibility', () => {
   })
 
   test('RalphContextType is re-exported from Ralph.tsx', async () => {
-    const { RalphContextType } = await import('./Ralph.js')
+    const { RalphContextType: _RalphContextType } = await import('./Ralph.js')
     // This is a type, so we just verify the module exports something
     expect(true).toBe(true)
   })

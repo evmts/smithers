@@ -1,7 +1,7 @@
 /**
  * Unit tests for JJ/Commit.tsx - JJ commit component interface tests.
  */
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 import type { CommitProps } from './Commit.js'
 
 describe('CommitProps interface', () => {

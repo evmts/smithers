@@ -344,7 +344,7 @@ describe('checkStopConditions', () => {
       const conditions: StopCondition[] = [
         {
           type: 'custom',
-          fn: (result: AgentResult) => true
+          fn: (_result: AgentResult) => true
         }
       ]
       const partialResult = {}
