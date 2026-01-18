@@ -37,6 +37,18 @@ git notes add -m "User prompt: Add feature X to the application"
 
 This creates a traceable history linking each commit to its originating request.
 
+### Precommit Hook Failures
+
+If a precommit hook fails (e.g., lint, typecheck, tests), you MUST stop immediately and NOT bypass the checks with `--no-verify` or similar flags.
+
+**If the failure is due to unrelated changes:**
+- Stop immediately - do not proceed with the commit
+- Inform the user about the precommit hook failure
+- Do NOT attempt to fix unrelated issues
+- Do NOT skip the checks with `--no-verify` or similar flags
+
+The agent should simply stop and let the user resolve precommit hook failures themselves before proceeding. Never use `git commit --no-verify` or similar flags to bypass hooks unless explicitly instructed by the user.
+
 ## APIs
 
 - `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
