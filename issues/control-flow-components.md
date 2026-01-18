@@ -4,7 +4,7 @@
   <priority>critical</priority>
   <category>feature</category>
   <estimated-effort>5-7 days</estimated-effort>
-  <status>design-review</status>
+  <status>design-review-accounted</status>
   <dependencies>
     - src/components/Phase.tsx
     - src/components/PhaseRegistry.tsx
@@ -36,11 +36,32 @@
 
 ---
 
+<section name="design-review-addendum">
+
+## Design Review Addendum (accounted)
+
+This issue has been updated to incorporate the review. **P0 blockers now treated as requirements:**
+
+- **Stable IDs**: control-flow nodes must have stable identity across restarts (v1 requires explicit `id` prop; no randomness).
+- **Scoped registries**: scope boundaries must create new Phase/Step registry instances; scoping keys alone is insufficient.
+- **Plan vs execution**: branch subtrees always render in plan; execution is gated via `executionEnabled` context (plan-only mode for inactive branches).
+- **Task gating**: control-flow nodes must own a task while evaluating/transitioning to prevent global `ralphCount` races.
+- **Step/Phase lifecycle**: completion must be explicit (not unmount-based); re-execution must be per-scope (likely keyed remount at boundary).
+- **Context propagation**: fallback context must support nested providers or be removed for scoped execution.
+- **Canonical state keys**: central `makeStateKey(...)` and scope encoder; no ad-hoc string templates.
+- **Schema**: add `tasks.scope_id` (and optionally `agents/tool_calls` later) to enable subtree completion checks.
+
+</section>
+
+---
+
 ## Executive Summary
 
 Add minimal control flow components (`<If>`, `<While>`, `<Switch>`) to enable conditional and iterative execution within Smithers orchestrations. These components complement the existing `Phase` and `Step` components while maintaining the declarative, unconditional rendering pattern.
 
 **Critical Design Challenge:** Control flow requires a **scoping mechanism** to allow phases/steps to re-execute across iterations without state collision.
+
+**New requirement from review:** scoping alone is insufficient; **stable IDs**, **scoped registries**, **execution gating**, and **task gating** are required for resumability and correctness.
 
 ---
 
@@ -53,7 +74,7 @@ Control flow components need a scoping mechanism to allow phases and steps to be
 **Example: While Loop**
 
 ```tsx
-<While condition={() => testsNotPassing} maxIterations={5}>
+<While id="fix-tests" condition={() => testsNotPassing} maxIterations={5}>
   <Phase name="Fix and Test">
     <Step name="Analyze Failures">
       <Claude>Analyze test failures</Claude>
@@ -94,7 +115,7 @@ The current Phase component supports sequential execution with `skipIf` for simp
 
 ### Design Principles
 
-1. **Unconditional rendering** - All control flow components render their structure in the plan output, even when branches are inactive
+1. **Unconditional rendering** - All control flow components render their structure in the plan output; execution is gated separately
 2. **Declarative over imperative** - Use props and children to express flow, not callbacks that mutate state
 3. **Visible in plan output** - The workflow structure is always visible, making debugging easier
 4. **Database-backed state** - Conditions can query SQLite state for durable, resumable workflows
@@ -116,7 +137,7 @@ The current Phase component supports sequential execution with `skipIf` for simp
 ```tsx
 // CORRECT - Workflow structure is always visible
 <Phase name="Research">...</Phase>
-<If condition={() => needsMoreResearch}>
+<If id="needs-more-research" condition={() => needsMoreResearch}>
   <Phase name="Additional Research">...</Phase>
 </If>
 <Phase name="Implementation">...</Phase>
@@ -150,11 +171,13 @@ The current Phase component supports sequential execution with `skipIf` for simp
 
 ### Design Requirements
 
-1. **Durable Phase/Step History**: All iterations should be logged to the database
-2. **Fresh Execution Per Iteration**: Each iteration needs clean state for phases/steps
-3. **Resumability**: If orchestration crashes mid-iteration, it should resume correctly
-4. **Visibility**: Plan output should show which iteration is active
-5. **Minimal API Changes**: Existing Phase/Step components should "just work" inside control flow
+1. **Stable identity**: Control-flow nodes must have stable IDs across restarts (explicit `id` v1).
+2. **Scoped execution**: Each branch/iteration has an isolated scope **and** isolated registries.
+3. **Execution gating**: Branches always render plan structure; only the active branch executes side effects.
+4. **Task gating**: Control-flow evaluation/transition must block global ticks until durable state is written.
+5. **Resumability**: Crash mid-iteration resumes in the same scope with persisted decisions.
+6. **Visibility**: Plan output always shows full structure with active/inactive status.
+7. **Minimal API changes**: Phases/steps still compose; explicit IDs are required for control flow.
 
 ### Proposed Solution: Hierarchical Scope IDs
 
@@ -162,13 +185,24 @@ Introduce a **scope identifier** that creates isolated execution contexts for co
 
 A scope ID is a hierarchical string that uniquely identifies an execution context:
 - Root scope: `"root"` (default)
-- While loop iteration 2: `"root.while_abc123.2"`
-- If branch (then): `"root.if_def456.then"`
-- Nested: `"root.while_abc123.2.if_def456.else"`
+- While loop iteration 2: `"root.while.fix-tests.2"`
+- If branch (then): `"root.if.needs-review.then"`
+- Nested: `"root.while.fix-tests.2.if.needs-review.else"`
+
+**Stable identity requirement:** All IDs used in scope paths must be stable across process restarts. V1 requires an explicit `id` prop on control-flow components. Random IDs are forbidden.
+
+**Canonical encoder:** Define a single helper to build scoped state keys and scope paths:
+
+```ts
+makeScopeId(parentScopeId, type, id, suffix?)
+makeStateKey(scopeId, domain, localId, suffix?)
+```
+
+No ad-hoc string templates across components.
 
 ### Implementation Approach
 
-#### 1. Add Scope to SmithersProvider Context
+#### 1. Add Scope + Execution Gate to SmithersProvider Context
 
 ```tsx
 interface SmithersContextValue {
@@ -176,47 +210,58 @@ interface SmithersContextValue {
   reactiveDb: ReactiveDatabase
   executionId: string
   ralphCount: number
-  scopeId: string  // NEW: current scope identifier
+  scopeId: string
+  executionEnabled: boolean
+  boundaryKey?: string
   // ... rest
 }
 ```
 
-#### 2. Create ScopeProvider Component
+Root scope defaults to `scopeId="root"` and `executionEnabled=true`.
+
+#### 2. Create ExecutionBoundary Component (replaces ScopeProvider)
 
 ```tsx
-interface ScopeProviderProps {
+interface ExecutionBoundaryProps {
   scopeId: string
+  enabled: boolean
+  boundaryKey?: string
   children: ReactNode
 }
 
-export function ScopeProvider(props: ScopeProviderProps): ReactNode {
-  const parentContext = useSmithers()
-
+export function ExecutionBoundary(props: ExecutionBoundaryProps): ReactNode {
+  const parent = useSmithers()
   const scopedContext = useMemo(
     () => ({
-      ...parentContext,
+      ...parent,
       scopeId: props.scopeId,
+      executionEnabled: parent.executionEnabled && props.enabled,
+      boundaryKey: props.boundaryKey ?? props.scopeId,
     }),
-    [parentContext, props.scopeId]
+    [parent, props.scopeId, props.enabled, props.boundaryKey]
   )
 
   return (
     <SmithersContext.Provider value={scopedContext}>
-      {props.children}
+      <PhaseRegistryProvider key={scopedContext.boundaryKey}>
+        {props.children}
+      </PhaseRegistryProvider>
     </SmithersContext.Provider>
   )
 }
 ```
 
-#### 3. Control Flow Components Create Child Scopes
+`PhaseRegistryProvider` (and any Step registry provider) must be instantiated per boundary to avoid cross-scope index collision.
 
-Control flow components wrap their children in ScopeProvider to isolate state:
+#### 3. Control Flow Components Create Child Boundaries
 
-- `<While>`: Each iteration gets scope `${scopeId}.${whileId}.${iteration}`
-- `<If>`: Then branch gets `${scopeId}.${ifId}.then`, else gets `${scopeId}.${ifId}.else`
-- `<Switch>`: Each case gets `${scopeId}.${switchId}.case${index}`
+Control flow components wrap their branches/iterations in ExecutionBoundary to isolate state **and** registries:
 
-#### 4. Phase and Step Use Scope for Database Keys
+- `<While>`: Each iteration gets scope `${scopeId}.while.${whileId}.${iteration}`
+- `<If>`: Then branch gets `${scopeId}.if.${ifId}.then`, else gets `${scopeId}.if.${ifId}.else`
+- `<Switch>`: Each case gets `${scopeId}.switch.${switchId}.case${index}`
+
+#### 4. Phase and Step Use Scope for Database Keys + Execution Gate
 
 **PhaseRegistry scoping:**
 ```tsx
@@ -224,7 +269,7 @@ export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactN
   const { db, reactiveDb, scopeId } = useSmithers()
 
   // Scope-specific phase index key
-  const phaseIndexKey = `currentPhaseIndex_${scopeId}`
+  const phaseIndexKey = makeStateKey(scopeId, 'phaseIndex', 'current')
 
   const { data: dbPhaseIndex } = useQueryValue<number>(
     reactiveDb,
@@ -242,7 +287,7 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   const { db, reactiveDb, scopeId } = useSmithers()
 
   // Scope-specific step index key
-  const stateKey = `stepIndex_${scopeId}_${props.phaseId ?? 'default'}`
+  const stateKey = makeStateKey(scopeId, 'stepIndex', props.phaseId ?? 'default')
 
   const { data: dbStepIndex } = useQueryValue<number>(
     reactiveDb,
@@ -257,15 +302,15 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
 **Phase metadata:**
 ```tsx
 export function Phase(props: PhaseProps): ReactNode {
-  const { db, ralphCount, scopeId } = useSmithers()
+  const { db, ralphCount, scopeId, executionEnabled } = useSmithers()
 
-  useEffect(() => {
-    if (isActive && !hasStartedRef.current) {
+  useMount(() => {
+    if (isActive && executionEnabled && !hasStartedRef.current) {
       // Create new phase row with scope in metadata (optional for queryability)
       const id = db.phases.start(props.name, ralphCount, { scope: scopeId })
       // ...
     }
-  }, [isActive, scopeId])
+  })
 
   // ...
 }
@@ -280,24 +325,25 @@ export function Phase(props: PhaseProps): ReactNode {
   </Phase>
 
   <While
+    id="fix-tests"
     condition={() => !testsPass}
     maxIterations={5}
   >
-    {/* Iteration 0 scope: root.while_xyz.0 */}
-    {/* Iteration 1 scope: root.while_xyz.1 */}
+    {/* Iteration 0 scope: root.while.fix-tests.0 */}
+    {/* Iteration 1 scope: root.while.fix-tests.1 */}
 
     <Phase name="Attempt Fix">
-      {/* Iteration 0: scope = root.while_xyz.0, phase = "Attempt Fix" */}
-      {/* Iteration 1: scope = root.while_xyz.1, phase = "Attempt Fix" */}
+      {/* Iteration 0: scope = root.while.fix-tests.0, phase = "Attempt Fix" */}
+      {/* Iteration 1: scope = root.while.fix-tests.1, phase = "Attempt Fix" */}
 
-      <If condition={() => hasQuickFix}>
-        {/* Then branch scope: root.while_xyz.N.if_abc.then */}
+      <If id="fix-path" condition={() => hasQuickFix}>
+        {/* Then branch scope: root.while.fix-tests.N.if.fix-path.then */}
         <Phase name="Quick Fix">
           <Claude>Apply quick fix</Claude>
         </Phase>
 
         <Else>
-          {/* Else branch scope: root.while_xyz.N.if_abc.else */}
+          {/* Else branch scope: root.while.fix-tests.N.if.fix-path.else */}
           <Phase name="Deep Investigation">
             <Claude>Investigate root cause</Claude>
           </Phase>
@@ -318,20 +364,19 @@ export function Phase(props: PhaseProps): ReactNode {
 
 **Database state keys:**
 - `currentPhaseIndex_root` - Top-level phase sequencing
-- `currentPhaseIndex_root.while_xyz.0` - Phase sequencing for While iteration 0
-- `currentPhaseIndex_root.while_xyz.1` - Phase sequencing for While iteration 1
-- `currentPhaseIndex_root.while_xyz.0.if_abc.then` - Phase sequencing for If then branch in iteration 0
-- `stepIndex_root.while_xyz.0_Attempt Fix` - Steps in "Attempt Fix" phase, iteration 0
+- `currentPhaseIndex_root.while.fix-tests.0` - Phase sequencing for While iteration 0
+- `currentPhaseIndex_root.while.fix-tests.1` - Phase sequencing for While iteration 1
+- `currentPhaseIndex_root.while.fix-tests.0.if.fix-path.then` - Phase sequencing for If then branch in iteration 0
+- `stepIndex_root.while.fix-tests.0_Attempt Fix` - Steps in "Attempt Fix" phase, iteration 0
 
 ### Alternative Approaches Considered
 
 #### Alternative 1: Add `scope` Column to Phases/Steps Tables
 
-**Rejected because:**
-- Schema migration required
-- Doesn't solve state table scoping (phase indices, step indices)
-- Still need scope propagation through context
-- Scope is better as a context concern, not a database schema concern
+**Partially adopted:**
+- Phases/steps can remain unscoped initially (metadata only), but **tasks must gain `scope_id`** to support subtree completion checks.
+- State table still needs scoped keys; schema alone does not solve sequencing.
+- Scope still propagates through context for plan/execution gating.
 
 #### Alternative 2: Use Iteration Number Only
 
@@ -343,11 +388,10 @@ export function Phase(props: PhaseProps): ReactNode {
 
 #### Alternative 3: React Key-Based Scoping
 
-**Rejected because:**
-- Loses durability - database state is tied to component lifecycle
-- Phases/steps get new UUIDs each iteration (hard to track history)
-- Doesn't solve resumability after crash
-- Confusing plan output
+**Modified (required as a reset mechanism):**
+- **Use keyed remount at scope boundaries** to reset ephemeral refs and lifecycle guards.
+- **Not a replacement** for DB-backed scope state; durability still comes from SQLite.
+- Compatible with resumability when paired with stable IDs + persisted scope state.
 
 #### Alternative 4: Explicit Scope Props (Render Props)
 
@@ -364,18 +408,29 @@ export function Phase(props: PhaseProps): ReactNode {
 
 ## `<If>` Component
 
-Conditionally renders children based on a runtime condition.
+Conditionally enables execution based on a runtime condition while always rendering plan structure.
 
 ### API
 
 ```tsx
 interface IfProps {
   /**
+   * Stable identifier for resumability. Required.
+   */
+  id: string
+
+  /**
    * Condition function that returns boolean.
-   * Called on each render to determine if children should execute.
+   * Evaluated once per scope when the If becomes active.
    * Can be async for database queries.
    */
   condition: () => boolean | Promise<boolean>
+
+  /**
+   * Optional key to force re-evaluation within the same scope.
+   * Changing this value invalidates the stored decision.
+   */
+  recomputeKey?: string
 
   /**
    * Children to render when condition is true.
@@ -399,7 +454,7 @@ interface IfProps {
   <Claude>Run tests</Claude>
 </Phase>
 
-<If condition={() => testsPassedRef.current}>
+<If id="deploy-if-tests-pass" condition={() => testsPassedRef.current}>
   <Phase name="Deploy">
     <Claude>Deploy to production</Claude>
   </Phase>
@@ -410,6 +465,7 @@ interface IfProps {
 
 ```tsx
 <If
+  id="merge-if-approved"
   condition={async () => {
     const review = await db.state.get('reviewResult')
     return review?.approved === true
@@ -429,7 +485,7 @@ interface IfProps {
 **Using `<Else>` component for cleaner syntax:**
 
 ```tsx
-<If condition={() => hasTests}>
+<If id="tests-branch" condition={() => hasTests}>
   <Phase name="Run Tests">
     <Claude>Execute test suite</Claude>
   </Phase>
@@ -455,50 +511,69 @@ interface IfProps {
 </if>
 ```
 
+**Semantics:** Evaluate once per scope when `executionEnabled` is true; persist decision and recomputeKey. Hold a control-flow task until the decision is written. Inactive branches still render but execute in plan-only mode.
+
 ### Implementation Sketch
 
 ```tsx
 export function If(props: IfProps): ReactNode {
-  const { db, reactiveDb, scopeId } = useSmithers()
-  const ifId = useRef(`if_${Math.random().toString(36).slice(2)}`).current
-  const stateKey = `if_result_${ifId}`
+  const { db, reactiveDb, scopeId, executionEnabled } = useSmithers()
+  const ifId = props.id
+  const decisionKey = makeStateKey(scopeId, 'if', ifId, 'decision')
+  const recomputeKey = makeStateKey(scopeId, 'if', ifId, 'recomputeKey')
 
-  // Read condition result from SQLite reactively
-  const { data: dbResult } = useQueryValue<boolean>(
+  const { data: dbDecision } = useQueryValue<number>(
     reactiveDb,
     `SELECT CAST(value AS INTEGER) as result FROM state WHERE key = ?`,
-    [stateKey]
+    [decisionKey]
+  )
+  const { data: dbRecompute } = useQueryValue<string>(
+    reactiveDb,
+    `SELECT value as val FROM state WHERE key = ?`,
+    [recomputeKey]
   )
 
-  const result = dbResult ?? null
-  const evaluated = result !== null
+  const recomputeTag = props.recomputeKey ?? ''
+  const evaluated = dbDecision !== null && dbDecision !== undefined && dbRecompute === recomputeTag
+  const result = evaluated ? dbDecision === 1 : null
 
-  useMount(() => {
+  useEffect(() => {
+    if (!executionEnabled) return
+    if (evaluated) return
+
+    const taskId = db.tasks.start('control_flow', `if:${ifId}`, { scopeId })
     ;(async () => {
       const conditionResult = await props.condition()
-      // Store result in database for durability
-      db.state.set(stateKey, conditionResult ? 1 : 0, 'if_condition_evaluated')
+      db.state.set(decisionKey, conditionResult ? 1 : 0, 'if_condition_evaluated')
+      db.state.set(recomputeKey, recomputeTag, 'if_recompute_key')
+      db.tasks.complete(taskId)
     })()
-  })
+  }, [executionEnabled, evaluated, recomputeTag, decisionKey, recomputeKey, ifId, scopeId])
 
-  // Always render structure, but only active branch's children execute
-  // Wrap each branch in ScopeProvider for isolated state
+  const thenEnabled = executionEnabled && result === true
+  const elseEnabled = executionEnabled && result === false
+
+  // Always render structure; execution is gated by ExecutionBoundary
   return (
     <if status={evaluated ? 'evaluated' : 'evaluating'} result={result}>
       <branch type="then" active={result === true}>
-        {result === true && (
-          <ScopeProvider scopeId={`${scopeId}.${ifId}.then`}>
-            {props.children}
-          </ScopeProvider>
-        )}
+        <ExecutionBoundary
+          scopeId={`${scopeId}.if.${ifId}.then`}
+          enabled={thenEnabled}
+          boundaryKey={`${scopeId}.if.${ifId}.then`}
+        >
+          {props.children}
+        </ExecutionBoundary>
       </branch>
       {(props.else || hasElseChild(props.children)) && (
         <branch type="else" active={result === false}>
-          {result === false && (
-            <ScopeProvider scopeId={`${scopeId}.${ifId}.else`}>
-              {props.else ?? extractElseChildren(props.children)}
-            </ScopeProvider>
-          )}
+          <ExecutionBoundary
+            scopeId={`${scopeId}.if.${ifId}.else`}
+            enabled={elseEnabled}
+            boundaryKey={`${scopeId}.if.${ifId}.else`}
+          >
+            {props.else ?? extractElseChildren(props.children)}
+          </ExecutionBoundary>
         </branch>
       )}
     </if>
@@ -514,15 +589,20 @@ export function If(props: IfProps): ReactNode {
 
 ## `<While>` Component
 
-Repeats children while a condition is true. Useful for retry loops and iterative refinement.
+Repeats children while a condition is true, persisting iteration state and gating execution per scope.
 
 ### API
 
 ```tsx
 interface WhileProps {
   /**
+   * Stable identifier for resumability. Required.
+   */
+  id: string
+
+  /**
    * Condition function. Loop continues while this returns true.
-   * Evaluated before each iteration.
+   * Evaluated at the start of each iteration and persisted.
    */
   condition: () => boolean | Promise<boolean>
 
@@ -555,6 +635,7 @@ interface WhileProps {
 
 ```tsx
 <While
+  id="fix-and-retry"
   condition={async () => {
     const result = await db.state.get('testResult')
     return result?.passed !== true
@@ -594,14 +675,16 @@ interface WhileProps {
 </while>
 ```
 
+**Semantics:** Evaluate condition at the start of each iteration, persist iteration + status, and gate iteration transitions with a control-flow task. Children run under an ExecutionBoundary keyed by `scopeId.while.{id}.{iteration}`.
+
 ### Implementation Sketch
 
 ```tsx
 export function While(props: WhileProps): ReactNode {
-  const { db, reactiveDb, scopeId } = useSmithers()
-  const whileId = useRef(`while_${Math.random().toString(36).slice(2)}`).current
-  const iterationKey = `while_iteration_${whileId}`
-  const statusKey = `while_status_${whileId}`
+  const { db, reactiveDb, scopeId, executionEnabled } = useSmithers()
+  const whileId = props.id
+  const iterationKey = makeStateKey(scopeId, 'while', whileId, 'iteration')
+  const statusKey = makeStateKey(scopeId, 'while', whileId, 'status')
   const maxIterations = props.maxIterations ?? 10
 
   // Read iteration count from SQLite reactively
@@ -621,29 +704,39 @@ export function While(props: WhileProps): ReactNode {
   const iteration = dbIteration ?? 0
   const status = (dbStatus as 'pending' | 'running' | 'complete') ?? 'pending'
 
-  useMount(() => {
+  useEffect(() => {
+    if (!executionEnabled) return
+    if (status !== 'pending') return
+
+    const taskId = db.tasks.start('control_flow', `while:init:${whileId}`, { scopeId })
     ;(async () => {
-      // Initialize state in database
-      db.state.set(iterationKey, 0, 'while_init')
+      if (dbIteration === null || dbIteration === undefined) {
+        db.state.set(iterationKey, 0, 'while_init')
+      }
 
       const conditionResult = await props.condition()
-      if (conditionResult) {
+      if (conditionResult && iteration < maxIterations) {
         db.state.set(statusKey, 'running', 'while_start')
-        props.onIteration?.(0)
+        props.onIteration?.(iteration)
       } else {
-        db.state.set(statusKey, 'complete', 'while_skip')
-        props.onComplete?.(0, 'condition')
+        const reason = conditionResult ? 'max' : 'condition'
+        db.state.set(statusKey, 'complete', `while_${reason}`)
+        props.onComplete?.(iteration, reason)
       }
+      db.tasks.complete(taskId)
     })()
-  })
+  }, [executionEnabled, status, dbIteration, iteration, maxIterations, iterationKey, statusKey, whileId, scopeId])
 
   // Called when children complete
   const handleIterationComplete = async () => {
+    if (!executionEnabled) return
+    const taskId = db.tasks.start('control_flow', `while:iter:${whileId}:${iteration}`, { scopeId })
     const nextIteration = iteration + 1
 
     if (nextIteration >= maxIterations) {
       db.state.set(statusKey, 'complete', 'while_max_reached')
       props.onComplete?.(nextIteration, 'max')
+      db.tasks.complete(taskId)
       return
     }
 
@@ -651,15 +744,18 @@ export function While(props: WhileProps): ReactNode {
     if (!conditionResult) {
       db.state.set(statusKey, 'complete', 'while_condition_false')
       props.onComplete?.(nextIteration, 'condition')
+      db.tasks.complete(taskId)
       return
     }
 
     db.state.set(iterationKey, nextIteration, 'while_advance')
     props.onIteration?.(nextIteration)
+    db.tasks.complete(taskId)
   }
 
   // Each iteration gets its own scope for isolated phase/step state
-  const iterationScopeId = `${scopeId}.${whileId}.${iteration}`
+  const iterationScopeId = `${scopeId}.while.${whileId}.${iteration}`
+  const iterationEnabled = executionEnabled && status === 'running'
 
   return (
     <while
@@ -667,13 +763,15 @@ export function While(props: WhileProps): ReactNode {
       iteration={iteration}
       status={status}
     >
-      {status === 'running' && (
-        <ScopeProvider scopeId={iterationScopeId}>
-          <WhileIterationProvider onComplete={handleIterationComplete}>
-            {props.children}
-          </WhileIterationProvider>
-        </ScopeProvider>
-      )}
+      <ExecutionBoundary
+        scopeId={iterationScopeId}
+        enabled={iterationEnabled}
+        boundaryKey={iterationScopeId}
+      >
+        <WhileIterationProvider onComplete={handleIterationComplete}>
+          {props.children}
+        </WhileIterationProvider>
+      </ExecutionBoundary>
     </while>
   )
 }
@@ -687,17 +785,32 @@ export function While(props: WhileProps): ReactNode {
 
 ## `<Switch>` Component
 
-Multi-way branching based on a value. Cleaner than nested `<If>` components.
+Multi-way branching based on a value with persisted decision and gated execution.
 
 ### API
 
 ```tsx
 interface SwitchProps<T = string> {
   /**
+   * Stable identifier for resumability. Required.
+   */
+  id: string
+
+  /**
    * Value to match against cases.
    * Can be a function for dynamic evaluation.
    */
   value: T | (() => T | Promise<T>)
+
+  /**
+   * Optional serializer for non-primitive values.
+   */
+  serialize?: (value: T) => string
+
+  /**
+   * Optional deserializer for persisted values.
+   */
+  deserialize?: (raw: string) => T
 
   /**
    * Children should be <Case> and optionally <Default> components.
@@ -728,7 +841,7 @@ interface DefaultProps {
 ### Usage
 
 ```tsx
-<Switch value={async () => await db.state.get('workflowMode')}>
+<Switch id="workflow-mode" value={async () => await db.state.get('workflowMode')}>
   <Case match="fast">
     <Phase name="Quick Implementation">
       <Claude model="haiku">Implement quickly</Claude>
@@ -769,33 +882,41 @@ interface DefaultProps {
 </switch>
 ```
 
+**Semantics:** Evaluate once per scope, persist the value, and gate execution until the value is known. Use serializer/deserializer for non-primitive values.
+
 ### Implementation Sketch
 
 ```tsx
 export function Switch<T = string>(props: SwitchProps<T>): ReactNode {
-  const { db, reactiveDb, scopeId } = useSmithers()
-  const switchId = useRef(`switch_${Math.random().toString(36).slice(2)}`).current
-  const valueKey = `switch_value_${switchId}`
+  const { db, reactiveDb, scopeId, executionEnabled } = useSmithers()
+  const switchId = props.id
+  const valueKey = makeStateKey(scopeId, 'switch', switchId, 'value')
+  const serialize = props.serialize ?? ((value: T) => String(value))
+  const deserialize = props.deserialize ?? ((raw: string) => raw as unknown as T)
 
-  // Read evaluated value from SQLite reactively
-  const { data: dbValue } = useQueryValue<T>(
+  const { data: dbValue } = useQueryValue<string>(
     reactiveDb,
     `SELECT value as val FROM state WHERE key = ?`,
     [valueKey]
   )
 
-  const evaluatedValue = dbValue ?? null
+  const evaluated = dbValue !== null && dbValue !== undefined
+  const evaluatedValue = evaluated ? deserialize(dbValue) : null
 
-  useMount(() => {
+  useEffect(() => {
+    if (!executionEnabled) return
+    if (evaluated) return
+
+    const taskId = db.tasks.start('control_flow', `switch:${switchId}`, { scopeId })
     ;(async () => {
       const value = typeof props.value === 'function'
         ? await (props.value as () => T | Promise<T>)()
         : props.value
 
-      // Store evaluated value in database for durability
-      db.state.set(valueKey, value, 'switch_value_evaluated')
+      db.state.set(valueKey, serialize(value), 'switch_value_evaluated')
+      db.tasks.complete(taskId)
     })()
-  })
+  }, [executionEnabled, evaluated, valueKey, switchId, scopeId])
 
   // Extract Case and Default children
   const cases: Array<{ match: T | T[], children: ReactNode }> = []
@@ -831,30 +952,35 @@ export function Switch<T = string>(props: SwitchProps<T>): ReactNode {
     }
   }
 
-  // Always render structure, show all cases with active/inactive status
-  // Wrap matched case in ScopeProvider for isolated state
+  const canExecute = executionEnabled && evaluated
+
+  // Always render structure; execution is gated by ExecutionBoundary
   return (
-    <switch value={String(evaluatedValue)}>
+    <switch value={String(evaluatedValue)} status={evaluated ? 'evaluated' : 'evaluating'}>
       {cases.map((c, i) => (
         <case
           key={i}
           match={Array.isArray(c.match) ? c.match.join(',') : String(c.match)}
           active={i === matchedIndex}
         >
-          {i === matchedIndex && (
-            <ScopeProvider scopeId={`${scopeId}.${switchId}.case${i}`}>
-              {c.children}
-            </ScopeProvider>
-          )}
+          <ExecutionBoundary
+            scopeId={`${scopeId}.switch.${switchId}.case${i}`}
+            enabled={canExecute && i === matchedIndex}
+            boundaryKey={`${scopeId}.switch.${switchId}.case${i}`}
+          >
+            {c.children}
+          </ExecutionBoundary>
         </case>
       ))}
       {defaultChildren && (
-        <default active={matchedIndex === -1 && evaluatedValue !== null}>
-          {matchedIndex === -1 && evaluatedValue !== null && (
-            <ScopeProvider scopeId={`${scopeId}.${switchId}.default`}>
-              {defaultChildren}
-            </ScopeProvider>
-          )}
+        <default active={matchedIndex === -1 && evaluated}>
+          <ExecutionBoundary
+            scopeId={`${scopeId}.switch.${switchId}.default`}
+            enabled={canExecute && matchedIndex === -1}
+            boundaryKey={`${scopeId}.switch.${switchId}.default`}
+          >
+            {defaultChildren}
+          </ExecutionBoundary>
         </default>
       )}
     </switch>
@@ -889,7 +1015,7 @@ Control flow components compose naturally:
   <Claude>Analyze the task</Claude>
 </Phase>
 
-<Switch value={() => db.state.get('taskComplexity')}>
+<Switch id="task-complexity" value={() => db.state.get('taskComplexity')}>
   <Case match="simple">
     <Phase name="Quick Fix">
       <Claude model="haiku">Apply simple fix</Claude>
@@ -898,11 +1024,12 @@ Control flow components compose naturally:
 
   <Case match="complex">
     <While
+      id="iterative-implementation"
       condition={() => db.state.get('needsMoreWork')}
       maxIterations={5}
     >
       <Phase name="Iterative Implementation">
-        <If condition={() => db.state.get('hasBlocker')}>
+        <If id="blocker-check" condition={() => db.state.get('hasBlocker')}>
           <Phase name="Resolve Blocker">
             <Claude>Resolve the blocker first</Claude>
           </Phase>
@@ -930,7 +1057,7 @@ Control flow components integrate with Phase's automatic sequencing:
   <Phase name="Setup">...</Phase>
 
   {/* If wraps phases but doesn't break sequencing */}
-  <If condition={() => needsResearch}>
+  <If id="needs-research" condition={() => needsResearch}>
     <Phase name="Research">...</Phase>
   </If>
 
@@ -947,48 +1074,45 @@ Control flow components integrate with Phase's automatic sequencing:
 
 ## Implementation Plan
 
-### Phase 1: Add Scope Context (2 days)
+### Phase 0: Runtime prerequisites (required before control flow)
 
-1. Add `scopeId` to `SmithersContextValue`
-2. Create `ScopeProvider` component
-3. Initialize root scope as `"root"` in `SmithersProvider`
-4. Test: Verify scope propagates through context
+1. Fix Step lifecycle: complete tasks on explicit completion, not unmount.
+2. Fix PhaseRegistry: no setState during render, no reset on mount, correct index advancement.
+3. Add `executionEnabled` gating to Phase/Step so plan-only rendering has no side effects.
+4. Establish control-flow task gating pattern in SmithersProvider loop.
 
-### Phase 2: Update Phase/Step to Use Scope (2 days)
+### Phase 1: Stable scope + boundary mechanics
 
-1. Update `PhaseRegistryProvider` to scope `currentPhaseIndex` key
-2. Update `StepRegistryProvider` to scope step index keys
-3. Update `Phase` component to include scope in phase metadata (optional)
-4. Update `Step` component to include scope in step metadata (optional)
-5. Test: Verify phases/steps work with scoped state keys
-6. Test: Existing orchestrations still work with root scope
+1. Add `scopeId`, `executionEnabled`, `boundaryKey` to `SmithersContextValue`.
+2. Implement `ExecutionBoundary` (scoped context + registry boundary + remount key).
+3. Fix context fallback to support nested providers or remove it.
 
-### Phase 3: Implement Control Flow Components (3 days)
+### Phase 2: Scoped registries + state key helper + schema
 
-1. Create `src/components/If.tsx` with scoping
-2. Create `src/components/Else.tsx` (child marker component)
-3. Create `src/components/While.tsx` with scoping
-4. Create `WhileIterationContext` for iteration tracking
-5. Create `src/components/Switch.tsx` with scoping
-6. Create `src/components/Case.tsx` and `Default.tsx`
-7. Export from `src/components/index.ts`
+1. Add `makeScopeId` / `makeStateKey` helpers.
+2. Update PhaseRegistry/StepRegistry to use scoped keys and be instantiated per boundary.
+3. Add `tasks.scope_id` column and update queries/migrations.
 
-### Phase 4: Testing (2 days)
+### Phase 3: Implement control flow components
 
-1. Test: While loop with phases executes multiple iterations correctly
-2. Test: If branches execute with isolated state
-3. Test: Switch cases execute with isolated state
-4. Test: Nested control flow works (While inside If, etc.)
-5. Test: Orchestration resumes correctly mid-iteration after crash
-6. Test: Database contains complete history of all iterations
-7. Test: State table keys don't collide
+1. `If`/`While`/`Switch` require explicit `id`.
+2. Persist decisions/iterations in SQLite (scoped by scopeId).
+3. Task gating for evaluation/transition boundaries.
+4. Plan always renders; execution gated via `executionEnabled`.
 
-### Phase 5: Documentation (1 day)
+### Phase 4: Testing
 
-1. Update SKILL.md with control flow patterns
-2. Update REFERENCE.md with API documentation
-3. Add examples to EXAMPLES.md
-4. Document scoping behavior (for maintainers)
+1. Crash/resume with stable IDs (process restart simulation).
+2. Nested control flow with distinct registry indices per scope.
+3. Async condition evaluation does not cause premature global tick.
+4. Inactive branches still appear in plan output.
+
+### Phase 5: Documentation
+
+1. Update SKILL.md with control flow patterns.
+2. Update REFERENCE.md with API documentation.
+3. Add examples to EXAMPLES.md.
+4. Document scoping and gating behavior (maintainers).
 
 </section>
 
@@ -998,37 +1122,26 @@ Control flow components integrate with Phase's automatic sequencing:
 
 ## Open Questions
 
-### Q1: Should we automatically clean up old scope state?
+### Q1: Stable ID strategy beyond v1?
 
-When a While loop completes, should we delete state keys for old iterations?
+**V1:** Explicit `id` prop is required.  
+**V2:** Consider compiler-generated IDs or reconciler-derived path hashes to remove manual burden.
 
-**Recommendation:** Keep everything. State table is cheap storage and provides full audit trail.
+### Q2: ExecutionBoundary remount policy
 
-### Q2: How deep should scope nesting go?
+Use `boundaryKey=scopeId` for remount on scope change. Confirm this does not break plan diffing or host node identity in the reconciler.
 
-Should we limit nesting depth to prevent absurdly long scope IDs?
+### Q3: Context fallback behavior
 
-**Recommendation:** No hard limit. Real-world nesting unlikely to exceed 5 levels.
+Nested scopes require reliable context propagation. Either remove the global fallback or make it scope-stack aware.
 
-### Q3: Should scope be visible in the API?
+### Q4: Scope columns beyond tasks
 
-Should users be able to manually create scopes or query current scope?
+`tasks.scope_id` is required. Decide whether `agents` and `tool_calls` also gain `scope_id` for traceability.
 
-**Recommendation:** Keep it internal. Advanced users can access via `useSmithers()` if needed.
+### Q5: Scope data retention
 
-### Q4: How does scope interact with Ralph iterations?
-
-Ralph is the outer retry loop. Should Ralph iterations create scopes?
-
-**Recommendation:** Don't scope Ralph iterations. Keep `iteration` field as-is. Scope is only for control flow components. Ralph is a full workflow restart, not a sub-loop.
-
-### Q5: What happens with resumability mid-iteration?
-
-If orchestration crashes during While iteration 3, how does it resume?
-
-**Analysis:** Control flow state (current iteration) is in database. On resume, While reads `while_iteration_root.while_abc` from state table and knows to create scope `root.while_abc.3` again. Phase/Step state is scoped, so picks up where it left off.
-
-**Recommendation:** Current design handles this. Add test to verify.
+Keep scope state by default for auditability; add cleanup tooling only if DB growth becomes a proven issue.
 
 </section>
 
@@ -1039,22 +1152,28 @@ If orchestration crashes during While iteration 3, how does it resume?
 ## Acceptance Criteria
 
 ### Scoping System
-- [ ] ScopeProvider component propagates scope via context
-- [ ] PhaseRegistry uses scoped state keys
-- [ ] StepRegistry uses scoped state keys
+- [ ] ExecutionBoundary propagates scope and executionEnabled via context
+- [ ] ExecutionBoundary creates a registry boundary per scope (Phase/Step)
+- [ ] PhaseRegistry uses scoped state keys via makeStateKey
+- [ ] StepRegistry uses scoped state keys via makeStateKey
+- [ ] tasks table includes scope_id for subtree completion checks
 - [ ] Existing orchestrations work unchanged with root scope
 - [ ] State table keys are properly scoped and don't collide
 
 ### `<If>` Component
-- [ ] Evaluates sync and async conditions
-- [ ] Renders children when condition is true
-- [ ] Renders else children when condition is false
+- [ ] Requires stable id prop
+- [ ] Evaluates sync and async conditions once per scope (unless recomputeKey changes)
+- [ ] Task gating prevents premature global tick
+- [ ] Enables execution for then branch when condition is true
+- [ ] Enables execution for else branch when condition is false
 - [ ] `<Else>` child component works as alternative to `else` prop
 - [ ] Plan output shows both branches with active/inactive status
 - [ ] Then and else branches have isolated scopes
 
 ### `<While>` Component
-- [ ] Evaluates condition before each iteration
+- [ ] Requires stable id prop
+- [ ] Evaluates condition before each iteration and persists result
+- [ ] Task gating wraps iteration transitions
 - [ ] Stops when condition returns false
 - [ ] Stops when maxIterations reached
 - [ ] `onIteration` callback fires on each iteration
@@ -1065,12 +1184,14 @@ If orchestration crashes during While iteration 3, how does it resume?
 - [ ] Phases/steps re-execute correctly across iterations
 
 ### `<Switch>` Component
+- [ ] Requires stable id prop
 - [ ] Matches single values correctly
 - [ ] Matches array of values (any match)
 - [ ] Falls through to `<Default>` when no match
 - [ ] Only one branch executes
 - [ ] Plan output shows all branches with active/inactive status
-- [ ] Async value function works
+- [ ] Async value function works and persists value
+- [ ] Serializer/deserializer handles non-primitive values
 - [ ] Each case has isolated scope
 
 ### Integration
@@ -1081,6 +1202,7 @@ If orchestration crashes during While iteration 3, how does it resume?
 - [ ] Database-backed conditions work for resumability
 - [ ] Orchestration resumes correctly mid-iteration after crash
 - [ ] Database contains complete history of all iterations
+- [ ] Context fallback supports nested scopes or is removed
 
 </section>
 
@@ -1164,11 +1286,12 @@ Specialized retry with backoff:
 Control flow components (`<If>`, `<While>`, `<Switch>`) provide declarative conditional and iterative execution while maintaining the unconditional rendering pattern. They:
 
 1. **Always render their structure** in plan output for visibility
-2. **Support async conditions** for database-backed decisions
-3. **Compose naturally** with existing Phase/Step components
-4. **Use hierarchical scoping** to enable re-execution across iterations
-5. **Integrate with PhaseRegistry** for automatic sequencing
+2. **Gate execution** via `executionEnabled` while plan structure remains visible
+3. **Require stable IDs** for resumability across restarts
+4. **Use hierarchical scoping + scoped registries** to enable re-execution across iterations
+5. **Use task gating** to prevent global tick races during evaluation/transition
+6. **Compose naturally** with existing Phase/Step components
 
-**Key design decision:** Scoping is the critical complexity. Hierarchical scope IDs (`root.while_abc.2.if_def.then`) isolate state across iterations/branches, enabling durable, resumable control flow without breaking Phase/Step state management.
+**Key design decision:** Scoping is necessary but not sufficient. Correctness depends on stable IDs, registry boundaries, execution gating, and task gating in addition to hierarchical scope IDs.
 
 **This feature requires thorough review before implementation.**
