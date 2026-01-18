@@ -1,9 +1,10 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { extractText } from '../../utils/extract-text.js'
+import { useExecutionEffect, useExecutionScope } from '../ExecutionScope.js'
 
 interface CommitState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -83,12 +84,13 @@ export function Commit(props: CommitProps): ReactNode {
 
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
+  const executionScope = useExecutionScope()
 
   const setState = (newState: CommitState) => {
     smithers.db.state.set(stateKey, newState, 'git-commit')
   }
 
-  useMount(() => {
+  useExecutionEffect(executionScope.enabled, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database

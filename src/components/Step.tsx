@@ -6,6 +6,7 @@ import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useMount, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
+import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
 
 // ============================================================================
 // STEP REGISTRY CONTEXT (for sequential execution within a phase)
@@ -193,6 +194,7 @@ export function Step(props: StepProps): ReactNode {
   const { db, reactiveDb, executionId } = useSmithers()
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
+  const executionScope = useExecutionScope()
 
   const stepIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
@@ -206,9 +208,11 @@ export function Step(props: StepProps): ReactNode {
   // If no registry (not inside a Phase), always active
   const isActive = registry ? registry.isStepActive(myIndex) : true
   const isCompleted = registry ? registry.isStepCompleted(myIndex) : false
-  const status = isActive ? 'active' : isCompleted ? 'completed' : 'pending'
+  const canExecute = executionScope.enabled && isActive
+  const status = canExecute ? 'active' : isCompleted ? 'completed' : 'pending'
   const isDbClosed = () => db.db.isClosed
 
+<<<<<<< HEAD
   // Monitor child tasks for this step (only when started)
   // Uses the same pattern as SmithersProvider for reactive task counting
   const { data: childRunningTaskCount } = useQueryValue<number>(
@@ -225,6 +229,10 @@ export function Step(props: StepProps): ReactNode {
   // Pattern from Claude.tsx:110, Smithers.tsx:170
   useEffectOnValueChange(isActive, () => {
     if (!isActive || hasStartedRef.current) return
+=======
+  useEffectOnValueChange(canExecute, () => {
+    if (!canExecute || hasStartedRef.current) return
+>>>>>>> 4cfb61a (feat: add new feature)
     if (isDbClosed()) return
     hasStartedRef.current = true
 
@@ -272,7 +280,7 @@ export function Step(props: StepProps): ReactNode {
         props.onError?.(errorObj)
       }
     })()
-  })
+  }, [canExecute, db, props.name, props.onStart, props.snapshotBefore])
 
   // Helper to complete the step
   const completeStep = useCallback(async () => {
@@ -361,10 +369,11 @@ export function Step(props: StepProps): ReactNode {
     }
   })
 
-  // Always render the step element, only render children when active
   return (
     <step {...(props.name ? { name: props.name } : {})} status={status}>
-      {isActive && props.children}
+      <ExecutionScopeProvider enabled={canExecute}>
+        {props.children}
+      </ExecutionScopeProvider>
     </step>
   )
 }
