@@ -1,7 +1,14 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes, getGitNotes } from '../../utils/vcs.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useQueryValue } from '../../reactive-sqlite/index.js'
+
+interface NotesState {
+  status: 'pending' | 'running' | 'complete' | 'error'
+  result: NotesResult | null
+  error: string | null
+}
 
 export interface NotesProps {
   /** Commit reference (default: HEAD) */
@@ -29,12 +36,24 @@ export interface NotesResult {
  */
 export function Notes(props: NotesProps): ReactNode {
   const smithers = useSmithers()
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = useState<NotesResult | null>(null)
-  const [error, setError] = useState<Error | null>(null)
+  const opIdRef = useRef(crypto.randomUUID())
+  const stateKey = `git-notes:${opIdRef.current}`
+
+  const { data: opState } = useQueryValue<string>(
+    smithers.db.db,
+    "SELECT value FROM state WHERE key = ?",
+    [stateKey]
+  )
+  const { status, result, error }: NotesState = opState
+    ? JSON.parse(opState)
+    : { status: 'pending', result: null, error: null }
 
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
+
+  const setState = (newState: NotesState) => {
+    smithers.db.state.set(stateKey, newState, 'git-notes')
+  }
 
   useMount(() => {
     // Fire-and-forget async IIFE
@@ -43,7 +62,7 @@ export function Notes(props: NotesProps): ReactNode {
       taskIdRef.current = smithers.db.tasks.start('git-notes')
 
       try {
-        setStatus('running')
+        setState({ status: 'running', result: null, error: null })
 
         const commitRef = props.commitRef ?? 'HEAD'
 
@@ -70,16 +89,14 @@ export function Notes(props: NotesProps): ReactNode {
         }
 
         if (isMounted()) {
-          setResult(notesResult)
-          setStatus('complete')
+          setState({ status: 'complete', result: notesResult, error: null })
           props.onFinished?.(notesResult)
         }
 
       } catch (err) {
         if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
-          setError(errorObj)
-          setStatus('error')
+          setState({ status: 'error', result: null, error: errorObj.message })
           props.onError?.(errorObj)
         }
       } finally {
@@ -95,7 +112,7 @@ export function Notes(props: NotesProps): ReactNode {
     <git-notes
       status={status}
       commit-ref={result?.commitRef}
-      error={error?.message}
+      error={error}
     />
   )
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
 
@@ -17,13 +17,11 @@ function parseConflicts(output: string): string[] {
   const lines = output.split('\n')
 
   for (const line of lines) {
-    // JJ marks conflicts with 'C' or mentions them in output
     if (line.includes('conflict') || line.startsWith('C ')) {
       const match = line.match(/C\s+(.+)/)
       if (match && match[1]) {
         conflicts.push(match[1].trim())
       } else {
-        // Try to extract file paths from conflict messages
         const fileMatch = line.match(/['"]([^'"]+)['"]/g)
         if (fileMatch) {
           conflicts.push(...fileMatch.map((f) => f.replace(/['"]/g, '')))
@@ -38,28 +36,27 @@ function parseConflicts(output: string): string[] {
 /**
  * JJ Rebase component - performs JJ rebase with conflict handling.
  *
- * React pattern: Uses useEffect with empty deps and async IIFE inside.
+ * React pattern: Uses useRef + forceUpdate for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
 export function Rebase(props: RebaseProps): ReactNode {
   const smithers = useSmithers()
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
-  const [conflicts, setConflicts] = useState<string[]>([])
-  const [error, setError] = useState<Error | null>(null)
+  const [, forceUpdate] = useReducer((x) => x + 1, 0)
 
+  const statusRef = useRef<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
+  const conflictsRef = useRef<string[]>([])
+  const errorRef = useRef<Error | null>(null)
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   useMount(() => {
-    // Fire-and-forget async IIFE
     ;(async () => {
-      // Register task with database
       taskIdRef.current = smithers.db.tasks.start('jj-rebase')
 
       try {
-        setStatus('running')
+        statusRef.current = 'running'
+        forceUpdate()
 
-        // Build rebase command
         const args: string[] = ['rebase']
 
         if (props.destination) {
@@ -70,7 +67,6 @@ export function Rebase(props: RebaseProps): ReactNode {
           args.push('-s', props.source)
         }
 
-        // Execute rebase
         let rebaseOutput: string
         let hasConflicts = false
 
@@ -78,30 +74,27 @@ export function Rebase(props: RebaseProps): ReactNode {
           const result = await Bun.$`jj ${args}`.quiet()
           rebaseOutput = result.stdout.toString() + result.stderr.toString()
         } catch (rebaseError: any) {
-          // JJ rebase may fail with conflicts but still "succeed"
           rebaseOutput = rebaseError.stderr?.toString() || rebaseError.message
           hasConflicts = rebaseOutput.toLowerCase().includes('conflict')
         }
 
         if (!isMounted()) return
 
-        // Check for conflicts in output
         const detectedConflicts = parseConflicts(rebaseOutput)
 
-        // Also check jj status for conflicts
         const statusResult = await Bun.$`jj status`.text()
         const statusConflicts = parseConflicts(statusResult)
 
         const allConflicts = [...new Set([...detectedConflicts, ...statusConflicts])]
-        setConflicts(allConflicts)
+        conflictsRef.current = allConflicts
 
         if (allConflicts.length > 0 || hasConflicts) {
           if (isMounted()) {
-            setStatus('conflict')
+            statusRef.current = 'conflict'
+            forceUpdate()
             props.onConflict?.(allConflicts)
           }
 
-          // Log conflict to database
           await smithers.db.vcs.addReport({
             type: 'warning',
             title: 'JJ Rebase Conflicts',
@@ -115,10 +108,10 @@ export function Rebase(props: RebaseProps): ReactNode {
           })
         } else {
           if (isMounted()) {
-            setStatus('complete')
+            statusRef.current = 'complete'
+            forceUpdate()
           }
 
-          // Log successful rebase
           await smithers.db.vcs.addReport({
             type: 'progress',
             title: 'JJ Rebase Complete',
@@ -131,12 +124,11 @@ export function Rebase(props: RebaseProps): ReactNode {
         }
       } catch (err) {
         if (isMounted()) {
-          const errorObj = err instanceof Error ? err : new Error(String(err))
-          setError(errorObj)
-          setStatus('error')
+          errorRef.current = err instanceof Error ? err : new Error(String(err))
+          statusRef.current = 'error'
+          forceUpdate()
         }
 
-        // Log error to database
         const errorObj = err instanceof Error ? err : new Error(String(err))
         await smithers.db.vcs.addReport({
           type: 'error',
@@ -149,7 +141,6 @@ export function Rebase(props: RebaseProps): ReactNode {
           },
         })
       } finally {
-        // Complete task
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
@@ -159,11 +150,11 @@ export function Rebase(props: RebaseProps): ReactNode {
 
   return (
     <jj-rebase
-      status={status}
+      status={statusRef.current}
       destination={props.destination}
       source={props.source}
-      conflicts={conflicts.join(',')}
-      error={error?.message}
+      conflicts={conflictsRef.current.join(',')}
+      error={errorRef.current?.message}
     >
       {props.children}
     </jj-rebase>

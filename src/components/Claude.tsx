@@ -1,7 +1,7 @@
 // Enhanced Claude component for Smithers orchestrator
 // Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
 
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
@@ -11,6 +11,7 @@ import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { LogWriter } from '../monitor/log-writer.js'
 import { uuid } from '../db/utils.js'
 import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
+import { useQuery } from '../reactive-sqlite/index.js'
 
 // ============================================================================
 // CLAUDE COMPONENT
@@ -43,15 +44,56 @@ import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/
 // Default throttle interval for tail log updates (ms)
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
 
+// Type for agent row from DB
+type AgentRow = {
+  status: string
+  result: string | null
+  result_structured: string | null
+  error: string | null
+  tokens_input: number | null
+  tokens_output: number | null
+  duration_ms: number | null
+}
+
 export function Claude(props: ClaudeProps): ReactNode {
-  const { db, executionId, isStopRequested } = useSmithers()
+  const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
   const ralphCount = useRalphCount()
 
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = useState<AgentResult | null>(null)
-  const [error, setError] = useState<Error | null>(null)
-  const [agentId, setAgentId] = useState<string | null>(null)
-  const [tailLog, setTailLog] = useState<TailLogEntry[]>([])
+  // agentId stored in ref (set once, non-reactive until set)
+  const agentIdRef = useRef<string | null>(null)
+
+  // tailLog stored in ref with forceUpdate for reactivity
+  const tailLogRef = useRef<TailLogEntry[]>([])
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
+
+  // Query reactive state from DB
+  const { data: agentRows } = useQuery<AgentRow>(
+    reactiveDb,
+    "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",
+    [agentIdRef.current ?? '']
+  )
+  const agentRow = agentRows[0] ?? null
+
+  // Derive state from DB row
+  const dbStatus = agentRow?.status
+  const status: 'pending' | 'running' | 'complete' | 'error' = 
+    dbStatus === 'completed' ? 'complete' :
+    dbStatus === 'failed' ? 'error' :
+    dbStatus === 'running' ? 'running' : 'pending'
+  
+  const result: AgentResult | null = agentRow?.result ? {
+    output: agentRow.result,
+    structured: agentRow.result_structured ? JSON.parse(agentRow.result_structured) : undefined,
+    tokensUsed: {
+      input: agentRow.tokens_input ?? 0,
+      output: agentRow.tokens_output ?? 0,
+    },
+    turnsUsed: 0, // Not stored in DB, default to 0
+    durationMs: agentRow.duration_ms ?? 0,
+    stopReason: 'completed',
+  } : null
+  
+  const error: Error | null = agentRow?.error ? new Error(agentRow.error) : null
 
   // Track task ID for this component
   const taskIdRef = useRef<string | null>(null)
@@ -87,8 +129,6 @@ export function Claude(props: ClaudeProps): ReactNode {
       let logPath: string | undefined
 
       try {
-        setStatus('running')
-
         // Extract prompt from children
         const childrenString = String(props.children)
 
@@ -119,7 +159,7 @@ export function Claude(props: ClaudeProps): ReactNode {
             props.systemPrompt,
             logPath
           )
-          setAgentId(currentAgentId)
+          agentIdRef.current = currentAgentId
         }
 
         // Report progress
@@ -166,7 +206,8 @@ export function Claude(props: ClaudeProps): ReactNode {
                   // Enough time has passed, update immediately
                   lastTailLogUpdateRef.current = now
                   if (isMounted()) {
-                    setTailLog(messageParserRef.current.getLatestEntries(maxEntries))
+                    tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+                    forceUpdate()
                   }
                 } else if (!pendingTailLogUpdateRef.current) {
                   // Schedule an update for later
@@ -174,7 +215,8 @@ export function Claude(props: ClaudeProps): ReactNode {
                     pendingTailLogUpdateRef.current = null
                     lastTailLogUpdateRef.current = Date.now()
                     if (isMounted()) {
-                      setTailLog(messageParserRef.current.getLatestEntries(maxEntries))
+                      tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+                      forceUpdate()
                     }
                   }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
                 }
@@ -228,7 +270,8 @@ export function Claude(props: ClaudeProps): ReactNode {
           clearTimeout(pendingTailLogUpdateRef.current)
           pendingTailLogUpdateRef.current = null
         }
-        setTailLog(messageParserRef.current.getLatestEntries(maxEntries))
+        tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+        forceUpdate()
 
         // Log completion to database
         if (props.reportingEnabled !== false && currentAgentId) {
@@ -263,17 +306,14 @@ export function Claude(props: ClaudeProps): ReactNode {
         }
 
         if (isMounted()) {
-          setResult(agentResult)
-          setStatus('complete')
+          // DB update via db.agents.complete() triggers reactive re-render
           props.onFinished?.(agentResult)
         }
       } catch (err) {
         if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
-          setError(errorObj)
-          setStatus('error')
 
-          // Log failure to database
+          // Log failure to database - this triggers reactive re-render
           if (props.reportingEnabled !== false && currentAgentId) {
             await db.agents.fail(currentAgentId, errorObj.message)
           }
@@ -311,6 +351,7 @@ export function Claude(props: ClaudeProps): ReactNode {
 
   // Render custom element for XML serialization
   const maxLines = props.tailLogLines ?? 10
+  const tailLog = tailLogRef.current
   const displayEntries = status === 'complete'
     ? tailLog.slice(-1)
     : tailLog.slice(-maxEntries)
@@ -318,7 +359,7 @@ export function Claude(props: ClaudeProps): ReactNode {
   return (
     <claude
       status={status}
-      agent-id={agentId}
+      agent-id={agentIdRef.current}
       execution-id={executionId}
       model={props.model ?? 'sonnet'}
       {...(error?.message ? { error: error.message } : {})}

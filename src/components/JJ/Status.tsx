@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { getJJStatus } from '../../utils/vcs.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
@@ -12,48 +12,45 @@ export interface StatusProps {
 /**
  * JJ Status component - checks JJ working copy status.
  *
- * React pattern: Uses useEffect with empty deps and async IIFE inside.
+ * React pattern: Uses useRef + forceUpdate for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
 export function Status(props: StatusProps): ReactNode {
   const smithers = useSmithers()
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [isDirty, setIsDirty] = useState<boolean | null>(null)
-  const [fileStatus, setFileStatus] = useState<{
+  const [, forceUpdate] = useReducer((x) => x + 1, 0)
+
+  const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const isDirtyRef = useRef<boolean | null>(null)
+  const fileStatusRef = useRef<{
     modified: string[]
     added: string[]
     deleted: string[]
   } | null>(null)
-  const [error, setError] = useState<Error | null>(null)
-
+  const errorRef = useRef<Error | null>(null)
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   useMount(() => {
-    // Fire-and-forget async IIFE
     ;(async () => {
-      // Register task with database
       taskIdRef.current = smithers.db.tasks.start('jj-status')
 
       try {
-        setStatus('running')
+        statusRef.current = 'running'
+        forceUpdate()
 
-        // Get JJ status
         const jjStatus = await getJJStatus()
 
         if (!isMounted()) return
 
-        setFileStatus(jjStatus)
+        fileStatusRef.current = jjStatus
 
-        // Check if working copy is dirty
         const dirty =
           jjStatus.modified.length > 0 ||
           jjStatus.added.length > 0 ||
           jjStatus.deleted.length > 0
 
-        setIsDirty(dirty)
+        isDirtyRef.current = dirty
 
-        // Call appropriate callback
         if (dirty) {
           props.onDirty?.(jjStatus)
         } else {
@@ -61,10 +58,10 @@ export function Status(props: StatusProps): ReactNode {
         }
 
         if (isMounted()) {
-          setStatus('complete')
+          statusRef.current = 'complete'
+          forceUpdate()
         }
 
-        // Log status check to reports
         await smithers.db.vcs.addReport({
           type: 'progress',
           title: 'JJ Status Check',
@@ -78,12 +75,11 @@ export function Status(props: StatusProps): ReactNode {
         })
       } catch (err) {
         if (isMounted()) {
-          const errorObj = err instanceof Error ? err : new Error(String(err))
-          setError(errorObj)
-          setStatus('error')
+          errorRef.current = err instanceof Error ? err : new Error(String(err))
+          statusRef.current = 'error'
+          forceUpdate()
         }
       } finally {
-        // Complete task
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
@@ -93,12 +89,12 @@ export function Status(props: StatusProps): ReactNode {
 
   return (
     <jj-status
-      status={status}
-      is-dirty={isDirty}
-      modified={fileStatus?.modified?.join(',')}
-      added={fileStatus?.added?.join(',')}
-      deleted={fileStatus?.deleted?.join(',')}
-      error={error?.message}
+      status={statusRef.current}
+      is-dirty={isDirtyRef.current}
+      modified={fileStatusRef.current?.modified?.join(',')}
+      added={fileStatusRef.current?.added?.join(',')}
+      deleted={fileStatusRef.current?.deleted?.join(',')}
+      error={errorRef.current?.message}
     >
       {props.children}
     </jj-status>

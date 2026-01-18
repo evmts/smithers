@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
@@ -13,59 +13,53 @@ export interface CommitProps {
 /**
  * JJ Commit component - creates a JJ commit with optional auto-describe.
  *
- * React pattern: Uses useEffect with empty deps and async IIFE inside.
+ * React pattern: Uses useRef + forceUpdate for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
 export function Commit(props: CommitProps): ReactNode {
   const smithers = useSmithers()
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [commitHash, setCommitHash] = useState<string | null>(null)
-  const [changeId, setChangeId] = useState<string | null>(null)
-  const [error, setError] = useState<Error | null>(null)
+  const [, forceUpdate] = useReducer((x) => x + 1, 0)
 
+  const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const commitHashRef = useRef<string | null>(null)
+  const changeIdRef = useRef<string | null>(null)
+  const errorRef = useRef<Error | null>(null)
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   useMount(() => {
-    // Fire-and-forget async IIFE
     ;(async () => {
-      // Register task with database
       taskIdRef.current = smithers.db.tasks.start('jj-commit')
 
       try {
-        setStatus('running')
+        statusRef.current = 'running'
+        forceUpdate()
 
         let message = props.message
 
-        // Auto-describe if requested
         if (props.autoDescribe && !message) {
           const diffResult = await Bun.$`jj diff`.text()
           const lines = diffResult.split('\n').length
           message = `Auto-generated commit: ${lines} lines changed`
         }
 
-        // Default message if still none
         if (!message) {
           message = 'Commit by Smithers'
         }
 
-        // Create JJ commit
         const result = await jjCommit(message)
 
         if (!isMounted()) return
 
-        setCommitHash(result.commitHash)
-        setChangeId(result.changeId)
+        commitHashRef.current = result.commitHash
+        changeIdRef.current = result.changeId
 
-        // Get diff stats for logging
         const stats = await getJJDiffStats()
 
-        // Add git notes with smithers metadata if provided
         if (props.notes) {
           await addGitNotes(props.notes)
         }
 
-        // Log to database
         await smithers.db.vcs.logCommit({
           vcs_type: 'jj',
           commit_hash: result.commitHash,
@@ -78,16 +72,16 @@ export function Commit(props: CommitProps): ReactNode {
         })
 
         if (isMounted()) {
-          setStatus('complete')
+          statusRef.current = 'complete'
+          forceUpdate()
         }
       } catch (err) {
         if (isMounted()) {
-          const errorObj = err instanceof Error ? err : new Error(String(err))
-          setError(errorObj)
-          setStatus('error')
+          errorRef.current = err instanceof Error ? err : new Error(String(err))
+          statusRef.current = 'error'
+          forceUpdate()
         }
       } finally {
-        // Complete task
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
@@ -97,10 +91,10 @@ export function Commit(props: CommitProps): ReactNode {
 
   return (
     <jj-commit
-      status={status}
-      commit-hash={commitHash}
-      change-id={changeId}
-      error={error?.message}
+      status={statusRef.current}
+      commit-hash={commitHashRef.current}
+      change-id={changeIdRef.current}
+      error={errorRef.current?.message}
       message={props.message}
       auto-describe={props.autoDescribe}
     >

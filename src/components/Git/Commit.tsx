@@ -1,7 +1,14 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useQueryValue } from '../../reactive-sqlite/index.js'
+
+interface CommitState {
+  status: 'pending' | 'running' | 'complete' | 'error'
+  result: CommitResult | null
+  error: string | null
+}
 
 export interface CommitProps {
   /** Commit message (optional if autoGenerate is true) */
@@ -58,12 +65,24 @@ ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : 
  */
 export function Commit(props: CommitProps): ReactNode {
   const smithers = useSmithers()
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = useState<CommitResult | null>(null)
-  const [error, setError] = useState<Error | null>(null)
+  const opIdRef = useRef(crypto.randomUUID())
+  const stateKey = `git-commit:${opIdRef.current}`
+
+  const { data: opState } = useQueryValue<string>(
+    smithers.db.db,
+    "SELECT value FROM state WHERE key = ?",
+    [stateKey]
+  )
+  const { status, result, error }: CommitState = opState
+    ? JSON.parse(opState)
+    : { status: 'pending', result: null, error: null }
 
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
+
+  const setState = (newState: CommitState) => {
+    smithers.db.state.set(stateKey, newState, 'git-commit')
+  }
 
   useMount(() => {
     // Fire-and-forget async IIFE
@@ -72,7 +91,7 @@ export function Commit(props: CommitProps): ReactNode {
       taskIdRef.current = smithers.db.tasks.start('git-commit')
 
       try {
-        setStatus('running')
+        setState({ status: 'running', result: null, error: null })
 
         // Stage files
         if (props.files && props.files.length > 0) {
@@ -145,16 +164,14 @@ export function Commit(props: CommitProps): ReactNode {
         }
 
         if (isMounted()) {
-          setResult(commitResult)
-          setStatus('complete')
+          setState({ status: 'complete', result: commitResult, error: null })
           props.onFinished?.(commitResult)
         }
 
       } catch (err) {
         if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
-          setError(errorObj)
-          setStatus('error')
+          setState({ status: 'error', result: null, error: errorObj.message })
           props.onError?.(errorObj)
         }
       } finally {
@@ -171,7 +188,7 @@ export function Commit(props: CommitProps): ReactNode {
       status={status}
       commit-hash={result?.commitHash}
       message={result?.message}
-      error={error?.message}
+      error={error}
     >
       {props.children}
     </git-commit>

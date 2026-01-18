@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
 
@@ -11,43 +11,40 @@ export interface DescribeProps {
 /**
  * JJ Describe component - auto-generates commit message.
  *
- * React pattern: Uses useEffect with empty deps and async IIFE inside.
+ * React pattern: Uses useRef + forceUpdate for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
 export function Describe(props: DescribeProps): ReactNode {
   const smithers = useSmithers()
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [description, setDescription] = useState<string | null>(null)
-  const [error, setError] = useState<Error | null>(null)
+  const [, forceUpdate] = useReducer((x) => x + 1, 0)
 
+  const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const descriptionRef = useRef<string | null>(null)
+  const errorRef = useRef<Error | null>(null)
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
   useMount(() => {
-    // Fire-and-forget async IIFE
     ;(async () => {
-      // Register task with database
       taskIdRef.current = smithers.db.tasks.start('jj-describe')
 
       try {
-        setStatus('running')
+        statusRef.current = 'running'
+        forceUpdate()
 
-        // Get the current diff
         const diff = await Bun.$`jj diff`.text()
 
-        // Generate description
         const lines = diff.split('\n').length
         const generatedDescription = `Changes: ${lines} lines modified`
 
-        // Update JJ description
         await Bun.$`jj describe -m ${generatedDescription}`.quiet()
 
         if (isMounted()) {
-          setDescription(generatedDescription)
-          setStatus('complete')
+          descriptionRef.current = generatedDescription
+          statusRef.current = 'complete'
+          forceUpdate()
         }
 
-        // Log to vcs reports
         await smithers.db.vcs.addReport({
           type: 'progress',
           title: 'JJ Describe',
@@ -59,12 +56,11 @@ export function Describe(props: DescribeProps): ReactNode {
         })
       } catch (err) {
         if (isMounted()) {
-          const errorObj = err instanceof Error ? err : new Error(String(err))
-          setError(errorObj)
-          setStatus('error')
+          errorRef.current = err instanceof Error ? err : new Error(String(err))
+          statusRef.current = 'error'
+          forceUpdate()
         }
       } finally {
-        // Complete task
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
@@ -74,9 +70,9 @@ export function Describe(props: DescribeProps): ReactNode {
 
   return (
     <jj-describe
-      status={status}
-      description={description}
-      error={error?.message}
+      status={statusRef.current}
+      description={descriptionRef.current}
+      error={errorRef.current?.message}
       use-agent={props.useAgent}
       template={props.template}
     >

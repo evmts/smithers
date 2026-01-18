@@ -1,7 +1,7 @@
 // Step component with automatic sequential execution within phases
 // Steps execute one after another unless wrapped in <Parallel>
 
-import { createContext, useContext, useState, useRef, useCallback, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useMount, useUnmount } from '../reconciler/hooks.js'
@@ -28,11 +28,11 @@ export function useStepRegistry(): StepRegistryContextValue | undefined {
 
 export function useStepIndex(name: string | undefined): number {
   const registry = useStepRegistry()
-  const [index] = useState(() => {
-    if (!registry) return 0
-    return registry.registerStep(name ?? 'unnamed')
-  })
-  return index
+  const indexRef = useRef<number | null>(null)
+  if (indexRef.current === null) {
+    indexRef.current = registry ? registry.registerStep(name ?? 'unnamed') : 0
+  }
+  return indexRef.current
 }
 
 // ============================================================================
@@ -185,8 +185,6 @@ export function Step(props: StepProps): ReactNode {
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
 
-  const [, setStepId] = useState<string | null>(null)
-  const [, setStatus] = useState<'pending' | 'active' | 'completed' | 'failed'>('pending')
   const stepIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
@@ -223,16 +221,13 @@ export function Step(props: StepProps): ReactNode {
 
         // Start step in database
         const id = db.steps.start(props.name)
-        setStepId(id)
         stepIdRef.current = id
-        setStatus('active')
 
         console.log(`[Step] Started: ${props.name ?? 'unnamed'}`)
 
         props.onStart?.()
       } catch (error) {
         console.error(`[Step] Error starting step:`, error)
-        setStatus('failed')
 
         if (stepIdRef.current) {
           db.steps.fail(stepIdRef.current)
@@ -292,7 +287,6 @@ export function Step(props: StepProps): ReactNode {
           ...(commitHashRef.current ? { commit_created: commitHashRef.current } : {}),
         })
 
-        setStatus('completed')
         console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
 
         props.onComplete?.()
@@ -302,7 +296,6 @@ export function Step(props: StepProps): ReactNode {
       } catch (error) {
         console.error(`[Step] Error completing step:`, error)
         db.steps.fail(id)
-        setStatus('failed')
       } finally {
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)

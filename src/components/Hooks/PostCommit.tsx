@@ -1,9 +1,10 @@
 // PostCommit hook component - triggers children when a git commit is made
 // Installs a git post-commit hook and polls db.state for triggers
 
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { useMount, useUnmount } from '../../reconciler/hooks.js'
+import { useQueryValue } from '../../reactive-sqlite/index.js'
 
 export interface PostCommitProps {
   children: ReactNode
@@ -67,31 +68,58 @@ async function hasSmithersMetadata(commitHash: string): Promise<boolean> {
  * </PostCommit>
  * ```
  */
-export function PostCommit(props: PostCommitProps): ReactNode {
-  const smithers = useSmithers()
+interface PostCommitState {
+  triggered: boolean
+  currentTrigger: HookTrigger | null
+  hookInstalled: boolean
+  error: string | null
+  lastProcessedTimestamp: number
+}
 
-  const [triggered, setTriggered] = useState(false)
-  const [currentTrigger, setCurrentTrigger] = useState<HookTrigger | null>(null)
-  const lastProcessedTimestampRef = useRef(0)
-  const [hookInstalled, setHookInstalled] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+const DEFAULT_STATE: PostCommitState = {
+  triggered: false,
+  currentTrigger: null,
+  hookInstalled: false,
+  error: null,
+  lastProcessedTimestamp: 0,
+}
+
+export function PostCommit(props: PostCommitProps): ReactNode {
+  const { db, reactiveDb } = useSmithers()
+
+  // Query state from db.state reactively
+  const { data: stateJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'hook:postCommit'"
+  )
+  const state: PostCommitState = stateJson ? JSON.parse(stateJson) : DEFAULT_STATE
+  const { triggered, currentTrigger, hookInstalled, error } = state
+
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const taskIdRef = useRef<string | null>(null)
 
   useMount(() => {
+    // Initialize state if not present
+    const currentState = db.state.get<PostCommitState>('hook:postCommit')
+    if (!currentState) {
+      db.state.set('hook:postCommit', DEFAULT_STATE, 'post-commit-init')
+    }
+
     // Fire-and-forget async IIFE pattern
     ;(async () => {
       try {
         // Install the git hook
         await installPostCommitHook()
-        setHookInstalled(true)
+        const s = db.state.get<PostCommitState>('hook:postCommit') ?? DEFAULT_STATE
+        db.state.set('hook:postCommit', { ...s, hookInstalled: true }, 'post-commit-hook-installed')
 
         // Start polling for triggers
         pollIntervalRef.current = setInterval(async () => {
           try {
-            const trigger = await smithers.db.state.get<HookTrigger>('last_hook_trigger')
+            const trigger = db.state.get<HookTrigger>('last_hook_trigger')
+            const currentS = db.state.get<PostCommitState>('hook:postCommit') ?? DEFAULT_STATE
 
-            if (trigger && trigger.type === 'post-commit' && trigger.timestamp > lastProcessedTimestampRef.current) {
+            if (trigger && trigger.type === 'post-commit' && trigger.timestamp > currentS.lastProcessedTimestamp) {
               // Check filter conditions
               let shouldTrigger = true
 
@@ -100,22 +128,25 @@ export function PostCommit(props: PostCommitProps): ReactNode {
               }
 
               if (shouldTrigger) {
-                setCurrentTrigger(trigger)
-                lastProcessedTimestampRef.current = trigger.timestamp
-                setTriggered(true)
+                db.state.set('hook:postCommit', {
+                  ...currentS,
+                  triggered: true,
+                  currentTrigger: trigger,
+                  lastProcessedTimestamp: trigger.timestamp,
+                }, 'post-commit-triggered')
 
                 // Mark as processed in db
-                await smithers.db.state.set('last_hook_trigger', {
+                db.state.set('last_hook_trigger', {
                   ...trigger,
                   processed: true,
                 }, 'post-commit-hook')
 
                 // If running in background (async), register task
                 if (props.async) {
-                  taskIdRef.current = smithers.db.tasks.start('post-commit-hook')
+                  taskIdRef.current = db.tasks.start('post-commit-hook')
                   // Task will be completed when children finish
                   // For now, we complete immediately as children handle their own task registration
-                  smithers.db.tasks.complete(taskIdRef.current)
+                  db.tasks.complete(taskIdRef.current)
                 }
               }
             }
@@ -126,7 +157,8 @@ export function PostCommit(props: PostCommitProps): ReactNode {
 
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
-        setError(errorMsg)
+        const s = db.state.get<PostCommitState>('hook:postCommit') ?? DEFAULT_STATE
+        db.state.set('hook:postCommit', { ...s, error: errorMsg }, 'post-commit-error')
         console.error('[PostCommit] Failed to install hook:', errorMsg)
       }
     })()

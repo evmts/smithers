@@ -1,9 +1,10 @@
 // OnCIFailure hook component - polls CI status and triggers children on failure
 // Currently supports GitHub Actions
 
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { useMount, useUnmount } from '../../reconciler/hooks.js'
+import { useQueryValue } from '../../reactive-sqlite/index.js'
 
 export interface CIFailure {
   failed: boolean
@@ -104,43 +105,59 @@ async function fetchRunLogs(runId: number): Promise<string> {
  * </OnCIFailure>
  * ```
  */
+interface CIFailureState {
+  ciStatus: 'idle' | 'polling' | 'failed' | 'error'
+  currentFailure: CIFailure | null
+  triggered: boolean
+  error: string | null
+  processedRunIds: number[]
+}
+
+const DEFAULT_CI_STATE: CIFailureState = {
+  ciStatus: 'idle',
+  currentFailure: null,
+  triggered: false,
+  error: null,
+  processedRunIds: [],
+}
+
 export function OnCIFailure(props: OnCIFailureProps): ReactNode {
-  const smithers = useSmithers()
+  const { db, reactiveDb } = useSmithers()
 
-  const [ciStatus, setCIStatus] = useState<'idle' | 'polling' | 'failed' | 'error'>('idle')
-  const [currentFailure, setCurrentFailure] = useState<CIFailure | null>(null)
-  const [triggered, setTriggered] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Query state from db.state reactively
+  const { data: stateJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'hook:ciFailure'"
+  )
+  const state: CIFailureState = stateJson ? JSON.parse(stateJson) : DEFAULT_CI_STATE
+  const { ciStatus, currentFailure, triggered, error } = state
 
-  // Track processed run IDs to avoid re-triggering
-  const processedRunIdsRef = useRef(new Set<number>())
   const taskIdRef = useRef<string | null>(null)
 
   const intervalMs = props.pollInterval ?? 30000
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useMount(() => {
-    const processedRunIds = processedRunIdsRef.current
+    // Initialize state if not present
+    const currentState = db.state.get<CIFailureState>('hook:ciFailure')
+    if (!currentState) {
+      db.state.set('hook:ciFailure', DEFAULT_CI_STATE, 'ci-failure-init')
+    }
 
     // Fire-and-forget async IIFE pattern
     ;(async () => {
-      setCIStatus('polling')
-
-      // Load previously processed run IDs from db state
-      try {
-        const processed = await smithers.db.state.get<number[]>('ci_processed_run_ids')
-        if (processed) {
-          processed.forEach((id) => processedRunIds.add(id))
-        }
-      } catch {
-        // Ignore - starting fresh
-      }
+      const s = db.state.get<CIFailureState>('hook:ciFailure') ?? DEFAULT_CI_STATE
+      db.state.set('hook:ciFailure', { ...s, ciStatus: 'polling' }, 'ci-failure-polling')
 
       // Define the polling function
       const checkCI = async () => {
         try {
           if (props.provider !== 'github-actions') {
-            setError(`Unsupported CI provider: ${props.provider}`)
+            const currentS = db.state.get<CIFailureState>('hook:ciFailure') ?? DEFAULT_CI_STATE
+            db.state.set('hook:ciFailure', { 
+              ...currentS, 
+              error: `Unsupported CI provider: ${props.provider}` 
+            }, 'ci-failure-error')
             return
           }
 
@@ -150,22 +167,15 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
             return
           }
 
+          const currentS = db.state.get<CIFailureState>('hook:ciFailure') ?? DEFAULT_CI_STATE
+          const processedSet = new Set(currentS.processedRunIds)
+
           // Check if this is a new failure
           if (
             run.status === 'completed' &&
             run.conclusion === 'failure' &&
-            !processedRunIds.has(run.databaseId)
+            !processedSet.has(run.databaseId)
           ) {
-            // Mark as processed
-            processedRunIds.add(run.databaseId)
-
-            // Persist processed IDs
-            await smithers.db.state.set(
-              'ci_processed_run_ids',
-              Array.from(processedRunIds),
-              'ci-failure-hook'
-            )
-
             // Fetch additional failure details
             const failedJobs = await fetchFailedJobs(run.databaseId)
             const logs = await fetchRunLogs(run.databaseId)
@@ -178,25 +188,34 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
               logs,
             }
 
-            setCurrentFailure(failure)
-            setCIStatus('failed')
-            setTriggered(true)
+            // Update state with new failure and processed ID
+            db.state.set('hook:ciFailure', {
+              ...currentS,
+              ciStatus: 'failed',
+              currentFailure: failure,
+              triggered: true,
+              processedRunIds: [...currentS.processedRunIds, run.databaseId],
+            }, 'ci-failure-triggered')
 
             // Call onFailure callback
             props.onFailure?.(failure)
 
             // Register task for tracking - children will handle completion
-            taskIdRef.current = smithers.db.tasks.start('ci-failure-hook', props.provider)
+            taskIdRef.current = db.tasks.start('ci-failure-hook', props.provider)
             // Complete immediately as children handle their own task registration
-            smithers.db.tasks.complete(taskIdRef.current)
+            db.tasks.complete(taskIdRef.current)
 
             // Log to db state
-            await smithers.db.state.set('last_ci_failure', failure, 'ci-failure-hook')
+            db.state.set('last_ci_failure', failure, 'ci-failure-hook')
           }
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err)
-          setError(errorMsg)
-          setCIStatus('error')
+          const currentS = db.state.get<CIFailureState>('hook:ciFailure') ?? DEFAULT_CI_STATE
+          db.state.set('hook:ciFailure', { 
+            ...currentS, 
+            error: errorMsg, 
+            ciStatus: 'error' 
+          }, 'ci-failure-error')
           console.error('[OnCIFailure] Polling error:', errorMsg)
         }
       }

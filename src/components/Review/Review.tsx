@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes } from '../../utils/vcs.js'
 import type { ReviewTarget, ReviewResult, ReviewProps } from './types.js'
@@ -182,9 +182,10 @@ ${issuesText}
  */
 export function Review(props: ReviewProps): ReactNode {
   const smithers = useSmithers()
-  const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const [result, setResult] = useState<ReviewResult | null>(null)
-  const [error, setError] = useState<Error | null>(null)
+  const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+  const resultRef = useRef<ReviewResult | null>(null)
+  const errorRef = useRef<Error | null>(null)
+  const [, forceUpdate] = useReducer(x => x + 1, 0)
 
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
@@ -196,7 +197,8 @@ export function Review(props: ReviewProps): ReactNode {
       taskIdRef.current = smithers.db.tasks.start('review', props.target.type)
 
       try {
-        setStatus('running')
+        statusRef.current = 'running'
+        forceUpdate()
 
         // Fetch content to review
         const content = await fetchTargetContent(props.target)
@@ -240,8 +242,9 @@ export function Review(props: ReviewProps): ReactNode {
         }
 
         if (isMounted()) {
-          setResult(reviewResult)
-          setStatus('complete')
+          resultRef.current = reviewResult
+          statusRef.current = 'complete'
+          forceUpdate()
           props.onFinished?.(reviewResult)
 
           // If blocking and not approved, request stop
@@ -257,8 +260,9 @@ export function Review(props: ReviewProps): ReactNode {
       } catch (err) {
         if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
-          setError(errorObj)
-          setStatus('error')
+          errorRef.current = errorObj
+          statusRef.current = 'error'
+          forceUpdate()
           props.onError?.(errorObj)
         }
       } finally {
@@ -272,11 +276,11 @@ export function Review(props: ReviewProps): ReactNode {
 
   return (
     <review
-      status={status}
-      approved={result?.approved}
-      summary={result?.summary}
-      issue-count={result?.issues.length}
-      error={error?.message}
+      status={statusRef.current}
+      approved={resultRef.current?.approved}
+      summary={resultRef.current?.summary}
+      issue-count={resultRef.current?.issues.length}
+      error={errorRef.current?.message}
       target-type={props.target.type}
       target-ref={props.target.ref}
       blocking={props.blocking}

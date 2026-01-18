@@ -1,6 +1,6 @@
 // PhaseRegistry - Manages sequential phase execution via SQLite state
 
-import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { useMount } from '../reconciler/hooks.js'
@@ -38,8 +38,11 @@ export function usePhaseRegistry(): PhaseRegistryContextValue {
 // Hook for phases to get their index during registration
 export function usePhaseIndex(name: string): number {
   const registry = usePhaseRegistry()
-  const [index] = useState(() => registry.registerPhase(name))
-  return index
+  const indexRef = useRef<number | null>(null)
+  if (indexRef.current === null) {
+    indexRef.current = registry.registerPhase(name)
+  }
+  return indexRef.current
 }
 
 export interface PhaseRegistryProviderProps {
@@ -49,8 +52,8 @@ export interface PhaseRegistryProviderProps {
 export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactNode {
   const { db, reactiveDb } = useSmithers()
 
-  // Track registered phases in order
-  const [phases, setPhases] = useState<string[]>([])
+  // Track registered phases in order (ref for synchronous registration)
+  const phasesRef = useRef<string[]>([])
 
   // Read currentPhaseIndex from SQLite reactively
   const { data: dbPhaseIndex } = useQueryValue<number>(
@@ -67,28 +70,22 @@ export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactN
 
   // Register a phase and return its index
   const registerPhase = useCallback((name: string): number => {
-    let index = -1
-    setPhases(prev => {
-      // Check if already registered
-      const existingIndex = prev.indexOf(name)
-      if (existingIndex >= 0) {
-        index = existingIndex
-        return prev
-      }
-      // Add new phase
-      index = prev.length
-      return [...prev, name]
-    })
-    return index >= 0 ? index : phases.length
-  }, [phases.length])
+    const existingIndex = phasesRef.current.indexOf(name)
+    if (existingIndex >= 0) {
+      return existingIndex
+    }
+    const index = phasesRef.current.length
+    phasesRef.current.push(name)
+    return index
+  }, [])
 
   // Advance to next phase
   const advancePhase = useCallback(() => {
     const nextIndex = currentPhaseIndex + 1
-    if (nextIndex < phases.length) {
+    if (nextIndex < phasesRef.current.length) {
       db.state.set('currentPhaseIndex', nextIndex, 'phase_advance')
     }
-  }, [db, currentPhaseIndex, phases.length])
+  }, [db, currentPhaseIndex])
 
   // Check if phase is active
   const isPhaseActive = useCallback((index: number): boolean => {
@@ -106,8 +103,8 @@ export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactN
     advancePhase,
     isPhaseActive,
     isPhaseCompleted,
-    totalPhases: phases.length,
-  }), [registerPhase, currentPhaseIndex, advancePhase, isPhaseActive, isPhaseCompleted, phases.length])
+    totalPhases: phasesRef.current.length,
+  }), [registerPhase, currentPhaseIndex, advancePhase, isPhaseActive, isPhaseCompleted])
 
   return (
     <PhaseRegistryContext.Provider value={value}>
