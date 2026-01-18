@@ -30,7 +30,8 @@
     "./db": "./src/db/index.ts",
     "./monitor": "./src/monitor/index.ts",
     "./tools": "./src/tools/index.ts",
-    "./reactive-sqlite": "./src/reactive-sqlite/index.ts"
+    "./reactive-sqlite": "./src/reactive-sqlite/index.ts",
+    "./hooks": "./src/hooks/index.ts"
   },
   "files": [
     "src",
