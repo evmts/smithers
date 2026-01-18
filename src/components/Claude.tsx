@@ -10,6 +10,7 @@ import type { ClaudeProps, AgentResult } from './agents/types'
 import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks'
 import { LogWriter } from '../monitor/log-writer'
 import { uuid } from '../db/utils'
+import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser'
 
 // ============================================================================
 // CLAUDE COMPONENT
@@ -47,9 +48,11 @@ export function Claude(props: ClaudeProps): ReactNode {
   const [result, setResult] = useState<AgentResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [agentId, setAgentId] = useState<string | null>(null)
+  const [tailLog, setTailLog] = useState<TailLogEntry[]>([])
 
   // Track task ID for this component
   const taskIdRef = useRef<string | null>(null)
+  const messageParserRef = useRef<MessageParser>(new MessageParser())
   const isMounted = useMountedState()
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
@@ -139,6 +142,11 @@ export function Claude(props: ClaudeProps): ReactNode {
                 if (logFilename) {
                   logWriter.appendLog(logFilename, chunk)
                 }
+
+                // Parse for tail log
+                messageParserRef.current.parseChunk(chunk)
+                setTailLog([...messageParserRef.current.getEntries()])
+
                 // Call original onProgress
                 props.onProgress?.(chunk)
               },
@@ -183,6 +191,10 @@ export function Claude(props: ClaudeProps): ReactNode {
         if (!agentResult) {
           throw lastError ?? new Error('No result from Claude CLI')
         }
+
+        // Flush message parser to capture any remaining content
+        messageParserRef.current.flush()
+        setTailLog([...messageParserRef.current.getEntries()])
 
         // Log completion to database
         if (props.reportingEnabled !== false && currentAgentId) {
@@ -239,6 +251,8 @@ export function Claude(props: ClaudeProps): ReactNode {
           props.onError?.(errorObj)
         }
       } finally {
+        // Close log stream
+        logWriter.closeStream(logFilename)
         // Always complete task
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
@@ -248,19 +262,39 @@ export function Claude(props: ClaudeProps): ReactNode {
   })
 
   // Render custom element for XML serialization
+  const maxEntries = props.tailLogCount ?? 10
+  const maxLines = props.tailLogLines ?? 10
+  const displayEntries = status === 'complete'
+    ? tailLog.slice(-1)
+    : tailLog.slice(-maxEntries)
+
   return (
     <claude
       status={status}
       agent-id={agentId}
       execution-id={executionId}
       model={props.model ?? 'sonnet'}
-      result={result?.output?.slice(0, 200)}
       error={error?.message}
       tokens-input={result?.tokensUsed?.input}
       tokens-output={result?.tokensUsed?.output}
       turns-used={result?.turnsUsed}
       duration-ms={result?.durationMs}
     >
+      {displayEntries.length > 0 && (
+        <messages count={displayEntries.length}>
+          {displayEntries.map(entry =>
+            entry.type === 'message' ? (
+              <message key={entry.index} index={entry.index}>
+                {truncateToLastLines(entry.content, maxLines)}
+              </message>
+            ) : (
+              <tool-call key={entry.index} name={entry.toolName} index={entry.index}>
+                {truncateToLastLines(entry.content, maxLines)}
+              </tool-call>
+            )
+          )}
+        </messages>
+      )}
       {props.children}
     </claude>
   )

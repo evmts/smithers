@@ -19,6 +19,9 @@ const KNOWN_TYPES = new Set([
   'review',
   'text',
   'root',
+  'messages',
+  'message',
+  'tool-call',
 ])
 
 /**

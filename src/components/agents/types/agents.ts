@@ -193,4 +193,16 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
    * @default 2
    */
   schemaRetries?: number
+
+  /**
+   * Number of tail log entries to display during execution.
+   * @default 10
+   */
+  tailLogCount?: number
+
+  /**
+   * Number of lines to show per tail log entry.
+   * @default 10
+   */
+  tailLogLines?: number
 }
