@@ -10,7 +10,22 @@
     - src/components/SmithersProvider.tsx
     - src/reconciler/hooks.js
   </dependencies>
+  <blocked-by>
+    - issues/control-flow-scoping.md (requires design review and approval)
+  </blocked-by>
 </metadata>
+
+---
+
+## ⚠️ BLOCKED: Scoping Design Required
+
+**This feature is blocked pending design review of the scoping mechanism.**
+
+See `issues/control-flow-scoping.md` for the full scoping design proposal.
+
+**Why blocked:** Control flow components require a scoping system to allow phases/steps to re-execute across iterations (e.g., While loops). Without scoping, the database state management breaks after the first iteration.
+
+**Do not implement this feature until the scoping design is reviewed and approved.**
 
 ---
 

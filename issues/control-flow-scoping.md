@@ -7,7 +7,28 @@
   <blocks>
     - issues/control-flow-components.md
   </blocks>
+  <blocked-by>
+    - Human review and approval required
+    - Codex review required
+  </blocked-by>
 </metadata>
+
+---
+
+## ⚠️ WARNING: Complex Feature - Review Required
+
+**This design requires thorough review before implementation:**
+
+- **Complexity**: Introduces hierarchical scoping system with deep implications for state management
+- **Risk**: Changes core assumptions about Phase/Step lifecycle and database interactions
+- **Testing**: Requires comprehensive test coverage for nested scenarios and edge cases
+- **Reversibility**: Once implemented, removing scoping would be a breaking change
+
+**Required Reviews:**
+1. **Human review**: Validate design approach and confirm it solves the right problem
+2. **Codex review**: Verify implementation approach and identify potential issues
+
+**Do not proceed with implementation until reviews are complete.**
 
 ---
 
