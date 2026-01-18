@@ -65,6 +65,7 @@ export interface Agent {
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   result?: string
   result_structured?: Record<string, any>
+  log_path?: string
   error?: string
   started_at?: Date
   completed_at?: Date
