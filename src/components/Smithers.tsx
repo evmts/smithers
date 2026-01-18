@@ -184,11 +184,16 @@ export function Smithers(props: SmithersProps): ReactNode {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
-      taskIdRef.current = db.tasks.start('smithers', props.plannerModel ?? 'sonnet')
+      taskIdRef.current = db.tasks.start('smithers')
 
       try {
         // Extract task from children
-        const task = String(props.children)
+        if (typeof props.children !== 'string') {
+          throw new TypeError(
+            'Smithers children must be a string. Use explicit props for structured prompts.'
+          )
+        }
+        const task = props.children
 
         // Log subagent start to database
         if (props.reportingEnabled !== false) {

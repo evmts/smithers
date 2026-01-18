@@ -127,7 +127,7 @@ export function Claude(props: ClaudeProps): ReactNode {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
-      taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
+      taskIdRef.current = db.tasks.start('claude')
 
       // Check if stop has been requested globally
       if (isStopRequested()) {
@@ -160,7 +160,12 @@ export function Claude(props: ClaudeProps): ReactNode {
 
       try {
         // Extract prompt from children
-        const childrenString = String(props.children)
+        if (typeof props.children !== 'string') {
+          throw new TypeError(
+            'Claude children must be a string. Use explicit props for structured prompts.'
+          )
+        }
+        const childrenString = props.children
 
         // Check for MCP tool components
         const { configs: mcpConfigs, cleanPrompt, toolInstructions } = extractMCPConfigs(childrenString)

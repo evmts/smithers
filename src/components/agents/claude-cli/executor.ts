@@ -142,10 +142,17 @@ export async function executeClaudeCLIOnce(
     const sessionMatch = stderr.match(/session[_-]?id[:\s]+([a-f0-9-]+)/i)
     const sessionId = sessionMatch?.[1]
 
-    // Determine stop reason
-    let stopReason: AgentResult['stopReason'] = 'completed'
     if (exitCode !== 0) {
-      stopReason = 'error'
+      return {
+        output: `Claude CLI failed with exit code ${exitCode}\n\nCommand: claude ${args.join(' ')}\n\nSTDOUT:\n${parsed.output}\n\nSTDERR:\n${stderr}`,
+        structured: parsed.structured,
+        tokensUsed: parsed.tokensUsed,
+        turnsUsed: parsed.turnsUsed,
+        stopReason: 'error',
+        durationMs,
+        exitCode,
+        ...(sessionId ? { sessionId } : {}),
+      }
     }
 
     return {
@@ -153,7 +160,7 @@ export async function executeClaudeCLIOnce(
       structured: parsed.structured,
       tokensUsed: parsed.tokensUsed,
       turnsUsed: parsed.turnsUsed,
-      stopReason,
+      stopReason: 'completed',
       durationMs,
       exitCode,
       ...(sessionId ? { sessionId } : {}),
