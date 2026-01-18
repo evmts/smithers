@@ -1,30 +1,131 @@
+## Scope: major
+
 # useHumanInteractive Hook Not Implemented
 
 ## Status: FEATURE GAP
 
 ## Summary
-The design documents describe a `useHumanInteractive` hook for interactive Claude sessions with full tool access. Currently only simple `useHuman` prompts exist.
+Complete design exists for `useHumanInteractive` hook (design-complete status as of commit e01a096), but implementation has not begun. Hook enables interactive Claude Code sessions for complex human-in-the-loop scenarios requiring exploration, multi-turn dialogue, and AI assistance.
+
+## Design Status
+- **Design document**: `/Users/williamcory/smithers/issues/use-human-interactive.md` (1391 lines)
+- **Design review**: Complete - all 10 P0 issues resolved (2026-01-18)
+- **Implementation status**: Not started
+- **Acceptance criteria**: 31 items defined and ready
 
 ## Impact
-- No interactive human-in-the-loop sessions
+- No interactive human-in-the-loop sessions beyond simple prompts
 - Cannot have multi-turn conversations during orchestration
-- Limited human interaction capabilities
+- No way for humans to explore codebase with AI assistance before making decisions
+- Limits complex approval workflows requiring investigation
 
-## Design Location
-- `issues/use-human-interactive.md`
+## Current Implementation Gap
 
-## Current State
-- `useHuman` exists for simple yes/no or text prompts
-- No support for interactive sessions with tool access
+### What Exists
+- `useHuman` hook (`/Users/williamcory/smithers/src/hooks/useHuman.ts`) - simple prompts only
+  - Supports: confirmation, select, input types
+  - Returns direct response via `ask()` method
+- Basic `HumanModule` in `/Users/williamcory/smithers/src/db/human.ts`
+  - Methods: `request()`, `resolve()`, `get()`, `listPending()`
+- DB table: `human_interactions` (schema.sql:452) - missing session columns
 
-## Suggested Implementation
-1. Implement `useHumanInteractive` hook
-2. Support multi-turn conversation context
-3. Allow tool access during interaction
-4. Add timeout and cancellation support
+### What's Missing (per design doc)
+1. **Hook**: `useHumanInteractive.ts` with mutation-like API (`request`, `requestAsync`, `cancel`, `reset`)
+2. **DB schema additions**:
+   - `session_config` (TEXT) - JSON configuration
+   - `session_transcript` (TEXT) - optional captured transcript
+   - `session_duration` (INTEGER) - ms
+   - `error` (TEXT) - error message
+   - New type: `'interactive_session'`
+   - New statuses: `'completed'`, `'cancelled'`, `'failed'`
+3. **HumanModule extensions**:
+   - `requestInteractive(prompt, config)`
+   - `completeInteractive(id, outcome, response, options)`
+   - `cancelInteractive(id)`
+   - `listPending(executionId?)` - explicit execution scope
+4. **Types**:
+   - `HumanInteractionRow` - raw DB row type
+   - `InteractiveSessionConfig` - session configuration
+   - `InteractiveSessionResult` - outcome type
+   - `parseHumanInteraction()` - mapper function
+5. **Harness integration** - external process handling (not in-process)
+
+## Implementation Approach (from design)
+
+### Phase 1: DB Schema (0.5 day)
+```sql
+ALTER TABLE human_interactions ADD COLUMN session_config TEXT;
+ALTER TABLE human_interactions ADD COLUMN session_transcript TEXT;
+ALTER TABLE human_interactions ADD COLUMN session_duration INTEGER;
+ALTER TABLE human_interactions ADD COLUMN error TEXT;
+```
+Add migration, update `HumanInteraction` type, add `HumanInteractionRow` type
+
+### Phase 2: Human Module (0.5 day)
+Extend `/Users/williamcory/smithers/src/db/human.ts`:
+- Add `requestInteractive()`, `completeInteractive()`, `cancelInteractive()`
+- Update `listPending()` to accept optional `executionId` (support `'*'` for cross-execution)
+- Add `parseHumanInteraction()` mapper
+
+### Phase 3: Hook (1 day)
+Create `/Users/williamcory/smithers/src/hooks/useHumanInteractive.ts`:
+- Reactive subscription via `useQueryOne<HumanInteractionRow>`
+- Parse raw rows with `parseHumanInteraction()`
+- Task creation for orchestration gating (`blockOrchestration: true`)
+- Promise resolution on session completion
+- Single-session enforcement (throw if pending)
+- Export from `/Users/williamcory/smithers/src/hooks/index.ts`
+
+### Phase 4: Documentation (0.5 day)
+- API docs for hook
+- Usage examples
+- Harness integration guide
+
+### Phase 5: Example Harness (0.5 day)
+- Reference implementation showing Claude CLI interactive mode launch
+- Outcome extraction patterns (approval, structured)
+
+## Key Design Decisions (P0 review resolved)
+- **Mutation API**: `request()` fire-and-forget, `requestAsync()` returns promise
+- **Serializable config**: JSON Schema in DB, Zod validation client-side
+- **Status semantics**: Lifecycle (`pending|completed|cancelled|timeout|failed`), decisions in `response` field
+- **Orchestration gating**: Creates task when `blockOrchestration: true` (default)
+- **Harness-agnostic**: Creates DB record; external harness fulfills via polling `listPending('*')`
+- **Privacy**: Transcript capture opt-in (`captureTranscript: false` default)
+- **Concurrency**: Single session enforced (throws if `status === 'pending'`)
+
+## Codebase Patterns to Follow
+
+### DB Module Pattern
+Similar to existing modules in `/Users/williamcory/smithers/src/db/`:
+- `agents.ts` - has `mapAgent()` parser
+- `commits.ts` - has `mapCommit()` parser
+- Follow same pattern: `HumanInteractionRow` raw type, `parseHumanInteraction()` mapper
+
+### Hook Pattern
+Follow `/Users/williamcory/smithers/src/hooks/useHuman.ts`:
+- Use `useQueryOne<HumanInteractionRow>` for reactive subscription
+- Track `resolveRef` for promise resolution
+- `useMount`/`useUnmount` from `/Users/williamcory/smithers/src/reconciler/hooks` (not `useEffect`)
+- `useCallback` for methods
+
+### Task Integration
+Use `db.tasks` for orchestration gating:
+```typescript
+const tid = db.tasks.start('human_interactive', description)
+// ... later when session completes
+db.tasks.complete(tid)
+```
+
+## Testing Considerations
+- Test DB migration on existing database
+- Test single-session enforcement
+- Test task completion on all terminal states
+- Test parsing of session_config JSON
+- Mock harness for integration tests
 
 ## Priority
-**P3** - Feature enhancement (post-MVP)
+**P2** - High value post-MVP feature, design complete, ready for implementation
 
 ## Estimated Effort
-2-3 days (per design doc)
+**3.5-4 days** (per detailed implementation plan in design doc)
