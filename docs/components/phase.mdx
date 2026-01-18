@@ -35,11 +35,11 @@ import { Phase } from "smithers";
 
 ```tsx
 function FeatureWorkflow() {
-  const [phase, setPhase] = createSignal("research");
+  const [phase, setPhase] = useState("research");
 
   return (
     <Ralph maxIterations={10}>
-      {phase() === "research" && (
+      {phase === "research" && (
         <Phase name="Research">
           <Step name="find-files">
             <Claude
@@ -52,7 +52,7 @@ function FeatureWorkflow() {
         </Phase>
       )}
 
-      {phase() === "implement" && (
+      {phase === "implement" && (
         <Phase name="Implementation">
           <Step name="write-code">
             <Claude
@@ -65,7 +65,7 @@ function FeatureWorkflow() {
         </Phase>
       )}
 
-      {phase() === "test" && (
+      {phase === "test" && (
         <Phase name="Testing">
           <Claude
             allowedTools={["Bash"]}

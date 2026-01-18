@@ -14,8 +14,8 @@ As of the latest version, SmithersProvider consolidates SmithersProvider, RalphC
 ## Basic Usage
 
 ```tsx
-import { createSmithersDB } from "smithers/db";
-import { SmithersProvider, Orchestration, Claude } from "smithers/components";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider, Orchestration, Claude } from "smithers-orchestrator/components";
 
 const db = await createSmithersDB({ path: ".smithers/my-workflow" });
 const executionId = await db.execution.start("My Workflow", "workflow.tsx");
@@ -107,7 +107,7 @@ function Workflow() {
 Child components can access the context using the `useSmithers` hook:
 
 ```tsx
-import { useSmithers } from "smithers/components";
+import { useSmithers } from "smithers-orchestrator/components";
 
 function MyComponent() {
   const {
@@ -139,9 +139,9 @@ function MyComponent() {
 Components can register and complete tasks using the database-backed task system:
 
 ```tsx
-import { useSmithers } from "smithers/components";
+import { useSmithers } from "smithers-orchestrator/components";
 import { useRef } from "react";
-import { useMount } from "smithers/reconciler/hooks";
+import { useMount } from "smithers-orchestrator/reconciler/hooks";
 
 function CustomAsyncStep() {
   const { db } = useSmithers();
@@ -234,7 +234,7 @@ function DatabaseAccessExample() {
 Use reactive database queries with the `useQuery` hook:
 
 ```tsx
-import { useQuery } from "smithers/reactive-sqlite";
+import { useQuery } from "smithers-orchestrator/reactive-sqlite";
 
 function TaskMonitor() {
   const { reactiveDb } = useSmithers();
@@ -256,8 +256,8 @@ function TaskMonitor() {
 ## Complete Example
 
 ```tsx
-import { createSmithersRoot, createSmithersDB } from "smithers";
-import { SmithersProvider, Orchestration, Claude, useSmithers } from "smithers/components";
+import { createSmithersRoot, createSmithersDB } from "smithers-orchestrator";
+import { SmithersProvider, Orchestration, Claude, useSmithers } from "smithers-orchestrator/components";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/example" });

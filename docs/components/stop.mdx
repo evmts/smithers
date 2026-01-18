@@ -29,11 +29,11 @@ import { Stop } from "smithers";
 
 ```tsx
 function ConditionalWorkflow() {
-  const [status, setStatus] = createSignal("running");
+  const [status, setStatus] = useState("running");
 
   return (
     <Ralph maxIterations={10}>
-      {status() === "running" && (
+      {status === "running" && (
         <Claude
           onFinished={(result) => {
             if (result.output.includes("CRITICAL")) {
@@ -47,11 +47,11 @@ function ConditionalWorkflow() {
         </Claude>
       )}
 
-      {status() === "error" && (
+      {status === "error" && (
         <Stop reason="Critical error detected" />
       )}
 
-      {status() === "complete" && (
+      {status === "complete" && (
         <Stop reason="Task completed" />
       )}
     </Ralph>
@@ -70,7 +70,7 @@ function ConditionalWorkflow() {
   Review the changes.
 </Human>
 
-{phase() === "cancelled" && (
+{phase === "cancelled" && (
   <Stop reason="Rejected by human" />
 )}
 ```

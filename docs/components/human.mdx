@@ -48,17 +48,17 @@ import { Human } from "smithers";
 
 ```tsx
 function ApprovalWorkflow() {
-  const [phase, setPhase] = createSignal("implement");
+  const [phase, setPhase] = useState("implement");
 
   return (
     <Ralph maxIterations={10}>
-      {phase() === "implement" && (
+      {phase === "implement" && (
         <Claude onFinished={() => setPhase("review")}>
           Implement the feature.
         </Claude>
       )}
 
-      {phase() === "review" && (
+      {phase === "review" && (
         <Human
           message="Review Implementation"
           onApprove={() => setPhase("deploy")}
@@ -69,7 +69,7 @@ function ApprovalWorkflow() {
         </Human>
       )}
 
-      {phase() === "deploy" && (
+      {phase === "deploy" && (
         <Claude
           allowedTools={["Bash"]}
           onFinished={() => setPhase("done")}
@@ -78,7 +78,7 @@ function ApprovalWorkflow() {
         </Claude>
       )}
 
-      {phase() === "cancelled" && (
+      {phase === "cancelled" && (
         <Stop reason="Human rejected changes" />
       )}
     </Ralph>
@@ -90,11 +90,11 @@ function ApprovalWorkflow() {
 
 ```tsx
 function StrictWorkflow() {
-  const [phase, setPhase] = createSignal("prompt-input");
+  const [phase, setPhase] = useState("prompt-input");
 
   return (
     <Ralph maxIterations={20}>
-      {phase() === "prompt-input" && (
+      {phase === "prompt-input" && (
         <Human
           message="Confirm Feature Request"
           onApprove={() => setPhase("research")}
@@ -105,13 +105,13 @@ function StrictWorkflow() {
         </Human>
       )}
 
-      {phase() === "research" && (
+      {phase === "research" && (
         <Claude onFinished={() => setPhase("plan-review")}>
           Research the implementation approach.
         </Claude>
       )}
 
-      {phase() === "plan-review" && (
+      {phase === "plan-review" && (
         <Human
           message="Approve Plan"
           onApprove={() => setPhase("implement")}
@@ -121,13 +121,13 @@ function StrictWorkflow() {
         </Human>
       )}
 
-      {phase() === "implement" && (
+      {phase === "implement" && (
         <Claude onFinished={() => setPhase("final-review")}>
           Implement the feature.
         </Claude>
       )}
 
-      {phase() === "final-review" && (
+      {phase === "final-review" && (
         <Human
           message="Final Review"
           onApprove={() => setPhase("done")}
@@ -137,7 +137,7 @@ function StrictWorkflow() {
         </Human>
       )}
 
-      {phase() === "cancelled" && (
+      {phase === "cancelled" && (
         <Stop reason="Workflow cancelled by human" />
       )}
     </Ralph>

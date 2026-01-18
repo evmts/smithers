@@ -10,7 +10,7 @@ The `<Commit>` component creates git commits with optional notes and metadata tr
 ## Basic Usage
 
 ```tsx
-import { Commit } from "smithers/components/Git";
+import { Commit } from "smithers-orchestrator/components/Git";
 
 <Commit
   message="feat: Add user authentication"
@@ -96,11 +96,11 @@ interface CommitResult {
 
 ```tsx
 function CommitWorkflow() {
-  const [phase, setPhase] = createSignal("implement");
+  const [phase, setPhase] = useState("implement");
 
   return (
     <Ralph maxIterations={5}>
-      {phase() === "implement" && (
+      {phase === "implement" && (
         <Claude
           allowedTools={["Edit", "Write"]}
           onFinished={() => setPhase("commit")}
@@ -109,7 +109,7 @@ function CommitWorkflow() {
         </Claude>
       )}
 
-      {phase() === "commit" && (
+      {phase === "commit" && (
         <Commit
           message="feat: Add new feature"
           all

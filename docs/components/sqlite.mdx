@@ -10,7 +10,7 @@ The `<Sqlite>` component configures an MCP (Model Context Protocol) server that 
 ## Basic Usage
 
 ```tsx
-import { Sqlite } from "smithers/components/MCP";
+import { Sqlite } from "smithers-orchestrator/components/MCP";
 
 <Claude model="sonnet" maxTurns={5}>
   <Sqlite path="./analytics.db">
@@ -100,11 +100,11 @@ import { Sqlite } from "smithers/components/MCP";
 
 ```tsx
 function DataWorkflow() {
-  const [phase, setPhase] = createSignal("analyze");
+  const [phase, setPhase] = useState("analyze");
 
   return (
     <Ralph maxIterations={5}>
-      {phase() === "analyze" && (
+      {phase === "analyze" && (
         <Claude
           model="sonnet"
           onFinished={() => setPhase("report")}
@@ -118,7 +118,7 @@ function DataWorkflow() {
         </Claude>
       )}
 
-      {phase() === "report" && (
+      {phase === "report" && (
         <Claude
           allowedTools={["Write"]}
           onFinished={() => setPhase("done")}

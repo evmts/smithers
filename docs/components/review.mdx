@@ -113,11 +113,11 @@ interface ReviewIssue {
 
 ```tsx
 function ReviewWorkflow() {
-  const [phase, setPhase] = createSignal("implement");
+  const [phase, setPhase] = useState("implement");
 
   return (
     <Ralph maxIterations={5}>
-      {phase() === "implement" && (
+      {phase === "implement" && (
         <Claude
           allowedTools={["Edit", "Write"]}
           onFinished={() => setPhase("review")}
@@ -126,7 +126,7 @@ function ReviewWorkflow() {
         </Claude>
       )}
 
-      {phase() === "review" && (
+      {phase === "review" && (
         <Review
           target={{ type: "diff", ref: "main" }}
           criteria={[

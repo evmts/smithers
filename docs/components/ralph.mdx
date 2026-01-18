@@ -45,7 +45,7 @@ The `<Ralph>` component was the original loop controller in Smithers workflows. 
 <CodeGroup>
 ```tsx Before (Ralph context)
 import { useContext } from 'react';
-import { RalphContext } from 'smithers/components';
+import { RalphContext } from 'smithers-orchestrator/components';
 
 function CustomStep() {
   const ralph = useContext(RalphContext);
@@ -60,7 +60,7 @@ function CustomStep() {
 ```
 
 ```tsx After (db.tasks)
-import { useSmithers } from 'smithers/components';
+import { useSmithers } from 'smithers-orchestrator/components';
 import { useRef } from 'react';
 
 function CustomStep() {
@@ -88,7 +88,7 @@ const iteration = ralph?.ralphCount ?? 0;
 ```
 
 ```tsx After (useRalphCount hook)
-import { useRalphCount } from 'smithers/hooks';
+import { useRalphCount } from 'smithers-orchestrator/hooks';
 const ralphCount = useRalphCount();
 
 // Or via useSmithers
@@ -101,7 +101,7 @@ const { ralphCount } = useSmithers();
 The Ralph component still works for backwards compatibility:
 
 ```tsx
-import { Ralph } from "smithers/components";
+import { Ralph } from "smithers-orchestrator/components";
 
 <Ralph maxIterations={10}>
   <Claude onFinished={() => { /* state change triggers re-render */ }}>
