@@ -1,9 +1,10 @@
 // OnCIFailure hook component - polls CI status and triggers children on failure
 // Currently supports GitHub Actions
 
-import { useState, useEffect, useRef, useContext, type ReactNode } from 'react'
+import { useState, useRef, useContext, type ReactNode } from 'react'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { RalphContext } from '../Ralph'
+import { useMount, useUnmount } from '../../react/hooks'
 
 export interface CIFailure {
   failed: boolean
@@ -117,9 +118,9 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
   const processedRunIdsRef = useRef(new Set<number>())
 
   const intervalMs = props.pollInterval ?? 30000
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  useEffect(() => {
-    let pollInterval: ReturnType<typeof setInterval> | null = null
+  useMount(() => {
     const processedRunIds = processedRunIdsRef.current
 
     // Fire-and-forget async IIFE pattern
@@ -207,15 +208,15 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
       await checkCI()
 
       // Start polling
-      pollInterval = setInterval(checkCI, intervalMs)
+      pollIntervalRef.current = setInterval(checkCI, intervalMs)
     })()
+  })
 
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval)
-      }
+  useUnmount(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
     }
-  }, [props.provider, intervalMs, props.onFailure, ralph, smithers.db.state])
+  })
 
   return (
     <ci-failure-hook

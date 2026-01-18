@@ -1,10 +1,11 @@
 // Enhanced Phase component with automatic database logging
 // Wraps base smithers Phase component
 
-import { useEffect, useState, useContext, useRef, type ReactNode } from 'react'
+import { useState, useContext, useRef, type ReactNode } from 'react'
 import { Phase as BasePhase } from '../../components/Phase'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
+import { useMount, useUnmount } from '../../react/hooks'
 
 export interface PhaseProps {
   /**
@@ -46,7 +47,7 @@ export interface PhaseProps {
 export function Phase(props: PhaseProps): ReactNode {
   const { db } = useSmithers()
   const ralph = useContext(RalphContext)
-  const [phaseId, setPhaseId] = useState<string | null>(null)
+  const [, setPhaseId] = useState<string | null>(null)
   const [status, setStatus] = useState<'pending' | 'running' | 'completed' | 'skipped'>('pending')
   const phaseIdRef = useRef<string | null>(null)
 
@@ -55,7 +56,7 @@ export function Phase(props: PhaseProps): ReactNode {
     return (ralph as any)?.iteration ?? 0
   }
 
-  useEffect(() => {
+  useMount(() => {
     ;(async () => {
       try {
         // Check skip condition
@@ -64,9 +65,9 @@ export function Phase(props: PhaseProps): ReactNode {
           console.log(`[Phase] Skipped: ${props.name}`)
 
           // Still log to database for completeness
-          const id = await db.phases.start(props.name, getCurrentIteration())
-          await db.pg.query(
-            `UPDATE phases SET status = 'skipped', completed_at = NOW() WHERE id = $1`,
+          const id = db.phases.start(props.name, getCurrentIteration())
+          db.db.run(
+            `UPDATE phases SET status = 'skipped', completed_at = datetime('now') WHERE id = ?`,
             [id]
           )
 
@@ -74,7 +75,7 @@ export function Phase(props: PhaseProps): ReactNode {
         }
 
         // Start phase in database
-        const id = await db.phases.start(props.name, getCurrentIteration())
+        const id = db.phases.start(props.name, getCurrentIteration())
         setPhaseId(id)
         phaseIdRef.current = id
         setStatus('running')
@@ -86,25 +87,25 @@ export function Phase(props: PhaseProps): ReactNode {
         console.error(`[Phase] Error starting phase ${props.name}:`, error)
       }
     })()
+  })
 
-    return () => {
-      ;(async () => {
-        const id = phaseIdRef.current
-        if (!id) return
+  useUnmount(() => {
+    ;(async () => {
+      const id = phaseIdRef.current
+      if (!id) return
 
-        try {
-          await db.phases.complete(id)
-          setStatus('completed')
+      try {
+        db.phases.complete(id)
+        setStatus('completed')
 
-          console.log(`[Phase] Completed: ${props.name}`)
+        console.log(`[Phase] Completed: ${props.name}`)
 
-          props.onComplete?.()
-        } catch (error) {
-          console.error(`[Phase] Error completing phase ${props.name}:`, error)
-        }
-      })()
-    }
-  }, [])
+        props.onComplete?.()
+      } catch (error) {
+        console.error(`[Phase] Error completing phase ${props.name}:`, error)
+      }
+    })()
+  })
 
   // Don't render children if skipped
   if (status === 'skipped') {

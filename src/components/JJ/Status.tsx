@@ -1,7 +1,8 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { getJJStatus } from '../../utils/vcs'
+import { useMount, useMountedState } from '../../react/hooks'
 
 export interface StatusProps {
   onDirty?: (status: { modified: string[]; added: string[]; deleted: string[] }) => void
@@ -27,9 +28,9 @@ export function Status(props: StatusProps): ReactNode {
   } | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -40,7 +41,7 @@ export function Status(props: StatusProps): ReactNode {
         // Get JJ status
         const jjStatus = await getJJStatus()
 
-        if (cancelled) return
+        if (!isMounted()) return
 
         setFileStatus(jjStatus)
 
@@ -59,7 +60,7 @@ export function Status(props: StatusProps): ReactNode {
           props.onClean?.()
         }
 
-        if (!cancelled) {
+        if (isMounted()) {
           setStatus('complete')
         }
 
@@ -76,7 +77,7 @@ export function Status(props: StatusProps): ReactNode {
           },
         })
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -85,9 +86,7 @@ export function Status(props: StatusProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <jj-status

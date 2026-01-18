@@ -1,9 +1,10 @@
 // PostCommit hook component - triggers children when a git commit is made
 // Installs a git post-commit hook and polls db.state for triggers
 
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, useRef, type ReactNode } from 'react'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { RalphContext } from '../Ralph'
+import { useMount, useUnmount } from '../../react/hooks'
 
 export interface PostCommitProps {
   children: ReactNode
@@ -73,13 +74,12 @@ export function PostCommit(props: PostCommitProps): ReactNode {
 
   const [triggered, setTriggered] = useState(false)
   const [currentTrigger, setCurrentTrigger] = useState<HookTrigger | null>(null)
-  const [lastProcessedTimestamp, setLastProcessedTimestamp] = useState(0)
+  const lastProcessedTimestampRef = useRef(0)
   const [hookInstalled, setHookInstalled] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  useEffect(() => {
-    let pollInterval: ReturnType<typeof setInterval> | null = null
-
+  useMount(() => {
     // Fire-and-forget async IIFE pattern
     ;(async () => {
       try {
@@ -88,11 +88,11 @@ export function PostCommit(props: PostCommitProps): ReactNode {
         setHookInstalled(true)
 
         // Start polling for triggers
-        pollInterval = setInterval(async () => {
+        pollIntervalRef.current = setInterval(async () => {
           try {
             const trigger = await smithers.db.state.get<HookTrigger>('last_hook_trigger')
 
-            if (trigger && trigger.type === 'post-commit' && trigger.timestamp > lastProcessedTimestamp) {
+            if (trigger && trigger.type === 'post-commit' && trigger.timestamp > lastProcessedTimestampRef.current) {
               // Check filter conditions
               let shouldTrigger = true
 
@@ -102,7 +102,7 @@ export function PostCommit(props: PostCommitProps): ReactNode {
 
               if (shouldTrigger) {
                 setCurrentTrigger(trigger)
-                setLastProcessedTimestamp(trigger.timestamp)
+                lastProcessedTimestampRef.current = trigger.timestamp
                 setTriggered(true)
 
                 // Mark as processed in db
@@ -131,13 +131,13 @@ export function PostCommit(props: PostCommitProps): ReactNode {
         console.error('[PostCommit] Failed to install hook:', errorMsg)
       }
     })()
+  })
 
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval)
-      }
+  useUnmount(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
     }
-  }, [lastProcessedTimestamp, props.runOn, props.async, ralph, smithers.db.state])
+  })
 
   return (
     <post-commit-hook

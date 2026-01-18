@@ -1,11 +1,12 @@
 // Smithers Subagent Component
 // Launches a new Smithers instance to plan and execute a task
 
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI'
 import type { ClaudeModel } from './agents/types'
+import { useMount, useMountedState } from '../../react/hooks'
 
 // ============================================================================
 // Types
@@ -125,9 +126,9 @@ export function Smithers(props: SmithersProps): ReactNode {
   const [error, setError] = useState<Error | null>(null)
   const [subagentId, setSubagentId] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -135,7 +136,7 @@ export function Smithers(props: SmithersProps): ReactNode {
       let currentSubagentId: string | null = null
 
       try {
-        if (!cancelled) setStatus('planning')
+        if (isMounted()) setStatus('planning')
 
         // Extract task from children
         const task = String(props.children)
@@ -147,13 +148,13 @@ export function Smithers(props: SmithersProps): ReactNode {
             props.plannerModel ?? 'sonnet',
             'Smithers subagent planning and execution'
           )
-          if (!cancelled) setSubagentId(currentSubagentId)
+          if (isMounted()) setSubagentId(currentSubagentId)
         }
 
         props.onProgress?.('Starting Smithers subagent...')
 
         // Execute the subagent
-        if (!cancelled) setStatus('executing')
+        if (isMounted()) setStatus('executing')
         const smithersResult = await executeSmithers({
           task,
           plannerModel: props.plannerModel,
@@ -198,7 +199,7 @@ export function Smithers(props: SmithersProps): ReactNode {
           })
         }
 
-        if (!cancelled) {
+        if (isMounted()) {
           setResult(smithersResult)
           setStatus('complete')
           props.onFinished?.(smithersResult)
@@ -206,7 +207,7 @@ export function Smithers(props: SmithersProps): ReactNode {
 
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err))
-        if (!cancelled) {
+        if (isMounted()) {
           setError(errorObj)
           setStatus('error')
         }
@@ -232,9 +233,7 @@ export function Smithers(props: SmithersProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   // Render custom element for XML serialization
   return (

@@ -1,8 +1,9 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { addGitNotes } from '../../utils/vcs'
 import type { ReviewTarget, ReviewResult, ReviewProps } from './types'
+import { useMount, useMountedState } from '../../react/hooks'
 
 /**
  * Fetch content to review based on target type
@@ -187,9 +188,9 @@ export function Review(props: ReviewProps): ReactNode {
   const [result, setResult] = useState<ReviewResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -206,7 +207,7 @@ export function Review(props: ReviewProps): ReactNode {
         // Execute review
         const reviewResult = await executeReview(prompt, props.model)
 
-        if (cancelled) return
+        if (!isMounted()) return
 
         // Log to database
         const reviewId = await smithers.db.vcs.logReview({
@@ -238,7 +239,7 @@ export function Review(props: ReviewProps): ReactNode {
           await smithers.db.vcs.updateReview(reviewId, { posted_to_git_notes: true })
         }
 
-        if (!cancelled) {
+        if (isMounted()) {
           setResult(reviewResult)
           setStatus('complete')
           props.onFinished?.(reviewResult)
@@ -254,7 +255,7 @@ export function Review(props: ReviewProps): ReactNode {
         }
 
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -264,9 +265,7 @@ export function Review(props: ReviewProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <review

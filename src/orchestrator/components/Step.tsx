@@ -1,11 +1,12 @@
 // Enhanced Step component with automatic database logging and VCS integration
 // Wraps base smithers Step component
 
-import { useEffect, useState, useContext, useRef, type ReactNode } from 'react'
+import { useState, useContext, useRef, type ReactNode } from 'react'
 import { Step as BaseStep } from '../../components/Step'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { jjSnapshot, jjCommit } from '../../utils/vcs'
+import { useMount, useUnmount } from '../../react/hooks'
 
 export interface StepProps {
   /**
@@ -62,14 +63,14 @@ export interface StepProps {
 export function Step(props: StepProps): ReactNode {
   const { db } = useSmithers()
   const ralph = useContext(RalphContext)
-  const [stepId, setStepId] = useState<string | null>(null)
+  const [, setStepId] = useState<string | null>(null)
   const [, setStatus] = useState<'pending' | 'running' | 'completed' | 'failed'>('pending')
   const stepIdRef = useRef<string | null>(null)
-  const snapshotBeforeIdRef = useRef<string | undefined>()
-  const snapshotAfterIdRef = useRef<string | undefined>()
-  const commitHashRef = useRef<string | undefined>()
+  const snapshotBeforeIdRef = useRef<string | undefined>(undefined)
+  const snapshotAfterIdRef = useRef<string | undefined>(undefined)
+  const commitHashRef = useRef<string | undefined>(undefined)
 
-  useEffect(() => {
+  useMount(() => {
     ;(async () => {
       ralph?.registerTask()
 
@@ -86,7 +87,7 @@ export function Step(props: StepProps): ReactNode {
         }
 
         // Start step in database
-        const id = await db.steps.start(props.name)
+        const id = db.steps.start(props.name)
         setStepId(id)
         stepIdRef.current = id
         setStatus('running')
@@ -99,72 +100,72 @@ export function Step(props: StepProps): ReactNode {
         setStatus('failed')
 
         if (stepIdRef.current) {
-          await db.steps.fail(stepIdRef.current)
+          db.steps.fail(stepIdRef.current)
         }
 
         ralph?.completeTask()
       }
     })()
+  })
 
-    return () => {
-      ;(async () => {
-        const id = stepIdRef.current
-        if (!id) return
+  useUnmount(() => {
+    ;(async () => {
+      const id = stepIdRef.current
+      if (!id) return
 
-        try {
-          // Snapshot after if requested
-          if (props.snapshotAfter) {
-            try {
-              const { changeId } = await jjSnapshot(`After step: ${props.name ?? 'unnamed'}`)
-              snapshotAfterIdRef.current = changeId
-              console.log(`[Step] Created snapshot after: ${changeId}`)
-            } catch (error) {
-              console.warn('[Step] Could not create snapshot after:', error)
-            }
+      try {
+        // Snapshot after if requested
+        if (props.snapshotAfter) {
+          try {
+            const { changeId } = await jjSnapshot(`After step: ${props.name ?? 'unnamed'}`)
+            snapshotAfterIdRef.current = changeId
+            console.log(`[Step] Created snapshot after: ${changeId}`)
+          } catch (error) {
+            console.warn('[Step] Could not create snapshot after:', error)
           }
-
-          // Commit if requested
-          if (props.commitAfter) {
-            try {
-              const message = props.commitMessage ?? `Step: ${props.name ?? 'unnamed'}`
-              const result = await jjCommit(message)
-              commitHashRef.current = result.commitHash
-
-              console.log(`[Step] Created commit: ${commitHashRef.current}`)
-
-              // Also log to commits table
-              await db.vcs.logCommit({
-                vcs_type: 'jj',
-                commit_hash: result.commitHash,
-                change_id: result.changeId,
-                message,
-              })
-            } catch (error) {
-              console.warn('[Step] Could not create commit:', error)
-            }
-          }
-
-          // Complete step in database
-          await db.steps.complete(id, {
-            snapshot_before: snapshotBeforeIdRef.current,
-            snapshot_after: snapshotAfterIdRef.current,
-            commit_created: commitHashRef.current,
-          })
-
-          setStatus('completed')
-          console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
-
-          props.onComplete?.()
-        } catch (error) {
-          console.error(`[Step] Error completing step:`, error)
-          await db.steps.fail(id)
-          setStatus('failed')
-        } finally {
-          ralph?.completeTask()
         }
-      })()
-    }
-  }, [])
+
+        // Commit if requested
+        if (props.commitAfter) {
+          try {
+            const message = props.commitMessage ?? `Step: ${props.name ?? 'unnamed'}`
+            const result = await jjCommit(message)
+            commitHashRef.current = result.commitHash
+
+            console.log(`[Step] Created commit: ${commitHashRef.current}`)
+
+            // Also log to commits table
+            db.vcs.logCommit({
+              vcs_type: 'jj',
+              commit_hash: result.commitHash,
+              change_id: result.changeId,
+              message,
+            })
+          } catch (error) {
+            console.warn('[Step] Could not create commit:', error)
+          }
+        }
+
+        // Complete step in database
+        db.steps.complete(id, {
+          snapshot_before: snapshotBeforeIdRef.current,
+          snapshot_after: snapshotAfterIdRef.current,
+          commit_created: commitHashRef.current,
+        })
+
+        setStatus('completed')
+        console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
+
+        props.onComplete?.()
+      } catch (error) {
+        console.error(`[Step] Error completing step:`, error)
+        db.steps.fail(id)
+        setStatus('failed')
+      } finally {
+        ralph?.completeTask()
+      }
+    })()
+  })
 
   return (
     <BaseStep name={props.name}>

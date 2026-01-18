@@ -1,6 +1,7 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
+import { useMount, useMountedState } from '../../react/hooks'
 
 export interface DescribeProps {
   useAgent?: 'claude'
@@ -40,9 +41,9 @@ export function Describe(props: DescribeProps): ReactNode {
   const [description, setDescription] = useState<string | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -67,7 +68,7 @@ export function Describe(props: DescribeProps): ReactNode {
         // Update JJ description
         await Bun.$`jj describe -m ${generatedDescription}`.quiet()
 
-        if (!cancelled) {
+        if (isMounted()) {
           setDescription(generatedDescription)
           setStatus('complete')
         }
@@ -83,7 +84,7 @@ export function Describe(props: DescribeProps): ReactNode {
           },
         })
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -92,9 +93,7 @@ export function Describe(props: DescribeProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <jj-describe

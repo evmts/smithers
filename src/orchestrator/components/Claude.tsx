@@ -1,12 +1,13 @@
 // Enhanced Claude component for Smithers orchestrator
 // Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
 
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config'
 import type { ClaudeProps, AgentResult } from './agents/types'
+import { useMount, useMountedState } from '../../react/hooks'
 
 // ============================================================================
 // CLAUDE COMPONENT
@@ -44,9 +45,9 @@ export function Claude(props: ClaudeProps): ReactNode {
   const [error, setError] = useState<Error | null>(null)
   const [agentId, setAgentId] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register with Ralph (if present)
@@ -186,13 +187,13 @@ export function Claude(props: ClaudeProps): ReactNode {
           })
         }
 
-        if (!cancelled) {
+        if (isMounted()) {
           setResult(agentResult)
           setStatus('complete')
           props.onFinished?.(agentResult)
         }
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -220,9 +221,7 @@ export function Claude(props: ClaudeProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   // Render custom element for XML serialization
   return (

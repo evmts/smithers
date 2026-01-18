@@ -1,7 +1,8 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { jjSnapshot, getJJStatus } from '../../utils/vcs'
+import { useMount, useMountedState } from '../../react/hooks'
 
 export interface SnapshotProps {
   message?: string
@@ -21,9 +22,9 @@ export function Snapshot(props: SnapshotProps): ReactNode {
   const [changeId, setChangeId] = useState<string | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -34,7 +35,7 @@ export function Snapshot(props: SnapshotProps): ReactNode {
         // Create JJ snapshot
         const result = await jjSnapshot(props.message)
 
-        if (cancelled) return
+        if (!isMounted()) return
 
         setChangeId(result.changeId)
 
@@ -50,11 +51,11 @@ export function Snapshot(props: SnapshotProps): ReactNode {
           files_deleted: fileStatus.deleted,
         })
 
-        if (!cancelled) {
+        if (isMounted()) {
           setStatus('complete')
         }
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -63,9 +64,7 @@ export function Snapshot(props: SnapshotProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <jj-snapshot

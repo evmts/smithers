@@ -1,7 +1,8 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs'
+import { useMount, useMountedState } from '../../react/hooks'
 
 export interface CommitProps {
   message?: string
@@ -38,9 +39,9 @@ export function Commit(props: CommitProps): ReactNode {
   const [changeId, setChangeId] = useState<string | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -64,7 +65,7 @@ export function Commit(props: CommitProps): ReactNode {
         // Create JJ commit
         const result = await jjCommit(message)
 
-        if (cancelled) return
+        if (!isMounted()) return
 
         setCommitHash(result.commitHash)
         setChangeId(result.changeId)
@@ -89,11 +90,11 @@ export function Commit(props: CommitProps): ReactNode {
           smithers_metadata: props.notes ? { notes: props.notes } : undefined,
         })
 
-        if (!cancelled) {
+        if (isMounted()) {
           setStatus('complete')
         }
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -102,9 +103,7 @@ export function Commit(props: CommitProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <jj-commit

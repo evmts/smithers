@@ -1,5 +1,6 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from './Ralph'
+import { useMount, useMountedState } from '../react/hooks'
 
 /**
  * Execute a prompt using Claude Agent SDK.
@@ -58,9 +59,9 @@ export function Claude(props: ClaudeProps): ReactNode {
   const [result, setResult] = useState<unknown>(null)
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register with Ralph (if present)
@@ -77,7 +78,7 @@ export function Claude(props: ClaudeProps): ReactNode {
           systemPrompt: props.systemPrompt,
         })
 
-        if (cancelled) return
+        if (!isMounted()) return
 
         // Optional validation
         if (props.validate) {
@@ -87,14 +88,14 @@ export function Claude(props: ClaudeProps): ReactNode {
           }
         }
 
-        if (!cancelled) {
+        if (isMounted()) {
           setResult(response)
           setStatus('complete')
           props.onFinished?.(response)
         }
 
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -105,9 +106,7 @@ export function Claude(props: ClaudeProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <claude

@@ -1,7 +1,8 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { addGitNotes, getGitNotes } from '../../utils/vcs'
+import { useMount, useMountedState } from '../../react/hooks'
 
 export interface NotesProps {
   /** Commit reference (default: HEAD) */
@@ -34,9 +35,9 @@ export function Notes(props: NotesProps): ReactNode {
   const [result, setResult] = useState<NotesResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -68,14 +69,14 @@ export function Notes(props: NotesProps): ReactNode {
           previousNotes,
         }
 
-        if (!cancelled) {
+        if (isMounted()) {
           setResult(notesResult)
           setStatus('complete')
           props.onFinished?.(notesResult)
         }
 
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -85,9 +86,7 @@ export function Notes(props: NotesProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <git-notes

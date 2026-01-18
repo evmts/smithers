@@ -1,9 +1,10 @@
 // Orchestration - Top-level orchestration component
 // Handles global timeouts, stop conditions, CI/CD integration, and cleanup
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
 import { jjSnapshot } from '../../utils/vcs'
+import { useMount, useUnmount } from '../../react/hooks'
 
 // ============================================================================
 // TYPES
@@ -97,10 +98,10 @@ export function Orchestration(props: OrchestrationProps): ReactNode {
   const { db, executionId, requestStop, isStopRequested } = useSmithers()
 
   const startTimeRef = useRef(Date.now())
+  const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const checkIntervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout> | null = null
-    let checkIntervalId: ReturnType<typeof setInterval> | null = null
+  useMount(() => {
     const startTime = startTimeRef.current
 
     ;(async () => {
@@ -122,7 +123,7 @@ export function Orchestration(props: OrchestrationProps): ReactNode {
 
         // Set up global timeout
         if (props.globalTimeout) {
-          timeoutId = setTimeout(() => {
+          timeoutIdRef.current = setTimeout(() => {
             if (!isStopRequested()) {
               const message = `Global timeout of ${props.globalTimeout}ms exceeded`
               requestStop(message)
@@ -133,9 +134,9 @@ export function Orchestration(props: OrchestrationProps): ReactNode {
 
         // Set up stop condition checking
         if (props.stopConditions && props.stopConditions.length > 0) {
-          checkIntervalId = setInterval(async () => {
+          checkIntervalIdRef.current = setInterval(async () => {
             if (isStopRequested()) {
-              if (checkIntervalId) clearInterval(checkIntervalId)
+              if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
               return
             }
 
@@ -188,7 +189,7 @@ export function Orchestration(props: OrchestrationProps): ReactNode {
                 requestStop(message)
                 props.onStopRequested?.(message)
 
-                if (checkIntervalId) clearInterval(checkIntervalId)
+                if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
                 break
               }
             }
@@ -199,40 +200,40 @@ export function Orchestration(props: OrchestrationProps): ReactNode {
         props.onError?.(error as Error)
       }
     })()
+  })
 
-    return () => {
-      // Clear timers
-      if (timeoutId) clearTimeout(timeoutId)
-      if (checkIntervalId) clearInterval(checkIntervalId)
+  useUnmount(() => {
+    // Clear timers
+    if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current)
+    if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
 
-      // Generate completion result
-      ;(async () => {
-        try {
-          const execution = await db.execution.current()
-          if (!execution) return
+    // Generate completion result
+    ;(async () => {
+      try {
+        const execution = await db.execution.current()
+        if (!execution) return
 
-          const result: OrchestrationResult = {
-            executionId,
-            status: isStopRequested() ? 'stopped' : 'completed',
-            totalAgents: execution.total_agents,
-            totalToolCalls: execution.total_tool_calls,
-            totalTokens: execution.total_tokens_used,
-            durationMs: Date.now() - startTime,
-          }
-
-          props.onComplete?.(result)
-
-          // Cleanup if requested
-          if (props.cleanupOnComplete) {
-            await db.close()
-          }
-        } catch (error) {
-          console.error('[Orchestration] Cleanup error:', error)
-          props.onError?.(error as Error)
+        const result: OrchestrationResult = {
+          executionId,
+          status: isStopRequested() ? 'stopped' : 'completed',
+          totalAgents: execution.total_agents,
+          totalToolCalls: execution.total_tool_calls,
+          totalTokens: execution.total_tokens_used,
+          durationMs: Date.now() - startTimeRef.current,
         }
-      })()
-    }
-  }, [])
+
+        props.onComplete?.(result)
+
+        // Cleanup if requested
+        if (props.cleanupOnComplete) {
+          await db.close()
+        }
+      } catch (error) {
+        console.error('[Orchestration] Cleanup error:', error)
+        props.onError?.(error as Error)
+      }
+    })()
+  })
 
   return <orchestration execution-id={executionId}>{props.children}</orchestration>
 }

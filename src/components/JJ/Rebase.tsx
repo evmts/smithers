@@ -1,6 +1,7 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
+import { useMount, useMountedState } from '../../react/hooks'
 
 export interface RebaseProps {
   destination?: string
@@ -48,9 +49,9 @@ export function Rebase(props: RebaseProps): ReactNode {
   const [conflicts, setConflicts] = useState<string[]>([])
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -82,7 +83,7 @@ export function Rebase(props: RebaseProps): ReactNode {
           hasConflicts = rebaseOutput.toLowerCase().includes('conflict')
         }
 
-        if (cancelled) return
+        if (!isMounted()) return
 
         // Check for conflicts in output
         const detectedConflicts = parseConflicts(rebaseOutput)
@@ -95,7 +96,7 @@ export function Rebase(props: RebaseProps): ReactNode {
         setConflicts(allConflicts)
 
         if (allConflicts.length > 0 || hasConflicts) {
-          if (!cancelled) {
+          if (isMounted()) {
             setStatus('conflict')
             props.onConflict?.(allConflicts)
           }
@@ -113,7 +114,7 @@ export function Rebase(props: RebaseProps): ReactNode {
             },
           })
         } else {
-          if (!cancelled) {
+          if (isMounted()) {
             setStatus('complete')
           }
 
@@ -129,7 +130,7 @@ export function Rebase(props: RebaseProps): ReactNode {
           })
         }
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -151,9 +152,7 @@ export function Rebase(props: RebaseProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <jj-rebase

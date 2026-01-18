@@ -1,7 +1,8 @@
-import { useState, useEffect, useContext, type ReactNode } from 'react'
+import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs'
+import { useMount, useMountedState } from '../../react/hooks'
 
 export interface CommitProps {
   /** Commit message (optional if autoGenerate is true) */
@@ -63,9 +64,9 @@ export function Commit(props: CommitProps): ReactNode {
   const [result, setResult] = useState<CommitResult | null>(null)
   const [error, setError] = useState<Error | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const isMounted = useMountedState()
 
+  useMount(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -108,7 +109,7 @@ export function Commit(props: CommitProps): ReactNode {
           await Bun.$`git commit -m ${message}`.quiet()
         }
 
-        if (cancelled) return
+        if (!isMounted()) return
 
         // Get commit info
         const commitHash = await getCommitHash('HEAD')
@@ -143,14 +144,14 @@ export function Commit(props: CommitProps): ReactNode {
           deletions: diffStats.deletions,
         }
 
-        if (!cancelled) {
+        if (isMounted()) {
           setResult(commitResult)
           setStatus('complete')
           props.onFinished?.(commitResult)
         }
 
       } catch (err) {
-        if (!cancelled) {
+        if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           setError(errorObj)
           setStatus('error')
@@ -160,9 +161,7 @@ export function Commit(props: CommitProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-
-    return () => { cancelled = true }
-  }, [])
+  })
 
   return (
     <git-commit
