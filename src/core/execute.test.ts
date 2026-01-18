@@ -3,7 +3,7 @@
  */
 import { describe, test, expect } from 'bun:test'
 import { executePlan } from './execute'
-import type { SmithersNode } from './types'
+import type { SmithersNode } from '../reconciler/types'
 
 describe('executePlan', () => {
   test('returns immediately when tree has no pending nodes', async () => {

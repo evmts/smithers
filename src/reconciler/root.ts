@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { SmithersReconciler } from './renderer.js'
-import type { SmithersNode } from '../core/types.js'
-import { serialize } from '../core/serialize.js'
+import { SmithersReconciler } from './host-config.js'
+import type { SmithersNode } from './types.js'
+import { serialize } from './serialize.js'
 import { createOrchestrationPromise } from '../components/Ralph.jsx'
 
 // Type for the fiber root container

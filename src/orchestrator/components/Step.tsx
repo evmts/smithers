@@ -6,7 +6,7 @@ import { Step as BaseStep } from '../../components/Step'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { jjSnapshot, jjCommit } from '../../utils/vcs'
-import { useMount, useUnmount } from '../../react/hooks'
+import { useMount, useUnmount } from '../../reconciler/hooks'
 
 export interface StepProps {
   /**

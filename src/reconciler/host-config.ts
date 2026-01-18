@@ -1,6 +1,6 @@
 import Reconciler from 'react-reconciler'
-import type { SmithersNode } from '../core/types.js'
-import { rendererMethods } from './renderer-methods.js'
+import type { SmithersNode } from './types.js'
+import { rendererMethods } from './methods.js'
 
 // Re-export rendererMethods for backwards compatibility
 export { rendererMethods }

@@ -10,8 +10,8 @@ import { describe, test, expect } from 'bun:test'
 
 // Setup import removed - causes Solid JSX loading errors
 // import './setup'
-import { serialize } from '../src/core/serialize'
-import type { SmithersNode } from '../src/core/types'
+import { serialize } from '../src/reconciler/serialize'
+import type { SmithersNode } from '../src/reconciler/types'
 
 // Skip tests that use renderPlan - JSX transform mismatch
 describe.skip('renderPlan()', () => {

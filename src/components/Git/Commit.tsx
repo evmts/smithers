@@ -2,7 +2,7 @@ import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs'
-import { useMount, useMountedState } from '../../react/hooks'
+import { useMount, useMountedState } from '../../reconciler/hooks'
 
 export interface CommitProps {
   /** Commit message (optional if autoGenerate is true) */

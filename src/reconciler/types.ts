@@ -1,9 +1,9 @@
 /**
- * Core type definitions for Smithers execution engine.
- * These types are framework-agnostic and work with any renderer.
+ * Core type definitions for Smithers reconciler.
+ * These types define the SmithersNode tree structure that the reconciler creates.
  *
  * Key architectural principle: Components execute themselves via onMount,
- * not via external orchestrators. State changes (via Solid signals) trigger
+ * not via external orchestrators. State changes (via React signals) trigger
  * re-renders, which trigger re-execution. This is the "Ralph Wiggum loop"
  * pattern - change the key prop to force unmount/remount.
  */

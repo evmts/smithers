@@ -1,4 +1,4 @@
-import type { SmithersNode, ExecuteOptions, ExecutionResult } from './types.js'
+import type { SmithersNode, ExecuteOptions, ExecutionResult } from '../reconciler/types.js'
 
 /**
  * Execute a SmithersNode tree using the Ralph Wiggum loop.

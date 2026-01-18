@@ -3,7 +3,9 @@
  */
 
 export { executePlan } from './execute.js'
-export { serialize } from './serialize.js'
+
+// Re-export from reconciler for backwards compatibility
+export { serialize } from '../reconciler/serialize.js'
 
 export type {
   SmithersNode,
@@ -12,4 +14,4 @@ export type {
   ExecutionResult,
   DebugOptions,
   DebugEvent,
-} from './types.js'
+} from '../reconciler/types.js'

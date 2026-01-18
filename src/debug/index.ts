@@ -2,7 +2,7 @@
  * Debug and observability utilities
  */
 
-import type { DebugEvent } from '../core/types.js'
+import type { DebugEvent } from '../reconciler/types.js'
 
 export interface DebugCollector {
   emit(event: DebugEvent): void

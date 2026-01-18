@@ -4,7 +4,7 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider'
 import { jjSnapshot } from '../../utils/vcs'
-import { useMount, useUnmount } from '../../react/hooks'
+import { useMount, useUnmount } from '../../reconciler/hooks'
 
 // ============================================================================
 // TYPES

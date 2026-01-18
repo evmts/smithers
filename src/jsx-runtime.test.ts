@@ -2,7 +2,7 @@
  * Unit tests for jsx-runtime.ts - JSX transformation functions.
  */
 import { describe, test, expect } from 'bun:test'
-import { jsx, jsxs, Fragment, jsxDEV } from './jsx-runtime'
+import { jsx, jsxs, Fragment, jsxDEV } from './reconciler/jsx-runtime'
 
 describe('jsx', () => {
   test('creates element with string type', () => {

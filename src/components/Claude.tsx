@@ -1,6 +1,6 @@
-import { useState, useContext, type ReactNode } from 'react'
+import { useState, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { RalphContext } from './Ralph'
-import { useMount, useMountedState } from '../react/hooks'
+import { useMountedState } from '../reconciler/hooks'
 
 /**
  * Execute a prompt using Claude Agent SDK.
@@ -43,15 +43,16 @@ export interface ClaudeProps {
 }
 
 /**
- * Claude component that executes on mount.
+ * Claude component that executes when ralphCount changes.
  *
  * CRITICAL PATTERN: This component is BOTH declaration AND execution.
- * When it mounts, it executes itself. No external orchestrator needed.
+ * Instead of relying on remounting via key, it reacts to ralphCount
+ * changes from Ralph and explicitly restarts execution.
  *
- * React pattern: Use useEffect with empty deps and async IIFE inside:
+ * React pattern: Use useEffect with ralphCount dependency:
  *   useEffect(() => {
  *     (async () => { ... })()
- *   }, [])
+ *   }, [ralphCount])
  */
 export function Claude(props: ClaudeProps): ReactNode {
   const ralph = useContext(RalphContext)
@@ -61,7 +62,21 @@ export function Claude(props: ClaudeProps): ReactNode {
 
   const isMounted = useMountedState()
 
-  useMount(() => {
+  // Track which ralphCount we've already executed for
+  const lastExecutedCount = useRef<number>(-1)
+
+  // Get current ralphCount from Ralph context
+  const ralphCount = ralph?.ralphCount ?? 0
+
+  useEffect(() => {
+    // Skip if we've already executed for this ralphCount
+    if (lastExecutedCount.current === ralphCount) {
+      return
+    }
+
+    // Mark this count as being executed
+    lastExecutedCount.current = ralphCount
+
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register with Ralph (if present)
@@ -106,7 +121,7 @@ export function Claude(props: ClaudeProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-  })
+  }, [ralphCount, ralph, props, isMounted])
 
   return (
     <claude

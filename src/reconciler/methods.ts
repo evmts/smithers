@@ -1,4 +1,4 @@
-import type { SmithersNode } from '../core/types.js'
+import type { SmithersNode } from './types.js'
 
 /**
  * Renderer configuration methods.

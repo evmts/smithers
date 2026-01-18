@@ -1,4 +1,6 @@
-import { createContext, useState, useEffect, useMemo, useReducer, type ReactNode } from 'react'
+import { createContext, useState, useEffect, useMemo, type ReactNode } from 'react'
+import type { ReactiveDatabase } from '../reactive-sqlite'
+import { useQueryValue } from '../reactive-sqlite'
 
 /**
  * Ralph context for task tracking.
@@ -7,6 +9,14 @@ import { createContext, useState, useEffect, useMemo, useReducer, type ReactNode
 export interface RalphContextType {
   registerTask: () => void
   completeTask: () => void
+  /**
+   * Current ralph iteration count - components can use this to restart execution
+   */
+  ralphCount: number
+  /**
+   * Database instance for reactive queries
+   */
+  db: ReactiveDatabase | null
 }
 
 export const RalphContext = createContext<RalphContextType | undefined>(undefined)
@@ -53,28 +63,68 @@ export interface RalphProps {
   onIteration?: (iteration: number) => void
   onComplete?: () => void
   children?: ReactNode
+  /**
+   * Database instance for storing ralphCount reactively
+   * When provided, ralphCount is stored in DB and components can subscribe to changes
+   */
+  db?: ReactiveDatabase
 }
 
 /**
- * Ralph component - manages the remount loop.
+ * Ralph component - manages the iteration loop.
  *
  * The Ralph Wiggum loop:
  * 1. Render children (which may contain Claude components)
- * 2. Claude components execute on mount
- * 3. When tasks complete, increment key to force remount
- * 4. Repeat until no more tasks or maxIterations reached
+ * 2. Claude components execute when ralphCount changes
+ * 3. When tasks complete, increment ralphCount in database
+ * 4. Components react to ralphCount change and restart explicitly (no remount)
+ * 5. Repeat until no more tasks or maxIterations reached
  *
- * This is the core orchestration pattern.
+ * This avoids the key remounting hack by storing ralphCount in SQLite
+ * and letting components subscribe to changes reactively.
  */
 export function Ralph(props: RalphProps): ReactNode {
-  const [iteration, setIteration] = useState(0)
   const [pendingTasks, setPendingTasks] = useState(0)
-  const [key, incrementKey] = useReducer((k: number) => k + 1, 0)
   const [hasStartedTasks, setHasStartedTasks] = useState(false)
 
   const maxIterations = props.maxIterations || 100
+  const db = props.db ?? null
 
-  console.log('[Ralph] Component created, maxIterations:', maxIterations)
+  // Read ralphCount from database reactively, or use local state as fallback
+  const { data: dbRalphCount } = db
+    ? useQueryValue<number>(db, "SELECT CAST(value AS INTEGER) as count FROM state WHERE key = 'ralphCount'")
+    : { data: null }
+
+  // Local state fallback when no DB provided
+  const [localRalphCount, setLocalRalphCount] = useState(0)
+
+  // Use DB value if available, otherwise local state
+  const ralphCount = dbRalphCount ?? localRalphCount
+
+  // Initialize ralphCount in DB if needed
+  useEffect(() => {
+    if (db && dbRalphCount === null) {
+      db.run(
+        "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
+      )
+    }
+  }, [db, dbRalphCount])
+
+  console.log('[Ralph] Component created, maxIterations:', maxIterations, 'ralphCount:', ralphCount)
+
+  // Increment ralphCount - either in DB or local state
+  const incrementRalphCount = useMemo(() => () => {
+    const nextCount = ralphCount + 1
+    if (db) {
+      db.run(
+        "UPDATE state SET value = ?, updated_at = datetime('now') WHERE key = 'ralphCount'",
+        [String(nextCount)]
+      )
+    } else {
+      setLocalRalphCount(nextCount)
+    }
+    return nextCount
+  }, [db, ralphCount])
 
   const contextValue: RalphContextType = useMemo(() => ({
     registerTask: () => {
@@ -86,11 +136,13 @@ export function Ralph(props: RalphProps): ReactNode {
       console.log('[Ralph] completeTask called')
       setPendingTasks((p: number) => p - 1)
     },
-  }), [])
+    ralphCount,
+    db,
+  }), [ralphCount, db])
 
   useEffect(() => {
-    console.log('[Ralph] useEffect fired!')
-    // Monitor pending tasks and trigger remount when all complete
+    console.log('[Ralph] useEffect fired! ralphCount:', ralphCount)
+    // Monitor pending tasks and trigger next iteration when all complete
     let checkInterval: NodeJS.Timeout | null = null
     let stableCount = 0 // Count consecutive stable checks (no tasks running)
 
@@ -122,7 +174,7 @@ export function Ralph(props: RalphProps): ReactNode {
       }
 
       // All tasks complete
-      if (iteration >= maxIterations - 1) {
+      if (ralphCount >= maxIterations - 1) {
         // Max iterations reached
         if (checkInterval) clearInterval(checkInterval)
         signalOrchestrationComplete()
@@ -130,10 +182,8 @@ export function Ralph(props: RalphProps): ReactNode {
         return
       }
 
-      // Trigger remount for next iteration
-      const nextIteration = iteration + 1
-      setIteration(nextIteration)
-      incrementKey()
+      // Trigger next iteration by incrementing ralphCount
+      const nextIteration = incrementRalphCount()
       setHasStartedTasks(false) // Reset for next iteration
       stableCount = 0
 
@@ -146,13 +196,12 @@ export function Ralph(props: RalphProps): ReactNode {
     return () => {
       if (checkInterval) clearInterval(checkInterval)
     }
-  }, [pendingTasks, hasStartedTasks, iteration, maxIterations, props])
+  }, [pendingTasks, hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount])
 
   return (
     <RalphContext.Provider value={contextValue}>
       <ralph
-        key={key}
-        iteration={iteration}
+        iteration={ralphCount}
         pending={pendingTasks}
         maxIterations={maxIterations}
       >

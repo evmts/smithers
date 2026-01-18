@@ -1,12 +1,12 @@
 // Smithers Subagent Component
 // Launches a new Smithers instance to plan and execute a task
 
-import { useState, useContext, type ReactNode } from 'react'
+import { useState, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { RalphContext } from '../../components/Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI'
 import type { ClaudeModel } from './agents/types'
-import { useMount, useMountedState } from '../../react/hooks'
+import { useMountedState } from '../../reconciler/hooks'
 
 // ============================================================================
 // Types
@@ -128,7 +128,21 @@ export function Smithers(props: SmithersProps): ReactNode {
 
   const isMounted = useMountedState()
 
-  useMount(() => {
+  // Track which ralphCount we've already executed for
+  const lastExecutedCount = useRef<number>(-1)
+
+  // Get current ralphCount from Ralph context
+  const ralphCount = ralph?.ralphCount ?? 0
+
+  useEffect(() => {
+    // Skip if we've already executed for this ralphCount
+    if (lastExecutedCount.current === ralphCount) {
+      return
+    }
+
+    // Mark this count as being executed
+    lastExecutedCount.current = ralphCount
+
     // Fire-and-forget async IIFE
     ;(async () => {
       ralph?.registerTask()
@@ -233,7 +247,7 @@ export function Smithers(props: SmithersProps): ReactNode {
         ralph?.completeTask()
       }
     })()
-  })
+  }, [ralphCount, ralph, db, executionId, props, isMounted])
 
   // Render custom element for XML serialization
   return (

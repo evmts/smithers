@@ -2,7 +2,7 @@ import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs'
-import { useMount, useMountedState } from '../../react/hooks'
+import { useMount, useMountedState } from '../../reconciler/hooks'
 
 export interface CommitProps {
   message?: string

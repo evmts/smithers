@@ -2,7 +2,7 @@ import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { getJJStatus } from '../../utils/vcs'
-import { useMount, useMountedState } from '../../react/hooks'
+import { useMount, useMountedState } from '../../reconciler/hooks'
 
 export interface StatusProps {
   onDirty?: (status: { modified: string[]; added: string[]; deleted: string[] }) => void

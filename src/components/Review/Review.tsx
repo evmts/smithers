@@ -3,7 +3,7 @@ import { RalphContext } from '../Ralph'
 import { useSmithers } from '../../orchestrator/components/SmithersProvider'
 import { addGitNotes } from '../../utils/vcs'
 import type { ReviewTarget, ReviewResult, ReviewProps } from './types'
-import { useMount, useMountedState } from '../../react/hooks'
+import { useMount, useMountedState } from '../../reconciler/hooks'
 
 /**
  * Fetch content to review based on target type
