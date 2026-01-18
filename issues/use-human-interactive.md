@@ -3,14 +3,17 @@
 <metadata>
   <priority>medium</priority>
   <category>feature</category>
-  <estimated-effort>2-3 days</estimated-effort>
-  <status>design-review</status>
+  <estimated-effort>3-4 days</estimated-effort>
+  <status>design-complete</status>
   <dependencies>
     - src/hooks/useHuman.ts
     - src/db/human.ts
+    - src/db/tasks.ts
     - src/components/agents/claude-cli/executor.ts
     - src/components/SmithersProvider.tsx
   </dependencies>
+  <design-review-date>2026-01-18</design-review-date>
+  <p0-issues-resolved>10/10</p0-issues-resolved>
 </metadata>
 
 ---
@@ -82,17 +85,17 @@ The hook follows a `useMutation`-like pattern, giving callers full control over 
 ```tsx
 interface UseHumanInteractiveResult<T = InteractiveSessionResult> {
   /**
+   * Trigger without returning a promise (fire-and-forget).
+   * Use `data` and `status` to reactively track the result.
+   */
+  request: (prompt: string, options?: AskInteractiveOptions) => void
+
+  /**
    * Trigger an interactive Claude session request.
    * Returns a promise that resolves when the session completes.
    * Callers decide whether to await (blocking that code path) or not.
    */
-  mutate: (prompt: string, options?: AskInteractiveOptions) => Promise<T>
-
-  /**
-   * Trigger without returning a promise (fire-and-forget).
-   * Use `data` and `status` to reactively track the result.
-   */
-  mutateAsync: (prompt: string, options?: AskInteractiveOptions) => void
+  requestAsync: (prompt: string, options?: AskInteractiveOptions) => Promise<T>
 
   /**
    * Current mutation status
@@ -113,6 +116,11 @@ interface UseHumanInteractiveResult<T = InteractiveSessionResult> {
    * The current session ID (if any)
    */
   sessionId: string | null
+
+  /**
+   * Cancel the pending session (if any)
+   */
+  cancel: () => void
 
   /**
    * Reset the hook state back to idle
@@ -163,15 +171,35 @@ interface AskInteractiveOptions {
   outcomeSchema?: {
     type: 'approval' | 'selection' | 'freeform' | 'structured'
     options?: string[]
-    schema?: z.ZodType
+    /** JSON Schema for structured responses (must be serializable) */
+    jsonSchema?: Record<string, unknown>
   }
+
+  /**
+   * Zod schema for client-side validation (not stored in DB).
+   * Used to validate the response after session completes.
+   */
+  zodSchema?: z.ZodType
+
+  /**
+   * Capture full session transcript.
+   * @default false (opt-in for privacy and storage)
+   */
+  captureTranscript?: boolean
+
+  /**
+   * Keep orchestration alive until session completes.
+   * Creates a task to prevent run from finishing prematurely.
+   * @default true
+   */
+  blockOrchestration?: boolean
 }
 
 interface InteractiveSessionResult {
   /**
-   * How the session ended
+   * How the session ended (lifecycle status)
    */
-  outcome: 'completed' | 'cancelled' | 'timeout'
+  outcome: 'completed' | 'cancelled' | 'timeout' | 'failed'
 
   /**
    * The final response/decision from the session
@@ -187,6 +215,11 @@ interface InteractiveSessionResult {
    * Duration of the session in milliseconds
    */
   duration: number
+
+  /**
+   * Error message if failed
+   */
+  error?: string
 }
 ```
 
@@ -195,12 +228,12 @@ interface InteractiveSessionResult {
 **Basic usage (awaited):**
 
 ```tsx
-const { mutate } = useHumanInteractive()
+const { requestAsync } = useHumanInteractive()
 
 async function reviewChanges() {
   // Awaiting blocks THIS code path until session completes
   // Other parts of your orchestration continue running
-  const result = await mutate(
+  const result = await requestAsync(
     'Please review the proposed database schema changes and approve or reject them.'
   )
 
@@ -213,11 +246,11 @@ async function reviewChanges() {
 **Reactive pattern (non-blocking):**
 
 ```tsx
-const { mutateAsync, status, data } = useHumanInteractive()
+const { request, status, data } = useHumanInteractive()
 
 // Fire off the request without blocking
 useMount(() => {
-  mutateAsync('Review the deployment plan')
+  request('Review the deployment plan')
 })
 
 // React to status changes
@@ -225,7 +258,7 @@ if (status === 'pending') {
   return <Text>Waiting for human review...</Text>
 }
 
-if (status === 'success' && data?.response === 'approved') {
+if (status === 'success' && data?.outcome === 'completed' && data?.response === 'approved') {
   return <DeploymentExecutor />
 }
 ```
@@ -233,9 +266,14 @@ if (status === 'success' && data?.response === 'approved') {
 **With context and structured outcome:**
 
 ```tsx
-const { mutate } = useHumanInteractive<{ approved: boolean; notes: string }>()
+const { requestAsync } = useHumanInteractive<{ approved: boolean; notes: string }>()
 
-const result = await mutate(
+const DecisionSchema = z.object({
+  approved: z.boolean(),
+  notes: z.string(),
+})
+
+const result = await requestAsync(
   'Review the security audit findings and provide approval decision.',
   {
     context: {
@@ -248,22 +286,34 @@ const result = await mutate(
       When they're ready to decide, capture their approval and any notes.`,
     outcomeSchema: {
       type: 'structured',
-      schema: z.object({
-        approved: z.boolean(),
-        notes: z.string(),
-      }),
+      jsonSchema: {
+        type: 'object',
+        properties: {
+          approved: { type: 'boolean' },
+          notes: { type: 'string' },
+        },
+        required: ['approved', 'notes'],
+      },
     },
+    zodSchema: DecisionSchema, // Client-side validation
+    captureTranscript: true, // Opt-in to capture full conversation
   }
 )
+
+// Validate with Zod on the client side
+if (result.outcome === 'completed') {
+  const decision = DecisionSchema.parse(result.response)
+  // TypeScript knows decision is { approved: boolean; notes: string }
+}
 ```
 
 **Expert consultation:**
 
 ```tsx
-const { mutate } = useHumanInteractive()
+const { requestAsync, cancel } = useHumanInteractive()
 
 // Escalate to human expert when AI is uncertain
-const diagnosis = await mutate(
+const diagnosisPromise = requestAsync(
   'The automated analysis found an unusual pattern. Please investigate.',
   {
     context: {
@@ -276,8 +326,16 @@ const diagnosis = await mutate(
       reading logs, and exploring the codebase as needed.`,
     model: 'opus', // Use most capable model for complex investigation
     timeout: 30 * 60 * 1000, // 30 minute max
+    captureTranscript: true, // Capture for audit trail
   }
 )
+
+// Can cancel if conditions change
+if (automatedFixSucceeded) {
+  cancel()
+}
+
+const diagnosis = await diagnosisPromise
 ```
 
 </section>
@@ -300,18 +358,54 @@ Extend the `human_interactions` table to support interactive sessions:
 ALTER TABLE human_interactions ADD COLUMN session_config TEXT;  -- JSON config
 ALTER TABLE human_interactions ADD COLUMN session_transcript TEXT;  -- Captured transcript
 ALTER TABLE human_interactions ADD COLUMN session_duration INTEGER;  -- Duration in ms
+ALTER TABLE human_interactions ADD COLUMN error TEXT;  -- Error message if failed
 ```
 
-### HumanInteraction Type Extension
+### Status Semantics
+
+**CRITICAL CHANGE:** The `status` field now represents **lifecycle status**, not decision:
+
+- `pending`: Session not yet completed
+- `completed`: Session finished successfully (regardless of approval/rejection)
+- `cancelled`: User or system cancelled the session
+- `timeout`: Session exceeded timeout
+- `failed`: Session encountered an error
+
+**For approval/rejection decisions:** These are stored in the `response` field, NOT in `status`.
+
+This change ensures:
+- Query correctness (dashboards can count completed sessions accurately)
+- Backward compatibility (existing confirmation flows still use approved/rejected)
+- Clear separation of concerns (lifecycle vs business logic)
+
+### Type Definitions
 
 ```typescript
+/** Raw database row (strings for JSON columns) */
+interface HumanInteractionRow {
+  id: string
+  execution_id: string
+  type: 'confirmation' | 'select' | 'input' | 'interactive_session'
+  prompt: string
+  options: string | null  // JSON string
+  status: 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled' | 'completed' | 'failed'
+  response: string | null  // JSON string
+  created_at: string
+  resolved_at: string | null
+  session_config: string | null  // JSON string
+  session_transcript: string | null
+  session_duration: number | null
+  error: string | null
+}
+
+/** Parsed application type */
 interface HumanInteraction {
   id: string
   execution_id: string
   type: 'confirmation' | 'select' | 'input' | 'interactive_session'
   prompt: string
   options: string[] | null
-  status: 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled'
+  status: 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled' | 'completed' | 'failed'
   response: any | null
   created_at: string
   resolved_at: string | null
@@ -319,6 +413,7 @@ interface HumanInteraction {
   session_config?: InteractiveSessionConfig | null
   session_transcript?: string | null
   session_duration?: number | null
+  error?: string | null
 }
 
 interface InteractiveSessionConfig {
@@ -328,7 +423,23 @@ interface InteractiveSessionConfig {
   cwd?: string
   mcpConfig?: string
   timeout?: number
-  outcomeSchema?: OutcomeSchemaConfig
+  outcomeSchema?: {
+    type: 'approval' | 'selection' | 'freeform' | 'structured'
+    options?: string[]
+    jsonSchema?: Record<string, unknown>
+  }
+  captureTranscript?: boolean
+  blockOrchestration?: boolean
+}
+
+/** Parse DB row to application type */
+function parseHumanInteraction(row: HumanInteractionRow): HumanInteraction {
+  return {
+    ...row,
+    options: row.options ? JSON.parse(row.options) : null,
+    response: row.response ? JSON.parse(row.response) : null,
+    session_config: row.session_config ? JSON.parse(row.session_config) : null,
+  }
 }
 ```
 
@@ -347,7 +458,8 @@ interface InteractiveSessionConfig {
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useSmithers } from '../components/SmithersProvider.js'
-import type { HumanInteraction } from '../db/human.js'
+import type { HumanInteractionRow, HumanInteraction } from '../db/human.js'
+import { parseHumanInteraction } from '../db/human.js'
 import { useQueryOne } from '../reactive-sqlite/index.js'
 
 export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInteractiveResult<T> {
@@ -356,12 +468,20 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   const [status, setStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle')
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<Error | null>(null)
+  const [taskId, setTaskId] = useState<string | null>(null)
   const resolveRef = useRef<((value: T) => void) | null>(null)
   const rejectRef = useRef<((error: Error) => void) | null>(null)
-  const startTimeRef = useRef<number | null>(null)
+  const mountedRef = useRef(true)
 
-  // Reactive subscription to the current session
-  const { data: session } = useQueryOne<HumanInteraction>(
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  // Reactive subscription to the current session (raw DB row)
+  const { data: rawSession } = useQueryOne<HumanInteractionRow>(
     db.db,
     sessionId
       ? `SELECT * FROM human_interactions WHERE id = ?`
@@ -369,47 +489,59 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     sessionId ? [sessionId] : []
   )
 
+  // Parse the raw DB row
+  const session = rawSession ? parseHumanInteraction(rawSession) : null
+
   // Resolve/reject when session completes
   useEffect(() => {
-    if (session && session.status !== 'pending' && status === 'pending') {
-      const duration = startTimeRef.current
-        ? Date.now() - startTimeRef.current
-        : 0
+    if (!session || !mountedRef.current) return
+    if (session.status === 'pending' || status !== 'pending') return
 
-      let response = null
-      try {
-        response = session.response
-          ? JSON.parse(session.response as string)
-          : null
-      } catch {
-        response = session.response
+    const result = {
+      outcome: session.status === 'completed' ? 'completed'
+             : session.status === 'cancelled' ? 'cancelled'
+             : session.status === 'timeout' ? 'timeout'
+             : session.status === 'failed' ? 'failed'
+             : 'completed', // fallback for legacy statuses
+      response: session.response,
+      transcript: session.session_transcript ?? undefined,
+      duration: session.session_duration ?? 0,
+      error: session.error ?? undefined,
+    } as T
+
+    // Complete the task if one was created
+    if (taskId) {
+      db.tasks.complete(taskId)
+      setTaskId(null)
+    }
+
+    if (session.status === 'failed') {
+      setError(new Error(session.error ?? 'Session failed'))
+      setStatus('error')
+      if (rejectRef.current) {
+        rejectRef.current(new Error(session.error ?? 'Session failed'))
       }
-
-      const result = {
-        outcome: session.status === 'approved' ? 'completed'
-               : session.status === 'cancelled' ? 'cancelled'
-               : 'timeout',
-        response,
-        transcript: session.session_transcript ?? undefined,
-        duration,
-      } as T
-
+    } else {
       setData(result)
       setStatus('success')
-      startTimeRef.current = null
-
       if (resolveRef.current) {
         resolveRef.current(result)
-        resolveRef.current = null
-        rejectRef.current = null
       }
     }
-  }, [session, status])
+
+    resolveRef.current = null
+    rejectRef.current = null
+  }, [session, status, taskId, db])
 
   const createSession = useCallback((
     prompt: string,
     options?: AskInteractiveOptions
   ): string => {
+    // Enforce single session constraint
+    if (status === 'pending') {
+      throw new Error('Cannot create a new interactive session while one is already pending')
+    }
+
     const config: InteractiveSessionConfig = {
       systemPrompt: options?.systemPrompt,
       context: options?.context,
@@ -418,19 +550,42 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
       mcpConfig: options?.mcpConfig,
       timeout: options?.timeout,
       outcomeSchema: options?.outcomeSchema,
+      captureTranscript: options?.captureTranscript,
+      blockOrchestration: options?.blockOrchestration ?? true,
     }
-    return db.human.requestInteractive(prompt, config)
-  }, [db])
+
+    const id = db.human.requestInteractive(prompt, config)
+
+    // Create a task to keep orchestration alive if requested
+    if (config.blockOrchestration) {
+      const tid = db.tasks.start('human_interactive', `Interactive session: ${prompt.slice(0, 50)}...`)
+      setTaskId(tid)
+    }
+
+    return id
+  }, [db, status])
+
+  // Fire-and-forget version - use status/data reactively
+  const request = useCallback((
+    prompt: string,
+    options?: AskInteractiveOptions
+  ): void => {
+    setStatus('pending')
+    setData(null)
+    setError(null)
+
+    const id = createSession(prompt, options)
+    setSessionId(id)
+  }, [createSession])
 
   // Returns a promise - caller decides whether to await
-  const mutate = useCallback((
+  const requestAsync = useCallback((
     prompt: string,
     options?: AskInteractiveOptions
   ): Promise<T> => {
     return new Promise<T>((resolve, reject) => {
       resolveRef.current = resolve
       rejectRef.current = reject
-      startTimeRef.current = Date.now()
       setStatus('pending')
       setData(null)
       setError(null)
@@ -440,37 +595,37 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     })
   }, [createSession])
 
-  // Fire-and-forget version - use status/data reactively
-  const mutateAsync = useCallback((
-    prompt: string,
-    options?: AskInteractiveOptions
-  ): void => {
-    startTimeRef.current = Date.now()
-    setStatus('pending')
-    setData(null)
-    setError(null)
-
-    const id = createSession(prompt, options)
-    setSessionId(id)
-  }, [createSession])
+  const cancel = useCallback(() => {
+    if (sessionId && status === 'pending') {
+      db.human.cancelInteractive(sessionId)
+      if (taskId) {
+        db.tasks.complete(taskId)
+        setTaskId(null)
+      }
+    }
+  }, [sessionId, status, taskId, db])
 
   const reset = useCallback(() => {
+    if (taskId) {
+      db.tasks.complete(taskId)
+    }
     setSessionId(null)
     setStatus('idle')
     setData(null)
     setError(null)
+    setTaskId(null)
     resolveRef.current = null
     rejectRef.current = null
-    startTimeRef.current = null
-  }, [])
+  }, [taskId, db])
 
   return {
-    mutate,
-    mutateAsync,
+    request,
+    requestAsync,
     status,
     data,
     error,
     sessionId,
+    cancel,
     reset,
   }
 }
@@ -490,15 +645,30 @@ export interface HumanModule {
   requestInteractive: (prompt: string, config: InteractiveSessionConfig) => string
 
   /**
-   * Complete an interactive session
+   * Complete an interactive session with lifecycle status
    */
   completeInteractive: (
     id: string,
-    outcome: 'completed' | 'cancelled' | 'timeout',
+    outcome: 'completed' | 'cancelled' | 'timeout' | 'failed',
     response: unknown,
-    transcript?: string,
-    duration?: number
+    options?: {
+      transcript?: string
+      duration?: number
+      error?: string
+    }
   ) => void
+
+  /**
+   * Cancel a pending interactive session
+   */
+  cancelInteractive: (id: string) => void
+
+  /**
+   * List pending interactions with optional execution scope
+   * @param executionId - Optional execution ID. If not provided, uses current execution.
+   *                      Pass '*' to list across all executions.
+   */
+  listPending: (executionId?: string) => HumanInteraction[]
 }
 
 // Implementation
@@ -518,22 +688,62 @@ requestInteractive: (prompt: string, config: InteractiveSessionConfig): string =
 
 completeInteractive: (
   id: string,
-  outcome: 'completed' | 'cancelled' | 'timeout',
+  outcome: 'completed' | 'cancelled' | 'timeout' | 'failed',
   response: unknown,
-  transcript?: string,
-  duration?: number
+  options?: {
+    transcript?: string
+    duration?: number
+    error?: string
+  }
 ) => {
-  const status = outcome === 'completed' ? 'approved'
-               : outcome === 'cancelled' ? 'cancelled'
-               : 'timeout'
-
+  // Status is now the lifecycle status, not the decision
   rdb.run(
     `UPDATE human_interactions
      SET status = ?, response = ?, session_transcript = ?,
-         session_duration = ?, resolved_at = ?
+         session_duration = ?, error = ?, resolved_at = ?
      WHERE id = ?`,
-    [status, JSON.stringify(response), transcript ?? null, duration ?? null, now(), id]
+    [
+      outcome,
+      JSON.stringify(response),
+      options?.transcript ?? null,
+      options?.duration ?? null,
+      options?.error ?? null,
+      now(),
+      id
+    ]
   )
+}
+
+cancelInteractive: (id: string) => {
+  rdb.run(
+    `UPDATE human_interactions
+     SET status = 'cancelled', resolved_at = ?
+     WHERE id = ? AND status = 'pending'`,
+    [now(), id]
+  )
+}
+
+// Updated listPending to support explicit execution scope
+listPending: (executionId?: string): HumanInteraction[] => {
+  let query = `SELECT * FROM human_interactions WHERE status = 'pending'`
+  const params: string[] = []
+
+  if (executionId === '*') {
+    // List across all executions
+  } else if (executionId) {
+    // Specific execution
+    query += ` AND execution_id = ?`
+    params.push(executionId)
+  } else {
+    // Current execution (default behavior)
+    const currentExecId = getCurrentExecutionId()
+    if (!currentExecId) return []
+    query += ` AND execution_id = ?`
+    params.push(currentExecId)
+  }
+
+  const rows = rdb.all(query, params) as HumanInteractionRow[]
+  return rows.map(parseHumanInteraction)
 }
 ```
 
@@ -578,7 +788,7 @@ async function handleInteractiveSession(request: HumanInteraction) {
   const startTime = Date.now()
   const result = await session.waitForCompletion({
     timeout: config.timeout,
-    captureTranscript: true,
+    captureTranscript: config.captureTranscript ?? false,
   })
 
   // Extract structured response if schema provided
@@ -589,10 +799,13 @@ async function handleInteractiveSession(request: HumanInteraction) {
   // Complete the interaction
   db.human.completeInteractive(
     request.id,
-    result.exitReason, // 'completed' | 'cancelled' | 'timeout'
+    result.exitReason, // 'completed' | 'cancelled' | 'timeout' | 'failed'
     response,
-    result.transcript,
-    Date.now() - startTime
+    {
+      transcript: config.captureTranscript ? result.transcript : undefined,
+      duration: Date.now() - startTime,
+      error: result.error,
+    }
   )
 }
 
@@ -853,28 +1066,147 @@ Both hooks follow the same pattern: create a DB record, let the harness fulfill 
 
 ---
 
+<section name="design-review-changes">
+
+## Design Review Changes (P0 Issues Resolved)
+
+This section documents critical design changes made to address P0 issues identified in the design review.
+
+### 1. Serializable Schema Configuration ✅
+
+**Problem:** `z.ZodType` instances cannot be JSON stringified and stored in the database, breaking harness-agnostic promise.
+
+**Solution:**
+- `outcomeSchema.jsonSchema` now accepts `Record<string, unknown>` (JSON Schema format)
+- Separate `zodSchema` option for client-side validation after session completes
+- Harness receives JSON Schema (serializable) in DB; hook validates with Zod afterward
+
+### 2. Status Semantics (Lifecycle vs Decision) ✅
+
+**Problem:** Using `status = 'approved'` to mean "completed" conflates lifecycle with business logic, breaking queries and dashboards.
+
+**Solution:**
+- `status` now represents **lifecycle only**: `pending | completed | cancelled | timeout | failed`
+- Approval/rejection decisions stored in `response` field, not `status`
+- Backward compatible with existing confirmation flows (still use `approved/rejected`)
+- Clear separation: lifecycle (status) vs decision (response)
+
+### 3. Proper DB Row Types and Parsing ✅
+
+**Problem:** `useQueryOne` returns raw DB rows with JSON strings, but hook assumed parsed objects.
+
+**Solution:**
+- Added `HumanInteractionRow` type matching actual table columns
+- Added `parseHumanInteraction(row)` mapper function
+- Hook now queries `HumanInteractionRow` and parses before use
+- Consistent with existing module patterns (`mapAgent`, `mapCommit`, etc.)
+
+### 4. Orchestration Loop Gating ✅
+
+**Problem:** Fire-and-forget sessions could cause runaway iterations or premature completion if no task keeps orchestration alive.
+
+**Solution:**
+- Added `blockOrchestration` option (default: `true`)
+- Hook creates a `human_interactive` task when session starts
+- Task completed when session resolves, preventing premature run completion
+- Caller can still opt-out with `blockOrchestration: false` for advanced use cases
+
+### 5. External Harness Polling Support ✅
+
+**Problem:** `listPending()` uses `getCurrentExecutionId()` from closure, which won't work in out-of-process harness.
+
+**Solution:**
+- Extended `listPending(executionId?: string)` to accept explicit execution scope
+- Pass `'*'` to list across all executions (for external harness)
+- Defaults to current execution for backward compatibility
+- Mirrors existing patterns in `agents.list(executionId)`, `phases.list(executionId)`
+
+### 6. API Naming Alignment ✅
+
+**Problem:** `mutate`/`mutateAsync` naming inverted vs react-query conventions.
+
+**Solution:**
+- Renamed to `request()` (fire-and-forget) and `requestAsync()` (returns promise)
+- Clearer, more explicit naming that avoids confusion
+- Follows common patterns without misleading developers
+
+### 7. Proper Error Handling ✅
+
+**Problem:** Hook had `error` state but never set it; no `failed` terminal status.
+
+**Solution:**
+- Added `failed` as terminal outcome
+- Added `error` field to `InteractiveSessionResult`
+- Added `error` column to DB schema
+- Hook properly sets `status = 'error'` and rejects promise on failure
+
+### 8. Concurrency Constraint Enforcement ✅
+
+**Problem:** Single-session recommendation not enforced, leading to `resolveRef` bugs.
+
+**Solution:**
+- Enforced in `createSession`: throws if `status === 'pending'`
+- Prevents overlapping sessions and ref corruption
+- Clear error message guides correct usage
+
+### 9. Cancellation Support ✅
+
+**Problem:** No way to cancel a pending session.
+
+**Solution:**
+- Added `cancel()` method to hook API
+- Added `db.human.cancelInteractive(id)` method
+- Cancellation completes associated task and updates DB status
+- Enables scenarios where conditions change mid-session
+
+### 10. Transcript Capture as First-Class Option ✅
+
+**Problem:** Transcript capture mentioned in docs but not in API; unclear defaults.
+
+**Solution:**
+- Added `captureTranscript?: boolean` to `AskInteractiveOptions`
+- Default: `false` (opt-in for privacy and storage)
+- Harness respects config and only captures when requested
+- Documented privacy/storage considerations
+
+</section>
+
+---
+
 <section name="acceptance-criteria">
 
 ## Acceptance Criteria
 
 ### Hook API
-- [ ] `useHumanInteractive` hook returns `mutate`, `mutateAsync`, `status`, `data`, `error`, `sessionId`, `reset`
-- [ ] `mutate` returns a Promise that resolves when session completes
-- [ ] `mutateAsync` triggers the request without returning a promise (fire-and-forget)
+- [ ] `useHumanInteractive` hook returns `request`, `requestAsync`, `status`, `data`, `error`, `sessionId`, `cancel`, `reset`
+- [ ] `request` triggers without returning a promise (fire-and-forget)
+- [ ] `requestAsync` returns a Promise that resolves when session completes
+- [ ] `cancel` cancels a pending session and completes associated task
 - [ ] `status` correctly reflects 'idle' | 'pending' | 'success' | 'error' states
 - [ ] `data` contains `InteractiveSessionResult` when status is 'success'
-- [ ] `reset` clears all state back to idle
+- [ ] `error` contains Error when status is 'error'
+- [ ] `reset` clears all state back to idle and completes task if any
+- [ ] Single session constraint enforced (throws if request made while pending)
+- [ ] Mounted state tracking prevents setState on unmounted component
 
 ### Database
 - [ ] `human_interactions` table supports `type: 'interactive_session'`
-- [ ] `session_config` column stores JSON configuration
-- [ ] `session_transcript` column stores captured transcript (optional)
+- [ ] `session_config` column stores JSON configuration (serializable)
+- [ ] `session_transcript` column stores captured transcript (optional, opt-in)
 - [ ] `session_duration` column stores duration in milliseconds
+- [ ] `error` column stores error message if session failed
+- [ ] Status represents lifecycle: `pending | completed | cancelled | timeout | failed`
+- [ ] Approval/rejection decisions stored in `response`, not `status`
+- [ ] `HumanInteractionRow` type defined for raw DB rows
+- [ ] `parseHumanInteraction()` mapper function implemented
 
 ### Human Module
 - [ ] `db.human.requestInteractive()` creates interactive session requests
-- [ ] `db.human.completeInteractive()` resolves sessions with outcome and response
-- [ ] `db.human.listPending()` includes interactive sessions
+- [ ] `db.human.completeInteractive()` resolves sessions with lifecycle status and response
+- [ ] `db.human.cancelInteractive()` cancels pending sessions
+- [ ] `db.human.listPending(executionId?)` supports explicit execution scope
+- [ ] `listPending('*')` lists across all executions (for external harness)
+- [ ] `listPending()` defaults to current execution (backward compatible)
 
 ### Configuration
 - [ ] `systemPrompt` option configures Claude's behavior in session
@@ -882,13 +1214,20 @@ Both hooks follow the same pattern: create a DB record, let the harness fulfill 
 - [ ] `model` option selects Claude model for session
 - [ ] `cwd` option sets working directory for session
 - [ ] `timeout` option limits session duration
-- [ ] `outcomeSchema` option enables structured response extraction
+- [ ] `outcomeSchema.jsonSchema` accepts JSON Schema (serializable)
+- [ ] `zodSchema` option for client-side validation (not stored in DB)
+- [ ] `captureTranscript` option defaults to `false` (opt-in for privacy)
+- [ ] `blockOrchestration` option defaults to `true` (keeps orchestration alive)
 
 ### Integration
-- [ ] Harness can detect pending interactive sessions via `listPending()`
-- [ ] Harness can fulfill the request however it chooses (hook is agnostic)
-- [ ] Harness can complete the interaction via `completeInteractive()`
+- [ ] External harness can detect pending sessions via `listPending('*')`
+- [ ] Harness can fulfill request however it chooses (hook is agnostic)
+- [ ] Harness receives serializable JSON Schema, not Zod types
+- [ ] Harness can complete interaction via `completeInteractive()`
+- [ ] Harness respects `captureTranscript` config
 - [ ] Plan output shows interactive session status
+- [ ] Task created when `blockOrchestration: true` prevents premature completion
+- [ ] Task completed when session resolves (any terminal status)
 
 </section>
 
@@ -898,15 +1237,15 @@ Both hooks follow the same pattern: create a DB record, let the harness fulfill 
 
 ## Open Questions
 
-### Q1: Should we capture full session transcript?
+### Q1: Should we capture full session transcript? ✅ RESOLVED
 
-**Options:**
-- A) Always capture full transcript (storage concern for long sessions)
-- B) Capture last N messages only
-- C) Make it configurable via option
-- D) Don't capture by default, opt-in only
+**Decision:** Option D - Don't capture by default (opt-in via `captureTranscript: true`).
 
-**Recommendation:** Option D - Don't capture by default. Transcripts can be large and may contain sensitive information. Opt-in via `captureTranscript: true` option.
+**Rationale:**
+- Transcripts can be large (storage concern for long sessions)
+- May contain sensitive information (privacy concern)
+- Harness implementation complexity (requires PTY or Claude CLI logging support)
+- Opt-in approach puts control in caller's hands
 
 ### Q2: How should timeout behavior work?
 
@@ -918,11 +1257,15 @@ Both hooks follow the same pattern: create a DB record, let the harness fulfill 
 
 **Recommendation:** Option B - Warn the user that the orchestration is waiting, give 60s grace period to wrap up, then timeout.
 
-### Q3: Should the hook support multiple concurrent sessions?
+### Q3: Should the hook support multiple concurrent sessions? ✅ RESOLVED
 
-The current `useHuman` only supports one request at a time. Should `useHumanInteractive` be different?
+**Decision:** No - enforce single session at a time.
 
-**Recommendation:** No, keep single session at a time for simplicity. Multiple concurrent interactive sessions would be confusing for the human anyway.
+**Rationale:**
+- Multiple concurrent interactive sessions would be confusing for the human
+- Prevents `resolveRef` corruption bugs
+- Enforced via runtime check with clear error message
+- Simpler implementation and mental model
 
 ### Q4: How does this interact with Worktree context?
 
@@ -1001,6 +1344,33 @@ const result = await mutate('Long investigation session', {
 
 ---
 
+## Implementation Readiness
+
+This feature is **ready for implementation**. All P0 design issues have been resolved:
+
+✅ Serializable schema configuration (JSON Schema, not Zod)
+✅ Status semantics fixed (lifecycle vs decision)
+✅ Proper DB row types and parsing
+✅ Orchestration loop gating via task creation
+✅ External harness polling support
+✅ API naming aligned with conventions
+✅ Proper error handling with `failed` status
+✅ Concurrency constraint enforcement
+✅ Cancellation support
+✅ Transcript capture as first-class opt-in option
+
+### Next Steps
+
+1. **Phase 1:** DB migration and type definitions (0.5 day)
+2. **Phase 2:** Extend `HumanModule` with new methods (0.5 day)
+3. **Phase 3:** Implement `useHumanInteractive` hook (1 day)
+4. **Phase 4:** Example harness implementation (0.5 day)
+5. **Phase 5:** Integration testing and documentation (1 day)
+
+**Estimated total:** 3.5-4 days
+
+---
+
 ## Summary
 
 The `useHumanInteractive` hook extends Smithers' human-in-the-loop capabilities from simple prompts to rich, multi-turn sessions. This enables:
@@ -1008,12 +1378,13 @@ The `useHumanInteractive` hook extends Smithers' human-in-the-loop capabilities 
 1. **Complex decisions** - Humans can investigate with AI assistance before deciding
 2. **Contextual exploration** - Rich context and configuration for the session
 3. **Structured outcomes** - Extract specific response formats from conversations
-4. **Seamless integration** - Same `useMutation`-like API pattern as `useHuman`
+4. **Seamless integration** - Same mutation-like API pattern as `useHuman`
 
 Key design decisions:
-- **`useMutation`-like API** - Callers explicitly trigger requests and decide whether to await
-- **No automatic blocking** - The hook doesn't pause execution; the caller controls flow
-- **Harness-agnostic** - Creates DB records; harness fulfills however it chooses
+- **Mutation-like API** - `request()` fire-and-forget, `requestAsync()` returns promise
+- **Caller-controlled blocking** - Caller decides whether to await; hook manages orchestration task
+- **Harness-agnostic** - Creates DB records with serializable config; harness fulfills however it chooses
 - **Reactive database updates** - Same pattern as `useHuman` for consistency
-- **Optional transcript capture** - Don't store by default for privacy/storage reasons
-- **Configurable outcomes** - Support both freeform and structured response extraction
+- **Opt-in transcript capture** - Privacy and storage-conscious defaults
+- **Lifecycle vs decision separation** - Clean status semantics for queries and dashboards
+- **Configurable outcomes** - Support both freeform and structured response extraction (JSON Schema)
