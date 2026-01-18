@@ -5,6 +5,14 @@ import { createContext, useContext, createSignal, type JSX } from 'solid-js'
 import type { SmithersDB } from '../db/index.js'
 
 // ============================================================================
+// GLOBAL STORE (for universal renderer compatibility)
+// ============================================================================
+
+// Module-level store for context value - used as fallback when
+// Solid's Context API doesn't work in universal renderer mode
+let globalSmithersContext: SmithersContextValue | null = null
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -80,13 +88,24 @@ const SmithersContext = createContext<SmithersContextValue>()
 
 /**
  * Hook to access Smithers context
+ *
+ * Uses Solid's Context API, but falls back to module-level store
+ * for universal renderer compatibility where context propagation
+ * may not work as expected.
  */
 export function useSmithers() {
+  // Try Solid's Context first
   const ctx = useContext(SmithersContext)
-  if (!ctx) {
-    throw new Error('useSmithers must be used within SmithersProvider')
+  if (ctx) {
+    return ctx
   }
-  return ctx
+
+  // Fall back to global store for universal renderer
+  if (globalSmithersContext) {
+    return globalSmithersContext
+  }
+
+  throw new Error('useSmithers must be used within SmithersProvider')
 }
 
 // ============================================================================
@@ -172,14 +191,14 @@ export function SmithersProvider(props: SmithersProviderProps): JSX.Element {
     isRebaseRequested: rebaseRequested,
   }
 
-  // Use a function to render children lazily after context is established
-  // This is important for Solid.js universal renderer where children may
-  // be evaluated eagerly before the context provider is set up
-  const renderChildren = () => props.children
+  // Set global store BEFORE any children are evaluated
+  // This is critical for universal renderer compatibility where
+  // Solid's Context API may not propagate properly
+  globalSmithersContext = value
 
   return (
     <SmithersContext.Provider value={value}>
-      {renderChildren()}
+      {props.children}
     </SmithersContext.Provider>
   )
 }
