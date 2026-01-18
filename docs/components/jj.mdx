@@ -1,0 +1,200 @@
+---
+title: JJ (Jujutsu) Components
+description: Components for Jujutsu version control operations
+---
+
+# JJ Components
+
+Smithers provides first-class support for Jujutsu (jj), a modern version control system. These components wrap jj commands and integrate with the database for logging.
+
+## Installation
+
+Ensure you have [Jujutsu](https://github.com/martinvonz/jj) installed:
+
+```bash
+# macOS
+brew install jj
+
+# From source
+cargo install jj-cli
+```
+
+## Components
+
+### Snapshot
+
+Creates a jj snapshot and logs to the database.
+
+```tsx
+import { Snapshot } from "smithers-orchestrator/components/JJ";
+
+<Snapshot message="Before risky refactoring">
+  {/* Child content */}
+</Snapshot>
+```
+
+#### Props
+
+<ParamField path="message" type="string">
+  Optional message describing the snapshot.
+</ParamField>
+
+<ParamField path="children" type="ReactNode">
+  Optional child content.
+</ParamField>
+
+### Commit
+
+Creates a jj commit with optional auto-describe functionality.
+
+```tsx
+import { Commit } from "smithers-orchestrator/components/JJ";
+
+// With explicit message
+<Commit message="feat: Add user authentication" />
+
+// With auto-generated message
+<Commit autoDescribe />
+
+// With git notes
+<Commit
+  message="feat: New feature"
+  notes="User prompt: Add the new feature"
+/>
+```
+
+#### Props
+
+<ParamField path="message" type="string">
+  Commit message. If not provided and `autoDescribe` is false, defaults to "Commit by Smithers".
+</ParamField>
+
+<ParamField path="autoDescribe" type="boolean">
+  Use Claude to automatically generate a commit message based on the diff.
+</ParamField>
+
+<ParamField path="notes" type="string">
+  Git notes to attach to the commit (useful for tracking Smithers metadata).
+</ParamField>
+
+<ParamField path="children" type="ReactNode">
+  Optional child content.
+</ParamField>
+
+### Describe
+
+Updates the description of a jj change.
+
+```tsx
+import { Describe } from "smithers-orchestrator/components/JJ";
+
+<Describe changeId="abc123" description="Updated description" />
+```
+
+#### Props
+
+<ParamField path="changeId" type="string">
+  The change ID to describe.
+</ParamField>
+
+<ParamField path="description" type="string">
+  The new description.
+</ParamField>
+
+### Status
+
+Gets the current jj status.
+
+```tsx
+import { Status } from "smithers-orchestrator/components/JJ";
+
+<Status onStatus={(status) => console.log(status)} />
+```
+
+#### Props
+
+<ParamField path="onStatus" type="(status: JJStatus) => void">
+  Callback with the current jj status.
+</ParamField>
+
+### Rebase
+
+Performs a jj rebase operation.
+
+```tsx
+import { Rebase } from "smithers-orchestrator/components/JJ";
+
+<Rebase source="feature" destination="main" />
+```
+
+#### Props
+
+<ParamField path="source" type="string">
+  Source revision to rebase.
+</ParamField>
+
+<ParamField path="destination" type="string">
+  Destination to rebase onto.
+</ParamField>
+
+## Complete Example
+
+```tsx
+import { Snapshot, Commit } from "smithers-orchestrator/components/JJ";
+
+function JJWorkflow() {
+  const [phase, setPhase] = useState("snapshot");
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={5}>
+        {phase === "snapshot" && (
+          <Snapshot
+            message="Before feature implementation"
+            onComplete={() => setPhase("implement")}
+          />
+        )}
+
+        {phase === "implement" && (
+          <Claude
+            onFinished={() => setPhase("commit")}
+          >
+            Implement the feature.
+          </Claude>
+        )}
+
+        {phase === "commit" && (
+          <Commit
+            autoDescribe
+            notes="Smithers automated commit"
+            onComplete={() => setPhase("done")}
+          />
+        )}
+      </Ralph>
+    </SmithersProvider>
+  );
+}
+```
+
+## Database Logging
+
+All JJ operations are automatically logged to the database:
+
+```tsx
+// Snapshots
+const snapshots = await db.vcs.getSnapshots(10);
+
+// Commits
+const commits = await db.vcs.getCommits(10);
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Git Components" icon="git" href="/components/commit">
+    Git version control components
+  </Card>
+  <Card title="VCS Integration Guide" icon="code-branch" href="/guides/vcs-integration">
+    Complete VCS integration guide
+  </Card>
+</CardGroup>

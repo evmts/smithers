@@ -1,0 +1,201 @@
+---
+title: Hook Components
+description: Event-driven components that trigger on external events
+---
+
+# Hook Components
+
+Hook components listen for external events and trigger their children when those events occur. They're useful for building reactive workflows that respond to CI/CD events, commits, and other triggers.
+
+## OnCIFailure
+
+Monitors CI status and triggers children when a failure is detected.
+
+```tsx
+import { OnCIFailure } from "smithers-orchestrator/components/Hooks";
+
+<OnCIFailure
+  provider="github-actions"
+  pollInterval={60000}
+  onFailure={(failure) => console.log('CI failed:', failure)}
+>
+  <Claude>
+    The CI has failed. Here are the logs:
+    {failure.logs}
+
+    Analyze the failure and fix the issue.
+  </Claude>
+</OnCIFailure>
+```
+
+### Props
+
+<ParamField path="provider" type="'github-actions'" required>
+  CI provider to monitor. Currently only GitHub Actions is supported.
+</ParamField>
+
+<ParamField path="pollInterval" type="number" default="30000">
+  Polling interval in milliseconds.
+</ParamField>
+
+<ParamField path="onFailure" type="(failure: CIFailure) => void">
+  Callback when a CI failure is detected.
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  Content to render when a failure is detected.
+</ParamField>
+
+### CIFailure Type
+
+```tsx
+interface CIFailure {
+  failed: boolean;
+  runId?: string;
+  workflowName?: string;
+  failedJobs?: string[];
+  logs?: string;
+}
+```
+
+### How It Works
+
+1. On mount, starts polling GitHub Actions for the latest run status
+2. When a failed run is detected (that hasn't been processed before), triggers children
+3. Keeps track of processed run IDs to avoid re-triggering on the same failure
+4. Persists processed run IDs to database state for restart resilience
+
+## PostCommit
+
+Triggers children when a git commit is made.
+
+```tsx
+import { PostCommit } from "smithers-orchestrator/components/Hooks";
+
+<PostCommit runOn="smithers-only">
+  <Claude>
+    Review the latest commit and suggest improvements.
+  </Claude>
+</PostCommit>
+```
+
+### Props
+
+<ParamField path="runOn" type="'all' | 'smithers-only'" default="all">
+  Filter which commits trigger the hook:
+  - `all`: All commits trigger
+  - `smithers-only`: Only commits with smithers metadata in git notes
+</ParamField>
+
+<ParamField path="async" type="boolean" default="false">
+  Run children in background (non-blocking).
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  Content to render when a commit is detected.
+</ParamField>
+
+### How It Works
+
+1. On mount, installs a git post-commit hook that calls `bunx smithers hook-trigger post-commit "$COMMIT_HASH"`
+2. Polls database state for `last_hook_trigger` to detect new commits
+3. When a commit is detected (matching the `runOn` filter), renders children
+4. Marks triggers as processed to avoid re-triggering
+
+### Git Hook Installation
+
+The PostCommit component automatically installs this hook at `.git/hooks/post-commit`:
+
+```bash
+#!/bin/bash
+COMMIT_HASH=$(git rev-parse HEAD)
+bunx smithers hook-trigger post-commit "$COMMIT_HASH"
+```
+
+## Example: CI Recovery Workflow
+
+```tsx
+function CIRecoveryWorkflow() {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Orchestration>
+        <Ralph maxIterations={3}>
+          <OnCIFailure
+            provider="github-actions"
+            pollInterval={30000}
+            onFailure={(f) => console.log(`CI failed: ${f.workflowName}`)}
+          >
+            <Phase name="Analyze">
+              <Claude
+                allowedTools={["Read", "Grep", "Glob"]}
+                onFinished={(r) => db.state.set("analysis", r.output)}
+              >
+                Analyze these CI failure logs and identify the root cause:
+
+                Failed jobs: {failure.failedJobs?.join(", ")}
+
+                Logs:
+                {failure.logs}
+              </Claude>
+            </Phase>
+
+            <Phase name="Fix">
+              <Claude
+                allowedTools={["Read", "Edit", "Write"]}
+                onFinished={() => db.state.set("phase", "test")}
+              >
+                Based on the analysis, fix the failing tests or code.
+              </Claude>
+            </Phase>
+
+            <Phase name="Commit">
+              <Commit
+                autoGenerate
+                all
+                notes={{ smithers: true, ciRecovery: true }}
+              />
+            </Phase>
+          </OnCIFailure>
+        </Ralph>
+      </Orchestration>
+    </SmithersProvider>
+  );
+}
+```
+
+## Example: Post-Commit Review
+
+```tsx
+function PostCommitReview() {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <PostCommit runOn="all">
+        <Review
+          target={{ type: "commit", ref: "HEAD" }}
+          criteria={[
+            "No security vulnerabilities",
+            "Code follows style guide",
+            "Tests are included",
+          ]}
+          onFinished={(review) => {
+            if (!review.approved) {
+              console.log("Review issues:", review.issues);
+            }
+          }}
+        />
+      </PostCommit>
+    </SmithersProvider>
+  );
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="VCS Integration" icon="code-branch" href="/guides/vcs-integration">
+    Complete VCS integration guide
+  </Card>
+  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+    Workflow orchestration
+  </Card>
+</CardGroup>

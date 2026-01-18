@@ -1,0 +1,184 @@
+---
+title: Constraints
+description: Define constraints and rules for Claude's responses
+---
+
+# Constraints Component
+
+The `<Constraints>` component defines rules and constraints that guide Claude's behavior and output format. Constraints are added to the prompt to enforce specific requirements.
+
+## Usage
+
+```tsx
+import { Constraints } from "smithers-orchestrator/components";
+
+<Claude>
+  <Constraints>
+    - Keep responses under 500 words
+    - Use bullet points for lists
+    - Include code examples where applicable
+    - Cite sources when making claims
+  </Constraints>
+
+  Explain the SOLID principles.
+</Claude>
+```
+
+## Props
+
+<ParamField path="children" type="ReactNode">
+  The constraints to apply, typically as a list of rules.
+</ParamField>
+
+## Examples
+
+### Output Format Constraints
+
+```tsx
+<Claude>
+  <Constraints>
+    - Respond in JSON format only
+    - Include a "summary" field
+    - Include an "issues" array
+    - Include a "recommendations" array
+  </Constraints>
+
+  Analyze this code for issues.
+</Claude>
+```
+
+### Behavioral Constraints
+
+```tsx
+<Claude>
+  <Constraints>
+    - Do not make changes to the database schema
+    - Only modify files in the src/components directory
+    - Run tests after each change
+    - Commit changes with descriptive messages
+  </Constraints>
+
+  Refactor the Button component to use CSS modules.
+</Claude>
+```
+
+### Security Constraints
+
+```tsx
+<Claude>
+  <Constraints>
+    - Never store plaintext passwords
+    - Always sanitize user input
+    - Use parameterized queries for database access
+    - Log security-relevant events
+  </Constraints>
+
+  Implement user authentication.
+</Claude>
+```
+
+### Quality Constraints
+
+```tsx
+<Claude>
+  <Constraints>
+    - All functions must have TypeScript types
+    - Include JSDoc comments for public APIs
+    - Write unit tests for new functionality
+    - Follow existing code style
+  </Constraints>
+
+  Add a new API endpoint for user profiles.
+</Claude>
+```
+
+## Combining with Persona
+
+Constraints work well with the `<Persona>` component:
+
+```tsx
+<Claude>
+  <Persona role="security engineer">
+    You specialize in application security.
+  </Persona>
+
+  <Constraints>
+    - Focus on OWASP Top 10 vulnerabilities
+    - Prioritize high-severity issues
+    - Provide remediation steps for each finding
+    - Rate each issue by severity (low/medium/high/critical)
+  </Constraints>
+
+  Perform a security audit of the authentication module.
+</Claude>
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Be specific and measurable">
+    Vague constraints are harder to follow:
+    ```tsx
+    // Good - specific and measurable
+    <Constraints>
+      - Keep functions under 50 lines
+      - Maximum 3 parameters per function
+      - Test coverage must be above 80%
+    </Constraints>
+
+    // Less effective - vague
+    <Constraints>
+      - Write clean code
+      - Make it good
+    </Constraints>
+    ```
+  </Accordion>
+
+  <Accordion title="Use positive constraints when possible">
+    Tell Claude what to do, not just what to avoid:
+    ```tsx
+    // Positive framing
+    <Constraints>
+      - Use parameterized queries
+      - Validate all user input
+      - Return early for error cases
+    </Constraints>
+
+    // Negative framing (sometimes needed)
+    <Constraints>
+      - Do not use string concatenation for SQL
+      - Never trust user input
+    </Constraints>
+    ```
+  </Accordion>
+
+  <Accordion title="Group related constraints">
+    Organize constraints by category:
+    ```tsx
+    <Constraints>
+      # Code Quality
+      - Use TypeScript strict mode
+      - No any types
+
+      # Testing
+      - Write tests for edge cases
+      - Mock external dependencies
+
+      # Performance
+      - Avoid N+1 queries
+      - Use pagination for lists
+    </Constraints>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Persona" icon="user" href="/components/persona">
+    Define personas for Claude
+  </Card>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    Core Claude component reference
+  </Card>
+</CardGroup>

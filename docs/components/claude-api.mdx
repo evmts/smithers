@@ -1,0 +1,120 @@
+---
+title: ClaudeApi
+description: Execute Claude using the Anthropic API directly
+---
+
+# ClaudeApi Component
+
+The `<ClaudeApi>` component provides an alternative way to execute Claude using the Anthropic SDK directly, rather than through the Claude Code CLI.
+
+<Note>
+This component is for scenarios where you need direct API access. For most use cases, the standard `<Claude>` component is recommended as it provides full tool access and better integration with Smithers features.
+</Note>
+
+## Usage
+
+```tsx
+import { ClaudeApi } from "smithers-orchestrator/components";
+
+<ClaudeApi model="claude-sonnet-4">
+  Generate a haiku about programming.
+</ClaudeApi>
+```
+
+## Props
+
+<ParamField path="model" type="string">
+  The Anthropic model ID to use (e.g., "claude-sonnet-4", "claude-opus-4").
+</ParamField>
+
+<ParamField path="maxTurns" type="number">
+  Maximum number of conversation turns.
+</ParamField>
+
+<ParamField path="tools" type="string[]">
+  Tool names to make available.
+</ParamField>
+
+<ParamField path="systemPrompt" type="string">
+  System prompt to use.
+</ParamField>
+
+<ParamField path="onFinished" type="(result: unknown) => void">
+  Callback when execution completes.
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Callback when an error occurs.
+</ParamField>
+
+<ParamField path="children" type="ReactNode">
+  The prompt to send to Claude.
+</ParamField>
+
+## When to Use ClaudeApi vs Claude
+
+| Feature | Claude | ClaudeApi |
+|---------|--------|-----------|
+| Tool access | Full CLI tools | Custom tools only |
+| File editing | Built-in | Manual |
+| Database logging | Automatic | Manual |
+| MCP support | Yes | No |
+| Structured output | Yes | Manual |
+| Best for | Agentic tasks | Simple completions |
+
+### Use Claude for:
+- File editing and code modifications
+- Multi-turn agentic workflows
+- Tasks requiring CLI tools (Bash, Read, Write, etc.)
+- Workflows that need database logging
+
+### Use ClaudeApi for:
+- Simple text generation
+- Custom API integrations
+- Direct control over the Anthropic SDK
+- Non-agentic tasks
+
+## Example
+
+```tsx
+function SimpleCompletion() {
+  const [result, setResult] = useState<string | null>(null);
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <ClaudeApi
+        model="claude-haiku-3"
+        onFinished={(r) => setResult(r.output)}
+        onError={(e) => console.error(e)}
+      >
+        Summarize the key points of functional programming in 3 bullet points.
+      </ClaudeApi>
+
+      {result && <div>Result: {result}</div>}
+    </SmithersProvider>
+  );
+}
+```
+
+## Environment Setup
+
+ClaudeApi requires an Anthropic API key:
+
+```bash
+export ANTHROPIC_API_KEY="your-api-key"
+```
+
+<Warning>
+Unlike the standard Claude component which uses Claude Code's subscription, ClaudeApi requires your own Anthropic API key and will be billed to your account.
+</Warning>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    Full-featured Claude execution via CLI
+  </Card>
+  <Card title="Structured Output" icon="code" href="/guides/structured-output">
+    Getting typed responses
+  </Card>
+</CardGroup>

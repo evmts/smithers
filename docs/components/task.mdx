@@ -1,0 +1,202 @@
+---
+title: Task
+description: Track individual tasks within workflows
+---
+
+# Task Component
+
+The `<Task>` component represents a trackable task within a workflow. Tasks can be marked as done/not done to track progress through complex workflows.
+
+## Usage
+
+```tsx
+import { Task } from "smithers-orchestrator/components";
+
+<Phase name="implementation">
+  <Task done={false}>Research existing patterns</Task>
+  <Task done={true}>Design component API</Task>
+  <Task done={false}>Implement component</Task>
+  <Task done={false}>Write tests</Task>
+</Phase>
+```
+
+## Props
+
+<ParamField path="done" type="boolean" default="false">
+  Whether the task is complete.
+</ParamField>
+
+<ParamField path="children" type="ReactNode">
+  Description of the task.
+</ParamField>
+
+## Examples
+
+### Basic Task List
+
+```tsx
+<Orchestration>
+  <Phase name="setup">
+    <Task done={true}>Initialize project</Task>
+    <Task done={true}>Configure TypeScript</Task>
+    <Task done={false}>Set up testing framework</Task>
+  </Phase>
+</Orchestration>
+```
+
+### Dynamic Task Tracking
+
+```tsx
+function TaskTracker() {
+  const [tasks, setTasks] = useState([
+    { id: 1, name: "Research", done: false },
+    { id: 2, name: "Design", done: false },
+    { id: 3, name: "Implement", done: false },
+    { id: 4, name: "Test", done: false },
+  ]);
+
+  const markDone = (id: number) => {
+    setTasks(tasks.map(t =>
+      t.id === id ? { ...t, done: true } : t
+    ));
+  };
+
+  return (
+    <Phase name="feature-development">
+      {tasks.map(task => (
+        <Task key={task.id} done={task.done}>
+          {task.name}
+        </Task>
+      ))}
+
+      <Claude
+        onFinished={() => markDone(getCurrentTaskId())}
+      >
+        Complete the next incomplete task.
+      </Claude>
+    </Phase>
+  );
+}
+```
+
+### With Database Persistence
+
+```tsx
+function PersistentTasks() {
+  const [tasks, setTasks] = useState<Array<{name: string, done: boolean}>>([]);
+
+  useEffect(() => {
+    // Load tasks from database
+    db.state.get("tasks").then(savedTasks => {
+      if (savedTasks) setTasks(savedTasks);
+    });
+  }, []);
+
+  const completeTask = async (index: number) => {
+    const newTasks = [...tasks];
+    newTasks[index].done = true;
+    setTasks(newTasks);
+    await db.state.set("tasks", newTasks, "task-tracker");
+  };
+
+  return (
+    <Phase name="tracked-work">
+      {tasks.map((task, i) => (
+        <Task key={i} done={task.done}>
+          {task.name}
+        </Task>
+      ))}
+    </Phase>
+  );
+}
+```
+
+### Task-Driven Workflow
+
+```tsx
+function TaskDrivenWorkflow() {
+  const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
+
+  const tasks = [
+    "Analyze the current implementation",
+    "Identify areas for improvement",
+    "Refactor the component",
+    "Update tests",
+    "Document changes",
+  ];
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={tasks.length}>
+        <Phase name="tasks">
+          {tasks.map((task, i) => (
+            <Task key={i} done={i < currentTaskIndex}>
+              {task}
+            </Task>
+          ))}
+        </Phase>
+
+        {currentTaskIndex < tasks.length && (
+          <Claude
+            onFinished={() => setCurrentTaskIndex(i => i + 1)}
+          >
+            Complete this task: {tasks[currentTaskIndex]}
+          </Claude>
+        )}
+      </Ralph>
+    </SmithersProvider>
+  );
+}
+```
+
+## Rendering
+
+The Task component renders as a `<task>` element with a `done` attribute, which can be styled or processed by your workflow visualization:
+
+```xml
+<task done="true">Research existing patterns</task>
+<task done="false">Implement component</task>
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep tasks atomic">
+    Each task should represent a single, well-defined action:
+    ```tsx
+    // Good - atomic tasks
+    <Task done={false}>Create user model</Task>
+    <Task done={false}>Add validation rules</Task>
+    <Task done={false}>Write migration</Task>
+
+    // Less effective - compound task
+    <Task done={false}>Create user model with validation and migration</Task>
+    ```
+  </Accordion>
+
+  <Accordion title="Use with Phase for organization">
+    Group related tasks within phases:
+    ```tsx
+    <Phase name="backend">
+      <Task done={true}>Create API endpoint</Task>
+      <Task done={false}>Add authentication</Task>
+    </Phase>
+
+    <Phase name="frontend">
+      <Task done={false}>Create form component</Task>
+      <Task done={false}>Add validation</Task>
+    </Phase>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Phase" icon="layer-group" href="/components/phase">
+    Organize tasks into phases
+  </Card>
+  <Card title="Step" icon="shoe-prints" href="/components/step">
+    Sequential workflow steps
+  </Card>
+</CardGroup>
