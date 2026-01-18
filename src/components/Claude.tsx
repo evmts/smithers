@@ -107,7 +107,21 @@ export function Claude(props: ClaudeProps): ReactNode {
       let currentAgentId: string | null = null
 
       const logWriter = new LogWriter(undefined, executionId ?? undefined)
-      const logFilename = `agent-${uuid()}.log`
+      const logId = uuid()
+      const typedStreamingEnabled = props.experimentalTypedStreaming ?? false
+      const useLegacyLogFormat = typedStreamingEnabled && (props.legacyLogFormat ?? false)
+      const recordStreamEvents = props.recordStreamEvents ?? props.reportingEnabled !== false
+      const streamLogFilename = typedStreamingEnabled ? `agent-${logId}.ndjson` : `agent-${logId}.log`
+      const legacyLogFilename = useLegacyLogFormat ? `agent-${logId}.log.legacy.txt` : null
+      const streamParser = typedStreamingEnabled ? new ClaudeStreamParser() : null
+      const streamSummary: StreamSummary = {
+        textBlocks: 0,
+        reasoningBlocks: 0,
+        toolCalls: 0,
+        toolResults: 0,
+        errors: 0,
+      }
+      const logFilename = streamLogFilename
       let logPath: string | undefined
 
       try {
@@ -333,6 +347,9 @@ export function Claude(props: ClaudeProps): ReactNode {
       } finally {
         // Flush log stream to ensure all writes complete before exit
         await logWriter.flushStream(logFilename)
+        if (legacyLogFilename) {
+          await logWriter.flushStream(legacyLogFilename)
+        }
         // Always complete task
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
