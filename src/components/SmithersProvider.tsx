@@ -8,7 +8,7 @@ import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { DatabaseProvider } from '../reactive-sqlite/hooks/context.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { PhaseRegistryProvider } from './PhaseRegistry.js'
-import { useMount } from '../reconciler/hooks.js'
+import { useMount, useUnmount } from '../reconciler/hooks.js'
 import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
 
 // ============================================================================
@@ -297,7 +297,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   // Initialize ralphCount in DB if needed
   useMount(() => {
-    if (dbRalphCount === null) {
+    if (dbRalphCount == null) {
       reactiveDb.run(
         "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
       )
@@ -360,8 +360,17 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       // Tasks have completed - check if we should continue or finish
       stableCount++
 
-      // Wait at least 100ms (10 checks) for any new tasks to register
-      if (stableCount < 10) {
+      // Wait at least 100ms (2 checks at 50ms) for any new tasks to register
+      if (stableCount < 2) {
+        return
+      }
+
+      // Check if stop was requested - halt before incrementing
+      if (stopRequested && !hasCompletedRef.current) {
+        hasCompletedRef.current = true
+        if (checkInterval) clearInterval(checkInterval)
+        signalOrchestrationComplete()
+        props.onComplete?.()
         return
       }
 
@@ -384,13 +393,13 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       if (props.onIteration) {
         props.onIteration(nextIteration)
       }
-    }, 10) // Check every 10ms
+    }, 50) // Check every 50ms
 
     // Cleanup on unmount
     return () => {
       if (checkInterval) clearInterval(checkInterval)
     }
-  }, [pendingTasks, hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount])
+  }, [pendingTasks, hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount, stopRequested])
 
   const value: SmithersContextValue = useMemo(() => ({
     db: props.db,
@@ -429,6 +438,13 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   // This is critical for universal renderer compatibility where
   // React's Context API may not propagate properly
   globalSmithersContext = value
+
+  // Cleanup global context on unmount to prevent cross-run contamination
+  useUnmount(() => {
+    if (globalSmithersContext === value) {
+      globalSmithersContext = null
+    }
+  })
 
   return (
     <SmithersContext.Provider value={value}>
