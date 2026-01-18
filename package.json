@@ -44,8 +44,12 @@
   "scripts": {
     "build": "echo 'No build needed - Bun runs TypeScript directly'",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint --config oxlint.json src/",
+    "lint:fix": "oxlint --config oxlint.json --fix src/",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "check": "bun run typecheck && bun run lint && bun run test",
+    "prepare": "husky"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.76",
@@ -64,6 +68,8 @@
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
     "@types/react-reconciler": "^0.28.9",
+    "husky": "^9.1.7",
+    "oxlint": "^1.39.0",
     "typescript": "^5.7.2"
   },
   "keywords": [

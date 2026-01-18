@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,8 +22,8 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Build
-        run: bun run build
+      - name: Lint
+        run: bun run lint
 
       - name: Test
-        run: bun -c ./bunfig.toml test
+        run: bun test
