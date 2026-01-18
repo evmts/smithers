@@ -355,6 +355,16 @@ Spawn a new Smithers instance to plan and execute complex subtasks:
 </Smithers>
 ```
 
+### Worktree
+
+Run agents in isolated git worktrees:
+
+```tsx
+<Worktree branch="feature-auth" cleanup>
+  <Claude>Implement user authentication</Claude>
+</Worktree>
+```
+
 ### Git/JJ VCS Integration
 
 First-class version control support:
