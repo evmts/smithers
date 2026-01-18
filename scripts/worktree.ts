@@ -22,6 +22,7 @@ interface WorktreeConfig {
   agent: string
   thinking: string
   yolo: boolean
+  iterations: number
   cwd: string
 }
 
@@ -35,6 +36,7 @@ function parseConfig(): WorktreeConfig {
     agent: process.env['WORKTREE_AGENT'] ?? 'codex',
     thinking: process.env['WORKTREE_THINKING'] ?? 'xhigh',
     yolo: process.env['WORKTREE_YOLO'] === 'true' || true, // Default to true
+    iterations: parseInt(process.env['WORKTREE_ITERATIONS'] ?? '3', 10),
     cwd: process.cwd(),
   }
 
@@ -59,6 +61,9 @@ function parseConfig(): WorktreeConfig {
       case '--no-yolo':
         config.yolo = false
         break
+      case '--iterations':
+        config.iterations = parseInt(args[++i] ?? '3', 10)
+        break
       case '--help':
       case '-h':
         printHelp()
@@ -82,13 +87,15 @@ Options:
   --all              Launch master agent to monitor all worktrees
   --agent <name>     Agent to use (default: codex)
   --thinking <level> Thinking level: low, medium, high, xhigh (default: xhigh)
+  --iterations <n>   Number of times to run each agent (default: 3)
   --no-yolo          Disable --yolo mode (default: enabled)
   -h, --help         Show this help
 
 Environment Variables:
-  WORKTREE_AGENT     Default agent (default: codex)
-  WORKTREE_THINKING  Default thinking level (default: xhigh)
-  WORKTREE_YOLO      Enable yolo mode (default: true)
+  WORKTREE_AGENT      Default agent (default: codex)
+  WORKTREE_THINKING   Default thinking level (default: xhigh)
+  WORKTREE_ITERATIONS Number of iterations (default: 3)
+  WORKTREE_YOLO       Enable yolo mode (default: true)
 
 Examples:
   bun scripts/worktree.ts --name chat-transport
@@ -214,7 +221,7 @@ async function deployToWorktree(
   const promptFile = `${worktreePath}/PROMPT.md`
 
   // Check if worktree exists
-  const exists = await Bun.file(worktreePath).exists()
+  const exists = await Bun.file(promptFile).exists()
   if (!exists) {
     throw new Error(`Worktree not found: ${worktreeName}`)
   }
@@ -222,22 +229,31 @@ async function deployToWorktree(
   // Read PROMPT.md
   const promptContent = await Bun.file(promptFile).text()
 
-  // Build Claude CLI command
-  const args = ['claude', '--print']
+  // Build CLI command - detect codex vs claude
+  const isCodex = config.agent === 'codex' || config.agent.startsWith('o')
+  const args: string[] = []
 
-  // Add agent/model
-  if (config.agent) {
-    args.push('--model', config.agent)
-  }
-
-  // Add thinking level
-  if (config.thinking) {
-    args.push('--thinking', config.thinking)
-  }
-
-  // Add yolo mode
-  if (config.yolo) {
-    args.push('--yolo')
+  if (isCodex) {
+    args.push('codex', 'exec')
+    if (config.agent !== 'codex') {
+      args.push('--model', config.agent)
+    }
+    if (config.yolo) {
+      args.push('--dangerously-bypass-approvals-and-sandbox')
+    } else {
+      args.push('--full-auto')
+    }
+  } else {
+    args.push('claude', '--print')
+    if (config.agent) {
+      args.push('--model', config.agent)
+    }
+    if (config.thinking) {
+      args.push('--thinking', config.thinking)
+    }
+    if (config.yolo) {
+      args.push('--dangerously-skip-permissions')
+    }
   }
 
   // Add the prompt
@@ -305,8 +321,143 @@ Current working directory: ${worktreePath}
   }
 }
 
+interface WorktreeResult {
+  name: string
+  success: boolean
+  output: string
+  hasPR: boolean
+}
+
 /**
- * Deploy master agent to monitor all worktrees
+ * Build prompt for a single worktree agent
+ */
+function buildWorktreePrompt(
+  worktreeName: string,
+  iteration: number,
+  totalIterations: number
+): string {
+  return `You are working in worktree: ${worktreeName}
+Iteration: ${iteration}/${totalIterations}
+
+**FIRST: Review existing work**
+- Check git log for existing commits: git log --oneline -10
+- Read any implementation already done
+- Check if tests pass: bun test
+- Check if build passes: bun run check
+- Check if PR exists: gh pr list --head issue/${worktreeName}
+
+**IF work is incomplete:**
+- Read PROMPT.md for requirements
+- Continue implementation from where it left off
+- Commit incrementally with good messages
+- Follow CLAUDE.md conventions
+
+**IF work appears complete (tests pass, PR exists):**
+- Polish: improve code quality, naming, comments
+- Add test coverage: find edge cases, add integration tests
+- Update docs: ensure README and inline docs are accurate
+- Look for any remaining TODOs or FIXMEs
+
+**Always:**
+- Follow CLAUDE.md conventions (Bun, vendored hooks, no useState)
+- Commit changes with descriptive messages
+- Push and create PR if not exists:
+  git push -u origin issue/${worktreeName}
+  gh pr create --title "Issue: ${worktreeName}" --body "See issues/${worktreeName}.md"
+
+Report what you accomplished at the end.`
+}
+
+/**
+ * Run a single agent for a worktree
+ */
+async function runWorktreeAgent(
+  config: WorktreeConfig,
+  worktreeName: string,
+  iteration: number
+): Promise<WorktreeResult> {
+  const worktreePath = `${config.cwd}/.worktrees/${worktreeName}`
+  const prompt = buildWorktreePrompt(worktreeName, iteration, config.iterations)
+
+  // Build CLI command
+  const isCodex = config.agent === 'codex' || config.agent.startsWith('o')
+  const args: string[] = []
+
+  if (isCodex) {
+    args.push('codex', 'exec')
+    if (config.agent !== 'codex') {
+      args.push('--model', config.agent)
+    }
+    if (config.yolo) {
+      args.push('--dangerously-bypass-approvals-and-sandbox')
+    } else {
+      args.push('--full-auto')
+    }
+    args.push('-C', worktreePath)
+  } else {
+    args.push('claude', '--print')
+    if (config.agent) {
+      args.push('--model', config.agent)
+    }
+    if (config.thinking) {
+      args.push('--thinking', config.thinking)
+    }
+    if (config.yolo) {
+      args.push('--dangerously-skip-permissions')
+    }
+  }
+
+  args.push(prompt)
+
+  console.log(`    [${worktreeName}] Starting...`)
+
+  const proc = Bun.spawn(args, {
+    cwd: isCodex ? config.cwd : worktreePath,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { ...process.env },
+  })
+
+  let output = ''
+  const decoder = new TextDecoder()
+  const stdoutReader = proc.stdout.getReader()
+
+  try {
+    while (true) {
+      const { done, value } = await stdoutReader.read()
+      if (done) break
+      output += decoder.decode(value, { stream: true })
+    }
+  } catch {
+    // Reader closed
+  }
+
+  const stderrText = await new Response(proc.stderr).text()
+  if (stderrText) output += '\n' + stderrText
+
+  const exitCode = await proc.exited
+
+  // Check if PR exists
+  let hasPR = false
+  try {
+    const prCheck = await Bun.$`gh pr list --head issue/${worktreeName} --json number`.cwd(config.cwd).quiet()
+    hasPR = prCheck.stdout.toString().includes('"number"')
+  } catch {
+    // gh command failed, assume no PR
+  }
+
+  console.log(`    [${worktreeName}] Done (exit: ${exitCode}, PR: ${hasPR ? 'yes' : 'no'})`)
+
+  return {
+    name: worktreeName,
+    success: exitCode === 0,
+    output,
+    hasPR,
+  }
+}
+
+/**
+ * Deploy agents to all worktrees in parallel with multiple iterations (ralphing)
  */
 async function deployMasterAgent(config: WorktreeConfig): Promise<void> {
   const worktrees = await listWorktrees(config.cwd)
@@ -316,133 +467,109 @@ async function deployMasterAgent(config: WorktreeConfig): Promise<void> {
     return
   }
 
-  console.log(`Found ${worktrees.length} worktrees:\n`)
+  console.log(`\n${'='.repeat(70)}`)
+  console.log(`Worktree Orchestrator - Ralphing Mode`)
+  console.log(`${'='.repeat(70)}`)
+  console.log(`\nWorktrees: ${worktrees.length}`)
+  console.log(`Iterations: ${config.iterations}`)
+  console.log(`Agent: ${config.agent} | Yolo: ${config.yolo}`)
+  console.log(`\nWorktrees:`)
   for (const wt of worktrees) {
     console.log(`  - ${wt}`)
   }
-  console.log()
 
-  // Build master agent prompt
-  const prompt = `You are the master orchestrator for ${worktrees.length} parallel worktrees.
+  const completedPRs = new Set<string>()
 
-**Worktrees to manage:**
-${worktrees.map((wt) => `- .worktrees/${wt}`).join('\n')}
+  // Run iterations
+  for (let iteration = 1; iteration <= config.iterations; iteration++) {
+    console.log(`\n${'═'.repeat(70)}`)
+    console.log(`ITERATION ${iteration}/${config.iterations}`)
+    console.log(`${'═'.repeat(70)}`)
 
-**Your Task:**
+    // Filter out worktrees that already have PRs
+    const pendingWorktrees = worktrees.filter((wt) => !completedPRs.has(wt))
 
-1. **Launch agents in parallel** - For each worktree, spawn a separate Claude agent:
-   - Use the Task tool with subagent_type=general-purpose
-   - Each agent should:
-     * cd to the worktree directory
-     * Read PROMPT.md for context
-     * Implement the solution
-     * Commit changes following CLAUDE.md protocol
-     * Run tests and checks
-     * Push and create PR when complete
-   - Launch ALL agents in a single message with multiple Task tool calls
-
-2. **Monitor progress** - Every 5 minutes:
-   - Check git status in each worktree
-   - Check if PRs have been created (gh pr list)
-   - Report progress summary:
-     * Completed (PR created): [list]
-     * In progress (commits made): [list]
-     * Not started: [list]
-     * Failed/blocked: [list with errors]
-
-3. **Loop until complete** - Continue monitoring until:
-   - All worktrees have PRs created OR
-   - All agents are blocked/failed
-   - User interrupts (Ctrl+C)
-
-**Agent Configuration:**
-- Default: ${config.agent} with ${config.thinking} thinking in ${config.yolo ? '--yolo' : 'normal'} mode
-- Each spawned agent should use these settings
-
-**Reporting Format:**
-\`\`\`
-═══════════════════════════════════════════════════════════
-Worktree Status Report - $(date)
-═══════════════════════════════════════════════════════════
-
-✓ Completed (X/Y):
-  - worktree-1 → PR #123
-  - worktree-2 → PR #124
-
-⚙ In Progress (X/Y):
-  - worktree-3: 5 commits, tests passing
-  - worktree-4: 2 commits, working on implementation
-
-⏸ Not Started (X/Y):
-  - worktree-5
-  - worktree-6
-
-✗ Blocked/Failed (X/Y):
-  - worktree-7: Test failures in module X
-  - worktree-8: Type errors in component Y
-
-Next check in 5 minutes...
-\`\`\`
-
-**Important:**
-- Run agents in PARALLEL (single message, multiple Task calls)
-- Be patient - agents may take 10-30 minutes per worktree
-- Provide clear, actionable error messages
-- Follow CLAUDE.md conventions strictly
-`
-
-  // Build Claude CLI command for master agent
-  const args = ['claude', '--print']
-
-  if (config.agent) {
-    args.push('--model', config.agent)
-  }
-
-  if (config.thinking) {
-    args.push('--thinking', config.thinking)
-  }
-
-  if (config.yolo) {
-    args.push('--yolo')
-  }
-
-  args.push(prompt)
-
-  console.log(`\n${'='.repeat(70)}`)
-  console.log(`Launching Master Orchestrator Agent`)
-  console.log(`Managing ${worktrees.length} worktrees in parallel`)
-  console.log(`Agent: ${config.agent} | Thinking: ${config.thinking} | Yolo: ${config.yolo}`)
-  console.log(`${'='.repeat(70)}\n`)
-
-  // Execute Claude CLI
-  const proc = Bun.spawn(args, {
-    cwd: config.cwd,
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env },
-  })
-
-  // Stream output
-  const stdoutReader = proc.stdout.getReader()
-  const decoder = new TextDecoder()
-
-  try {
-    while (true) {
-      const { done, value } = await stdoutReader.read()
-      if (done) break
-      const chunk = decoder.decode(value, { stream: true })
-      process.stdout.write(chunk)
+    if (pendingWorktrees.length === 0) {
+      console.log('\nAll worktrees have PRs created! Done.')
+      break
     }
-  } catch (e) {
-    // Reader closed
+
+    console.log(`\nLaunching ${pendingWorktrees.length} agents in parallel...`)
+    const startTime = Date.now()
+
+    // Launch all agents in parallel
+    const promises = pendingWorktrees.map((wt) => runWorktreeAgent(config, wt, iteration))
+
+    // Wait for all to complete
+    const results = await Promise.all(promises)
+    const elapsed = Math.round((Date.now() - startTime) / 1000)
+
+    // Report results
+    console.log(`\n${'─'.repeat(70)}`)
+    console.log(`Iteration ${iteration} Complete (${elapsed}s)`)
+    console.log(`${'─'.repeat(70)}`)
+
+    const newPRs: string[] = []
+    const inProgress: string[] = []
+    const failed: string[] = []
+
+    for (const result of results) {
+      if (result.hasPR) {
+        completedPRs.add(result.name)
+        newPRs.push(result.name)
+      } else if (result.success) {
+        inProgress.push(result.name)
+      } else {
+        failed.push(result.name)
+      }
+    }
+
+    console.log(`\n✓ PRs Created (${completedPRs.size}/${worktrees.length}):`)
+    if (newPRs.length > 0) {
+      for (const name of newPRs) console.log(`  - ${name}`)
+    } else {
+      console.log('  (none this iteration)')
+    }
+
+    if (inProgress.length > 0) {
+      console.log(`\n⚙ In Progress (${inProgress.length}):`)
+      for (const name of inProgress) console.log(`  - ${name}`)
+    }
+
+    if (failed.length > 0) {
+      console.log(`\n✗ Failed (${failed.length}):`)
+      for (const name of failed) console.log(`  - ${name}`)
+    }
+
+    // Check if all done
+    if (completedPRs.size === worktrees.length) {
+      console.log('\nAll worktrees have PRs! Success!')
+      break
+    }
+
+    // Sleep between iterations (except last)
+    if (iteration < config.iterations) {
+      console.log('\nSleeping 5 minutes before next iteration...')
+      await Bun.sleep(5 * 60 * 1000)
+    }
   }
 
-  const stderrText = await new Response(proc.stderr).text()
-  if (stderrText) {
-    console.error(stderrText)
+  // Final summary
+  console.log(`\n${'═'.repeat(70)}`)
+  console.log(`FINAL SUMMARY`)
+  console.log(`${'═'.repeat(70)}`)
+  console.log(`\nTotal PRs: ${completedPRs.size}/${worktrees.length}`)
+
+  if (completedPRs.size > 0) {
+    console.log('\nCompleted:')
+    for (const name of completedPRs) console.log(`  ✓ ${name}`)
   }
 
-  await proc.exited
+  const remaining = worktrees.filter((wt) => !completedPRs.has(wt))
+  if (remaining.length > 0) {
+    console.log('\nRemaining:')
+    for (const name of remaining) console.log(`  - ${name}`)
+  }
 }
 
 // ============================================================================
