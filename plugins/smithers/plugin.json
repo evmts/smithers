@@ -7,7 +7,7 @@
     "email": "will@tevm.tech",
     "url": "https://github.com/roninjin10"
   },
-  "homepage": "https://github.com/evmts/smithers",
+  "homepage": "https://github.com/evmts/smithers#readme",
   "repository": "https://github.com/evmts/smithers",
   "license": "MIT",
   "keywords": [
@@ -18,7 +18,9 @@
     "ai-agents",
     "claude",
     "jsx",
-    "reactive"
+    "reactive",
+    "solid-js",
+    "agentic"
   ],
   "skills": "./skills/"
 }
