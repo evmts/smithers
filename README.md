@@ -34,6 +34,7 @@ I use Smithers for both long-term (weeks) agentic work, as well as one-off scrip
   - [PhaseRegistry & Step](#phaseregistry--step)
   - [Parallel Execution](#parallel-execution)
   - [Database State Management](#database-state-management)
+  - [Rate Limit Monitoring](#rate-limit-monitoring)
 - [Contributing](#contributing)
 
 ---
@@ -475,6 +476,22 @@ const history = await db.state.getHistory("phase");
 
 // View all state
 const all = await db.state.getAll();
+```
+
+### Rate Limit Monitoring
+
+Track provider rate limit headroom and execution-scoped token usage:
+
+```typescript
+import { createRateLimitMonitor } from "smithers-orchestrator/rate-limits";
+
+const monitor = createRateLimitMonitor({
+  anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
+  db,
+});
+
+const status = await monitor.getStatus("anthropic", "claude-sonnet-4");
+const usage = await monitor.getUsage(executionId);
 ```
 
 ---
