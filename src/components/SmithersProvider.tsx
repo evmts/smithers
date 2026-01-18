@@ -2,13 +2,14 @@
 // Consolidates SmithersProvider, RalphContext, and DatabaseProvider into one
 // Gives all child components access to database, executionId, Ralph loop, and global controls
 
-import { createContext, useContext, useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, useEffect, useRef, type ReactNode } from 'react'
 import type { SmithersDB } from '../db/index.js'
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { DatabaseProvider } from '../reactive-sqlite/hooks/context.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { PhaseRegistryProvider } from './PhaseRegistry.js'
-import { getCurrentTreeXML } from '../reconciler/root.js'
+import { useMount } from '../reconciler/hooks.js'
+import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
 
 // ============================================================================
 // GLOBAL STORE (for universal renderer compatibility)
@@ -250,12 +251,19 @@ export interface SmithersProviderProps {
  * ```
  */
 export function SmithersProvider(props: SmithersProviderProps): ReactNode {
-  // Global stop/rebase signals
-  const [stopRequested, setStopRequested] = useState(false)
-  const [rebaseRequested, setRebaseRequested] = useState(false)
-
   const maxIterations = props.maxIterations ?? props.config?.maxIterations ?? 100
   const reactiveDb = props.db.db
+
+  // Read stop/rebase signals from database reactively
+  const { data: stopRequested } = useQueryValue<boolean>(
+    reactiveDb,
+    "SELECT CASE WHEN value IS NOT NULL THEN 1 ELSE 0 END as requested FROM state WHERE key = 'stop_requested'"
+  )
+
+  const { data: rebaseRequested } = useQueryValue<boolean>(
+    reactiveDb,
+    "SELECT CASE WHEN value IS NOT NULL THEN 1 ELSE 0 END as requested FROM state WHERE key = 'rebase_requested'"
+  )
 
   // Read ralphCount from database reactively
   const { data: dbRalphCount } = useQueryValue<number>(
@@ -263,11 +271,8 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     "SELECT CAST(value AS INTEGER) as count FROM state WHERE key = 'ralphCount'"
   )
 
-  // Local state fallback when DB query returns null
-  const [localRalphCount, setLocalRalphCount] = useState(0)
-
-  // Use DB value if available, otherwise local state
-  const ralphCount = dbRalphCount ?? localRalphCount
+  // Use DB value if available, otherwise default to 0
+  const ralphCount = dbRalphCount ?? 0
 
   // Read running task count from database reactively
   const { data: runningTaskCount } = useQueryValue<number>(
@@ -291,13 +296,13 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   const hasCompletedRef = useRef(false)
 
   // Initialize ralphCount in DB if needed
-  useEffect(() => {
+  useMount(() => {
     if (dbRalphCount === null) {
       reactiveDb.run(
         "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
       )
     }
-  }, [reactiveDb, dbRalphCount])
+  })
 
   // Increment ralphCount in DB
   const incrementRalphCount = useMemo(() => () => {
@@ -306,7 +311,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       "UPDATE state SET value = ?, updated_at = datetime('now') WHERE key = 'ralphCount'",
       [String(nextCount)]
     )
-    setLocalRalphCount(nextCount)
     return nextCount
   }, [reactiveDb, ralphCount])
 
@@ -320,23 +324,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   }, [])
 
   // Capture render frame on each Ralph iteration
-  useEffect(() => {
-    const captureFrame = () => {
-      try {
-        const treeXml = getCurrentTreeXML()
-        if (treeXml) {
-          props.db.renderFrames.store(treeXml, ralphCount)
-        }
-      } catch (e) {
-        // Ignore frame capture errors
-        console.warn('[SmithersProvider] Frame capture failed:', e)
-      }
-    }
-
-    // Capture frame after a short delay to ensure tree is fully rendered
-    const timeoutId = setTimeout(captureFrame, 50)
-    return () => clearTimeout(timeoutId)
-  }, [ralphCount, props.db])
+  useCaptureRenderFrame(props.db, ralphCount)
 
   // Ralph iteration monitoring effect - now uses DB-backed state
   useEffect(() => {
@@ -410,33 +398,25 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     config: props.config ?? {},
 
     requestStop: (reason: string) => {
-      setStopRequested(true)
-
-      // Log to database state
       props.db.state.set('stop_requested', {
         reason,
         timestamp: Date.now(),
         executionId: props.executionId,
       })
-
       console.log(`[Smithers] Stop requested: ${reason}`)
     },
 
     requestRebase: (reason: string) => {
-      setRebaseRequested(true)
-
-      // Log to database state
       props.db.state.set('rebase_requested', {
         reason,
         timestamp: Date.now(),
         executionId: props.executionId,
       })
-
       console.log(`[Smithers] Rebase requested: ${reason}`)
     },
 
-    isStopRequested: () => stopRequested,
-    isRebaseRequested: () => rebaseRequested,
+    isStopRequested: () => !!stopRequested,
+    isRebaseRequested: () => !!rebaseRequested,
 
     // Ralph fields (registerTask/completeTask are deprecated no-ops)
     registerTask,

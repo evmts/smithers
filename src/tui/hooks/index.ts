@@ -5,3 +5,5 @@ export { useRenderFrames, type UseRenderFramesResult } from './useRenderFrames.j
 export { useClaudeChat, type UseClaudeChatResult } from './useClaudeChat.js'
 export { useHumanRequests, type UseHumanRequestsResult } from './useHumanRequests.js'
 export { useReportGenerator, type UseReportGeneratorResult } from './useReportGenerator.js'
+export { usePollEvents, type TimelineEvent } from './usePollEvents.js'
+export { usePollTableData, type TableData } from './usePollTableData.js'

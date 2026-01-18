@@ -1,7 +1,7 @@
 // Phase component with automatic SQLite-backed state management
 // Phases are always rendered in output, but only active phase renders children
 
-import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useRef, useEffect, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
@@ -63,13 +63,10 @@ export function Phase(props: PhaseProps): ReactNode {
   const registry = usePhaseRegistry()
   const myIndex = usePhaseIndex(props.name)
 
-  const [, setPhaseId] = useState<string | null>(null)
   const phaseIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
   const hasCompletedRef = useRef(false)
-
-  // Track previous active state to detect completion
-  const wasActiveRef = useRef(false)
+  const prevIsActiveRef = useRef(false)
 
   // Determine phase status
   const isSkipped = props.skipIf?.() ?? false
@@ -101,43 +98,34 @@ export function Phase(props: PhaseProps): ReactNode {
     }
   })
 
-  // Handle phase activation - triggers when isActive changes to true
-  // Using useEffect instead of useMount so it triggers when a pre-mounted
-  // pending phase becomes active (not just on initial mount)
+  // Handle phase lifecycle transitions
   useEffect(() => {
     if (isSkipped) return
 
-    if (isActive && !hasStartedRef.current) {
+    // Activation: transition from inactive to active
+    if (!prevIsActiveRef.current && isActive && !hasStartedRef.current) {
       hasStartedRef.current = true
-      wasActiveRef.current = true
 
-      // Start phase in database
       const id = db.phases.start(props.name, ralphCount)
-      setPhaseId(id)
       phaseIdRef.current = id
 
       console.log(`[Phase] Started: ${props.name} (iteration ${ralphCount})`)
       props.onStart?.()
     }
-  }, [isActive, isSkipped, props.name, ralphCount, db, props.onStart])
 
-  // Handle phase completion - triggers when isActive changes from true to false
-  // Using useEffect instead of useUnmount because Phase components stay mounted
-  // (they always render in output), so we detect completion via state change
-  useEffect(() => {
-    // Detect transition from active to completed (wasActive && !isActive && isCompleted)
-    if (wasActiveRef.current && !isActive && isCompleted) {
+    // Completion: transition from active to inactive
+    if (prevIsActiveRef.current && !isActive) {
       const id = phaseIdRef.current
       if (id && !hasCompletedRef.current && hasStartedRef.current) {
         hasCompletedRef.current = true
-
         db.phases.complete(id)
         console.log(`[Phase] Completed: ${props.name}`)
-
         props.onComplete?.()
       }
     }
-  }, [isActive, isCompleted, db, props.name, props.onComplete])
+
+    prevIsActiveRef.current = isActive
+  }, [isActive, isSkipped, props.name, ralphCount, db, props.onStart, props.onComplete])
 
   // Always render the phase element (visible in plan output)
   // Only render children when active (executes work)
