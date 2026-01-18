@@ -311,6 +311,7 @@ writeStreamSummary(filename: string, parts: SmithersStreamPart[]): void {
     errors: parts.filter(p => p.type === 'error').length,
   }
 
+  const filepath = path.join(this.logDir, filename)
   const summaryPath = filepath.replace('.log', '.summary.json')
   fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2))
 }
