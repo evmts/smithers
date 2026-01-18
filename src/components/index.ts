@@ -13,6 +13,21 @@ export { Ralph, type RalphProps, RalphContext } from './Ralph.js'
 export { Phase, type PhaseProps } from './Phase.js'
 export { Step, type StepProps } from './Step.js'
 
+// Parallel execution wrapper
+export { Parallel, type ParallelProps } from './Parallel.js'
+
+// Phase registry for automatic phase state management
+export {
+  PhaseRegistryProvider,
+  usePhaseRegistry,
+  usePhaseIndex,
+  type PhaseRegistryContextValue,
+  type PhaseRegistryProviderProps
+} from './PhaseRegistry.js'
+
+// Step registry for sequential step execution within phases
+export { StepRegistryProvider, type StepRegistryProviderProps } from './Step.js'
+
 // Basic workflow components
 export { Stop, type StopProps } from './Stop.js'
 export { Subagent, type SubagentProps } from './Subagent.js'
