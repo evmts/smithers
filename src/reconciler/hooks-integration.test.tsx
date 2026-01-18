@@ -37,6 +37,17 @@ describe('SmithersRoot rendering', () => {
     root.dispose()
   })
 
+  test('exposes React key via SmithersNode.key', async () => {
+    const root = createSmithersRoot()
+    await root.render(<phase key="alpha" name="test" />)
+
+    const tree = root.getTree()
+    const phase = tree.children[0]!
+    expect(phase.key).toBe('alpha')
+
+    root.dispose()
+  })
+
   test('renders text children', async () => {
     const root = createSmithersRoot()
     await root.render(<step>Hello</step>)
