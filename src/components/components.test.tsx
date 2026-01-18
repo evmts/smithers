@@ -5,6 +5,34 @@
 import { describe, test, expect } from 'bun:test'
 import { serialize } from '../reconciler/serialize.js'
 import { jsx } from '../reconciler/jsx-runtime.js'
+import type { SmithersNode } from '../reconciler/types.js'
+
+function createNode(
+  type: string,
+  props: Record<string, unknown> = {},
+  children: (SmithersNode | string)[] = []
+): SmithersNode {
+  const node: SmithersNode = {
+    type,
+    props,
+    children: children.map(child => {
+      if (typeof child === 'string') {
+        return {
+          type: 'TEXT',
+          props: { value: child },
+          children: [],
+          parent: null,
+        }
+      }
+      return child
+    }),
+    parent: null,
+  }
+  node.children.forEach(child => {
+    child.parent = node
+  })
+  return node
+}
 
 describe('Phase element', () => {
   test('creates phase element with name prop', () => {
@@ -23,7 +51,7 @@ describe('Phase element', () => {
   test('renders children', () => {
     const child = jsx('step', { children: 'Step content' })
     const node = jsx('phase', { name: 'test', children: child })
-    expect(node.children).toHaveLength(1)
+    expect(node.props.children).toBe(child)
   })
 })
 
@@ -35,8 +63,7 @@ describe('Step element', () => {
 
   test('renders text children', () => {
     const node = jsx('step', { children: 'Read the docs' })
-    expect(node.children).toHaveLength(1)
-    expect(node.children[0].type).toBe('TEXT')
+    expect(node.props.children).toBe('Read the docs')
   })
 })
 
@@ -62,7 +89,7 @@ describe('Persona element', () => {
 
   test('renders description children', () => {
     const node = jsx('persona', { role: 'expert', children: 'You specialize in security.' })
-    expect(node.children).toHaveLength(1)
+    expect(node.props.children).toBe('You specialize in security.')
   })
 })
 
@@ -109,7 +136,7 @@ describe('Subagent element', () => {
   test('renders child components', () => {
     const child = jsx('phase', { name: 'inner' })
     const node = jsx('subagent', { name: 'outer', children: child })
-    expect(node.children).toHaveLength(1)
+    expect(node.props.children).toBe(child)
   })
 })
 
@@ -131,13 +158,13 @@ describe('Component composition', () => {
     const phaseNode = jsx('phase', { name: 'test', children: stepNode })
 
     expect(phaseNode.type).toBe('phase')
-    expect(phaseNode.children).toHaveLength(1)
-    expect(phaseNode.children[0].type).toBe('step')
+    expect(phaseNode.props.children).toBe(stepNode)
+    expect(phaseNode.props.children.type).toBe('step')
   })
 
   test('serializes nested structure correctly', () => {
-    const stepNode = jsx('step', { children: 'Do work' })
-    const phaseNode = jsx('phase', { name: 'main', children: stepNode })
+    const stepNode = createNode('step', {}, ['Do work'])
+    const phaseNode = createNode('phase', { name: 'main' }, [stepNode])
 
     const xml = serialize(phaseNode)
 

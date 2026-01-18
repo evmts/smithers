@@ -70,8 +70,19 @@ export const rendererMethods = {
     const idx = parent.children.indexOf(node)
     if (idx !== -1) parent.children.splice(idx, 1)
 
-    // Only clear parent if it matches (node may have moved)
+    // Always clear parent pointer if it matches, even if not found in array
+    // (defensive against race conditions or manual clearing)
     if (node.parent === parent) node.parent = null
+
+    // Recursively clear parent pointers of all descendants
+    // This ensures no stale pointers remain when unmounting subtrees
+    function clearDescendants(n: SmithersNode) {
+      for (const child of n.children) {
+        child.parent = null
+        clearDescendants(child)
+      }
+    }
+    clearDescendants(node)
   },
 
   isTextNode(node: SmithersNode): boolean {

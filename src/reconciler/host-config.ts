@@ -178,7 +178,11 @@ const hostConfig = {
   },
 
   clearContainer(container: Container): void {
-    container.children = []
+    // Detach all children first to avoid stale parent pointers
+    for (const child of container.children) {
+      child.parent = null
+    }
+    container.children.length = 0 // Preserve array reference
   },
 
   // Event handling (not used for Smithers)

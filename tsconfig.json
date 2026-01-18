@@ -53,6 +53,7 @@
     "test",
     "examples",
     "**/*.test.ts",
-    "**/*.test.tsx"
+    "**/*.test.tsx",
+    "src/tui"
   ]
 }

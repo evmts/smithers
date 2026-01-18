@@ -62,10 +62,10 @@ export function createSmithersRoot(): SmithersRoot {
 
   return {
     async mount(App: () => ReactNode | Promise<ReactNode>): Promise<void> {
-      // Clean up previous render
+      // Clean up previous render (synchronous in LegacyRoot mode)
       if (fiberRoot) {
         SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
-        rootNode.children = []
+        // React calls clearContainer/removeNode to clean up children
       }
 
       // Create a promise that Ralph will resolve when orchestration completes
@@ -109,10 +109,10 @@ export function createSmithersRoot(): SmithersRoot {
 
     render(element: ReactNode): Promise<void> {
       return new Promise((resolve) => {
-        // Clean up previous render
+        // Clean up previous render (synchronous in LegacyRoot mode)
         if (fiberRoot) {
           SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
-          rootNode.children = []
+          // React calls clearContainer/removeNode to clean up children
         }
 
         // Create the fiber root container
@@ -145,7 +145,15 @@ export function createSmithersRoot(): SmithersRoot {
         SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
         fiberRoot = null
       }
-      rootNode.children = []
+      // Defensive cleanup: recursively clear all parent pointers and empty children array
+      function clearTree(node: SmithersNode) {
+        for (const child of node.children) {
+          child.parent = null
+          clearTree(child)
+        }
+        node.children.length = 0
+      }
+      clearTree(rootNode)
     },
 
     toXML(): string {

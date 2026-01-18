@@ -175,6 +175,59 @@ describe('SmithersRoot rendering', () => {
     root.dispose()
   })
 
+  test('clears parent pointers on unmount', async () => {
+    const root = createSmithersRoot()
+    await root.render(
+      <phase name="test">
+        <step>Child</step>
+      </phase>
+    )
+
+    const tree = root.getTree()
+    const phase = tree.children[0]!
+    const step = phase.children[0]!
+
+    // Verify parent pointers are set
+    expect(phase.parent).toBe(tree)
+    expect(step.parent).toBe(phase)
+    expect(tree.children).toHaveLength(1)
+
+    // Unmount everything
+    await root.render(null)
+
+    // Verify parent pointers are cleared
+    expect(phase.parent).toBe(null)
+    expect(step.parent).toBe(null)
+    expect(tree.children).toHaveLength(0)
+
+    root.dispose()
+  })
+
+  test('dispose clears parent pointers', async () => {
+    const root = createSmithersRoot()
+    await root.render(
+      <phase name="test">
+        <step>Child</step>
+      </phase>
+    )
+
+    const tree = root.getTree()
+    const phase = tree.children[0]!
+    const step = phase.children[0]!
+
+    // Verify parent pointers are set
+    expect(phase.parent).toBe(tree)
+    expect(step.parent).toBe(phase)
+
+    // Dispose root
+    root.dispose()
+
+    // Verify parent pointers are cleared
+    expect(phase.parent).toBe(null)
+    expect(step.parent).toBe(null)
+    expect(tree.children).toHaveLength(0)
+  })
+
   test('toXML serializes tree', async () => {
     const root = createSmithersRoot()
     await root.render(
