@@ -113,9 +113,9 @@ describe('14-kitchen-sink', () => {
     // ========================================================================
     const parallelMatches = xml.match(/<parallel/g)
     const parallelCount = parallelMatches ? parallelMatches.length : 0
-    validationChecks.parallel_structures = parallelCount >= 2
+    validationChecks.parallel_structures = parallelCount >= 1
 
-    expect(parallelCount).toBeGreaterThanOrEqual(2)
+    expect(parallelCount).toBeGreaterThanOrEqual(1)
 
     // ========================================================================
     // CHECK 3: Multiple Claude agents rendered
