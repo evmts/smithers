@@ -7,17 +7,16 @@
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.1.76",
         "@anthropic-ai/sdk": "^0.71.2",
+        "@babel/core": "^7.28.6",
+        "@babel/preset-typescript": "^7.28.5",
         "@electric-sql/pglite": "^0.3.15",
+        "babel-preset-solid": "^1.9.10",
         "commander": "^12.0.0",
         "solid-js": "^1.9.10",
         "zod": "^4.3.5",
       },
       "devDependencies": {
-        "@babel/core": "^7.28.6",
-        "@babel/preset-typescript": "^7.28.5",
-        "@dschz/bun-plugin-solid": "^1.0.4",
         "@types/bun": "latest",
-        "babel-preset-solid": "^1.9.10",
         "typescript": "^5.7.2",
       },
       "peerDependencies": {
@@ -87,8 +86,6 @@
     "@babel/traverse": ["@babel/traverse@7.28.6", "", { "dependencies": { "@babel/code-frame": "^7.28.6", "@babel/generator": "^7.28.6", "@babel/helper-globals": "^7.28.0", "@babel/parser": "^7.28.6", "@babel/template": "^7.28.6", "@babel/types": "^7.28.6", "debug": "^4.3.1" } }, "sha512-fgWX62k02qtjqdSNTAGxmKYY/7FSL9WAS1o2Hu5+I5m9T0yxZzr4cnrfXQ/MX0rIifthCSs6FKTlzYbJcPtMNg=="],
 
     "@babel/types": ["@babel/types@7.28.6", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-0ZrskXVEHSWIqZM/sQZ4EV3jZJXRkio/WCxaqKZP1g//CEWEPSfeZFcms4XeKBCHU0ZKnIkdJeU/kF+eRp5lBg=="],
-
-    "@dschz/bun-plugin-solid": ["@dschz/bun-plugin-solid@1.0.4", "", { "peerDependencies": { "@babel/core": ">=7.24.0", "@babel/preset-typescript": ">=7.24.0", "babel-preset-solid": ">=1.8.9" } }, "sha512-rih0ULu+ssc5UoRhhNzAX9GRcKtmEJO3xwxpWeCkH4TPLAo60tp+W0yoRaKbmo8TKHQnktl8vEQiqKtXJV9QuQ=="],
 
     "@electric-sql/pglite": ["@electric-sql/pglite@0.3.15", "", {}, "sha512-Cj++n1Mekf9ETfdc16TlDi+cDDQF0W7EcbyRHYOAeZdsAe8M/FJg18itDTSwyHfar2WIezawM9o0EKaRGVKygQ=="],
 
