@@ -92,6 +92,9 @@ The source code has been migrated to React, but remnants of Solid.js remain in c
 - [ ] **`src/orchestrator/components/agents/SmithersCLI.test.ts`** (line 44) - Skipped "script execution with bun works" test
 - [ ] **`src/components/agents/SmithersCLI.test.ts`** (line 44) - Skipped "script execution with bun works" test
 
+### Failing Tests (`src/reactive-sqlite/hooks/context.test.tsx`)
+- [ ] **7 failing tests** - React hooks tests failing with "document is not defined" and "Invalid hook call" errors. Tests need DOM environment (`happy-dom` or `jsdom`) and proper React test renderer setup.
+
 ---
 
 ## Low - Feature Gaps
