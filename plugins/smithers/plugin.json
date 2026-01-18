@@ -2,7 +2,9 @@
   "name": "smithers",
   "version": "0.1.0",
   "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
-  "author": "William Cory",
+  "author": {
+    "name": "William Cory"
+  },
   "license": "MIT",
   "repository": "https://github.com/evmts/smithers",
   "keywords": [
@@ -15,7 +17,5 @@
     "jsx",
     "reactive"
   ],
-  "skills": [
-    "skills/smithers"
-  ]
+  "skills": "./skills/"
 }
