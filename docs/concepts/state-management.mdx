@@ -76,15 +76,15 @@ function ReactiveComponent() {
 }
 ```
 
-## React Stores
+## Complex State with useState
 
-For complex nested state, use stores:
+For complex nested state, use `useState` with object spreading:
 
 ```tsx
-import { createStore } from "smithers-orchestrator/store";
+import { useState } from "react";
 
-function WorkflowWithStore() {
-  const [state, setState] = createStore({
+function WorkflowWithComplexState() {
+  const [state, setState] = useState({
     phase: "research",
     findings: [] as string[],
     errors: [] as string[],
@@ -98,8 +98,11 @@ function WorkflowWithStore() {
     <Ralph maxIterations={10}>
       {state.phase === "research" && (
         <Claude onFinished={(result) => {
-          setState("findings", [...state.findings, result.output]);
-          setState("phase", "analyze");
+          setState(prev => ({
+            ...prev,
+            findings: [...prev.findings, result.output],
+            phase: "analyze",
+          }));
         }}>
           Research the topic.
         </Claude>
@@ -107,8 +110,14 @@ function WorkflowWithStore() {
 
       {state.phase === "analyze" && (
         <Claude onFinished={() => {
-          setState("metadata", "iterations", i => i + 1);
-          setState("phase", "done");
+          setState(prev => ({
+            ...prev,
+            phase: "done",
+            metadata: {
+              ...prev.metadata,
+              iterations: prev.metadata.iterations + 1,
+            },
+          }));
         }}>
           Analyze findings: {JSON.stringify(state.findings)}
         </Claude>
@@ -118,26 +127,36 @@ function WorkflowWithStore() {
 }
 ```
 
-### Store Updates
+### Updating Nested State
 
 ```tsx
-// Update a property
-setState("phase", "next");
+// Update a top-level property
+setState(prev => ({ ...prev, phase: "next" }));
 
 // Update nested property
-setState("metadata", "iterations", 5);
+setState(prev => ({
+  ...prev,
+  metadata: { ...prev.metadata, iterations: 5 },
+}));
 
-// Update with function
-setState("metadata", "iterations", i => i + 1);
+// Update with function (increment)
+setState(prev => ({
+  ...prev,
+  metadata: { ...prev.metadata, iterations: prev.metadata.iterations + 1 },
+}));
 
 // Update array
-setState("findings", findings => [...findings, "new finding"]);
+setState(prev => ({
+  ...prev,
+  findings: [...prev.findings, "new finding"],
+}));
 
-// Batch updates
-batch(() => {
-  setState("phase", "done");
-  setState("metadata", "completedAt", Date.now());
-});
+// Multiple updates in one setState call
+setState(prev => ({
+  ...prev,
+  phase: "done",
+  metadata: { ...prev.metadata, completedAt: Date.now() },
+}));
 ```
 
 ## Database Persistence
@@ -209,21 +228,23 @@ await db.state.replayTo(transitionId);
 A common pattern is to initialize state from the database:
 
 ```tsx
+import { useState, useCallback } from "react";
+
 async function ResumeableWorkflow() {
   // Load persisted state on startup
   const persisted = await db.state.getAll();
 
-  const [state, setState] = createStore({
+  const [state, setState] = useState({
     phase: persisted.phase ?? "start",
     data: persisted.data ?? null,
     attempts: persisted.attempts ?? 0,
   });
 
   // Helper to update both state and database
-  const persistState = async (updates: Partial<typeof state>) => {
-    setState(updates);
+  const persistState = useCallback(async (updates: Partial<typeof state>) => {
+    setState(prev => ({ ...prev, ...updates }));
     await db.state.setMany(updates);
-  };
+  }, []);
 
   return (
     <SmithersProvider db={db} executionId={executionId}>
@@ -319,16 +340,23 @@ function EffectExample() {
     ```
   </Accordion>
 
-  <Accordion title="Use stores for complex state">
-    Stores handle nested updates better than multiple state variables:
+  <Accordion title="Group related state together">
+    Use a single state object for related values:
     ```tsx
-    // Prefer store for complex state
-    const [state, setState] = createStore({
+    // Prefer grouped state for related values
+    const [state, setState] = useState({
       phase: "start",
       data: { items: [], metadata: {} },
     });
 
-    // Multiple state variables get unwieldy
+    // Updating grouped state
+    setState(prev => ({
+      ...prev,
+      phase: "next",
+      data: { ...prev.data, items: [...prev.data.items, newItem] },
+    }));
+
+    // Multiple separate state variables can be harder to keep in sync
     const [phase, setPhase] = useState("start");
     const [items, setItems] = useState([]);
     const [metadata, setMetadata] = useState({});
