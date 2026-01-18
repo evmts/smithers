@@ -1,0 +1,187 @@
+---
+title: Installation
+description: Install Smithers via Claude Code plugin or npm package
+---
+
+# Installation
+
+Smithers can be installed as a Claude Code plugin (recommended) or as an npm package for programmatic use.
+
+## Claude Code Plugin (Recommended)
+
+The plugin gives Claude Code the ability to generate Smithers orchestration workflows.
+
+<Steps>
+  <Step title="Add the Smithers marketplace">
+    ```bash
+    /plugin marketplace add evmts/smithers
+    ```
+  </Step>
+
+  <Step title="Install the plugin">
+    ```bash
+    /plugin install smithers@smithers
+    ```
+  </Step>
+</Steps>
+
+Now you can ask Claude to create orchestration workflows:
+
+```
+You: "Create a workflow that reviews PRs and posts comments"
+Claude: *generates pr-review-workflow.tsx*
+```
+
+## npm Package
+
+For programmatic use in your own scripts:
+
+<CodeGroup>
+
+```bash bun (recommended)
+bun add smithers
+```
+
+```bash npm
+npm install smithers
+```
+
+```bash pnpm
+pnpm add smithers
+```
+
+```bash yarn
+yarn add smithers
+```
+
+</CodeGroup>
+
+## Dependencies
+
+### Required
+
+| Dependency | Version | Purpose |
+|------------|---------|---------|
+| [Bun](https://bun.sh) | 1.0+ | JavaScript runtime |
+| [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) | latest | Agent execution |
+
+### Included
+
+These are bundled with Smithers:
+
+- **solid-js** - Reactive primitives for state management
+- **@electric-sql/pglite** - Embedded PostgreSQL for persistence
+- **zod** - Schema validation for structured output
+
+### Optional
+
+| Dependency | Purpose |
+|------------|---------|
+| [jj (Jujutsu)](https://github.com/martinvonz/jj) | Alternative VCS with better snapshot support |
+
+## Project Setup
+
+### TypeScript Configuration
+
+Add JSX support to your `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "moduleResolution": "bundler",
+    "target": "ESNext",
+    "module": "ESNext"
+  }
+}
+```
+
+### Bun Configuration
+
+Create a `bunfig.toml` for Solid JSX:
+
+```toml
+[dev]
+jsx = "solid"
+```
+
+## Verify Installation
+
+Create a test file `test.tsx`:
+
+```tsx
+#!/usr/bin/env bun
+
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
+import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+
+const db = await createSmithersDB({ path: ".smithers/test" });
+const executionId = await db.execution.start("Test", "test.tsx");
+
+async function Test() {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Claude model="haiku" maxTurns={1} onFinished={(r) => console.log("Success!", r.output)}>
+        Say "Hello from Smithers!"
+      </Claude>
+    </SmithersProvider>
+  );
+}
+
+const root = createSmithersRoot();
+await root.mount(Test);
+await db.close();
+```
+
+Run it:
+
+```bash
+bun test.tsx
+```
+
+You should see Claude respond with "Hello from Smithers!"
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Claude Code not found">
+    Make sure Claude Code is installed globally:
+    ```bash
+    npm install -g @anthropic-ai/claude-code
+    ```
+    Verify it's in your PATH:
+    ```bash
+    which claude
+    ```
+  </Accordion>
+
+  <Accordion title="JSX compilation errors">
+    Ensure your `bunfig.toml` has the Solid JSX configuration:
+    ```toml
+    [dev]
+    jsx = "solid"
+    ```
+  </Accordion>
+
+  <Accordion title="Database permission errors">
+    The PGlite database needs write access to the directory. Check permissions:
+    ```bash
+    mkdir -p .smithers
+    chmod 755 .smithers
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Create your first workflow
+  </Card>
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts/ralph-wiggum-loop">
+    Understand how Smithers works
+  </Card>
+</CardGroup>

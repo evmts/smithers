@@ -1,0 +1,150 @@
+---
+title: Introduction
+description: Declarative JSX framework for building AI agent orchestration workflows
+---
+
+# Welcome to Smithers
+
+Smithers is a **declarative JSX framework** for building AI agent orchestration workflows. Built with Solid.js signals, it lets you write agent workflows as composable JSX components with persistent state across sessions.
+
+## Why Smithers?
+
+- **Write agent workflows as JSX** - Declarative composition is easier to reason about than imperative chains
+- **Let Claude Code write the orchestration** - Describe what you want, and your agent builds the workflow
+- **Persist state across sessions** - Pick up where you left off, even days later
+- **Mix short scripts with long-running workflows** - Same syntax for a quick task or a week-long project
+- **Full observability** - Database logging and reports show exactly what your agents are doing
+- **Reactive primitives** - Solid.js signals mean your workflows respond to state changes automatically
+- **Version controlled workflows** - Workflows are just TypeScript files
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running with your first agent in minutes
+  </Card>
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts/ralph-wiggum-loop">
+    Understand the execution model and mental framework
+  </Card>
+  <Card title="Components" icon="cube" href="/components/claude">
+    Explore the component API reference
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/hello-world">
+    Learn from real-world agent examples
+  </Card>
+</CardGroup>
+
+## Key Features
+
+### Claude Component
+
+The core agent component that executes Claude with full tool access:
+
+```tsx
+<Claude
+  model="sonnet"           // opus | sonnet | haiku
+  maxTurns={10}            // Limit agentic loops
+  permissionMode="acceptEdits"  // Auto-accept file edits
+  systemPrompt="You are a senior engineer..."
+  allowedTools={["Read", "Edit", "Bash"]}
+  onFinished={(result) => handleResult(result)}
+>
+  Your prompt here
+</Claude>
+```
+
+### Ralph Loop Controller
+
+Named after Ralph Wiggum's "I'm in danger" catchphrase - controls iterative loops that could run away:
+
+```tsx
+<Ralph maxIterations={10} onMaxIterations={() => console.log("I'm in danger!")}>
+  <Claude onFinished={() => { /* state change triggers next iteration */ }}>
+    Keep improving until tests pass.
+  </Claude>
+</Ralph>
+```
+
+### Structured Output with Zod
+
+Get typed, validated responses with automatic retry:
+
+```tsx
+const UserSchema = z.object({
+  name: z.string(),
+  email: z.string().email(),
+})
+
+<Claude schema={UserSchema} schemaRetries={2}>
+  Extract user info from: John Doe (john@example.com)
+</Claude>
+// result.structured: { name: string, email: string }
+```
+
+### Database State Persistence
+
+All state is saved in a PGlite database that survives restarts:
+
+```tsx
+// Set state
+await db.state.set("phase", "review");
+
+// Get state
+const phase = await db.state.get("phase");
+
+// Query history
+const history = await db.state.history("phase");
+```
+
+### MCP Tool Integration
+
+Give Claude access to external tools via Model Context Protocol:
+
+```tsx
+<Claude model="sonnet" maxTurns={5}>
+  <Sqlite path="./analytics.db">
+    The database contains user_events and sessions tables.
+  </Sqlite>
+  What are the top 10 most common user actions this week?
+</Claude>
+```
+
+## How It Works
+
+Smithers uses a custom Solid.js renderer called the "Ralph Wiggum Loop":
+
+1. **Render**: Your JSX components render using Solid's fine-grained reactivity
+2. **Execute**: `<Claude>` nodes are executed via Claude Code CLI
+3. **Update**: `onFinished` callbacks update Solid signals
+4. **Re-render**: Signal changes trigger reactive updates to the tree
+5. **Loop**: Back to step 2 until no pending `<Claude>` nodes remain
+6. **Complete**: Execution finishes when all agents are done
+
+This reactive model means your agent's behavior emerges from your component logic - conditionals, state machines, and composition.
+
+## Installation Methods
+
+### Claude Code Plugin (Recommended)
+
+```bash
+# Add the Smithers marketplace
+/plugin marketplace add evmts/smithers
+
+# Install the plugin
+/plugin install smithers@smithers
+```
+
+### npm Package (Programmatic)
+
+```bash
+bun add smithers
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start Guide" icon="play" href="/quickstart">
+    Create your first Smithers workflow
+  </Card>
+  <Card title="Ralph Wiggum Loop" icon="rotate" href="/concepts/ralph-wiggum-loop">
+    Understand the core execution model
+  </Card>
+</CardGroup>

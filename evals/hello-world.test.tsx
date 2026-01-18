@@ -1,3 +1,4 @@
+/** @jsxImportSource ../src */
 /**
  * Hello World E2E Test
  *

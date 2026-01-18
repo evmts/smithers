@@ -3,7 +3,10 @@
 # Usage: bun -c node_modules/smithers-orchestrator/bunfig.toml your-file.tsx
 
 jsx = "react-jsx"
-jsxImportSource = "solid-js"
+jsxImportSource = "solid-js/h"
 
 [install]
 auto = "fallback"
+
+[test]
+preload = ["./test/preload.ts"]

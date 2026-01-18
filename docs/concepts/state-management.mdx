@@ -1,0 +1,348 @@
+---
+title: State Management
+description: Using Solid.js signals and database persistence for workflow state
+---
+
+# State Management
+
+Smithers uses two complementary state systems:
+
+1. **Solid.js Signals** - Reactive in-memory state that drives re-renders
+2. **Database Persistence** - PGlite storage that survives restarts
+
+## Solid.js Signals
+
+Signals are the reactive primitive that powers the Ralph Wiggum Loop:
+
+```tsx
+import { createSignal } from "solid-js";
+
+function WorkflowWithSignals() {
+  const [count, setCount] = createSignal(0);
+  const [phase, setPhase] = createSignal("start");
+
+  return (
+    <Ralph maxIterations={10}>
+      {phase() === "start" && (
+        <Claude onFinished={() => {
+          setCount(c => c + 1);
+          setPhase("process");
+        }}>
+          Initialize the workflow.
+        </Claude>
+      )}
+
+      {phase() === "process" && (
+        <Claude onFinished={() => setPhase("done")}>
+          Process iteration {count()}.
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+### Signal Basics
+
+```tsx
+// Create a signal with initial value
+const [value, setValue] = createSignal("initial");
+
+// Read the current value (call as function)
+console.log(value()); // "initial"
+
+// Update the value
+setValue("new value");
+
+// Update based on previous value
+setValue(prev => prev + " updated");
+```
+
+### Signals in JSX
+
+Signals automatically trigger re-renders when read in JSX:
+
+```tsx
+function ReactiveComponent() {
+  const [status, setStatus] = createSignal("pending");
+
+  return (
+    <>
+      {/* This re-renders when status changes */}
+      {status() === "pending" && <Claude>Do the work</Claude>}
+      {status() === "done" && <Stop reason="Complete" />}
+    </>
+  );
+}
+```
+
+## Solid.js Stores
+
+For complex nested state, use stores:
+
+```tsx
+import { createStore } from "solid-js/store";
+
+function WorkflowWithStore() {
+  const [state, setState] = createStore({
+    phase: "research",
+    findings: [] as string[],
+    errors: [] as string[],
+    metadata: {
+      startedAt: Date.now(),
+      iterations: 0,
+    },
+  });
+
+  return (
+    <Ralph maxIterations={10}>
+      {state.phase === "research" && (
+        <Claude onFinished={(result) => {
+          setState("findings", [...state.findings, result.output]);
+          setState("phase", "analyze");
+        }}>
+          Research the topic.
+        </Claude>
+      )}
+
+      {state.phase === "analyze" && (
+        <Claude onFinished={() => {
+          setState("metadata", "iterations", i => i + 1);
+          setState("phase", "done");
+        }}>
+          Analyze findings: {JSON.stringify(state.findings)}
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+### Store Updates
+
+```tsx
+// Update a property
+setState("phase", "next");
+
+// Update nested property
+setState("metadata", "iterations", 5);
+
+// Update with function
+setState("metadata", "iterations", i => i + 1);
+
+// Update array
+setState("findings", findings => [...findings, "new finding"]);
+
+// Batch updates
+batch(() => {
+  setState("phase", "done");
+  setState("metadata", "completedAt", Date.now());
+});
+```
+
+## Database Persistence
+
+Signals are in-memory only. For persistence across restarts, use the database:
+
+```tsx
+async function PersistentWorkflow() {
+  // Load persisted state
+  const savedPhase = await db.state.get("phase");
+  const [phase, setPhase] = createSignal(savedPhase ?? "start");
+
+  // Sync signal to database
+  const updatePhase = async (newPhase: string) => {
+    setPhase(newPhase);
+    await db.state.set("phase", newPhase);
+  };
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={10}>
+        {phase() === "start" && (
+          <Claude onFinished={() => updatePhase("process")}>
+            Start the workflow.
+          </Claude>
+        )}
+
+        {phase() === "process" && (
+          <Claude onFinished={() => updatePhase("done")}>
+            Continue processing.
+          </Claude>
+        )}
+      </Ralph>
+    </SmithersProvider>
+  );
+}
+```
+
+### Database State API
+
+```tsx
+// Set a value
+await db.state.set("key", value);
+
+// Set with trigger (for tracking)
+await db.state.set("phase", "review", "agent_completed");
+
+// Get a value
+const value = await db.state.get("key");
+
+// Set multiple values
+await db.state.setMany({
+  phase: "done",
+  completedAt: Date.now(),
+});
+
+// Get all state
+const all = await db.state.getAll();
+
+// View history
+const history = await db.state.history("phase");
+
+// Time-travel: replay to a previous transition
+await db.state.replayTo(transitionId);
+```
+
+## Combining Signals and Database
+
+A common pattern is to initialize signals from the database:
+
+```tsx
+async function ResumeableWorkflow() {
+  // Load persisted state on startup
+  const persisted = await db.state.getAll();
+
+  const [state, setState] = createStore({
+    phase: persisted.phase ?? "start",
+    data: persisted.data ?? null,
+    attempts: persisted.attempts ?? 0,
+  });
+
+  // Helper to update both signal and database
+  const persistState = async (updates: Partial<typeof state>) => {
+    setState(updates);
+    await db.state.setMany(updates);
+  };
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph maxIterations={10}>
+        {state.phase === "start" && (
+          <Claude onFinished={(result) => {
+            persistState({
+              phase: "process",
+              data: result.output
+            });
+          }}>
+            Initialize.
+          </Claude>
+        )}
+      </Ralph>
+    </SmithersProvider>
+  );
+}
+```
+
+## Snapshots and Restore
+
+Save and restore complete state snapshots:
+
+```tsx
+// Take a snapshot
+const snapshot = await db.state.snapshot();
+console.log(snapshot); // { phase: "review", data: {...} }
+
+// Restore a snapshot
+await db.state.restore(snapshot, "manual_restore");
+```
+
+## Effects and Derived State
+
+Use `createEffect` for side effects when state changes:
+
+```tsx
+import { createEffect, createMemo } from "solid-js";
+
+function EffectExample() {
+  const [phase, setPhase] = createSignal("start");
+  const [attempts, setAttempts] = createSignal(0);
+
+  // Derived state (computed from other signals)
+  const isComplete = createMemo(() => phase() === "done");
+  const hasRetried = createMemo(() => attempts() > 1);
+
+  // Side effect when phase changes
+  createEffect(() => {
+    console.log(`Phase changed to: ${phase()}`);
+    db.state.set("phase", phase());
+  });
+
+  return (
+    <Ralph maxIterations={10}>
+      {!isComplete() && (
+        <Claude onFinished={() => {
+          setAttempts(a => a + 1);
+          setPhase("done");
+        }}>
+          Attempt {attempts() + 1}
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always read signals as functions">
+    Signals must be called to track reactivity:
+    ```tsx
+    // Correct - reactive
+    {phase() === "done" && <Stop />}
+
+    // Wrong - not reactive
+    {phase === "done" && <Stop />}
+    ```
+  </Accordion>
+
+  <Accordion title="Persist critical state to database">
+    Anything that should survive a restart needs database persistence:
+    ```tsx
+    // In-memory only - lost on restart
+    const [phase, setPhase] = createSignal("start");
+
+    // Persisted - survives restart
+    const savedPhase = await db.state.get("phase");
+    const [phase, setPhase] = createSignal(savedPhase ?? "start");
+    ```
+  </Accordion>
+
+  <Accordion title="Use stores for complex state">
+    Stores handle nested updates better than multiple signals:
+    ```tsx
+    // Prefer store for complex state
+    const [state, setState] = createStore({
+      phase: "start",
+      data: { items: [], metadata: {} },
+    });
+
+    // Multiple signals get unwieldy
+    const [phase, setPhase] = createSignal("start");
+    const [items, setItems] = createSignal([]);
+    const [metadata, setMetadata] = createSignal({});
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Persistence" icon="hard-drive" href="/concepts/database-persistence">
+    Deep dive into the PGlite database
+  </Card>
+  <Card title="Ralph Component" icon="rotate" href="/components/ralph">
+    Control iteration with Ralph
+  </Card>
+</CardGroup>

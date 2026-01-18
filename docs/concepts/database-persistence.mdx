@@ -1,0 +1,336 @@
+---
+title: Database Persistence
+description: PGlite database for persisting workflow state across sessions
+---
+
+# Database Persistence
+
+Smithers uses **PGlite** (embedded PostgreSQL) to persist all workflow state. This enables:
+
+- **Resume workflows** after restarts or crashes
+- **Inspect execution history** for debugging
+- **Time-travel debugging** by replaying state transitions
+- **Long-running workflows** that span days or weeks
+
+## Creating a Database
+
+```tsx
+import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+
+// Create a database at a specific path
+const db = await createSmithersDB({
+  path: ".smithers/my-workflow"
+});
+
+// Always close when done
+await db.close();
+```
+
+The database is created as a directory containing PostgreSQL data files.
+
+## Database Structure
+
+The database tracks several entity types:
+
+| Entity | Purpose |
+|--------|---------|
+| **Executions** | Top-level workflow runs |
+| **Phases** | Workflow phases within executions |
+| **Steps** | Individual steps within phases |
+| **Agents** | Claude invocations with prompts and results |
+| **Tool Calls** | Tools invoked by agents |
+| **State** | Key-value workflow state |
+| **Memories** | Long-term knowledge across sessions |
+| **VCS** | Git commits, snapshots, and reviews |
+
+## Execution Tracking
+
+Every workflow run is an execution:
+
+```tsx
+// Start a new execution
+const executionId = await db.execution.start(
+  "Feature Implementation",  // name
+  "scripts/feature.tsx"      // file path
+);
+
+// Complete the execution
+await db.execution.complete(executionId, {
+  summary: "Feature implemented successfully"
+});
+
+// Or mark as failed
+await db.execution.fail(executionId, new Error("Tests failed"));
+
+// Find incomplete executions (for resume)
+const incomplete = await db.execution.findIncomplete();
+if (incomplete) {
+  console.log(`Resuming execution: ${incomplete.id}`);
+}
+```
+
+## State Management
+
+The state API provides key-value storage with history:
+
+```tsx
+// Set a value
+await db.state.set("phase", "review");
+
+// Set with trigger (for tracking what caused the change)
+await db.state.set("phase", "review", "tests_passed");
+
+// Get a value
+const phase = await db.state.get("phase");
+
+// Get all state
+const all = await db.state.getAll();
+// { phase: "review", lastAgent: "abc123", ... }
+
+// Set multiple values atomically
+await db.state.setMany({
+  phase: "complete",
+  completedAt: Date.now(),
+});
+```
+
+### State History
+
+Every state change is recorded:
+
+```tsx
+// Get history for a key
+const history = await db.state.history("phase", 10);
+// [
+//   { id: "t1", key: "phase", value: "start", trigger: "init", timestamp: ... },
+//   { id: "t2", key: "phase", value: "review", trigger: "tests_passed", ... },
+// ]
+
+// Time-travel: replay to a previous state
+await db.state.replayTo("t1");
+// State is now back to what it was at transition t1
+```
+
+### Snapshots
+
+Save and restore complete state:
+
+```tsx
+// Take a snapshot
+const snapshot = await db.state.snapshot();
+// { phase: "review", data: {...}, attempts: 3 }
+
+// Later, restore the snapshot
+await db.state.restore(snapshot, "rollback");
+```
+
+## Agent Tracking
+
+Track Claude invocations:
+
+```tsx
+// Start an agent
+const agentId = await db.agents.start(
+  "Implement the feature",     // prompt
+  "sonnet",                     // model
+  "You are a senior engineer"   // system prompt
+);
+
+// Complete with results
+await db.agents.complete(
+  agentId,
+  "Feature implemented",        // output
+  { success: true },            // structured result
+  { input: 1000, output: 500 }  // tokens
+);
+
+// List agents in current execution
+const agents = await db.agents.list(executionId);
+```
+
+## Tool Call Tracking
+
+Track tools used by agents:
+
+```tsx
+// Start a tool call
+const toolId = await db.tools.start(
+  agentId,
+  "Edit",
+  { file: "src/main.ts", changes: "..." }
+);
+
+// Complete with output
+await db.tools.complete(
+  toolId,
+  "File edited successfully",
+  "Edited src/main.ts: added 15 lines"
+);
+
+// List tool calls for an agent
+const tools = await db.tools.list(agentId);
+```
+
+## Memories (Long-term Knowledge)
+
+Store knowledge that persists across workflows:
+
+```tsx
+// Add a fact
+await db.memories.addFact(
+  "api-endpoint",
+  "The API endpoint is at /api/v2/users",
+  "discovered in auth.ts"
+);
+
+// Add a learning
+await db.memories.addLearning(
+  "test-pattern",
+  "Use vitest for unit tests in this project",
+  "package.json"
+);
+
+// Add a preference
+await db.memories.addPreference(
+  "commit-style",
+  "Use conventional commits with scope"
+);
+
+// Search memories
+const relevant = await db.memories.search("API endpoint");
+
+// Get specific memory
+const memory = await db.memories.get("fact", "api-endpoint");
+```
+
+### Memory Categories
+
+| Category | Use Case |
+|----------|----------|
+| `fact` | Discovered facts about the codebase |
+| `learning` | Lessons learned from past executions |
+| `preference` | User preferences and conventions |
+| `context` | Contextual information |
+| `skill` | Reusable skills or patterns |
+
+### Memory Scopes
+
+| Scope | Visibility |
+|-------|------------|
+| `global` | All projects and sessions |
+| `project` | Current project only |
+| `session` | Current session only |
+
+## VCS Integration
+
+Track version control operations:
+
+```tsx
+// Log a commit
+await db.vcs.logCommit({
+  hash: "abc123",
+  message: "feat: Add user auth",
+  author: "claude",
+  timestamp: new Date(),
+  filesChanged: 3,
+  insertions: 150,
+  deletions: 20,
+  vcsType: "git",
+});
+
+// Log a snapshot (jj)
+await db.vcs.logSnapshot({
+  snapshotId: "xyz789",
+  description: "Before refactoring",
+  timestamp: new Date(),
+});
+
+// Log a review
+await db.vcs.logReview({
+  reviewId: "r1",
+  target: "abc123",
+  approved: false,
+  summary: "Security issues found",
+  issues: [
+    { severity: "high", file: "auth.ts", description: "..." }
+  ],
+});
+```
+
+## Direct Queries
+
+For advanced use cases, query the database directly:
+
+```tsx
+// Run a custom query
+const results = await db.query<{ count: number }>(
+  "SELECT COUNT(*) as count FROM agents WHERE model = $1",
+  ["sonnet"]
+);
+console.log(`${results[0].count} sonnet agents`);
+```
+
+## Inspecting the Database
+
+Use the CLI to inspect database contents:
+
+```bash
+# List executions
+smithers-orchestrator db executions
+
+# View state
+smithers-orchestrator db state --execution-id abc123
+
+# Custom query
+smithers-orchestrator db query "SELECT * FROM agents LIMIT 10"
+
+# View phases and steps
+smithers-orchestrator db phases --execution-id abc123
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always close the database">
+    Ensure the database is closed to flush writes:
+    ```tsx
+    const db = await createSmithersDB({ path: ".smithers/data" });
+    try {
+      // ... do work
+    } finally {
+      await db.close();
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use triggers for debugging">
+    Set triggers when updating state to track causality:
+    ```tsx
+    await db.state.set("phase", "review", "tests_passed");
+    // Later, history shows why the change happened
+    ```
+  </Accordion>
+
+  <Accordion title="Check for incomplete executions on startup">
+    Resume interrupted workflows:
+    ```tsx
+    const incomplete = await db.execution.findIncomplete();
+    if (incomplete) {
+      // Resume the workflow
+      const state = await db.state.getAll();
+      // ... continue from saved state
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="State API Reference" icon="code" href="/api-reference/state">
+    Complete state management API
+  </Card>
+  <Card title="Memories API Reference" icon="brain" href="/api-reference/memories">
+    Long-term knowledge storage
+  </Card>
+</CardGroup>

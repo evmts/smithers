@@ -1,0 +1,243 @@
+---
+title: Ralph Wiggum Loop
+description: The core execution model that powers Smithers orchestration
+---
+
+# Ralph Wiggum Loop
+
+The Ralph Wiggum Loop is the core execution model of Smithers. Named after Ralph Wiggum's famous "I'm in danger" catchphrase, it controls iterative loops that could potentially run away.
+
+## The Execution Model
+
+Smithers uses a reactive render loop powered by Solid.js signals:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│  ┌──────────┐    ┌─────────┐    ┌──────────────────┐   │
+│  │  Render  │───▶│ Execute │───▶│ Update Signals   │   │
+│  │   JSX    │    │ Claude  │    │ (onFinished)     │   │
+│  └──────────┘    └─────────┘    └──────────────────┘   │
+│       ▲                                   │             │
+│       │                                   │             │
+│       └───────────────────────────────────┘             │
+│                  (re-render on signal change)           │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+1. **Render**: Your JSX components render using Solid's fine-grained reactivity
+2. **Execute**: `<Claude>` nodes execute via the Claude Code CLI
+3. **Update**: `onFinished` callbacks update Solid signals
+4. **Re-render**: Signal changes trigger reactive updates
+5. **Loop**: Process repeats until no pending agents remain
+
+## Why "Ralph Wiggum"?
+
+The name captures two key ideas:
+
+1. **Iteration Control**: Like Ralph's oblivious danger-awareness, loops can run away if not controlled
+2. **Safety Rails**: The `<Ralph>` component provides `maxIterations` to prevent infinite loops
+
+```tsx
+<Ralph
+  maxIterations={10}
+  onMaxIterations={() => console.log("I'm in danger!")}
+>
+  {/* This loop will stop after 10 iterations */}
+</Ralph>
+```
+
+## How It Differs from Other Frameworks
+
+| Traditional Agent Loops | Smithers Ralph Loop |
+|------------------------|---------------------|
+| Imperative while loops | Declarative reactive rendering |
+| Manual state tracking | Automatic signal propagation |
+| Hard to visualize flow | Components describe the flow |
+| State scattered in closures | Centralized in Solid signals |
+
+## The Ralph Component
+
+The `<Ralph>` component wraps iterative workflows:
+
+```tsx
+import { createSignal } from "solid-js";
+
+function IterativeWorkflow() {
+  const [attempts, setAttempts] = createSignal(0);
+  const [testsPassing, setTestsPassing] = createSignal(false);
+
+  return (
+    <Ralph
+      maxIterations={5}
+      onIteration={(i) => console.log(`Iteration ${i}`)}
+      onComplete={() => console.log("Workflow complete")}
+    >
+      {!testsPassing() && (
+        <Claude
+          model="sonnet"
+          onFinished={(result) => {
+            setAttempts(a => a + 1);
+            if (result.output.includes("All tests pass")) {
+              setTestsPassing(true);
+            }
+          }}
+        >
+          Fix the failing tests. Current attempt: {attempts()}
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+## Reactive Updates
+
+The power of the Ralph Loop comes from Solid.js reactivity:
+
+```tsx
+function PhaseWorkflow() {
+  const [phase, setPhase] = createSignal("research");
+
+  return (
+    <Ralph maxIterations={10}>
+      {/* This block re-renders when phase() changes */}
+
+      {phase() === "research" && (
+        <Claude onFinished={() => setPhase("implement")}>
+          Research the problem space.
+        </Claude>
+      )}
+
+      {phase() === "implement" && (
+        <Claude onFinished={() => setPhase("test")}>
+          Implement the solution.
+        </Claude>
+      )}
+
+      {phase() === "test" && (
+        <Claude onFinished={(r) => {
+          if (r.output.includes("PASS")) {
+            setPhase("done");
+          } else {
+            setPhase("implement");
+          }
+        }}>
+          Run and verify tests.
+        </Claude>
+      )}
+    </Ralph>
+  );
+}
+```
+
+When `setPhase("implement")` is called:
+1. The signal updates
+2. Solid detects the change
+3. Only the affected branch re-renders
+4. The new `<Claude>` component mounts and executes
+
+## Fire-and-Forget Pattern
+
+Components use an async IIFE pattern in `onMount`:
+
+```tsx
+function Claude(props) {
+  onMount(() => {
+    // Fire-and-forget async execution
+    (async () => {
+      const result = await executeClaudeAgent(props);
+      props.onFinished?.(result);
+    })();
+  });
+
+  return <claude-node {...props} />;
+}
+```
+
+This means:
+- Components execute when they mount
+- Results trigger callbacks that update signals
+- Signal updates cause re-renders
+- New components mount and execute
+
+## Orchestration Context
+
+The `<Ralph>` component provides context for task coordination:
+
+```tsx
+import { useRalph } from "smithers";
+
+function CustomStep() {
+  const ralph = useRalph();
+
+  onMount(() => {
+    const taskId = ralph.registerTask();
+
+    doSomeWork().then(() => {
+      ralph.completeTask(taskId);
+    });
+  });
+
+  return <step-node />;
+}
+```
+
+The Ralph context tracks:
+- Active tasks
+- Completed tasks
+- Iteration count
+- Orchestration state
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always set maxIterations">
+    Without a limit, a bug in your state logic could cause infinite loops:
+    ```tsx
+    // Good
+    <Ralph maxIterations={10}>...</Ralph>
+
+    // Risky
+    <Ralph>...</Ralph>
+    ```
+  </Accordion>
+
+  <Accordion title="Use signals for phase transitions">
+    Let reactivity drive the flow instead of imperative logic:
+    ```tsx
+    // Good - reactive
+    const [phase, setPhase] = createSignal("start");
+    {phase() === "start" && <Claude onFinished={() => setPhase("next")} />}
+
+    // Avoid - imperative
+    let phase = "start";
+    while (phase !== "done") { ... }
+    ```
+  </Accordion>
+
+  <Accordion title="Handle the maxIterations callback">
+    Know when you've hit the limit:
+    ```tsx
+    <Ralph
+      maxIterations={10}
+      onMaxIterations={() => {
+        console.error("Workflow did not complete in 10 iterations");
+        db.state.set("status", "failed");
+      }}
+    >
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="State Management" icon="database" href="/concepts/state-management">
+    Learn about Solid.js signals and stores
+  </Card>
+  <Card title="Database Persistence" icon="hard-drive" href="/concepts/database-persistence">
+    Persist state across restarts
+  </Card>
+</CardGroup>
