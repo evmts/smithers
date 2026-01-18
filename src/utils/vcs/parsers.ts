@@ -1,6 +1,6 @@
 // Parser utilities for VCS output
 
-import type { VCSStatus, DiffStats } from './types'
+import type { VCSStatus, DiffStats } from './types.js'
 
 /**
  * Parse git status output
@@ -57,7 +57,7 @@ export function parseDiffStats(output: string): DiffStats {
     if (!line.trim()) continue
 
     // Match pattern like: "file.ts | 10 +++++++---"
-    const match = line.match(/^\s*(.+?)\s*\|\s*(\d+)\s+([+\-]+)/)
+    const match = line.match(/^\s*(.+?)\s*\|\s*(\d+)\s+([+-]+)/)
     if (match) {
       const [, file, _changes, symbols] = match
       files.push(file.trim())

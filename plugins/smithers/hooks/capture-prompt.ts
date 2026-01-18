@@ -50,7 +50,7 @@ async function main() {
     }
 
     await pg.close()
-  } catch (error) {
+  } catch {
     // DB not initialized or other error - silently continue
     // This hook should never block the user
   }

@@ -71,7 +71,7 @@ export async function summarizeWithHaiku(
       summary,
       fullPath: logPath,
     }
-  } catch (error) {
+  } catch {
     // Fallback on error
     return {
       summary: truncate(content, 500) + '\n[... summarization failed, see full output]',

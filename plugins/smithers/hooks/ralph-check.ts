@@ -67,8 +67,8 @@ async function main() {
     await pg.close()
 
     // Remove the ralph flag (one-shot trigger)
-    await Bun.file(ralphFlagPath).delete?.() ??
-      await Bun.write(ralphFlagPath + '.done', '')
+    const deleted = await Bun.file(ralphFlagPath).delete?.()
+    if (!deleted) await Bun.write(ralphFlagPath + '.done', '')
 
     // Block stopping and provide the initial prompt
     const output: HookOutput = {
@@ -78,7 +78,7 @@ async function main() {
 
     console.log(JSON.stringify(output))
     process.exit(0)
-  } catch (error) {
+  } catch {
     // DB error - allow stopping
     process.exit(0)
   }

@@ -12,7 +12,7 @@ export function zodToJsonSchema(schema: z.ZodType): Record<string, any> {
   if (typeof (schema as any).toJSONSchema === 'function') {
     const jsonSchema = (schema as any).toJSONSchema()
     // Remove $schema to keep it cleaner for prompts
-    const { $schema, ...rest } = jsonSchema
+    const { $schema: _$schema, ...rest } = jsonSchema
     return rest
   }
 
