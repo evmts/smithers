@@ -1,7 +1,7 @@
 /**
  * Mount lifecycle hooks vendored from react-use
  * https://github.com/streamich/react-use
- * License: Unlicense (public domain)
+ * License: MIT (public domain)
  */
 
 import {

@@ -101,6 +101,7 @@ export function createSmithersRoot(): SmithersRoot {
       )
 
       // Render the app synchronously
+      // LegacyRoot mode (tag: 0) provides synchronous updates by default
       SmithersReconciler.updateContainer(element, fiberRoot, null, () => {})
 
       // Wait for orchestration to complete (Ralph will signal this)
@@ -127,6 +128,7 @@ export function createSmithersRoot(): SmithersRoot {
 
         // Update container with element (or null to unmount)
         // The callback is invoked when React has finished committing the update
+        // LegacyRoot mode (tag: 0) provides synchronous updates by default
         SmithersReconciler.updateContainer(element, fiberRoot, null, () => {
           resolve()
         })
@@ -141,6 +143,10 @@ export function createSmithersRoot(): SmithersRoot {
       if (fiberRoot) {
         SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
         fiberRoot = null
+      }
+      // Clear global singleton if this is the current root
+      if (currentRootNode === rootNode) {
+        currentRootNode = null
       }
       // Defensive cleanup: recursively clear all parent pointers and empty children array
       function clearTree(node: SmithersNode) {

@@ -161,7 +161,12 @@ function serializeProps(props: Record<string, unknown>): string {
     .map(([key, value]) => {
       // GOTCHA: Object props need to be serialized as JSON
       if (typeof value === 'object') {
-        return ` ${key}="${escapeXml(JSON.stringify(value))}"`
+        try {
+          return ` ${key}="${escapeXml(JSON.stringify(value))}"`
+        } catch (error) {
+          // Handle circular references and other stringify errors
+          return ` ${key}="${escapeXml('[Object (circular or non-serializable)]')}"`
+        }
       }
       return ` ${key}="${escapeXml(String(value))}"`
     })
