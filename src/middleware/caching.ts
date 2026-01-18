@@ -1,100 +1,51 @@
-import type { AgentResult, CLIExecutionOptions } from '../components/agents/types.js'
-import type { SmithersMiddleware } from './types.js'
+import type { AgentResult } from '../components/agents/types.js'
+import type { ClaudeExecutionParams, SmithersMiddleware } from './types.js'
 
-export interface CacheStore {
-  get: (key: string) => AgentResult | null | Promise<AgentResult | null>
-  set: (key: string, value: AgentResult, ttlMs?: number) => void | Promise<void>
-  delete?: (key: string) => void | Promise<void>
+export interface CacheStore<T> {
+  get: (key: string) => T | null | Promise<T | null>
+  set: (key: string, value: T, ttlSeconds?: number) => void | Promise<void>
 }
 
-export interface LRUCacheOptions {
-  max: number
-  ttlMs?: number
-}
-
-type CacheEntry = {
-  value: AgentResult
-  expiresAt?: number
-}
-
-export class LRUCache implements CacheStore {
-  private readonly max: number
-  private readonly ttlMs?: number
-  private readonly store = new Map<string, CacheEntry>()
-
-  constructor(options: LRUCacheOptions) {
-    this.max = options.max
-    if (options.ttlMs !== undefined) {
-      this.ttlMs = options.ttlMs
-    }
-  }
-
-  get(key: string): AgentResult | null {
-    const entry = this.store.get(key)
-    if (!entry) return null
-
-    if (entry.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
-      this.store.delete(key)
-      return null
-    }
-
-    this.store.delete(key)
-    this.store.set(key, entry)
-    return entry.value
-  }
-
-  set(key: string, value: AgentResult, ttlMs?: number): void {
-    const ttl = ttlMs ?? this.ttlMs
-    const entry: CacheEntry = ttl === undefined
-      ? { value }
-      : { value, expiresAt: Date.now() + ttl }
-
-    if (this.store.has(key)) {
-      this.store.delete(key)
-    }
-
-    this.store.set(key, entry)
-
-    while (this.store.size > this.max) {
-      const oldestKey = this.store.keys().next().value
-      if (oldestKey === undefined) break
-      this.store.delete(oldestKey)
-    }
-  }
-
-  delete(key: string): void {
-    this.store.delete(key)
-  }
+export interface CachingMiddlewareOptions {
+  cache: CacheStore<AgentResult>
+  ttl?: number
+  keyFn?: (params: ClaudeExecutionParams) => string
 }
 
 function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value)
+  const seen = new WeakSet<object>()
+  const replacer = (_key: string, val: unknown) => {
+    if (typeof val === 'function' || typeof val === 'symbol') {
+      return undefined
+    }
+    if (val && typeof val === 'object') {
+      if (seen.has(val)) return '[circular]'
+      seen.add(val)
+      if ('safeParse' in (val as Record<string, unknown>)) {
+        return '[zod-schema]'
+      }
+    }
+    return val
   }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`)
-  return `{${entries.join(',')}}`
+  return JSON.stringify(value, replacer)
 }
 
-function defaultCacheKey(options: CLIExecutionOptions): string {
-  return stableStringify(options)
+function defaultCacheKey(params: ClaudeExecutionParams): string {
+  const { onProgress, onToolCall, schema, ...rest } = params
+  return stableStringify({ ...rest, schema: schema ? '[schema]' : undefined })
 }
 
-export function cachingMiddleware(options: {
-  cache: CacheStore
-  ttl?: number
-  keyFn?: (opts: CLIExecutionOptions) => string
-}): SmithersMiddleware {
+export function cachingMiddleware(options: CachingMiddlewareOptions): SmithersMiddleware {
+  const keyFn = options.keyFn ?? defaultCacheKey
+
   return {
     name: 'caching',
-    wrapExecute: async (doExecute, opts) => {
-      const key = options.keyFn ? options.keyFn(opts) : defaultCacheKey(opts)
+    wrapExecute: async ({ doExecute, params }) => {
+      const key = keyFn(params)
       const cached = await options.cache.get(key)
-      if (cached) return cached
+      if (cached) {
+        return cached
+      }
 
       const result = await doExecute()
       await options.cache.set(key, result, options.ttl)

@@ -1,53 +1,40 @@
 import type { AgentResult, CLIExecutionOptions } from '../components/agents/types.js'
 
+export type ClaudeExecutionParams = CLIExecutionOptions
+
 /**
- * Smithers middleware for enhancing Claude component behavior.
- *
- * IMPORTANT: Operates at the CLI execution level, not the API level.
- * Middleware cannot intercept individual API calls or modify streaming
- * response chunks from the Claude API. Instead, it can:
- * - Modify CLI options before execution
- * - Wrap the entire CLI execution
- * - Process stdout/stderr chunks
- * - Transform final results
+ * Smithers middleware for enhancing Claude execution.
+ * Inspired by Vercel AI SDK's LanguageModelMiddleware.
  */
 export interface SmithersMiddleware {
   /**
-   * Middleware name for debugging/logging
+   * Optional name for debugging/logging.
    */
   name?: string
 
   /**
-   * Transform CLI execution options before spawning subprocess.
-   * Use this to modify system prompt, timeout, tools, etc.
+   * Transform execution parameters before running.
    */
-  transformOptions?: (
-    options: CLIExecutionOptions
-  ) => CLIExecutionOptions | Promise<CLIExecutionOptions>
+  transformParams?: (options: {
+    type: 'execute'
+    params: ClaudeExecutionParams
+  }) => ClaudeExecutionParams | Promise<ClaudeExecutionParams>
 
   /**
-   * Wrap the entire CLI execution.
-   * Use this for retry logic, caching, rate limiting, cost tracking.
+   * Wrap the execution operation.
    */
-  wrapExecute?: (
-    doExecute: () => Promise<AgentResult>,
-    options: CLIExecutionOptions
-  ) => Promise<AgentResult>
+  wrapExecute?: (options: {
+    doExecute: () => Promise<AgentResult>
+    params: ClaudeExecutionParams
+  }) => Promise<AgentResult>
 
   /**
-   * Transform stdout/stderr chunks as they arrive.
-   * Use this for filtering, redacting, or parsing streaming output.
-   *
-   * NOTE: This is called for EVERY chunk, potentially hundreds of times.
-   * Keep this function fast and side-effect free.
+   * Transform streaming chunks passed to onProgress.
    */
   transformChunk?: (chunk: string) => string
 
   /**
-   * Transform the final result after CLI execution completes.
-   * Use this for extracting data, validating output, adding metadata.
+   * Transform the final result before callbacks.
    */
-  transformResult?: (
-    result: AgentResult
-  ) => AgentResult | Promise<AgentResult>
+  transformResult?: (result: AgentResult) => AgentResult | Promise<AgentResult>
 }

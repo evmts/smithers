@@ -27,6 +27,11 @@ export interface AgentResult<T = any> {
   output: string
 
   /**
+   * Extracted reasoning content (if middleware provides it)
+   */
+  reasoning?: string
+
+  /**
    * Structured output (if JSON output was requested or schema was provided)
    * When a Zod schema is provided, this will be typed according to the schema.
    */

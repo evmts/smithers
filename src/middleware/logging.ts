@@ -1,74 +1,72 @@
-import type { AgentResult, CLIExecutionOptions } from '../components/agents/types.js'
-import type { SmithersMiddleware } from './types.js'
+import type { AgentResult } from '../components/agents/types.js'
+import type { ClaudeExecutionParams, SmithersMiddleware } from './types.js'
 
-export type LogEntry =
-  | {
-      type: 'start'
-      model?: string
-      promptPreview?: string
-      timestamp: number
-    }
-  | {
-      type: 'complete'
-      tokensUsed?: AgentResult['tokensUsed']
-      durationMs?: number
-      stopReason?: AgentResult['stopReason']
-      timestamp: number
-    }
-  | {
-      type: 'error'
-      message: string
-      timestamp: number
-    }
+export type LogLevel = 'debug' | 'info' | 'warn'
 
-export function loggingMiddleware(options?: {
-  logLevel?: 'debug' | 'info' | 'warn'
+export interface LogEntry {
+  level: LogLevel
+  phase: 'start' | 'finish' | 'error'
+  type: 'execute'
+  params?: ClaudeExecutionParams
+  durationMs?: number
+  tokens?: AgentResult['tokensUsed']
+  error?: string
+}
+
+export interface LoggingMiddlewareOptions {
+  logLevel?: LogLevel
   includeTokens?: boolean
-  logger?: (entry: LogEntry) => void
-}): SmithersMiddleware {
-  const logger = options?.logger ?? ((entry: LogEntry) => {
-    const label = options?.logLevel ?? 'info'
-    if (label === 'warn' && entry.type !== 'error') return
-    console.log(entry)
+  logFn?: (entry: LogEntry) => void
+}
+
+const levelOrder: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+}
+
+export function loggingMiddleware(options: LoggingMiddlewareOptions = {}): SmithersMiddleware {
+  const level = options.logLevel ?? 'info'
+  const logFn = options.logFn ?? ((entry: LogEntry) => {
+    const prefix = `[middleware:${entry.type}] ${entry.phase}`
+    if (entry.phase === 'error') {
+      console.warn(prefix, entry.error)
+    } else if (entry.phase === 'finish') {
+      console.log(prefix, entry.durationMs ? `${entry.durationMs}ms` : undefined)
+    } else {
+      console.log(prefix)
+    }
   })
 
   return {
     name: 'logging',
-    transformOptions: (opts: CLIExecutionOptions) => {
-      const entry: LogEntry = {
-        type: 'start',
-        timestamp: Date.now(),
-        ...(opts.model !== undefined ? { model: opts.model } : {}),
-        ...(opts.prompt !== undefined ? { promptPreview: opts.prompt.slice(0, 100) } : {}),
+    transformParams: ({ params }) => {
+      if (levelOrder[level] <= levelOrder.info) {
+        logFn({ level, phase: 'start', type: 'execute', params })
       }
-      logger(entry)
-      return opts
+      return params
     },
-    wrapExecute: async (doExecute) => {
+    wrapExecute: async ({ doExecute }) => {
+      const start = Date.now()
       try {
-        return await doExecute()
+        const result = await doExecute()
+        const durationMs = Date.now() - start
+        const tokens = options.includeTokens ? result.tokensUsed : undefined
+        if (levelOrder[level] <= levelOrder.info) {
+          logFn({ level, phase: 'finish', type: 'execute', durationMs, tokens })
+        }
+        return result
       } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error))
-        logger({
-          type: 'error',
-          message: err.message,
-          timestamp: Date.now(),
-        })
-        throw err
+        if (levelOrder[level] <= levelOrder.warn) {
+          logFn({
+            level: 'warn',
+            phase: 'error',
+            type: 'execute',
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+        throw error
       }
-    },
-    transformResult: (result: AgentResult) => {
-      const entry: LogEntry = {
-        type: 'complete',
-        timestamp: Date.now(),
-        ...(options?.includeTokens && result.tokensUsed !== undefined
-          ? { tokensUsed: result.tokensUsed }
-          : {}),
-        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
-        ...(result.stopReason !== undefined ? { stopReason: result.stopReason } : {}),
-      }
-      logger(entry)
-      return result
     },
   }
 }
