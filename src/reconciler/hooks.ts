@@ -4,7 +4,13 @@
  * License: Unlicense (public domain)
  */
 
-import { EffectCallback, useCallback, useEffect, useRef } from "react";
+import {
+  DependencyList,
+  EffectCallback,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react";
 
 /**
  * Runs an effect exactly once when the component mounts.
@@ -84,4 +90,58 @@ export function useMountedState(): () => boolean {
   }, []);
 
   return get;
+}
+
+/**
+ * Returns the value from the previous render.
+ * Returns undefined on the first render.
+ *
+ * @example
+ * const count = useCount();
+ * const prevCount = usePrevious(count);
+ * // On first render: prevCount is undefined
+ * // After count changes: prevCount is the old value
+ */
+export function usePrevious<T>(state: T): T | undefined {
+  const ref = useRef<T | undefined>(undefined);
+
+  useEffect(() => {
+    ref.current = state;
+  });
+
+  return ref.current;
+}
+
+const UNSET = Symbol("unset");
+
+/**
+ * Runs an effect when a value changes, with idempotency guarantees.
+ * Unlike useEffect with [value], this:
+ * - Won't run twice for the same value (handles React strict mode)
+ * - Updates the "last seen" value synchronously before running the effect
+ * - Runs on first mount (when value first becomes available)
+ *
+ * @example
+ * const ralphCount = ralph?.ralphCount ?? 0;
+ *
+ * useEffectOnValueChange(ralphCount, () => {
+ *   // Runs once when ralphCount changes, idempotent
+ *   executeTask();
+ * });
+ */
+export function useEffectOnValueChange<T>(
+  value: T,
+  effect: () => void | (() => void),
+  deps: DependencyList = []
+): void {
+  const lastValueRef = useRef<T | typeof UNSET>(UNSET);
+
+  useEffect(() => {
+    if (lastValueRef.current !== UNSET && Object.is(lastValueRef.current, value)) {
+      return;
+    }
+    lastValueRef.current = value;
+    return effect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, ...deps]);
 }

@@ -47,8 +47,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --config oxlint.json src/",
     "lint:fix": "oxlint --config oxlint.json --fix src/",
-    "test": "bun test src/",
-    "test:watch": "bun test --watch src/",
+    "test": "cd src && bun test .",
+    "test:watch": "cd src && bun test --watch .",
     "check": "bun run typecheck && bun run lint && bun run test",
     "prepare": "husky"
   },
