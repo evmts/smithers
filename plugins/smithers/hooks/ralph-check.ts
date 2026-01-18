@@ -1,4 +1,14 @@
 #!/usr/bin/env bun
+/**
+ * Ralph hook - checks if ralph mode is enabled and restarts with initial prompt.
+ *
+ * To enable ralph mode, create a file: .smithers/ralph-enabled
+ * The hook will:
+ * 1. Read the initial prompt from the Smithers DB
+ * 2. Block stopping and return the initial prompt as context
+ * 3. Increment the ralph counter
+ * 4. Remove the ralph-enabled file (one-shot)
+ */
 
 import { PGlite } from "@electric-sql/pglite";
 
@@ -53,7 +63,9 @@ async function main() {
 
     await pg.close();
 
-    await Bun.file(ralphFlagPath).delete?.();
+    // Remove the ralph flag (one-shot trigger)
+    const deleted = await Bun.file(ralphFlagPath).delete?.();
+    if (!deleted) await Bun.write(ralphFlagPath + ".done", "");
 
     const output: HookOutput = {
       decision: "block",

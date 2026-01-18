@@ -19,12 +19,14 @@ import { OnCIFailure } from "smithers-orchestrator/components/Hooks";
   pollInterval={60000}
   onFailure={(failure) => console.log('CI failed:', failure)}
 >
-  <Claude>
-    The CI has failed. Here are the logs:
-    {failure.logs}
+  {(failure) => (
+    <Claude>
+      The CI has failed. Here are the logs:
+      {failure.logs}
 
-    Analyze the failure and fix the issue.
-  </Claude>
+      Analyze the failure and fix the issue.
+    </Claude>
+  )}
 </OnCIFailure>
 ```
 
@@ -42,8 +44,8 @@ import { OnCIFailure } from "smithers-orchestrator/components/Hooks";
   Callback when a CI failure is detected.
 </ParamField>
 
-<ParamField path="children" type="ReactNode" required>
-  Content to render when a failure is detected.
+<ParamField path="children" type="ReactNode | ((failure: CIFailure) => ReactNode)" required>
+  Content to render when a failure is detected. Can be a render prop function that receives the failure object.
 </ParamField>
 
 ### CIFailure Type
@@ -125,36 +127,40 @@ function CIRecoveryWorkflow() {
             pollInterval={30000}
             onFailure={(f) => console.log(`CI failed: ${f.workflowName}`)}
           >
-            <Phase name="Analyze">
-              <Claude
-                allowedTools={["Read", "Grep", "Glob"]}
-                onFinished={(r) => db.state.set("analysis", r.output)}
-              >
-                Analyze these CI failure logs and identify the root cause:
+            {(failure) => (
+              <>
+                <Phase name="Analyze">
+                  <Claude
+                    allowedTools={["Read", "Grep", "Glob"]}
+                    onFinished={(r) => db.state.set("analysis", r.output)}
+                  >
+                    Analyze these CI failure logs and identify the root cause:
 
-                Failed jobs: {failure.failedJobs?.join(", ")}
+                    Failed jobs: {failure.failedJobs?.join(", ")}
 
-                Logs:
-                {failure.logs}
-              </Claude>
-            </Phase>
+                    Logs:
+                    {failure.logs}
+                  </Claude>
+                </Phase>
 
-            <Phase name="Fix">
-              <Claude
-                allowedTools={["Read", "Edit", "Write"]}
-                onFinished={() => db.state.set("phase", "test")}
-              >
-                Based on the analysis, fix the failing tests or code.
-              </Claude>
-            </Phase>
+                <Phase name="Fix">
+                  <Claude
+                    allowedTools={["Read", "Edit", "Write"]}
+                    onFinished={() => db.state.set("phase", "test")}
+                  >
+                    Based on the analysis, fix the failing tests or code.
+                  </Claude>
+                </Phase>
 
-            <Phase name="Commit">
-              <Commit
-                autoGenerate
-                all
-                notes={{ smithers: true, ciRecovery: true }}
-              />
-            </Phase>
+                <Phase name="Commit">
+                  <Commit
+                    autoGenerate
+                    all
+                    notes={{ smithers: true, ciRecovery: true }}
+                  />
+                </Phase>
+              </>
+            )}
           </OnCIFailure>
         </Ralph>
       </Orchestration>
