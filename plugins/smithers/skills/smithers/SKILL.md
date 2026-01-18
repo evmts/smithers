@@ -27,6 +27,45 @@ Use this skill when the user wants to:
 
 **Trigger keywords**: "smithers", "multi-agent", "orchestration", "workflow", "agent pipeline", "coordinate agents"
 
+## Gathering Requirements
+
+Before creating an orchestration, ask the user these questions to understand their needs:
+
+### Essential Questions (Always Ask)
+
+**1. Purpose**: "What are you trying to accomplish with this orchestration?"
+- Understand the goal before designing the solution
+- Clarifies scope, success criteria, and constraints
+
+**2. Duration**: "How long do you expect this to run?"
+- **Minutes**: Simple one-shot script, no persistence needed
+- **Hours**: May need checkpoints and error recovery
+- **Days/Weeks**: Ralph with persistence, session resumability
+- **Ongoing**: Full Ralph mode, robust monitoring
+
+**3. Model Selection**: "Should I use opus, sonnet, or a mix based on task complexity?"
+- **Opus**: Complex reasoning, architecture, critical decisions
+- **Sonnet**: Implementation, straightforward tasks
+- **Haiku**: Summarization, simple validation
+- **Mixed**: Match model to phase complexity (recommended for multi-phase)
+
+### Situational Questions (Ask Based on Context)
+
+**Parallelism**: "Can some phases run in parallel?"
+- Affects use of `<Step>` components for concurrent work
+
+**Error Handling**: "How should failures be handled - retry, fallback, or abort?"
+- Determines retry counts, recovery phases, onError callbacks
+
+**Human Checkpoints**: "Should execution pause for your review at certain points?"
+- Adds approval gates between phases
+
+**Context Sources**: "Where should agents get information - files, web, APIs?"
+- Determines tools to enable and prompt structure
+
+**Output Expectations**: "What should the final output look like?"
+- Defines terminal phase and success criteria
+
 ## Quick Start
 
 ### 1. Install and initialize
