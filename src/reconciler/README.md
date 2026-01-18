@@ -181,8 +181,8 @@ The key insight is how React's reconciliation enables iterative orchestration:
 │                                                                              │
 │   1. Initial render (managed by SmithersProvider)                            │
 │      ┌─────────────────────┐                                                 │
-│      │ <ralph iteration={0}>│  ← iteration=0 on first pass                   │
-│      │   <Claude />         │                                                │
+│      │ <ralph iteration={0}>│  ← intrinsic element (serialized to XML)       │
+│      │   <Claude />         │  ← React component                             │
 │      └─────────────────────┘                                                 │
 │              │                                                               │
 │              ▼                                                               │
