@@ -11,9 +11,10 @@ export interface PhaseProps {
  * Provides semantic structure to agent workflows.
  */
 export function Phase(props: PhaseProps): JSX.Element {
+  const { children, ...rest } = props
   return (
-    <phase name={props.name}>
-      {props.children}
+    <phase {...rest}>
+      {children}
     </phase>
   )
 }

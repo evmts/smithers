@@ -1,9 +1,8 @@
 # Bun configuration for Smithers
 # https://bun.sh/docs/runtime/bunfig
-# Usage: bun -c node_modules/smithers-orchestrator/bunfig.toml your-file.tsx
 
 jsx = "react-jsx"
-jsxImportSource = "solid-js/h"
+jsxImportSource = "smithers-orchestrator"
 
 [install]
 auto = "fallback"

@@ -7,9 +7,9 @@
     "declarationMap": true,
     "sourceMap": true,
 
-    // JSX configuration - use react-jsx with solid-js import source
+    // JSX configuration - use smithers jsx-runtime
     "jsx": "react-jsx",
-    "jsxImportSource": "solid-js",
+    "jsxImportSource": "smithers-orchestrator",
 
     // Module system
     "module": "ESNext",
