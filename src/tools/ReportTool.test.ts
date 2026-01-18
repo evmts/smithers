@@ -51,54 +51,58 @@ describe('createReportTool', () => {
       },
     },
     agentId: 'test-agent',
+    executionId: 'exec-1',
+    cwd: '/tmp',
+    env: {},
+    log: mock(() => {}),
   }
 
   test('returns a tool with correct name', () => {
-    const tool = createReportTool(mockContext as any)
+    const tool = createReportTool()
     expect(tool.name).toBe('Report')
   })
 
   test('has description', () => {
-    const tool = createReportTool(mockContext as any)
+    const tool = createReportTool()
     expect(tool.description).toBeDefined()
     expect(tool.description.length).toBeGreaterThan(0)
   })
 
   test('has input schema', () => {
-    const tool = createReportTool(mockContext as any)
+    const tool = createReportTool()
     expect(tool.inputSchema).toBeDefined()
-    expect(tool.inputSchema.type).toBe('object')
-    expect(tool.inputSchema.properties).toBeDefined()
+    expect(typeof tool.inputSchema.safeParse).toBe('function')
   })
 
   test('input schema has required fields', () => {
-    const tool = createReportTool(mockContext as any)
-    expect(tool.inputSchema.required).toContain('type')
-    expect(tool.inputSchema.required).toContain('title')
-    expect(tool.inputSchema.required).toContain('content')
+    const tool = createReportTool()
+    const shape = (tool.inputSchema as any).shape
+    expect(shape.type).toBeDefined()
+    expect(shape.title).toBeDefined()
+    expect(shape.content).toBeDefined()
   })
 
   test('input schema has type enum', () => {
-    const tool = createReportTool(mockContext as any)
-    const typeProperty = tool.inputSchema.properties?.type as any
-    expect(typeProperty.enum).toContain('progress')
-    expect(typeProperty.enum).toContain('finding')
-    expect(typeProperty.enum).toContain('warning')
-    expect(typeProperty.enum).toContain('error')
-    expect(typeProperty.enum).toContain('metric')
-    expect(typeProperty.enum).toContain('decision')
+    const tool = createReportTool()
+    const typeSchema = (tool.inputSchema as any).shape.type
+    expect(typeSchema.options).toContain('progress')
+    expect(typeSchema.options).toContain('finding')
+    expect(typeSchema.options).toContain('warning')
+    expect(typeSchema.options).toContain('error')
+    expect(typeSchema.options).toContain('metric')
+    expect(typeSchema.options).toContain('decision')
   })
 
   test('input schema has severity enum', () => {
-    const tool = createReportTool(mockContext as any)
-    const severityProperty = tool.inputSchema.properties?.severity as any
-    expect(severityProperty.enum).toContain('info')
-    expect(severityProperty.enum).toContain('warning')
-    expect(severityProperty.enum).toContain('critical')
+    const tool = createReportTool()
+    const severitySchema = (tool.inputSchema as any).shape.severity
+    expect(severitySchema._def.innerType.options).toContain('info')
+    expect(severitySchema._def.innerType.options).toContain('warning')
+    expect(severitySchema._def.innerType.options).toContain('critical')
   })
 
   test('has execute function', () => {
-    const tool = createReportTool(mockContext as any)
+    const tool = createReportTool()
     expect(typeof tool.execute).toBe('function')
   })
 
@@ -107,14 +111,25 @@ describe('createReportTool', () => {
     const context = {
       db: { vcs: { addReport } },
       agentId: 'agent-123',
+      executionId: 'exec-2',
+      cwd: '/tmp',
+      env: {},
+      log: mock(() => {}),
     }
 
-    const tool = createReportTool(context as any)
-    await tool.execute({
-      type: 'progress',
-      title: 'Test Progress',
-      content: 'Progress update content',
-    })
+    const tool = createReportTool()
+    await tool.execute(
+      {
+        type: 'progress',
+        title: 'Test Progress',
+        content: 'Progress update content',
+      },
+      {
+        toolCallId: 'call-1',
+        messages: [],
+        experimental_context: context,
+      }
+    )
 
     expect(addReport).toHaveBeenCalledWith({
       type: 'progress',
@@ -131,14 +146,25 @@ describe('createReportTool', () => {
     const context = {
       db: { vcs: { addReport } },
       agentId: 'agent-123',
+      executionId: 'exec-3',
+      cwd: '/tmp',
+      env: {},
+      log: mock(() => {}),
     }
 
-    const tool = createReportTool(context as any)
-    const result = await tool.execute({
-      type: 'finding',
-      title: 'Test Finding',
-      content: 'Finding content',
-    })
+    const tool = createReportTool()
+    const result = await tool.execute(
+      {
+        type: 'finding',
+        title: 'Test Finding',
+        content: 'Finding content',
+      },
+      {
+        toolCallId: 'call-2',
+        messages: [],
+        experimental_context: context,
+      }
+    )
 
     expect(result.success).toBe(true)
     expect(result.reportId).toBe('report-789')
@@ -150,14 +176,25 @@ describe('createReportTool', () => {
     const context = {
       db: { vcs: { addReport } },
       agentId: 'agent-123',
+      executionId: 'exec-4',
+      cwd: '/tmp',
+      env: {},
+      log: mock(() => {}),
     }
 
-    const tool = createReportTool(context as any)
-    await tool.execute({
-      type: 'error',
-      title: 'Test Error',
-      content: 'Error content',
-    })
+    const tool = createReportTool()
+    await tool.execute(
+      {
+        type: 'error',
+        title: 'Test Error',
+        content: 'Error content',
+      },
+      {
+        toolCallId: 'call-3',
+        messages: [],
+        experimental_context: context,
+      }
+    )
 
     expect(addReport).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'critical' })
@@ -169,14 +206,25 @@ describe('createReportTool', () => {
     const context = {
       db: { vcs: { addReport } },
       agentId: 'agent-123',
+      executionId: 'exec-5',
+      cwd: '/tmp',
+      env: {},
+      log: mock(() => {}),
     }
 
-    const tool = createReportTool(context as any)
-    await tool.execute({
-      type: 'warning',
-      title: 'Test Warning',
-      content: 'Warning content',
-    })
+    const tool = createReportTool()
+    await tool.execute(
+      {
+        type: 'warning',
+        title: 'Test Warning',
+        content: 'Warning content',
+      },
+      {
+        toolCallId: 'call-4',
+        messages: [],
+        experimental_context: context,
+      }
+    )
 
     expect(addReport).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'warning' })
@@ -188,15 +236,26 @@ describe('createReportTool', () => {
     const context = {
       db: { vcs: { addReport } },
       agentId: 'agent-123',
+      executionId: 'exec-6',
+      cwd: '/tmp',
+      env: {},
+      log: mock(() => {}),
     }
 
-    const tool = createReportTool(context as any)
-    await tool.execute({
-      type: 'error',
-      title: 'Test Error',
-      content: 'Error content',
-      severity: 'info', // Override critical default
-    })
+    const tool = createReportTool()
+    await tool.execute(
+      {
+        type: 'error',
+        title: 'Test Error',
+        content: 'Error content',
+        severity: 'info', // Override critical default
+      },
+      {
+        toolCallId: 'call-5',
+        messages: [],
+        experimental_context: context,
+      }
+    )
 
     expect(addReport).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'info' })
@@ -208,15 +267,26 @@ describe('createReportTool', () => {
     const context = {
       db: { vcs: { addReport } },
       agentId: 'agent-123',
+      executionId: 'exec-7',
+      cwd: '/tmp',
+      env: {},
+      log: mock(() => {}),
     }
 
-    const tool = createReportTool(context as any)
-    await tool.execute({
-      type: 'metric',
-      title: 'Test Metric',
-      content: 'Metric content',
-      data: { value: 42, unit: 'ms' },
-    })
+    const tool = createReportTool()
+    await tool.execute(
+      {
+        type: 'metric',
+        title: 'Test Metric',
+        content: 'Metric content',
+        data: { value: 42, unit: 'ms' },
+      },
+      {
+        toolCallId: 'call-6',
+        messages: [],
+        experimental_context: context,
+      }
+    )
 
     expect(addReport).toHaveBeenCalledWith(
       expect.objectContaining({
