@@ -5,6 +5,7 @@ import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
 import { usePhaseContext } from './PhaseContext.js'
+import { useStepContext } from './StepContext.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
@@ -62,6 +63,8 @@ export function Claude(props: ClaudeProps): ReactNode {
   const worktree = useWorktree()
   const phase = usePhaseContext()
   const phaseActive = phase?.isActive ?? true
+  const step = useStepContext()
+  const stepActive = step?.isActive ?? true
   const ralphCount = useRalphCount()
 
   // agentId stored in ref (set once, non-reactive until set)
@@ -112,10 +115,11 @@ export function Claude(props: ClaudeProps): ReactNode {
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
-  const executionKey = `${ralphCount}:${phaseActive ? 'active' : 'inactive'}`
+  const shouldExecute = phaseActive && stepActive
+  const executionKey = `${ralphCount}:${shouldExecute ? 'active' : 'inactive'}`
 
   useEffectOnValueChange(executionKey, () => {
-    if (!phaseActive) return
+    if (!shouldExecute) return
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database

@@ -107,6 +107,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
 
   const vcs: VcsModule = {
     logCommit: (commit): string => {
+      if (rdb.isClosed) return uuid()
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
@@ -123,6 +124,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     getCommits: (limit: number = 50): Commit[] => {
+      if (rdb.isClosed) return []
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) return []
       return rdb.query<any>('SELECT * FROM commits WHERE execution_id = ? ORDER BY created_at DESC LIMIT ?', [currentExecutionId, limit])
@@ -131,6 +133,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     getCommit: (hash: string, vcsType?: 'git' | 'jj'): Commit | null => {
+      if (rdb.isClosed) return null
       if (vcsType) {
         return mapCommit(rdb.queryOne('SELECT * FROM commits WHERE commit_hash = ? AND vcs_type = ?', [hash, vcsType]))
       }
@@ -138,6 +141,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     logSnapshot: (snapshot): string => {
+      if (rdb.isClosed) return uuid()
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
@@ -155,6 +159,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     getSnapshots: (limit: number = 50): Snapshot[] => {
+      if (rdb.isClosed) return []
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) return []
       return rdb.query<any>('SELECT * FROM snapshots WHERE execution_id = ? ORDER BY created_at DESC LIMIT ?', [currentExecutionId, limit])
@@ -163,6 +168,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     logReview: (review): string => {
+      if (rdb.isClosed) return uuid()
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
@@ -178,6 +184,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     updateReview: (id: string, updates: { posted_to_github?: boolean; posted_to_git_notes?: boolean }) => {
+      if (rdb.isClosed) return
       const sets: string[] = []
       const params: any[] = []
       if (updates.posted_to_github !== undefined) { sets.push('posted_to_github = ?'); params.push(updates.posted_to_github ? 1 : 0) }
@@ -189,6 +196,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     getReviews: (limit: number = 50): Review[] => {
+      if (rdb.isClosed) return []
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) return []
       return rdb.query<any>('SELECT * FROM reviews WHERE execution_id = ? ORDER BY created_at DESC LIMIT ?', [currentExecutionId, limit])
@@ -197,6 +205,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     getBlockingReviews: (): Review[] => {
+      if (rdb.isClosed) return []
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) return []
       return rdb.query<any>('SELECT * FROM reviews WHERE execution_id = ? AND blocking = 1 AND approved = 0', [currentExecutionId])
@@ -205,6 +214,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     addReport: (report): string => {
+      if (rdb.isClosed) return uuid()
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
@@ -218,6 +228,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     getReports: (type?: Report['type'], limit: number = 100): Report[] => {
+      if (rdb.isClosed) return []
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) return []
       let sql = 'SELECT * FROM reports WHERE execution_id = ?'
@@ -231,6 +242,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     },
 
     getCriticalReports: (): Report[] => {
+      if (rdb.isClosed) return []
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) return []
       return rdb.query<any>(
