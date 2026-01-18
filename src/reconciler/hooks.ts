@@ -31,7 +31,7 @@ export const ExecutionGateProvider = ({
     children
   );
 
-const useExecutionGate = (): boolean => useContext(ExecutionGateContext);
+export const useExecutionGate = (): boolean => useContext(ExecutionGateContext);
 
 /**
  * Runs an effect exactly once when the component mounts.
