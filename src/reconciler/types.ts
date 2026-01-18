@@ -18,9 +18,10 @@ export interface SmithersNode {
   /** Reference to parent node (null for root) */
   parent: SmithersNode | null
   /**
-   * Unique key for reconciliation.
-   * CRITICAL for the "Ralph Wiggum loop" - changing this forces unmount/remount,
-   * which triggers re-execution of onMount handlers.
+   * Unique key for reconciliation (set by jsx-runtime, not React reconciler).
+   * NOTE: React's `key` prop is NOT passed through to components/instances.
+   * The jsx-runtime handles this specially, but if using React reconciler
+   * directly, use `planKey` in props instead for accessible identifiers.
    */
   key?: string | number
   /** Runtime execution state */

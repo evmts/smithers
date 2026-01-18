@@ -1,6 +1,10 @@
 import Reconciler from 'react-reconciler'
+import { DefaultEventPriority } from 'react-reconciler/constants.js'
 import type { SmithersNode } from './types.js'
 import { rendererMethods } from './methods.js'
+
+// Track current update priority (avoids hardcoded magic numbers)
+let currentUpdatePriority: number = DefaultEventPriority
 
 // Re-export rendererMethods for backwards compatibility
 export { rendererMethods }
@@ -189,7 +193,7 @@ const hostConfig = {
 
   // Required for newer React versions
   getCurrentEventPriority(): number {
-    return 16 // DefaultEventPriority (DiscreteEventPriority = 1, ContinuousEventPriority = 4, DefaultEventPriority = 16)
+    return DefaultEventPriority
   },
 
   getInstanceFromNode(): null {
@@ -212,16 +216,16 @@ const hostConfig = {
     return null
   },
 
-  setCurrentUpdatePriority(): void {
-    // No-op
+  setCurrentUpdatePriority(priority: number): void {
+    currentUpdatePriority = priority
   },
 
   getCurrentUpdatePriority(): number {
-    return 16
+    return currentUpdatePriority
   },
 
   resolveUpdatePriority(): number {
-    return 16
+    return currentUpdatePriority || DefaultEventPriority
   },
 
   // For microtasks (React 18+)
