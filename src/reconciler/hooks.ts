@@ -5,12 +5,33 @@
  */
 
 import {
+  createContext,
+  createElement,
   DependencyList,
   EffectCallback,
   useCallback,
+  useContext,
   useEffect,
   useRef,
+  type ReactNode,
 } from "react";
+
+const ExecutionGateContext = createContext(true);
+
+export const ExecutionGateProvider = ({
+  enabled,
+  children,
+}: {
+  enabled: boolean;
+  children: ReactNode;
+}) =>
+  createElement(
+    ExecutionGateContext.Provider,
+    { value: enabled },
+    children
+  );
+
+const useExecutionGate = (): boolean => useContext(ExecutionGateContext);
 
 /**
  * Runs an effect exactly once when the component mounts.
@@ -27,9 +48,17 @@ export const useEffectOnce = (effect: EffectCallback) => {
  * - Is easier to grep for mount behavior
  */
 export const useMount = (fn: () => void) => {
-  useEffectOnce(() => {
-    fn();
-  });
+  const fnRef = useRef(fn);
+  const hasRunRef = useRef(false);
+  const isEnabled = useExecutionGate();
+
+  fnRef.current = fn;
+
+  useEffect(() => {
+    if (!isEnabled || hasRunRef.current) return;
+    hasRunRef.current = true;
+    fnRef.current();
+  }, [isEnabled]);
 };
 
 /**
@@ -40,11 +69,22 @@ export const useMount = (fn: () => void) => {
  */
 export const useUnmount = (fn: () => void): void => {
   const fnRef = useRef(fn);
+  const wasEnabledRef = useRef(false);
+  const isEnabled = useExecutionGate();
 
   // Update the ref each render so if it changes, the newest callback will be invoked
   fnRef.current = fn;
 
-  useEffectOnce(() => () => fnRef.current());
+  useEffect(() => {
+    if (isEnabled) {
+      wasEnabledRef.current = true;
+    }
+  }, [isEnabled]);
+
+  useEffectOnce(() => () => {
+    if (!wasEnabledRef.current) return;
+    fnRef.current();
+  });
 };
 
 /**
