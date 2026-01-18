@@ -1,6 +1,6 @@
-# Issue: Reexport React Hooks
+# Issue: Rate Limit Module
 
-See: `../../../issues/reexport-react-hooks.md`
+See: `../../../issues/rate-limit-module.md`
 
 ## Task
 
@@ -11,6 +11,6 @@ Implement the solution described in the issue.
 1. Make commits as you implement
 2. When ready, push and create PR:
    ```bash
-   git push -u origin issue/reexport-react-hooks
-   gh pr create --title "Feat: Reexport React Hooks" --body "Implements reexport-react-hooks. See issues/reexport-react-hooks.md"
+   git push -u origin issue/rate-limit-module
+   gh pr create --title "Feat: Rate Limit Module" --body "Implements rate-limit-module. See issues/rate-limit-module.md"
    ```
