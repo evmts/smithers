@@ -1,5 +1,6 @@
 # Orchestration.tsx Completion Not Aligned with SmithersProvider
 
+**Scope:** easy
 **Severity:** P1 - High
 **File:** `src/components/Orchestration.tsx`
 **Status:** Open
@@ -81,15 +82,59 @@ SmithersReconciler.updateContainer(null, fiberRoot, null, () => {
 ## Missing Switch Case
 
 ```tsx
-// Current
-switch (props.stopOnGlobalCondition) {
-  case 'error': ...
-  case 'timeout': ...
+// Current (src/components/Orchestration.tsx:158-185)
+switch (condition.type) {
+  case 'total_tokens': ...
+  case 'total_agents': ...
+  case 'total_time': ...
+  case 'report_severity': ...
+  case 'custom': ...
   // Missing: case 'ci_failure'
 }
 
 // Add:
 case 'ci_failure':
-  // Watch CI status and trigger stop
+  // Watch CI status from DB and trigger stop
+  const ciStatus = await db.state.get('ci_status')
+  shouldStop = ciStatus?.value?.status === 'failure'
+  message = message || 'CI build failed'
   break
 ```
+
+## How to Fix
+
+### Fix 1: Call dispose() after mount completes
+
+The simplest fix - update `templates/main.tsx.template` and all orchestration entry points:
+
+```tsx
+// templates/main.tsx.template:228
+await root.mount(App)
+
+// Add immediately after mount completes:
+root.dispose()  // This triggers useUnmount in Orchestration
+
+// Mark execution as complete
+const finalState = await db.state.getAll()
+await db.execution.complete(executionId, finalState)
+```
+
+This ensures:
+- Promise resolves when SmithersProvider signals completion
+- Tree unmounts immediately after, firing useUnmount hooks
+- Orchestration.onComplete callback executes
+- Orchestration.cleanupOnComplete runs if configured
+
+### Fix 2: Add missing ci_failure case
+
+In `src/components/Orchestration.tsx`, add the case at line 185:
+
+```tsx
+case 'ci_failure':
+  const ciStatus = await db.state.get('ci_status')
+  shouldStop = ciStatus?.value?.status === 'failure'
+  message = message || 'CI build failed'
+  break
+```
+
+This assumes CI status is tracked in state table. The `OnCIFailure` hook component should update this state.

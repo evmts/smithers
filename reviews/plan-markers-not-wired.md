@@ -1,38 +1,46 @@
+## Scope: easy
+
 # Plan-Only Markers Not Wired to Execution
 
 **Severity:** P2 - Medium (if intentional phased development)
 **Files:** Multiple component files
 **Status:** Open / Tracking
+**Last Audited:** 2026-01-18
 
 ## Overview
 
-These components serialize to plan XML but the execution engine does not interpret them:
+Most components serialize to plan XML but lack execution wiring. Status varies by component:
 
-| Component | XML Tag | Current State |
-|-----------|---------|---------------|
-| Stop | `<smithers-stop>` | Serializes only |
-| Human | `<human>` | Serializes only |
-| Task | `<task done=...>` | Serializes only |
-| Subagent | `<subagent>` | Serializes only |
-| Persona | `<persona>` | Serializes only |
-| Constraints | `<constraints>` | Serializes only |
-| MCP/Sqlite | `<mcp-tool ...>` | Serializes only |
+| Component | XML Tag | Infrastructure | Component Wired | Status |
+|-----------|---------|----------------|-----------------|--------|
+| MCP/Sqlite | `<mcp-tool ...>` | ✅ Full | ✅ Yes | **COMPLETE** |
+| Stop | `<smithers-stop>` | ✅ Partial | ❌ No | Infra exists, needs wiring |
+| Human | `<human>` | ✅ Partial | ❌ No | Infra exists, needs wiring |
+| Persona | `<persona>` | ❌ None | ❌ No | Needs extraction |
+| Constraints | `<constraints>` | ❌ None | ❌ No | Needs extraction |
+| Task | `<task done=...>` | ❌ None | ❌ No | Visualization only |
+| Subagent | `<subagent>` | ❌ None | ❌ No | Visualization only |
 
-Only Claude/Smithers actually execute (make API calls, produce outputs).
+Only Claude/Smithers/MCP actually execute (make API calls, produce outputs).
 
 ## Current Flow
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ Component renders → Serializes to XML → Plan captured   │
-│                                                         │
-│ BUT:                                                    │
-│ • SmithersProvider doesn't scan for <smithers-stop>     │
-│ • <human> doesn't block on db.human.resolve()           │
-│ • <persona>/<constraints> not extracted by prompt       │
-│   builders                                              │
-│ • <mcp-tool> not routed to MCP server                   │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Component renders → Serializes to XML → Plan captured       │
+│                                                              │
+│ ✅ WORKING:                                                  │
+│ • <mcp-tool> extracted by Claude.tsx (line 136)             │
+│ • MCP config generated & passed to CLI (lines 147-148)      │
+│                                                              │
+│ ❌ NOT WIRED (but infra exists):                            │
+│ • <smithers-stop> → doesn't call requestStop()             │
+│ • <human> → doesn't call db.human.request()                │
+│                                                              │
+│ ❌ NOT WIRED (no infra):                                    │
+│ • <persona>/<constraints> not extracted by Claude.tsx       │
+│ • <task>/<subagent> no execution logic                     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## If Intentional (Phased Development)

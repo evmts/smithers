@@ -1,14 +1,23 @@
 # PhaseRegistry + Phase Sequential Control is Broken
 
+**Scope:** MAJOR
 **Severity:** P0 (multiple critical issues)
-**Files:** `src/components/PhaseRegistry.tsx`, `src/components/Phase.tsx`
-**Status:** Open
+**Files:** `src/components/PhaseRegistry.tsx`, `src/components/Phase.tsx`, `src/components/Step.tsx`
+**Status:** Open (as of 2026-01-18)
+
+**Status Summary:**
+- Issue #1 (Reset on mount): STILL PRESENT - Line 68 unconditionally sets index to 0
+- Issue #2 (setState during render): FIXED - Refactored to useRef in commit 5e3536e
+- Issue #3 (Skipped phases at mount): STILL PRESENT - Lines 86-99 advance on mount
+- Issue #4 (Missing progression): STILL PRESENT - No completion detection mechanism
 
 ---
 
 ## P0: PhaseRegistryProvider Resets Phase Index Every Mount
 
 ### Problem
+
+**Location:** `src/components/PhaseRegistry.tsx:67-69`
 
 ```tsx
 useMount(() => {
@@ -23,16 +32,18 @@ This:
 
 ### Recommended Fix
 
-Only initialize if missing (like StepRegistryProvider):
+Only initialize if missing (like StepRegistryProvider does at lines 66-72):
 
 ```tsx
 useMount(() => {
-  const existing = db.state.get('currentPhaseIndex')
-  if (existing === undefined) {
+  const existing = db.state.get<number>('currentPhaseIndex')
+  if (existing === null) {
     db.state.set('currentPhaseIndex', 0, 'phase_registry_init')
   }
 })
 ```
+
+**Pattern Reference:** See `StepRegistryProvider` in `src/components/Step.tsx:66-72` for correct pattern.
 
 ---
 
