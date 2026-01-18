@@ -1,15 +1,17 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "smithers",
+  "version": "1.0.0",
+  "description": "Smithers - Declarative JSX framework for AI agent orchestration",
   "owner": {
     "name": "William Cory"
   },
-  "description": "Smithers - Declarative JSX framework for AI agent orchestration",
   "plugins": [
     {
       "name": "smithers",
-      "source": "..",
       "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
-      "version": "0.1.0"
+      "source": ".",
+      "category": "development"
     }
   ]
 }
