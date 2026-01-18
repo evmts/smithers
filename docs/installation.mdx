@@ -69,8 +69,8 @@ yarn add smithers
 
 These are bundled with Smithers:
 
-- **solid-js** - Reactive primitives for state management
-- **@electric-sql/pglite** - Embedded PostgreSQL for persistence
+- **react** - Reactive primitives for state management
+- **bun:sqlite (reactive-sqlite wrapper)** - SQLite for persistence
 - **zod** - Schema validation for structured output
 
 ### Optional
@@ -89,7 +89,7 @@ Add JSX support to your `tsconfig.json`:
 {
   "compilerOptions": {
     "jsx": "preserve",
-    "jsxImportSource": "solid-js",
+    "jsxImportSource": "react",
     "moduleResolution": "bundler",
     "target": "ESNext",
     "module": "ESNext"
@@ -99,7 +99,7 @@ Add JSX support to your `tsconfig.json`:
 
 ### Bun Configuration
 
-Create a `bunfig.toml` for Solid JSX:
+Create a `bunfig.toml` for React JSX:
 
 ```toml
 [dev]
@@ -114,9 +114,9 @@ Create a test file `test.tsx`:
 #!/usr/bin/env bun
 
 import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Claude } from "smithers-orchestrator/components/Claude";
 
 const db = await createSmithersDB({ path: ".smithers/test" });
 const executionId = await db.execution.start("Test", "test.tsx");
@@ -159,7 +159,7 @@ You should see Claude respond with "Hello from Smithers!"
   </Accordion>
 
   <Accordion title="JSX compilation errors">
-    Ensure your `bunfig.toml` has the Solid JSX configuration:
+    Ensure your `bunfig.toml` has the React JSX configuration:
     ```toml
     [dev]
     jsx = "solid"
@@ -167,7 +167,7 @@ You should see Claude respond with "Hello from Smithers!"
   </Accordion>
 
   <Accordion title="Database permission errors">
-    The PGlite database needs write access to the directory. Check permissions:
+    The SQLite database needs write access to the directory. Check permissions:
     ```bash
     mkdir -p .smithers
     chmod 755 .smithers

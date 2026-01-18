@@ -1,11 +1,11 @@
 ---
 title: Database Persistence
-description: PGlite database for persisting workflow state across sessions
+description: SQLite database for persisting workflow state across sessions
 ---
 
 # Database Persistence
 
-Smithers uses **PGlite** (embedded PostgreSQL) to persist all workflow state. This enables:
+Smithers uses **SQLite** (via reactive-sqlite) to persist all workflow state. This enables:
 
 - **Resume workflows** after restarts or crashes
 - **Inspect execution history** for debugging
@@ -15,7 +15,7 @@ Smithers uses **PGlite** (embedded PostgreSQL) to persist all workflow state. Th
 ## Creating a Database
 
 ```tsx
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { createSmithersDB } from "smithers-orchestrator/db";
 
 // Create a database at a specific path
 const db = await createSmithersDB({
@@ -26,7 +26,7 @@ const db = await createSmithersDB({
 await db.close();
 ```
 
-The database is created as a directory containing PostgreSQL data files.
+The database is created as a directory containing SQLite data files.
 
 ## Database Structure
 

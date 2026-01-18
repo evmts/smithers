@@ -5,7 +5,7 @@ description: Declarative JSX framework for building AI agent orchestration workf
 
 # Welcome to Smithers
 
-Smithers is a **declarative JSX framework** for building AI agent orchestration workflows. Built with Solid.js signals, it lets you write agent workflows as composable JSX components with persistent state across sessions.
+Smithers is a **declarative JSX framework** for building AI agent orchestration workflows. Built with React, it lets you write agent workflows as composable JSX components with persistent state across sessions.
 
 ## Why Smithers?
 
@@ -14,7 +14,7 @@ Smithers is a **declarative JSX framework** for building AI agent orchestration 
 - **Persist state across sessions** - Pick up where you left off, even days later
 - **Mix short scripts with long-running workflows** - Same syntax for a quick task or a week-long project
 - **Full observability** - Database logging and reports show exactly what your agents are doing
-- **Reactive primitives** - Solid.js signals mean your workflows respond to state changes automatically
+- **Reactive primitives** - React mean your workflows respond to state changes automatically
 - **Version controlled workflows** - Workflows are just TypeScript files
 
 <CardGroup cols={2}>
@@ -81,7 +81,7 @@ const UserSchema = z.object({
 
 ### Database State Persistence
 
-All state is saved in a PGlite database that survives restarts:
+All state is saved in a SQLite database that survives restarts:
 
 ```tsx
 // Set state
@@ -109,11 +109,11 @@ Give Claude access to external tools via Model Context Protocol:
 
 ## How It Works
 
-Smithers uses a custom Solid.js renderer called the "Ralph Wiggum Loop":
+Smithers uses a custom React renderer called the "Ralph Wiggum Loop":
 
-1. **Render**: Your JSX components render using Solid's fine-grained reactivity
+1. **Render**: Your JSX components render using React's rendering
 2. **Execute**: `<Claude>` nodes are executed via Claude Code CLI
-3. **Update**: `onFinished` callbacks update Solid signals
+3. **Update**: `onFinished` callbacks update React state
 4. **Re-render**: Signal changes trigger reactive updates to the tree
 5. **Loop**: Back to step 2 until no pending `<Claude>` nodes remain
 6. **Complete**: Execution finishes when all agents are done

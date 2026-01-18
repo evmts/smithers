@@ -10,7 +10,7 @@ The `<Smithers>` component spawns a new Smithers instance to plan and execute co
 ## Basic Usage
 
 ```tsx
-import { Smithers } from "smithers/smithers-orchestrator/src/components/Smithers";
+import { Smithers } from "smithers-orchestrator/components/Smithers";
 
 <Smithers
   plannerModel="opus"
@@ -201,12 +201,12 @@ The planner might generate something like:
 import { createSmithersRoot, SmithersProvider, Ralph, Phase, Claude } from "smithers";
 
 async function NotificationWorkflow() {
-  const [phase, setPhase] = createSignal("database");
+  const [phase, setPhase] = useState("database");
 
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={10}>
-        {phase() === "database" && (
+        {phase === "database" && (
           <Phase name="Database">
             <Claude
               model="sonnet"
@@ -219,7 +219,7 @@ async function NotificationWorkflow() {
           </Phase>
         )}
 
-        {phase() === "api" && (
+        {phase === "api" && (
           <Phase name="API">
             <Claude
               model="sonnet"
