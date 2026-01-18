@@ -115,10 +115,10 @@ The component tracks execution status internally:
 
 ### Phase
 
-Semantic grouping component for workflow organization.
+Sequential workflow phase with automatic state management. Phases execute in declaration order.
 
 ```tsx
-<Phase name="Research">
+<Phase name="Research" onStart={() => {}} onComplete={() => {}}>
   {children}
 </Phase>
 ```
@@ -127,29 +127,55 @@ Semantic grouping component for workflow organization.
 
 | Prop | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `name` | `string` | No | - | Phase name for identification |
-| `children` | `JSX.Element` | No | - | Child components |
+| `name` | `string` | Yes | - | Phase name (must be unique) |
+| `children` | `JSX.Element` | No | - | Child components (only rendered when active) |
+| `skipIf` | `() => boolean` | No | - | Skip this phase if condition returns true |
+| `onStart` | `() => void` | No | - | Callback when phase becomes active |
+| `onComplete` | `() => void` | No | - | Callback when phase completes |
 
-#### Purpose
+#### Behavior
 
-Phases provide semantic structure to workflows. They:
-- Group related agents
-- Improve plan readability
-- Help with XML serialization
-- Provide logical organization
+1. All phases are always rendered in the plan output (visible structure)
+2. Only the active phase renders its children (executes work)
+3. When a phase's children complete, it automatically advances to the next phase
+4. Phase state is persisted to SQLite via PhaseRegistry
+
+#### Important: Unconditional Rendering
+
+**Always render phases unconditionally.** The Phase component manages its own active state internally.
+
+```tsx
+// CORRECT - Render all phases unconditionally
+<Ralph>
+  <Phase name="Research">...</Phase>
+  <Phase name="Implementation">...</Phase>
+  <Phase name="Testing">...</Phase>
+</Ralph>
+
+// WRONG - Don't use conditional rendering for phases
+<Ralph>
+  {phase === 'research' && <Phase name="Research">...</Phase>}
+  {phase === 'implementation' && <Phase name="Implementation">...</Phase>}
+</Ralph>
+```
 
 #### Example
 
 ```tsx
-<Phase name="Setup">
-  <Claude>Initialize configuration</Claude>
-  <Claude>Verify environment</Claude>
-</Phase>
+<Ralph maxIterations={5}>
+  <Phase name="Setup" onStart={() => console.log('Starting setup')}>
+    <Claude>Initialize configuration</Claude>
+  </Phase>
 
-<Phase name="Implementation">
-  <Claude>Write code</Claude>
-  <Claude>Add tests</Claude>
-</Phase>
+  <Phase name="Implementation">
+    <Claude>Write code</Claude>
+    <Claude>Add tests</Claude>
+  </Phase>
+
+  <Phase name="Optional" skipIf={() => process.env.SKIP_REVIEW === 'true'}>
+    <Claude>Review the implementation</Claude>
+  </Phase>
+</Ralph>
 ```
 
 ---
@@ -196,83 +222,72 @@ Steps provide finer-grained organization than phases. Use for:
 
 ## State Management
 
-### Database State (db.state)
+### Automatic Phase State (PhaseRegistry)
 
-Smithers uses SQLite for persistent state management, enabling session resumability.
-
-#### Basic Usage
+Phase state is managed automatically by PhaseRegistry. You don't need to track phase state manually.
 
 ```tsx
-import { useState } from 'react'
-import { createSmithersDB } from 'smithers-orchestrator/db'
-
-// Initialize database
-const db = await createSmithersDB({ path: '.smithers/db' })
-
-// In component - use React state + db.state for persistence
+// Phase state is automatic - no useState needed for phases
 function Workflow() {
-  const [phase, setPhase] = useState('start')
-  const [data, setData] = useState(null)
-
-  const updatePhase = async (newPhase: string) => {
-    setPhase(newPhase)
-    await db.state.set('phase', newPhase) // Persist to SQLite
-  }
-
-  const updateData = async (newData: unknown) => {
-    setData(newData)
-    await db.state.set('data', newData)
-  }
-
-  // ...
-}
-```
-
-#### TypeScript
-
-```tsx
-// State is typed via db.state generic
-const phase = await db.state.get<string>('phase')
-const data = await db.state.get<MyDataType>('data')
-
-// Or with default value
-const phase = await db.state.get('phase', 'start')
-```
-
-#### Usage in Components
-
-```tsx
-function Workflow() {
-  const [phase, setPhase] = useState('start')
-
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={10}>
-        {phase === 'start' && (
-          <Claude onFinished={async () => {
-            setPhase('next')
-            await db.state.set('phase', 'next')
-          }}>
-            Start task
-          </Claude>
-        )}
+        <Phase name="Start">
+          <Claude>Start task</Claude>
+        </Phase>
+        <Phase name="Next">
+          <Claude>Next task (auto-starts when Start completes)</Claude>
+        </Phase>
       </Ralph>
     </SmithersProvider>
   )
 }
 ```
 
+### Database State (db.state)
+
+For custom data that needs to persist across phases, use db.state.
+
+#### Basic Usage
+
+```tsx
+import { createSmithersDB } from 'smithers-orchestrator/db'
+
+// Initialize database
+const db = await createSmithersDB({ path: '.smithers/db' })
+
+// Store data in callbacks
+<Claude
+  onFinished={async (result) => {
+    // Persist custom data to SQLite
+    await db.state.set('researchFindings', result)
+  }}
+>
+  Research the topic
+</Claude>
+```
+
+#### TypeScript
+
+```tsx
+// State is typed via db.state generic
+const data = await db.state.get<MyDataType>('data')
+
+// Or with default value
+const findings = await db.state.get('findings', [])
+```
+
 #### Access Outside Components
 
 ```tsx
 // Get current state
-const currentPhase = await db.state.get('phase')
+const findings = await db.state.get('researchFindings')
 
 // Update state
-await db.state.set('phase', 'new-phase')
+await db.state.set('status', 'processing')
 
 // Get state history
-const history = await db.state.history('phase')
+const history = await db.state.history('status')
 ```
 
 ---
@@ -400,144 +415,128 @@ All custom elements support:
 
 ## Patterns
 
-### Sequential Workflow Pattern
+### Sequential Workflow Pattern (Recommended)
+
+**Always use unconditional phase rendering.** Phases auto-sequence when one completes.
 
 ```tsx
-import { useState } from 'react'
-
 export default function Workflow() {
-  const [phase, setPhase] = useState('step1')
-
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={5}>
-        {phase === 'step1' && (
-          <Claude onFinished={async () => {
-            setPhase('step2')
-            await db.state.set('phase', 'step2')
-          }}>Task 1</Claude>
-        )}
-        {phase === 'step2' && (
-          <Claude onFinished={async () => {
-            setPhase('step3')
-            await db.state.set('phase', 'step3')
-          }}>Task 2</Claude>
-        )}
-        {phase === 'step3' && (
-          <Claude onFinished={async () => {
-            setPhase('done')
-            await db.state.set('phase', 'done')
-          }}>Task 3</Claude>
-        )}
+        {/* All phases rendered unconditionally */}
+        <Phase name="Task 1">
+          <Claude>First task</Claude>
+        </Phase>
+        <Phase name="Task 2">
+          <Claude>Second task (starts when Task 1 completes)</Claude>
+        </Phase>
+        <Phase name="Task 3">
+          <Claude>Third task (starts when Task 2 completes)</Claude>
+        </Phase>
       </Ralph>
     </SmithersProvider>
   )
 }
 ```
 
-### Conditional Branch Pattern
+### Conditional Phase Skipping
+
+Use `skipIf` to conditionally skip phases based on runtime conditions.
 
 ```tsx
-<Claude onFinished={(result) => {
-  if (result.success) {
-    setPhase('success-path')
-  } else {
-    setPhase('retry-path')
-  }
-}}>
-  Attempt task
-</Claude>
+<Ralph maxIterations={5}>
+  <Phase name="Build">
+    <Claude>Build the project</Claude>
+  </Phase>
+
+  <Phase name="Deploy to Staging" skipIf={() => process.env.SKIP_STAGING === 'true'}>
+    <Claude>Deploy to staging environment</Claude>
+  </Phase>
+
+  <Phase name="Deploy to Production">
+    <Claude>Deploy to production</Claude>
+  </Phase>
+</Ralph>
 ```
 
 ### Parallel Execution Pattern
 
+Use `<Parallel>` component for concurrent step execution within a phase.
+
 ```tsx
-<Phase name="Parallel Work">
-  <Claude onFinished={() => incrementComplete()}>Task 1</Claude>
-  <Claude onFinished={() => incrementComplete()}>Task 2</Claude>
-  <Claude onFinished={() => incrementComplete()}>Task 3</Claude>
+<Phase name="Build">
+  <Parallel>
+    <Step name="Frontend">
+      <Claude>Build frontend assets</Claude>
+    </Step>
+    <Step name="Backend">
+      <Claude>Build backend services</Claude>
+    </Step>
+    <Step name="Database">
+      <Claude>Run database migrations</Claude>
+    </Step>
+  </Parallel>
 </Phase>
 ```
 
-### Data Flow Pattern
+### Error Handling Pattern
+
+Use `onError` callbacks for error handling within the sequential flow.
 
 ```tsx
-import { useState } from 'react'
+<Ralph maxIterations={5}>
+  <Phase name="Implementation">
+    <Claude
+      onError={(error) => {
+        console.error('Implementation failed:', error)
+        // Error is logged, phase will retry or skip based on configuration
+      }}
+    >
+      Implement the feature
+    </Claude>
+  </Phase>
 
-function DataWorkflow() {
-  const [phase, setPhase] = useState('research')
-  const [researchData, setResearchData] = useState(null)
-  const [implementationResult, setImplementationResult] = useState(null)
-
-  return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Ralph maxIterations={5}>
-        {/* Phase 1: Collect data */}
-        {phase === 'research' && (
-          <Claude onFinished={async (result) => {
-            setResearchData(result)
-            await db.state.set('researchData', result)
-            setPhase('implement')
-            await db.state.set('phase', 'implement')
-          }}>
-            Research the topic
-          </Claude>
-        )}
-
-        {/* Phase 2: Use collected data */}
-        {phase === 'implement' && (
-          <Claude onFinished={async (result) => {
-            setImplementationResult(result)
-            await db.state.set('implementationResult', result)
-            setPhase('done')
-            await db.state.set('phase', 'done')
-          }}>
-            Implement using research: {JSON.stringify(researchData)}
-          </Claude>
-        )}
-      </Ralph>
-    </SmithersProvider>
-  )
-}
+  <Phase name="Testing">
+    <Claude
+      validate={async (result) => {
+        // Return false to retry
+        return result.includes('PASS')
+      }}
+    >
+      Run tests and verify all pass
+    </Claude>
+  </Phase>
+</Ralph>
 ```
 
-### Error Recovery Pattern
+### Callbacks for Audit Trail
+
+Use `onStart`, `onComplete`, and `onFinished` for logging and side effects.
 
 ```tsx
-import { useState } from 'react'
+<Ralph maxIterations={5}>
+  <Phase
+    name="Research"
+    onStart={() => console.log('Research phase started')}
+    onComplete={() => console.log('Research phase completed')}
+  >
+    <Claude
+      onFinished={(result) => {
+        // Store result for later phases
+        db.state.set('researchFindings', result)
+      }}
+    >
+      Research the topic
+    </Claude>
+  </Phase>
 
-function RetryWorkflow() {
-  const [phase, setPhase] = useState('attempt')
-  const [retryCount, setRetryCount] = useState(0)
-  const maxRetries = 3
-
-  return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Ralph maxIterations={10}>
-        {phase === 'attempt' && (
-          <Claude
-            onFinished={async () => {
-              setPhase('success')
-              await db.state.set('phase', 'success')
-            }}
-            onError={async (error) => {
-              if (retryCount < maxRetries) {
-                setRetryCount(retryCount + 1)
-                await db.state.set('retryCount', retryCount + 1)
-                // Phase stays 'attempt' to retry
-              } else {
-                setPhase('failed')
-                await db.state.set('phase', 'failed')
-              }
-            }}
-          >
-            Attempt task
-          </Claude>
-        )}
-      </Ralph>
-    </SmithersProvider>
-  )
-}
+  <Phase name="Implementation">
+    <Claude>
+      Implement based on research findings stored in database.
+    </Claude>
+  </Phase>
+</Ralph>
 ```
 
 ---
@@ -628,21 +627,15 @@ for (const step of plan) {
 **After:**
 ```tsx
 <Ralph maxIterations={3}>
-  {phase === 'research' && (
-    <Claude onFinished={() => setPhase('implement')}>
-      Research topic
-    </Claude>
-  )}
-  {phase === 'implement' && (
-    <Claude onFinished={() => setPhase('test')}>
-      Implement solution
-    </Claude>
-  )}
-  {phase === 'test' && (
-    <Claude onFinished={() => setPhase('done')}>
-      Test implementation
-    </Claude>
-  )}
+  <Phase name="Research">
+    <Claude>Research topic</Claude>
+  </Phase>
+  <Phase name="Implementation">
+    <Claude>Implement solution</Claude>
+  </Phase>
+  <Phase name="Testing">
+    <Claude>Test implementation</Claude>
+  </Phase>
 </Ralph>
 ```
 
@@ -650,21 +643,49 @@ for (const step of plan) {
 - Declarative vs imperative
 - Type-safe JSX
 - Built-in error handling
-- Automatic remount loop
-- Visual plan representation
+- Automatic phase sequencing
+- Visual plan representation (all phases visible)
+- No manual state management for phase transitions
+
+### From Conditional Phase Rendering
+
+**Before (deprecated pattern):**
+```tsx
+const [phase, setPhase] = useState('research')
+
+<Ralph>
+  {phase === 'research' && <Phase name="Research">...</Phase>}
+  {phase === 'implement' && <Phase name="Implementation">...</Phase>}
+</Ralph>
+```
+
+**After (recommended):**
+```tsx
+<Ralph>
+  <Phase name="Research">...</Phase>
+  <Phase name="Implementation">...</Phase>
+</Ralph>
+```
+
+**Why the change:**
+- Plan output shows all phases regardless of current state
+- Phase component internally tracks active/completed/pending
+- No risk of forgetting to add conditional branches
+- Simpler, more declarative code
 
 ---
 
 ## Best Practices
 
-1. **Always set maxIterations** - Prevent infinite loops
-2. **Use terminal states** - Ensure workflows can complete
-3. **Handle errors** - Always provide onError callbacks
-4. **Validate when needed** - Use validate prop for quality checks
-5. **Organize with Phase/Step** - Improve readability
-6. **Use React useState with db.state** - Persist critical state to SQLite
-7. **Test workflows** - Create test runs with mock executors
-8. **Document phases** - Add comments explaining workflow logic
+1. **Render phases unconditionally** - Let PhaseRegistry manage active state
+2. **Always set maxIterations** - Prevent infinite loops
+3. **Use skipIf for conditional phases** - Not conditional rendering
+4. **Handle errors** - Provide onError callbacks for logging/recovery
+5. **Validate when needed** - Use validate prop for quality checks
+6. **Organize with Phase/Step** - Improve readability and structure
+7. **Use db.state for custom data** - Persist data needed across phases
+8. **Use callbacks for audit trails** - onStart, onComplete, onFinished
+9. **Test workflows** - Create test runs with mock executors
 
 ---
 

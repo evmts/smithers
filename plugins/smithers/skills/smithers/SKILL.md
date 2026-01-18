@@ -133,30 +133,31 @@ In plan mode:
 
 ## The Smithers Pattern
 
-Smithers uses the "Ralph Wiggum Loop" - a declarative iteration pattern:
+Smithers uses declarative phase-based orchestration with automatic state management:
 
 ```tsx
 <Ralph maxIterations={5}>
-  {phase === "research" && (
-    <Claude onFinished={() => setPhase("implement")}>Research the topic</Claude>
-  )}
-  {phase === "implement" && (
-    <Claude onFinished={() => setPhase("test")}>Implement the solution</Claude>
-  )}
-  {phase === "test" && (
-    <Claude onFinished={() => setPhase("done")}>Test the implementation</Claude>
-  )}
+  <Phase name="Research">
+    <Claude>Research the topic</Claude>
+  </Phase>
+  <Phase name="Implementation">
+    <Claude>Implement the solution</Claude>
+  </Phase>
+  <Phase name="Testing">
+    <Claude>Test the implementation</Claude>
+  </Phase>
 </Ralph>
 ```
 
 **How it works:**
 
-1. `<Claude>` components execute on mount
-2. `onFinished` callbacks update React state (persisted to SQLite)
-3. State change triggers re-render
-4. Ralph detects completion and increments key
-5. Key change forces remount → next phase executes
-6. Loop continues until no more `<Claude>` components render
+1. All `<Phase>` components are rendered unconditionally (visible in plan output)
+2. Only the active phase's children execute
+3. When a phase completes, the next phase automatically becomes active
+4. Phase state is managed by PhaseRegistry (persisted to SQLite)
+5. The plan output shows all phases with their status (pending/active/completed)
+
+**Important:** Always render phases unconditionally. Do NOT use conditional rendering like `{phase === 'xxx' && <Phase>}`. The Phase component handles its own state internally.
 
 ## CLI Commands
 
@@ -228,45 +229,41 @@ cat .smithers/logs/tool-001.txt
 
 ```tsx
 #!/usr/bin/env bun
-import { useState } from "react";
 import { createSmithersRoot } from "smithers-orchestrator";
 import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Ralph } from "smithers-orchestrator/components/Ralph";
-import { Claude } from "smithers-orchestrator/components/Claude";
-import { Phase } from "smithers-orchestrator/components/Phase";
+import { SmithersProvider, Ralph, Claude, Phase, Orchestration } from "smithers-orchestrator/components";
 
 // 1. Initialize database for persistent state
 const db = await createSmithersDB({ path: ".smithers/db" });
 const executionId = await db.execution.start("My Orchestration", "main.tsx");
 
 // 2. Define orchestration component
-function Orchestration() {
-  const [phase, setPhase] = useState("initial");
-  const [data, setData] = useState(null);
-
+function App() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Ralph maxIterations={10}>
-        {phase === "initial" && (
-          <Phase name="Phase 1">
-            <Claude
-              model="sonnet"
-              onFinished={async (result) => {
-                setData(result);
-                // Persist to database for session resumability
-                await db.state.set("data", result);
-                setPhase("next");
-                await db.state.set("phase", "next");
-              }}
-            >
-              Your prompt here
+      <Orchestration globalTimeout={1800000}>
+        <Ralph maxIterations={10}>
+          {/* All phases are rendered unconditionally */}
+          {/* Only the active phase executes its children */}
+          <Phase name="Research">
+            <Claude model="sonnet">
+              Research the topic and gather information.
             </Claude>
           </Phase>
-        )}
 
-        {/* Add more phases... */}
-      </Ralph>
+          <Phase name="Implementation">
+            <Claude model="sonnet">
+              Implement the solution based on research.
+            </Claude>
+          </Phase>
+
+          <Phase name="Testing">
+            <Claude model="sonnet">
+              Test the implementation.
+            </Claude>
+          </Phase>
+        </Ralph>
+      </Orchestration>
     </SmithersProvider>
   );
 }
@@ -278,7 +275,7 @@ console.log(root.toXML());
 console.log("===========================\n");
 
 // 4. Execute
-root.mount(() => <Orchestration />);
+root.mount(() => <App />);
 
 // 5. Keep alive
 await new Promise(() => {});
@@ -286,12 +283,12 @@ await new Promise(() => {});
 
 ### Best Practices
 
-1. **Use React useState** for state with `db.state` for persistence
+1. **Render phases unconditionally** - let PhaseRegistry manage active state
 2. **Always set maxIterations** to prevent infinite loops
-3. **Include a terminal phase** where no `<Claude>` renders
-4. **Use Phase components** for semantic grouping
+3. **Use Phase components** for sequential workflow steps
+4. **Use skipIf for conditional phases** - `<Phase name="Optional" skipIf={() => condition}>`
 5. **Start simple** - 2-3 phases first, add complexity later
-6. **Persist critical state** to SQLite for session resumability
+6. **Use callbacks for logging** - `onStart`, `onComplete`, `onFinished` for audit trails
 
 ### Error Handling
 
@@ -324,47 +321,45 @@ bunx smithers-orchestrator init
 **Step 2**: Edit `.smithers/main.tsx`
 
 ```tsx
-import { useState } from "react";
+import { createSmithersRoot } from "smithers-orchestrator";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider, Ralph, Claude, Phase, Orchestration } from "smithers-orchestrator/components";
+
+const db = await createSmithersDB({ path: ".smithers/db" });
+const executionId = await db.execution.start("Research Workflow", "main.tsx");
 
 function ResearchWorkflow() {
-  const [phase, setPhase] = useState("research");
-  const [findings, setFindings] = useState(null);
-
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Ralph maxIterations={3}>
-        {phase === "research" && (
+      <Orchestration>
+        <Ralph maxIterations={3}>
+          {/* All phases rendered unconditionally - auto-sequencing */}
           <Phase name="Research">
-            <Claude
-              onFinished={async (result) => {
-                setFindings(result);
-                await db.state.set("findings", result);
-                setPhase("summarize");
-                await db.state.set("phase", "summarize");
-              }}
-            >
-              Research the topic "{userTopic}" and gather key findings. Return
-              structured findings as JSON.
+            <Claude model="sonnet">
+              Research the topic and gather key findings.
+              Return structured findings as JSON.
             </Claude>
           </Phase>
-        )}
 
-        {phase === "summarize" && (
           <Phase name="Summarize">
-            <Claude onFinished={async () => {
-              setPhase("done");
-              await db.state.set("phase", "done");
-            }}>
-              Based on these findings:
-              {JSON.stringify(findings)}
-              Write a clear, concise summary.
+            <Claude model="sonnet">
+              Based on the research findings, write a clear, concise summary.
             </Claude>
           </Phase>
-        )}
-      </Ralph>
+
+          <Phase name="Review">
+            <Claude model="sonnet">
+              Review the summary for accuracy and completeness.
+            </Claude>
+          </Phase>
+        </Ralph>
+      </Orchestration>
     </SmithersProvider>
   );
 }
+
+const root = createSmithersRoot();
+root.mount(() => <ResearchWorkflow />);
 ```
 
 **Step 3**: Monitor execution
