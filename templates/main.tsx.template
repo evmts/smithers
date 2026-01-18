@@ -1,22 +1,22 @@
 #!/usr/bin/env bun
-import { createSmithersRoot } from 'smithers'
+import { createSmithersRoot } from 'smithers-orchestrator'
 import { createSmithersDB } from 'smithers-orchestrator/db'
-import { Ralph } from 'smithers/components/Ralph'
+import { Ralph } from 'smithers-orchestrator/components/Ralph'
 
 // Enhanced components with database integration
-import { SmithersProvider, useSmithers } from 'smithers-orchestrator/components/SmithersProvider'
-import { Orchestration } from 'smithers-orchestrator/components/Orchestration'
-import { Claude } from 'smithers-orchestrator/components/Claude'
-import { Phase } from 'smithers-orchestrator/components/Phase'
-import { Step } from 'smithers-orchestrator/components/Step'
+import { SmithersProvider, useSmithers } from 'smithers-orchestrator/orchestrator/SmithersProvider'
+import { Orchestration } from 'smithers-orchestrator/orchestrator/Orchestration'
+import { Claude } from 'smithers-orchestrator/orchestrator/Claude'
+import { Phase } from 'smithers-orchestrator/orchestrator/Phase'
+import { Step } from 'smithers-orchestrator/orchestrator/Step'
 
 // VCS components
-import { Commit, Snapshot, Describe, Status, Rebase } from 'smithers/components/JJ'
-import { Commit as GitCommit, Notes as GitNotes } from 'smithers/components/Git'
+import { Commit, Snapshot, Describe, Status, Rebase } from 'smithers-orchestrator/components/JJ'
+import { Commit as GitCommit, Notes as GitNotes } from 'smithers-orchestrator/components/Git'
 
 // Review and hooks
-import { Review } from 'smithers/components/Review'
-import { PostCommit, OnCIFailure } from 'smithers/components/Hooks'
+import { Review } from 'smithers-orchestrator/components/Review'
+import { PostCommit, OnCIFailure } from 'smithers-orchestrator/components/Hooks'
 
 /**
  * Smithers Orchestration Template
