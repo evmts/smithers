@@ -1,6 +1,6 @@
-# Issue: Rate Limit Module
+# Issue: Tool Standardization
 
-See: `../../../issues/rate-limit-module.md`
+See: `../../../issues/tool-standardization.md`
 
 ## Task
 
@@ -11,6 +11,6 @@ Implement the solution described in the issue.
 1. Make commits as you implement
 2. When ready, push and create PR:
    ```bash
-   git push -u origin issue/rate-limit-module
-   gh pr create --title "Feat: Rate Limit Module" --body "Implements rate-limit-module. See issues/rate-limit-module.md"
+   git push -u origin issue/tool-standardization
+   gh pr create --title "Feat: Tool Standardization" --body "Implements tool-standardization. See issues/tool-standardization.md"
    ```

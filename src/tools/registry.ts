@@ -1,40 +1,24 @@
 // Tools registry - built-in and custom tool support
 
 import type { SmithersDB } from '../db/index.js'
+import type { JSONSchema } from '../components/agents/types/schema.js'
+import type { LegacyTool, MCPServer, SmithersTool, ToolSpec } from './types.js'
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-export interface JSONSchema {
-  type: string
-  properties?: Record<string, JSONSchema>
-  required?: string[]
-  description?: string
-  enum?: string[]
-  items?: JSONSchema
-  [key: string]: any
-}
-
 export interface ToolContext {
   db: SmithersDB
   agentId: string
   executionId: string
+  cwd: string
+  env: Record<string, string>
+  log: (message: string) => void
 }
 
-export interface Tool {
-  name: string
-  description: string
-  inputSchema: JSONSchema
-  execute: (input: any, context: ToolContext) => Promise<any>
-}
-
-export interface MCPServer {
-  name: string
-  command: string
-  args?: string[]
-  env?: Record<string, string>
-}
+export type Tool = LegacyTool
+export type { JSONSchema }
 
 // ============================================================================
 // BUILT-IN TOOLS REGISTRY
@@ -83,13 +67,25 @@ export function getToolInfo(name: string): (typeof BUILTIN_TOOLS)[BuiltinToolNam
 // TOOL SPECIFICATION HELPERS
 // ============================================================================
 
-export type ToolSpec = string | Tool | MCPServer
+export type { ToolSpec }
 
 /**
  * Check if a tool spec is a custom Tool object
  */
-export function isCustomTool(spec: ToolSpec): spec is Tool {
-  return typeof spec === 'object' && 'execute' in spec
+export function isLegacyTool(spec: ToolSpec): spec is LegacyTool {
+  return typeof spec === 'object' && 'execute' in spec && !isMCPServer(spec) && !isSmithersTool(spec)
+}
+
+export function isCustomTool(spec: ToolSpec): spec is LegacyTool {
+  return isLegacyTool(spec)
+}
+
+export function isSmithersTool(spec: ToolSpec): spec is SmithersTool {
+  if (typeof spec !== 'object' || spec === null) return false
+  if (!('execute' in spec) || !('inputSchema' in spec)) return false
+  if (isMCPServer(spec)) return false
+  const schema = (spec as { inputSchema?: unknown }).inputSchema
+  return typeof schema === 'object' && schema !== null && 'safeParse' in (schema as Record<string, unknown>)
 }
 
 /**
@@ -111,24 +107,29 @@ export function isToolName(spec: ToolSpec): spec is string {
  */
 export function parseToolSpecs(specs: ToolSpec[]): {
   builtinTools: string[]
-  customTools: Tool[]
+  smithersTools: SmithersTool[]
+  legacyTools: LegacyTool[]
+  customTools: LegacyTool[]
   mcpServers: MCPServer[]
 } {
   const builtinTools: string[] = []
-  const customTools: Tool[] = []
+  const smithersTools: SmithersTool[] = []
+  const legacyTools: LegacyTool[] = []
   const mcpServers: MCPServer[] = []
 
   for (const spec of specs) {
     if (isToolName(spec)) {
       builtinTools.push(spec)
-    } else if (isCustomTool(spec)) {
-      customTools.push(spec)
+    } else if (isSmithersTool(spec)) {
+      smithersTools.push(spec)
+    } else if (isLegacyTool(spec)) {
+      legacyTools.push(spec)
     } else if (isMCPServer(spec)) {
       mcpServers.push(spec)
     }
   }
 
-  return { builtinTools, customTools, mcpServers }
+  return { builtinTools, smithersTools, legacyTools, customTools: legacyTools, mcpServers }
 }
 
 /**

@@ -3,6 +3,8 @@
  * Tests the component's props and interface, not execution behavior.
  */
 import { describe, test, expect, mock } from 'bun:test'
+import { z } from 'zod'
+import { createSmithersTool } from '../tools/createSmithersTool.js'
 import type { ClaudeProps } from './Claude.js'
 
 describe('ClaudeProps interface', () => {
@@ -21,9 +23,18 @@ describe('ClaudeProps interface', () => {
     expect(props.maxTurns).toBe(5)
   })
 
-  test('tools is optional string array', () => {
+  test('tools is optional array of tool specs', () => {
+    const smithersTool = createSmithersTool({
+      name: 'greet',
+      description: 'Greet user',
+      inputSchema: z.object({ name: z.string() }),
+      execute: async ({ name }) => ({ greeting: `hi ${name}` }),
+    })
     const props: ClaudeProps = { tools: ['Read', 'Edit', 'Bash'] }
     expect(props.tools).toHaveLength(3)
+
+    const propsWithSmithers: ClaudeProps = { tools: [smithersTool] }
+    expect(propsWithSmithers.tools).toHaveLength(1)
   })
 
   test('systemPrompt is optional string', () => {

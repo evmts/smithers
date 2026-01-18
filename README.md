@@ -376,6 +376,37 @@ Give Claude access to external tools via Model Context Protocol:
 </Claude>
 ```
 
+### AI SDK Tool Format
+
+Define tools with Zod schemas and pass them to Claude:
+
+```tsx
+import { z } from "zod";
+import { createSmithersTool } from "smithers-orchestrator/tools";
+
+const reportTool = createSmithersTool({
+  name: "report",
+  description: "Report progress to the orchestrator",
+  inputSchema: z.object({
+    message: z.string(),
+    severity: z.enum(["info", "warning", "error"]).optional(),
+  }),
+  execute: async ({ message, severity }, { db }) => {
+    await db.vcs.addReport({
+      type: "progress",
+      title: "Agent Report",
+      content: message,
+      severity: severity ?? "info",
+    });
+    return { success: true };
+  },
+});
+
+<Claude tools={[reportTool]}>
+  Report progress as you go.
+</Claude>
+```
+
 ### Smithers Subagent
 
 Spawn a new Smithers instance to plan and execute complex subtasks:

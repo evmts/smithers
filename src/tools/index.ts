@@ -5,7 +5,6 @@ export {
   type JSONSchema,
   type ToolContext,
   type Tool,
-  type MCPServer,
   type ToolSpec,
   type BuiltinToolName,
 
@@ -16,10 +15,22 @@ export {
 
   // Helpers
   isCustomTool,
+  isLegacyTool,
+  isSmithersTool,
   isMCPServer,
   isToolName,
   parseToolSpecs,
   buildToolFlags,
-} from './registry.jsx'
+} from './registry.js'
 
-export { createReportTool, getReportToolDescription } from './ReportTool.jsx'
+export type {
+  SmithersTool,
+  SmithersToolContext,
+  CreateSmithersToolOptions,
+  LegacyTool,
+  MCPServer,
+} from './types.js'
+
+export { createSmithersTool } from './createSmithersTool.js'
+export { toolToMCPDefinition, createSmithersToolServer } from './tool-to-mcp.js'
+export { createReportTool, getReportToolDescription } from './ReportTool.js'

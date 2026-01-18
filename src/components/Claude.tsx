@@ -2,10 +2,9 @@
 // Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
 
 import { useRef, useReducer, type ReactNode } from 'react'
+import { fileURLToPath } from 'url'
+import path from 'path'
 import { useSmithers } from './SmithersProvider.js'
-import { useWorktree } from './WorktreeProvider.js'
-import { usePhaseContext } from './PhaseContext.js'
-import { useStepContext } from './StepContext.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
@@ -15,9 +14,8 @@ import { LogWriter } from '../monitor/log-writer.js'
 import { uuid } from '../db/utils.js'
 import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
 import { useQuery } from '../reactive-sqlite/index.js'
-import { ClaudeStreamParser } from '../streaming/claude-parser.js'
-import type { SmithersStreamPart } from '../streaming/types.js'
-import type { StreamSummary } from '../db/types.js'
+import { parseToolSpecs } from '../tools/registry.js'
+import { createSmithersToolServer } from '../tools/tool-to-mcp.js'
 
 // ============================================================================
 // CLAUDE COMPONENT
@@ -49,6 +47,9 @@ import type { StreamSummary } from '../db/types.js'
  */
 // Default throttle interval for tail log updates (ms)
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
+const SMITHERS_MCP_SERVER_PATH = fileURLToPath(
+  new URL('../tools/smithers-mcp-server.ts', import.meta.url)
+)
 
 // Type for agent row from DB
 type AgentRow = {
@@ -63,13 +64,7 @@ type AgentRow = {
 
 export function Claude(props: ClaudeProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
-  const worktree = useWorktree()
-  const phase = usePhaseContext()
-  const phaseActive = phase?.isActive ?? true
-  const step = useStepContext()
-  const stepActive = step?.isActive ?? true
   const ralphCount = useRalphCount()
-  const cwd = props.cwd ?? worktree?.cwd
 
   // agentId stored in ref (set once, non-reactive until set)
   const agentIdRef = useRef<string | null>(null)
@@ -119,15 +114,11 @@ export function Claude(props: ClaudeProps): ReactNode {
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
-  const shouldExecute = phaseActive && stepActive
-  const executionKey = `${ralphCount}:${shouldExecute ? 'active' : 'inactive'}`
-
-  useEffectOnValueChange(executionKey, () => {
-    if (!shouldExecute) return
+  useEffectOnValueChange(ralphCount, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
-      taskIdRef.current = db.tasks.start('claude')
+      taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
 
       // Check if stop has been requested globally
       if (isStopRequested()) {
@@ -141,55 +132,75 @@ export function Claude(props: ClaudeProps): ReactNode {
 
       // Initialize LogWriter
       const logWriter = new LogWriter(undefined, executionId ?? undefined)
-      const logId = uuid()
-      const typedStreamingEnabled = props.experimentalTypedStreaming ?? false
-      const useLegacyLogFormat = typedStreamingEnabled && (props.legacyLogFormat ?? false)
-      const recordStreamEvents = props.recordStreamEvents ?? props.reportingEnabled !== false
-      const streamLogFilename = typedStreamingEnabled ? `agent-${logId}.ndjson` : `agent-${logId}.log`
-      const legacyLogFilename = useLegacyLogFormat ? `agent-${logId}.log.legacy.txt` : null
-      const streamParser = typedStreamingEnabled ? new ClaudeStreamParser() : null
-      const streamSummary: StreamSummary = {
-        textBlocks: 0,
-        reasoningBlocks: 0,
-        toolCalls: 0,
-        toolResults: 0,
-        errors: 0,
-      }
-      const logFilename = streamLogFilename
+      const logFilename = `agent-${uuid()}.log`
       let logPath: string | undefined
 
       try {
         // Extract prompt from children
-        if (typeof props.children !== 'string') {
-          throw new TypeError(
-            'Claude children must be a string. Use explicit props for structured prompts.'
-          )
-        }
-        const childrenString = props.children
+        const childrenString = String(props.children)
 
         // Check for MCP tool components
         const { configs: mcpConfigs, cleanPrompt, toolInstructions } = extractMCPConfigs(childrenString)
 
+        const toolSpecs = props.tools ?? []
+        const { builtinTools, smithersTools, legacyTools, mcpServers } = parseToolSpecs(toolSpecs)
+
+        if (legacyTools.length > 0) {
+          console.warn(
+            `[Claude] Legacy tools provided (${legacyTools.length}) but only AI SDK tools are supported for MCP bridging.`
+          )
+        }
+
+        const smithersToolInstructions = smithersTools.length > 0
+          ? smithersTools
+              .map(tool => `${tool.name}: ${tool.description ?? 'No description provided.'}`)
+              .join('\n')
+          : ''
+
+        const combinedToolInstructions = [toolInstructions, smithersToolInstructions]
+          .map(value => value?.trim())
+          .filter(value => value)
+          .join('\n\n')
+
         // Build final prompt with tool instructions
         let prompt = cleanPrompt
-        if (toolInstructions) {
-          prompt = `${toolInstructions}\n\n---\n\n${cleanPrompt}`
+        if (combinedToolInstructions) {
+          prompt = `${combinedToolInstructions}\n\n---\n\n${cleanPrompt}`
         }
 
         // Generate MCP config file if needed
         let mcpConfigPath = props.mcpConfig
-        if (mcpConfigs.length > 0) {
+        if (mcpConfigs.length > 0 || mcpServers.length > 0 || smithersTools.length > 0) {
           const mcpConfig = generateMCPServerConfig(mcpConfigs)
-          mcpConfigPath = await writeMCPConfigFile(mcpConfig)
+          for (const server of mcpServers) {
+            mcpConfig['mcpServers'][server.name] = {
+              command: server.command,
+              ...(server.args ? { args: server.args } : {}),
+              ...(server.env ? { env: server.env } : {}),
+            }
+          }
+
+          if (smithersTools.length > 0) {
+            const smithersServer = createSmithersToolServer(
+              Object.fromEntries(smithersTools.map(tool => [tool.name, tool])),
+              path.resolve(SMITHERS_MCP_SERVER_PATH)
+            )
+            mcpConfig['mcpServers'][smithersServer.name] = {
+              command: smithersServer.command,
+              ...(smithersServer.args ? { args: smithersServer.args } : {}),
+              ...(smithersServer.env ? { env: smithersServer.env } : {}),
+            }
+          }
+
+          if (Object.keys(mcpConfig['mcpServers']).length > 0) {
+            mcpConfigPath = await writeMCPConfigFile(mcpConfig)
+          }
         }
 
         // Log agent start to database if reporting is enabled
         if (props.reportingEnabled !== false) {
           // Initialize log file
           logPath = logWriter.appendLog(logFilename, '')
-          if (legacyLogFilename) {
-            logWriter.appendLog(legacyLogFilename, '')
-          }
           
           currentAgentId = await db.agents.start(
             prompt,
@@ -206,67 +217,6 @@ export function Claude(props: ClaudeProps): ReactNode {
         // Execute with retry logic
         let agentResult: AgentResult | null = null
         let lastError: Error | null = null
-        messageParserRef.current.reset()
-
-        const handleTailLogUpdate = () => {
-          const now = Date.now()
-          const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
-
-          if (timeSinceLastUpdate >= DEFAULT_TAIL_LOG_THROTTLE_MS) {
-            lastTailLogUpdateRef.current = now
-            if (isMounted()) {
-              tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-              forceUpdate()
-            }
-          } else if (!pendingTailLogUpdateRef.current) {
-            pendingTailLogUpdateRef.current = setTimeout(() => {
-              pendingTailLogUpdateRef.current = null
-              lastTailLogUpdateRef.current = Date.now()
-              if (isMounted()) {
-                tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-                forceUpdate()
-              }
-            }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
-          }
-        }
-
-        const handleStreamPart = (part: SmithersStreamPart) => {
-          logWriter.appendStreamPart(logFilename, part)
-
-          if (recordStreamEvents && currentAgentId) {
-            db.agents.recordStreamEvent(currentAgentId, part)
-          }
-
-          if (part.type === 'text-end') {
-            streamSummary.textBlocks += 1
-          } else if (part.type === 'reasoning-end') {
-            streamSummary.reasoningBlocks += 1
-          } else if (part.type === 'tool-call') {
-            streamSummary.toolCalls += 1
-          } else if (part.type === 'tool-result') {
-            streamSummary.toolResults += 1
-          } else if (part.type === 'error') {
-            streamSummary.errors += 1
-          }
-
-          if (part.type === 'text-delta') {
-            messageParserRef.current.parseChunk(part.delta)
-            handleTailLogUpdate()
-            props.onProgress?.(part.delta)
-          } else if (part.type === 'tool-call') {
-            messageParserRef.current.parseChunk(`Tool: ${part.toolName}\n${part.input}\n\n`)
-            handleTailLogUpdate()
-            if (props.onToolCall) {
-              try {
-                props.onToolCall(part.toolName, JSON.parse(part.input))
-              } catch {
-                props.onToolCall(part.toolName, part.input)
-              }
-            }
-          }
-
-          props.onStreamPart?.(part)
-        }
 
         while (retryCount <= maxRetries) {
           try {
@@ -279,32 +229,50 @@ export function Claude(props: ClaudeProps): ReactNode {
               ...(props.systemPrompt !== undefined ? { systemPrompt: props.systemPrompt } : {}),
               ...(props.outputFormat !== undefined ? { outputFormat: props.outputFormat } : {}),
               ...(mcpConfigPath !== undefined ? { mcpConfig: mcpConfigPath } : {}),
-              ...(props.allowedTools !== undefined ? { allowedTools: props.allowedTools } : {}),
+              ...(props.allowedTools !== undefined || builtinTools.length > 0
+                ? { allowedTools: Array.from(new Set([...(props.allowedTools ?? []), ...builtinTools])) }
+                : {}),
               ...(props.disallowedTools !== undefined ? { disallowedTools: props.disallowedTools } : {}),
-              ...(cwd !== undefined ? { cwd } : {}),
               ...(props.timeout !== undefined ? { timeout: props.timeout } : {}),
               ...(props.stopConditions !== undefined ? { stopConditions: props.stopConditions } : {}),
               ...(props.continueConversation !== undefined ? { continue: props.continueConversation } : {}),
               ...(props.resumeSession !== undefined ? { resume: props.resumeSession } : {}),
-              ...(typedStreamingEnabled && props.outputFormat === undefined ? { outputFormat: 'stream-json' } : {}),
               ...(props.onToolCall !== undefined ? { onToolCall: props.onToolCall } : {}),
               ...(props.schema !== undefined ? { schema: props.schema } : {}),
               ...(props.schemaRetries !== undefined ? { schemaRetries: props.schemaRetries } : {}),
               onProgress: (chunk) => {
-                if (typedStreamingEnabled && streamParser) {
-                  const parts = streamParser.parse(chunk)
-                  if (useLegacyLogFormat && legacyLogFilename) {
-                    logWriter.appendLog(legacyLogFilename, chunk)
-                  }
-                  for (const part of parts) {
-                    handleStreamPart(part)
-                  }
-                  return
+                // Stream to log file
+                if (logFilename) {
+                  logWriter.appendLog(logFilename, chunk)
                 }
 
-                logWriter.appendLog(logFilename, chunk)
+                // Parse for tail log
                 messageParserRef.current.parseChunk(chunk)
-                handleTailLogUpdate()
+
+                // Throttle tail log updates to reduce re-renders
+                const now = Date.now()
+                const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
+
+                if (timeSinceLastUpdate >= DEFAULT_TAIL_LOG_THROTTLE_MS) {
+                  // Enough time has passed, update immediately
+                  lastTailLogUpdateRef.current = now
+                  if (isMounted()) {
+                    tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+                    forceUpdate()
+                  }
+                } else if (!pendingTailLogUpdateRef.current) {
+                  // Schedule an update for later
+                  pendingTailLogUpdateRef.current = setTimeout(() => {
+                    pendingTailLogUpdateRef.current = null
+                    lastTailLogUpdateRef.current = Date.now()
+                    if (isMounted()) {
+                      tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+                      forceUpdate()
+                    }
+                  }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
+                }
+
+                // Call original onProgress
                 props.onProgress?.(chunk)
               },
             })
@@ -344,24 +312,6 @@ export function Claude(props: ClaudeProps): ReactNode {
 
         if (!agentResult) {
           throw lastError ?? new Error('No result from Claude CLI')
-        }
-
-        if (typedStreamingEnabled && streamParser) {
-          const remainingParts = streamParser.flush()
-          for (const part of remainingParts) {
-            handleStreamPart(part)
-          }
-          if (agentResult.sessionId) {
-            handleStreamPart({
-              type: 'session-info',
-              sessionId: agentResult.sessionId,
-              model: props.model ?? 'sonnet',
-            })
-          }
-          if (props.reportingEnabled !== false && currentAgentId) {
-            db.agents.setStreamSummary(currentAgentId, streamSummary)
-          }
-          logWriter.writeStreamSummaryFromCounts(logFilename, streamSummary)
         }
 
         // Flush message parser to capture any remaining content
@@ -442,9 +392,6 @@ export function Claude(props: ClaudeProps): ReactNode {
       } finally {
         // Flush log stream to ensure all writes complete before exit
         await logWriter.flushStream(logFilename)
-        if (legacyLogFilename) {
-          await logWriter.flushStream(legacyLogFilename)
-        }
         // Always complete task
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)

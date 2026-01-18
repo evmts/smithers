@@ -2,8 +2,7 @@
 
 import type { ReactNode } from 'react'
 import type { z } from 'zod'
-import type { Tool, MCPServer } from './tools.js'
-import type { SmithersStreamPart } from '../../../streaming/types.js'
+import type { ToolSpec } from './tools.js'
 import type { AgentResult, StopConditionType } from './execution.js'
 
 // ============================================================================
@@ -50,10 +49,11 @@ export interface BaseAgentProps {
    * Tools available to the agent
    * Can be:
    * - string: built-in tool name
-   * - Tool: custom tool definition
+   * - SmithersTool: AI SDK format tool
+   * - LegacyTool: custom tool definition
    * - MCPServer: MCP server to connect to
    */
-  tools?: (string | Tool | MCPServer)[]
+  tools?: ToolSpec[]
 
   /**
    * Conditions that will stop the agent
@@ -94,11 +94,6 @@ export interface BaseAgentProps {
    * Called for progress updates
    */
   onProgress?: (message: string) => void
-
-  /**
-   * Called for typed stream events (when enabled)
-   */
-  onStreamPart?: (part: SmithersStreamPart) => void
 
   /**
    * Enable database reporting for this agent
@@ -211,22 +206,4 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
    * @default 10
    */
   tailLogLines?: number
-
-  /**
-   * Enable typed stream parts for Claude CLI output.
-   * @default false
-   */
-  experimentalTypedStreaming?: boolean
-
-  /**
-   * Write legacy raw text logs alongside NDJSON logs.
-   * @default false
-   */
-  legacyLogFormat?: boolean
-
-  /**
-   * Record stream events to the database.
-   * @default true when reportingEnabled is true
-   */
-  recordStreamEvents?: boolean
 }
