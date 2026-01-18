@@ -31,6 +31,11 @@ const hostConfig = {
   supportsHydration: false,
   isPrimaryRenderer: true,
 
+  // Optional capability flags
+  warnsIfNotActing: false,
+  supportsResources: false,
+  supportsSingletons: false,
+
   // Timing
   scheduleTimeout: setTimeout,
   cancelTimeout: clearTimeout,

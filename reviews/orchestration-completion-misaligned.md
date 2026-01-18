@@ -138,3 +138,42 @@ case 'ci_failure':
 ```
 
 This assumes CI status is tracked in state table. The `OnCIFailure` hook component should update this state.
+
+## Files Requiring Updates
+
+### Primary fixes:
+1. **`src/components/Orchestration.tsx:185`** - Add ci_failure case to switch statement
+2. **`templates/main.tsx.template:228`** - Add `root.dispose()` call after mount
+
+### Documentation/example updates (also need root.dispose()):
+3. `README.md:152`
+4. `docs/installation.mdx:135`
+5. `docs/quickstart.mdx:64` and `docs/quickstart.mdx:114`
+6. `docs/examples/hello-world.mdx:42`
+7. `docs/examples/multi-phase-review.mdx:110`
+8. `docs/examples/structured-output.mdx:94`
+9. `docs/examples/subagent-workflow.mdx:143`
+10. `docs/examples/mcp-database.mdx:70`
+11. `docs/components/smithers-provider.mdx:293` and `docs/components/smithers-provider.mdx:424`
+12. `src/components/agents/SmithersCLI.ts:160`
+
+### Verification:
+
+After fixing, verify with a test that:
+1. Creates an Orchestration with onComplete callback
+2. Waits for mount to complete
+3. Calls root.dispose()
+4. Asserts onComplete was called
+
+```tsx
+let completeCalled = false
+await root.mount(() => (
+  <SmithersProvider db={db} executionId={id}>
+    <Orchestration onComplete={() => { completeCalled = true }}>
+      <Claude>Test</Claude>
+    </Orchestration>
+  </SmithersProvider>
+))
+root.dispose()
+expect(completeCalled).toBe(true)
+```

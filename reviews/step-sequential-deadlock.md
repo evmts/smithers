@@ -1,8 +1,10 @@
+**Scope:** major
+
 # Step + StepRegistryProvider Sequential Steps Deadlock
 
 **Severity:** P0 - Critical (highest-impact correctness issue)
-**Files:** `src/components/Step.tsx`, `src/components/StepRegistryProvider.tsx`, `src/components/Parallel.tsx`
-**Status:** Open
+**Files:** `src/components/Step.tsx` (lines 202-241), `src/components/StepRegistryProvider.tsx`, `src/components/Parallel.tsx`
+**Status:** CONFIRMED NOT FIXED - Issue still exists in current codebase
 
 ## Intended Behavior
 
@@ -49,85 +51,151 @@ Step execution is tied to **mount/unmount lifecycle**, but Steps are **never unm
 
 ## Recommended Fix: Active-State Transitions
 
-Switch from mount/unmount to active-state transitions:
+**CODEBASE PATTERN:** Use `useEffectOnValueChange` from `src/reconciler/hooks.ts` - this hook is already used by `Claude.tsx` (line 110) and `Smithers.tsx` (line 170) for exactly this pattern: running effects when ralphCount changes, with built-in idempotency and StrictMode handling.
+
+Replace current `useMount` pattern (Step.tsx line 202) with reactive isActive detection:
 
 ```tsx
-// Step.tsx
+// Step.tsx - Apply existing codebase pattern
+
+import { useEffectOnValueChange } from '../reconciler/hooks.js'
 
 const hasStartedRef = useRef(false)
 const taskIdRef = useRef<string | null>(null)
 
-// Start when becoming active
-useEffect(() => {
+// REPLACE: useMount(() => { if (!isActive) return ... })
+// WITH: useEffectOnValueChange listening to isActive changes
+useEffectOnValueChange(isActive, () => {
   if (isActive && !hasStartedRef.current) {
     hasStartedRef.current = true
-    taskIdRef.current = db.tasks.start('step', props.name)
-    // ... start step work
+
+    ;(async () => {
+      // Register task with database
+      taskIdRef.current = db.tasks.start('step', props.name)
+
+      try {
+        // Snapshot before if requested
+        if (props.snapshotBefore) { /* ... */ }
+
+        // Start step in database
+        const id = db.steps.start(props.name)
+        stepIdRef.current = id
+
+        props.onStart?.()
+      } catch (error) {
+        // Handle error, complete task
+      }
+    })()
   }
-}, [isActive])
+})
 
 // Complete when work is done (NOT on unmount)
-const completeStep = useCallback(() => {
-  if (taskIdRef.current) {
-    db.tasks.complete(taskIdRef.current)
-    taskIdRef.current = null
-  }
-  db.steps.complete(stepId)
-  registry.advanceStep()
-}, [])
+// Keep useUnmount for cleanup, but add completion detection via child task monitoring
 ```
 
 ## Missing Piece: How Does Step Know Work is Done?
 
-### Option A: Scoped Task Grouping (Preferred)
+**CURRENT CODEBASE CONTEXT:**
+- Tasks table schema: `src/db/tasks.ts` (no phase_id/step_id columns currently)
+- Reactive queries via `useQueryValue` hook: `src/reactive-sqlite/index.ts`
+- Task counting pattern in `SmithersProvider.tsx` (line ~108): uses `useQueryValue` to count pending tasks
+
+### Option A: Scoped Task Grouping (Preferred for Multi-Task Steps)
 
 Treat completion as "all child tasks have completed" scoped to that step.
 
-Requires new columns on tasks table:
-
+**Schema Migration Required:**
 ```sql
+-- Add to src/db/tasks.ts schema
 ALTER TABLE tasks ADD COLUMN phase_id TEXT;
 ALTER TABLE tasks ADD COLUMN step_id TEXT;
 ```
 
-Query becomes:
-```sql
-SELECT COUNT(*) FROM tasks
-WHERE step_id = ? AND status = 'running'
-```
-
-### Option B: Explicit Done Signal (Smaller Change)
-
-Avoid registering "step task" entirely. Let child tasks govern iteration.
-
-Step advancement triggered by explicit signal:
+**Implementation Pattern:**
 ```tsx
-<Claude onFinished={() => stepContext.markComplete()} />
-```
+// src/components/Step.tsx
+import { useQueryValue } from '../reactive-sqlite/index.js'
 
-Step watches for this signal to advance.
+// Track child tasks for this step (similar to SmithersProvider pattern)
+const { data: childTaskCount } = useQueryValue<number>(
+  reactiveDb,
+  `SELECT COUNT(*) as count FROM tasks
+   WHERE step_id = ? AND status = 'running'`,
+  [stepIdRef.current]
+)
 
-### Option C: Children Completion Detection
-
-```tsx
-// Step detects when all rendered children complete
-const childTaskCount = useTaskCount({ stepId: myStepId })
-
+// Auto-complete when all child tasks done
 useEffect(() => {
-  if (hasStarted && childTaskCount === 0) {
+  if (hasStartedRef.current && childTaskCount === 0) {
     completeStep()
   }
 }, [childTaskCount])
 ```
 
+### Option B: Explicit Done Signal (Smaller Change, Single-Task Steps)
+
+**Best for steps with ONE child component.** No schema changes needed.
+
+Current children (`Claude`, `Smithers`) already complete their tasks in their own lifecycle.
+Step just needs to detect when its direct child's task completes:
+
+```tsx
+// Step simply monitors: when I started AND my task is done, advance
+useEffect(() => {
+  if (hasStartedRef.current && taskIdRef.current) {
+    const task = db.tasks.get(taskIdRef.current)
+    if (task?.status === 'completed') {
+      registry.advanceStep()
+    }
+  }
+}, [/* need reactive trigger */])
+```
+
+### Option C: Children Completion via Reactive Query (Simplest)
+
+**RECOMMENDED IMMEDIATE FIX** - uses existing patterns, no schema changes.
+
+Steps currently register ONE task (`db.tasks.start('step', props.name)`). When step children (Claude/Smithers) complete, step's children are done rendering. Detect via:
+
+```tsx
+// Monitor: when active, started, and my children have no running tasks, I'm done
+const { data: activeChildTasks } = useQueryValue<number>(
+  reactiveDb,
+  `SELECT COUNT(*) as count FROM tasks WHERE component_name = ? AND status = 'running'`,
+  [props.name] // Assumes children tag tasks with parent step name
+)
+
+useEffect(() => {
+  if (hasStartedRef.current && isActive && activeChildTasks === 0) {
+    // Children done, complete this step
+    completeStep()
+  }
+}, [activeChildTasks, isActive])
+```
+
 ## Summary
 
-| Problem | Impact | Fix |
-|---------|--------|-----|
-| Mount-only effect for non-first steps | Steps 1+ never start | Use `useEffect` keyed on `isActive` |
-| Task completion on unmount | Task never completes | Complete on work done, not unmount |
-| No completion detection | Can't advance steps | Add scoped task tracking or explicit signals |
+| Problem | Impact | Fix | Codebase Pattern |
+|---------|--------|-----|------------------|
+| Mount-only effect for non-first steps | Steps 1+ never start | Replace `useMount` with `useEffectOnValueChange(isActive, ...)` | See `Claude.tsx:110`, `Smithers.tsx:170` |
+| Task completion tied to unmount | Task never completes (step never unmounts) | Monitor child task completion reactively | Use `useQueryValue` like `SmithersProvider.tsx:108` |
+| No completion detection | Steps can't advance automatically | Query `COUNT(*) FROM tasks WHERE step_id = ? AND status = 'running'` | Reactive SQLite pattern used throughout codebase |
+
+## Implementation Steps
+
+1. **Fix step activation** (Step.tsx lines 202-241):
+   - Import `useEffectOnValueChange` from `../reconciler/hooks.js`
+   - Replace `useMount(() => { if (!isActive) return })` with `useEffectOnValueChange(isActive, () => { if (isActive && !hasStarted) ... })`
+
+2. **Fix step completion** (Step.tsx lines 243-305):
+   - Add schema: `ALTER TABLE tasks ADD COLUMN step_id TEXT` (optional, for scoping)
+   - Use `useQueryValue` to monitor child task count
+   - Call `registry.advanceStep()` when child tasks reach 0, not on unmount
+
+3. **Update task registration**:
+   - When `db.tasks.start()` is called by child components, pass `step_id` context
+   - Or rely on component_name pattern matching (simpler but less robust)
 
 ## Priority
 
-This is the **highest-impact correctness issue** - sequential workflows are completely broken.
+**P0 CRITICAL** - Sequential workflows completely broken. Tests pass because they don't verify multi-step sequential execution completes. The test only checks that step 1 starts, not that step 2 ever executes.

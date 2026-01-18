@@ -51,33 +51,31 @@ useMount(() => {
 
 ### Problem
 
-```
-usePhaseIndex()
-  → registry.registerPhase(name)     // Called in useState initializer (during render)
-    → setPhases(...)                 // State update in different component during render
-```
+**STATUS: FIXED** in commit 5e3536e (refactor: eliminate useState in favor of SQLite-backed state)
 
-In standard React this causes:
-- Warnings/errors in development
-- Unstable behavior
-- Potential infinite render loops
+Previously used `useState` with `setPhases()` which caused state updates during render.
 
-### Recommended Fix
+### Current Implementation
 
-Use ref-based registration (like StepRegistryProvider):
+**Location:** `src/components/PhaseRegistry.tsx:56,72-80`
+
+Now correctly uses ref-based registration:
 
 ```tsx
 const phasesRef = useRef<string[]>([])
 
-const registerPhase = useCallback((name: string) => {
-  if (!phasesRef.current.includes(name)) {
-    phasesRef.current.push(name)
+const registerPhase = useCallback((name: string): number => {
+  const existingIndex = phasesRef.current.indexOf(name)
+  if (existingIndex >= 0) {
+    return existingIndex
   }
-  return phasesRef.current.indexOf(name)
+  const index = phasesRef.current.length
+  phasesRef.current.push(name)
+  return index
 }, [])
 ```
 
-Registration becomes synchronous and side-effect free.
+Registration is now synchronous and side-effect free. ✓
 
 ---
 
@@ -85,31 +83,47 @@ Registration becomes synchronous and side-effect free.
 
 ### Problem
 
+**Location:** `src/components/Phase.tsx:86-99`
+
 ```tsx
 // Phase.tsx
 useMount(() => {
   if (isSkipped) {
+    // Log skipped phase to database
+    const id = db.phases.start(props.name, ralphCount)
+    db.db.run(
+      `UPDATE phases SET status = 'skipped', completed_at = datetime('now') WHERE id = ?`,
+      [id]
+    )
+    console.log(`[Phase] Skipped: ${props.name}`)
+
+    // Advance to next phase immediately
     registry.advancePhase()
   }
 })
 ```
 
-Phases are "always rendered" in the plan, so all phases mount immediately—including phases not yet active.
+**Root Cause:** Phases are "always rendered" (per design doc), so all phases mount simultaneously—including phases not yet active.
 
-Result: A skipped phase later in the sequence advances `currentPhaseIndex` immediately, potentially skipping currently-active work.
+**Result:** A skipped phase at index 2 mounts immediately and calls `advancePhase()`, potentially advancing past the currently-active phase 0.
 
 ### Correct Behavior
 
-Only skip a phase when it would become active:
+Only skip when phase becomes active:
 
 ```tsx
 useEffect(() => {
-  if (registry.isPhaseActive(myIndex) && shouldSkip) {
-    markSkipped()
+  if (registry.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
+    hasSkippedRef.current = true
+    const id = db.phases.start(props.name, ralphCount)
+    db.phases.skip(id)
+    console.log(`[Phase] Skipped: ${props.name}`)
     registry.advancePhase()
   }
-}, [registry.currentPhaseIndex])
+}, [registry.currentPhaseIndex, isSkipped])
 ```
+
+**Note:** Guard with ref to prevent double-advancement in strict mode.
 
 ---
 
@@ -117,30 +131,87 @@ useEffect(() => {
 
 ### Problem
 
-No code path advances phases when a phase's work completes. Only the skipped-phase mount path calls `advancePhase()`.
+**Critical Finding:** Only ONE location calls `advancePhase()`:
+- `src/components/Phase.tsx:97` - skipped phase mount path only
 
-Result: Phases never advance beyond the first (unless something external calls `advancePhase()`).
+**No code path advances phases when work completes normally.**
 
-### Expected Flow
+**Result:** Phases never advance beyond the first unless skipped or manually advanced externally.
 
+### Current Step Completion Flow
+
+**Location:** `src/components/Step.tsx:85-91,295`
+
+```tsx
+// In Step component's useUnmount:
+registry?.advanceStep()  // Line 295
+
+// In StepRegistryProvider:
+const advanceStep = useCallback(() => {
+  if (props.isParallel) return
+  const nextIndex = currentStepIndex + 1
+  if (nextIndex < stepsRef.current.length) {
+    db.state.set(stateKey, nextIndex, 'step_advance')
+  }
+  // ❌ When nextIndex >= length, nothing happens - phase doesn't advance
+}, [db, stateKey, currentStepIndex, props.isParallel])
 ```
-Phase 0 active → work completes → advancePhase() → Phase 1 active → ...
-```
+
+**Gap:** When the last step completes, `advanceStep()` does nothing because `nextIndex >= stepsRef.current.length`. There's no signal to the parent Phase that all steps are done.
 
 ### Recommended Fix
 
-Add completion detection:
+**Option A: Detection in StepRegistryProvider**
+
+When last step advances beyond bounds, notify phase:
 
 ```tsx
-// When phase's child tasks complete
-useEffect(() => {
-  if (isActive && allChildTasksComplete) {
-    registry.advancePhase()
+const advanceStep = useCallback(() => {
+  if (props.isParallel) return
+  const nextIndex = currentStepIndex + 1
+  if (nextIndex < stepsRef.current.length) {
+    db.state.set(stateKey, nextIndex, 'step_advance')
+  } else {
+    // All steps complete - signal phase completion
+    props.onAllStepsComplete?.()
   }
-}, [isActive, allChildTasksComplete])
+}, [db, stateKey, currentStepIndex, props.isParallel, props.onAllStepsComplete])
 ```
 
-This requires scoped task tracking (see step-deadlock review).
+Then in Phase:
+
+```tsx
+<StepRegistryProvider
+  phaseId={props.name}
+  onAllStepsComplete={() => {
+    if (registry.isPhaseActive(myIndex)) {
+      registry.advancePhase()
+    }
+  }}
+>
+  {props.children}
+</StepRegistryProvider>
+```
+
+**Option B: Polling in Phase component**
+
+Query step state to detect completion:
+
+```tsx
+useEffect(() => {
+  if (!isActive) return
+
+  const stepKey = `stepIndex_${props.name}`
+  const stepIndex = db.state.get<number>(stepKey)
+  const totalSteps = // need access to StepRegistry's stepsRef
+
+  if (stepIndex !== null && stepIndex >= totalSteps - 1) {
+    // Last step is active, wait for it to unmount then advance
+  }
+}, [isActive, /* step changes */])
+```
+
+**Recommended:** Option A is cleaner as it maintains the event-driven architecture.
 
 ---
 
@@ -167,3 +238,33 @@ This requires scoped task tracking (see step-deadlock review).
 │      → Continue until all phases complete               │
 └─────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Implementation Complexity
+
+**Issue Priority:**
+1. **Issue #4 (Missing progression)** - HIGHEST PRIORITY - Blocks all multi-phase workflows
+2. **Issue #1 (Reset on mount)** - HIGH - Prevents resume/persistence
+3. **Issue #3 (Skip timing)** - MEDIUM - Edge case but causes wrong execution order
+4. **Issue #2 (setState during render)** - FIXED ✓
+
+**Estimated Changes:**
+- Issue #1: 5 lines (trivial - copy pattern from Step.tsx)
+- Issue #3: 15 lines (easy - move logic to useEffect with guards)
+- Issue #4: 30-40 lines (moderate - add completion callback + phase advancement)
+
+**Files to Modify:**
+- `src/components/PhaseRegistry.tsx` - Issue #1 fix
+- `src/components/Phase.tsx` - Issue #3 fix, Issue #4 integration
+- `src/components/Step.tsx` - Issue #4 completion callback
+
+**Testing Requirements:**
+- Verify multi-phase workflows advance automatically
+- Verify phase progress persists across remounts
+- Verify skipped phases only skip when active
+- Run existing evals: `evals/02-workflow-sequential.test.tsx`
+
+**Related Issues:**
+- May interact with broken build orchestration pattern (reviews/20260118_132246_161937b.md)
+- Completion detection relates to step-deadlock issues mentioned in original review
