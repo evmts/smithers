@@ -10,7 +10,7 @@ The `<Review>` component performs AI-powered code reviews against specified crit
 ## Basic Usage
 
 ```tsx
-import { Review } from "smithers";
+import { Review } from "smithers-orchestrator";
 
 <Review
   target={{ type: "diff", ref: "main" }}
@@ -112,6 +112,8 @@ interface ReviewIssue {
 ## Review Workflow Example
 
 ```tsx
+import { useState } from "react";
+
 function ReviewWorkflow() {
   const [phase, setPhase] = useState("implement");
 

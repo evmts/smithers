@@ -10,7 +10,7 @@ The `<Stop>` component signals that the workflow should terminate.
 ## Basic Usage
 
 ```tsx
-import { Stop } from "smithers";
+import { Stop } from "smithers-orchestrator";
 
 <Stop reason="Task completed successfully" />
 ```
@@ -28,6 +28,8 @@ import { Stop } from "smithers";
 ## Conditional Stop
 
 ```tsx
+import { useState } from "react";
+
 function ConditionalWorkflow() {
   const [status, setStatus] = useState("running");
 

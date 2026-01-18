@@ -10,7 +10,7 @@ The `<Human>` component pauses the workflow to request human input or approval.
 ## Basic Usage
 
 ```tsx
-import { Human } from "smithers";
+import { Human } from "smithers-orchestrator";
 
 <Human
   message="Review the implementation"
@@ -47,6 +47,8 @@ import { Human } from "smithers";
 ## Approval Workflow
 
 ```tsx
+import { useState } from "react";
+
 function ApprovalWorkflow() {
   const [phase, setPhase] = useState("implement");
 
@@ -89,6 +91,8 @@ function ApprovalWorkflow() {
 ## Multi-Checkpoint Workflow
 
 ```tsx
+import { useState } from "react";
+
 function StrictWorkflow() {
   const [phase, setPhase] = useState("prompt-input");
 

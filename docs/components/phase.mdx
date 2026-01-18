@@ -10,7 +10,7 @@ The `<Phase>` component groups related steps semantically, providing structure a
 ## Basic Usage
 
 ```tsx
-import { Phase } from "smithers";
+import { Phase } from "smithers-orchestrator";
 
 <Phase name="Research">
   <Claude allowedTools={["Read", "Glob", "Grep"]}>
@@ -34,6 +34,8 @@ import { Phase } from "smithers";
 ## Multi-Phase Workflow
 
 ```tsx
+import { useState } from "react";
+
 function FeatureWorkflow() {
   const [phase, setPhase] = useState("research");
 
