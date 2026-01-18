@@ -3,55 +3,53 @@
  *
  * Tests verify:
  * 1. Database schema with new tables (reports, commits, snapshots, reviews, steps)
- * 2. VCSManager operations
+ * 2. VCS operations
  * 3. Component imports and basic functionality
  */
 
 import { test, expect, beforeAll, afterAll, describe } from 'bun:test'
 import { createSmithersDB, type SmithersDB } from './db'
-import { VCSManager } from './db/vcs'
-import { rmSync, mkdirSync } from 'fs'
+import { rmSync, mkdirSync, existsSync } from 'fs'
 
-const TEST_DB_PATH = '.smithers/test-integration'
+const TEST_DB_DIR = '.smithers/test-integration'
+const TEST_DB_PATH = `${TEST_DB_DIR}/test.db`
 
 describe('Smithers Orchestrator Integration', () => {
   let db: SmithersDB
   let executionId: string
 
-  beforeAll(async () => {
+  beforeAll(() => {
     // Clean up any existing test database
     try {
-      rmSync(TEST_DB_PATH, { recursive: true, force: true })
+      rmSync(TEST_DB_DIR, { recursive: true, force: true })
     } catch {
       // Ignore if doesn't exist
     }
-    mkdirSync(TEST_DB_PATH, { recursive: true })
+    mkdirSync(TEST_DB_DIR, { recursive: true })
 
-    // Create database
-    db = await createSmithersDB({ path: TEST_DB_PATH })
+    // Create database (synchronous)
+    db = createSmithersDB({ path: TEST_DB_PATH })
 
     // Start an execution for testing
-    executionId = await db.execution.start('Test Execution', 'integration.test.ts', {
+    executionId = db.execution.start('Test Execution', 'integration.test.ts', {
       maxIterations: 5,
       model: 'sonnet',
     })
   })
 
-  afterAll(async () => {
-    await db.close()
+  afterAll(() => {
+    db.close()
     // Clean up test database
     try {
-      rmSync(TEST_DB_PATH, { recursive: true, force: true })
+      rmSync(TEST_DB_DIR, { recursive: true, force: true })
     } catch {
       // Ignore
     }
   })
 
   describe('Database Schema', () => {
-    test('reports table exists and works', async () => {
-      const vcs = db.getVCSManager(executionId)
-
-      const reportId = await vcs.addReport({
+    test('reports table exists and works', () => {
+      const reportId = db.vcs.addReport({
         type: 'progress',
         title: 'Test Report',
         content: 'This is a test report',
@@ -61,16 +59,14 @@ describe('Smithers Orchestrator Integration', () => {
 
       expect(reportId).toBeTruthy()
 
-      const reports = await vcs.getReports()
+      const reports = db.vcs.getReports()
       expect(reports.length).toBeGreaterThan(0)
       expect(reports[0].title).toBe('Test Report')
       expect(reports[0].type).toBe('progress')
     })
 
-    test('commits table exists and works', async () => {
-      const vcs = db.getVCSManager(executionId)
-
-      const commitId = await vcs.logCommit({
+    test('commits table exists and works', () => {
+      const commitId = db.vcs.logCommit({
         vcs_type: 'jj',
         commit_hash: 'abc123def456',
         change_id: 'xyz789',
@@ -83,16 +79,14 @@ describe('Smithers Orchestrator Integration', () => {
 
       expect(commitId).toBeTruthy()
 
-      const commits = await vcs.getCommits()
+      const commits = db.vcs.getCommits()
       expect(commits.length).toBeGreaterThan(0)
       expect(commits[0].message).toBe('Test commit')
       expect(commits[0].vcs_type).toBe('jj')
     })
 
-    test('snapshots table exists and works', async () => {
-      const vcs = db.getVCSManager(executionId)
-
-      const snapshotId = await vcs.logSnapshot({
+    test('snapshots table exists and works', () => {
+      const snapshotId = db.vcs.logSnapshot({
         change_id: 'snapshot123',
         commit_hash: 'commit456',
         description: 'Test snapshot',
@@ -104,15 +98,13 @@ describe('Smithers Orchestrator Integration', () => {
 
       expect(snapshotId).toBeTruthy()
 
-      const snapshots = await vcs.getSnapshots()
+      const snapshots = db.vcs.getSnapshots()
       expect(snapshots.length).toBeGreaterThan(0)
       expect(snapshots[0].description).toBe('Test snapshot')
     })
 
-    test('reviews table exists and works', async () => {
-      const vcs = db.getVCSManager(executionId)
-
-      const reviewId = await vcs.logReview({
+    test('reviews table exists and works', () => {
+      const reviewId = db.vcs.logReview({
         target_type: 'commit',
         target_ref: 'HEAD',
         approved: true,
@@ -121,100 +113,90 @@ describe('Smithers Orchestrator Integration', () => {
         approvals: [{ aspect: 'code quality', reason: 'Well structured' }],
         reviewer_model: 'claude-sonnet-4',
         blocking: false,
-        posted_to_github: false,
-        posted_to_git_notes: true,
       })
 
       expect(reviewId).toBeTruthy()
 
-      const reviews = await vcs.getReviews()
+      const reviews = db.vcs.getReviews()
       expect(reviews.length).toBeGreaterThan(0)
       expect(reviews[0].approved).toBe(true)
     })
 
-    test('steps table exists and works', async () => {
-      const stepId = await db.steps.start('test-step')
+    test('steps table exists and works', () => {
+      const stepId = db.steps.start('test-step')
       expect(stepId).toBeTruthy()
 
-      await db.steps.complete(stepId)
+      db.steps.complete(stepId)
 
-      const steps = await db.steps.getByExecution(executionId)
+      const steps = db.steps.getByExecution(executionId)
       expect(steps.length).toBeGreaterThan(0)
       expect(steps[0].name).toBe('test-step')
       expect(steps[0].status).toBe('completed')
     })
   })
 
-  describe('VCSManager', () => {
-    test('getBlockingReviews returns only blocking reviews', async () => {
-      const vcs = db.getVCSManager(executionId)
-
+  describe('VCS Operations', () => {
+    test('getBlockingReviews returns only blocking reviews', () => {
       // Add a non-blocking review
-      await vcs.logReview({
+      db.vcs.logReview({
         target_type: 'diff',
         target_ref: 'main',
         approved: false,
         summary: 'Non-blocking issues',
         issues: [{ severity: 'minor', message: 'Minor issue' }],
         blocking: false,
-        posted_to_github: false,
-        posted_to_git_notes: false,
       })
 
       // Add a blocking review
-      await vcs.logReview({
+      db.vcs.logReview({
         target_type: 'diff',
         target_ref: 'main',
         approved: false,
         summary: 'Critical issues',
         issues: [{ severity: 'critical', message: 'Security vulnerability' }],
         blocking: true,
-        posted_to_github: false,
-        posted_to_git_notes: false,
       })
 
-      const blockingReviews = await vcs.getBlockingReviews()
+      const blockingReviews = db.vcs.getBlockingReviews()
       expect(blockingReviews.every((r) => r.blocking)).toBe(true)
     })
 
-    test('getReports filters by type', async () => {
-      const vcs = db.getVCSManager(executionId)
-
-      await vcs.addReport({
+    test('getReports filters by type', () => {
+      db.vcs.addReport({
         type: 'error',
         title: 'Error Report',
         content: 'Something went wrong',
         severity: 'critical',
       })
 
-      await vcs.addReport({
+      db.vcs.addReport({
         type: 'metric',
         title: 'Performance Metric',
         content: 'Response time: 100ms',
         severity: 'info',
       })
 
-      const errorReports = await vcs.getReports('error')
+      const errorReports = db.vcs.getReports('error')
       expect(errorReports.every((r) => r.type === 'error')).toBe(true)
 
-      const metricReports = await vcs.getReports('metric')
+      const metricReports = db.vcs.getReports('metric')
       expect(metricReports.every((r) => r.type === 'metric')).toBe(true)
     })
   })
 
   describe('State Management', () => {
-    test('state get/set works correctly', async () => {
-      await db.state.set('test_key', 'test_value', 'test_trigger')
+    test('state get/set works correctly', () => {
+      db.state.set('test_key', 'test_value', 'test_trigger')
 
-      const value = await db.state.get<string>('test_key')
+      const value = db.state.get<string>('test_key')
       expect(value).toBe('test_value')
     })
 
-    test('state getAll returns all state', async () => {
-      await db.state.set('key1', 'value1', 'trigger1')
-      await db.state.set('key2', { nested: true }, 'trigger2')
+    test('state getAll returns all state', () => {
+      db.state.set('key1', 'value1', 'trigger1')
+      db.state.set('key2', { nested: true }, 'trigger2')
 
-      const allState = await db.state.getAll()
+      const allState = db.state.getAll()
       expect(allState).toBeTruthy()
       expect(allState.key1).toBe('value1')
       expect(allState.key2).toEqual({ nested: true })
@@ -222,25 +204,25 @@ describe('Smithers Orchestrator Integration', () => {
   })
 
   describe('Execution Management', () => {
-    test('execution lifecycle works', async () => {
-      const newExecutionId = await db.execution.start('Lifecycle Test', 'test.tsx')
+    test('execution lifecycle works', () => {
+      const newExecutionId = db.execution.start('Lifecycle Test', 'test.tsx')
       expect(newExecutionId).toBeTruthy()
 
-      const execution = await db.execution.get(newExecutionId)
+      const execution = db.execution.get(newExecutionId)
       expect(execution).toBeTruthy()
       expect(execution?.name).toBe('Lifecycle Test')
       expect(execution?.status).toBe('running')
 
-      await db.execution.complete(newExecutionId, { result: 'success' })
+      db.execution.complete(newExecutionId, { result: 'success' })
 
-      const completedExecution = await db.execution.get(newExecutionId)
+      const completedExecution = db.execution.get(newExecutionId)
       expect(completedExecution?.status).toBe('completed')
     })
   })
 })
 
 describe('Component Imports', () => {
-  // Skip tests that import Solid JSX components due to transform mismatch
+  // Skip tests that import React JSX components due to transform mismatch
   test.skip('SmithersProvider exports correctly', async () => {})
   test.skip('Orchestration exports correctly', async () => {})
   test.skip('Phase exports correctly', async () => {})
@@ -266,8 +248,8 @@ describe('Component Imports', () => {
   })
 })
 
-// VCS Component Imports are skipped due to Solid JSX transform mismatch.
-// These components use Solid internally which requires a different JSX transform
+// VCS Component Imports are skipped due to React JSX transform mismatch.
+// These components use React internally which requires a different JSX transform
 // than what's available in the test environment.
 describe.skip('VCS Component Imports', () => {
   test('JJ components export correctly', async () => {})
