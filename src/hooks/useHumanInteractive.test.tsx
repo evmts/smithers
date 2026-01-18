@@ -37,14 +37,17 @@ describe('useHumanInteractive', () => {
         <TestComponent onPromise={(p) => { capturedPromise = p }} />
       </SmithersProvider>
     )
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(capturedPromise).not.toBeNull()
 
-    const pending = db.human.listPending()
-    expect(pending.length).toBeGreaterThan(0)
-
-    const session = pending.find((row) => row.type === 'interactive_session')
-    expect(session).toBeDefined()
+    let session = db.human.listPending().find((row) => row.type === 'interactive_session') ?? null
+    const startTime = Date.now()
+    while (!session && Date.now() - startTime < 2000) {
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      session = db.human.listPending().find((row) => row.type === 'interactive_session') ?? null
+    }
+    expect(session).not.toBeNull()
 
     db.human.completeInteractive(session!.id, 'completed', { approved: true }, {
       duration: 42,

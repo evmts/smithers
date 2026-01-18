@@ -1,11 +1,10 @@
 import { useCallback, useRef } from 'react'
 import type { ZodType } from 'zod'
 import { useSmithers } from '../components/SmithersProvider.js'
-import type { HumanInteractionRow, InteractiveSessionConfig } from '../db/human.js'
-import { parseHumanInteraction } from '../db/human.js'
+import type { HumanInteraction, InteractiveSessionConfig } from '../db/human.js'
 import { parseJson, uuid } from '../db/utils.js'
-import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
-import { useEffectOnValueChange, useMount } from '../reconciler/hooks.js'
+import { useQueryValue } from '../reactive-sqlite/index.js'
+import { useEffectOnValueChange, useMount, useUnmount } from '../reconciler/hooks.js'
 
 export interface InteractiveSessionResult {
   outcome: 'completed' | 'cancelled' | 'timeout' | 'failed'
@@ -65,6 +64,7 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   const resolveRef = useRef<((value: T) => void) | null>(null)
   const rejectRef = useRef<((error: Error) => void) | null>(null)
   const zodSchemaRef = useRef<ZodType | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useMount(() => {
     const existing = db.state.get<HookState>(stateKeyRef.current)
@@ -80,15 +80,6 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   )
   const state = stateJson ? parseJson<HookState>(stateJson, DEFAULT_STATE) : DEFAULT_STATE
 
-  const { data: rawSession } = useQueryOne<HumanInteractionRow>(
-    reactiveDb,
-    state.sessionId
-      ? 'SELECT * FROM human_interactions WHERE id = ?'
-      : 'SELECT 1 WHERE 0',
-    state.sessionId ? [state.sessionId] : []
-  )
-  const session = rawSession ? parseHumanInteraction(rawSession) : null
-
   const setState = useCallback((next: HookState, trigger: string) => {
     db.state.set(stateKeyRef.current, next, trigger)
   }, [db])
@@ -101,10 +92,7 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     return 'completed'
   }
 
-  useEffectOnValueChange(session?.status ?? null, () => {
-    if (!session || state.status !== 'pending') return
-    if (session.status === 'pending') return
-
+  const handleCompletion = useCallback((session: HumanInteraction, current: HookState) => {
     let response = session.response
     if (zodSchemaRef.current) {
       try {
@@ -112,14 +100,14 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Interactive response validation failed')
         setState({
-          ...state,
+          ...current,
           status: 'error',
           error: error.message,
           data: null,
           taskId: null,
         }, 'human_interactive_validation_failed')
-        if (state.taskId) {
-          db.tasks.complete(state.taskId)
+        if (current.taskId) {
+          db.tasks.complete(current.taskId)
         }
         rejectRef.current?.(error)
         resolveRef.current = null
@@ -136,13 +124,13 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
       error: session.error ?? undefined,
     } as T
 
-    if (state.taskId) {
-      db.tasks.complete(state.taskId)
+    if (current.taskId) {
+      db.tasks.complete(current.taskId)
     }
 
     const nextStatus = session.status === 'failed' ? 'error' : 'success'
     setState({
-      ...state,
+      ...current,
       status: nextStatus,
       data: nextStatus === 'success' ? result : null,
       error: nextStatus === 'error' ? (session.error ?? 'Session failed') : null,
@@ -158,7 +146,32 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
 
     resolveRef.current = null
     rejectRef.current = null
-  }, [state, session, db, setState])
+  }, [db, setState])
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
+  useEffectOnValueChange(state.sessionId, () => {
+    stopPolling()
+    if (!state.sessionId || state.status !== 'pending') return
+
+    pollRef.current = setInterval(() => {
+      const current = db.state.get<HookState>(stateKeyRef.current) ?? DEFAULT_STATE
+      if (current.status !== 'pending' || !current.sessionId) return
+      const session = db.human.get(current.sessionId)
+      if (!session || session.status === 'pending') return
+      stopPolling()
+      handleCompletion(session, current)
+    }, 250)
+  }, [state.status, db, stopPolling, handleCompletion])
+
+  useUnmount(() => {
+    stopPolling()
+  })
 
   const createSession = useCallback((prompt: string, options?: AskInteractiveOptions): string => {
     const current = db.state.get<HookState>(stateKeyRef.current) ?? DEFAULT_STATE
@@ -167,16 +180,16 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     }
 
     const config: InteractiveSessionConfig = {
-      systemPrompt: options?.systemPrompt,
-      context: options?.context,
-      model: options?.model,
-      cwd: options?.cwd,
-      mcpConfig: options?.mcpConfig,
-      timeout: options?.timeout,
-      outcomeSchema: options?.outcomeSchema,
-      captureTranscript: options?.captureTranscript,
       blockOrchestration: options?.blockOrchestration ?? true,
     }
+    if (options?.systemPrompt !== undefined) config.systemPrompt = options.systemPrompt
+    if (options?.context !== undefined) config.context = options.context
+    if (options?.model !== undefined) config.model = options.model
+    if (options?.cwd !== undefined) config.cwd = options.cwd
+    if (options?.mcpConfig !== undefined) config.mcpConfig = options.mcpConfig
+    if (options?.timeout !== undefined) config.timeout = options.timeout
+    if (options?.outcomeSchema !== undefined) config.outcomeSchema = options.outcomeSchema
+    if (options?.captureTranscript !== undefined) config.captureTranscript = options.captureTranscript
 
     const id = db.human.requestInteractive(prompt, config)
     let taskId: string | null = null

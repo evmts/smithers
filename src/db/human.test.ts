@@ -3,11 +3,10 @@ import { createSmithersDB, type SmithersDB } from './index.js'
 
 describe('Human module interactive sessions', () => {
   let db: SmithersDB
-  let executionId: string
 
   beforeAll(async () => {
     db = await createSmithersDB({ reset: true })
-    executionId = await db.execution.start('test-human', 'human.test.tsx')
+    await db.execution.start('test-human', 'human.test.tsx')
   })
 
   afterAll(() => {
