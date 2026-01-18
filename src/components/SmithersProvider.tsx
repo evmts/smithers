@@ -621,7 +621,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     db: props.db,
     executionId: props.executionId,
     config: props.config ?? {},
-    middleware: props.middleware,
+    ...(props.middleware !== undefined ? { middleware: props.middleware } : {}),
 
     requestStop: (reason: string) => {
       props.db.state.set('stop_requested', {
