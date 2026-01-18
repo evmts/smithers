@@ -1,4 +1,6 @@
-import type { UIMessage } from '../utils/structured-output/types.js'
+export interface UIMessage {
+  id: string
+}
 
 export type ChatTransportTrigger = 'submit-message' | 'regenerate-message'
 
