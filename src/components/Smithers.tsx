@@ -4,6 +4,7 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
+import { usePhaseContext } from './PhaseContext.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI.js'
 import type { ClaudeModel } from './agents/types.js'
@@ -122,6 +123,8 @@ export interface SmithersProps {
 export function Smithers(props: SmithersProps): ReactNode {
   const { db, executionId } = useSmithers()
   const worktree = useWorktree()
+  const phase = usePhaseContext()
+  const phaseActive = phase?.isActive ?? true
   const ralphCount = useRalphCount()
 
   const subagentIdRef = useRef<string | null>(null)
@@ -169,7 +172,10 @@ export function Smithers(props: SmithersProps): ReactNode {
   }
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
-  useEffectOnValueChange(ralphCount, () => {
+  const executionKey = `${ralphCount}:${phaseActive ? 'active' : 'inactive'}`
+
+  useEffectOnValueChange(executionKey, () => {
+    if (!phaseActive) return
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database

@@ -4,6 +4,7 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
+import { usePhaseContext } from './PhaseContext.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
@@ -59,6 +60,8 @@ type AgentRow = {
 export function Claude(props: ClaudeProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
   const worktree = useWorktree()
+  const phase = usePhaseContext()
+  const phaseActive = phase?.isActive ?? true
   const ralphCount = useRalphCount()
 
   // agentId stored in ref (set once, non-reactive until set)
@@ -109,7 +112,10 @@ export function Claude(props: ClaudeProps): ReactNode {
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Execute once per ralphCount change (idempotent, handles React strict mode)
-  useEffectOnValueChange(ralphCount, () => {
+  const executionKey = `${ralphCount}:${phaseActive ? 'active' : 'inactive'}`
+
+  useEffectOnValueChange(executionKey, () => {
+    if (!phaseActive) return
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database

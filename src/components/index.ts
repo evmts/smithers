@@ -12,6 +12,7 @@ export { Ralph, type RalphProps, RalphContext } from './Ralph.js'
 // Phase and Step - Workflow structure
 export { Phase, type PhaseProps } from './Phase.js'
 export { Step, type StepProps } from './Step.js'
+export { PhaseContext, usePhaseContext, type PhaseContextValue } from './PhaseContext.js'
 
 // Parallel execution wrapper
 export { Parallel, type ParallelProps } from './Parallel.js'
