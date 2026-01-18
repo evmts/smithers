@@ -202,7 +202,7 @@ const hostConfig = {
 
   // Required for newer React versions
   getCurrentEventPriority(): number {
-    return DefaultEventPriority
+    return currentUpdatePriority
   },
 
   getInstanceFromNode(): null {
@@ -234,7 +234,7 @@ const hostConfig = {
   },
 
   resolveUpdatePriority(): number {
-    return currentUpdatePriority || DefaultEventPriority
+    return currentUpdatePriority
   },
 
   // For microtasks (React 18+)
