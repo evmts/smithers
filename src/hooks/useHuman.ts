@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useSmithers } from '../components/SmithersProvider'
-import type { HumanInteraction } from '../db/human'
-import { useQueryOne } from '../reactive-sqlite'
+import { useSmithers } from '../components/SmithersProvider.js'
+import type { HumanInteraction } from '../db/human.js'
+import { useQueryOne } from '../reactive-sqlite/index.js'
 
 export interface AskOptions {
   options?: string[]

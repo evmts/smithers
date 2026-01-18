@@ -2,7 +2,7 @@
  * Unit tests for Git/Notes.tsx - Git notes component interface tests.
  */
 import { describe, test, expect, mock } from 'bun:test'
-import type { NotesProps, NotesResult } from './Notes'
+import type { NotesProps, NotesResult } from './Notes.js'
 
 describe('NotesProps interface', () => {
   test('commitRef is optional, defaults to HEAD', () => {

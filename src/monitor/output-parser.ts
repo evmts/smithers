@@ -35,7 +35,7 @@ export class OutputParser {
           type: 'phase',
           timestamp,
           data: {
-            name: match[1].trim(),
+            name: match[1]!.trim(),
             status: match[2]?.trim() || 'STARTING',
           },
           raw: line,
@@ -51,7 +51,7 @@ export class OutputParser {
           type: 'agent',
           timestamp,
           data: {
-            name: match[1].trim(),
+            name: match[1]!.trim(),
             status: match[2]?.trim() || 'RUNNING',
           },
           raw: line,
@@ -67,7 +67,7 @@ export class OutputParser {
           type: 'tool',
           timestamp,
           data: {
-            name: match[1].trim(),
+            name: match[1]!.trim(),
             details: match[2]?.trim() || '',
           },
           raw: line,
@@ -83,7 +83,7 @@ export class OutputParser {
           type: 'ralph',
           timestamp,
           data: {
-            iteration: parseInt(match[1]),
+            iteration: parseInt(match[1]!),
           },
           raw: line,
         }

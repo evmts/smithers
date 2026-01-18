@@ -11,8 +11,8 @@
  */
 import { describe, test, expect, mock } from 'bun:test'
 
-// Cannot import from './Ralph' - contains Solid JSX
-// import { RalphContext, createOrchestrationPromise, ... } from './Ralph'
+// Cannot import from './Ralph.js' - contains Solid JSX
+// import { RalphContext, createOrchestrationPromise, ... } from './Ralph.js'
 
 describe.skip('RalphContext', () => {
   test('RalphContext is exported', () => {})

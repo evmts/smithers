@@ -2,8 +2,8 @@
 // Currently supports GitHub Actions
 
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider'
-import { useMount, useUnmount } from '../../reconciler/hooks'
+import { useSmithers } from '../SmithersProvider.js'
+import { useMount, useUnmount } from '../../reconciler/hooks.js'
 
 export interface CIFailure {
   failed: boolean

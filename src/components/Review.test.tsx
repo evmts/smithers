@@ -2,7 +2,7 @@
  * Unit tests for Review.tsx - Code review component interface tests.
  */
 import { describe, test, expect, mock } from 'bun:test'
-import type { ReviewTarget, ReviewResult, ReviewIssue, ReviewProps } from './Review'
+import type { ReviewTarget, ReviewResult, ReviewIssue, ReviewProps } from './Review.js'
 
 describe('ReviewTarget interface', () => {
   test('commit target with optional ref', () => {

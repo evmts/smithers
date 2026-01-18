@@ -1,15 +1,15 @@
 // Claude CLI Executor
 // Executes Claude CLI commands using Bun
 
-import type { CLIExecutionOptions, AgentResult } from '../types'
+import type { CLIExecutionOptions, AgentResult } from '../types.js'
 import {
   generateStructuredOutputPrompt,
   generateRetryPrompt,
   parseStructuredOutput,
-} from '../../../utils/structured-output'
-import { buildClaudeArgs } from './arg-builder'
-import { checkStopConditions } from './stop-conditions'
-import { parseClaudeOutput } from './output-parser'
+} from '../../../utils/structured-output.js'
+import { buildClaudeArgs } from './arg-builder.js'
+import { checkStopConditions } from './stop-conditions.js'
+import { parseClaudeOutput } from './output-parser.js'
 
 /**
  * Execute a single Claude CLI invocation (internal helper)
@@ -156,7 +156,7 @@ export async function executeClaudeCLIOnce(
       stopReason,
       durationMs,
       exitCode,
-      sessionId,
+      ...(sessionId ? { sessionId } : {}),
     }
   } catch (error) {
     const durationMs = Date.now() - startTime

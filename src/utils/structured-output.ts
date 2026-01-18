@@ -15,4 +15,4 @@ export {
   // Prompt generation
   generateStructuredOutputPrompt,
   generateRetryPrompt,
-} from './structured-output/index'
+} from './structured-output/index.js'

@@ -13,7 +13,7 @@ import {
   buildToolFlags,
   type Tool,
   type MCPServer,
-} from './registry'
+} from './registry.js'
 
 describe('BUILTIN_TOOLS', () => {
   test('contains Read tool', () => {

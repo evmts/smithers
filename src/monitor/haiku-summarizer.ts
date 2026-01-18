@@ -29,7 +29,7 @@ export async function summarizeWithHaiku(
     apiKey?: string
   } = {}
 ): Promise<SummaryResult> {
-  const threshold = options.threshold || parseInt(process.env.SMITHERS_SUMMARY_THRESHOLD || '50')
+  const threshold = options.threshold || parseInt(process.env['SMITHERS_SUMMARY_THRESHOLD'] || '50')
   const lineCount = content.split('\n').length
 
   // Don't summarize if below threshold
@@ -40,7 +40,7 @@ export async function summarizeWithHaiku(
     }
   }
 
-  const apiKey = options.apiKey || process.env.ANTHROPIC_API_KEY
+  const apiKey = options.apiKey || process.env['ANTHROPIC_API_KEY']
 
   if (!apiKey) {
     // Fallback: truncate instead of summarize
@@ -65,7 +65,7 @@ export async function summarizeWithHaiku(
     })
 
     const text = response.content[0]
-    const summary = text.type === 'text' ? text.text : content
+    const summary = text && text.type === 'text' && 'text' in text ? text.text : content
 
     return {
       summary,

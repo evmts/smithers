@@ -37,10 +37,10 @@ Create a file called `my-workflow.tsx`:
 ```tsx
 #!/usr/bin/env bun
 
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { createSmithersRoot } from "smithers-orchestrator";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Claude } from "smithers-orchestrator/components/Claude";
 
 // Create a database for state persistence
 const db = await createSmithersDB({ path: ".smithers/my-task" });
@@ -80,7 +80,7 @@ You'll see Claude analyze your codebase and output suggestions.
     ```tsx
     const db = await createSmithersDB({ path: ".smithers/my-task" });
     ```
-    The PGlite database persists all state, letting you resume workflows.
+    The SQLite database persists all state, letting you resume workflows.
   </Step>
 
   <Step title="Start Execution">
@@ -113,7 +113,7 @@ You'll see Claude analyze your codebase and output suggestions.
     const root = createSmithersRoot();
     await root.mount(MyWorkflow);
     ```
-    The Solid.js renderer mounts your component tree and executes it.
+    The React renderer mounts your component tree and executes it.
   </Step>
 </Steps>
 

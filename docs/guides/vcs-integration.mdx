@@ -12,7 +12,7 @@ Smithers has first-class support for Git and Jujutsu (jj) version control.
 Create commits with the Commit component:
 
 ```tsx
-import { Commit } from "smithers/components/Git";
+import { Commit } from "smithers-orchestrator/components/Git";
 
 <Commit
   message="feat: Add user authentication"
@@ -71,11 +71,11 @@ Review changes before committing:
 
 ```tsx
 function ReviewAndCommit() {
-  const [phase, setPhase] = createSignal("implement");
+  const [phase, setPhase] = useState("implement");
 
   return (
     <Ralph maxIterations={5}>
-      {phase() === "implement" && (
+      {phase === "implement" && (
         <Claude
           allowedTools={["Edit", "Write"]}
           onFinished={() => setPhase("review")}
@@ -84,7 +84,7 @@ function ReviewAndCommit() {
         </Claude>
       )}
 
-      {phase() === "review" && (
+      {phase === "review" && (
         <Review
           target={{ type: "diff", ref: "main" }}
           criteria={[
@@ -101,7 +101,7 @@ function ReviewAndCommit() {
         />
       )}
 
-      {phase() === "commit" && (
+      {phase === "commit" && (
         <Commit
           autoGenerate
           all
@@ -175,13 +175,13 @@ const blocking = await db.vcs.getBlockingReviews();
 
 ```tsx
 function FeatureWorkflow() {
-  const [phase, setPhase] = createSignal("implement");
+  const [phase, setPhase] = useState("implement");
 
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Orchestration snapshotBeforeStart>
         <Ralph maxIterations={10}>
-          {phase() === "implement" && (
+          {phase === "implement" && (
             <Phase name="Implementation">
               <Claude
                 allowedTools={["Edit", "Write"]}
@@ -192,7 +192,7 @@ function FeatureWorkflow() {
             </Phase>
           )}
 
-          {phase() === "test" && (
+          {phase === "test" && (
             <Phase name="Testing">
               <Claude
                 allowedTools={["Bash"]}
@@ -209,7 +209,7 @@ function FeatureWorkflow() {
             </Phase>
           )}
 
-          {phase() === "review" && (
+          {phase === "review" && (
             <Phase name="Review">
               <Review
                 target={{ type: "diff", ref: "main" }}
@@ -225,7 +225,7 @@ function FeatureWorkflow() {
             </Phase>
           )}
 
-          {phase() === "commit" && (
+          {phase === "commit" && (
             <Phase name="Commit">
               <Commit
                 autoGenerate

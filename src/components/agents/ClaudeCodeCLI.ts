@@ -15,6 +15,6 @@ export {
   executeClaudeCLI,
   executeClaudeShell,
   executeClaudeCLIOnce,
-} from './claude-cli'
+} from './claude-cli/index.js'
 
-export type { ParsedOutput } from './claude-cli'
+export type { ParsedOutput } from './claude-cli/index.js'

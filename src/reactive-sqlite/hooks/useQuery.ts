@@ -3,11 +3,11 @@
  */
 
 import { useSyncExternalStore, useCallback, useMemo, useEffect } from 'react'
-import type { ReactiveDatabase } from '../database'
-import { extractReadTables } from '../parser'
-import type { UseQueryResult, UseQueryOptions } from '../types'
-import { useVersionTracking, useQueryCache } from './shared'
-import { useDatabaseOptional } from './context'
+import type { ReactiveDatabase } from '../database.js'
+import { extractReadTables } from '../parser.js'
+import type { UseQueryResult, UseQueryOptions } from '../types.js'
+import { useVersionTracking, useQueryCache } from './shared.js'
+import { useDatabaseOptional } from './context.js'
 
 /**
  * Hook to execute a reactive query

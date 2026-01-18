@@ -2,7 +2,7 @@
  * Unit tests for Hooks/OnCIFailure.tsx - CI failure hook component interface tests.
  */
 import { describe, test, expect, mock } from 'bun:test'
-import type { OnCIFailureProps, CIFailure } from './OnCIFailure'
+import type { OnCIFailureProps, CIFailure } from './OnCIFailure.js'
 
 describe('OnCIFailureProps interface', () => {
   test('provider is required', () => {

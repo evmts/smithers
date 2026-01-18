@@ -24,7 +24,7 @@ export interface PersonaProps {
  */
 export function Persona(props: PersonaProps): ReactNode {
   return (
-    <persona role={props.role}>
+    <persona {...(props.role ? { role: props.role } : {})}>
       {props.children}
     </persona>
   )

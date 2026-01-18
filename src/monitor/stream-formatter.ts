@@ -40,37 +40,37 @@ export class StreamFormatter {
 
     switch (event.type) {
       case 'phase':
-        if (event.data.status === 'COMPLETE') {
+        if (event.data['status'] === 'COMPLETE') {
           this.stats.phasesCompleted++
         }
-        output = this.formatPhase(time, event.data.name, event.data.status)
+        output = this.formatPhase(time, event.data['name'], event.data['status'])
         break
 
       case 'agent':
-        if (event.data.status === 'COMPLETE') {
+        if (event.data['status'] === 'COMPLETE') {
           this.stats.agentsExecuted++
         }
-        output = this.formatAgent(time, event.data.name, event.data.status)
+        output = this.formatAgent(time, event.data['name'], event.data['status'])
         break
 
       case 'tool':
         this.stats.toolCalls++
-        output = this.formatTool(time, event.data.name, event.data.details, logPath, summary)
+        output = this.formatTool(time, event.data['name'], event.data['details'], logPath, summary)
         break
 
       case 'ralph':
-        output = this.formatRalph(time, event.data.iteration)
+        output = this.formatRalph(time, event.data['iteration'])
         break
 
       case 'error':
         this.stats.errors++
-        output = this.formatError(time, event.data.message, logPath)
+        output = this.formatError(time, event.data['message'], logPath)
         break
 
       case 'log':
         // Only show logs if they're different from last event
         if (this.lastEventType !== 'log') {
-          output = this.formatLog(time, event.data.message)
+          output = this.formatLog(time, event.data['message'])
         }
         break
 

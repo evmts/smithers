@@ -1,8 +1,8 @@
 // Git operations
 // Uses Bun.$ for command execution per CLAUDE.md
 
-import { parseGitStatus } from './parsers'
-import type { CommandResult, VCSStatus, DiffStats, CommitInfo } from './types'
+import { parseGitStatus } from './parsers.js'
+import type { CommandResult, VCSStatus, DiffStats, CommitInfo } from './types.js'
 
 const SMITHERS_NOTES_REF = 'refs/notes/smithers'
 
@@ -59,9 +59,11 @@ export async function getDiffStats(ref?: string): Promise<DiffStats> {
     if (!line.trim()) continue
 
     const [ins, del, file] = line.split('\t')
-    files.push(file)
-    insertions += parseInt(ins) || 0
-    deletions += parseInt(del) || 0
+    if (ins && del && file) {
+      files.push(file)
+      insertions += parseInt(ins) || 0
+      deletions += parseInt(del) || 0
+    }
   }
 
   return { files, insertions, deletions }

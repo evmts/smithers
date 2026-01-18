@@ -10,13 +10,13 @@ import {
   extractWriteTables,
   isWriteOperation,
   extractRowFilter,
-} from "./parser";
+} from "./parser.js";
 import type {
   QuerySubscription,
   SubscriptionCallback,
   ReactiveDatabaseConfig,
   RowFilter,
-} from "./types";
+} from "./types.js";
 
 /**
  * ReactiveDatabase wraps bun:sqlite with reactive subscriptions
@@ -184,7 +184,7 @@ export class ReactiveDatabase {
     const subscription: QuerySubscription = {
       id,
       tables: new Set(tables.map((t) => t.toLowerCase())),
-      rowFilters: rowFilter ? [rowFilter] : undefined,
+      ...(rowFilter && { rowFilters: [rowFilter] }),
       callback,
     };
 

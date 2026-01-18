@@ -2,8 +2,8 @@
  * Unit tests for execute.ts - Ralph Wiggum loop execution engine.
  */
 import { describe, test, expect } from 'bun:test'
-import { executePlan } from './execute'
-import type { SmithersNode } from '../reconciler/types'
+import { executePlan } from './execute.js'
+import type { SmithersNode } from '../reconciler/types.js'
 
 describe('executePlan', () => {
   test('returns immediately when tree has no pending nodes', async () => {

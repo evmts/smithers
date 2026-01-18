@@ -1,6 +1,6 @@
 // Raw query access module for Smithers DB
 
-import type { ReactiveDatabase } from '../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 
 export type QueryFunction = <T>(sql: string, params?: any[]) => T[]
 

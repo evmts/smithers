@@ -81,7 +81,7 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}) {
 
       // For tool calls and errors, save to logs and optionally summarize
       if (event.type === 'tool' && event.raw) {
-        logPath = logWriter.writeToolCall(event.data.name, {}, event.raw)
+        logPath = logWriter.writeToolCall(event.data['name'], {}, event.raw)
 
         if (enableSummary) {
           const summaryResult = await summarizeWithHaiku(
@@ -92,9 +92,9 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}) {
           summary = summaryResult.summary
         }
       } else if (event.type === 'error') {
-        logPath = logWriter.writeError(event.data.message)
-      } else if (event.type === 'agent' && event.data.status === 'COMPLETE') {
-        logPath = logWriter.writeAgentResult(event.data.name, event.raw)
+        logPath = logWriter.writeError(event.data['message'])
+      } else if (event.type === 'agent' && event.data['status'] === 'COMPLETE') {
+        logPath = logWriter.writeAgentResult(event.data['name'], event.raw)
 
         if (enableSummary && event.raw.length > 200) {
           const summaryResult = await summarizeWithHaiku(

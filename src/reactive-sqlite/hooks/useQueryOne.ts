@@ -2,9 +2,9 @@
  * useQueryOne hook for reactive SQLite single-row queries
  */
 
-import type { ReactiveDatabase } from '../database'
-import type { UseQueryResult, UseQueryOptions } from '../types'
-import { useQuery } from './useQuery'
+import type { ReactiveDatabase } from '../database.js'
+import type { UseQueryResult, UseQueryOptions } from '../types.js'
+import { useQuery } from './useQuery.js'
 
 /**
  * Hook to get a single row from a query

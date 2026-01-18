@@ -1,7 +1,7 @@
 // Human interaction module
 // Handles requests for human input/confirmation
 
-import type { ReactiveDatabase } from '../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { uuid, now } from './utils.js'
 
 export interface HumanInteraction {

@@ -2,9 +2,9 @@
 // Handles global timeouts, stop conditions, CI/CD integration, and cleanup
 
 import { useRef, type ReactNode } from 'react'
-import { useSmithers } from './SmithersProvider'
-import { jjSnapshot } from '../utils/vcs'
-import { useMount, useUnmount } from '../reconciler/hooks'
+import { useSmithers } from './SmithersProvider.js'
+import { jjSnapshot } from '../utils/vcs.js'
+import { useMount, useUnmount } from '../reconciler/hooks.js'
 
 // ============================================================================
 // TYPES

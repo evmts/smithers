@@ -33,13 +33,13 @@
  */
 
 // Database
-export { ReactiveDatabase, createReactiveDatabase } from './database'
+export { ReactiveDatabase, createReactiveDatabase } from './database.js'
 
 // Hooks
-export { useQuery, useQueryOne, useQueryValue, useMutation } from './hooks'
+export { useQuery, useQueryOne, useQueryValue, useMutation } from './hooks.js'
 
 // Parser utilities
-export { extractReadTables, extractWriteTables, isWriteOperation, extractAllTables } from './parser'
+export { extractReadTables, extractWriteTables, isWriteOperation, extractAllTables } from './parser.js'
 
 // Types
 export type {
@@ -54,4 +54,4 @@ export type {
   ReactiveDatabaseConfig,
   DatabaseEvent,
   DatabaseEventType,
-} from './types'
+} from './types.js'

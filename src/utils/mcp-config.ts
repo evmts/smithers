@@ -32,15 +32,18 @@ export function extractMCPConfigs(childrenString: string): ExtractedMCPConfig {
     const [fullMatch, type, configJson, instructions] = match
 
     try {
+      if (!type || !configJson) throw new Error('Missing type or config');
       const config = JSON.parse(configJson.replace(/&quot;/g, '"'))
+      const safeInstructions = instructions ? instructions.trim() : '';
+
       configs.push({
         type: type as MCPToolConfig['type'],
         config,
-        instructions: instructions.trim(),
+        instructions: safeInstructions,
       })
 
-      if (instructions.trim()) {
-        toolInstructions.push(`[${type.toUpperCase()} DATABASE: ${config.path}]\n${instructions.trim()}`)
+      if (safeInstructions) {
+        toolInstructions.push(`[${type.toUpperCase()} DATABASE: ${config['path']}]\n${safeInstructions}`)
       }
     } catch (e) {
       console.warn(`Failed to parse MCP tool config: ${e}`)
@@ -71,14 +74,14 @@ export function generateMCPServerConfig(configs: MCPToolConfig[]): Record<string
   for (const tool of configs) {
     switch (tool.type) {
       case 'sqlite':
-        mcpConfig.mcpServers['sqlite'] = {
+        mcpConfig['mcpServers']['sqlite'] = {
           command: 'npx',
           args: [
             '-y',
             '@anthropic/mcp-server-sqlite',
             '--db-path',
-            tool.config.path,
-            ...(tool.config.readOnly ? ['--read-only'] : []),
+            tool.config['path'],
+            ...(tool.config['readOnly'] ? ['--read-only'] : []),
           ],
         }
         break

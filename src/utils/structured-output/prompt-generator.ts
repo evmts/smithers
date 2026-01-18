@@ -2,7 +2,7 @@
 // Generate prompts for structured output
 
 import { z } from 'zod'
-import { schemaToPromptDescription } from './zod-converter'
+import { schemaToPromptDescription } from './zod-converter.js'
 
 /**
  * Generate system prompt additions for structured output

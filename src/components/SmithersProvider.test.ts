@@ -1,5 +1,5 @@
 import { test, expect, beforeAll, afterAll, describe } from 'bun:test'
-import { createSmithersDB, type SmithersDB } from '../db/index'
+import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import {
   SmithersProvider,
   useSmithers,
@@ -9,7 +9,7 @@ import {
   signalOrchestrationError,
   type SmithersContextValue,
   type RalphContextType,
-} from './SmithersProvider'
+} from './SmithersProvider.js'
 
 describe('SmithersProvider', () => {
   let db: SmithersDB
@@ -356,18 +356,18 @@ describe('SmithersProvider', () => {
 
 describe('Ralph backwards compatibility', () => {
   test('Ralph component is exported from Ralph.tsx', async () => {
-    const { Ralph } = await import('./Ralph')
+    const { Ralph } = await import('./Ralph.js')
     expect(Ralph).toBeDefined()
     expect(typeof Ralph).toBe('function')
   })
 
   test('RalphContext is exported from Ralph.tsx', async () => {
-    const { RalphContext } = await import('./Ralph')
+    const { RalphContext } = await import('./Ralph.js')
     expect(RalphContext).toBeDefined()
   })
 
   test('RalphContextType is re-exported from Ralph.tsx', async () => {
-    const { RalphContextType } = await import('./Ralph')
+    const { RalphContextType } = await import('./Ralph.js')
     // This is a type, so we just verify the module exports something
     expect(true).toBe(true)
   })
@@ -377,7 +377,7 @@ describe('Ralph backwards compatibility', () => {
       createOrchestrationPromise: cop,
       signalOrchestrationComplete: soc,
       signalOrchestrationError: soe,
-    } = await import('./Ralph')
+    } = await import('./Ralph.js')
 
     expect(cop).toBeDefined()
     expect(soc).toBeDefined()
@@ -387,32 +387,32 @@ describe('Ralph backwards compatibility', () => {
 
 describe('Index exports', () => {
   test('exports SmithersProvider from index', async () => {
-    const index = await import('./index')
+    const index = await import('./index.js')
     expect(index.SmithersProvider).toBeDefined()
   })
 
   test('exports useSmithers from index', async () => {
-    const index = await import('./index')
+    const index = await import('./index.js')
     expect(index.useSmithers).toBeDefined()
   })
 
   test('exports useRalph from index', async () => {
-    const index = await import('./index')
+    const index = await import('./index.js')
     expect(index.useRalph).toBeDefined()
   })
 
   test('exports Ralph from index (backwards compatibility)', async () => {
-    const index = await import('./index')
+    const index = await import('./index.js')
     expect(index.Ralph).toBeDefined()
   })
 
   test('exports RalphContext from index (backwards compatibility)', async () => {
-    const index = await import('./index')
+    const index = await import('./index.js')
     expect(index.RalphContext).toBeDefined()
   })
 
   test('exports orchestration signals from index', async () => {
-    const index = await import('./index')
+    const index = await import('./index.js')
     expect(index.createOrchestrationPromise).toBeDefined()
     expect(index.signalOrchestrationComplete).toBeDefined()
     expect(index.signalOrchestrationError).toBeDefined()

@@ -3,23 +3,23 @@
  */
 
 // Core agent components
-export { Claude, type ClaudeProps, type AgentResult, executeClaudeCLI } from './Claude'
-export { ClaudeApi, type ClaudeApiProps } from './ClaudeApi'
+export { Claude, type ClaudeProps, type AgentResult, executeClaudeCLI } from './Claude.js'
+export { ClaudeApi, type ClaudeApiProps } from './ClaudeApi.js'
 
 // Ralph - Loop controller (backwards compatibility)
-export { Ralph, type RalphProps, RalphContext } from './Ralph'
+export { Ralph, type RalphProps, RalphContext } from './Ralph.js'
 
 // Phase and Step - Workflow structure
-export { Phase, type PhaseProps } from './Phase'
-export { Step, type StepProps } from './Step'
+export { Phase, type PhaseProps } from './Phase.js'
+export { Step, type StepProps } from './Step.js'
 
 // Basic workflow components
-export { Stop, type StopProps } from './Stop'
-export { Subagent, type SubagentProps } from './Subagent'
-export { Persona, type PersonaProps } from './Persona'
-export { Constraints, type ConstraintsProps } from './Constraints'
-export { Task, type TaskProps } from './Task'
-export { Human, type HumanProps } from './Human'
+export { Stop, type StopProps } from './Stop.js'
+export { Subagent, type SubagentProps } from './Subagent.js'
+export { Persona, type PersonaProps } from './Persona.js'
+export { Constraints, type ConstraintsProps } from './Constraints.js'
+export { Task, type TaskProps } from './Task.js'
+export { Human, type HumanProps } from './Human.js'
 
 // Smithers Provider and Orchestration (database-integrated)
 export {
@@ -29,24 +29,24 @@ export {
   createOrchestrationPromise,
   signalOrchestrationComplete,
   signalOrchestrationError,
-} from './SmithersProvider'
-export type { SmithersConfig, SmithersContextValue, SmithersProviderProps, RalphContextType } from './SmithersProvider'
+} from './SmithersProvider.js'
+export type { SmithersConfig, SmithersContextValue, SmithersProviderProps, RalphContextType } from './SmithersProvider.js'
 
-export { Orchestration } from './Orchestration'
-export type { OrchestrationProps, GlobalStopCondition, OrchestrationContext, OrchestrationResult } from './Orchestration'
+export { Orchestration } from './Orchestration.js'
+export type { OrchestrationProps, GlobalStopCondition, OrchestrationContext, OrchestrationResult } from './Orchestration.js'
 
 // Smithers subagent component
-export { Smithers, executeSmithers } from './Smithers'
-export type { SmithersProps, SmithersResult } from './Smithers'
+export { Smithers, executeSmithers } from './Smithers.js'
+export type { SmithersProps, SmithersResult } from './Smithers.js'
 
 // Agent types
-export * from './agents/types'
+export * from './agents/types.js'
 
 // Git VCS components
-export * from './Git/index'
+export * from './Git/index.js'
 
 // MCP Tool components
-export * from './MCP/index'
+export * from './MCP/index.js'
 
 // Review component
-export { Review, type ReviewProps, type ReviewTarget, type ReviewResult, type ReviewIssue } from './Review'
+export { Review, type ReviewProps, type ReviewTarget, type ReviewResult, type ReviewIssue } from './Review.js'

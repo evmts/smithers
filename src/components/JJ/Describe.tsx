@@ -1,6 +1,6 @@
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider'
-import { useMount, useMountedState } from '../../reconciler/hooks'
+import { useSmithers } from '../SmithersProvider.js'
+import { useMount, useMountedState } from '../../reconciler/hooks.js'
 
 export interface DescribeProps {
   useAgent?: 'claude'

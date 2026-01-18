@@ -2,7 +2,7 @@
  * Unit tests for Git/Commit.tsx - Git commit component interface tests.
  */
 import { describe, test, expect, mock } from 'bun:test'
-import type { CommitProps, CommitResult } from './Commit'
+import type { CommitProps, CommitResult } from './Commit.js'
 
 describe('CommitProps interface', () => {
   test('message is optional', () => {

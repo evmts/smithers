@@ -2,8 +2,8 @@
  * Unit tests for stream-formatter.ts - Output formatting for monitor.
  */
 import { describe, test, expect } from 'bun:test'
-import { StreamFormatter } from './stream-formatter'
-import type { ParsedEvent } from './output-parser'
+import { StreamFormatter } from './stream-formatter.js'
+import type { ParsedEvent } from './output-parser.js'
 
 function createEvent(type: ParsedEvent['type'], data: Record<string, any> = {}): ParsedEvent {
   return {

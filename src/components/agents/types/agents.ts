@@ -2,8 +2,8 @@
 
 import type { ReactNode } from 'react'
 import type { z } from 'zod'
-import type { Tool, MCPServer } from './tools'
-import type { AgentResult, StopConditionType } from './execution'
+import type { Tool, MCPServer } from './tools.js'
+import type { AgentResult, StopConditionType } from './execution.js'
 
 // ============================================================================
 // Stop Condition (defined here to avoid circular dependency)

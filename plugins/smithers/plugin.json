@@ -1,13 +1,13 @@
 {
   "name": "smithers",
   "version": "0.1.0",
-  "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
+  "description": "Orchestrate AI agents with React - A supercharged plan mode",
   "author": {
     "name": "William Cory",
     "email": "will@tevm.tech",
     "url": "https://github.com/roninjin10"
   },
-  "homepage": "https://github.com/evmts/smithers#readme",
+  "homepage": "https://github.com/evmts/smithers",
   "repository": "https://github.com/evmts/smithers",
   "license": "MIT",
   "keywords": [

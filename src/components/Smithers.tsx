@@ -2,11 +2,11 @@
 // Launches a new Smithers instance to plan and execute a task
 
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from './SmithersProvider'
-import { useRalphCount } from '../hooks/useRalphCount'
-import { executeSmithers, type SmithersResult } from './agents/SmithersCLI'
-import type { ClaudeModel } from './agents/types'
-import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks'
+import { useSmithers } from './SmithersProvider.js'
+import { useRalphCount } from '../hooks/useRalphCount.js'
+import { executeSmithers, type SmithersResult } from './agents/SmithersCLI.js'
+import type { ClaudeModel } from './agents/types.js'
+import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
 
 // ============================================================================
 // Types
@@ -160,16 +160,16 @@ export function Smithers(props: SmithersProps): ReactNode {
         if (isMounted()) setStatus('executing')
         const smithersResult = await executeSmithers({
           task,
-          plannerModel: props.plannerModel,
-          executionModel: props.executionModel,
-          maxPlanningTurns: props.maxPlanningTurns,
-          timeout: props.timeout,
-          context: props.context,
-          cwd: props.cwd,
+          ...(props.plannerModel !== undefined ? { plannerModel: props.plannerModel } : {}),
+          ...(props.executionModel !== undefined ? { executionModel: props.executionModel } : {}),
+          ...(props.maxPlanningTurns !== undefined ? { maxPlanningTurns: props.maxPlanningTurns } : {}),
+          ...(props.timeout !== undefined ? { timeout: props.timeout } : {}),
+          ...(props.context !== undefined ? { context: props.context } : {}),
+          ...(props.cwd !== undefined ? { cwd: props.cwd } : {}),
           keepScript: props.keepScript || !!props.scriptPath,
-          scriptPath: props.scriptPath,
-          onProgress: props.onProgress,
-          onScriptGenerated: props.onScriptGenerated,
+          ...(props.scriptPath !== undefined ? { scriptPath: props.scriptPath } : {}),
+          ...(props.onProgress !== undefined ? { onProgress: props.onProgress } : {}),
+          ...(props.onScriptGenerated !== undefined ? { onScriptGenerated: props.onScriptGenerated } : {}),
         })
 
         // Check for errors
@@ -198,7 +198,7 @@ export function Smithers(props: SmithersProps): ReactNode {
               scriptPath: smithersResult.scriptPath,
               durationMs: smithersResult.durationMs,
             },
-            agent_id: currentSubagentId ?? undefined,
+            ...(currentSubagentId ? { agent_id: currentSubagentId } : {}),
           })
         }
 
@@ -227,7 +227,7 @@ export function Smithers(props: SmithersProps): ReactNode {
             title: 'Smithers subagent failed',
             content: errorObj.message,
             severity: 'warning',
-            agent_id: currentSubagentId ?? undefined,
+            ...(currentSubagentId ? { agent_id: currentSubagentId } : {}),
           })
         }
 
@@ -245,16 +245,16 @@ export function Smithers(props: SmithersProps): ReactNode {
   return (
     <smithers-subagent
       status={status}
-      subagent-id={subagentId}
-      execution-id={executionId}
+      {...(subagentId ? { 'subagent-id': subagentId } : {})}
+      {...(executionId ? { 'execution-id': executionId } : {})}
       planner-model={props.plannerModel ?? 'sonnet'}
       execution-model={props.executionModel ?? 'sonnet'}
-      script-path={result?.scriptPath}
-      output={result?.output?.slice(0, 200)}
-      error={error?.message}
-      tokens-input={result?.tokensUsed?.input}
-      tokens-output={result?.tokensUsed?.output}
-      duration-ms={result?.durationMs}
+      {...(result?.scriptPath ? { 'script-path': result.scriptPath } : {})}
+      {...(result?.output ? { output: result.output.slice(0, 200) } : {})}
+      {...(error?.message ? { error: error.message } : {})}
+      {...(result?.tokensUsed?.input !== undefined ? { 'tokens-input': result.tokensUsed.input } : {})}
+      {...(result?.tokensUsed?.output !== undefined ? { 'tokens-output': result.tokensUsed.output } : {})}
+      {...(result?.durationMs !== undefined ? { 'duration-ms': result.durationMs } : {})}
     >
       {props.children}
     </smithers-subagent>
@@ -266,4 +266,4 @@ export function Smithers(props: SmithersProps): ReactNode {
 // ============================================================================
 
 export type { SmithersResult }
-export { executeSmithers } from './agents/SmithersCLI'
+export { executeSmithers } from './agents/SmithersCLI.js'

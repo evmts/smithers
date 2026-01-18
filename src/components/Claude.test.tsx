@@ -3,7 +3,7 @@
  * Tests the component's props and interface, not execution behavior.
  */
 import { describe, test, expect, mock } from 'bun:test'
-import type { ClaudeProps } from './Claude'
+import type { ClaudeProps } from './Claude.js'
 
 describe('ClaudeProps interface', () => {
   test('model is optional string', () => {

@@ -2,7 +2,7 @@
 // Parse and validate LLM output against Zod schemas
 
 import { z } from 'zod'
-import type { ParseResult } from './types'
+import type { ParseResult } from './types.js'
 
 /**
  * Extract JSON from text that may contain markdown code blocks or other content
@@ -10,13 +10,13 @@ import type { ParseResult } from './types'
 export function extractJson(text: string): string | null {
   // Try to find JSON in code blocks first
   const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
-  if (codeBlockMatch) {
+  if (codeBlockMatch && codeBlockMatch[1]) {
     return codeBlockMatch[1].trim()
   }
 
   // Try to find raw JSON (object or array)
   const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
-  if (jsonMatch) {
+  if (jsonMatch && jsonMatch[1]) {
     return jsonMatch[1].trim()
   }
 

@@ -2,7 +2,7 @@
  * Unit tests for JJ/Snapshot.tsx - JJ snapshot component interface tests.
  */
 import { describe, test, expect } from 'bun:test'
-import type { SnapshotProps } from './Snapshot'
+import type { SnapshotProps } from './Snapshot.js'
 
 describe('SnapshotProps interface', () => {
   test('message is optional', () => {

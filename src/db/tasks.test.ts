@@ -1,5 +1,5 @@
 import { test, expect, beforeAll, afterAll, describe } from 'bun:test'
-import { createSmithersDB, type SmithersDB } from './index'
+import { createSmithersDB, type SmithersDB } from './index.js'
 
 describe('Tasks module', () => {
   let db: SmithersDB

@@ -12,8 +12,8 @@
     "jsxImportSource": "smithers-orchestrator",
 
     // Module system
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "target": "ES2020",
 
     // Type checking
@@ -21,6 +21,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "exactOptionalPropertyTypes": true,
 
     // Library configuration
     "lib": ["ES2020", "DOM"],

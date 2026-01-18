@@ -1,7 +1,7 @@
 // Claude CLI Stop Condition Checker
 // Checks if execution should stop based on configured conditions
 
-import type { StopCondition, AgentResult } from '../types'
+import type { StopCondition, AgentResult } from '../types.js'
 
 /**
  * Check if any stop condition is met

@@ -1,3 +1,3 @@
 // Smithers hooks
-export { useRalphCount } from './useRalphCount'
-export * from './useHuman'
+export { useRalphCount } from './useRalphCount.js'
+export * from './useHuman.js'

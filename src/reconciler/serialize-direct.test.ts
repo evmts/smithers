@@ -8,8 +8,8 @@
  */
 
 import { describe, it, expect } from 'bun:test'
-import { serialize } from './serialize'
-import type { SmithersNode } from './types'
+import { serialize } from './serialize.js'
+import type { SmithersNode } from './types.js'
 
 describe('XML Serialization (Direct Node Creation)', () => {
   /**

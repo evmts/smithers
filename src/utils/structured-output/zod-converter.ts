@@ -63,9 +63,9 @@ export function convertZodType(schema: z.ZodType): Record<string, any> {
   // Handle string type
   if (type === 'string') {
     const result: Record<string, any> = { type: 'string' }
-    if ((schema as any).minLength) result.minLength = (schema as any).minLength
-    if ((schema as any).maxLength) result.maxLength = (schema as any).maxLength
-    if ((schema as any).format) result.format = (schema as any).format
+    if ((schema as any)['minLength']) result['minLength'] = (schema as any)['minLength']
+    if ((schema as any)['maxLength']) result['maxLength'] = (schema as any)['maxLength']
+    if ((schema as any)['format']) result['format'] = (schema as any)['format']
     return result
   }
 

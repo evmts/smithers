@@ -1,7 +1,7 @@
 // Claude CLI Output Parser
 // Parses CLI output to extract result information
 
-import type { ClaudeOutputFormat } from '../types'
+import type { ClaudeOutputFormat } from '../types.js'
 
 /**
  * Parsed output structure from Claude CLI
@@ -52,7 +52,7 @@ export function parseClaudeOutput(
 
   // Try to extract token usage from text output
   const tokenMatch = stdout.match(/tokens?:\s*(\d+)\s*input,?\s*(\d+)\s*output/i)
-  if (tokenMatch) {
+  if (tokenMatch && tokenMatch[1] && tokenMatch[2]) {
     result.tokensUsed = {
       input: parseInt(tokenMatch[1], 10),
       output: parseInt(tokenMatch[2], 10),
@@ -61,7 +61,7 @@ export function parseClaudeOutput(
 
   // Try to extract turn count from text output
   const turnMatch = stdout.match(/turns?:\s*(\d+)/i)
-  if (turnMatch) {
+  if (turnMatch && turnMatch[1]) {
     result.turnsUsed = parseInt(turnMatch[1], 10)
   }
 

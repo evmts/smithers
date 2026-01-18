@@ -1,8 +1,8 @@
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider'
-import { addGitNotes } from '../../utils/vcs'
-import type { ReviewTarget, ReviewResult, ReviewProps } from './types'
-import { useMount, useMountedState } from '../../reconciler/hooks'
+import { useSmithers } from '../SmithersProvider.js'
+import { addGitNotes } from '../../utils/vcs.js'
+import type { ReviewTarget, ReviewResult, ReviewProps } from './types.js'
+import { useMount, useMountedState } from '../../reconciler/hooks.js'
 
 /**
  * Fetch content to review based on target type
@@ -212,12 +212,12 @@ export function Review(props: ReviewProps): ReactNode {
         // Log to database
         const reviewId = await smithers.db.vcs.logReview({
           target_type: props.target.type,
-          target_ref: props.target.ref,
+          ...(props.target.ref ? { target_ref: props.target.ref } : {}),
           approved: reviewResult.approved,
           summary: reviewResult.summary,
           issues: reviewResult.issues,
           reviewer_model: props.model ?? 'claude-sonnet-4',
-          blocking: props.blocking,
+          ...(props.blocking !== undefined ? { blocking: props.blocking } : {}),
         })
 
         // Post to GitHub if requested

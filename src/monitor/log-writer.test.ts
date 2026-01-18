@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
-import { LogWriter } from './log-writer'
+import { LogWriter } from './log-writer.js'
 
 const TEST_LOG_DIR = '.smithers/test-logs'
 
@@ -15,6 +15,10 @@ describe('LogWriter', () => {
   afterEach(() => {
     if (fs.existsSync(TEST_LOG_DIR)) {
       fs.rmSync(TEST_LOG_DIR, { recursive: true, force: true })
+    }
+    const executionsDir = path.resolve('.smithers/executions')
+    if (fs.existsSync(executionsDir)) {
+      fs.rmSync(executionsDir, { recursive: true, force: true })
     }
   })
 

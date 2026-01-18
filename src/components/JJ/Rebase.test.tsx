@@ -2,7 +2,7 @@
  * Unit tests for JJ/Rebase.tsx - JJ rebase component interface tests.
  */
 import { describe, test, expect, mock } from 'bun:test'
-import type { RebaseProps } from './Rebase'
+import type { RebaseProps } from './Rebase.js'
 
 describe('RebaseProps interface', () => {
   test('destination is optional', () => {

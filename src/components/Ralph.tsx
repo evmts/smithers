@@ -1,9 +1,9 @@
 import { createContext, type ReactNode } from 'react'
-import type { ReactiveDatabase } from '../reactive-sqlite'
-import { useSmithers, type RalphContextType } from './SmithersProvider'
+import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
+import { useSmithers, type RalphContextType } from './SmithersProvider.js'
 
 // Re-export RalphContextType for backwards compatibility
-export type { RalphContextType } from './SmithersProvider'
+export type { RalphContextType } from './SmithersProvider.js'
 
 /**
  * Ralph context - DEPRECATED
@@ -40,7 +40,7 @@ export {
   createOrchestrationPromise,
   signalOrchestrationComplete,
   signalOrchestrationError,
-} from './SmithersProvider'
+} from './SmithersProvider.js'
 
 export interface RalphProps {
   maxIterations?: number

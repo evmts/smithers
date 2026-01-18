@@ -10,7 +10,7 @@ describe('SmithersCLI', () => {
   describe('script template', () => {
     test('template has required placeholders', async () => {
       // Import the module to check the template structure
-      const module = await import('./SmithersCLI')
+      const module = await import('./SmithersCLI.js')
 
       // The module should export executeSmithers
       expect(typeof module.executeSmithers).toBe('function')
@@ -70,7 +70,7 @@ console.log('Hello from test script')
   describe('SmithersExecutionOptions validation', () => {
     test('options interface has required fields', () => {
       // Type check - this will fail at compile time if the interface is wrong
-      const options: import('./SmithersCLI').SmithersExecutionOptions = {
+      const options: import('./SmithersCLI.js').SmithersExecutionOptions = {
         task: 'Test task',
       }
 
@@ -83,7 +83,7 @@ console.log('Hello from test script')
     test('options with all fields', () => {
       const progressMessages: string[] = []
 
-      const options: import('./SmithersCLI').SmithersExecutionOptions = {
+      const options: import('./SmithersCLI.js').SmithersExecutionOptions = {
         task: 'Create a user management system',
         plannerModel: 'opus',
         executionModel: 'sonnet',
@@ -112,7 +112,7 @@ console.log('Hello from test script')
 
   describe('SmithersResult interface', () => {
     test('result has all required fields', () => {
-      const result: import('./SmithersCLI').SmithersResult = {
+      const result: import('./SmithersCLI.js').SmithersResult = {
         output: 'Task completed successfully',
         script: '// generated script',
         scriptPath: '/tmp/script.tsx',

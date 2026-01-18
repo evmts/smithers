@@ -2,7 +2,7 @@
  * Unit tests for Hooks/PostCommit.tsx - Post commit hook component interface tests.
  */
 import { describe, test, expect, mock } from 'bun:test'
-import type { PostCommitProps } from './PostCommit'
+import type { PostCommitProps } from './PostCommit.js'
 
 describe('PostCommitProps interface', () => {
   test('children is required', () => {

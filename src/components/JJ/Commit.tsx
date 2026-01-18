@@ -1,7 +1,7 @@
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider'
-import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs'
-import { useMount, useMountedState } from '../../reconciler/hooks'
+import { useSmithers } from '../SmithersProvider.js'
+import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs.js'
+import { useMount, useMountedState } from '../../reconciler/hooks.js'
 
 export interface CommitProps {
   message?: string
@@ -87,7 +87,7 @@ export function Commit(props: CommitProps): ReactNode {
           files_changed: stats.files,
           insertions: stats.insertions,
           deletions: stats.deletions,
-          smithers_metadata: props.notes ? { notes: props.notes } : undefined,
+          ...(props.notes ? { smithers_metadata: { notes: props.notes } } : {}),
         })
 
         if (isMounted()) {

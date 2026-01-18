@@ -3,9 +3,9 @@
  */
 
 import { useCallback, useState } from 'react'
-import type { ReactiveDatabase } from '../database'
-import type { UseMutationResult, UseMutationOptions } from '../types'
-import { useDatabaseOptional } from './context'
+import type { ReactiveDatabase } from '../database.js'
+import type { UseMutationResult, UseMutationOptions } from '../types.js'
+import { useDatabaseOptional } from './context.js'
 
 /**
  * Hook to execute mutations with automatic query invalidation

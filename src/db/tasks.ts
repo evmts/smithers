@@ -1,7 +1,7 @@
 // Task tracking module for Ralph iteration management
 // Replaces React state-based task tracking with database-backed tracking
 
-import type { ReactiveDatabase } from '../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { uuid, now } from './utils.js'
 
 export interface Task {

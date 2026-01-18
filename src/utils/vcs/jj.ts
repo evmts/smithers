@@ -1,8 +1,8 @@
 // Jujutsu (jj) operations
 // Uses Bun.$ for command execution per CLAUDE.md
 
-import { parseJJStatus, parseDiffStats } from './parsers'
-import type { CommandResult, VCSStatus, DiffStats, JJSnapshotResult, JJCommitResult } from './types'
+import { parseJJStatus, parseDiffStats } from './parsers.js'
+import type { CommandResult, VCSStatus, DiffStats, JJSnapshotResult, JJCommitResult } from './types.js'
 
 /**
  * Execute a jj command

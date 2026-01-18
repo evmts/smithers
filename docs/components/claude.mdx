@@ -10,7 +10,7 @@ The `<Claude>` component is the core of Smithers. It executes Claude via Claude 
 ## Basic Usage
 
 ```tsx
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { Claude } from "smithers-orchestrator/components/Claude";
 
 <Claude
   model="sonnet"
@@ -195,6 +195,53 @@ import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
   ```
 </ParamField>
 
+### Session Management
+
+<ParamField path="continueConversation" type="boolean">
+  Continue from the previous conversation in the same execution context.
+</ParamField>
+
+<ParamField path="resumeSession" type="string">
+  Resume a specific session by ID.
+</ParamField>
+
+### Output Configuration
+
+<ParamField path="outputFormat" type="'text' | 'json' | 'stream-json'" default="text">
+  Output format for Claude CLI responses.
+
+  - `text`: Plain text output (default)
+  - `json`: Structured JSON output
+  - `stream-json`: Streaming JSON output
+</ParamField>
+
+<ParamField path="mcpConfig" type="string">
+  Path to MCP (Model Context Protocol) configuration file.
+
+  ```tsx
+  <Claude mcpConfig="./mcp-config.json">
+    Use the configured MCP tools.
+  </Claude>
+  ```
+</ParamField>
+
+### Tail Log Display
+
+<ParamField path="tailLogCount" type="number" default="10">
+  Number of tail log entries to display during execution.
+</ParamField>
+
+<ParamField path="tailLogLines" type="number" default="10">
+  Number of lines to show per tail log entry.
+</ParamField>
+
+### Reporting
+
+<ParamField path="reportingEnabled" type="boolean" default="true">
+  Enable database reporting for this agent. When enabled, agent execution
+  is logged to the database for observability.
+</ParamField>
+
 ## AgentResult Type
 
 ```tsx
@@ -272,15 +319,15 @@ Control what Claude can do:
 
 ## Conditional Rendering
 
-Use signals to control when Claude runs:
+Use state to control when Claude runs:
 
 ```tsx
 function ConditionalClaude() {
-  const [phase, setPhase] = createSignal("research");
+  const [phase, setPhase] = useState("research");
 
   return (
     <Ralph maxIterations={5}>
-      {phase() === "research" && (
+      {phase === "research" && (
         <Claude
           allowedTools={["Read", "Glob"]}
           onFinished={() => setPhase("implement")}
@@ -289,7 +336,7 @@ function ConditionalClaude() {
         </Claude>
       )}
 
-      {phase() === "implement" && (
+      {phase === "implement" && (
         <Claude
           allowedTools={["Edit", "Write"]}
           onFinished={() => setPhase("done")}
@@ -321,12 +368,12 @@ Compose prompts with child components:
 
 ```tsx
 function ResilientClaude() {
-  const [attempts, setAttempts] = createSignal(0);
-  const [error, setError] = createSignal<Error | null>(null);
+  const [attempts, setAttempts] = useState(0);
+  const [error, setError] = useState<Error | null>(null);
 
   return (
     <Ralph maxIterations={3}>
-      {error() && attempts() < 3 && (
+      {error && attempts < 3 && (
         <Claude
           onFinished={() => setError(null)}
           onError={(err) => {
@@ -334,12 +381,12 @@ function ResilientClaude() {
             setAttempts(a => a + 1);
           }}
         >
-          Previous attempt failed: {error()?.message}
+          Previous attempt failed: {error?.message}
           Try a different approach.
         </Claude>
       )}
 
-      {!error() && (
+      {!error && (
         <Claude
           onFinished={(r) => console.log("Success:", r.output)}
           onError={setError}

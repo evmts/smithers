@@ -97,13 +97,16 @@ Severity levels:
       }
 
       // Add report to database
-      const reportId = await context.db.vcs.addReport({
+      const reportData = {
         type: input.type,
         title: input.title,
         content: input.content,
-        data: input.data,
         severity,
         agent_id: context.agentId,
+      }
+      const reportId = await context.db.vcs.addReport({
+        ...reportData,
+        ...(input.data && { data: input.data }),
       })
 
       console.log(`[Report] ${severity.toUpperCase()}: ${input.title}`)

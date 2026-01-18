@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect } from 'bun:test'
-import { extractRowFilter } from './parser'
+import { extractRowFilter } from './parser.js'
 
 describe('extractRowFilter', () => {
   describe('simple WHERE id = ?', () => {

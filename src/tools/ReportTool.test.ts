@@ -2,7 +2,7 @@
  * Unit tests for ReportTool.ts
  */
 import { describe, test, expect, mock } from 'bun:test'
-import { createReportTool, getReportToolDescription } from './ReportTool'
+import { createReportTool, getReportToolDescription } from './ReportTool.js'
 
 describe('getReportToolDescription', () => {
   test('returns a non-empty string', () => {

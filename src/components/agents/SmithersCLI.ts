@@ -4,8 +4,8 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
-import type { AgentResult, ClaudeModel } from './types'
-import { executeClaudeCLI } from './ClaudeCodeCLI'
+import type { AgentResult, ClaudeModel } from './types.js'
+import { executeClaudeCLI } from './ClaudeCodeCLI.js'
 
 // ============================================================================
 // Types
@@ -193,7 +193,7 @@ Return ONLY the script body code, no markdown fences or explanations.`
     maxTurns: options.maxPlanningTurns || 5,
     systemPrompt: PLANNING_SYSTEM_PROMPT,
     timeout: options.timeout || 120000,
-    onProgress: options.onProgress,
+    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   })
 
   if (planningResult.stopReason === 'error') {

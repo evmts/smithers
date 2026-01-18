@@ -88,6 +88,41 @@ export class LogWriter {
     }
   }
 
+  /**
+   * Flush and close all open streams, waiting for writes to complete.
+   * Use this before process exit to ensure no logs are lost.
+   */
+  flushAllStreams(): Promise<void> {
+    const promises: Promise<void>[] = []
+    for (const [filename, stream] of this.streams) {
+      promises.push(
+        new Promise<void>((resolve, reject) => {
+          stream.once('finish', resolve)
+          stream.once('error', reject)
+          stream.end()
+        })
+      )
+      this.streams.delete(filename)
+    }
+    return Promise.all(promises).then(() => {})
+  }
+
+  /**
+   * Flush and close a specific stream, waiting for writes to complete.
+   */
+  flushStream(filename: string): Promise<void> {
+    const stream = this.streams.get(filename)
+    if (!stream) {
+      return Promise.resolve()
+    }
+    this.streams.delete(filename)
+    return new Promise<void>((resolve, reject) => {
+      stream.once('finish', resolve)
+      stream.once('error', reject)
+      stream.end()
+    })
+  }
+
   writeToolCall(toolName: string, input: any, output: string): string {
     const metadata = {
       tool: toolName,

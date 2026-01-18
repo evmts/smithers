@@ -1,6 +1,6 @@
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider'
-import { useMount, useMountedState } from '../../reconciler/hooks'
+import { useSmithers } from '../SmithersProvider.js'
+import { useMount, useMountedState } from '../../reconciler/hooks.js'
 
 export interface RebaseProps {
   destination?: string
@@ -20,7 +20,7 @@ function parseConflicts(output: string): string[] {
     // JJ marks conflicts with 'C' or mentions them in output
     if (line.includes('conflict') || line.startsWith('C ')) {
       const match = line.match(/C\s+(.+)/)
-      if (match) {
+      if (match && match[1]) {
         conflicts.push(match[1].trim())
       } else {
         // Try to extract file paths from conflict messages

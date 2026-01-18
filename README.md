@@ -106,7 +106,7 @@ Your agent understands the component model and generates correct, working orches
 
 ### State Persistence
 
-All Smithers state is saved in a **PGlite database** on your system that can be easily inspected:
+All Smithers state is saved in a **SQLite database** on your system that can be easily inspected:
 
 ```bash
 # View execution history
@@ -124,10 +124,10 @@ smithers-orchestrator db query "SELECT * FROM agents ORDER BY started_at DESC LI
 ```tsx
 #!/usr/bin/env bun
 
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
-import { SmithersProvider } from "smithers/smithers-orchestrator/src/components/SmithersProvider";
-import { Claude } from "smithers/smithers-orchestrator/src/components/Claude";
+import { createSmithersRoot } from "smithers-orchestrator";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Claude } from "smithers-orchestrator/components/Claude";
 
 const db = await createSmithersDB({ path: ".smithers/my-task" });
 const executionId = await db.execution.start("My Task", "scripts/my-task.tsx");
@@ -398,4 +398,4 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 
 ---
 
-**Built with Solid.js, powered by Claude.**
+**Built with React, powered by Claude.**

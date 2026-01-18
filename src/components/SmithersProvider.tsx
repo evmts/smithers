@@ -4,9 +4,9 @@
 
 import { createContext, useContext, useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
 import type { SmithersDB } from '../db/index.js'
-import type { ReactiveDatabase } from '../reactive-sqlite'
-import { DatabaseProvider } from '../reactive-sqlite/hooks/context'
-import { useQueryValue } from '../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
+import { DatabaseProvider } from '../reactive-sqlite/hooks/context.js'
+import { useQueryValue } from '../reactive-sqlite/index.js'
 
 // ============================================================================
 // GLOBAL STORE (for universal renderer compatibility)

@@ -3,8 +3,8 @@
  * Component interface tests are in individual *.test.tsx files.
  */
 import { describe, test, expect } from 'bun:test'
-import { serialize } from '../reconciler/serialize'
-import { jsx } from '../reconciler/jsx-runtime'
+import { serialize } from '../reconciler/serialize.js'
+import { jsx } from '../reconciler/jsx-runtime.js'
 
 describe('Phase element', () => {
   test('creates phase element with name prop', () => {

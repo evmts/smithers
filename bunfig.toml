@@ -6,4 +6,4 @@ auto = "fallback"
 
 [test]
 preload = ["./test/preload.ts"]
-exclude = ["reference/", "node_modules/"]
+exclude = ["**/reference/**", "**/node_modules/**"]

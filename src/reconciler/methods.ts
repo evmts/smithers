@@ -25,7 +25,7 @@ export const rendererMethods = {
   },
 
   replaceText(node: SmithersNode, text: string): void {
-    node.props.value = text
+    node.props['value'] = text
   },
 
   setProperty(node: SmithersNode, name: string, value: unknown): void {

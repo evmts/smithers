@@ -45,8 +45,8 @@
   "scripts": {
     "build": "echo 'No build needed - Bun runs TypeScript directly'",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint --config oxlint.json src/",
-    "lint:fix": "oxlint --config oxlint.json --fix src/",
+    "lint": "oxlint src/",
+    "lint:fix": "oxlint --fix src/",
     "test": "cd src && bun test .",
     "test:watch": "cd src && bun test --watch .",
     "check": "bun run typecheck && bun run lint && bun run test",

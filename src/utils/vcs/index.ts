@@ -9,10 +9,10 @@ export type {
   CommandResult,
   JJSnapshotResult,
   JJCommitResult,
-} from './types'
+} from './types.js'
 
 // Parsers
-export { parseGitStatus, parseJJStatus, parseDiffStats } from './parsers'
+export { parseGitStatus, parseJJStatus, parseDiffStats } from './parsers.js'
 
 // Git operations
 export {
@@ -26,7 +26,7 @@ export {
   hasGitNotes,
   isGitRepo,
   getCurrentBranch,
-} from './git'
+} from './git.js'
 
 // Jujutsu operations
 export {
@@ -37,4 +37,4 @@ export {
   getJJStatus,
   getJJDiffStats,
   isJJRepo,
-} from './jj'
+} from './jj.js'

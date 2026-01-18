@@ -1,7 +1,7 @@
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider'
-import { getJJStatus } from '../../utils/vcs'
-import { useMount, useMountedState } from '../../reconciler/hooks'
+import { useSmithers } from '../SmithersProvider.js'
+import { getJJStatus } from '../../utils/vcs.js'
+import { useMount, useMountedState } from '../../reconciler/hooks.js'
 
 export interface StatusProps {
   onDirty?: (status: { modified: string[]; added: string[]; deleted: string[] }) => void

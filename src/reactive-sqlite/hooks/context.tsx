@@ -5,7 +5,7 @@
  */
 
 import { createContext, useContext, type ReactNode } from 'react'
-import type { ReactiveDatabase } from '../database'
+import type { ReactiveDatabase } from '../database.js'
 
 /**
  * Context for the ReactiveDatabase instance

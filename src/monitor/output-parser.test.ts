@@ -2,7 +2,7 @@
  * Unit tests for output-parser.ts - Output parsing for monitor.
  */
 import { describe, test, expect } from 'bun:test'
-import { OutputParser } from './output-parser'
+import { OutputParser } from './output-parser.js'
 
 describe('OutputParser', () => {
   describe('parseChunk', () => {

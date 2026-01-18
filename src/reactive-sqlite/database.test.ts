@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { ReactiveDatabase } from './database'
+import { ReactiveDatabase } from './database.js'
 
 describe('ReactiveDatabase', () => {
   let db: ReactiveDatabase

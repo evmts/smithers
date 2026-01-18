@@ -1,16 +1,16 @@
 ---
 title: Database
-description: PGlite database API for workflow persistence
+description: SQLite database API for workflow persistence
 ---
 
 # Database API
 
-The Smithers database provides persistent storage using PGlite (embedded PostgreSQL).
+The Smithers database provides persistent storage using SQLite (via reactive-sqlite).
 
 ## Creating a Database
 
 ```tsx
-import { createSmithersDB } from "smithers/smithers-orchestrator/src/db";
+import { createSmithersDB } from "smithers-orchestrator/db";
 
 const db = await createSmithersDB({
   path: ".smithers/my-workflow"

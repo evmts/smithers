@@ -21,13 +21,13 @@ export function extractReadTables(sql: string): string[] {
   const fromRegex = /\bfrom\s+([a-z_][a-z0-9_]*)/gi
   let match
   while ((match = fromRegex.exec(normalized)) !== null) {
-    tables.add(match[1])
+    tables.add(match[1]!)
   }
 
   // JOIN clauses: JOIN table_name, LEFT JOIN table_name, etc.
   const joinRegex = /\bjoin\s+([a-z_][a-z0-9_]*)/gi
   while ((match = joinRegex.exec(normalized)) !== null) {
-    tables.add(match[1])
+    tables.add(match[1]!)
   }
 
   // Subqueries in FROM (simplified - just look for nested FROM)
@@ -53,37 +53,37 @@ export function extractWriteTables(sql: string): string[] {
   const insertRegex = /\binsert\s+(?:or\s+\w+\s+)?into\s+([a-z_][a-z0-9_]*)/gi
   let match
   while ((match = insertRegex.exec(normalized)) !== null) {
-    tables.add(match[1])
+    tables.add(match[1]!)
   }
 
   // UPDATE table_name
   const updateRegex = /\bupdate\s+(?:or\s+\w+\s+)?([a-z_][a-z0-9_]*)/gi
   while ((match = updateRegex.exec(normalized)) !== null) {
-    tables.add(match[1])
+    tables.add(match[1]!)
   }
 
   // DELETE FROM table_name
   const deleteRegex = /\bdelete\s+from\s+([a-z_][a-z0-9_]*)/gi
   while ((match = deleteRegex.exec(normalized)) !== null) {
-    tables.add(match[1])
+    tables.add(match[1]!)
   }
 
   // CREATE TABLE table_name
   const createRegex = /\bcreate\s+(?:temp\s+|temporary\s+)?table\s+(?:if\s+not\s+exists\s+)?([a-z_][a-z0-9_]*)/gi
   while ((match = createRegex.exec(normalized)) !== null) {
-    tables.add(match[1])
+    tables.add(match[1]!)
   }
 
   // DROP TABLE table_name
   const dropRegex = /\bdrop\s+table\s+(?:if\s+exists\s+)?([a-z_][a-z0-9_]*)/gi
   while ((match = dropRegex.exec(normalized)) !== null) {
-    tables.add(match[1])
+    tables.add(match[1]!)
   }
 
   // ALTER TABLE table_name
   const alterRegex = /\balter\s+table\s+([a-z_][a-z0-9_]*)/gi
   while ((match = alterRegex.exec(normalized)) !== null) {
-    tables.add(match[1])
+    tables.add(match[1]!)
   }
 
   return Array.from(tables)
@@ -171,20 +171,20 @@ export function extractRowFilter(sql: string, params: unknown[] = []): RowFilter
 
   // UPDATE table SET ... WHERE
   const updateMatch = normalized.match(/\bupdate\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
-  if (updateMatch) {
-    table = (updateMatch[1] || updateMatch[2]).toLowerCase()
+  if (updateMatch && (updateMatch[1] || updateMatch[2])) {
+    table = (updateMatch[1] || updateMatch[2])!.toLowerCase()
   }
 
   // DELETE FROM table WHERE
   const deleteMatch = normalized.match(/\bdelete\s+from\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
-  if (deleteMatch) {
-    table = (deleteMatch[1] || deleteMatch[2]).toLowerCase()
+  if (deleteMatch && (deleteMatch[1] || deleteMatch[2])) {
+    table = (deleteMatch[1] || deleteMatch[2])!.toLowerCase()
   }
 
   // SELECT ... FROM table WHERE
   const selectMatch = normalized.match(/\bfrom\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
-  if (selectMatch && !table) {
-    table = (selectMatch[1] || selectMatch[2]).toLowerCase()
+  if (selectMatch && !table && (selectMatch[1] || selectMatch[2])) {
+    table = (selectMatch[1] || selectMatch[2])!.toLowerCase()
   }
 
   if (!table) {
@@ -193,15 +193,18 @@ export function extractRowFilter(sql: string, params: unknown[] = []): RowFilter
 
   // Extract WHERE clause
   const whereMatch = normalized.match(/\bwhere\s+(.+?)(?:\s+(?:order|group|limit|having)\b|$)/i)
-  if (!whereMatch) {
+  if (!whereMatch || !whereMatch[1]) {
     return null
   }
 
   const whereClause = whereMatch[1]
 
-  // For AND conditions, take the first simple equality condition
-  // Split by AND and take the first condition
+  // For AND conditions, take the first condition for row-level filtering
+  // (Note: This may miss invalidations for other columns in AND clauses)
   const conditions = whereClause.split(/\band\b/i)
+  if (!conditions[0]) {
+    return null
+  }
   const firstCondition = conditions[0].trim()
 
   // Match simple equality: column = ? or column = value
@@ -210,11 +213,11 @@ export function extractRowFilter(sql: string, params: unknown[] = []): RowFilter
     /^(?:"([^"]+)"|([a-z_][a-z0-9_]*))\s*=\s*(.+)$/i
   )
 
-  if (!equalityMatch) {
+  if (!equalityMatch || !equalityMatch[3]) {
     return null
   }
 
-  const column = (equalityMatch[1] || equalityMatch[2]).toLowerCase()
+  const column = ((equalityMatch[1] || equalityMatch[2]) || '').toLowerCase()
   const valueExpr = equalityMatch[3].trim()
 
   // Determine the value
@@ -239,12 +242,12 @@ export function extractRowFilter(sql: string, params: unknown[] = []): RowFilter
     // Literal value - parse it
     // Try numeric
     const numMatch = valueExpr.match(/^(\d+)$/)
-    if (numMatch) {
+    if (numMatch && numMatch[1]) {
       value = parseInt(numMatch[1], 10)
     } else {
       // Try quoted string
       const strMatch = valueExpr.match(/^['"](.+)['"]$/)
-      if (strMatch) {
+      if (strMatch && strMatch[1]) {
         value = strMatch[1]
       } else {
         // Unquoted string or other literal

@@ -1,6 +1,6 @@
 // Memory CRUD operations module for Smithers DB
 
-import type { ReactiveDatabase } from '../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Memory, MemoryInput } from './types.js'
 import { uuid, now } from './utils.js'
 
@@ -83,15 +83,15 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     addFact: (key: string, content: string, source?: string): string => {
-      return memories.add({ category: 'fact', key, content, source })
+      return memories.add({ category: 'fact', key, content, ...(source ? { source } : {}) })
     },
 
     addLearning: (key: string, content: string, source?: string): string => {
-      return memories.add({ category: 'learning', key, content, source })
+      return memories.add({ category: 'learning', key, content, ...(source ? { source } : {}) })
     },
 
     addPreference: (key: string, content: string, scope?: 'global' | 'project' | 'session'): string => {
-      return memories.add({ category: 'preference', key, content, scope })
+      return memories.add({ category: 'preference', key, content, ...(scope ? { scope } : {}) })
     },
 
     stats: () => {

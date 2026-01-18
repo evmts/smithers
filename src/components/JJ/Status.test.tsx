@@ -2,7 +2,7 @@
  * Unit tests for JJ/Status.tsx - JJ status component interface tests.
  */
 import { describe, test, expect, mock } from 'bun:test'
-import type { StatusProps } from './Status'
+import type { StatusProps } from './Status.js'
 
 describe('StatusProps interface', () => {
   test('onDirty is optional callback', () => {

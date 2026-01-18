@@ -7,8 +7,8 @@
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import React from 'react'
-import { DatabaseProvider, useDatabase, useDatabaseOptional, DatabaseContext } from './context'
-import { ReactiveDatabase } from '../database'
+import { DatabaseProvider, useDatabase, useDatabaseOptional, DatabaseContext } from './context.js'
+import { ReactiveDatabase } from '../database.js'
 
 describe('DatabaseContext exports', () => {
   test('DatabaseProvider is a function component', () => {
@@ -58,7 +58,7 @@ describe('DatabaseProvider element creation', () => {
 
 describe('hook exports from index', () => {
   test('index exports all context utilities', async () => {
-    const hooks = await import('./index')
+    const hooks = await import('./index.js')
 
     expect(hooks.DatabaseProvider).toBeDefined()
     expect(hooks.useDatabase).toBeDefined()
@@ -70,7 +70,7 @@ describe('hook exports from index', () => {
 
 describe('useQuery overload detection', () => {
   test('useQuery accepts string as first argument (new signature)', async () => {
-    const { useQuery } = await import('./useQuery')
+    const { useQuery } = await import('./useQuery.js')
     // Verify the function exists and accepts overloaded args
     expect(typeof useQuery).toBe('function')
   })
@@ -78,7 +78,7 @@ describe('useQuery overload detection', () => {
 
 describe('useMutation overload detection', () => {
   test('useMutation accepts string as first argument (new signature)', async () => {
-    const { useMutation } = await import('./useMutation')
+    const { useMutation } = await import('./useMutation.js')
     // Verify the function exists and accepts overloaded args
     expect(typeof useMutation).toBe('function')
   })

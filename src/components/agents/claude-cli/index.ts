@@ -7,18 +7,18 @@ export {
   modelMap,
   permissionFlags,
   formatMap,
-} from './arg-builder'
+} from './arg-builder.js'
 
 // Stop conditions
-export { checkStopConditions } from './stop-conditions'
+export { checkStopConditions } from './stop-conditions.js'
 
 // Output parser
-export { parseClaudeOutput } from './output-parser'
-export type { ParsedOutput } from './output-parser'
+export { parseClaudeOutput } from './output-parser.js'
+export type { ParsedOutput } from './output-parser.js'
 
 // Executor functions
 export {
   executeClaudeCLI,
   executeClaudeShell,
   executeClaudeCLIOnce,
-} from './executor'
+} from './executor.js'

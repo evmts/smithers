@@ -1,7 +1,7 @@
 // Claude CLI Argument Builder
 // Builds CLI arguments from execution options
 
-import type { CLIExecutionOptions, ClaudePermissionMode, ClaudeOutputFormat } from '../types'
+import type { CLIExecutionOptions, ClaudePermissionMode, ClaudeOutputFormat } from '../types.js'
 
 /**
  * Model name mapping from shorthand to full model ID

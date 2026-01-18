@@ -1,9 +1,9 @@
 // Enhanced Step component with automatic database logging and VCS integration
 
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from './SmithersProvider'
-import { jjSnapshot, jjCommit } from '../utils/vcs'
-import { useMount, useUnmount } from '../reconciler/hooks'
+import { useSmithers } from './SmithersProvider.js'
+import { jjSnapshot, jjCommit } from '../utils/vcs.js'
+import { useMount, useUnmount } from '../reconciler/hooks.js'
 
 export interface StepProps {
   /**
@@ -149,9 +149,9 @@ export function Step(props: StepProps): ReactNode {
 
         // Complete step in database
         db.steps.complete(id, {
-          snapshot_before: snapshotBeforeIdRef.current,
-          snapshot_after: snapshotAfterIdRef.current,
-          commit_created: commitHashRef.current,
+          ...(snapshotBeforeIdRef.current ? { snapshot_before: snapshotBeforeIdRef.current } : {}),
+          ...(snapshotAfterIdRef.current ? { snapshot_after: snapshotAfterIdRef.current } : {}),
+          ...(commitHashRef.current ? { commit_created: commitHashRef.current } : {}),
         })
 
         setStatus('completed')
@@ -172,7 +172,7 @@ export function Step(props: StepProps): ReactNode {
   })
 
   return (
-    <step name={props.name}>
+    <step {...(props.name ? { name: props.name } : {})}>
       {props.children}
     </step>
   )

@@ -1,6 +1,6 @@
 // Tool and MCP Server type definitions for Smithers orchestrator
 
-import type { JSONSchema } from './schema'
+import type { JSONSchema } from './schema.js'
 
 // ============================================================================
 // Tool Context

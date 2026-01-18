@@ -2,7 +2,7 @@
  * Unit tests for vcs.ts - VCS utilities for git and jj operations.
  */
 import { describe, test, expect } from 'bun:test'
-import { parseGitStatus, parseJJStatus, parseDiffStats, isGitRepo, getCurrentBranch } from './vcs'
+import { parseGitStatus, parseJJStatus, parseDiffStats, isGitRepo, getCurrentBranch } from './vcs.js'
 
 describe('parseGitStatus', () => {
   test('parses modified files', () => {

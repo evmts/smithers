@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test'
-import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from './mcp-config'
+import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from './mcp-config.js'
 import * as fs from 'fs/promises'
 
 describe('extractMCPConfigs', () => {

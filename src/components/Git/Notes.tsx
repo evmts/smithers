@@ -1,7 +1,7 @@
 import { useState, useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider'
-import { addGitNotes, getGitNotes } from '../../utils/vcs'
-import { useMount, useMountedState } from '../../reconciler/hooks'
+import { useSmithers } from '../SmithersProvider.js'
+import { addGitNotes, getGitNotes } from '../../utils/vcs.js'
+import { useMount, useMountedState } from '../../reconciler/hooks.js'
 
 export interface NotesProps {
   /** Commit reference (default: HEAD) */

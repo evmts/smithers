@@ -7,7 +7,7 @@ import {
   parseStructuredOutput,
   generateStructuredOutputPrompt,
   generateRetryPrompt,
-} from './structured-output'
+} from './structured-output.js'
 
 describe('zodToJsonSchema', () => {
   test('converts simple object schema', () => {
