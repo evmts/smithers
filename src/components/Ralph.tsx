@@ -6,8 +6,32 @@ import { useSmithers, type RalphContextType } from './SmithersProvider'
 export type { RalphContextType } from './SmithersProvider'
 
 /**
- * Ralph context - now just provides access to SmithersProvider context values.
- * Kept for backwards compatibility with components using useContext(RalphContext).
+ * Ralph context - DEPRECATED
+ *
+ * Use useSmithers() and db.tasks.start()/complete() instead:
+ *
+ * Before:
+ * ```tsx
+ * const ralph = useContext(RalphContext)
+ * ralph?.registerTask()
+ * // ... do work ...
+ * ralph?.completeTask()
+ * ```
+ *
+ * After:
+ * ```tsx
+ * const { db } = useSmithers()
+ * const taskId = db.tasks.start('component-type', 'component-name')
+ * try {
+ *   // ... do work ...
+ * } finally {
+ *   db.tasks.complete(taskId)
+ * }
+ * ```
+ *
+ * For ralphCount, use useRalphCount() hook instead.
+ *
+ * @deprecated Use useSmithers() and db.tasks instead
  */
 export const RalphContext = createContext<RalphContextType | undefined>(undefined)
 
@@ -30,9 +54,11 @@ export interface RalphProps {
 }
 
 /**
- * Ralph component - Thin wrapper for backwards compatibility
+ * Ralph component - DEPRECATED backwards compatibility wrapper
  *
- * The Ralph loop is now managed by SmithersProvider directly.
+ * The Ralph loop is now managed by SmithersProvider directly, and task
+ * tracking is now database-backed via the tasks table.
+ *
  * This component exists for:
  * 1. Backwards compatibility with existing code using <Ralph>
  * 2. Providing RalphContext for components using useContext(RalphContext)
@@ -46,12 +72,23 @@ export interface RalphProps {
  *   </Orchestration>
  * </SmithersProvider>
  * ```
+ *
+ * Task tracking in components should use db.tasks:
+ * ```tsx
+ * const { db } = useSmithers()
+ * const ralphCount = useRalphCount()
+ * const taskId = db.tasks.start('component-type')
+ * try { ... } finally { db.tasks.complete(taskId) }
+ * ```
+ *
+ * @deprecated Use SmithersProvider directly with db.tasks for task tracking
  */
 export function Ralph(props: RalphProps): ReactNode {
   // Get context from SmithersProvider
   const smithers = useSmithers()
 
   // Build RalphContext value from SmithersProvider
+  // Note: registerTask/completeTask are deprecated no-ops
   const contextValue: RalphContextType = {
     registerTask: smithers.registerTask,
     completeTask: smithers.completeTask,

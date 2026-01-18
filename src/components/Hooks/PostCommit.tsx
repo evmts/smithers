@@ -69,7 +69,6 @@ async function hasSmithersMetadata(commitHash: string): Promise<boolean> {
  */
 export function PostCommit(props: PostCommitProps): ReactNode {
   const smithers = useSmithers()
-  const { registerTask, completeTask } = smithers
 
   const [triggered, setTriggered] = useState(false)
   const [currentTrigger, setCurrentTrigger] = useState<HookTrigger | null>(null)
@@ -77,6 +76,7 @@ export function PostCommit(props: PostCommitProps): ReactNode {
   const [hookInstalled, setHookInstalled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const taskIdRef = useRef<string | null>(null)
 
   useMount(() => {
     // Fire-and-forget async IIFE pattern
@@ -112,10 +112,10 @@ export function PostCommit(props: PostCommitProps): ReactNode {
 
                 // If running in background (async), register task
                 if (props.async) {
-                  registerTask()
+                  taskIdRef.current = smithers.db.tasks.start('post-commit-hook')
                   // Task will be completed when children finish
                   // For now, we complete immediately as children handle their own task registration
-                  completeTask()
+                  smithers.db.tasks.complete(taskIdRef.current)
                 }
               }
             }
