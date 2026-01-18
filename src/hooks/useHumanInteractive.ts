@@ -1,10 +1,11 @@
 import { useCallback, useRef } from 'react'
 import type { ZodType } from 'zod'
 import { useSmithers } from '../components/SmithersProvider.js'
-import type { HumanInteraction, InteractiveSessionConfig } from '../db/human.js'
+import type { HumanInteraction, HumanInteractionRow, InteractiveSessionConfig } from '../db/human.js'
+import { parseHumanInteraction } from '../db/human.js'
 import { parseJson, uuid } from '../db/utils.js'
-import { useQueryValue } from '../reactive-sqlite/index.js'
-import { useEffectOnValueChange, useMount, useUnmount } from '../reconciler/hooks.js'
+import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
+import { useEffectOnValueChange, useMount } from '../reconciler/hooks.js'
 
 export interface InteractiveSessionResult {
   outcome: 'completed' | 'cancelled' | 'timeout' | 'failed'
@@ -64,7 +65,6 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   const resolveRef = useRef<((value: T) => void) | null>(null)
   const rejectRef = useRef<((error: Error) => void) | null>(null)
   const zodSchemaRef = useRef<ZodType | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useMount(() => {
     const existing = db.state.get<HookState>(stateKeyRef.current)
@@ -79,6 +79,15 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     [stateKeyRef.current]
   )
   const state = stateJson ? parseJson<HookState>(stateJson, DEFAULT_STATE) : DEFAULT_STATE
+
+  const { data: sessionRow } = useQueryOne<HumanInteractionRow>(
+    reactiveDb,
+    state.sessionId
+      ? 'SELECT * FROM human_interactions WHERE id = ?'
+      : 'SELECT 1 WHERE 0',
+    state.sessionId ? [state.sessionId] : []
+  )
+  const session = sessionRow ? parseHumanInteraction(sessionRow) : null
 
   const setState = useCallback((next: HookState, trigger: string) => {
     db.state.set(stateKeyRef.current, next, trigger)
@@ -148,30 +157,13 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     rejectRef.current = null
   }, [db, setState])
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
-  }, [])
-
-  useEffectOnValueChange(state.sessionId, () => {
-    stopPolling()
-    if (!state.sessionId || state.status !== 'pending') return
-
-    pollRef.current = setInterval(() => {
-      const current = db.state.get<HookState>(stateKeyRef.current) ?? DEFAULT_STATE
-      if (current.status !== 'pending' || !current.sessionId) return
-      const session = db.human.get(current.sessionId)
-      if (!session || session.status === 'pending') return
-      stopPolling()
-      handleCompletion(session, current)
-    }, 250)
-  }, [state.status, db, stopPolling, handleCompletion])
-
-  useUnmount(() => {
-    stopPolling()
-  })
+  useEffectOnValueChange(session?.status, () => {
+    if (!session || session.status === 'pending') return
+    if (db.db.isClosed) return
+    const current = db.state.get<HookState>(stateKeyRef.current) ?? DEFAULT_STATE
+    if (current.status !== 'pending') return
+    handleCompletion(session, current)
+  }, [session, db, handleCompletion])
 
   const createSession = useCallback((prompt: string, options?: AskInteractiveOptions): string => {
     const current = db.state.get<HookState>(stateKeyRef.current) ?? DEFAULT_STATE
