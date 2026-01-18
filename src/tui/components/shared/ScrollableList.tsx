@@ -1,6 +1,6 @@
 // Reusable scrollable list component with vim-style navigation
 
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { KeyEvent } from '@opentui/core'
 
@@ -22,42 +22,36 @@ export function ScrollableList<T>({
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [scrollOffset, setScrollOffset] = useState(0)
 
-  // Clamp selection to valid range
-  useEffect(() => {
-    if (selectedIndex >= items.length && items.length > 0) {
-      setSelectedIndex(items.length - 1)
-    }
-  }, [items.length, selectedIndex])
+  const clampedSelectedIndex = Math.min(selectedIndex, Math.max(0, items.length - 1))
 
-  // Handle keyboard navigation
   useKeyboard((key: KeyEvent) => {
     if (!focused) return
 
     if (key.name === 'j' || key.name === 'down') {
-      setSelectedIndex(prev => Math.min(prev + 1, items.length - 1))
+      const newIndex = Math.min(clampedSelectedIndex + 1, items.length - 1)
+      setSelectedIndex(newIndex)
+      if (newIndex >= scrollOffset + height) {
+        setScrollOffset(newIndex - height + 1)
+      }
     } else if (key.name === 'k' || key.name === 'up') {
-      setSelectedIndex(prev => Math.max(prev - 1, 0))
+      const newIndex = Math.max(clampedSelectedIndex - 1, 0)
+      setSelectedIndex(newIndex)
+      if (newIndex < scrollOffset) {
+        setScrollOffset(newIndex)
+      }
     } else if (key.name === 'g') {
       setSelectedIndex(0)
       setScrollOffset(0)
     } else if (key.name === 'G' || (key.shift && key.name === 'g')) {
       setSelectedIndex(items.length - 1)
+      setScrollOffset(Math.max(0, items.length - height))
     } else if (key.name === 'return') {
-      const item = items[selectedIndex]
+      const item = items[clampedSelectedIndex]
       if (item && onSelect) {
-        onSelect(item, selectedIndex)
+        onSelect(item, clampedSelectedIndex)
       }
     }
   })
-
-  // Adjust scroll offset based on selection
-  useEffect(() => {
-    if (selectedIndex < scrollOffset) {
-      setScrollOffset(selectedIndex)
-    } else if (selectedIndex >= scrollOffset + height) {
-      setScrollOffset(selectedIndex - height + 1)
-    }
-  }, [selectedIndex, scrollOffset, height])
 
   const visibleItems = items.slice(scrollOffset, scrollOffset + height)
 
@@ -67,7 +61,7 @@ export function ScrollableList<T>({
         const actualIndex = scrollOffset + index
         return (
           <box key={actualIndex}>
-            {renderItem(item, actualIndex, actualIndex === selectedIndex)}
+            {renderItem(item, actualIndex, actualIndex === clampedSelectedIndex)}
           </box>
         )
       })}

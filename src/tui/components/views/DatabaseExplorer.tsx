@@ -1,10 +1,11 @@
 // Database Explorer View (F3)
 // Browse SQLite tables and query data
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
+import { usePollTableData } from '../../hooks/usePollTableData.js'
 
 const TABLES = [
   'executions',
@@ -32,38 +33,25 @@ export interface DatabaseExplorerProps {
 
 export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
   const [selectedTable, setSelectedTable] = useState(0)
-  const [tableData, setTableData] = useState<Record<string, unknown>[]>([])
-  const [columns, setColumns] = useState<string[]>([])
   const [rowOffset, setRowOffset] = useState(0)
   const [isTableListFocused, setIsTableListFocused] = useState(true)
 
-  // Load table data when selection changes
-  useEffect(() => {
-    const tableName = TABLES[selectedTable]
-    try {
-      // Get column info
-      const pragmaResult = db.query<{ name: string }>(`PRAGMA table_info(${tableName})`)
-      setColumns(pragmaResult.map(r => r.name))
+  const tableName = TABLES[selectedTable]
+  const { columns, data: tableData } = usePollTableData(db, tableName)
 
-      // Get data
-      const data = db.query<Record<string, unknown>>(`SELECT * FROM ${tableName} ORDER BY rowid DESC LIMIT 100`)
-      setTableData(data)
-      setRowOffset(0)
-    } catch {
-      setTableData([])
-      setColumns([])
-    }
-  }, [db, selectedTable])
+  const handleSelectTable = (index: number) => {
+    setSelectedTable(index)
+    setRowOffset(0)
+  }
 
-  // Handle keyboard navigation
   useKeyboard((key: KeyEvent) => {
     if (key.name === 'tab') {
       setIsTableListFocused(!isTableListFocused)
     } else if (isTableListFocused) {
       if (key.name === 'j' || key.name === 'down') {
-        setSelectedTable(prev => Math.min(prev + 1, TABLES.length - 1))
+        handleSelectTable(Math.min(selectedTable + 1, TABLES.length - 1))
       } else if (key.name === 'k' || key.name === 'up') {
-        setSelectedTable(prev => Math.max(prev - 1, 0))
+        handleSelectTable(Math.max(selectedTable - 1, 0))
       }
     } else {
       if (key.name === 'j' || key.name === 'down') {
@@ -74,7 +62,6 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
     }
   })
 
-  const tableName = TABLES[selectedTable]
   const visibleRows = tableData.slice(rowOffset, rowOffset + height - 8)
 
   return (
