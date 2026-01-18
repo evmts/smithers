@@ -4,8 +4,8 @@ import { useSmithers } from '../components/SmithersProvider.js'
 import type { HumanInteraction, HumanInteractionRow, InteractiveSessionConfig } from '../db/human.js'
 import { parseHumanInteraction } from '../db/human.js'
 import { parseJson, uuid } from '../db/utils.js'
-import { useQueryValue } from '../reactive-sqlite/index.js'
-import { useEffectOnValueChange, useMount, useUnmount } from '../reconciler/hooks.js'
+import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
+import { useEffectOnValueChange, useMount } from '../reconciler/hooks.js'
 
 export interface InteractiveSessionResult {
   outcome: 'completed' | 'cancelled' | 'timeout' | 'failed'
@@ -65,7 +65,6 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   const resolveRef = useRef<((value: T) => void) | null>(null)
   const rejectRef = useRef<((error: Error) => void) | null>(null)
   const zodSchemaRef = useRef<ZodType | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useMount(() => {
     const existing = db.state.get<HookState>(stateKeyRef.current)
