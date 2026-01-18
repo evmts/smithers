@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/capture-prompt.ts",
+            "command": "bun ${CLAUDE_PLUGIN_ROOT}/hooks/capture-prompt.ts",
             "timeout": 5
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/ralph-check.ts",
+            "command": "bun ${CLAUDE_PLUGIN_ROOT}/hooks/ralph-check.ts",
             "timeout": 10
           }
         ]
