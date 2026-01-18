@@ -164,3 +164,20 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+
+## Reference Libraries
+
+The `reference/` folder contains git submodules of external libraries. These are **NOT dependencies** - they exist solely as documentation and context for AI assistants to:
+
+- Grep for API usage patterns and examples
+- Read test files to understand expected behavior
+- Reference documentation and type definitions
+- Learn library conventions without web searches
+
+**Do NOT:**
+- Import from `reference/` in application code
+- Modify files in `reference/`
+- Treat these as part of the project's codebase
+
+**Current references:**
+- `reference/vercel-ai-sdk/` - Vercel AI SDK source for understanding streaming, tools, and provider patterns
