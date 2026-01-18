@@ -1,0 +1,32 @@
+{
+  "env": {
+    "node": true,
+    "browser": true,
+    "es2024": true
+  },
+  "settings": {
+    "import/resolver": {
+      "node": {
+        "extensions": [".ts", ".tsx", ".js", ".jsx"]
+      }
+    }
+  },
+  "rules": {
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
+    "no-console": [
+      "warn",
+      {
+        "allow": ["warn", "error", "info"]
+      }
+    ],
+    "no-empty": "warn",
+    "prefer-const": "warn",
+    "no-var": "error"
+  }
+}
