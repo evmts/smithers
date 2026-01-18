@@ -4,7 +4,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
-import { ReactiveDatabase } from '../../reactive-sqlite'
+import { ReactiveDatabase } from '../reactive-sqlite'
 // Types are re-exported from './types.js' at the bottom of this file
 
 // Import modules
@@ -104,10 +104,10 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
       const currentDir = path.dirname(fileURLToPath(currentFileUrl))
       schemaPath = path.join(currentDir, 'schema.sql')
     } else {
-      schemaPath = path.resolve(process.cwd(), 'src/orchestrator/db/schema.sql')
+      schemaPath = path.resolve(process.cwd(), 'src/db/schema.sql')
     }
   } catch {
-    schemaPath = path.resolve(process.cwd(), 'src/orchestrator/db/schema.sql')
+    schemaPath = path.resolve(process.cwd(), 'src/db/schema.sql')
   }
 
   // Reset if requested
@@ -175,7 +175,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
 export * from './types.js'
 
 // Re-export reactive-sqlite for direct use
-export { ReactiveDatabase, useQuery, useMutation, useQueryOne, useQueryValue } from '../../reactive-sqlite'
+export { ReactiveDatabase, useQuery, useMutation, useQueryOne, useQueryValue } from '../reactive-sqlite'
 
 // Re-export module types for consumers who need them
 export type { StateModule } from './state.js'

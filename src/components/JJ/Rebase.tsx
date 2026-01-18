@@ -1,6 +1,6 @@
 import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
-import { useSmithers } from '../../orchestrator/components/SmithersProvider'
+import { useSmithers } from '../SmithersProvider'
 import { useMount, useMountedState } from '../../reconciler/hooks'
 
 export interface RebaseProps {

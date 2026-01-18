@@ -1,6 +1,6 @@
 // Execution tracking module for Smithers DB
 
-import type { ReactiveDatabase } from '../../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite'
 import type { Execution } from './types.js'
 import { uuid, now, parseJson } from './utils.js'
 

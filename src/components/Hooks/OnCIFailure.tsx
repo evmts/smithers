@@ -2,7 +2,7 @@
 // Currently supports GitHub Actions
 
 import { useState, useRef, useContext, type ReactNode } from 'react'
-import { useSmithers } from '../../orchestrator/components/SmithersProvider'
+import { useSmithers } from '../SmithersProvider'
 import { RalphContext } from '../Ralph'
 import { useMount, useUnmount } from '../../reconciler/hooks'
 

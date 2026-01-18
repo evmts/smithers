@@ -1,6 +1,6 @@
 // State management module for Smithers DB
 
-import type { ReactiveDatabase } from '../../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite'
 import { uuid, now, parseJson } from './utils.js'
 
 export interface StateModule {

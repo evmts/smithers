@@ -2,7 +2,7 @@
 // Installs a git post-commit hook and polls db.state for triggers
 
 import { useState, useContext, useRef, type ReactNode } from 'react'
-import { useSmithers } from '../../orchestrator/components/SmithersProvider'
+import { useSmithers } from '../SmithersProvider'
 import { RalphContext } from '../Ralph'
 import { useMount, useUnmount } from '../../reconciler/hooks'
 

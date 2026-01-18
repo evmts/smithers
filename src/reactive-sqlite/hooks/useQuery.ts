@@ -7,6 +7,7 @@ import type { ReactiveDatabase } from '../database'
 import { extractReadTables } from '../parser'
 import type { UseQueryResult, UseQueryOptions } from '../types'
 import { useVersionTracking, useQueryCache } from './shared'
+import { useDatabaseOptional } from './context'
 
 /**
  * Hook to execute a reactive query
@@ -15,6 +16,7 @@ import { useVersionTracking, useQueryCache } from './shared'
  *
  * @example
  * ```tsx
+ * // With explicit db
  * function UserList() {
  *   const { data: users, isLoading } = useQuery(
  *     db,
@@ -26,14 +28,51 @@ import { useVersionTracking, useQueryCache } from './shared'
  *
  *   return <ul>{users.map(u => <li key={u.id}>{u.name}</li>)}</ul>
  * }
+ *
+ * // With context (inside DatabaseProvider)
+ * function UserList() {
+ *   const { data: users } = useQuery('SELECT * FROM users')
+ *   return <ul>{users.map(u => <li key={u.id}>{u.name}</li>)}</ul>
+ * }
  * ```
  */
 export function useQuery<T = Record<string, unknown>>(
-  db: ReactiveDatabase,
-  sql: string,
-  params: any[] = [],
-  options: UseQueryOptions = {}
+  sqlOrDb: ReactiveDatabase | string,
+  sqlOrParams?: string | any[],
+  paramsOrOptions?: any[] | UseQueryOptions,
+  optionsOrDb?: UseQueryOptions | ReactiveDatabase
 ): UseQueryResult<T> {
+  // Parse overloaded arguments
+  const contextDb = useDatabaseOptional()
+
+  let db: ReactiveDatabase
+  let sql: string
+  let params: any[]
+  let options: UseQueryOptions
+
+  if (typeof sqlOrDb === 'string') {
+    // New signature: useQuery(sql, params?, options?, explicitDb?)
+    sql = sqlOrDb
+    params = Array.isArray(sqlOrParams) ? sqlOrParams : []
+    options = (Array.isArray(sqlOrParams) ? paramsOrOptions : sqlOrParams) as UseQueryOptions ?? {}
+    const explicitDb = Array.isArray(sqlOrParams) ? optionsOrDb : paramsOrOptions
+
+    if (explicitDb && typeof explicitDb !== 'object') {
+      throw new Error('Invalid arguments to useQuery')
+    }
+
+    db = (explicitDb as ReactiveDatabase) ?? contextDb!
+    if (!db) {
+      throw new Error('useQuery requires either a DatabaseProvider or an explicit db argument')
+    }
+  } else {
+    // Legacy signature: useQuery(db, sql, params?, options?)
+    db = sqlOrDb
+    sql = sqlOrParams as string
+    params = Array.isArray(paramsOrOptions) ? paramsOrOptions : []
+    options = (optionsOrDb as UseQueryOptions) ?? {}
+  }
+
   const { skip = false, deps = [] } = options
 
   // Track version for forcing re-renders

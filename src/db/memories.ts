@@ -1,6 +1,6 @@
 // Memory CRUD operations module for Smithers DB
 
-import type { ReactiveDatabase } from '../../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite'
 import type { Memory, MemoryInput } from './types.js'
 import { uuid, now } from './utils.js'
 

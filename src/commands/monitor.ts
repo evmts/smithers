@@ -13,7 +13,7 @@ import { summarizeWithHaiku } from '../monitor/haiku-summarizer.jsx'
 function findPreloadPath(): string {
   const __filename = fileURLToPath(import.meta.url)
   const __dirname = path.dirname(__filename)
-  // Navigate up from src/orchestrator/commands to package root
+  // Navigate up from src/commands to package root
   let dir = __dirname
   while (dir !== path.dirname(dir)) {
     const preloadPath = path.join(dir, 'preload.ts')

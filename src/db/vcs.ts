@@ -1,6 +1,6 @@
 // VCS/commit/snapshot/review tracking module for Smithers DB
 
-import type { ReactiveDatabase } from '../../reactive-sqlite'
+import type { ReactiveDatabase } from '../reactive-sqlite'
 import type { Commit, Snapshot, Review, Report } from './types.js'
 import { uuid, now, parseJson } from './utils.js'
 

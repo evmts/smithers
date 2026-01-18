@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 
 import { Command } from "commander";
-import { init } from "../src/orchestrator/commands/init.ts";
-import { run } from "../src/orchestrator/commands/run.ts";
-import { monitor } from "../src/orchestrator/commands/monitor.ts";
-import { dbCommand } from "../src/orchestrator/commands/db.ts";
+import { init } from "../src/commands/init.ts";
+import { run } from "../src/commands/run.ts";
+import { monitor } from "../src/commands/monitor.ts";
+import { dbCommand } from "../src/commands/db.ts";
 
 const program = new Command();
 
@@ -60,7 +60,7 @@ program
   .action(async (type: string, data: string, options: { path: string }) => {
     try {
       const { createSmithersDB } = await import(
-        "../src/orchestrator/db/index.ts"
+        "../src/db/index.ts"
       );
 
       const db = createSmithersDB({ path: options.path });

@@ -2,11 +2,11 @@
 // Launches a new Smithers instance to plan and execute a task
 
 import { useState, useContext, useEffect, useRef, type ReactNode } from 'react'
-import { RalphContext } from '../../components/Ralph'
+import { RalphContext } from './Ralph'
 import { useSmithers } from './SmithersProvider'
 import { executeSmithers, type SmithersResult } from './agents/SmithersCLI'
 import type { ClaudeModel } from './agents/types'
-import { useMountedState } from '../../reconciler/hooks'
+import { useMountedState } from '../reconciler/hooks'
 
 // ============================================================================
 // Types

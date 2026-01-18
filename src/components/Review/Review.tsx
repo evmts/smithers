@@ -1,6 +1,6 @@
 import { useState, useContext, type ReactNode } from 'react'
 import { RalphContext } from '../Ralph'
-import { useSmithers } from '../../orchestrator/components/SmithersProvider'
+import { useSmithers } from '../SmithersProvider'
 import { addGitNotes } from '../../utils/vcs'
 import type { ReviewTarget, ReviewResult, ReviewProps } from './types'
 import { useMount, useMountedState } from '../../reconciler/hooks'
