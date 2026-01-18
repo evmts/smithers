@@ -1,0 +1,120 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Smithers",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#0D9373",
+    "light": "#07C983",
+    "dark": "#0D9373",
+    "anchors": {
+      "from": "#0D9373",
+      "to": "#07C983"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Support",
+      "url": "https://github.com/evmts/smithers/issues"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "GitHub",
+    "url": "https://github.com/evmts/smithers"
+  },
+  "tabs": [
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    },
+    {
+      "name": "Examples",
+      "url": "examples"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "GitHub",
+      "icon": "github",
+      "url": "https://github.com/evmts/smithers"
+    },
+    {
+      "name": "npm",
+      "icon": "npm",
+      "url": "https://www.npmjs.com/package/smithers"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Get Started",
+      "pages": [
+        "introduction",
+        "quickstart",
+        "installation"
+      ]
+    },
+    {
+      "group": "Core Concepts",
+      "pages": [
+        "concepts/ralph-wiggum-loop",
+        "concepts/state-management",
+        "concepts/database-persistence",
+        "concepts/orchestration"
+      ]
+    },
+    {
+      "group": "Components",
+      "pages": [
+        "components/smithers-provider",
+        "components/claude",
+        "components/ralph",
+        "components/smithers",
+        "components/orchestration",
+        "components/phase",
+        "components/step",
+        "components/review",
+        "components/human",
+        "components/stop",
+        "components/commit",
+        "components/sqlite"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "guides/structured-output",
+        "guides/mcp-integration",
+        "guides/vcs-integration",
+        "guides/error-handling"
+      ]
+    },
+    {
+      "group": "Database API",
+      "pages": [
+        "api-reference/database",
+        "api-reference/state",
+        "api-reference/memories",
+        "api-reference/execution",
+        "api-reference/agents",
+        "api-reference/vcs"
+      ]
+    },
+    {
+      "group": "Examples",
+      "pages": [
+        "examples/hello-world",
+        "examples/multi-phase-review",
+        "examples/structured-output",
+        "examples/mcp-database",
+        "examples/subagent-workflow"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/evmts/smithers",
+    "twitter": "https://twitter.com/evmts"
+  }
+}

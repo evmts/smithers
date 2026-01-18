@@ -7,7 +7,7 @@
  * 3. Component imports and basic functionality
  */
 
-import { test, expect, beforeAll, afterAll, describe } from 'vitest'
+import { test, expect, beforeAll, afterAll, describe } from 'bun:test'
 import { createSmithersDB, type SmithersDB } from './db'
 import { VCSManager } from './db/vcs'
 import { rmSync, mkdirSync } from 'fs'

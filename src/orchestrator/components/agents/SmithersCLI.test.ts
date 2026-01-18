@@ -1,4 +1,4 @@
-import { test, expect, describe, vi, beforeEach } from 'vitest'
+import { test, expect, describe } from 'bun:test'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
