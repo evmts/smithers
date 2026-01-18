@@ -53,13 +53,14 @@ I wanted a tool that allows me to:
 
 ### Install the Smithers Plugin for Claude Code
 
+**Step 1:** Add the Smithers marketplace:
 ```bash
-claude plugin install smithers@https://github.com/evmts/smithers
+/plugin marketplace add evmts/smithers
 ```
 
-Or add it via the plugin UI:
+**Step 2:** Install the plugin:
 ```bash
-/plugin install smithers@https://github.com/evmts/smithers
+/plugin install smithers@smithers
 ```
 
 This gives Claude Code the `smithers-orchestrator` skill for creating multi-agent workflows.

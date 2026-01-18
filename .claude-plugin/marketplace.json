@@ -1,0 +1,11 @@
+{
+  "name": "smithers",
+  "description": "Smithers - Declarative JSX framework for AI agent orchestration",
+  "plugins": [
+    {
+      "name": "smithers",
+      "path": "..",
+      "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration"
+    }
+  ]
+}
