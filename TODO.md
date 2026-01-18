@@ -4,6 +4,59 @@ Incomplete work, stubs, and placeholders in the codebase.
 
 ---
 
+## High - Fix Skipped Tests (48 total)
+
+**Goal: Achieve 0 skipped tests before MVP**
+
+The test suite currently skips 48 tests. These must be fixed, not ignored.
+
+### Root Causes & Fixes
+
+1. **Tests Using Wrong Testing Approach** (7 tests)
+   - [ ] Migrate from DOM-based testing to SmithersNode/XML serialization
+   - [ ] Use `SmithersRoot.toXML()` for assertions instead of DOM queries
+   - [ ] Do NOT add happy-dom/jsdom - this project uses a custom React reconciler that renders to SmithersNode, not DOM
+   - [ ] Files affected: `src/reactive-sqlite/hooks/context.test.tsx`
+
+2. **Solid JSX Transform Mismatch** (30+ tests)
+   - [ ] Remove outdated skip comments - components are now React
+   - [ ] Update test patterns from Solid to SmithersNode/XML testing
+   - [ ] Files affected:
+     - `src/components/Claude.test.tsx`
+     - `src/components/Review.test.tsx`
+     - `src/components/Ralph.test.tsx`
+     - `src/components/Git/*.test.tsx`
+     - `src/components/JJ/*.test.tsx`
+     - `src/components/Hooks/*.test.tsx`
+     - `evals/*.test.tsx`
+
+3. **Integration Test Import Issues** (10+ tests)
+   - [ ] Fix `react-reconciler` package resolution in test environment
+   - [ ] Check for circular imports
+   - [ ] Files affected: `src/orchestrator/integration.test.ts`
+
+4. **SmithersCLI Bun Execution** (2 tests)
+   - [ ] Fix "script execution with bun works" test
+   - [ ] Files affected:
+     - `src/orchestrator/components/agents/SmithersCLI.test.ts`
+     - `src/components/agents/SmithersCLI.test.ts`
+
+---
+
+## High - Fix Failing Tests (37 total)
+
+### Zod Schema Converter (18+ failures)
+- [ ] **`src/utils/structured-output/zod-converter.ts`** - `zodToJsonSchema()` returns objects with missing `type` property
+- [ ] Consider using existing library `zod-to-json-schema` if custom implementation is complex
+- [ ] See: `reviews/zod-schema-converter-broken.md`
+
+### React Hooks (7 failures)
+- [ ] Migrate to SmithersNode/XML testing (same fix as skipped tests above)
+- [ ] Use `SmithersRoot.mount()` and `toXML()` for assertions
+- [ ] See: `reviews/react-hook-tests-need-dom.md`
+
+---
+
 ## Medium - SDK Integration
 
 ### Claude SDK Integration (`src/components/Claude.tsx`)
@@ -76,7 +129,7 @@ The source code has been migrated to React, but remnants of Solid.js remain in c
 - [ ] **`src/components/agents/SmithersCLI.test.ts`** (line 44) - Skipped "script execution with bun works" test
 
 ### Failing Tests (`src/reactive-sqlite/hooks/context.test.tsx`)
-- [ ] **7 failing tests** - React hooks tests failing with "document is not defined" and "Invalid hook call" errors. Tests need DOM environment (`happy-dom` or `jsdom`) and proper React test renderer setup.
+- [ ] **7 failing tests** - React hooks tests need migration to SmithersNode/XML testing pattern. This project uses a custom React reconciler that renders to SmithersNode trees, not DOM. Use `SmithersRoot.mount()` and `toXML()` for testing instead of DOM-based testing libraries.
 
 ---
 

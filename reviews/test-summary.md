@@ -1,12 +1,12 @@
 # Test Suite Summary
 
-## Status: NEEDS ATTENTION
+## Status: CRITICAL - BLOCK MVP
 
 ## Current State
 ```
 ✅ 879 pass
-⏭️  48 skip
-❌ 37 fail
+⏭️  48 skip  <-- UNACCEPTABLE: Must be 0
+❌ 37 fail   <-- BLOCKING: Must be 0
 ⚠️  1 error
    1591 expect() calls
    964 total tests across 53 files
@@ -14,26 +14,34 @@
 
 ## Failure Breakdown
 
-| Category | Count | Root Cause |
-|----------|-------|------------|
-| Zod schema conversion | 18+ | `zodToJsonSchema()` incomplete |
-| React hooks | 7 | Missing DOM environment |
-| Integration | 226-230 skipped | 'react-reconciler' import |
-| Components | Many skipped | Solid migration artifacts |
+| Category | Count | Root Cause | Priority |
+|----------|-------|------------|----------|
+| Zod schema conversion | 18+ | `zodToJsonSchema()` incomplete | P0 |
+| React hooks | 7 | Need SmithersNode/XML testing | P1 |
+| Skipped tests | 48 | Solid migration artifacts, imports | P1 |
+| Integration | 10+ skipped | 'react-reconciler' import | P1 |
 
 ## Priority Order
 
-1. **Fix Zod converter** - Unblocks structured output
-2. **Add DOM to tests** - Unblocks hook tests
-3. **Fix integration imports** - Unblocks e2e tests
-4. **Update component tests** - Improves confidence
+1. **Fix Zod converter** - P0, blocks structured output
+2. **Migrate to SmithersNode/XML testing** - P1, unblocks 7 failures + hook tests
+3. **Fix 48 skipped tests** - P1, skips are unacceptable
+4. **Fix integration imports** - P1, unblocks e2e tests
 
 ## Test Files Needing Attention
-- `src/utils/structured-output/zod-converter.test.ts`
-- `src/reactive-sqlite/hooks/context.test.tsx`
-- `test/integration.test.ts`
-- `src/components/Claude.test.tsx`
-- `src/components/Review.test.tsx`
+- `src/utils/structured-output/zod-converter.test.ts` (P0)
+- `src/reactive-sqlite/hooks/context.test.tsx` (P1)
+- `src/components/*.test.tsx` (P1 - remove skip comments)
+- `src/orchestrator/integration.test.ts` (P1)
 
-## Goal
-Achieve 0 failures and <10 skipped tests before MVP
+## MVP Goal
+```
+✅ 900+ pass
+⏭️  0 skip   <-- ZERO tolerance for skips
+❌ 0 fail
+```
+
+## Related Reviews
+- `reviews/zod-schema-converter-broken.md` - P0 blocker
+- `reviews/skipped-tests-unacceptable.md` - P1 skips
+- `reviews/react-hook-tests-need-dom.md` - P1 XML testing (NOT DOM)

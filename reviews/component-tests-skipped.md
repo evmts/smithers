@@ -20,8 +20,10 @@ Many component tests are skipped with "Solid JSX transform mismatch" comments. T
 ## Suggested Fix
 1. Update skipped tests to work with React (not Solid)
 2. Remove Solid-specific test patterns
-3. Use React Testing Library or test renderer
+3. Use SmithersNode/XML testing (NOT React Testing Library - this project uses a custom reconciler)
 4. Re-enable tests one by one
+
+**Important:** Do NOT add happy-dom, jsdom, or @testing-library - this project uses a custom React reconciler that renders to SmithersNode, not DOM. Use `SmithersRoot.mount()` and `toXML()` for testing.
 
 ## Priority
 **P2** - Important for confidence but not blocking
