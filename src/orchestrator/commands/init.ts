@@ -6,6 +6,20 @@ interface InitOptions {
   dir?: string
 }
 
+/**
+ * Find the package root by looking for package.json
+ */
+function findPackageRoot(startDir: string): string {
+  let dir = startDir
+  while (dir !== path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      return dir
+    }
+    dir = path.dirname(dir)
+  }
+  return startDir
+}
+
 export async function init(options: InitOptions = {}) {
   const targetDir = options.dir || process.cwd()
   const smithersDir = path.join(targetDir, '.smithers')
@@ -29,10 +43,11 @@ export async function init(options: InitOptions = {}) {
   fs.mkdirSync(smithersDir, { recursive: true })
   fs.mkdirSync(logsDir, { recursive: true })
 
-  // Get template path
+  // Get template path - find package root first
   const __filename = fileURLToPath(import.meta.url)
   const __dirname = path.dirname(__filename)
-  const templatePath = path.join(__dirname, '../../../templates/main.tsx.template')
+  const packageRoot = findPackageRoot(__dirname)
+  const templatePath = path.join(packageRoot, 'templates/main.tsx.template')
 
   // Copy template
   if (!fs.existsSync(templatePath)) {
