@@ -1,6 +1,6 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
   "type": "module",
   "main": "./dist/index.js",

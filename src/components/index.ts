@@ -3,7 +3,15 @@
  */
 
 export { Claude, type ClaudeProps } from './Claude.jsx'
-export { Ralph, type RalphProps, RalphContext, type RalphContextType } from './Ralph.jsx'
+export {
+  Ralph,
+  type RalphProps,
+  RalphContext,
+  type RalphContextType,
+  createOrchestrationPromise,
+  signalOrchestrationComplete,
+  signalOrchestrationError,
+} from './Ralph.jsx'
 export { Phase, type PhaseProps } from './Phase.jsx'
 export { Step, type StepProps } from './Step.jsx'
 
