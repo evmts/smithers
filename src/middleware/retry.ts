@@ -5,6 +5,7 @@ export interface RetryOptions {
   retryOn?: (error: Error) => boolean
   backoff?: 'exponential' | 'linear' | 'constant'
   baseDelay?: number
+  onRetry?: (error: Error, attempt: number, maxRetries: number, delayMs: number) => void
 }
 
 function delay(ms: number): Promise<void> {
@@ -38,6 +39,7 @@ export function retryMiddleware(options: RetryOptions = {}): SmithersMiddleware 
               ? baseDelay * (attempt + 1)
               : baseDelay * Math.pow(2, attempt)
 
+          options.onRetry?.(lastError, attempt + 1, maxRetries, delayMs)
           await delay(delayMs)
         }
       }

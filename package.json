@@ -27,6 +27,7 @@
     "./components/Git": "./src/components/Git/index.ts",
     "./components/Hooks": "./src/components/Hooks/index.ts",
     "./components/MCP": "./src/components/MCP/index.ts",
+    "./middleware": "./src/middleware/index.ts",
     "./db": "./src/db/index.ts",
     "./monitor": "./src/monitor/index.ts",
     "./tools": "./src/tools/index.ts",

@@ -6,13 +6,16 @@ import { useStepContext } from './StepContext.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
-import type { ClaudeProps, AgentResult } from './agents/types.js'
+import type { ClaudeProps, AgentResult, CLIExecutionOptions } from './agents/types.js'
 import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { LogWriter } from '../monitor/log-writer.js'
 import { uuid } from '../db/utils.js'
 import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
 import { useQuery } from '../reactive-sqlite/index.js'
 import { extractText } from '../utils/extract-text.js'
+import { composeMiddleware } from '../middleware/compose.js'
+import { retryMiddleware } from '../middleware/retry.js'
+import { validationMiddleware, ValidationError } from '../middleware/validation.js'
 
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
 
@@ -40,7 +43,7 @@ type AgentRow = {
  * ```
  */
 export function Claude(props: ClaudeProps): ReactNode {
-  const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
+  const { db, reactiveDb, executionId, isStopRequested, middleware: providerMiddleware } = useSmithers()
   const worktree = useWorktree()
   const phase = usePhaseContext()
   const phaseActive = phase?.isActive ?? true
@@ -102,8 +105,6 @@ export function Claude(props: ClaudeProps): ReactNode {
       }
 
       let currentAgentId: string | null = null
-      let retryCount = 0
-      const maxRetries = props.maxRetries ?? 3
 
       const logWriter = new LogWriter(undefined, executionId ?? undefined)
       const logFilename = `agent-${uuid()}.log`
@@ -125,107 +126,140 @@ export function Claude(props: ClaudeProps): ReactNode {
           mcpConfigPath = await writeMCPConfigFile(mcpConfig)
         }
 
+        const retryOnValidationFailure = props.retryOnValidationFailure === true
+        const middlewareStack = [
+          ...(providerMiddleware ?? []),
+          ...(props.middleware ?? []),
+        ]
+        const internalMiddlewares = [
+          retryMiddleware({
+            maxRetries: props.maxRetries ?? 3,
+            retryOn: (error) => {
+              if (error instanceof ValidationError) {
+                return retryOnValidationFailure
+              }
+              return true
+            },
+            onRetry: (error, attempt, maxRetries) => {
+              if (error instanceof ValidationError) {
+                props.onProgress?.(`Validation failed, retrying (${attempt}/${maxRetries})...`)
+                return
+              }
+              props.onProgress?.(`Error occurred, retrying (${attempt}/${maxRetries})...`)
+            },
+          }),
+        ]
+
+        if (props.validate) {
+          internalMiddlewares.push(validationMiddleware({ validate: props.validate }))
+        }
+
+        const middlewares = [...middlewareStack, ...internalMiddlewares]
+        const composed = composeMiddleware(...middlewares)
+
+        const baseOptions: CLIExecutionOptions = {
+          prompt,
+        }
+        if (props.model !== undefined) baseOptions.model = props.model
+        if (props.permissionMode !== undefined) baseOptions.permissionMode = props.permissionMode
+        if (props.maxTurns !== undefined) baseOptions.maxTurns = props.maxTurns
+        if (props.systemPrompt !== undefined) baseOptions.systemPrompt = props.systemPrompt
+        if (props.outputFormat !== undefined) baseOptions.outputFormat = props.outputFormat
+        if (mcpConfigPath !== undefined) baseOptions.mcpConfig = mcpConfigPath
+        if (props.allowedTools !== undefined) baseOptions.allowedTools = props.allowedTools
+        if (props.disallowedTools !== undefined) baseOptions.disallowedTools = props.disallowedTools
+        if (cwd !== undefined) baseOptions.cwd = cwd
+        if (props.timeout !== undefined) baseOptions.timeout = props.timeout
+        if (props.stopConditions !== undefined) baseOptions.stopConditions = props.stopConditions
+        if (props.continueConversation !== undefined) baseOptions.continue = props.continueConversation
+        if (props.resumeSession !== undefined) baseOptions.resume = props.resumeSession
+        if (props.onToolCall !== undefined) baseOptions.onToolCall = props.onToolCall
+        if (props.schema !== undefined) baseOptions.schema = props.schema
+        if (props.schemaRetries !== undefined) baseOptions.schemaRetries = props.schemaRetries
+        if (props.useSubscription !== undefined) baseOptions.useSubscription = props.useSubscription
+
+        const executionOptions = composed.transformOptions
+          ? await composed.transformOptions(baseOptions)
+          : baseOptions
+
+        // Log agent start to database if reporting is enabled
         if (props.reportingEnabled !== false) {
           logPath = logWriter.appendLog(logFilename, '')
-          
+
           currentAgentId = await db.agents.start(
-            prompt,
-            props.model ?? 'sonnet',
-            props.systemPrompt,
+            executionOptions.prompt,
+            executionOptions.model ?? 'sonnet',
+            executionOptions.systemPrompt,
             logPath
           )
           agentIdRef.current = currentAgentId
         }
 
-        props.onProgress?.(`Starting Claude agent with model: ${props.model ?? 'sonnet'}`)
+        // Report progress
+        props.onProgress?.(`Starting Claude agent with model: ${executionOptions.model ?? 'sonnet'}`)
 
-        let agentResult: AgentResult | null = null
-        let lastError: Error | null = null
+        const upstreamOnProgress = executionOptions.onProgress
+        const onProgress = (chunk: string) => {
+          const transformedChunk = composed.transformChunk
+            ? composed.transformChunk(chunk)
+            : chunk
 
-        while (retryCount <= maxRetries) {
-          try {
-            agentResult = await executeClaudeCLI({
-              prompt,
-              ...(props.model !== undefined ? { model: props.model } : {}),
-              ...(props.permissionMode !== undefined ? { permissionMode: props.permissionMode } : {}),
-              ...(props.maxTurns !== undefined ? { maxTurns: props.maxTurns } : {}),
-              ...(props.systemPrompt !== undefined ? { systemPrompt: props.systemPrompt } : {}),
-              ...(props.outputFormat !== undefined ? { outputFormat: props.outputFormat } : {}),
-              ...(mcpConfigPath !== undefined ? { mcpConfig: mcpConfigPath } : {}),
-              ...(props.allowedTools !== undefined ? { allowedTools: props.allowedTools } : {}),
-              ...(props.disallowedTools !== undefined ? { disallowedTools: props.disallowedTools } : {}),
-              ...(cwd !== undefined ? { cwd } : {}),
-              ...(props.timeout !== undefined ? { timeout: props.timeout } : {}),
-              ...(props.stopConditions !== undefined ? { stopConditions: props.stopConditions } : {}),
-              ...(props.continueConversation !== undefined ? { continue: props.continueConversation } : {}),
-              ...(props.resumeSession !== undefined ? { resume: props.resumeSession } : {}),
-              ...(props.onToolCall !== undefined ? { onToolCall: props.onToolCall } : {}),
-              ...(props.schema !== undefined ? { schema: props.schema } : {}),
-              ...(props.schemaRetries !== undefined ? { schemaRetries: props.schemaRetries } : {}),
-              ...(props.useSubscription !== undefined ? { useSubscription: props.useSubscription } : {}),
-              onProgress: (chunk) => {
-                if (logFilename) {
-                  logWriter.appendLog(logFilename, chunk)
-                }
-
-                messageParserRef.current.parseChunk(chunk)
-
-                const now = Date.now()
-                const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
-
-                if (timeSinceLastUpdate >= DEFAULT_TAIL_LOG_THROTTLE_MS) {
-                  lastTailLogUpdateRef.current = now
-                  if (isMounted()) {
-                    tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-                    forceUpdate()
-                  }
-                } else if (!pendingTailLogUpdateRef.current) {
-                  pendingTailLogUpdateRef.current = setTimeout(() => {
-                    pendingTailLogUpdateRef.current = null
-                    lastTailLogUpdateRef.current = Date.now()
-                    if (isMounted()) {
-                      tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-                      forceUpdate()
-                    }
-                  }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
-                }
-
-                props.onProgress?.(chunk)
-              },
-            })
-
-            if (agentResult.stopReason === 'error') {
-              throw new Error(agentResult.output || 'Claude CLI execution failed')
-            }
-
-            if (props.validate) {
-              const isValid = await props.validate(agentResult)
-              if (!isValid) {
-                if (props.retryOnValidationFailure && retryCount < maxRetries) {
-                  retryCount++
-                  props.onProgress?.(`Validation failed, retrying (${retryCount}/${maxRetries})...`)
-                  continue
-                }
-                throw new Error('Validation failed')
-              }
-            }
-
-            break
-          } catch (err) {
-            lastError = err instanceof Error ? err : new Error(String(err))
-
-            if (retryCount < maxRetries) {
-              retryCount++
-              props.onProgress?.(`Error occurred, retrying (${retryCount}/${maxRetries})...`)
-              await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount)) // Exponential backoff
-            } else {
-              throw lastError
-            }
+          // Stream to log file
+          if (logFilename) {
+            logWriter.appendLog(logFilename, transformedChunk)
           }
+
+          // Parse for tail log
+          messageParserRef.current.parseChunk(transformedChunk)
+
+          // Throttle tail log updates to reduce re-renders
+          const now = Date.now()
+          const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
+
+          if (timeSinceLastUpdate >= DEFAULT_TAIL_LOG_THROTTLE_MS) {
+            // Enough time has passed, update immediately
+            lastTailLogUpdateRef.current = now
+            if (isMounted()) {
+              tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+              forceUpdate()
+            }
+          } else if (!pendingTailLogUpdateRef.current) {
+            // Schedule an update for later
+            pendingTailLogUpdateRef.current = setTimeout(() => {
+              pendingTailLogUpdateRef.current = null
+              lastTailLogUpdateRef.current = Date.now()
+              if (isMounted()) {
+                tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
+                forceUpdate()
+              }
+            }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
+          }
+
+          upstreamOnProgress?.(transformedChunk)
+          props.onProgress?.(transformedChunk)
         }
 
-        if (!agentResult) {
-          throw lastError ?? new Error('No result from Claude CLI')
+        const execute = async () => {
+          const result = await executeClaudeCLI({
+            ...executionOptions,
+            onProgress,
+          })
+
+          if (result.stopReason === 'error') {
+            throw new Error(result.output || 'Claude CLI execution failed')
+          }
+
+          return result
+        }
+
+        const wrappedExecute = composed.wrapExecute
+          ? () => composed.wrapExecute!(execute, executionOptions)
+          : execute
+
+        let agentResult = await wrappedExecute()
+
+        if (composed.transformResult) {
+          agentResult = await composed.transformResult(agentResult)
         }
 
         messageParserRef.current.flush()
