@@ -3,18 +3,20 @@
 /**
  * Export Codebase to Markdown
  *
- * Creates a markdown file containing all source code from the src directory
- * and README files, formatted for sharing with LLMs.
+ * Creates a markdown file containing source code sections, formatted for sharing with LLMs.
  * Copies the result to clipboard.
+ *
+ * Usage:
+ *   bun scripts/export-codebase.ts          # Show help with section sizes
+ *   bun scripts/export-codebase.ts --reconciler  # Export reconciler section
+ *   bun scripts/export-codebase.ts --all    # Export full codebase
  */
 
-import { $ } from "bun";
 import { join, relative } from "node:path";
 
 const MAX_LINES = 500; // Files longer than this get truncated
 const HEAD_LINES = 200; // Show first N lines of large files
 const ROOT_DIR = process.cwd();
-const SRC_DIR = join(ROOT_DIR, "src");
 
 interface FileEntry {
   path: string;
@@ -24,15 +26,52 @@ interface FileEntry {
   totalLines?: number;
 }
 
-async function getFiles(pattern: string): Promise<string[]> {
-  const glob = new Bun.Glob(pattern);
-  const files: string[] = [];
+interface SectionConfig {
+  pattern: string | string[];
+  description: string;
+}
 
-  for await (const file of glob.scan({ cwd: ROOT_DIR, onlyFiles: true })) {
-    files.push(join(ROOT_DIR, file));
+const SECTIONS: Record<string, SectionConfig> = {
+  'reconciler': { pattern: 'src/reconciler/**/*', description: 'Core React renderer' },
+  'database': { pattern: 'src/db/**/*', description: 'SQLite state management' },
+  'reactive-sqlite': { pattern: 'src/reactive-sqlite/**/*', description: 'Reactive DB wrapper' },
+  'components-core': { pattern: ['src/components/*.tsx', 'src/components/MCP/**/*'], description: 'Main components' },
+  'components-agents': { pattern: 'src/components/agents/**/*', description: 'CLI execution engines' },
+  'components-vcs': { pattern: ['src/components/Git/**/*', 'src/components/JJ/**/*'], description: 'Git + Jujutsu operations' },
+  'components-hooks': { pattern: 'src/components/Hooks/**/*', description: 'Lifecycle hooks' },
+  'components-review': { pattern: 'src/components/Review/**/*', description: 'Code review' },
+  'utils': { pattern: 'src/utils/**/*', description: 'Utilities' },
+  'monitor': { pattern: 'src/monitor/**/*', description: 'Output parsing/logging' },
+  'commands': { pattern: 'src/commands/**/*', description: 'CLI commands' },
+  'all': { pattern: 'src/**/*', description: 'Full codebase' },
+};
+
+const TEXT_EXTENSIONS = ['ts', 'tsx', 'js', 'jsx', 'json', 'sql', 'md', 'txt', 'yml', 'yaml', 'css', 'html'];
+
+function isTextFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  return TEXT_EXTENSIONS.includes(ext || '');
+}
+
+function isTestFile(filePath: string): boolean {
+  return filePath.includes('.test.');
+}
+
+async function getFiles(patterns: string | string[]): Promise<string[]> {
+  const patternArray = Array.isArray(patterns) ? patterns : [patterns];
+  const fileSet = new Set<string>();
+
+  for (const pattern of patternArray) {
+    const glob = new Bun.Glob(pattern);
+    for await (const file of glob.scan({ cwd: ROOT_DIR, onlyFiles: true })) {
+      const fullPath = join(ROOT_DIR, file);
+      if (isTextFile(fullPath) && !isTestFile(fullPath)) {
+        fileSet.add(fullPath);
+      }
+    }
   }
 
-  return files.sort();
+  return Array.from(fileSet).sort();
 }
 
 async function readFile(filePath: string): Promise<FileEntry> {
@@ -89,39 +128,91 @@ function formatFileEntry(entry: FileEntry): string {
   return output;
 }
 
-async function main() {
-  console.log("🔍 Scanning codebase...");
+async function calculateSectionSize(patterns: string | string[]): Promise<{ files: number; size: number }> {
+  const files = await getFiles(patterns);
+  let totalSize = 0;
 
-  let markdown = "# Smithers Codebase Export\n\n";
-  markdown += `Generated: ${new Date().toISOString()}\n\n`;
-  markdown += "---\n\n";
-
-  // Add root README
-  console.log("📖 Adding root README.md...");
-  try {
-    const rootReadme = await readFile(join(ROOT_DIR, "README.md"));
-    markdown += formatFileEntry(rootReadme);
-    markdown += "\n---\n";
-  } catch (err) {
-    console.log("⚠️  No root README.md found");
+  for (const file of files) {
+    try {
+      const entry = await readFile(file);
+      totalSize += formatFileEntry(entry).length;
+    } catch {
+      // Skip files that can't be read
+    }
   }
 
-  // Add source files
-  console.log("📂 Collecting source files from src/...");
-  const srcFiles = await getFiles("src/**/*");
+  return { files: files.length, size: totalSize };
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+async function showHelp(): Promise<void> {
+  console.log("📦 Codebase Export Tool\n");
+  console.log("Exports source code sections for LLM context sharing.\n");
+  console.log("Usage:");
+  console.log("  bun scripts/export-codebase.ts --<section>  Export a specific section");
+  console.log("  bun scripts/export-codebase.ts --help       Show this help\n");
+  console.log("Calculating section sizes...\n");
+
+  console.log("Available sections:\n");
+  console.log("  Section                Size        Files   Description");
+  console.log("  ─────────────────────────────────────────────────────────────────");
+
+  for (const [name, config] of Object.entries(SECTIONS)) {
+    const { files, size } = await calculateSectionSize(config.pattern);
+    const sizeStr = formatSize(size).padStart(10);
+    const filesStr = String(files).padStart(5);
+    const flagName = `--${name}`.padEnd(22);
+    console.log(`  ${flagName} ${sizeStr}  ${filesStr}   ${config.description}`);
+  }
+
+  console.log("\nExample:");
+  console.log("  bun scripts/export-codebase.ts --reconciler");
+}
+
+function parseArgs(): string | null {
+  const args = Bun.argv.slice(2);
+
+  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+    return null;
+  }
+
+  // Find a --section flag
+  for (const arg of args) {
+    if (arg.startsWith('--')) {
+      const sectionName = arg.slice(2);
+      if (SECTIONS[sectionName]) {
+        return sectionName;
+      } else {
+        console.error(`Unknown section: ${sectionName}`);
+        console.error(`Run without arguments to see available sections.\n`);
+        process.exit(1);
+      }
+    }
+  }
+
+  return null;
+}
+
+async function exportSection(sectionName: string): Promise<void> {
+  const config = SECTIONS[sectionName];
+  console.log(`🔍 Exporting section: ${sectionName} (${config.description})...`);
+
+  let markdown = `# Smithers Codebase Export: ${sectionName}\n\n`;
+  markdown += `Generated: ${new Date().toISOString()}\n`;
+  markdown += `Section: ${sectionName} - ${config.description}\n\n`;
+  markdown += "---\n";
+
+  const files = await getFiles(config.pattern);
+  console.log(`📂 Found ${files.length} files...`);
 
   let processedCount = 0;
   let truncatedCount = 0;
 
-  for (const file of srcFiles) {
-    // Skip directories, binaries, and other non-text files
-    const ext = file.split('.').pop()?.toLowerCase();
-    const textExtensions = ['ts', 'tsx', 'js', 'jsx', 'json', 'sql', 'md', 'txt', 'yml', 'yaml', 'css', 'html'];
-
-    if (!textExtensions.includes(ext || '')) {
-      continue;
-    }
-
+  for (const file of files) {
     try {
       const entry = await readFile(file);
       markdown += formatFileEntry(entry);
@@ -131,7 +222,6 @@ async function main() {
         truncatedCount++;
       }
 
-      // Progress indicator
       if (processedCount % 10 === 0) {
         console.log(`  Processed ${processedCount} files...`);
       }
@@ -145,6 +235,7 @@ async function main() {
   // Add metadata footer
   markdown += "\n---\n\n";
   markdown += `## Export Metadata\n\n`;
+  markdown += `- **Section**: ${sectionName}\n`;
   markdown += `- **Total files**: ${processedCount}\n`;
   markdown += `- **Truncated files**: ${truncatedCount}\n`;
   markdown += `- **Export date**: ${new Date().toLocaleString()}\n`;
@@ -159,14 +250,24 @@ async function main() {
   proc.stdin.end();
   await proc.exited;
 
-  // Also save to file for reference
+  // Save to file
   const outputPath = join(ROOT_DIR, "codebase-export.md");
   await Bun.write(outputPath, markdown);
 
   console.log(`\n✨ Done!`);
   console.log(`📋 Markdown copied to clipboard`);
   console.log(`💾 Also saved to: ${outputPath}`);
-  console.log(`📊 Total size: ${(markdown.length / 1024).toFixed(2)} KB`);
+  console.log(`📊 Total size: ${formatSize(markdown.length)}`);
+}
+
+async function main() {
+  const section = parseArgs();
+
+  if (section === null) {
+    await showHelp();
+  } else {
+    await exportSection(section);
+  }
 }
 
 main().catch(console.error);
