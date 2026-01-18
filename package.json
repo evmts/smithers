@@ -1,6 +1,6 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Build AI agents with Solid.js - Declarative JSX for Claude orchestration",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,17 +25,61 @@
       "types": "./dist/components/index.d.ts",
       "import": "./dist/components/index.js"
     },
-    "./components/*": {
-      "types": "./dist/components/*.d.ts",
-      "import": "./dist/components/*.js"
+    "./components/Ralph": {
+      "types": "./dist/components/Ralph.d.ts",
+      "import": "./dist/components/Ralph.jsx"
+    },
+    "./components/Review": {
+      "types": "./dist/components/Review.d.ts",
+      "import": "./dist/components/Review.jsx"
+    },
+    "./components/Phase": {
+      "types": "./dist/components/Phase.d.ts",
+      "import": "./dist/components/Phase.jsx"
+    },
+    "./components/Step": {
+      "types": "./dist/components/Step.d.ts",
+      "import": "./dist/components/Step.jsx"
+    },
+    "./components/JJ": {
+      "types": "./dist/components/JJ/index.d.ts",
+      "import": "./dist/components/JJ/index.js"
+    },
+    "./components/Git": {
+      "types": "./dist/components/Git/index.d.ts",
+      "import": "./dist/components/Git/index.js"
+    },
+    "./components/Hooks": {
+      "types": "./dist/components/Hooks/index.d.ts",
+      "import": "./dist/components/Hooks/index.js"
+    },
+    "./components/MCP": {
+      "types": "./dist/components/MCP/index.d.ts",
+      "import": "./dist/components/MCP/index.js"
     },
     "./orchestrator": {
       "types": "./dist/orchestrator/components/index.d.ts",
       "import": "./dist/orchestrator/components/index.js"
     },
-    "./orchestrator/*": {
-      "types": "./dist/orchestrator/components/*.d.ts",
-      "import": "./dist/orchestrator/components/*.js"
+    "./orchestrator/SmithersProvider": {
+      "types": "./dist/orchestrator/components/SmithersProvider.d.ts",
+      "import": "./dist/orchestrator/components/SmithersProvider.jsx"
+    },
+    "./orchestrator/Orchestration": {
+      "types": "./dist/orchestrator/components/Orchestration.d.ts",
+      "import": "./dist/orchestrator/components/Orchestration.jsx"
+    },
+    "./orchestrator/Claude": {
+      "types": "./dist/orchestrator/components/Claude.d.ts",
+      "import": "./dist/orchestrator/components/Claude.jsx"
+    },
+    "./orchestrator/Phase": {
+      "types": "./dist/orchestrator/components/Phase.d.ts",
+      "import": "./dist/orchestrator/components/Phase.jsx"
+    },
+    "./orchestrator/Step": {
+      "types": "./dist/orchestrator/components/Step.d.ts",
+      "import": "./dist/orchestrator/components/Step.jsx"
     },
     "./db": {
       "types": "./dist/orchestrator/db/index.d.ts",
