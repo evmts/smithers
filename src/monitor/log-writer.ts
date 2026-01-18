@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import type { SmithersStreamPart } from '../streaming/types.js'
+import type { StreamSummary } from '../db/types.js'
 
 export class LogWriter {
   private logDir: string
@@ -106,6 +107,16 @@ export class LogWriter {
       errors: parts.filter((part) => part.type === 'error').length,
     }
 
+    fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2))
+    return summaryPath
+  }
+
+  /**
+   * Write a summary file from precomputed counts.
+   */
+  writeStreamSummaryFromCounts(filename: string, summary: StreamSummary): string {
+    const filepath = path.join(this.logDir, filename)
+    const summaryPath = filepath.replace(/\.log$|\.ndjson$/, '') + '.summary.json'
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2))
     return summaryPath
   }

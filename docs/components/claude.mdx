@@ -192,6 +192,10 @@ import { Claude } from "smithers-orchestrator";
   Called with progress updates.
 </ParamField>
 
+<ParamField path="onStreamPart" type="(part: SmithersStreamPart) => void">
+  Called with typed stream events when experimental streaming is enabled.
+</ParamField>
+
 <ParamField path="onToolCall" type="(tool: string, input: any) => void">
   Called when Claude uses a tool.
 </ParamField>
@@ -230,7 +234,7 @@ import { Claude } from "smithers-orchestrator";
 
   - `text`: Plain text output (default)
   - `json`: Structured JSON output
-  - `stream-json`: Streaming JSON output
+  - `stream-json`: Streaming JSON output (required for typed streaming)
 </ParamField>
 
 <ParamField path="mcpConfig" type="string">
@@ -251,6 +255,21 @@ import { Claude } from "smithers-orchestrator";
 
 <ParamField path="tailLogLines" type="number" default="10">
   Number of lines to show per tail log entry.
+</ParamField>
+
+### Streaming
+
+<ParamField path="experimentalTypedStreaming" type="boolean" default="false">
+  Enable typed V3 stream parts for Claude CLI output. When enabled and no
+  explicit `outputFormat` is provided, `stream-json` is used automatically.
+</ParamField>
+
+<ParamField path="legacyLogFormat" type="boolean" default="false">
+  Write legacy raw text logs alongside NDJSON stream logs.
+</ParamField>
+
+<ParamField path="recordStreamEvents" type="boolean" default="true">
+  Record stream events to the database when reporting is enabled.
 </ParamField>
 
 ### Reporting

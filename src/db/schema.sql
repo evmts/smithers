@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS agents (
   result TEXT,                   -- Agent's response
   result_structured TEXT,        -- JSON: Parsed/structured result
   log_path TEXT,                 -- Path to execution log file
+  stream_summary TEXT,           -- JSON: Stream summary metrics
   error TEXT,
 
   -- Timing
@@ -147,6 +148,25 @@ CREATE INDEX IF NOT EXISTS idx_agents_execution ON agents(execution_id);
 CREATE INDEX IF NOT EXISTS idx_agents_phase ON agents(phase_id);
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
 CREATE INDEX IF NOT EXISTS idx_agents_created ON agents(created_at DESC);
+
+-- ============================================================================
+-- 4b. AGENT_STREAM_EVENTS - Typed Stream Events
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS agent_stream_events (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  event_id TEXT,
+  tool_name TEXT,
+  content TEXT,
+  timestamp INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_stream_events_agent ON agent_stream_events(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_stream_events_type ON agent_stream_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_agent_stream_events_created ON agent_stream_events(created_at DESC);
 
 -- ============================================================================
 -- 5. TOOL_CALLS - Tool Invocations
