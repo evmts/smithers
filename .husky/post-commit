@@ -11,8 +11,8 @@ COMMIT_MSG=$(git log -1 --pretty=%B)
 if git rev-parse HEAD~1 >/dev/null 2>&1; then
   DIFF=$(git diff HEAD~1 HEAD)
 else
-  # Initial commit - get diff against empty tree
-  DIFF=$(git diff --cached 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD 2>/dev/null || git show HEAD)
+  # Initial commit - diff against empty tree
+  DIFF=$(git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD)
 fi
 
 # Skip if no diff
@@ -23,6 +23,7 @@ fi
 # Create temporary files for the prompt and review
 TEMP_PROMPT=$(mktemp)
 TEMP_REVIEW=$(mktemp)
+TEMP_STDERR=$(mktemp)
 
 # Write prompt to file to avoid shell escaping issues
 cat > "$TEMP_PROMPT" << 'PROMPT_END'
@@ -37,20 +38,29 @@ If there are suggestions for improvements, security concerns, bugs, or other iss
 
 PROMPT_END
 
-echo "Commit: $COMMIT_HASH" >> "$TEMP_PROMPT"
-echo "Commit message: $COMMIT_MSG" >> "$TEMP_PROMPT"
-echo "" >> "$TEMP_PROMPT"
-echo "Changes:" >> "$TEMP_PROMPT"
-echo "$DIFF" >> "$TEMP_PROMPT"
+printf "Commit: %s\n" "$COMMIT_HASH" >> "$TEMP_PROMPT"
+printf "Commit message: %s\n" "$COMMIT_MSG" >> "$TEMP_PROMPT"
+printf "\nChanges:\n" >> "$TEMP_PROMPT"
+printf "%s\n" "$DIFF" >> "$TEMP_PROMPT"
 
 # Run Gemini CLI to review the code changes
+# Stderr goes to separate file to avoid polluting the review
 echo "Running Gemini code review..."
-cat "$TEMP_PROMPT" | npx --yes https://github.com/google-gemini/gemini-cli --yolo > "$TEMP_REVIEW" 2>&1
+cat "$TEMP_PROMPT" | npx --yes https://github.com/google-gemini/gemini-cli --yolo > "$TEMP_REVIEW" 2>"$TEMP_STDERR"
+
+# Check exit status
+EXIT_CODE=$?
+if [ $EXIT_CODE -ne 0 ]; then
+  echo "Gemini CLI failed (exit code $EXIT_CODE):"
+  cat "$TEMP_STDERR"
+  rm -f "$TEMP_PROMPT" "$TEMP_REVIEW" "$TEMP_STDERR"
+  exit 0
+fi
 
 # Check if review was generated
 if [ ! -s "$TEMP_REVIEW" ]; then
   echo "No review generated"
-  rm -f "$TEMP_PROMPT" "$TEMP_REVIEW"
+  rm -f "$TEMP_PROMPT" "$TEMP_REVIEW" "$TEMP_STDERR"
   exit 0
 fi
 
@@ -58,11 +68,11 @@ fi
 REVIEW_CONTENT=$(cat "$TEMP_REVIEW")
 
 # Check if it's just LGTM (case insensitive, allowing for whitespace and punctuation)
-NORMALIZED=$(echo "$REVIEW_CONTENT" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:][:punct:]')
+NORMALIZED=$(printf "%s" "$REVIEW_CONTENT" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:][:punct:]')
 
 if [ "$NORMALIZED" = "lgtm" ]; then
   echo "Review: LGTM - no issues found"
-  rm -f "$TEMP_PROMPT" "$TEMP_REVIEW"
+  rm -f "$TEMP_PROMPT" "$TEMP_REVIEW" "$TEMP_STDERR"
   exit 0
 fi
 
@@ -82,4 +92,4 @@ $REVIEW_CONTENT
 EOF
 
 echo "Code review saved to $REVIEW_FILE"
-rm -f "$TEMP_PROMPT" "$TEMP_REVIEW"
+rm -f "$TEMP_PROMPT" "$TEMP_REVIEW" "$TEMP_STDERR"
