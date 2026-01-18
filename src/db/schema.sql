@@ -454,13 +454,19 @@ CREATE TABLE IF NOT EXISTS human_interactions (
   execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
 
   -- Request
-  type TEXT NOT NULL,            -- 'confirmation', 'text', 'select'
+  type TEXT NOT NULL,            -- 'confirmation', 'text', 'input', 'select', 'interactive_session'
   prompt TEXT NOT NULL,
   options TEXT,                  -- JSON array of strings
 
   -- Response
-  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected', 'timeout'
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected', 'timeout', 'cancelled', 'completed', 'failed'
   response TEXT,                 -- JSON string
+
+  -- Interactive session metadata (optional)
+  session_config TEXT,           -- JSON string
+  session_transcript TEXT,
+  session_duration INTEGER,
+  error TEXT,
 
   -- Timing
   created_at TEXT DEFAULT (datetime('now')),
