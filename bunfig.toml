@@ -1,11 +1,8 @@
 # Bun configuration for Smithers
 # https://bun.sh/docs/runtime/bunfig
 
-# Use bun-plugin-solid for Solid JSX transform
-preload = ["./preload.ts"]
-
 [install]
 auto = "fallback"
 
 [test]
-preload = ["./preload.ts", "./test/preload.ts"]
+preload = ["./test/preload.ts"]

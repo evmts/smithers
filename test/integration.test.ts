@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { createSmithersRoot } from '../src/core/root'
+import { createSmithersRoot } from '../src/react/root'
 import { rendererMethods } from '../src/react/renderer-methods'
 import type { SmithersNode } from '../src/core/types'
 
