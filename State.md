@@ -6,25 +6,61 @@ Comprehensive documentation of all state management in `src/components/`
 
 - **Total Components:** 30+ files
 - **Stateful Components:** 18
-- **State Variables:** 65+ `useState` calls
+- **State Variables:** **ZERO useState calls** (eliminated Jan 2026)
 - **Contexts:** 7 Context providers
-- **Database-Backed State:** Heavy use of `useQueryValue` for SQLite reactive queries
+- **Database-Backed State:** All durable state via SQLite + `useQuery`/`useQueryValue`
 
-## State Management Patterns
+## CRITICAL: NO useState in Orchestration
 
-### Primary Patterns
-1. **Database-Backed Reactive State** - `useQueryValue` from `reactive-sqlite`
-2. **Local Component State** - `useState` for component-local UI state
-3. **Context Providers** - Global shared state via React Context
-4. **Refs for Side Effects** - `useRef` for task IDs, lifecycle tracking, intervals
+**As of commit 5e3536e (Jan 18, 2026), useState is BANNED in orchestration components.**
+
+### Exception: TUI Components (src/tui/)
+
+**IMPORTANT:** The useState ban applies ONLY to orchestration components (`src/components/`).
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Orchestration (src/components/)  │  TUI (src/tui/)          │
+├──────────────────────────────────────────────────────────────┤
+│  ❌ NO useState                    │  ✅ useState OK          │
+│  ✅ SQLite + useQuery              │  ✅ SQLite polling       │
+│  ✅ useRef + forceUpdate           │  ✅ useRef               │
+│  Purpose: Durable workflows        │  Purpose: Ephemeral UI   │
+│  Survives: Process restart         │  Survives: Nothing       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Why the difference?**
+- **Orchestration** runs long-running workflows (hours/days) that must survive crashes
+- **TUI** is a monitoring UI that can crash/restart anytime without affecting orchestration
+- TUI state (selected index, scroll position) is transient and doesn't need persistence
+
+See `docs/tui-architecture.md` for full TUI documentation.
+
+### State Management Patterns (Orchestration)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. SQLite (durable, survives restart)  │ useQuery/useQueryValue  │
+│ 2. useRef (ephemeral, non-reactive)    │ Direct mutation         │
+│ 3. Derived/computed                     │ Calculate, don't store  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+1. **Database-Backed Reactive State** - `useQuery`/`useQueryValue` from `reactive-sqlite`
+2. **Non-Reactive Ephemeral** - `useRef` for IDs, lifecycle guards, intervals
+3. **Force Update Pattern** - `useReducer` + `forceUpdate` when needed
+4. **Context Providers** - Global shared state via React Context
 5. **Async Task Lifecycle** - All async operations tracked in SQLite tasks table
 
 ### Conventions
-- All async components start with `status: 'pending'`
+- **NO useState allowed** - use SQLite or useRef
+- All agent state in `db.agents` table (status, result, error, tokens)
+- VCS operations in `db.vcs` table
 - Task registration via `db.tasks.start()` / `db.tasks.complete()`
 - Cleanup handled via `useUnmount` (not `useEffect`)
 - Mount-once side effects via `useMount` (not `useEffect`)
-- Lifecycle guards via `useMountedState()` to prevent setState on unmounted
+- React to ralphCount changes via `useEffectOnValueChange`
 
 ---
 
@@ -44,26 +80,26 @@ Comprehensive documentation of all state management in `src/components/`
   - `stop()` - Signal orchestration stop
   - `rebase()` - Signal orchestration rebase
 
-#### Database-Backed State (useQueryValue)
+#### Database-Backed State (useQuery/useQueryValue)
 ```typescript
-// Line 177: Stop signal
-const stopRequested = useQueryValue(db,
+// Stop signal
+const stopRequested = useQueryValue(reactiveDb,
   "SELECT CASE WHEN value IS NOT NULL...", [executionId])
 
-// Line 183: Rebase signal
-const rebaseRequested = useQueryValue(db,
+// Rebase signal
+const rebaseRequested = useQueryValue(reactiveDb,
   "SELECT CASE WHEN value IS NOT NULL...", [executionId])
 
-// Line 189: Ralph count tracking
-const dbRalphCount = useQueryValue(db,
+// Ralph count tracking
+const dbRalphCount = useQueryValue(reactiveDb,
   "SELECT CAST(value AS INTEGER) as count FROM state WHERE key = 'ralphCount'", [])
 
-// Line 203: Running tasks
-const runningTaskCount = useQueryValue(db,
+// Running tasks
+const runningTaskCount = useQueryValue(reactiveDb,
   "SELECT COUNT(*) as count FROM tasks WHERE status IN ('running', 'starting')...", [executionId])
 
-// Line 216: Total tasks
-const totalTaskCount = useQueryValue(db,
+// Total tasks
+const totalTaskCount = useQueryValue(reactiveDb,
   "SELECT COUNT(*) as count FROM tasks WHERE executionId = ?", [executionId])
 ```
 
@@ -117,19 +153,19 @@ const dbPhaseIndex = useQueryValue(db,
 
 #### Provider State
 ```typescript
-// Line 54: Mutable ref for synchronous step tracking
+// Mutable ref for synchronous step tracking
 const stepsRef = useRef<string[]>([])
 
 // Database-backed current step index
-const dbStepIndex = useQueryValue(db,
-  "SELECT CAST(value AS INTEGER) as stepIndex FROM state WHERE key = ?", [stateKey])
+const { data: dbStepIndex } = useQueryValue<number>(reactiveDb,
+  "SELECT CAST(value AS INTEGER) as idx FROM state WHERE key = ?", [stateKey])
 ```
 
 #### Step Component State
 ```typescript
-// Line 188-189: Component lifecycle
-const [stepId, setStepId] = useState<string | null>(null)
-const [status, setStatus] = useState<'pending' | 'active' | 'completed' | 'failed'>('pending')
+// NO useState - all refs
+const stepIdRef = useRef<string | null>(null)
+const statusRef = useRef<'pending' | 'active' | 'completed' | 'failed'>('pending')
 ```
 
 #### Step Component Refs
@@ -176,18 +212,35 @@ const checkIntervalIdRef = useRef<NodeJS.Timeout | null>(null)
 
 **Anthropic Claude agent execution component**
 
-#### State
+#### State (NO useState - all DB + refs)
 ```typescript
-// Line 50-54: Agent execution state
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-const [result, setResult] = useState<AgentResult | null>(null)
-const [error, setError] = useState<Error | null>(null)
-const [agentId, setAgentId] = useState<string | null>(null)
-const [tailLog, setTailLog] = useState<TailLogEntry[]>([])
+// Line 63: Agent ID in ref (set once, persists across renders)
+const agentIdRef = useRef<string | null>(null)
+
+// Line 66-67: Tail log with forceUpdate pattern
+const tailLogRef = useRef<TailLogEntry[]>([])
+const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
+
+// Line 70-75: Reactive DB queries for agent state
+const { data: agentRows } = useQuery<AgentRow>(
+  reactiveDb,
+  "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",
+  [agentIdRef.current ?? '']
+)
+const agentRow = agentRows[0] ?? null
+
+// Line 79-96: Derived state from DB row (computed, not stored)
+const status = agentRow?.status === 'completed' ? 'complete' :
+              agentRow?.status === 'failed' ? 'error' :
+              agentRow?.status === 'running' ? 'running' : 'pending'
+const result = agentRow?.result ? { /* parsed from DB */ } : null
+const error = agentRow?.error ? new Error(agentRow.error) : null
 ```
 
 #### Refs
+- `agentIdRef` - Agent identifier (persisted in db.agents)
 - `taskIdRef` - Task registration
+- `tailLogRef` - Live log entries (non-reactive, updated via forceUpdate)
 - `messageParserRef` - MessageParser instance (capacity: maxEntries * 2)
 - `isMounted` (useMountedState) - Lifecycle guard
 - `lastTailLogUpdateRef`, `pendingTailLogUpdateRef` - Throttling for log updates
@@ -198,16 +251,33 @@ const [tailLog, setTailLog] = useState<TailLogEntry[]>([])
 
 **Higher-level orchestrator agent with planning phase**
 
-#### State
+#### State (NO useState - DB backed)
 ```typescript
-// Line 124-127: Smithers execution state
-const [status, setStatus] = useState<'pending' | 'planning' | 'executing' | 'complete' | 'error'>('pending')
-const [result, setResult] = useState<SmithersResult | null>(null)
-const [error, setError] = useState<Error | null>(null)
-const [subagentId, setSubagentId] = useState<string | null>(null)
+// Agent ID in ref
+const agentIdRef = useRef<string | null>(null)
+
+// Reactive query for agent state from db.agents
+const { data: agentRows } = useQuery<AgentRow>(
+  reactiveDb,
+  "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",
+  [agentIdRef.current ?? '']
+)
+
+// Substatus stored in db.state (planning/executing/etc)
+const { data: substatusValue } = useQueryValue<string>(
+  reactiveDb,
+  "SELECT value FROM state WHERE key = ?",
+  [`smithers_substatus_${agentIdRef.current}`]
+)
+
+// Derived state (computed from DB)
+const status = deriveStatusFromAgent(agentRow)
+const result = agentRow?.result ? parseResult(agentRow.result) : null
+const error = agentRow?.error ? new Error(agentRow.error) : null
 ```
 
 #### Refs
+- `agentIdRef` - Agent identifier
 - `taskIdRef` - Task registration
 - `isMounted` (useMountedState) - Lifecycle guard
 
@@ -236,10 +306,13 @@ const prevIsActiveRef = useRef(false)
 
 #### Commit (`Git/Commit.tsx`)
 ```typescript
-// Line 61-63: Git commit execution
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-const [result, setResult] = useState<CommitResult | null>(null)
-const [error, setError] = useState<Error | null>(null)
+// NO useState - stored in db.state with unique key
+const stateKey = `git_commit_${taskIdRef.current}`
+
+// Status, result, error read from db.state
+const status = db.state.get<string>(`${stateKey}_status`) ?? 'pending'
+const result = db.state.get<CommitResult>(`${stateKey}_result`)
+const error = db.state.get<string>(`${stateKey}_error`)
 ```
 
 **Refs:** `taskIdRef`, `isMounted`
@@ -248,10 +321,13 @@ const [error, setError] = useState<Error | null>(null)
 
 #### Notes (`Git/Notes.tsx`)
 ```typescript
-// Line 32-34: Git notes execution
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-const [result, setResult] = useState<NotesResult | null>(null)
-const [error, setError] = useState<Error | null>(null)
+// NO useState - stored in db.state with unique key
+const stateKey = `git_notes_${taskIdRef.current}`
+
+// Status, result, error read from db.state
+const status = db.state.get<string>(`${stateKey}_status`) ?? 'pending'
+const result = db.state.get<NotesResult>(`${stateKey}_result`)
+const error = db.state.get<string>(`${stateKey}_error`)
 ```
 
 **Refs:** `taskIdRef`, `isMounted`
@@ -262,56 +338,61 @@ const [error, setError] = useState<Error | null>(null)
 
 #### Describe (`JJ/Describe.tsx`)
 ```typescript
-// Line 19-21: JJ describe operation
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-const [description, setDescription] = useState<string | null>(null)
-const [error, setError] = useState<Error | null>(null)
+// NO useState - useRef + forceUpdate pattern
+const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+const descriptionRef = useRef<string | null>(null)
+const errorRef = useRef<Error | null>(null)
+const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
 ```
 
 ---
 
 #### Status (`JJ/Status.tsx`)
 ```typescript
-// Line 20-27: JJ status check
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-const [isDirty, setIsDirty] = useState<boolean | null>(null)
-const [fileStatus, setFileStatus] = useState<{
+// NO useState - useRef + forceUpdate pattern
+const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+const isDirtyRef = useRef<boolean | null>(null)
+const fileStatusRef = useRef<{
   modified: string[]
   added: string[]
   deleted: string[]
 } | null>(null)
-const [error, setError] = useState<Error | null>(null)
+const errorRef = useRef<Error | null>(null)
+const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
 ```
 
 ---
 
 #### Rebase (`JJ/Rebase.tsx`)
 ```typescript
-// Line 46-48: JJ rebase with conflict detection
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
-const [conflicts, setConflicts] = useState<string[]>([])
-const [error, setError] = useState<Error | null>(null)
+// NO useState - useRef + forceUpdate pattern
+const statusRef = useRef<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
+const conflictsRef = useRef<string[]>([])
+const errorRef = useRef<Error | null>(null)
+const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
 ```
 
 ---
 
 #### Snapshot (`JJ/Snapshot.tsx`)
 ```typescript
-// Line 19-21: JJ snapshot creation
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-const [changeId, setChangeId] = useState<string | null>(null)
-const [error, setError] = useState<Error | null>(null)
+// NO useState - useRef + forceUpdate pattern
+const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+const changeIdRef = useRef<string | null>(null)
+const errorRef = useRef<Error | null>(null)
+const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
 ```
 
 ---
 
 #### Commit (`JJ/Commit.tsx`)
 ```typescript
-// Line 21-24: JJ commit operation
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-const [commitHash, setCommitHash] = useState<string | null>(null)
-const [changeId, setChangeId] = useState<string | null>(null)
-const [error, setError] = useState<Error | null>(null)
+// NO useState - useRef + forceUpdate pattern
+const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+const commitHashRef = useRef<string | null>(null)
+const changeIdRef = useRef<string | null>(null)
+const errorRef = useRef<Error | null>(null)
+const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
 ```
 
 ---
@@ -322,15 +403,17 @@ const [error, setError] = useState<Error | null>(null)
 
 **Generates AI-powered code review analysis**
 
-#### State
+#### State (NO useState - useRef + forceUpdate)
 ```typescript
-// Line 185-187: Review execution
-const [status, setStatus] = useState<'pending' | 'running' | 'complete' | 'error'>('pending')
-const [result, setResult] = useState<ReviewResult | null>(null)
-const [error, setError] = useState<Error | null>(null)
+// useRef + forceUpdate pattern
+const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
+const resultRef = useRef<ReviewResult | null>(null)
+const errorRef = useRef<Error | null>(null)
+const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
 ```
 
 #### Refs
+- `statusRef`, `resultRef`, `errorRef` - State storage
 - `taskIdRef` - Task registration
 - `isMounted` (useMountedState) - Lifecycle guard
 
@@ -342,13 +425,14 @@ const [error, setError] = useState<Error | null>(null)
 
 **Polls for git post-commit hook triggers**
 
-#### State
+#### State (NO useState - db.state persistence)
 ```typescript
-// Line 73-77: Hook state management
-const [triggered, setTriggered] = useState(false)
-const [currentTrigger, setCurrentTrigger] = useState<HookTrigger | null>(null)
-const [hookInstalled, setHookInstalled] = useState(false)
-const [error, setError] = useState<string | null>(null)
+// Stored in db.state for persistence across restarts
+const stateKey = `post_commit_${executionId}`
+const triggered = db.state.get<boolean>(`${stateKey}_triggered`) ?? false
+const currentTrigger = db.state.get<HookTrigger>(`${stateKey}_trigger`)
+const hookInstalled = db.state.get<boolean>(`${stateKey}_installed`) ?? false
+const error = db.state.get<string>(`${stateKey}_error`)
 ```
 
 #### Refs
@@ -362,13 +446,14 @@ const [error, setError] = useState<string | null>(null)
 
 **Polls GitHub Actions for CI failures**
 
-#### State
+#### State (NO useState - db.state persistence)
 ```typescript
-// Line 110-113: CI failure detection
-const [ciStatus, setCiStatus] = useState<'idle' | 'polling' | 'failed' | 'error'>('idle')
-const [currentFailure, setCurrentFailure] = useState<CIFailure | null>(null)
-const [triggered, setTriggered] = useState(false)
-const [error, setError] = useState<string | null>(null)
+// Stored in db.state for persistence
+const stateKey = `ci_failure_${executionId}`
+const ciStatus = db.state.get<string>(`${stateKey}_status`) ?? 'idle'
+const currentFailure = db.state.get<CIFailure>(`${stateKey}_failure`)
+const triggered = db.state.get<boolean>(`${stateKey}_triggered`) ?? false
+const error = db.state.get<string>(`${stateKey}_error`)
 ```
 
 #### Refs
@@ -401,31 +486,34 @@ The following components have **NO state** (pure render/composition components):
 
 | Type | Count | Examples |
 |------|-------|----------|
-| `useState` | 65+ | status, result, error patterns |
-| `useQueryValue` | 7+ | DB-backed reactive queries |
+| `useState` | **0** | **ELIMINATED** (as of Jan 2026) |
+| `useQuery`/`useQueryValue` | 20+ | DB-backed reactive queries |
+| `useRef` | 80+ | State storage, task IDs, lifecycle flags, intervals |
+| `useReducer` (forceUpdate) | 10+ | Force re-renders after ref updates |
 | `createContext` | 7 | SmithersContext, PhaseRegistry, StepRegistry, RalphContext |
-| `useRef` | 50+ | Task IDs, lifecycle flags, intervals |
 | `useMountedState` | 15+ | Lifecycle guards for async ops |
 
 ### Common State Patterns
 
 | Pattern | Usage | Example Component |
 |---------|-------|-------------------|
-| Status/Result/Error triple | Async operations | Claude, Smithers, Git/Commit |
-| Database-backed reactive | Global orchestration state | SmithersProvider |
-| Ref-based lifecycle guards | Prevent duplicate execution | Step, Phase, Orchestration |
-| Task registration | Track async operations in DB | All async components |
-| Polling with Set tracking | Deduplicate events | OnCIFailure, PostCommit |
+| **DB + useQuery** | Durable agent state | Claude, Smithers |
+| **db.state key-value** | Durable component state | Git/Commit, Hooks/* |
+| **useRef + forceUpdate** | Non-durable, needs updates | JJ/*, Review |
+| **Ref-only** | Pure ephemeral data | Step IDs, lifecycle guards |
+| **Database-backed reactive** | Global orchestration state | SmithersProvider |
+| **Task registration** | Track async operations in DB | All async components |
 
 ### State Initialization Defaults
 
-| State Variable | Default Value | Type |
-|----------------|---------------|------|
-| `status` | `'pending'` | Union type |
-| `result` | `null` | Object \| null |
-| `error` | `null` | Error \| null |
-| `taskIdRef` | `null` | string \| null |
-| `hasStartedRef` | `false` | boolean |
+| State Variable | Default Value | Storage | Type |
+|----------------|---------------|---------|------|
+| `status` | `'pending'` | db.agents or useRef | Union type |
+| `result` | `null` | db.agents or useRef | Object \| null |
+| `error` | `null` | db.agents or useRef | Error \| null |
+| `agentIdRef` | `null` | useRef | string \| null |
+| `taskIdRef` | `null` | useRef | string \| null |
+| `hasStartedRef` | `false` | useRef | boolean |
 
 ---
 
@@ -466,11 +554,63 @@ Component           SQLite (via useQueryValue)        Reconciler
 
 ## Anti-Patterns to Avoid
 
-1. **Direct useEffect usage** - Use `useMount`, `useUnmount`, `useEffectOnValueChange` instead
-2. **setState on unmounted** - Always use `useMountedState()` guard for async
+1. **❌ NEVER use useState in orchestration components** - Use SQLite or useRef
+2. **Direct useEffect usage** - Use `useMount`, `useUnmount`, `useEffectOnValueChange` instead
 3. **Skipping task registration** - All async ops must call `db.tasks.start/complete`
-4. **Direct ref mutations without tracking** - Use refs only for non-reactive data
+4. **Storing in ref without forceUpdate** - If ref changes need re-render, use forceUpdate pattern
 5. **Missing cleanup** - Always clear intervals/timeouts in `useUnmount`
+
+## Pattern Migration (Pre-2026 → Current)
+
+### ❌ OLD (useState - BANNED)
+```typescript
+const [status, setStatus] = useState<'pending' | 'running' | 'complete'>('pending')
+const [result, setResult] = useState<AgentResult | null>(null)
+
+useMount(async () => {
+  setStatus('running')
+  const output = await execute()
+  setResult(output)
+  setStatus('complete')
+})
+```
+
+### ✅ NEW (Option 1: DB for durable state)
+```typescript
+const agentIdRef = useRef<string | null>(null)
+
+const { data: agentRows } = useQuery<AgentRow>(
+  reactiveDb,
+  "SELECT status, result FROM agents WHERE id = ?",
+  [agentIdRef.current ?? '']
+)
+const agentRow = agentRows[0] ?? null
+const status = agentRow?.status ?? 'pending'
+const result = agentRow?.result
+
+useMount(async () => {
+  const id = db.agents.create({ status: 'running', ... })
+  agentIdRef.current = id
+  const output = await execute()
+  db.agents.complete(id, output)
+})
+```
+
+### ✅ NEW (Option 2: useRef + forceUpdate for ephemeral)
+```typescript
+const statusRef = useRef<'pending' | 'running' | 'complete'>('pending')
+const resultRef = useRef<AgentResult | null>(null)
+const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
+
+useMount(async () => {
+  statusRef.current = 'running'
+  forceUpdate()
+  const output = await execute()
+  resultRef.current = output
+  statusRef.current = 'complete'
+  forceUpdate()
+})
+```
 
 ---
 
