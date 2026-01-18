@@ -26,12 +26,12 @@ Implement retry logic with signals:
 
 ```tsx
 function RetryWorkflow() {
-  const [attempts, setAttempts] = createSignal(0);
-  const [lastError, setLastError] = createSignal<Error | null>(null);
+  const [attempts, setAttempts] = useState(0);
+  const [lastError, setLastError] = useState<Error | null>(null);
 
   return (
     <Ralph maxIterations={5}>
-      {attempts() < 3 && (
+      {attempts < 3 && (
         <Claude
           onFinished={() => setLastError(null)}
           onError={(err) => {
@@ -39,15 +39,15 @@ function RetryWorkflow() {
             setAttempts(a => a + 1);
           }}
         >
-          {lastError() && (
-            <>Previous attempt failed: {lastError()!.message}</>
+          {lastError && (
+            <>Previous attempt failed: {lastError!.message}</>
           )}
-          Attempt the task (attempt {attempts() + 1}/3).
+          Attempt the task (attempt {attempts + 1}/3).
         </Claude>
       )}
 
-      {attempts() >= 3 && (
-        <Stop reason={`Failed after 3 attempts: ${lastError()?.message}`} />
+      {attempts >= 3 && (
+        <Stop reason={`Failed after 3 attempts: ${lastError?.message}`} />
       )}
     </Ralph>
   );
@@ -113,8 +113,8 @@ Log errors to the database for debugging:
       title: "Agent Failed",
       content: error.message,
       metadata: {
-        phase: phase(),
-        attempts: attempts(),
+        phase: phase,
+        attempts: attempts,
         timestamp: new Date().toISOString(),
       },
     });
@@ -135,11 +135,11 @@ Fall back to simpler approaches:
 
 ```tsx
 function ResilientWorkflow() {
-  const [approach, setApproach] = createSignal<"full" | "simple" | "manual">("full");
+  const [approach, setApproach] = useState<"full" | "simple" | "manual">("full");
 
   return (
     <Ralph maxIterations={5}>
-      {approach() === "full" && (
+      {approach === "full" && (
         <Claude
           model="opus"
           maxTurns={20}
@@ -150,7 +150,7 @@ function ResilientWorkflow() {
         </Claude>
       )}
 
-      {approach() === "simple" && (
+      {approach === "simple" && (
         <Claude
           model="sonnet"
           maxTurns={5}
@@ -162,7 +162,7 @@ function ResilientWorkflow() {
         </Claude>
       )}
 
-      {approach() === "manual" && (
+      {approach === "manual" && (
         <Human
           message="Automated analysis failed"
           onApprove={() => setApproach("done")}
@@ -220,7 +220,7 @@ Handle timeouts explicitly:
 
 ```tsx
 function RobustWorkflow() {
-  const [state, setState] = createStore({
+  const [state, setState] = useState({
     phase: "start",
     attempts: 0,
     errors: [] as string[],
@@ -250,14 +250,14 @@ function RobustWorkflow() {
         >
           {state.phase === "start" && state.attempts < 3 && (
             <Claude
-              onFinished={() => setState("phase", "done")}
+              onFinished={() => setState(s => ({ ...s, phase: "done" }))}
               onError={(error) => {
-                setState("errors", [...state.errors, error.message]);
-                setState("attempts", state.attempts + 1);
-
-                if (state.attempts >= 2) {
-                  setState("phase", "fallback");
-                }
+                setState(s => ({
+                  ...s,
+                  errors: [...s.errors, error.message],
+                  attempts: s.attempts + 1,
+                  phase: s.attempts >= 2 ? "fallback" : s.phase,
+                }));
               }}
             >
               Primary task.
@@ -270,8 +270,8 @@ function RobustWorkflow() {
           {state.phase === "fallback" && (
             <Human
               message="Automated task failed"
-              onApprove={() => setState("phase", "done")}
-              onReject={() => setState("phase", "cancelled")}
+              onApprove={() => setState(s => ({ ...s, phase: "done" }))}
+              onReject={() => setState(s => ({ ...s, phase: "cancelled" }))}
             >
               Failed {state.attempts} times.
               Errors: {state.errors.join("; ")}

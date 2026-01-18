@@ -14,7 +14,7 @@ Model Context Protocol (MCP) allows Claude to interact with external systems thr
 Give Claude access to SQLite databases:
 
 ```tsx
-import { Sqlite } from "smithers/components/MCP";
+import { Sqlite } from "smithers-orchestrator/components/MCP";
 
 <Claude model="sonnet" maxTurns={10}>
   <Sqlite path="./data.db" readOnly>
@@ -80,12 +80,12 @@ For advanced MCP setups, configure tools directly:
 
 ```tsx
 function DataPipeline() {
-  const [phase, setPhase] = createSignal("query");
-  const [data, setData] = createSignal<string | null>(null);
+  const [phase, setPhase] = useState("query");
+  const [data, setData] = useState<string | null>(null);
 
   return (
     <Ralph maxIterations={5}>
-      {phase() === "query" && (
+      {phase === "query" && (
         <Claude
           model="sonnet"
           onFinished={(result) => {
@@ -101,14 +101,14 @@ function DataPipeline() {
         </Claude>
       )}
 
-      {phase() === "analyze" && (
+      {phase === "analyze" && (
         <Claude
           model="sonnet"
           allowedTools={["Write"]}
           onFinished={() => setPhase("done")}
         >
           Analyze this data and write a report:
-          {data()}
+          {data}
 
           Save to reports/sales-analysis.md
         </Claude>
