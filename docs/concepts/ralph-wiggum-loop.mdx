@@ -9,7 +9,7 @@ The Ralph Wiggum Loop is the core execution model of Smithers. Named after Ralph
 
 ## The Execution Model
 
-Smithers uses a reactive render loop powered by Solid.js signals:
+Smithers uses a reactive render loop powered by React state:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -26,10 +26,10 @@ Smithers uses a reactive render loop powered by Solid.js signals:
 └─────────────────────────────────────────────────────────┘
 ```
 
-1. **Render**: Your JSX components render using Solid's fine-grained reactivity
+1. **Render**: Your JSX components render using React's state management
 2. **Execute**: `<Claude>` nodes execute via the Claude Code CLI
-3. **Update**: `onFinished` callbacks update Solid signals
-4. **Re-render**: Signal changes trigger reactive updates
+3. **Update**: `onFinished` callbacks update React state
+4. **Re-render**: State changes trigger reactive updates
 5. **Loop**: Process repeats until no pending agents remain
 
 ## Why "Ralph Wiggum"?
@@ -53,20 +53,20 @@ The name captures two key ideas:
 | Traditional Agent Loops | Smithers Ralph Loop |
 |------------------------|---------------------|
 | Imperative while loops | Declarative reactive rendering |
-| Manual state tracking | Automatic signal propagation |
+| Manual state tracking | Automatic state propagation |
 | Hard to visualize flow | Components describe the flow |
-| State scattered in closures | Centralized in Solid signals |
+| State scattered in closures | Centralized in React state |
 
 ## The Ralph Component
 
 The `<Ralph>` component wraps iterative workflows:
 
 ```tsx
-import { createSignal } from "solid-js";
+import { useState } from "react";
 
 function IterativeWorkflow() {
-  const [attempts, setAttempts] = createSignal(0);
-  const [testsPassing, setTestsPassing] = createSignal(false);
+  const [attempts, setAttempts] = useState(0);
+  const [testsPassing, setTestsPassing] = useState(false);
 
   return (
     <Ralph
@@ -74,7 +74,7 @@ function IterativeWorkflow() {
       onIteration={(i) => console.log(`Iteration ${i}`)}
       onComplete={() => console.log("Workflow complete")}
     >
-      {!testsPassing() && (
+      {!testsPassing && (
         <Claude
           model="sonnet"
           onFinished={(result) => {
@@ -84,7 +84,7 @@ function IterativeWorkflow() {
             }
           }}
         >
-          Fix the failing tests. Current attempt: {attempts()}
+          Fix the failing tests. Current attempt: {attempts}
         </Claude>
       )}
     </Ralph>
@@ -94,29 +94,29 @@ function IterativeWorkflow() {
 
 ## Reactive Updates
 
-The power of the Ralph Loop comes from Solid.js reactivity:
+The power of the Ralph Loop comes from React reactivity:
 
 ```tsx
 function PhaseWorkflow() {
-  const [phase, setPhase] = createSignal("research");
+  const [phase, setPhase] = useState("research");
 
   return (
     <Ralph maxIterations={10}>
-      {/* This block re-renders when phase() changes */}
+      {/* This block re-renders when phase changes */}
 
-      {phase() === "research" && (
+      {phase === "research" && (
         <Claude onFinished={() => setPhase("implement")}>
           Research the problem space.
         </Claude>
       )}
 
-      {phase() === "implement" && (
+      {phase === "implement" && (
         <Claude onFinished={() => setPhase("test")}>
           Implement the solution.
         </Claude>
       )}
 
-      {phase() === "test" && (
+      {phase === "test" && (
         <Claude onFinished={(r) => {
           if (r.output.includes("PASS")) {
             setPhase("done");
@@ -133,8 +133,8 @@ function PhaseWorkflow() {
 ```
 
 When `setPhase("implement")` is called:
-1. The signal updates
-2. Solid detects the change
+1. The state updates
+2. React detects the change
 3. Only the affected branch re-renders
 4. The new `<Claude>` component mounts and executes
 
@@ -158,8 +158,8 @@ function Claude(props) {
 
 This means:
 - Components execute when they mount
-- Results trigger callbacks that update signals
-- Signal updates cause re-renders
+- Results trigger callbacks that update state
+- State updates cause re-renders
 - New components mount and execute
 
 ## Orchestration Context
@@ -204,12 +204,12 @@ The Ralph context tracks:
     ```
   </Accordion>
 
-  <Accordion title="Use signals for phase transitions">
+  <Accordion title="Use state for phase transitions">
     Let reactivity drive the flow instead of imperative logic:
     ```tsx
     // Good - reactive
-    const [phase, setPhase] = createSignal("start");
-    {phase() === "start" && <Claude onFinished={() => setPhase("next")} />}
+    const [phase, setPhase] = useState("start");
+    {phase === "start" && <Claude onFinished={() => setPhase("next")} />}
 
     // Avoid - imperative
     let phase = "start";
@@ -235,7 +235,7 @@ The Ralph context tracks:
 
 <CardGroup cols={2}>
   <Card title="State Management" icon="database" href="/concepts/state-management">
-    Learn about Solid.js signals and stores
+    Learn about React state and stores
   </Card>
   <Card title="Database Persistence" icon="hard-drive" href="/concepts/database-persistence">
     Persist state across restarts

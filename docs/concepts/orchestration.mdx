@@ -211,8 +211,8 @@ function Workflow() {
 
   return (
     <Orchestration onStopRequested={() => console.log("Stop requested!")}>
-      {!isStopRequested() && <EmergencyStop />}
-      {!isStopRequested() && <MainWorkflow />}
+      {!isStopRequested && <EmergencyStop />}
+      {!isStopRequested && <MainWorkflow />}
     </Orchestration>
   );
 }

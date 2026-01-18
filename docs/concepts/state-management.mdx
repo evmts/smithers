@@ -1,29 +1,29 @@
 ---
 title: State Management
-description: Using Solid.js signals and database persistence for workflow state
+description: Using React state and database persistence for workflow state
 ---
 
 # State Management
 
 Smithers uses two complementary state systems:
 
-1. **Solid.js Signals** - Reactive in-memory state that drives re-renders
-2. **Database Persistence** - PGlite storage that survives restarts
+1. **React state** - Reactive in-memory state that drives re-renders
+2. **Database Persistence** - SQLite storage that survives restarts
 
-## Solid.js Signals
+## React state
 
-Signals are the reactive primitive that powers the Ralph Wiggum Loop:
+State is the reactive primitive that powers the Ralph Wiggum Loop:
 
 ```tsx
-import { createSignal } from "solid-js";
+import { useState } from "react";
 
-function WorkflowWithSignals() {
-  const [count, setCount] = createSignal(0);
-  const [phase, setPhase] = createSignal("start");
+function WorkflowWithState() {
+  const [count, setCount] = useState(0);
+  const [phase, setPhase] = useState("start");
 
   return (
     <Ralph maxIterations={10}>
-      {phase() === "start" && (
+      {phase === "start" && (
         <Claude onFinished={() => {
           setCount(c => c + 1);
           setPhase("process");
@@ -32,9 +32,9 @@ function WorkflowWithSignals() {
         </Claude>
       )}
 
-      {phase() === "process" && (
+      {phase === "process" && (
         <Claude onFinished={() => setPhase("done")}>
-          Process iteration {count()}.
+          Process iteration {count}.
         </Claude>
       )}
     </Ralph>
@@ -42,14 +42,14 @@ function WorkflowWithSignals() {
 }
 ```
 
-### Signal Basics
+### State Basics
 
 ```tsx
-// Create a signal with initial value
-const [value, setValue] = createSignal("initial");
+// Create state with initial value
+const [value, setValue] = useState("initial");
 
-// Read the current value (call as function)
-console.log(value()); // "initial"
+// Read the current value
+console.log(value); // "initial"
 
 // Update the value
 setValue("new value");
@@ -58,30 +58,30 @@ setValue("new value");
 setValue(prev => prev + " updated");
 ```
 
-### Signals in JSX
+### State in JSX
 
-Signals automatically trigger re-renders when read in JSX:
+State automatically triggers re-renders when updated in JSX:
 
 ```tsx
 function ReactiveComponent() {
-  const [status, setStatus] = createSignal("pending");
+  const [status, setStatus] = useState("pending");
 
   return (
     <>
       {/* This re-renders when status changes */}
-      {status() === "pending" && <Claude>Do the work</Claude>}
-      {status() === "done" && <Stop reason="Complete" />}
+      {status === "pending" && <Claude>Do the work</Claude>}
+      {status === "done" && <Stop reason="Complete" />}
     </>
   );
 }
 ```
 
-## Solid.js Stores
+## React Stores
 
 For complex nested state, use stores:
 
 ```tsx
-import { createStore } from "solid-js/store";
+import { createStore } from "smithers-orchestrator/store";
 
 function WorkflowWithStore() {
   const [state, setState] = createStore({
@@ -142,15 +142,15 @@ batch(() => {
 
 ## Database Persistence
 
-Signals are in-memory only. For persistence across restarts, use the database:
+State is in-memory only. For persistence across restarts, use the database:
 
 ```tsx
 async function PersistentWorkflow() {
   // Load persisted state
   const savedPhase = await db.state.get("phase");
-  const [phase, setPhase] = createSignal(savedPhase ?? "start");
+  const [phase, setPhase] = useState(savedPhase ?? "start");
 
-  // Sync signal to database
+  // Sync state to database
   const updatePhase = async (newPhase: string) => {
     setPhase(newPhase);
     await db.state.set("phase", newPhase);
@@ -159,13 +159,13 @@ async function PersistentWorkflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={10}>
-        {phase() === "start" && (
+        {phase === "start" && (
           <Claude onFinished={() => updatePhase("process")}>
             Start the workflow.
           </Claude>
         )}
 
-        {phase() === "process" && (
+        {phase === "process" && (
           <Claude onFinished={() => updatePhase("done")}>
             Continue processing.
           </Claude>
@@ -204,9 +204,9 @@ const history = await db.state.history("phase");
 await db.state.replayTo(transitionId);
 ```
 
-## Combining Signals and Database
+## Combining State and Database
 
-A common pattern is to initialize signals from the database:
+A common pattern is to initialize state from the database:
 
 ```tsx
 async function ResumeableWorkflow() {
@@ -219,7 +219,7 @@ async function ResumeableWorkflow() {
     attempts: persisted.attempts ?? 0,
   });
 
-  // Helper to update both signal and database
+  // Helper to update both state and database
   const persistState = async (updates: Partial<typeof state>) => {
     setState(updates);
     await db.state.setMany(updates);
@@ -259,33 +259,33 @@ await db.state.restore(snapshot, "manual_restore");
 
 ## Effects and Derived State
 
-Use `createEffect` for side effects when state changes:
+Use `useEffect` for side effects when state changes:
 
 ```tsx
-import { createEffect, createMemo } from "solid-js";
+import { useEffect, useMemo } from "react";
 
 function EffectExample() {
-  const [phase, setPhase] = createSignal("start");
-  const [attempts, setAttempts] = createSignal(0);
+  const [phase, setPhase] = useState("start");
+  const [attempts, setAttempts] = useState(0);
 
-  // Derived state (computed from other signals)
-  const isComplete = createMemo(() => phase() === "done");
-  const hasRetried = createMemo(() => attempts() > 1);
+  // Derived state (computed from other state)
+  const isComplete = useMemo(() => phase === "done", [phase]);
+  const hasRetried = useMemo(() => attempts > 1, [attempts]);
 
   // Side effect when phase changes
-  createEffect(() => {
-    console.log(`Phase changed to: ${phase()}`);
-    db.state.set("phase", phase());
-  });
+  useEffect(() => {
+    console.log(`Phase changed to: ${phase}`);
+    db.state.set("phase", phase);
+  }, [phase]);
 
   return (
     <Ralph maxIterations={10}>
-      {!isComplete() && (
+      {!isComplete && (
         <Claude onFinished={() => {
           setAttempts(a => a + 1);
           setPhase("done");
         }}>
-          Attempt {attempts() + 1}
+          Attempt {attempts + 1}
         </Claude>
       )}
     </Ralph>
@@ -296,14 +296,14 @@ function EffectExample() {
 ## Best Practices
 
 <AccordionGroup>
-  <Accordion title="Always read signals as functions">
-    Signals must be called to track reactivity:
+  <Accordion title="Always use state values directly">
+    State values are read directly in React:
     ```tsx
     // Correct - reactive
-    {phase() === "done" && <Stop />}
-
-    // Wrong - not reactive
     {phase === "done" && <Stop />}
+
+    // Wrong - don't call state as function
+    {phase() === "done" && <Stop />}
     ```
   </Accordion>
 
@@ -311,16 +311,16 @@ function EffectExample() {
     Anything that should survive a restart needs database persistence:
     ```tsx
     // In-memory only - lost on restart
-    const [phase, setPhase] = createSignal("start");
+    const [phase, setPhase] = useState("start");
 
     // Persisted - survives restart
     const savedPhase = await db.state.get("phase");
-    const [phase, setPhase] = createSignal(savedPhase ?? "start");
+    const [phase, setPhase] = useState(savedPhase ?? "start");
     ```
   </Accordion>
 
   <Accordion title="Use stores for complex state">
-    Stores handle nested updates better than multiple signals:
+    Stores handle nested updates better than multiple state variables:
     ```tsx
     // Prefer store for complex state
     const [state, setState] = createStore({
@@ -328,10 +328,10 @@ function EffectExample() {
       data: { items: [], metadata: {} },
     });
 
-    // Multiple signals get unwieldy
-    const [phase, setPhase] = createSignal("start");
-    const [items, setItems] = createSignal([]);
-    const [metadata, setMetadata] = createSignal({});
+    // Multiple state variables get unwieldy
+    const [phase, setPhase] = useState("start");
+    const [items, setItems] = useState([]);
+    const [metadata, setMetadata] = useState({});
     ```
   </Accordion>
 </AccordionGroup>
@@ -340,7 +340,7 @@ function EffectExample() {
 
 <CardGroup cols={2}>
   <Card title="Database Persistence" icon="hard-drive" href="/concepts/database-persistence">
-    Deep dive into the PGlite database
+    Deep dive into the SQLite database
   </Card>
   <Card title="Ralph Component" icon="rotate" href="/components/ralph">
     Control iteration with Ralph
