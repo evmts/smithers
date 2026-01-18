@@ -1,3 +1,6 @@
 [submodule "reference/vercel-ai-sdk"]
 	path = reference/vercel-ai-sdk
 	url = https://github.com/vercel/ai.git
+[submodule "reference/opentui"]
+	path = reference/opentui
+	url = https://github.com/sst/opentui
