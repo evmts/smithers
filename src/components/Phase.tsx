@@ -1,11 +1,11 @@
 // Phase component with automatic SQLite-backed state management
 // Phases are always rendered in output, but only active phase renders children
 
-import { useRef, useEffect, type ReactNode } from 'react'
+import { useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
-import { useMount } from '../reconciler/hooks.js'
+
 
 export interface PhaseProps {
   /**
@@ -82,9 +82,13 @@ export function Phase(props: PhaseProps): ReactNode {
         ? 'completed'
         : 'pending'
 
-  // Handle skipped phases on mount
-  useMount(() => {
-    if (isSkipped) {
+  // Track if we've already processed the skip for this phase
+  const hasSkippedRef = useRef(false)
+
+  // Handle skipped phases only when they become active (not on mount)
+  useEffect(() => {
+    if (registry.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
+      hasSkippedRef.current = true
       // Log skipped phase to database
       const id = db.phases.start(props.name, ralphCount)
       db.db.run(
@@ -96,7 +100,7 @@ export function Phase(props: PhaseProps): ReactNode {
       // Advance to next phase immediately
       registry.advancePhase()
     }
-  })
+  }, [registry.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry])
 
   // Handle phase lifecycle transitions
   useEffect(() => {
@@ -127,13 +131,20 @@ export function Phase(props: PhaseProps): ReactNode {
     prevIsActiveRef.current = isActive
   }, [isActive, isSkipped, props.name, ralphCount, db, props.onStart, props.onComplete])
 
+  // Handler for when all steps in this phase complete
+  const handleAllStepsComplete = useCallback(() => {
+    if (registry.isPhaseActive(myIndex)) {
+      registry.advancePhase()
+    }
+  }, [registry, myIndex])
+
   // Always render the phase element (visible in plan output)
   // Only render children when active (executes work)
   // Wrap children in StepRegistryProvider to enforce sequential step execution
   return (
     <phase name={props.name} status={status}>
       {isActive && (
-        <StepRegistryProvider phaseId={props.name}>
+        <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
           {props.children}
         </StepRegistryProvider>
       )}

@@ -1,10 +1,10 @@
 // Step component with automatic sequential execution within phases
 // Steps execute one after another unless wrapped in <Parallel>
 
-import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useRef, useCallback, useMemo, useEffect, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
-import { useMount, useUnmount } from '../reconciler/hooks.js'
+import { useMount, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 
 // ============================================================================
@@ -43,6 +43,7 @@ export interface StepRegistryProviderProps {
   children: ReactNode
   phaseId?: string
   isParallel?: boolean
+  onAllStepsComplete?: () => void
 }
 
 export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
@@ -87,8 +88,11 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     const nextIndex = currentStepIndex + 1
     if (nextIndex < stepsRef.current.length) {
       db.state.set(stateKey, nextIndex, 'step_advance')
+    } else {
+      // All steps complete - signal phase completion
+      props.onAllStepsComplete?.()
     }
-  }, [db, stateKey, currentStepIndex, props.isParallel])
+  }, [db, stateKey, currentStepIndex, props.isParallel, props.onAllStepsComplete])
 
   const isStepActive = useCallback((index: number): boolean => {
     if (props.isParallel) return true // All steps active in parallel mode
@@ -181,7 +185,7 @@ export interface StepProps {
  * ```
  */
 export function Step(props: StepProps): ReactNode {
-  const { db } = useSmithers()
+  const { db, reactiveDb, executionId } = useSmithers()
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
 
@@ -199,7 +203,21 @@ export function Step(props: StepProps): ReactNode {
   const isCompleted = registry ? registry.isStepCompleted(myIndex) : false
   const status = isActive ? 'active' : isCompleted ? 'completed' : 'pending'
 
-  useMount(() => {
+  // Monitor child tasks for this step (only when started)
+  // Uses the same pattern as SmithersProvider for reactive task counting
+  const { data: childRunningTaskCount } = useQueryValue<number>(
+    reactiveDb,
+    hasStartedRef.current && taskIdRef.current
+      ? `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND status = 'running' AND id != ?`
+      : `SELECT 0 as count`,
+    hasStartedRef.current && taskIdRef.current
+      ? [executionId, taskIdRef.current]
+      : []
+  )
+
+  // Reactive step activation - runs when isActive becomes true
+  // Pattern from Claude.tsx:110, Smithers.tsx:170
+  useEffectOnValueChange(isActive, () => {
     if (!isActive || hasStartedRef.current) return
     hasStartedRef.current = true
 
@@ -240,68 +258,89 @@ export function Step(props: StepProps): ReactNode {
     })()
   })
 
-  useUnmount(() => {
+  // Helper to complete the step
+  const completeStep = useCallback(async () => {
     if (!hasStartedRef.current || hasCompletedRef.current) return
     hasCompletedRef.current = true
 
-    ;(async () => {
-      const id = stepIdRef.current
-      if (!id) return
+    const id = stepIdRef.current
+    if (!id) return
 
-      try {
-        // Snapshot after if requested
-        if (props.snapshotAfter) {
-          try {
-            const { changeId } = await jjSnapshot(`After step: ${props.name ?? 'unnamed'}`)
-            snapshotAfterIdRef.current = changeId
-            console.log(`[Step] Created snapshot after: ${changeId}`)
-          } catch (error) {
-            console.warn('[Step] Could not create snapshot after:', error)
-          }
-        }
-
-        // Commit if requested
-        if (props.commitAfter) {
-          try {
-            const message = props.commitMessage ?? `Step: ${props.name ?? 'unnamed'}`
-            const result = await jjCommit(message)
-            commitHashRef.current = result.commitHash
-
-            console.log(`[Step] Created commit: ${commitHashRef.current}`)
-
-            db.vcs.logCommit({
-              vcs_type: 'jj',
-              commit_hash: result.commitHash,
-              change_id: result.changeId,
-              message,
-            })
-          } catch (error) {
-            console.warn('[Step] Could not create commit:', error)
-          }
-        }
-
-        // Complete step in database
-        db.steps.complete(id, {
-          ...(snapshotBeforeIdRef.current ? { snapshot_before: snapshotBeforeIdRef.current } : {}),
-          ...(snapshotAfterIdRef.current ? { snapshot_after: snapshotAfterIdRef.current } : {}),
-          ...(commitHashRef.current ? { commit_created: commitHashRef.current } : {}),
-        })
-
-        console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
-
-        props.onComplete?.()
-
-        // Advance to next step
-        registry?.advanceStep()
-      } catch (error) {
-        console.error(`[Step] Error completing step:`, error)
-        db.steps.fail(id)
-      } finally {
-        if (taskIdRef.current) {
-          db.tasks.complete(taskIdRef.current)
+    try {
+      // Snapshot after if requested
+      if (props.snapshotAfter) {
+        try {
+          const { changeId } = await jjSnapshot(`After step: ${props.name ?? 'unnamed'}`)
+          snapshotAfterIdRef.current = changeId
+          console.log(`[Step] Created snapshot after: ${changeId}`)
+        } catch (error) {
+          console.warn('[Step] Could not create snapshot after:', error)
         }
       }
-    })()
+
+      // Commit if requested
+      if (props.commitAfter) {
+        try {
+          const message = props.commitMessage ?? `Step: ${props.name ?? 'unnamed'}`
+          const result = await jjCommit(message)
+          commitHashRef.current = result.commitHash
+
+          console.log(`[Step] Created commit: ${commitHashRef.current}`)
+
+          db.vcs.logCommit({
+            vcs_type: 'jj',
+            commit_hash: result.commitHash,
+            change_id: result.changeId,
+            message,
+          })
+        } catch (error) {
+          console.warn('[Step] Could not create commit:', error)
+        }
+      }
+
+      // Complete step in database
+      db.steps.complete(id, {
+        ...(snapshotBeforeIdRef.current ? { snapshot_before: snapshotBeforeIdRef.current } : {}),
+        ...(snapshotAfterIdRef.current ? { snapshot_after: snapshotAfterIdRef.current } : {}),
+        ...(commitHashRef.current ? { commit_created: commitHashRef.current } : {}),
+      })
+
+      console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
+
+      props.onComplete?.()
+
+      // Advance to next step
+      registry?.advanceStep()
+    } catch (error) {
+      console.error(`[Step] Error completing step:`, error)
+      db.steps.fail(id)
+    } finally {
+      if (taskIdRef.current) {
+        db.tasks.complete(taskIdRef.current)
+      }
+    }
+  }, [db, registry, props])
+
+  // Reactive completion detection - when step has started and all child tasks are done
+  useEffect(() => {
+    if (!hasStartedRef.current || hasCompletedRef.current || childRunningTaskCount !== 0) {
+      return
+    }
+    // Small delay to ensure child tasks have actually registered
+    // This prevents completing before children even start
+    const timeoutId = setTimeout(() => {
+      if (hasStartedRef.current && !hasCompletedRef.current) {
+        completeStep()
+      }
+    }, 100)
+    return () => clearTimeout(timeoutId)
+  }, [childRunningTaskCount, completeStep])
+
+  // Cleanup on unmount (for edge cases like component disposal)
+  useUnmount(() => {
+    if (hasStartedRef.current && !hasCompletedRef.current) {
+      completeStep()
+    }
   })
 
   // Always render the step element, only render children when active

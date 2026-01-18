@@ -63,9 +63,12 @@ export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactN
 
   const currentPhaseIndex = dbPhaseIndex ?? 0
 
-  // Initialize currentPhaseIndex in DB if not present
+  // Initialize currentPhaseIndex in DB only if not present (preserves resume)
   useMount(() => {
-    db.state.set('currentPhaseIndex', 0, 'phase_registry_init')
+    const existing = db.state.get<number>('currentPhaseIndex')
+    if (existing === null || existing === undefined) {
+      db.state.set('currentPhaseIndex', 0, 'phase_registry_init')
+    }
   })
 
   // Register a phase and return its index
