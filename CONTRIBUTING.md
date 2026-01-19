@@ -11,6 +11,10 @@ bun install
 bun test
 ```
 
+## Testing (E2E = CI/CD)
+
+E2E evals in `evals/` are our CI/CD safety net and model real workflows. `bun test` runs them by default; run it before release. You can also target them directly (e.g., `bun test evals/`).
+
 ## Making Changes
 
 1. Fork the repository
