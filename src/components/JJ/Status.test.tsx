@@ -158,21 +158,23 @@ describe('Status dirty detection', () => {
     })
 
     const root = createSmithersRoot()
-    await root.render(
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Status onDirty={onDirty} />
-      </SmithersProvider>
-    )
+    try {
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+          <Status onDirty={onDirty} />
+        </SmithersProvider>
+      )
 
-    await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 200))
 
-    expect(onDirty).toHaveBeenCalled()
-    const status = onDirty.mock.calls[0]?.[0] as { modified: string[]; added: string[]; deleted: string[] }
-    expect(status.modified).toContain('src/file1.ts')
-    expect(status.modified).toContain('src/file2.ts')
-
-    getJJStatusSpy.mockRestore()
-    root.dispose()
+      expect(onDirty).toHaveBeenCalled()
+      const status = onDirty.mock.calls[0]?.[0] as { modified: string[]; added: string[]; deleted: string[] }
+      expect(status.modified).toContain('src/file1.ts')
+      expect(status.modified).toContain('src/file2.ts')
+    } finally {
+      getJJStatusSpy.mockRestore()
+      root.dispose()
+    }
   })
 
   test('calls onDirty with added files', async () => {
@@ -184,20 +186,22 @@ describe('Status dirty detection', () => {
     })
 
     const root = createSmithersRoot()
-    await root.render(
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Status onDirty={onDirty} />
-      </SmithersProvider>
-    )
+    try {
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+          <Status onDirty={onDirty} />
+        </SmithersProvider>
+      )
 
-    await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 200))
 
-    expect(onDirty).toHaveBeenCalled()
-    const status = onDirty.mock.calls[0]?.[0] as { modified: string[]; added: string[]; deleted: string[] }
-    expect(status.added).toContain('src/new-file.ts')
-
-    getJJStatusSpy.mockRestore()
-    root.dispose()
+      expect(onDirty).toHaveBeenCalled()
+      const status = onDirty.mock.calls[0]?.[0] as { modified: string[]; added: string[]; deleted: string[] }
+      expect(status.added).toContain('src/new-file.ts')
+    } finally {
+      getJJStatusSpy.mockRestore()
+      root.dispose()
+    }
   })
 
   test('calls onDirty with deleted files', async () => {
@@ -209,20 +213,22 @@ describe('Status dirty detection', () => {
     })
 
     const root = createSmithersRoot()
-    await root.render(
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Status onDirty={onDirty} />
-      </SmithersProvider>
-    )
+    try {
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+          <Status onDirty={onDirty} />
+        </SmithersProvider>
+      )
 
-    await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 200))
 
-    expect(onDirty).toHaveBeenCalled()
-    const status = onDirty.mock.calls[0]?.[0] as { modified: string[]; added: string[]; deleted: string[] }
-    expect(status.deleted).toContain('src/removed-file.ts')
-
-    getJJStatusSpy.mockRestore()
-    root.dispose()
+      expect(onDirty).toHaveBeenCalled()
+      const status = onDirty.mock.calls[0]?.[0] as { modified: string[]; added: string[]; deleted: string[] }
+      expect(status.deleted).toContain('src/removed-file.ts')
+    } finally {
+      getJJStatusSpy.mockRestore()
+      root.dispose()
+    }
   })
 })
 
@@ -250,19 +256,21 @@ describe('Status clean detection', () => {
     })
 
     const root = createSmithersRoot()
-    await root.render(
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Status onClean={onClean} onDirty={onDirty} />
-      </SmithersProvider>
-    )
+    try {
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+          <Status onClean={onClean} onDirty={onDirty} />
+        </SmithersProvider>
+      )
 
-    await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 200))
 
-    expect(onClean).toHaveBeenCalled()
-    expect(onDirty).not.toHaveBeenCalled()
-
-    getJJStatusSpy.mockRestore()
-    root.dispose()
+      expect(onClean).toHaveBeenCalled()
+      expect(onDirty).not.toHaveBeenCalled()
+    } finally {
+      getJJStatusSpy.mockRestore()
+      root.dispose()
+    }
   })
 
 })
@@ -290,22 +298,24 @@ describe('Status callbacks', () => {
     })
 
     const root = createSmithersRoot()
-    await root.render(
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Status onDirty={onDirty} />
-      </SmithersProvider>
-    )
+    try {
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+          <Status onDirty={onDirty} />
+        </SmithersProvider>
+      )
 
-    await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 200))
 
-    expect(onDirty).toHaveBeenCalledTimes(1)
-    const status = onDirty.mock.calls[0]?.[0] as { modified: string[]; added: string[]; deleted: string[] }
-    expect(status.modified).toHaveLength(2)
-    expect(status.added).toHaveLength(1)
-    expect(status.deleted).toHaveLength(3)
-
-    getJJStatusSpy.mockRestore()
-    root.dispose()
+      expect(onDirty).toHaveBeenCalledTimes(1)
+      const status = onDirty.mock.calls[0]?.[0] as { modified: string[]; added: string[]; deleted: string[] }
+      expect(status.modified).toHaveLength(2)
+      expect(status.added).toHaveLength(1)
+      expect(status.deleted).toHaveLength(3)
+    } finally {
+      getJJStatusSpy.mockRestore()
+      root.dispose()
+    }
   })
 
   test('only onDirty called when dirty', async () => {
@@ -318,19 +328,21 @@ describe('Status callbacks', () => {
     })
 
     const root = createSmithersRoot()
-    await root.render(
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Status onDirty={onDirty} onClean={onClean} />
-      </SmithersProvider>
-    )
+    try {
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+          <Status onDirty={onDirty} onClean={onClean} />
+        </SmithersProvider>
+      )
 
-    await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 200))
 
-    expect(onDirty).toHaveBeenCalled()
-    expect(onClean).not.toHaveBeenCalled()
-
-    getJJStatusSpy.mockRestore()
-    root.dispose()
+      expect(onDirty).toHaveBeenCalled()
+      expect(onClean).not.toHaveBeenCalled()
+    } finally {
+      getJJStatusSpy.mockRestore()
+      root.dispose()
+    }
   })
 
   test('only onClean called when clean', async () => {
@@ -343,18 +355,20 @@ describe('Status callbacks', () => {
     })
 
     const root = createSmithersRoot()
-    await root.render(
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Status onDirty={onDirty} onClean={onClean} />
-      </SmithersProvider>
-    )
+    try {
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+          <Status onDirty={onDirty} onClean={onClean} />
+        </SmithersProvider>
+      )
 
-    await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 200))
 
-    expect(onClean).toHaveBeenCalled()
-    expect(onDirty).not.toHaveBeenCalled()
-
-    getJJStatusSpy.mockRestore()
-    root.dispose()
+      expect(onClean).toHaveBeenCalled()
+      expect(onDirty).not.toHaveBeenCalled()
+    } finally {
+      getJJStatusSpy.mockRestore()
+      root.dispose()
+    }
   })
 })

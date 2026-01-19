@@ -23,8 +23,13 @@ export async function jj(...args: string[]): Promise<CommandResult> {
  * Get JJ change ID for current working copy
  */
 export async function getJJChangeId(ref: string = '@'): Promise<string> {
-  const result = await Bun.$`jj log -r ${ref} --no-graph -T change_id`.text()
-  return result.trim()
+  try {
+    const result = await Bun.$`jj log -r ${ref} --no-graph -T change_id`.text()
+    return result.trim()
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to get JJ change ID for '${ref}': ${msg}`)
+  }
 }
 
 /**
@@ -48,13 +53,10 @@ export async function jjSnapshot(message?: string): Promise<JJSnapshotResult> {
  * Create a JJ commit
  */
 export async function jjCommit(message: string): Promise<JJCommitResult> {
-  // Commit with message
   await Bun.$`jj commit -m ${message}`.quiet()
-
-  // Get commit hash and change ID
-  const commitHash = await Bun.$`jj log -r @ --no-graph -T commit_id`.text().then((s) => s.trim())
-  const changeId = await getJJChangeId('@')
-
+  // @- is the commit we just created (parent of new working copy)
+  const commitHash = await Bun.$`jj log -r @- --no-graph -T commit_id`.text().then((s) => s.trim())
+  const changeId = await getJJChangeId('@-')
   return { commitHash, changeId }
 }
 

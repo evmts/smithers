@@ -71,8 +71,8 @@ export async function summarizeWithHaiku(
       summary,
       fullPath: logPath,
     }
-  } catch {
-    // Fallback on error
+  } catch (err) {
+    console.warn('[haiku-summarizer] API call failed:', err instanceof Error ? err.message : String(err))
     return {
       summary: truncate(content, 500) + '\n[... summarization failed, see full output]',
       fullPath: logPath,

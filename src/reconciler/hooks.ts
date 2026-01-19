@@ -59,7 +59,7 @@ export function useFirstMountState(): boolean {
     return true;
   }
 
-  return isFirst.current;
+  return false;
 }
 
 /**
@@ -107,7 +107,7 @@ export function usePrevious<T>(state: T): T | undefined {
 
   useEffect(() => {
     ref.current = state;
-  });
+  }, [state]);
 
   return ref.current;
 }
@@ -135,13 +135,15 @@ export function useEffectOnValueChange<T>(
   deps: DependencyList = []
 ): void {
   const lastValueRef = useRef<T | typeof UNSET>(UNSET);
+  const effectRef = useRef(effect);
+  effectRef.current = effect;
 
   useEffect(() => {
     if (lastValueRef.current !== UNSET && Object.is(lastValueRef.current, value)) {
       return;
     }
     lastValueRef.current = value;
-    return effect();
+    return effectRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, ...deps]);
 }
