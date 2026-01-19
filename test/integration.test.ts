@@ -361,3 +361,260 @@ describe('Integration Tests (Core Architecture)', () => {
     root.dispose()
   })
 })
+
+import React from 'react'
+import { SmithersReconciler } from '../src/reconciler/host-config'
+import { serialize } from '../src/reconciler/serialize'
+
+describe('Host-config integration tests', () => {
+  it('should remove props on update', async () => {
+    const root = createSmithersRoot()
+    const container = root.getTree()
+
+    const fiberRoot = SmithersReconciler.createContainer(container, 0, null, false, null, '', () => {}, null)
+
+    SmithersReconciler.updateContainer(
+      React.createElement('task', { name: 'test' }),
+      fiberRoot,
+      null,
+      () => {}
+    )
+    await new Promise(r => setTimeout(r, 0))
+
+    let xml = root.toXML()
+    expect(xml).toContain('name="test"')
+
+    SmithersReconciler.updateContainer(
+      React.createElement('task', {}),
+      fiberRoot,
+      null,
+      () => {}
+    )
+    await new Promise(r => setTimeout(r, 0))
+
+    xml = root.toXML()
+    expect(xml).not.toContain('name=')
+
+    root.dispose()
+  })
+
+  it('should handle __smithersKey appearing first in XML', async () => {
+    const root = createSmithersRoot()
+    const container = root.getTree()
+
+    const fiberRoot = SmithersReconciler.createContainer(container, 0, null, false, null, '', () => {}, null)
+
+    SmithersReconciler.updateContainer(
+      React.createElement('task', { __smithersKey: 'k1', name: 'myTask' }),
+      fiberRoot,
+      null,
+      () => {}
+    )
+    await new Promise(r => setTimeout(r, 0))
+
+    const xml = root.toXML()
+    expect(xml).toContain('key="k1"')
+    const keyPos = xml.indexOf('key="k1"')
+    const namePos = xml.indexOf('name="myTask"')
+    expect(keyPos).toBeLessThan(namePos)
+
+    root.dispose()
+  })
+
+  it('should update key from k1 to k2', async () => {
+    const root = createSmithersRoot()
+    const container = root.getTree()
+
+    const fiberRoot = SmithersReconciler.createContainer(container, 0, null, false, null, '', () => {}, null)
+
+    SmithersReconciler.updateContainer(
+      React.createElement('task', { __smithersKey: 'k1' }),
+      fiberRoot,
+      null,
+      () => {}
+    )
+    await new Promise(r => setTimeout(r, 0))
+
+    let xml = root.toXML()
+    expect(xml).toContain('key="k1"')
+
+    SmithersReconciler.updateContainer(
+      React.createElement('task', { __smithersKey: 'k2' }),
+      fiberRoot,
+      null,
+      () => {}
+    )
+    await new Promise(r => setTimeout(r, 0))
+
+    xml = root.toXML()
+    expect(xml).toContain('key="k2"')
+    expect(xml).not.toContain('key="k1"')
+
+    root.dispose()
+  })
+
+  it('should remove key when __smithersKey set to undefined', async () => {
+    const root = createSmithersRoot()
+    const container = root.getTree()
+
+    const fiberRoot = SmithersReconciler.createContainer(container, 0, null, false, null, '', () => {}, null)
+
+    SmithersReconciler.updateContainer(
+      React.createElement('task', { __smithersKey: 'k1' }),
+      fiberRoot,
+      null,
+      () => {}
+    )
+    await new Promise(r => setTimeout(r, 0))
+
+    let xml = root.toXML()
+    expect(xml).toContain('key="k1"')
+
+    SmithersReconciler.updateContainer(
+      React.createElement('task', {}),
+      fiberRoot,
+      null,
+      () => {}
+    )
+    await new Promise(r => setTimeout(r, 0))
+
+    xml = root.toXML()
+    expect(xml).not.toContain('key=')
+
+    root.dispose()
+  })
+})
+
+describe('Warning tests for unknown parent detection', () => {
+  it('should add warning when known component is inside unknown element', () => {
+    const root = createSmithersRoot()
+    const rootTree = root.getTree()
+
+    const loopNode = rendererMethods.createElement('loop')
+    const claudeNode = rendererMethods.createElement('claude')
+    rendererMethods.insertNode(loopNode, claudeNode)
+    rendererMethods.insertNode(rootTree, loopNode)
+
+    serialize(rootTree)
+
+    expect(claudeNode.warnings).toBeDefined()
+    expect(claudeNode.warnings).toHaveLength(1)
+    expect(claudeNode.warnings![0]).toContain('<claude> rendered inside unknown element <loop>')
+
+    root.dispose()
+  })
+
+  it('should clear warnings on subsequent serialize() calls (idempotency)', () => {
+    const root = createSmithersRoot()
+    const rootTree = root.getTree()
+
+    const loopNode = rendererMethods.createElement('loop')
+    const claudeNode = rendererMethods.createElement('claude')
+    rendererMethods.insertNode(loopNode, claudeNode)
+    rendererMethods.insertNode(rootTree, loopNode)
+
+    serialize(rootTree)
+    expect(claudeNode.warnings).toBeDefined()
+    expect(claudeNode.warnings).toHaveLength(1)
+
+    serialize(rootTree)
+    expect(claudeNode.warnings).toBeDefined()
+    expect(claudeNode.warnings).toHaveLength(1)
+
+    rendererMethods.removeNode(loopNode, claudeNode)
+    const phaseNode = rendererMethods.createElement('phase')
+    rendererMethods.insertNode(phaseNode, claudeNode)
+    rendererMethods.insertNode(rootTree, phaseNode)
+
+    serialize(rootTree)
+    expect(claudeNode.warnings).toBeUndefined()
+
+    root.dispose()
+  })
+})
+
+describe('Prop filtering tests', () => {
+  it('should not include callbacks in XML', () => {
+    const root = createSmithersRoot()
+    const rootTree = root.getTree()
+
+    const taskNode = rendererMethods.createElement('task')
+    rendererMethods.setProperty(taskNode, 'name', 'myTask')
+    rendererMethods.setProperty(taskNode, 'onFinished', () => {})
+    rendererMethods.setProperty(taskNode, 'onError', () => {})
+    rendererMethods.insertNode(rootTree, taskNode)
+
+    const xml = root.toXML()
+    expect(xml).toContain('name="myTask"')
+    expect(xml).not.toContain('onFinished')
+    expect(xml).not.toContain('onError')
+
+    root.dispose()
+  })
+
+  it('should not include middleware arrays containing functions in XML', () => {
+    const root = createSmithersRoot()
+    const rootTree = root.getTree()
+
+    const taskNode = rendererMethods.createElement('task')
+    rendererMethods.setProperty(taskNode, 'name', 'myTask')
+    rendererMethods.setProperty(taskNode, 'middleware', [() => {}, () => {}])
+    rendererMethods.insertNode(rootTree, taskNode)
+
+    const xml = root.toXML()
+    expect(xml).toContain('name="myTask"')
+    expect(xml).not.toContain('middleware')
+
+    root.dispose()
+  })
+
+  it('should include plain objects as JSON stringified in XML', () => {
+    const root = createSmithersRoot()
+    const rootTree = root.getTree()
+
+    const taskNode = rendererMethods.createElement('task')
+    rendererMethods.setProperty(taskNode, 'config', { timeout: 5000, retries: 3 })
+    rendererMethods.insertNode(rootTree, taskNode)
+
+    const xml = root.toXML()
+    expect(xml).toContain('config=')
+    expect(xml).toContain('timeout')
+    expect(xml).toContain('5000')
+    expect(xml).toContain('retries')
+    expect(xml).toContain('3')
+
+    root.dispose()
+  })
+
+  it('should detect and filter functions nested in objects', () => {
+    const root = createSmithersRoot()
+    const rootTree = root.getTree()
+
+    const taskNode = rendererMethods.createElement('task')
+    rendererMethods.setProperty(taskNode, 'name', 'myTask')
+    rendererMethods.setProperty(taskNode, 'handlers', { onSuccess: () => {}, data: 'test' })
+    rendererMethods.insertNode(rootTree, taskNode)
+
+    const xml = root.toXML()
+    expect(xml).toContain('name="myTask"')
+    expect(xml).not.toContain('handlers')
+
+    root.dispose()
+  })
+
+  it('should detect and filter functions nested in arrays', () => {
+    const root = createSmithersRoot()
+    const rootTree = root.getTree()
+
+    const taskNode = rendererMethods.createElement('task')
+    rendererMethods.setProperty(taskNode, 'name', 'myTask')
+    rendererMethods.setProperty(taskNode, 'steps', ['step1', () => {}, 'step3'])
+    rendererMethods.insertNode(rootTree, taskNode)
+
+    const xml = root.toXML()
+    expect(xml).toContain('name="myTask"')
+    expect(xml).not.toContain('steps')
+
+    root.dispose()
+  })
+})
