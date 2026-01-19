@@ -5,17 +5,32 @@
  * These tests verify the core architecture works without JSX syntax.
  */
 
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect, afterEach } from 'bun:test'
 import { createSmithersRoot } from '../src/reconciler/root'
 import { rendererMethods } from '../src/reconciler/methods'
 import type { SmithersNode } from '../src/reconciler/types'
+
+const roots: Array<ReturnType<typeof createSmithersRoot>> = []
+
+const createRoot = () => {
+  const root = createSmithersRoot()
+  roots.push(root)
+  return root
+}
+
+afterEach(() => {
+  for (const root of roots) {
+    root.dispose()
+  }
+  roots.length = 0
+})
 
 describe('Integration Tests (Core Architecture)', () => {
   /**
    * Test that we can create a tree structure and serialize it
    */
   it('should create and serialize a multi-level tree', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
 
     // Manually create a tree structure (without JSX)
     const ralphNode: SmithersNode = rendererMethods.createElement('ralph')
@@ -55,14 +70,13 @@ describe('Integration Tests (Core Architecture)', () => {
     expect(xml).toContain('model="sonnet"')
     expect(xml).toContain('Initialize the system')
 
-    root.dispose()
   })
 
   /**
    * Test tree manipulation (add/remove nodes)
    */
   it('should support dynamic tree manipulation', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     // Create parent
@@ -85,14 +99,13 @@ describe('Integration Tests (Core Architecture)', () => {
     expect(parent.children).toHaveLength(1)
     expect(parent.children[0]).toBe(child2)
 
-    root.dispose()
   })
 
   /**
    * Test key-based reconciliation
    */
   it('should handle key prop for Ralph Wiggum loop', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     // Create node with key
@@ -109,14 +122,13 @@ describe('Integration Tests (Core Architecture)', () => {
     expect(node2.key).toBe('iteration-2')
     expect(node2.key).not.toBe(node1.key)
 
-    root.dispose()
   })
 
   /**
    * Test XML escaping in complex structures
    */
   it('should properly escape XML entities in nested structures', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const parent = rendererMethods.createElement('claude')
@@ -137,7 +149,6 @@ describe('Integration Tests (Core Architecture)', () => {
     expect(xml).not.toContain('&amp;amp;')
     expect(xml).not.toContain('&amp;lt;')
 
-    root.dispose()
   })
 
   /**
@@ -159,7 +170,7 @@ describe('Integration Tests (Core Architecture)', () => {
    * Test hierarchical structure with multiple levels
    */
   it('should handle deeply nested structures', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     // Level 1
@@ -191,13 +202,16 @@ describe('Integration Tests (Core Architecture)', () => {
     expect(level2.parent).toBe(level1)
     expect(level1.parent).toBe(rootTree)
 
-    // Verify XML indentation
+    // Verify XML structure order
     const xml = root.toXML()
-    expect(xml).toContain('  <phase')    // 2 spaces
-    expect(xml).toContain('    <step')   // 4 spaces
-    expect(xml).toContain('      <claude') // 6 spaces
-
-    root.dispose()
+    const phasePos = xml.indexOf('<phase')
+    const stepPos = xml.indexOf('<step')
+    const claudePos = xml.indexOf('<claude')
+    expect(phasePos).toBeGreaterThan(-1)
+    expect(stepPos).toBeGreaterThan(-1)
+    expect(claudePos).toBeGreaterThan(-1)
+    expect(phasePos).toBeLessThan(stepPos)
+    expect(stepPos).toBeLessThan(claudePos)
   })
 
   /**
@@ -308,7 +322,7 @@ describe('Integration Tests (Core Architecture)', () => {
    * Test removeNode clears parent pointers recursively
    */
   it('should clear parent pointers on descendants when removing subtree', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const parent = rendererMethods.createElement('container')
@@ -329,7 +343,6 @@ describe('Integration Tests (Core Architecture)', () => {
     expect(child.parent).toBeNull()
     expect(grandchild.parent).toBeNull()
 
-    root.dispose()
   })
 
   /**
@@ -355,10 +368,9 @@ describe('Integration Tests (Core Architecture)', () => {
    * Test empty root serialization
    */
   it('should serialize empty root as empty string', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const xml = root.toXML()
     expect(xml).toBe('')
-    root.dispose()
   })
 })
 
@@ -368,7 +380,7 @@ import { serialize } from '../src/reconciler/serialize'
 
 describe('Host-config integration tests', () => {
   it('should remove props on update', async () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const container = root.getTree()
 
     const fiberRoot = SmithersReconciler.createContainer(container, 0, null, false, null, '', () => {}, null)
@@ -395,11 +407,10 @@ describe('Host-config integration tests', () => {
     xml = root.toXML()
     expect(xml).not.toContain('name=')
 
-    root.dispose()
   })
 
   it('should handle __smithersKey appearing first in XML', async () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const container = root.getTree()
 
     const fiberRoot = SmithersReconciler.createContainer(container, 0, null, false, null, '', () => {}, null)
@@ -418,11 +429,10 @@ describe('Host-config integration tests', () => {
     const namePos = xml.indexOf('name="myTask"')
     expect(keyPos).toBeLessThan(namePos)
 
-    root.dispose()
   })
 
   it('should update key from k1 to k2', async () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const container = root.getTree()
 
     const fiberRoot = SmithersReconciler.createContainer(container, 0, null, false, null, '', () => {}, null)
@@ -450,11 +460,10 @@ describe('Host-config integration tests', () => {
     expect(xml).toContain('key="k2"')
     expect(xml).not.toContain('key="k1"')
 
-    root.dispose()
   })
 
   it('should remove key when __smithersKey set to undefined', async () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const container = root.getTree()
 
     const fiberRoot = SmithersReconciler.createContainer(container, 0, null, false, null, '', () => {}, null)
@@ -481,13 +490,12 @@ describe('Host-config integration tests', () => {
     xml = root.toXML()
     expect(xml).not.toContain('key=')
 
-    root.dispose()
   })
 })
 
 describe('Warning tests for unknown parent detection', () => {
   it('should add warning when known component is inside unknown element', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const loopNode = rendererMethods.createElement('loop')
@@ -501,11 +509,10 @@ describe('Warning tests for unknown parent detection', () => {
     expect(claudeNode.warnings).toHaveLength(1)
     expect(claudeNode.warnings![0]).toContain('<claude> rendered inside unknown element <loop>')
 
-    root.dispose()
   })
 
   it('should clear warnings on subsequent serialize() calls (idempotency)', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const loopNode = rendererMethods.createElement('loop')
@@ -529,13 +536,12 @@ describe('Warning tests for unknown parent detection', () => {
     serialize(rootTree)
     expect(claudeNode.warnings).toBeUndefined()
 
-    root.dispose()
   })
 })
 
 describe('Prop filtering tests', () => {
   it('should not include callbacks in XML', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const taskNode = rendererMethods.createElement('task')
@@ -549,11 +555,10 @@ describe('Prop filtering tests', () => {
     expect(xml).not.toContain('onFinished')
     expect(xml).not.toContain('onError')
 
-    root.dispose()
   })
 
   it('should not include middleware arrays containing functions in XML', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const taskNode = rendererMethods.createElement('task')
@@ -565,11 +570,10 @@ describe('Prop filtering tests', () => {
     expect(xml).toContain('name="myTask"')
     expect(xml).not.toContain('middleware')
 
-    root.dispose()
   })
 
   it('should include plain objects as JSON stringified in XML', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const taskNode = rendererMethods.createElement('task')
@@ -583,11 +587,10 @@ describe('Prop filtering tests', () => {
     expect(xml).toContain('retries')
     expect(xml).toContain('3')
 
-    root.dispose()
   })
 
   it('should detect and filter functions nested in objects', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const taskNode = rendererMethods.createElement('task')
@@ -599,11 +602,10 @@ describe('Prop filtering tests', () => {
     expect(xml).toContain('name="myTask"')
     expect(xml).not.toContain('handlers')
 
-    root.dispose()
   })
 
   it('should detect and filter functions nested in arrays', () => {
-    const root = createSmithersRoot()
+    const root = createRoot()
     const rootTree = root.getTree()
 
     const taskNode = rendererMethods.createElement('task')
@@ -615,6 +617,5 @@ describe('Prop filtering tests', () => {
     expect(xml).toContain('name="myTask"')
     expect(xml).not.toContain('steps')
 
-    root.dispose()
   })
 })

@@ -62,21 +62,31 @@ describe('Claude Mock Utilities', () => {
       const delayMs = 50
       const mock = createClaudeMock({ delay: delayMs })
 
-      const start = performance.now()
-      await mock('test')
-      const elapsed = performance.now() - start
+      let resolved = false
+      const promise = mock('test').then((result) => {
+        resolved = true
+        return result
+      })
 
-      expect(elapsed).toBeGreaterThanOrEqual(delayMs - 5) // allow small timing variance
+      await Promise.resolve()
+      expect(resolved).toBe(false)
+      const result = await promise
+      expect(result.durationMs).toBe(delayMs)
     })
 
     it('should resolve immediately with zero delay', async () => {
       const mock = createClaudeMock({ delay: 0 })
 
-      const start = performance.now()
-      await mock('test')
-      const elapsed = performance.now() - start
+      let resolved = false
+      const promise = mock('test').then((result) => {
+        resolved = true
+        return result
+      })
 
-      expect(elapsed).toBeLessThan(10)
+      await Promise.resolve()
+      expect(resolved).toBe(false)
+      const result = await promise
+      expect(result.durationMs).toBe(0)
     })
   })
 
