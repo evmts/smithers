@@ -218,11 +218,56 @@ The Ralph context tracks:
   </Accordion>
 </AccordionGroup>
 
+## SmithersProvider: The Root Ralph Loop
+
+`<SmithersProvider>` is a special Ralph Wiggum Loop that serves as the root orchestration wrapper. Unlike `<Ralph>` which is used for specific workflows within your component tree, `<SmithersProvider>` wraps your entire orchestration and manages the global Ralph loop.
+
+**Default Behavior:**
+By default, `<SmithersProvider>` runs the Ralph loop for up to **100 iterations**. This is sufficient for most workflows.
+
+**Infinite Loops:**
+For long-running orchestrations that need to continue indefinitely (like CI/CD monitors, autonomous agents, or server processes), you can configure it to run forever:
+
+```tsx
+import { SmithersProvider } from "smithers";
+
+<SmithersProvider
+  db={db}
+  executionId={executionId}
+  maxIterations={Infinity}
+  onIteration={(i) => console.log(`Iteration ${i}`)}
+>
+  <Claude>
+    Monitor the repository and respond to changes
+  </Claude>
+</SmithersProvider>
+```
+
+**Custom Iteration Limits:**
+You can also set custom limits based on your workflow needs:
+
+```tsx
+// Quick task - only needs a few iterations
+<SmithersProvider maxIterations={5}>
+  <Claude>Fix the linting errors</Claude>
+</SmithersProvider>
+
+// Complex multi-phase workflow
+<SmithersProvider maxIterations={50}>
+  <MultiPhaseOrchestration />
+</SmithersProvider>
+
+// Long-running agent
+<SmithersProvider maxIterations={Infinity}>
+  <AutonomousAgent />
+</SmithersProvider>
+```
+
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="State Management" icon="database" href="/concepts/state-management">
-    Learn about React state and stores
+  <Card title="React State Management" icon="database" href="https://react.dev/learn/managing-state">
+    Learn about React state from official docs
   </Card>
   <Card title="Database Persistence" icon="hard-drive" href="/concepts/database-persistence">
     Persist state across restarts
