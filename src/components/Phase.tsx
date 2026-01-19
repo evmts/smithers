@@ -15,6 +15,7 @@ function getPhaseStatus(isSkipped: boolean, isActive: boolean, isCompleted: bool
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex, PhaseRegistryProvider } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
+import { PhaseContext, usePhaseContext } from './PhaseContext.js'
 
 
 export interface PhaseProps {
@@ -72,6 +73,9 @@ export function Phase(props: PhaseProps): ReactNode {
   const { db, ralphCount } = useSmithers()
   const registry = usePhaseRegistry()
   const myIndex = usePhaseIndex(props.name)
+  const parentPhase = usePhaseContext()
+  const parentActive = parentPhase?.isActive ?? true
+  const isNested = parentPhase !== null
 
   const phaseIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
@@ -82,6 +86,7 @@ export function Phase(props: PhaseProps): ReactNode {
   const isSkipped = Boolean(props.skipIf?.())
   const isActive = !isSkipped && (registry ? registry.isPhaseActive(myIndex) : true)
   const isCompleted = !isSkipped && (registry ? registry.isPhaseCompleted(myIndex) : false)
+  const executionEnabled = !isSkipped && (isNested ? parentActive : isActive)
 
   // Compute status string for output
   const status = getPhaseStatus(isSkipped, isActive, isCompleted)
@@ -148,13 +153,15 @@ export function Phase(props: PhaseProps): ReactNode {
   // Wrap in PhaseRegistryProvider so nested phases get their own scope
   return (
     <phase name={props.name} status={status}>
-      {isActive && (
-        <PhaseRegistryProvider>
-          <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
-            {props.children}
-          </StepRegistryProvider>
-        </PhaseRegistryProvider>
-      )}
+      <PhaseContext.Provider value={{ isActive: executionEnabled }}>
+        {executionEnabled && (
+          <PhaseRegistryProvider>
+            <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
+              {props.children}
+            </StepRegistryProvider>
+          </PhaseRegistryProvider>
+        )}
+      </PhaseContext.Provider>
     </phase>
   )
 }
