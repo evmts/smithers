@@ -44,7 +44,7 @@ export interface WorktreePRFinalizeProps {
   worktree: WorktreeContext
   mergeMethod?: 'merge' | 'squash' | 'rebase'
   deleteAfterMerge?: boolean
-  onComplete?: (report: { success: boolean; mergedSha?: string; error?: string }) => void
+  onComplete?: (report: { success: boolean; mergedSha?: string | undefined; error?: string | undefined }) => void
 }
 
 export function WorktreePRFinalize({

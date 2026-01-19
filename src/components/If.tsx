@@ -16,8 +16,8 @@ import type { ReactNode } from 'react'
  * ```
  */
 export interface IfProps {
-  /** Condition to evaluate */
-  condition: boolean
+  /** Condition to evaluate - any truthy/falsy value */
+  condition: unknown
   /** Content to render when condition is true */
   children: ReactNode
 }

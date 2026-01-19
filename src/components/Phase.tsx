@@ -29,10 +29,10 @@ export interface PhaseProps {
   children: ReactNode
 
   /**
-   * Skip this phase if condition returns true.
+   * Skip this phase if condition returns truthy.
    * Takes precedence over automatic state management.
    */
-  skipIf?: () => boolean
+  skipIf?: () => unknown
 
   /**
    * Callback when phase starts (becomes active)
