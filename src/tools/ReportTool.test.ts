@@ -42,21 +42,6 @@ describe('getReportToolDescription', () => {
 })
 
 describe('createReportTool', () => {
-  // Create a mock context
-  const mockAddReport = mock(async () => 'report-123')
-  const mockContext = {
-    db: {
-      vcs: {
-        addReport: mockAddReport,
-      },
-    },
-    agentId: 'test-agent',
-    executionId: 'exec-1',
-    cwd: '/tmp',
-    env: {},
-    log: mock(() => {}),
-  }
-
   test('returns a tool with correct name', () => {
     const tool = createReportTool()
     expect(tool.name).toBe('Report')
