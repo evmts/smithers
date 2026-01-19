@@ -1,6 +1,6 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Build AI agents with React - Declarative JSX for Claude orchestration",
   "type": "module",
   "main": "./src/index.ts",
