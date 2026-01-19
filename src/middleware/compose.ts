@@ -1,5 +1,5 @@
-import type { AgentResult } from '../components/agents/types.js'
-import type { ClaudeExecutionParams, SmithersMiddleware } from './types.js'
+import type { AgentResult, CLIExecutionOptions } from '../components/agents/types.js'
+import type { SmithersMiddleware } from './types.js'
 
 function filterMiddleware(middlewares: (SmithersMiddleware | null | undefined)[]): SmithersMiddleware[] {
   return middlewares.filter(Boolean) as SmithersMiddleware[]
@@ -7,8 +7,8 @@ function filterMiddleware(middlewares: (SmithersMiddleware | null | undefined)[]
 
 function buildProgressTransformer(
   middlewares: SmithersMiddleware[],
-  onProgress: ClaudeExecutionParams['onProgress'],
-): ClaudeExecutionParams['onProgress'] {
+  onProgress: CLIExecutionOptions['onProgress'],
+): CLIExecutionOptions['onProgress'] {
   if (!onProgress) return undefined
 
   const transformers = middlewares.map((mw) => mw.transformChunk).filter(Boolean) as Array<
@@ -39,22 +39,22 @@ export function composeMiddleware(...middlewares: (SmithersMiddleware | null | u
   const name = active.map((mw) => mw.name).filter(Boolean).join('+')
 
   const composed: SmithersMiddleware = {
-    transformParams: async ({ type, params }) => {
-      let nextParams = params
+    transformOptions: async (options) => {
+      let nextOptions = options
       for (const mw of active) {
-        if (mw.transformParams) {
-          nextParams = await mw.transformParams({ type, params: nextParams })
+        if (mw.transformOptions) {
+          nextOptions = await mw.transformOptions(nextOptions)
         }
       }
-      const onProgress = buildProgressTransformer(active, nextParams.onProgress)
-      return onProgress ? { ...nextParams, onProgress } : nextParams
+      const onProgress = buildProgressTransformer(active, nextOptions.onProgress)
+      return onProgress ? { ...nextOptions, onProgress } : nextOptions
     },
-    wrapExecute: async ({ doExecute, params }) => {
+    wrapExecute: async ({ doExecute, options }) => {
       let wrapped = doExecute
       for (const mw of [...active].reverse()) {
         if (!mw.wrapExecute) continue
         const previous = wrapped
-        wrapped = () => mw.wrapExecute!({ doExecute: previous, params })
+        wrapped = () => mw.wrapExecute!({ doExecute: previous, options })
       }
       return wrapped()
     },
@@ -92,32 +92,32 @@ export function composeMiddleware(...middlewares: (SmithersMiddleware | null | u
  * Apply middleware to an execution function.
  */
 export async function applyMiddleware(
-  execute: () => Promise<AgentResult>,
-  params: ClaudeExecutionParams,
+  execute: (options: CLIExecutionOptions) => Promise<AgentResult>,
+  options: CLIExecutionOptions,
   middlewares: (SmithersMiddleware | null | undefined)[],
 ): Promise<AgentResult> {
   const active = filterMiddleware(middlewares)
   if (active.length === 0) {
-    return execute()
+    return execute(options)
   }
 
-  let nextParams = params
+  let nextOptions = options
   for (const mw of active) {
-    if (mw.transformParams) {
-      nextParams = await mw.transformParams({ type: 'execute', params: nextParams })
+    if (mw.transformOptions) {
+      nextOptions = await mw.transformOptions(nextOptions)
     }
   }
 
-  const onProgress = buildProgressTransformer(active, nextParams.onProgress)
+  const onProgress = buildProgressTransformer(active, nextOptions.onProgress)
   if (onProgress) {
-    nextParams = { ...nextParams, onProgress }
+    nextOptions = { ...nextOptions, onProgress }
   }
 
-  let wrappedExecute = execute
+  let wrappedExecute = () => execute(nextOptions)
   for (const mw of [...active].reverse()) {
     if (!mw.wrapExecute) continue
     const previous = wrappedExecute
-    wrappedExecute = () => mw.wrapExecute!({ doExecute: previous, params: nextParams })
+    wrappedExecute = () => mw.wrapExecute!({ doExecute: previous, options: nextOptions })
   }
 
   let result = await wrappedExecute()

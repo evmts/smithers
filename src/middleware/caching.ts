@@ -1,5 +1,5 @@
-import type { AgentResult } from '../components/agents/types.js'
-import type { ClaudeExecutionParams, SmithersMiddleware } from './types.js'
+import type { AgentResult, CLIExecutionOptions } from '../components/agents/types.js'
+import type { SmithersMiddleware } from './types.js'
 
 export interface CacheStore<T> {
   get: (key: string) => T | null | Promise<T | null>
@@ -9,7 +9,7 @@ export interface CacheStore<T> {
 export interface CachingMiddlewareOptions {
   cache: CacheStore<AgentResult>
   ttl?: number
-  keyFn?: (params: ClaudeExecutionParams) => string
+  keyFn?: (options: CLIExecutionOptions) => string
 }
 
 function stableStringify(value: unknown): string {
@@ -30,8 +30,8 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value, replacer)
 }
 
-function defaultCacheKey(params: ClaudeExecutionParams): string {
-  const { onProgress: _onProgress, onToolCall: _onToolCall, schema, ...rest } = params
+function defaultCacheKey(options: CLIExecutionOptions): string {
+  const { onProgress: _onProgress, onToolCall: _onToolCall, schema, ...rest } = options
   return stableStringify({ ...rest, schema: schema ? '[schema]' : undefined })
 }
 
@@ -40,8 +40,8 @@ export function cachingMiddleware(options: CachingMiddlewareOptions): SmithersMi
 
   return {
     name: 'caching',
-    wrapExecute: async ({ doExecute, params }) => {
-      const key = keyFn(params)
+    wrapExecute: async ({ doExecute, options: executionOptions }) => {
+      const key = keyFn(executionOptions)
       const cached = await options.cache.get(key)
       if (cached) {
         return cached

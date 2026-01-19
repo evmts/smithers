@@ -1,5 +1,5 @@
-import type { AgentResult } from '../components/agents/types.js'
-import type { ClaudeExecutionParams, SmithersMiddleware } from './types.js'
+import type { AgentResult, CLIExecutionOptions } from '../components/agents/types.js'
+import type { SmithersMiddleware } from './types.js'
 
 export type LogLevel = 'debug' | 'info' | 'warn'
 
@@ -7,7 +7,7 @@ export interface LogEntry {
   level: LogLevel
   phase: 'start' | 'finish' | 'error'
   type: 'execute'
-  params?: ClaudeExecutionParams
+  options?: CLIExecutionOptions
   durationMs?: number
   tokens?: AgentResult['tokensUsed']
   error?: string
@@ -40,11 +40,11 @@ export function loggingMiddleware(options: LoggingMiddlewareOptions = {}): Smith
 
   return {
     name: 'logging',
-    transformParams: ({ params }) => {
+    transformOptions: (options) => {
       if (levelOrder[level] <= levelOrder.info) {
-        logFn({ level, phase: 'start', type: 'execute', params })
+        logFn({ level, phase: 'start', type: 'execute', options })
       }
-      return params
+      return options
     },
     wrapExecute: async ({ doExecute }) => {
       const start = Date.now()
