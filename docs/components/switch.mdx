@@ -1,0 +1,589 @@
+---
+title: Switch Component
+description: Multi-way branching component for value-based conditional execution
+---
+
+<Warning>
+  **Planned Feature** - This component is not yet implemented.
+  See [control-flow-components issue](/issues/control-flow-components.md) for design details and implementation plan.
+</Warning>
+
+# Switch Component
+
+Multi-way branching based on runtime value evaluation with persisted decision and gated execution. Enables state machine transitions, mode selection, and complex branching logic while maintaining plan visibility.
+
+## Planned API
+
+```tsx
+interface SwitchProps<T = string> {
+  /**
+   * Stable identifier for resumability. Required.
+   */
+  id: string
+
+  /**
+   * Value to match against cases.
+   * Can be static value or function for dynamic evaluation.
+   */
+  value: T | (() => T | Promise<T>)
+
+  /**
+   * Optional serializer for non-primitive values.
+   * Required for objects/arrays to persist correctly.
+   */
+  serialize?: (value: T) => string
+
+  /**
+   * Optional deserializer for persisted values.
+   * Required if serialize provided.
+   */
+  deserialize?: (raw: string) => T
+
+  /**
+   * Children should be <Case> and optionally <Default> components.
+   */
+  children: ReactNode
+}
+
+interface CaseProps<T = string> {
+  /**
+   * Value(s) to match. Single value or array for multiple matches.
+   */
+  match: T | T[]
+
+  /**
+   * Children to render when matched.
+   */
+  children: ReactNode
+}
+
+interface DefaultProps {
+  /**
+   * Children to render when no case matches.
+   */
+  children: ReactNode
+}
+
+export function Switch<T = string>(props: SwitchProps<T>): JSX.Element
+export function Case<T = string>(props: CaseProps<T>): JSX.Element
+export function Default(props: DefaultProps): JSX.Element
+```
+
+## Proposed Usage
+
+### Basic Mode Selection
+
+```tsx
+import { Switch, Case, Default, Phase, Claude } from 'smithers-orchestrator'
+
+export function WorkflowModeSwitch() {
+  const { db } = useSmithers()
+
+  return (
+    <Switch
+      id="workflow-mode"
+      value={async () => await db.state.get('workflowMode')}
+    >
+      <Case match="fast">
+        <Phase name="Quick Implementation">
+          <Claude model="haiku">Implement quickly with minimal checks</Claude>
+        </Phase>
+      </Case>
+
+      <Case match="thorough">
+        <Phase name="Research">
+          <Claude model="opus">Deep research and planning</Claude>
+        </Phase>
+        <Phase name="Implementation">
+          <Claude model="sonnet">Careful implementation with tests</Claude>
+        </Phase>
+      </Case>
+
+      <Case match="experimental">
+        <Phase name="Prototype">
+          <Claude>Build experimental prototype</Claude>
+        </Phase>
+      </Case>
+
+      <Default>
+        <Phase name="Standard Flow">
+          <Claude>Standard implementation process</Claude>
+        </Phase>
+      </Default>
+    </Switch>
+  )
+}
+```
+
+### Multiple Match Values
+
+```tsx
+<Switch
+  id="priority-routing"
+  value={async () => {
+    const issue = await db.state.get('currentIssue')
+    return issue.priority
+  }}
+>
+  <Case match={["critical", "high"]}>
+    <Phase name="Urgent Response">
+      <Claude model="opus">Immediate attention with senior review</Claude>
+    </Phase>
+  </Case>
+
+  <Case match="medium">
+    <Phase name="Standard Response">
+      <Claude model="sonnet">Standard workflow</Claude>
+    </Phase>
+  </Case>
+
+  <Case match={["low", "trivial"]}>
+    <Phase name="Batch Processing">
+      <Claude model="haiku">Queue for batch processing</Claude>
+    </Phase>
+  </Case>
+
+  <Default>
+    <Phase name="Triage">
+      <Claude>Assess and categorize issue</Claude>
+    </Phase>
+  </Default>
+</Switch>
+```
+
+### State Machine Transitions
+
+```tsx
+<Switch
+  id="deployment-state"
+  value={async () => {
+    const { db } = useSmithers()
+    const state = await db.state.get('deploymentState')
+    return state || 'init'
+  }}
+>
+  <Case match="init">
+    <Phase name="Initialize">
+      <Claude>Set up deployment environment</Claude>
+    </Phase>
+  </Case>
+
+  <Case match="building">
+    <Phase name="Build">
+      <Claude>Build application artifacts</Claude>
+    </Phase>
+  </Case>
+
+  <Case match="testing">
+    <Phase name="Test">
+      <Claude>Run integration tests</Claude>
+    </Phase>
+  </Case>
+
+  <Case match="deploying">
+    <Phase name="Deploy">
+      <Claude>Deploy to production</Claude>
+    </Phase>
+  </Case>
+
+  <Case match="complete">
+    <Phase name="Verify">
+      <Claude>Verify deployment health</Claude>
+    </Phase>
+  </Case>
+
+  <Default>
+    <Phase name="Error Recovery">
+      <Claude>Handle unknown state</Claude>
+    </Phase>
+  </Default>
+</Switch>
+```
+
+### Non-Primitive Values with Serializer
+
+```tsx
+interface TaskType {
+  category: string
+  complexity: number
+}
+
+<Switch
+  id="task-routing"
+  value={async () => {
+    const task = await db.state.get('currentTask')
+    return task as TaskType
+  }}
+  serialize={(t) => JSON.stringify(t)}
+  deserialize={(s) => JSON.parse(s) as TaskType}
+>
+  <Case match={{ category: 'bug', complexity: 1 }}>
+    <Phase name="Quick Fix">
+      <Claude model="haiku">Apply simple bugfix</Claude>
+    </Phase>
+  </Case>
+
+  <Case match={{ category: 'feature', complexity: 3 }}>
+    <Phase name="Complex Feature">
+      <Claude model="opus">Plan and implement complex feature</Claude>
+    </Phase>
+  </Case>
+
+  <Default>
+    <Phase name="Standard Task">
+      <Claude model="sonnet">Handle standard task</Claude>
+    </Phase>
+  </Default>
+</Switch>
+```
+
+## Props (Planned)
+
+<ParamField path="id" type="string" required>
+  Stable identifier for component identity across restarts.
+
+  Used to build case scope IDs: `{scopeId}.switch.{id}.case{N}` or `{scopeId}.switch.{id}.default`
+
+  **Examples:**
+  - `"workflow-mode"` - Describes what's being switched on
+  - `"priority-routing"` - Indicates routing logic
+  - ❌ Random ID - Breaks resumability
+</ParamField>
+
+<ParamField path="value" type="T | (() => T | Promise<T>)" required>
+  Value to match against case conditions.
+
+  **Static value:**
+  ```tsx
+  <Switch id="mode" value="production">
+  ```
+
+  **Sync function:**
+  ```tsx
+  <Switch id="mode" value={() => computeMode()}>
+  ```
+
+  **Async function (database query):**
+  ```tsx
+  <Switch
+    id="mode"
+    value={async () => {
+      const { db } = useSmithers()
+      return await db.state.get('currentMode')
+    }}
+  >
+  ```
+
+  **Persistence:** Evaluated once per scope, result stored in SQLite for crash-resume.
+
+  **Task gating:** Holds control-flow task during evaluation.
+</ParamField>
+
+<ParamField path="serialize" type="(value: T) => string">
+  Serializer for non-primitive values.
+
+  Required when value is object/array to enable correct persistence and comparison.
+
+  ```tsx
+  serialize={(obj) => JSON.stringify(obj)}
+  ```
+
+  **Default:** `(value) => String(value)` (works for primitives)
+</ParamField>
+
+<ParamField path="deserialize" type="(raw: string) => T">
+  Deserializer for persisted values.
+
+  Required if serialize provided. Must be inverse of serialize.
+
+  ```tsx
+  deserialize={(str) => JSON.parse(str) as MyType}
+  ```
+
+  **Default:** `(raw) => raw as unknown as T`
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  Should contain `<Case>` and optionally `<Default>` components.
+
+  Each case executed under isolated ExecutionBoundary:
+  - Case 0: `root.switch.mode.case0`
+  - Case 1: `root.switch.mode.case1`
+  - Default: `root.switch.mode.default`
+
+  **Execution:** Only matched case/default has `executionEnabled=true`. Others render in plan-only mode.
+</ParamField>
+
+## Case Component Props
+
+<ParamField path="match" type="T | T[]" required>
+  Value(s) to match against switch value.
+
+  **Single value:**
+  ```tsx
+  <Case match="production">
+  ```
+
+  **Multiple values (OR logic):**
+  ```tsx
+  <Case match={["staging", "development"]}>
+  ```
+
+  **Matching:** Uses strict equality (===) for primitives. For objects, uses serialized comparison.
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  Components rendered when case matches.
+</ParamField>
+
+## Default Component Props
+
+<ParamField path="children" type="ReactNode" required>
+  Components rendered when no case matches.
+
+  Optional - if omitted and no case matches, Switch completes without executing children.
+</ParamField>
+
+## Implementation Status
+
+<Steps>
+  <Step title="Design Phase">
+    API designed as part of control-flow-components issue.
+    [View issue](/issues/control-flow-components.md)
+  </Step>
+
+  <Step title="Prerequisites (Pending)">
+    Requires ExecutionBoundary, makeScopeId, makeStateKey, tasks.scope_id.
+  </Step>
+
+  <Step title="Implementation (Pending)">
+    Component implementation, case matching logic, serialization support.
+  </Step>
+
+  <Step title="Testing (Future)">
+    Unit tests for primitive/object matching, default fallthrough, nested switches.
+  </Step>
+</Steps>
+
+## Design Rationale
+
+### Why Not If Chains?
+
+```tsx
+// With If chains (verbose, error-prone)
+<If id="check-fast" condition={() => mode === 'fast'}>
+  <Phase name="Fast">...</Phase>
+</If>
+<If id="check-thorough" condition={() => mode === 'thorough'}>
+  <Phase name="Thorough">...</Phase>
+  <Else>
+    <If id="check-experimental" condition={() => mode === 'experimental'}>
+      <Phase name="Experimental">...</Phase>
+      <Else>
+        <Phase name="Default">...</Phase>
+      </Else>
+    </If>
+  </Else>
+</If>
+```
+
+```tsx
+// With Switch (clean, intent clear)
+<Switch id="mode" value={mode}>
+  <Case match="fast"><Phase name="Fast">...</Phase></Case>
+  <Case match="thorough"><Phase name="Thorough">...</Phase></Case>
+  <Case match="experimental"><Phase name="Experimental">...</Phase></Case>
+  <Default><Phase name="Default">...</Phase></Default>
+</Switch>
+```
+
+### Plan Output
+
+```xml
+<switch id="workflow-mode" value="thorough" status="evaluated">
+  <case match="fast" active="false">
+    <phase name="Quick Implementation" status="skipped">...</phase>
+  </case>
+  <case match="thorough" active="true">
+    <phase name="Research" status="completed">...</phase>
+    <phase name="Implementation" status="active">...</phase>
+  </case>
+  <case match="experimental" active="false">
+    <phase name="Prototype" status="skipped">...</phase>
+  </case>
+  <default active="false">
+    <phase name="Standard Flow" status="skipped">...</phase>
+  </default>
+</switch>
+```
+
+Shows all branches with clear indication of which matched.
+
+### Serialization for Complex Values
+
+Objects/arrays need serialization for:
+1. **Persistence** - Store value in SQLite TEXT column
+2. **Comparison** - Match against case values after crash-resume
+
+```tsx
+const taskTypeSerializer = {
+  serialize: (t: TaskType) => `${t.category}:${t.complexity}`,
+  deserialize: (s: string) => {
+    const [category, complexity] = s.split(':')
+    return { category, complexity: parseInt(complexity) }
+  }
+}
+```
+
+Custom serializers enable efficient storage and comparison.
+
+## Examples of Use Cases
+
+### Use Case 1: Environment-Based Configuration
+
+```tsx
+<Switch
+  id="environment"
+  value={process.env.NODE_ENV || 'development'}
+>
+  <Case match="production">
+    <Phase name="Production Deploy">
+      <Claude>Deploy with production configuration and monitoring</Claude>
+    </Phase>
+  </Case>
+
+  <Case match={["development", "test"]}>
+    <Phase name="Dev Deploy">
+      <Claude>Deploy with debug logging and test fixtures</Claude>
+    </Phase>
+  </Case>
+
+  <Case match="staging">
+    <Phase name="Staging Deploy">
+      <Claude>Deploy to staging with production-like config</Claude>
+    </Phase>
+  </Case>
+
+  <Default>
+    <Phase name="Unknown Environment">
+      <Claude>Handle unknown environment - fail safe</Claude>
+    </Phase>
+  </Default>
+</Switch>
+```
+
+### Use Case 2: Error Code Handling
+
+```tsx
+<Switch
+  id="error-handler"
+  value={async () => {
+    const error = await db.state.get('lastError')
+    return error?.code
+  }}
+>
+  <Case match="ECONNREFUSED">
+    <Phase name="Retry Connection">
+      <Claude>Service unavailable - implement retry with backoff</Claude>
+    </Phase>
+  </Case>
+
+  <Case match={["EACCES", "EPERM"]}>
+    <Phase name="Permission Error">
+      <Claude>Permission denied - check credentials and permissions</Claude>
+    </Phase>
+  </Case>
+
+  <Case match="ENOENT">
+    <Phase name="Not Found">
+      <Claude>Resource not found - verify paths and create if needed</Claude>
+    </Phase>
+  </Case>
+
+  <Default>
+    <Phase name="Generic Error Handler">
+      <Claude>Handle unexpected error with logging and alerting</Claude>
+    </Phase>
+  </Default>
+</Switch>
+```
+
+### Use Case 3: Nested Switches
+
+```tsx
+<Switch id="platform" value={process.platform}>
+  <Case match="darwin">
+    <Switch id="arch" value={process.arch}>
+      <Case match="arm64">
+        <Phase name="macOS ARM">
+          <Claude>Build for Apple Silicon</Claude>
+        </Phase>
+      </Case>
+      <Case match="x64">
+        <Phase name="macOS Intel">
+          <Claude>Build for Intel Mac</Claude>
+        </Phase>
+      </Case>
+    </Switch>
+  </Case>
+
+  <Case match="linux">
+    <Phase name="Linux Build">
+      <Claude>Build for Linux</Claude>
+    </Phase>
+  </Case>
+
+  <Case match="win32">
+    <Phase name="Windows Build">
+      <Claude>Build for Windows</Claude>
+    </Phase>
+  </Case>
+</Switch>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card
+    title="Control Flow Components Issue"
+    icon="github"
+    href="/issues/control-flow-components.md"
+  >
+    Parent issue with scoping design, ExecutionBoundary, and implementation infrastructure
+  </Card>
+
+  <Card
+    title="If Component"
+    icon="question"
+    href="/components/if.mdx"
+  >
+    Binary conditional - use when only two branches needed
+  </Card>
+
+  <Card
+    title="While Component"
+    icon="rotate"
+    href="/components/while.mdx"
+  >
+    Iterative loop - shares scoping and execution gating with Switch
+  </Card>
+
+  <Card
+    title="Case Component"
+    icon="circle-check"
+    href="/components/case.mdx"
+  >
+    Case component reference (child of Switch)
+  </Card>
+</CardGroup>
+
+## Alternatives Considered
+
+- **If/Else chains**: Verbose, deeply nested, hard to read
+- **External routing logic**: Hides flow from plan, not resumable
+- **Dynamic Phase names**: Doesn't work with Phase registry
+- **React conditional rendering**: Hides structure from plan output
+
+## Feedback
+
+If you have feedback on this planned component, please comment on the [control-flow-components issue](/issues/control-flow-components.md).

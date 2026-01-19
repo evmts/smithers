@@ -1,0 +1,169 @@
+---
+title: [Component Name]
+description: [One-line description of the planned component]
+---
+
+<Warning>
+  **Planned Feature** - This component is not yet implemented.
+  See [implementation issue](../../issues/[issue-name].md) for design details and implementation plan.
+</Warning>
+
+# [Component Name]
+
+[Brief 2-3 sentence description of what this component will do and why it's useful]
+
+## Planned API
+
+```tsx
+interface [Component]Props {
+  /**
+   * [Description of prop]
+   */
+  propName: PropType
+
+  /**
+   * [Description of optional prop]
+   * @default defaultValue
+   */
+  optionalProp?: OptionalType
+
+  /**
+   * [Description of children]
+   */
+  children?: React.ReactNode
+}
+
+export function [Component](props: [Component]Props): JSX.Element
+```
+
+## Proposed Usage
+
+### Basic Example
+
+```tsx
+import { [Component] } from 'smithers-orchestrator'
+
+export function MyWorkflow() {
+  return (
+    <[Component] propName="value">
+      {/* Example usage showing typical pattern */}
+    </[Component]>
+  )
+}
+```
+
+### Advanced Example
+
+```tsx
+// More complex usage demonstrating advanced features
+export function AdvancedWorkflow() {
+  return (
+    <[Component]
+      propName="value"
+      optionalProp={customValue}
+    >
+      {/* Advanced pattern */}
+    </[Component]>
+  )
+}
+```
+
+## Props (Planned)
+
+<ParamField path="propName" type="PropType" required>
+  [Detailed description of what this prop does and how it affects behavior]
+
+  **Example values:**
+  - `value1` - [What this does]
+  - `value2` - [What this does]
+</ParamField>
+
+<ParamField path="optionalProp" type="OptionalType" default="defaultValue">
+  [Description of optional prop]
+
+  When omitted, defaults to `defaultValue`.
+</ParamField>
+
+<ParamField path="children" type="React.ReactNode">
+  [Description of what children represent and any constraints]
+</ParamField>
+
+## Implementation Status
+
+<Steps>
+  <Step title="Design Phase">
+    Issue created with detailed design and API proposal.
+    [Link to issue](../../issues/[issue-name].md)
+  </Step>
+
+  <Step title="Implementation (Pending)">
+    Core component implementation, testing, and documentation.
+  </Step>
+
+  <Step title="Integration (Future)">
+    Integration with existing components and workflow patterns.
+  </Step>
+</Steps>
+
+## Design Rationale
+
+### Why This Component?
+
+[Explanation of the problem this component solves]
+
+### Architectural Approach
+
+[Brief explanation of how this will be implemented architecturally]
+
+```
+┌──────────────────┐
+│  [Component]     │
+└────────┬─────────┘
+         │
+    ┌────▼────┐
+    │ System  │
+    └─────────┘
+```
+
+## Examples of Use Cases
+
+### Use Case 1: [Scenario]
+
+```tsx
+// Example showing specific use case
+```
+
+### Use Case 2: [Another Scenario]
+
+```tsx
+// Example showing different use case
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card
+    title="Implementation Issue"
+    icon="github"
+    href="../../issues/[issue-name].md"
+  >
+    View detailed design and implementation plan
+  </Card>
+
+  <Card
+    title="Related Component"
+    icon="puzzle-piece"
+    href="../components/[related].mdx"
+  >
+    [Description of how it relates]
+  </Card>
+</CardGroup>
+
+## Alternatives Considered
+
+- **Alternative 1**: [Description and why not chosen]
+- **Alternative 2**: [Description and why not chosen]
+
+## Feedback
+
+If you have feedback on this planned component, please comment on the [implementation issue](../../issues/[issue-name].md).

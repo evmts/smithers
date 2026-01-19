@@ -5,13 +5,15 @@ description: Unified context provider for database, execution state, and task or
 
 # SmithersProvider
 
-The `<SmithersProvider>` component provides unified context to all child components, including database access, execution state, and task orchestration. It's required at the root of every Smithers workflow.
+The `<SmithersProvider>` component provides unified context to all child components, including database access, execution state, task orchestration, global timeouts, and stop conditions. It's required at the root of every Smithers workflow.
+
+SmithersProvider extends [Ralph](/components/ralph) with additional database and orchestration features. All Ralph props (`maxIterations`, `onIteration`, `onComplete`) are supported and documented below.
 
 ## Basic Usage
 
 ```tsx
 import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider, Orchestration, Claude } from "smithers-orchestrator/components";
+import { SmithersProvider, Claude } from "smithers-orchestrator/components";
 
 const db = await createSmithersDB({ path: ".smithers/my-workflow" });
 const executionId = await db.execution.start("My Workflow", "workflow.tsx");
@@ -19,11 +21,9 @@ const executionId = await db.execution.start("My Workflow", "workflow.tsx");
 function Workflow() {
   return (
     <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-      <Orchestration>
-        <Claude model="sonnet">
-          Do the work.
-        </Claude>
-      </Orchestration>
+      <Claude model="sonnet">
+        Do the work.
+      </Claude>
     </SmithersProvider>
   );
 }
@@ -98,6 +98,71 @@ function Workflow() {
   ```
 </ParamField>
 
+<ParamField path="globalTimeout" type="number">
+  Maximum time in milliseconds for the entire workflow.
+
+  ```tsx
+  <SmithersProvider db={db} executionId={executionId} globalTimeout={3600000}>
+    {/* Will stop after 1 hour */}
+  </SmithersProvider>
+  ```
+</ParamField>
+
+<ParamField path="stopConditions" type="GlobalStopCondition[]">
+  Array of conditions that can stop the workflow early.
+
+  ```tsx
+  <SmithersProvider
+    db={db}
+    executionId={executionId}
+    stopConditions={[
+      { type: "total_tokens", value: 100000 },
+      { type: "total_agents", value: 50 },
+    ]}
+  >
+  ```
+</ParamField>
+
+<ParamField path="snapshotBeforeStart" type="boolean">
+  Create a VCS snapshot before starting (useful for rollback).
+
+  ```tsx
+  <SmithersProvider db={db} executionId={executionId} snapshotBeforeStart>
+  ```
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Called when workflow encounters an error.
+
+  ```tsx
+  <SmithersProvider
+    db={db}
+    executionId={executionId}
+    onError={(err) => console.error("Workflow failed:", err)}
+  >
+  ```
+</ParamField>
+
+<ParamField path="onStopRequested" type="(reason: string) => void">
+  Called when a stop is requested (via stop condition or manual request).
+
+  ```tsx
+  <SmithersProvider
+    db={db}
+    executionId={executionId}
+    onStopRequested={(reason) => console.log("Stop:", reason)}
+  >
+  ```
+</ParamField>
+
+<ParamField path="cleanupOnComplete" type="boolean">
+  Close the database when workflow completes.
+
+  ```tsx
+  <SmithersProvider db={db} executionId={executionId} cleanupOnComplete>
+  ```
+</ParamField>
+
 ## Context Values
 
 Child components can access the context using the `useSmithers` hook:
@@ -119,12 +184,8 @@ function MyComponent() {
   } = useSmithers();
 
   return (
-    <Claude onFinished={() => {
-      if (someCondition) {
-        requestStop("Condition met");
-      }
-    }}>
-      Work with context access.
+    <Claude model={config?.defaultModel}>
+      Current iteration: {ralphCount}. Work with context access.
     </Claude>
   );
 }
@@ -253,7 +314,7 @@ function TaskMonitor() {
 
 ```tsx
 import { createSmithersRoot, createSmithersDB } from "smithers-orchestrator";
-import { SmithersProvider, Orchestration, Claude, useSmithers } from "smithers-orchestrator/components";
+import { SmithersProvider, Claude, useSmithers } from "smithers-orchestrator/components";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/example" });
@@ -275,12 +336,14 @@ async function main() {
         db={db}
         executionId={executionId}
         maxIterations={10}
+        globalTimeout={3600000}
+        stopConditions={[
+          { type: "total_tokens", value: 100000 }
+        ]}
         onIteration={(i) => console.log(`Iteration ${i}`)}
         onComplete={() => console.log("Workflow complete")}
       >
-        <Orchestration globalTimeout={3600000}>
-          <WorkflowContent />
-        </Orchestration>
+        <WorkflowContent />
       </SmithersProvider>
     );
   }
@@ -379,10 +442,10 @@ main();
   <Card title="Database API" icon="database" href="/api-reference/database">
     Full database API reference
   </Card>
-  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
-    Top-level workflow control
-  </Card>
   <Card title="Ralph" icon="rotate" href="/components/ralph">
     Loop controller component
+  </Card>
+  <Card title="Phase" icon="list" href="/components/phase">
+    Workflow structure
   </Card>
 </CardGroup>
