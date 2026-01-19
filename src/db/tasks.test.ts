@@ -3,6 +3,7 @@ import { createSmithersDB, type SmithersDB } from './index.js'
 
 describe('Tasks module', () => {
   let db: SmithersDB
+  let executionId: string
 
   beforeEach(async () => {
     db = await createSmithersDB({ reset: true })
