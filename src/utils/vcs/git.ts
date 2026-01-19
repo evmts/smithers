@@ -1,8 +1,9 @@
 // Git operations
 // Uses Bun.$ for command execution per CLAUDE.md
 
+import * as path from 'node:path'
 import { parseGitStatus } from './parsers.js'
-import type { CommandResult, VCSStatus, DiffStats, CommitInfo } from './types.js'
+import type { CommandResult, VCSStatus, DiffStats, CommitInfo, WorktreeInfo } from './types.js'
 
 const SMITHERS_NOTES_REF = 'refs/notes/smithers'
 
@@ -137,4 +138,131 @@ export async function getCurrentBranch(): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * Parse `git worktree list --porcelain` output
+ */
+export function parseWorktreeList(output: string): WorktreeInfo[] {
+  const worktrees: WorktreeInfo[] = []
+  let current: Partial<WorktreeInfo> = {}
+
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      if (current.path) {
+        worktrees.push(current as WorktreeInfo)
+      }
+      current = { path: line.slice(9) }
+    } else if (line.startsWith('HEAD ')) {
+      current.head = line.slice(5)
+    } else if (line.startsWith('branch ')) {
+      current.branch = line.slice(7).replace('refs/heads/', '')
+    } else if (line === 'detached') {
+      current.branch = null
+    } else if (line === 'locked') {
+      current.locked = true
+    } else if (line === 'prunable') {
+      current.prunable = true
+    }
+  }
+
+  if (current.path) {
+    worktrees.push(current as WorktreeInfo)
+  }
+
+  return worktrees
+}
+
+/**
+ * List all worktrees for the repository
+ */
+export async function listWorktrees(cwd?: string): Promise<WorktreeInfo[]> {
+  const args = cwd
+    ? ['-C', cwd, 'worktree', 'list', '--porcelain']
+    : ['worktree', 'list', '--porcelain']
+  const result = await Bun.$`git ${args}`.quiet()
+  return parseWorktreeList(result.stdout.toString())
+}
+
+/**
+ * Add a new worktree
+ */
+export async function addWorktree(
+  worktreePath: string,
+  branch: string,
+  options?: {
+    base?: string
+    createBranch?: boolean
+    cwd?: string
+  }
+): Promise<void> {
+  const args: string[] = []
+
+  if (options?.cwd) {
+    args.push('-C', options.cwd)
+  }
+
+  args.push('worktree', 'add')
+
+  if (options?.createBranch) {
+    args.push('-b', branch)
+  }
+
+  args.push(worktreePath)
+
+  if (!options?.createBranch) {
+    args.push(branch)
+  } else if (options.base) {
+    args.push(options.base)
+  }
+
+  await Bun.$`git ${args}`.quiet()
+}
+
+/**
+ * Remove a worktree
+ */
+export async function removeWorktree(
+  worktreePath: string,
+  options?: { force?: boolean; cwd?: string }
+): Promise<void> {
+  const args: string[] = []
+
+  if (options?.cwd) {
+    args.push('-C', options.cwd)
+  }
+
+  args.push('worktree', 'remove')
+
+  if (options?.force) {
+    args.push('--force')
+  }
+
+  args.push(worktreePath)
+
+  await Bun.$`git ${args}`.quiet()
+}
+
+/**
+ * Check if a branch exists
+ */
+export async function branchExists(branch: string, cwd?: string): Promise<boolean> {
+  try {
+    const args = cwd
+      ? ['-C', cwd, 'rev-parse', '--verify', `refs/heads/${branch}`]
+      : ['rev-parse', '--verify', `refs/heads/${branch}`]
+    await Bun.$`git ${args}`.quiet()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Check if a worktree exists at path
+ */
+export async function worktreeExists(worktreePath: string, cwd?: string): Promise<boolean> {
+  const worktrees = await listWorktrees(cwd)
+  const normalizedPath = path.resolve(worktreePath)
+  return worktrees.some(wt => path.resolve(wt.path) === normalizedPath)
 }

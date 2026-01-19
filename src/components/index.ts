@@ -12,9 +12,15 @@ export { Ralph, type RalphProps, RalphContext } from './Ralph.js'
 // Phase and Step - Workflow structure
 export { Phase, type PhaseProps } from './Phase.js'
 export { Step, type StepProps } from './Step.js'
+export { PhaseContext, usePhaseContext, type PhaseContextValue } from './PhaseContext.js'
+export { StepContext, useStepContext, type StepContextValue } from './StepContext.js'
 
 // Parallel execution wrapper
 export { Parallel, type ParallelProps } from './Parallel.js'
+
+// Worktree execution context
+export { Worktree, type WorktreeProps } from './Worktree.js'
+export { useWorktree, WorktreeProvider, type WorktreeContextValue } from './WorktreeProvider.js'
 
 // Phase registry for automatic phase state management
 export {

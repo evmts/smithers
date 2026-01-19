@@ -50,3 +50,19 @@ export interface JJCommitResult {
   commitHash: string
   changeId: string
 }
+
+/**
+ * Git worktree info
+ */
+export interface WorktreeInfo {
+  /** Absolute path to the worktree directory */
+  path: string
+  /** Branch name (null for detached HEAD) */
+  branch: string | null
+  /** Commit hash at HEAD */
+  head: string
+  /** Whether the worktree is locked */
+  locked?: boolean
+  /** Whether the worktree can be pruned */
+  prunable?: boolean
+}

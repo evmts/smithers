@@ -65,6 +65,9 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
 
   const tasks: TasksModule = {
     start: (componentType: string, componentName?: string): string => {
+      if (rdb.isClosed) {
+        return uuid()
+      }
       const executionId = getCurrentExecutionId()
       if (!executionId) throw new Error('No active execution')
 
@@ -81,6 +84,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
     },
 
     complete: (id: string) => {
+      if (rdb.isClosed) return
       const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM tasks WHERE id = ?', [id])
       const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
       rdb.run(
@@ -90,6 +94,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
     },
 
     fail: (id: string) => {
+      if (rdb.isClosed) return
       const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM tasks WHERE id = ?', [id])
       const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
       rdb.run(
@@ -99,6 +104,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
     },
 
     getRunningCount: (iteration: number): number => {
+      if (rdb.isClosed) return 0
       const executionId = getCurrentExecutionId()
       if (!executionId) return 0
 
@@ -110,6 +116,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
     },
 
     getTotalCount: (iteration: number): number => {
+      if (rdb.isClosed) return 0
       const executionId = getCurrentExecutionId()
       if (!executionId) return 0
 
@@ -121,6 +128,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
     },
 
     list: (): Task[] => {
+      if (rdb.isClosed) return []
       const executionId = getCurrentExecutionId()
       if (!executionId) return []
 
@@ -131,6 +139,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
     },
 
     getCurrentIteration: (): number => {
+      if (rdb.isClosed) return 0
       const result = rdb.queryOne<{ value: string }>(
         "SELECT value FROM state WHERE key = 'ralphCount'"
       )

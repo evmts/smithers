@@ -22,11 +22,13 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
 
   const state: StateModule = {
     get: <T>(key: string): T | null => {
+      if (rdb.isClosed) return null
       const row = rdb.queryOne<{ value: string }>('SELECT value FROM state WHERE key = ?', [key])
       return row ? parseJson<T>(row.value, null as T) : null
     },
 
     set: <T>(key: string, value: T, trigger?: string) => {
+      if (rdb.isClosed) return
       const oldValue = state.get(key)
       const jsonValue = JSON.stringify(value)
       rdb.run(
@@ -44,12 +46,14 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
     },
 
     setMany: (updates: Record<string, any>, trigger?: string) => {
+      if (rdb.isClosed) return
       for (const [key, value] of Object.entries(updates)) {
         state.set(key, value, trigger)
       }
     },
 
     getAll: (): Record<string, any> => {
+      if (rdb.isClosed) return {}
       const rows = rdb.query<{ key: string; value: string }>('SELECT key, value FROM state')
       const result: Record<string, any> = {}
       for (const row of rows) {
@@ -59,11 +63,13 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
     },
 
     reset: () => {
+      if (rdb.isClosed) return
       rdb.run('DELETE FROM state')
       rdb.run("INSERT INTO state (key, value) VALUES ('phase', '\"initial\"'), ('ralphCount', '0'), ('data', 'null')")
     },
 
     history: (key?: string, limit: number = 100): any[] => {
+      if (rdb.isClosed) return []
       if (key) {
         return rdb.query(
           'SELECT * FROM transitions WHERE key = ? ORDER BY created_at DESC LIMIT ?',

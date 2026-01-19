@@ -205,4 +205,10 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
    * @default 10
    */
   tailLogLines?: number
+
+  /**
+   * Working directory for agent execution.
+   * If inside a <Worktree>, this defaults to the worktree cwd.
+   */
+  cwd?: string
 }

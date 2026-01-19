@@ -34,6 +34,9 @@ export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
 
   const agents: AgentsModule = {
     start: (prompt: string, model: string = 'sonnet', systemPrompt?: string, logPath?: string): string => {
+      if (rdb.isClosed) {
+        return uuid()
+      }
       const currentExecutionId = getCurrentExecutionId()
       const currentPhaseId = getCurrentPhaseId()
       if (!currentExecutionId) throw new Error('No active execution')
@@ -49,6 +52,7 @@ export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
     },
 
     complete: (id: string, result: string, structuredResult?: Record<string, any>, tokens?: { input: number; output: number }) => {
+      if (rdb.isClosed) return
       const startRow = rdb.queryOne<{ started_at: string; execution_id: string }>('SELECT started_at, execution_id FROM agents WHERE id = ?', [id])
       const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
       rdb.run(
@@ -63,17 +67,20 @@ export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
     },
 
     fail: (id: string, error: string) => {
+      if (rdb.isClosed) return
       rdb.run(`UPDATE agents SET status = 'failed', error = ?, completed_at = ? WHERE id = ?`, [error, now(), id])
       if (getCurrentAgentId() === id) setCurrentAgentId(null)
     },
 
     current: (): Agent | null => {
+      if (rdb.isClosed) return null
       const currentAgentId = getCurrentAgentId()
       if (!currentAgentId) return null
       return mapAgent(rdb.queryOne('SELECT * FROM agents WHERE id = ?', [currentAgentId]))
     },
 
     list: (executionId: string): Agent[] => {
+      if (rdb.isClosed) return []
       return rdb.query<any>('SELECT * FROM agents WHERE execution_id = ? ORDER BY created_at', [executionId])
         .map(mapAgent)
         .filter((a): a is Agent => a !== null)
