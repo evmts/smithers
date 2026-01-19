@@ -46,6 +46,7 @@ describe('14-kitchen-sink', () => {
             <Claude model="sonnet">
               Research the codebase and identify key files
             </Claude>
+            <Human message="Review the research findings and approve the plan?" />
           </Step>
           <Parallel>
             <Step name="analyze-frontend">
@@ -59,19 +60,16 @@ describe('14-kitchen-sink', () => {
               </Claude>
             </Step>
           </Parallel>
+          <Task done={false}>Define acceptance criteria</Task>
+          <Task done={false}>Identify potential risks</Task>
         </Phase>
 
         <Phase name="Planning">
-          <Step name="review">
-            <Human message="Review the research findings and approve the plan?" />
-          </Step>
           <Step name="create-plan">
             <Claude model="sonnet">
               Create detailed implementation plan based on research
             </Claude>
           </Step>
-          <Task done={false}>Define acceptance criteria</Task>
-          <Task done={false}>Identify potential risks</Task>
         </Phase>
 
         <Phase name="Implementation">
