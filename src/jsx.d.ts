@@ -1,10 +1,7 @@
 import type React from 'react'
 
-// Augment React's JSX namespace to include Smithers custom elements
-declare module 'react' {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace JSX {
-    interface IntrinsicElements {
+// Shared intrinsic elements for Smithers JSX runtime.
+interface SmithersIntrinsicElements {
       // Agent execution elements
       claude: {
         status?: string
@@ -403,7 +400,20 @@ declare module 'react' {
       blocked: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
       discovered: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
       agents: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
-    }
+}
+
+// Augment JSX namespaces for React and Smithers import sources.
+declare module 'react' {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace JSX {
+    interface IntrinsicElements extends SmithersIntrinsicElements {}
+  }
+}
+
+declare module 'smithers-orchestrator' {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace JSX {
+    interface IntrinsicElements extends SmithersIntrinsicElements {}
   }
 }
 
