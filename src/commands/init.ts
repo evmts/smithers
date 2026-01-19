@@ -39,9 +39,22 @@ export async function init(options: InitOptions = {}) {
     process.exit(1)
   }
 
+  // Check write permission before creating directories
+  try {
+    fs.accessSync(targetDir, fs.constants.W_OK)
+  } catch {
+    console.error(`❌ No write permission for directory: ${targetDir}`)
+    process.exit(1)
+  }
+
   // Create directories
-  fs.mkdirSync(smithersDir, { recursive: true })
-  fs.mkdirSync(logsDir, { recursive: true })
+  try {
+    fs.mkdirSync(smithersDir, { recursive: true })
+    fs.mkdirSync(logsDir, { recursive: true })
+  } catch (error) {
+    console.error(`❌ Failed to create directories:`, error instanceof Error ? error.message : error)
+    process.exit(1)
+  }
 
   // Get template path - find package root first
   const __filename = fileURLToPath(import.meta.url)

@@ -17,8 +17,10 @@ export async function git(...args: string[]): Promise<CommandResult> {
       stdout: result.stdout.toString(),
       stderr: result.stderr.toString(),
     }
-  } catch (error: any) {
-    throw new Error(`git ${args.join(' ')} failed: ${error.stderr?.toString() || error.message}`)
+  } catch (error) {
+    const stderr = error instanceof Object && 'stderr' in error ? String((error as { stderr: unknown }).stderr) : ''
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(`git ${args.join(' ')} failed: ${stderr || msg}`)
   }
 }
 
@@ -106,8 +108,9 @@ export async function addGitNotes(
 
   try {
     await Bun.$`git notes --ref ${SMITHERS_NOTES_REF} ${flag} ${forceFlag} -m ${content} ${ref}`.quiet()
-  } catch (error: any) {
-    throw new Error(`Failed to ${flag} git notes: ${error.message}`)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to ${flag} git notes: ${msg}`)
   }
 }
 
@@ -211,6 +214,13 @@ export async function addWorktree(
     cwd?: string
   }
 ): Promise<void> {
+  if (options?.createBranch) {
+    const exists = await branchExists(branch, options.cwd)
+    if (exists) {
+      throw new Error(`Branch '${branch}' already exists. Cannot create worktree with -b flag.`)
+    }
+  }
+
   const args: string[] = []
 
   if (options?.cwd) {
@@ -220,15 +230,9 @@ export async function addWorktree(
   args.push('worktree', 'add')
 
   if (options?.createBranch) {
-    args.push('-b', branch)
-  }
-
-  args.push(worktreePath)
-
-  if (!options?.createBranch) {
-    args.push(branch)
-  } else if (options.base) {
-    args.push(options.base)
+    args.push('-b', branch, worktreePath, options.base ?? 'HEAD')
+  } else {
+    args.push(worktreePath, branch)
   }
 
   await Bun.$`git ${args}`.quiet()
