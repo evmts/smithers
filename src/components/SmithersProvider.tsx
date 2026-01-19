@@ -400,7 +400,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   // Initialize ralphCount in DB if needed
   useMount(() => {
-    if (dbRalphCount == null) {
+    if (dbRalphCount == null && !reactiveDb.isClosed) {
       reactiveDb.run(
         "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
       )
@@ -556,6 +556,10 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     let stableCount = 0 // Count consecutive stable checks (no tasks running)
 
     checkInterval = setInterval(() => {
+      if (reactiveDb.isClosed) {
+        if (checkInterval) clearInterval(checkInterval)
+        return
+      }
       // Re-check values from database (reactive queries will have updated)
       const currentPendingTasks = pendingTasks
       const currentHasStartedTasks = hasStartedTasks
