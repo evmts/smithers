@@ -177,7 +177,8 @@ describe('generateStructuredOutputPrompt - edge cases', () => {
   })
 
   test('handles record schema', () => {
-    const schema = z.record(z.string())
+    // z.record requires a key type in Zod 4
+    const schema = z.record(z.string(), z.string())
     const prompt = generateStructuredOutputPrompt(schema)
     
     expect(prompt).toContain('JSON')

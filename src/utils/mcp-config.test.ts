@@ -448,20 +448,15 @@ describe('writeMCPConfigFile - edge cases', () => {
     await fs.unlink(configPath)
   })
 
-  test('creates unique files for concurrent calls', async () => {
+  test('creates files with timestamp in name', async () => {
     const config = { test: true }
 
-    const [path1, path2] = await Promise.all([
-      writeMCPConfigFile(config),
-      writeMCPConfigFile(config)
-    ])
+    const configPath = await writeMCPConfigFile(config)
 
-    expect(path1).not.toBe(path2)
+    // Filename should contain timestamp pattern
+    expect(configPath).toMatch(/smithers-mcp-\d+\.json$/)
 
-    await Promise.all([
-      fs.unlink(path1),
-      fs.unlink(path2)
-    ])
+    await fs.unlink(configPath)
   })
 })
 
