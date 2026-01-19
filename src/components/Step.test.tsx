@@ -379,19 +379,23 @@ describe('Step component', () => {
 
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test" onComplete={() => { completed = true }}>
-            <div />
-          </Step>
+          <PhaseRegistryProvider>
+            <Phase name="test-phase">
+              <Step name="test" onComplete={() => { completed = true }}>
+                <div />
+              </Step>
+            </Phase>
+          </PhaseRegistryProvider>
         </SmithersProvider>
       )
 
       // Wait for step to start
-      await new Promise(r => setTimeout(r, 150))
+      await new Promise(r => setTimeout(r, 100))
 
-      // Dispose root to trigger unmount - onComplete is called on unmount
+      // Dispose triggers unmount, which should fire onComplete for started step
       root.dispose()
       
-      // Wait for cleanup
+      // Give async cleanup a moment
       await new Promise(r => setTimeout(r, 50))
 
       expect(completed).toBe(true)

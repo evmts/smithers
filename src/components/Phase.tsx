@@ -145,11 +145,16 @@ export function Phase(props: PhaseProps): ReactNode {
 
   // Always render the phase element (visible in plan output)
   // Only render children when active (executes work)
-  // Wrap children in StepRegistryProvider to enforce sequential step execution
-  // Wrap in ExecutionBoundary so execution is controlled by isActive
+  // Skipped and non-active phases show only the phase tag without children
+  const shouldRenderChildren = isActive && !isSkipped
+
   return (
-    <phase name={props.name} status={status}>
-      {isActive && (
+    <phase 
+      name={props.name} 
+      status={status}
+      {...(skipIfErrorRef.current ? { error: skipIfErrorRef.current.message } : {})}
+    >
+      {shouldRenderChildren && (
         <ExecutionBoundary enabled={isActive}>
           <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
             {props.children}
