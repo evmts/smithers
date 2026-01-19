@@ -76,14 +76,30 @@ export function Phase(props: PhaseProps): ReactNode {
   const hasStartedRef = useRef(false)
   const hasCompletedRef = useRef(false)
   const prevIsActiveRef = useRef(false)
+  const skipIfErrorRef = useRef<Error | null>(null)
 
-  // Determine phase status
-  const isSkipped = Boolean(props.skipIf?.())
-  const isActive = !isSkipped && (registry ? registry.isPhaseActive(myIndex) : true)
-  const isCompleted = !isSkipped && (registry ? registry.isPhaseCompleted(myIndex) : false)
+  // Create logger with phase context
+  const log: Logger = useMemo(() => createLogger('Phase', { name: props.name }), [props.name])
+
+  // Evaluate skipIf with error handling
+  let isSkipped = false
+  if (props.skipIf) {
+    try {
+      isSkipped = Boolean(props.skipIf())
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err))
+      skipIfErrorRef.current = error
+      log.error('skipIf evaluation failed', error, { phase: props.name })
+      isSkipped = false // Don't skip if we can't evaluate the condition
+    }
+  }
+
+  const hasError = skipIfErrorRef.current !== null
+  const isActive = !isSkipped && !hasError && (registry ? registry.isPhaseActive(myIndex) : true)
+  const isCompleted = !isSkipped && !hasError && (registry ? registry.isPhaseCompleted(myIndex) : false)
 
   // Compute status string for output
-  const status = getPhaseStatus(isSkipped, isActive, isCompleted)
+  const status = getPhaseStatus(isSkipped, isActive, isCompleted, hasError)
 
   // Track if we've already processed the skip for this phase
   const hasSkippedRef = useRef(false)
@@ -91,36 +107,35 @@ export function Phase(props: PhaseProps): ReactNode {
   // Handle skipped phases only when they become active (not on mount)
   useEffect(() => {
     if (!executionEnabled) return
-    // Critical: Only run when this phase IS CURRENTLY ACTIVE
-    if (!registry?.isPhaseActive(myIndex)) return
-    if (!isSkipped) return
-    if (hasSkippedRef.current) return
+    if (registry?.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
+      hasSkippedRef.current = true
+      const endTiming = log.time('phase_skip')
+      const id = db.phases.start(props.name, ralphCount)
+      db.db.run(
+        `UPDATE phases SET status = 'skipped', completed_at = datetime('now') WHERE id = ?`,
+        [id]
+      )
+      log.info(`Skipped`, { iteration: ralphCount })
+      endTiming()
 
-    hasSkippedRef.current = true
-    // Log skipped phase to database
-    const id = db.phases.start(props.name, ralphCount)
-    db.db.run(
-      `UPDATE phases SET status = 'skipped', completed_at = datetime('now') WHERE id = ?`,
-      [id]
-    )
-    console.log(`[Phase] Skipped: ${props.name}`)
-
-    // Advance to next phase immediately
-    registry?.advancePhase()
-  }, [registry?.currentPhaseIndex, myIndex, isSkipped, db, props.name, ralphCount, registry, executionEnabled])
+      registry?.advancePhase()
+    }
+  }, [registry?.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry, executionEnabled, log])
 
   // Handle phase lifecycle transitions
   useEffect(() => {
-    if (isSkipped || !executionEnabled) return
+    if (isSkipped || hasError || !executionEnabled) return
 
     // Activation: transition from inactive to active
     if (!prevIsActiveRef.current && isActive && !hasStartedRef.current) {
       hasStartedRef.current = true
+      const endTiming = log.time('phase_start')
 
       const id = db.phases.start(props.name, ralphCount)
       phaseIdRef.current = id
+      endTiming()
 
-      console.log(`[Phase] Started: ${props.name} (iteration ${ralphCount})`)
+      log.info(`Started`, { iteration: ralphCount, phaseId: id })
       props.onStart?.()
     }
 
@@ -129,14 +144,16 @@ export function Phase(props: PhaseProps): ReactNode {
       const id = phaseIdRef.current
       if (id && !hasCompletedRef.current && hasStartedRef.current) {
         hasCompletedRef.current = true
+        const endTiming = log.time('phase_complete')
         db.phases.complete(id)
-        console.log(`[Phase] Completed: ${props.name}`)
+        endTiming()
+        log.info(`Completed`, { phaseId: id })
         props.onComplete?.()
       }
     }
 
     prevIsActiveRef.current = isActive
-  }, [isActive, isSkipped, executionEnabled, props.name, ralphCount, db, props.onStart, props.onComplete])
+  }, [isActive, isSkipped, hasError, executionEnabled, props.name, ralphCount, db, props.onStart, props.onComplete, log])
 
   // Handler for when all steps in this phase complete
   const handleAllStepsComplete = useCallback(() => {
