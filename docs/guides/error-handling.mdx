@@ -127,7 +127,7 @@ Log errors to the database for debugging:
       severity: "warning",
       title: "Agent Failed",
       content: error.message,
-      metadata: {
+      data: {
         phase: phase,
         attempts: attempts,
         timestamp: new Date().toISOString(),

@@ -19,11 +19,11 @@ describe('getReportToolDescription', () => {
   test('describes report types', () => {
     const description = getReportToolDescription()
     expect(description).toContain('progress')
-    expect(description).toContain('findings')
-    expect(description).toContain('warnings')
-    expect(description).toContain('errors')
-    expect(description).toContain('metrics')
-    expect(description).toContain('decisions')
+    expect(description).toContain('finding')
+    expect(description).toContain('warning')
+    expect(description).toContain('error')
+    expect(description).toContain('metric')
+    expect(description).toContain('decision')
   })
 
   test('includes example usage', () => {
@@ -61,29 +61,49 @@ describe('createReportTool', () => {
 
   test('input schema has required fields', () => {
     const tool = createReportTool()
-    const shape = (tool.inputSchema as any).shape
-    expect(shape.type).toBeDefined()
-    expect(shape.title).toBeDefined()
-    expect(shape.content).toBeDefined()
+    expect(tool.inputSchema.safeParse({ type: 'progress', title: 't', content: 'c' }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({ title: 't', content: 'c' }).success).toBe(false)
+    expect(tool.inputSchema.safeParse({ type: 'progress', content: 'c' }).success).toBe(false)
+    expect(tool.inputSchema.safeParse({ type: 'progress', title: 't' }).success).toBe(false)
   })
 
   test('input schema has type enum', () => {
     const tool = createReportTool()
-    const typeSchema = (tool.inputSchema as any).shape.type
-    expect(typeSchema.options).toContain('progress')
-    expect(typeSchema.options).toContain('finding')
-    expect(typeSchema.options).toContain('warning')
-    expect(typeSchema.options).toContain('error')
-    expect(typeSchema.options).toContain('metric')
-    expect(typeSchema.options).toContain('decision')
+    expect(tool.inputSchema.safeParse({ type: 'progress', title: 't', content: 'c' }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({ type: 'finding', title: 't', content: 'c' }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({ type: 'warning', title: 't', content: 'c' }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({ type: 'error', title: 't', content: 'c' }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({ type: 'metric', title: 't', content: 'c' }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({ type: 'decision', title: 't', content: 'c' }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({ type: 'nope', title: 't', content: 'c' }).success).toBe(false)
   })
 
   test('input schema has severity enum', () => {
     const tool = createReportTool()
-    const severitySchema = (tool.inputSchema as any).shape.severity
-    expect(severitySchema._def.innerType.options).toContain('info')
-    expect(severitySchema._def.innerType.options).toContain('warning')
-    expect(severitySchema._def.innerType.options).toContain('critical')
+    expect(tool.inputSchema.safeParse({
+      type: 'progress',
+      title: 't',
+      content: 'c',
+      severity: 'info'
+    }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({
+      type: 'progress',
+      title: 't',
+      content: 'c',
+      severity: 'warning'
+    }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({
+      type: 'progress',
+      title: 't',
+      content: 'c',
+      severity: 'critical'
+    }).success).toBe(true)
+    expect(tool.inputSchema.safeParse({
+      type: 'progress',
+      title: 't',
+      content: 'c',
+      severity: 'nope'
+    }).success).toBe(false)
   })
 
   test('has execute function', () => {

@@ -12,7 +12,14 @@ const ALLOWED_TABLES = [
   'executions', 'phases', 'agents', 'tool_calls', 'human_interactions',
   'render_frames', 'tasks', 'steps', 'reports', 'memories',
   'state', 'transitions', 'artifacts', 'commits', 'snapshots', 'reviews'
-]
+] as const
+
+const TABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+type AllowedTableName = typeof ALLOWED_TABLES[number]
+
+export function isAllowedTableName(tableName: string): tableName is AllowedTableName {
+  return TABLE_NAME_PATTERN.test(tableName) && ALLOWED_TABLES.includes(tableName as AllowedTableName)
+}
 
 const EMPTY_COLUMNS: string[] = []
 const EMPTY_DATA: Record<string, unknown>[] = []
@@ -27,7 +34,7 @@ export function usePollTableData(db: SmithersDB, tableName: string): TableData {
   const pollKey = useMemo(() => ({ db, tableName }), [db, tableName])
 
   useEffectOnValueChange(pollKey, () => {
-    if (!ALLOWED_TABLES.includes(tableName)) {
+    if (!isAllowedTableName(tableName)) {
       setColumns(EMPTY_COLUMNS)
       setData(EMPTY_DATA)
       return

@@ -33,7 +33,7 @@ export async function dbCommand(subcommand: string | undefined, options: DbOptio
   console.log(`   Database: ${requestedPath}`)
   console.log('')
 
-  const db = await createSmithersDB({ path: dbFile })
+  const db = createSmithersDB({ path: dbFile })
 
   try {
     switch (subcommand) {

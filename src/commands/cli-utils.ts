@@ -15,10 +15,13 @@ export function resolveEntrypoint(
 }
 
 export function ensureExecutable(filePath: string): void {
+  if (process.platform === 'win32') {
+    return
+  }
   try {
     fs.accessSync(filePath, fs.constants.X_OK)
   } catch {
-    fs.chmodSync(filePath, '755')
+    fs.chmodSync(filePath, 0o755)
   }
 }
 

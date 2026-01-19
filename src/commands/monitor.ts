@@ -1,9 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
-import { OutputParser } from '../monitor/output-parser.jsx'
-import { StreamFormatter } from '../monitor/stream-formatter.jsx'
-import { LogWriter } from '../monitor/log-writer.jsx'
-import { summarizeWithHaiku } from '../monitor/haiku-summarizer.jsx'
+import { OutputParser, StreamFormatter, LogWriter, summarizeWithHaiku } from '../monitor/index.js'
 import { ensureExecutable, findPreloadPath, resolveEntrypoint } from './cli-utils.js'
 
 interface MonitorOptions {
@@ -42,12 +39,10 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}): P
   const preloadPath = findPreloadPath(import.meta.url)
   const child = spawn('bun', ['--preload', preloadPath, '--install=fallback', filePath], {
     stdio: ['inherit', 'pipe', 'pipe'],
-    shell: true,
+    shell: false,
   })
 
-  child.stdout?.on('data', async (data) => {
-    const chunk = data.toString()
-
+  const handleStdoutChunk = async (chunk: string) => {
     const events = parser.parseChunk(chunk)
 
     for (const event of events) {
@@ -86,10 +81,20 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}): P
         process.stdout.write(formatted)
       }
     }
+  }
+
+  let stdoutChain = Promise.resolve()
+  let stderrChain = Promise.resolve()
+  child.stdout?.on('data', (data) => {
+    const chunk = data.toString()
+    stdoutChain = stdoutChain
+      .then(() => handleStdoutChunk(chunk))
+      .catch((err) => {
+        console.warn('[monitor] stdout processing error:', err instanceof Error ? err.message : String(err))
+      })
   })
 
-  child.stderr?.on('data', async (data) => {
-    const chunk = data.toString()
+  const handleStderrChunk = async (chunk: string) => {
     const logPath = logWriter.writeError(chunk)
 
     let summary: string | undefined
@@ -109,6 +114,15 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}): P
       process.stderr.write(`           ${chunk}`)
     }
     process.stderr.write(`           📄 Full error: ${logPath}\n\n`)
+  }
+
+  child.stderr?.on('data', (data) => {
+    const chunk = data.toString()
+    stderrChain = stderrChain
+      .then(() => handleStderrChunk(chunk))
+      .catch((err) => {
+        console.warn('[monitor] stderr processing error:', err instanceof Error ? err.message : String(err))
+      })
   })
 
   const promise = new Promise<number>((resolve, reject) => {
@@ -136,30 +150,35 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}): P
     })
 
     child.on('exit', (code) => {
-      const remainingEvents = parser.flush()
-      for (const event of remainingEvents) {
-        const formatted = formatter.formatEvent(event)
-        if (formatted) {
-          process.stdout.write(formatted)
+      const finalize = async () => {
+        await Promise.allSettled([stdoutChain, stderrChain])
+        const remainingEvents = parser.flush()
+        for (const event of remainingEvents) {
+          const formatted = formatter.formatEvent(event)
+          if (formatted) {
+            process.stdout.write(formatted)
+          }
+        }
+
+        const duration = Date.now() - startTime
+
+        console.log(formatter.formatSummary(duration, logWriter.getLogDir()))
+
+        if (code === 0) {
+          console.log('✅ Orchestration completed successfully')
+          console.log('')
+        } else {
+          console.log(`❌ Orchestration exited with code: ${code}`)
+          console.log('')
+        }
+
+        resolve(code || 0)
+        if (!options.noExit) {
+          process.exit(code || 0)
         }
       }
 
-      const duration = Date.now() - startTime
-
-      console.log(formatter.formatSummary(duration, logWriter.getLogDir()))
-
-      if (code === 0) {
-        console.log('✅ Orchestration completed successfully')
-        console.log('')
-      } else {
-        console.log(`❌ Orchestration exited with code: ${code}`)
-        console.log('')
-      }
-
-      resolve(code || 0)
-      if (!options.noExit) {
-        process.exit(code || 0)
-      }
+      void finalize()
     })
   })
 

@@ -39,10 +39,31 @@ export function createClaudeAssistant(db: SmithersDB): ClaudeAssistant {
   const getContextSummary = (): string => {
     try {
       const execution = db.execution.current()
-      const phases = db.query<{ name: string; status: string }>('SELECT * FROM phases ORDER BY created_at DESC LIMIT 5')
-      const agents = db.query<{ model: string; status: string; tokens_input: number | null; tokens_output: number | null }>('SELECT * FROM agents ORDER BY created_at DESC LIMIT 5')
-      const toolCalls = db.query<{ tool_name: string; status: string }>('SELECT * FROM tool_calls ORDER BY created_at DESC LIMIT 10')
-      const recentFrames = db.query<{ id: string }>('SELECT * FROM render_frames ORDER BY created_at DESC LIMIT 3')
+      const executionId = execution?.id ?? null
+      const phases = executionId
+        ? db.query<{ name: string; status: string }>(
+          'SELECT name, status FROM phases WHERE execution_id = ? ORDER BY created_at DESC LIMIT 5',
+          [executionId]
+        )
+        : []
+      const agents = executionId
+        ? db.query<{ model: string; status: string; tokens_input: number | null; tokens_output: number | null }>(
+          'SELECT model, status, tokens_input, tokens_output FROM agents WHERE execution_id = ? ORDER BY created_at DESC LIMIT 5',
+          [executionId]
+        )
+        : []
+      const toolCalls = executionId
+        ? db.query<{ tool_name: string; status: string }>(
+          'SELECT tool_name, status FROM tool_calls WHERE execution_id = ? ORDER BY created_at DESC LIMIT 10',
+          [executionId]
+        )
+        : []
+      const recentFrames = executionId
+        ? db.query<{ id: string }>(
+          'SELECT id FROM render_frames WHERE execution_id = ? ORDER BY created_at DESC LIMIT 3',
+          [executionId]
+        )
+        : []
 
       return `
 Current Context:

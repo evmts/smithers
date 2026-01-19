@@ -182,41 +182,41 @@ describe('isSmithersTool', () => {
   })
 
   test('returns false for null', () => {
-    expect(isCustomTool(null as any)).toBe(false)
+    expect(isSmithersTool(null as any)).toBe(false)
   })
 
   test('returns false for undefined', () => {
-    expect(isCustomTool(undefined as any)).toBe(false)
+    expect(isSmithersTool(undefined as any)).toBe(false)
   })
 
-  test('returns false for object with non-function execute', () => {
-    const badTool = {
-      name: 'bad',
-      description: 'test',
-      inputSchema: { type: 'object' },
-      execute: 'not a function',
-    }
-    expect(isCustomTool(badTool as any)).toBe(false)
-  })
-
-  test('handles async execute functions', () => {
-    const asyncTool: Tool = {
-      name: 'async',
-      description: 'async tool',
+  test('returns false for non-zod inputSchema', () => {
+    const legacyLike: Tool = {
+      name: 'legacyish',
+      description: 'legacyish tool',
       inputSchema: { type: 'object' },
       execute: async () => ({ result: 'done' }),
     }
-    expect(isCustomTool(asyncTool)).toBe(true)
+    expect(isSmithersTool(legacyLike)).toBe(false)
+  })
+
+  test('handles async execute functions', () => {
+    const asyncTool = {
+      name: 'async',
+      description: 'async tool',
+      inputSchema: z.object({ value: z.string() }),
+      execute: async () => ({ result: 'done' }),
+    }
+    expect(isSmithersTool(asyncTool as any)).toBe(true)
   })
 
   test('handles sync execute functions', () => {
     const syncTool = {
       name: 'sync',
       description: 'sync tool',
-      inputSchema: { type: 'object' },
-      execute: () => ({ result: 'done' }),
+      inputSchema: z.object({ value: z.string() }),
+      execute: () => Promise.resolve({ result: 'done' }),
     }
-    expect(isCustomTool(syncTool as any)).toBe(true)
+    expect(isSmithersTool(syncTool as any)).toBe(true)
   })
 
   test('handles tool with missing name/description/inputSchema', () => {
