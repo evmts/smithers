@@ -1,11 +1,20 @@
-export type { SmithersMiddleware } from './types.js'
-export { composeMiddleware } from './compose.js'
-export { applyMiddleware } from './apply.js'
-export { loggingMiddleware, type LogEntry } from './logging.js'
-export { cachingMiddleware, LRUCache, type CacheStore, type LRUCacheOptions } from './caching.js'
-export { retryMiddleware, type RetryOptions } from './retry.js'
-export { rateLimitingMiddleware } from './rate-limiting.js'
-export { validationMiddleware, ValidationError, type ValidationOptions } from './validation.js'
-export { costTrackingMiddleware, type CostTrackingOptions } from './cost-tracking.js'
-export { redactSecretsMiddleware, type RedactSecretsOptions } from './redact-secrets.js'
-export { timeoutMiddleware, type TimeoutOptions } from './timeout.js'
+export { composeMiddleware, applyMiddleware } from './compose.js'
+export type { SmithersMiddleware, ClaudeExecutionParams } from './types.js'
+
+export { extractReasoningMiddleware } from './extract-reasoning.js'
+export type { ExtractReasoningOptions } from './extract-reasoning.js'
+
+export { extractJsonMiddleware } from './extract-json.js'
+export type { ExtractJsonOptions } from './extract-json.js'
+
+export { loggingMiddleware } from './logging.js'
+export type { LogEntry, LogLevel, LoggingMiddlewareOptions } from './logging.js'
+
+export { retryMiddleware } from './retry.js'
+export type { RetryBackoff, RetryMiddlewareOptions } from './retry.js'
+
+export { cachingMiddleware } from './caching.js'
+export type { CacheStore, CachingMiddlewareOptions } from './caching.js'
+
+export { validationMiddleware, ValidationError } from './validation.js'
+export type { ValidationMiddlewareOptions } from './validation.js'

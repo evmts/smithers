@@ -8,23 +8,24 @@ export class ValidationError extends Error {
   }
 }
 
-export interface ValidationOptions {
+export interface ValidationMiddlewareOptions {
   validate: (result: AgentResult) => boolean | Promise<boolean>
-  onInvalid?: (result: AgentResult) => void | Promise<void>
+  errorMessage?: string
 }
 
-export function validationMiddleware(options: ValidationOptions): SmithersMiddleware {
+export function validationMiddleware(options: ValidationMiddlewareOptions): SmithersMiddleware {
   return {
     name: 'validation',
-    wrapExecute: async (doExecute) => {
-      const result = await doExecute()
+    transformResult: async (result: AgentResult) => {
+      if (result.stopReason === 'error') {
+        return result
+      }
+
       const isValid = await options.validate(result)
       if (!isValid) {
-        if (options.onInvalid) {
-          await options.onInvalid(result)
-        }
-        throw new ValidationError('Validation failed')
+        throw new ValidationError(options.errorMessage ?? 'Validation failed')
       }
+
       return result
     },
   }

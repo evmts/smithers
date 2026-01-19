@@ -22,7 +22,7 @@ export async function applyMiddleware(
   }
 
   const wrappedExecute = composed.wrapExecute
-    ? () => composed.wrapExecute!(execute, resolvedOptions)
+    ? () => composed.wrapExecute!({ doExecute: execute, options: resolvedOptions })
     : execute
 
   const result = await wrappedExecute()

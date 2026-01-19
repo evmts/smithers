@@ -156,7 +156,8 @@ export function Claude(props: ClaudeProps): ReactNode {
               }
               return true
             },
-            onRetry: (error, attempt, maxRetries) => {
+            onRetry: (attempt, error) => {
+              const maxRetries = props.maxRetries ?? 3
               if (error instanceof ValidationError) {
                 props.onProgress?.(`Validation failed, retrying (${attempt}/${maxRetries})...`)
                 return
@@ -323,7 +324,7 @@ export function Claude(props: ClaudeProps): ReactNode {
         }
 
         const wrappedExecute = composed.wrapExecute
-          ? () => composed.wrapExecute!(execute, executionOptions)
+          ? () => composed.wrapExecute!({ doExecute: execute, options: executionOptions })
           : execute
 
         let agentResult = await wrappedExecute()

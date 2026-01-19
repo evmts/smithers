@@ -14,20 +14,20 @@ const DEFAULT_PRICING: Record<string, { input: number; output: number }> = {
 export function costTrackingMiddleware(options: CostTrackingOptions): SmithersMiddleware {
   return {
     name: 'cost-tracking',
-    wrapExecute: async (doExecute, execOptions) => {
+    wrapExecute: async ({ doExecute, options: executionOptions }) => {
       const result = await doExecute()
-      const modelId = execOptions.model ?? 'sonnet'
+      const modelId = executionOptions.model ?? 'sonnet'
       const pricing = options.pricing?.[modelId] ?? DEFAULT_PRICING[modelId]
 
-      if (!pricing || !result.tokensUsed) {
-        return result
+      if (pricing) {
+        const inputTokens = result.tokensUsed?.input ?? 0
+        const outputTokens = result.tokensUsed?.output ?? 0
+        const inputCost = (inputTokens / 1000) * pricing.input
+        const outputCost = (outputTokens / 1000) * pricing.output
+        const total = inputCost + outputCost
+        options.onCost({ input: inputCost, output: outputCost, total })
       }
 
-      const inputCost = (result.tokensUsed.input / 1000) * pricing.input
-      const outputCost = (result.tokensUsed.output / 1000) * pricing.output
-      const total = inputCost + outputCost
-
-      options.onCost({ input: inputCost, output: outputCost, total })
       return result
     },
   }

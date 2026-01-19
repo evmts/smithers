@@ -279,6 +279,8 @@ export function Step(props: StepProps): ReactNode {
     const id = stepIdRef.current
     if (!id) return
 
+    const canUseDb = !db.db.isClosed
+
     try {
       // Snapshot after if requested
       if (props.snapshotAfter) {
@@ -300,23 +302,27 @@ export function Step(props: StepProps): ReactNode {
 
           console.log(`[Step] Created commit: ${commitHashRef.current}`)
 
-          db.vcs.logCommit({
-            vcs_type: 'jj',
-            commit_hash: result.commitHash,
-            change_id: result.changeId,
-            message,
-          })
+          if (canUseDb) {
+            db.vcs.logCommit({
+              vcs_type: 'jj',
+              commit_hash: result.commitHash,
+              change_id: result.changeId,
+              message,
+            })
+          }
         } catch (error) {
           console.warn('[Step] Could not create commit:', error)
         }
       }
 
       // Complete step in database
-      db.steps.complete(id, {
-        ...(snapshotBeforeIdRef.current ? { snapshot_before: snapshotBeforeIdRef.current } : {}),
-        ...(snapshotAfterIdRef.current ? { snapshot_after: snapshotAfterIdRef.current } : {}),
-        ...(commitHashRef.current ? { commit_created: commitHashRef.current } : {}),
-      })
+      if (canUseDb) {
+        db.steps.complete(id, {
+          ...(snapshotBeforeIdRef.current ? { snapshot_before: snapshotBeforeIdRef.current } : {}),
+          ...(snapshotAfterIdRef.current ? { snapshot_after: snapshotAfterIdRef.current } : {}),
+          ...(commitHashRef.current ? { commit_created: commitHashRef.current } : {}),
+        })
+      }
 
       console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
 
@@ -326,9 +332,11 @@ export function Step(props: StepProps): ReactNode {
       registry?.advanceStep()
     } catch (error) {
       console.error(`[Step] Error completing step:`, error)
-      db.steps.fail(id)
+      if (canUseDb) {
+        db.steps.fail(id)
+      }
     } finally {
-      if (taskIdRef.current) {
+      if (canUseDb && taskIdRef.current) {
         db.tasks.complete(taskIdRef.current)
       }
     }

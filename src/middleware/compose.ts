@@ -1,56 +1,134 @@
 import type { AgentResult, CLIExecutionOptions } from '../components/agents/types.js'
 import type { SmithersMiddleware } from './types.js'
 
-/**
- * Compose multiple middleware into one.
- * Middleware are applied in order:
- * - transformOptions: left to right
- * - wrapExecute: right to left (outermost last)
- * - transformChunk: left to right
- * - transformResult: left to right
- */
-export function composeMiddleware(
-  ...middlewares: SmithersMiddleware[]
-): SmithersMiddleware {
-  const stack = middlewares.filter(Boolean)
+function filterMiddleware(middlewares: (SmithersMiddleware | null | undefined)[]): SmithersMiddleware[] {
+  return middlewares.filter(Boolean) as SmithersMiddleware[]
+}
 
-  return {
-    name: stack.map((mw) => mw.name).filter(Boolean).join(' -> ') || 'composed',
-    transformOptions: async (options: CLIExecutionOptions) => {
+function buildProgressTransformer(
+  middlewares: SmithersMiddleware[],
+  onProgress: CLIExecutionOptions['onProgress'],
+): CLIExecutionOptions['onProgress'] {
+  if (!onProgress) return undefined
+
+  const transformers = middlewares.map((mw) => mw.transformChunk).filter(Boolean) as Array<
+    (chunk: string) => string
+  >
+
+  if (transformers.length === 0) return onProgress
+
+  return (chunk: string) => {
+    let nextChunk = chunk
+    for (const transform of transformers) {
+      nextChunk = transform(nextChunk)
+    }
+    onProgress(nextChunk)
+  }
+}
+
+/**
+ * Compose multiple middleware into a single middleware.
+ */
+export function composeMiddleware(...middlewares: (SmithersMiddleware | null | undefined)[]): SmithersMiddleware {
+  const active = filterMiddleware(middlewares)
+
+  if (active.length === 0) {
+    return {}
+  }
+
+  const name = active.map((mw) => mw.name).filter(Boolean).join('+')
+
+  const composed: SmithersMiddleware = {
+    transformOptions: async (options) => {
       let nextOptions = options
-      for (const middleware of stack) {
-        if (middleware.transformOptions) {
-          nextOptions = await middleware.transformOptions(nextOptions)
+      for (const mw of active) {
+        if (mw.transformOptions) {
+          nextOptions = await mw.transformOptions(nextOptions)
         }
       }
-      return nextOptions
+      const onProgress = buildProgressTransformer(active, nextOptions.onProgress)
+      return onProgress ? { ...nextOptions, onProgress } : nextOptions
     },
-    wrapExecute: async (doExecute: () => Promise<AgentResult>, options: CLIExecutionOptions) => {
-      let composed = doExecute
-      for (const middleware of [...stack].reverse()) {
-        if (!middleware.wrapExecute) continue
-        const next = composed
-        composed = () => middleware.wrapExecute!(next, options)
+    wrapExecute: async ({ doExecute, options }) => {
+      let wrapped = doExecute
+      for (const mw of [...active].reverse()) {
+        if (!mw.wrapExecute) continue
+        const previous = wrapped
+        wrapped = () => mw.wrapExecute!({ doExecute: previous, options })
       }
-      return composed()
-    },
-    transformChunk: (chunk: string) => {
-      let nextChunk = chunk
-      for (const middleware of stack) {
-        if (middleware.transformChunk) {
-          nextChunk = middleware.transformChunk(nextChunk)
-        }
-      }
-      return nextChunk
+      return wrapped()
     },
     transformResult: async (result: AgentResult) => {
       let nextResult = result
-      for (const middleware of stack) {
-        if (middleware.transformResult) {
-          nextResult = await middleware.transformResult(nextResult)
+      for (const mw of active) {
+        if (mw.transformResult) {
+          nextResult = await mw.transformResult(nextResult)
         }
       }
       return nextResult
     },
   }
+
+  if (active.some((mw) => mw.transformChunk)) {
+    composed.transformChunk = (chunk: string) => {
+      let nextChunk = chunk
+      for (const mw of active) {
+        if (mw.transformChunk) {
+          nextChunk = mw.transformChunk(nextChunk)
+        }
+      }
+      return nextChunk
+    }
+  }
+
+  if (name) {
+    composed.name = name
+  }
+
+  return composed
+}
+
+/**
+ * Apply middleware to an execution function.
+ */
+export async function applyMiddleware(
+  execute: (options: CLIExecutionOptions) => Promise<AgentResult>,
+  options: CLIExecutionOptions,
+  middlewares: (SmithersMiddleware | null | undefined)[],
+): Promise<AgentResult> {
+  const active = filterMiddleware(middlewares)
+  if (active.length === 0) {
+    return execute(options)
+  }
+
+  let nextOptions = options
+  for (const mw of active) {
+    if (mw.transformOptions) {
+      nextOptions = await mw.transformOptions(nextOptions)
+    }
+  }
+
+  const onProgress = buildProgressTransformer(active, nextOptions.onProgress)
+  if (onProgress) {
+    nextOptions = { ...nextOptions, onProgress }
+  }
+
+  const executeWithTransforms = async () => {
+    let result = await execute(nextOptions)
+    for (const mw of active) {
+      if (mw.transformResult) {
+        result = await mw.transformResult(result)
+      }
+    }
+    return result
+  }
+
+  let wrappedExecute = executeWithTransforms
+  for (const mw of [...active].reverse()) {
+    if (!mw.wrapExecute) continue
+    const previous = wrappedExecute
+    wrappedExecute = () => mw.wrapExecute!({ doExecute: previous, options: nextOptions })
+  }
+
+  return wrappedExecute()
 }

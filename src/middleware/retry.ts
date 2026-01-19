@@ -1,50 +1,49 @@
+import type { AgentResult } from '../components/agents/types.js'
 import type { SmithersMiddleware } from './types.js'
 
-export interface RetryOptions {
+export type RetryBackoff = 'exponential' | 'linear'
+
+export interface RetryMiddlewareOptions {
   maxRetries?: number
   retryOn?: (error: Error) => boolean
-  backoff?: 'exponential' | 'linear' | 'constant'
-  baseDelay?: number
-  onRetry?: (error: Error, attempt: number, maxRetries: number, delayMs: number) => void
+  backoff?: RetryBackoff
+  baseDelayMs?: number
+  onRetry?: (attempt: number, error: Error, delayMs: number) => void | Promise<void>
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function calculateBackoff(attempt: number, backoff: RetryBackoff, baseDelayMs: number): number {
+  if (backoff === 'linear') {
+    return baseDelayMs * (attempt + 1)
+  }
+  return baseDelayMs * Math.pow(2, attempt)
 }
 
-export function retryMiddleware(options: RetryOptions = {}): SmithersMiddleware {
+export function retryMiddleware(options: RetryMiddlewareOptions = {}): SmithersMiddleware {
   const maxRetries = options.maxRetries ?? 3
-  const baseDelay = options.baseDelay ?? 1000
   const backoff = options.backoff ?? 'exponential'
+  const baseDelayMs = options.baseDelayMs ?? 250
+  const retryOn = options.retryOn ?? (() => true)
 
   return {
     name: 'retry',
-    wrapExecute: async (doExecute) => {
+    wrapExecute: async ({ doExecute }) => {
       let lastError: Error | null = null
-
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
         try {
           return await doExecute()
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error))
-          const shouldRetry = options.retryOn ? options.retryOn(lastError) : true
-
-          if (!shouldRetry || attempt >= maxRetries) {
+          if (attempt >= maxRetries || !retryOn(lastError)) {
             throw lastError
           }
-
-          const delayMs = backoff === 'constant'
-            ? baseDelay
-            : backoff === 'linear'
-              ? baseDelay * (attempt + 1)
-              : baseDelay * Math.pow(2, attempt)
-
-          options.onRetry?.(lastError, attempt + 1, maxRetries, delayMs)
-          await delay(delayMs)
+          const delay = calculateBackoff(attempt, backoff, baseDelayMs)
+          const retryAttempt = attempt + 1
+          await options.onRetry?.(retryAttempt, lastError, delay)
+          await new Promise((resolve) => setTimeout(resolve, delay))
         }
       }
-
       throw lastError ?? new Error('Retry middleware failed without error')
     },
+    transformResult: (result: AgentResult) => result,
   }
 }

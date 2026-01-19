@@ -1,91 +1,76 @@
+import type { AgentResult } from '../components/agents/types.js'
 import type { SmithersMiddleware } from './types.js'
 
-interface TokenBucketOptions {
+export interface RateLimitingOptions {
   requestsPerMinute: number
   tokensPerMinute?: number
-  acquireTimeoutMs?: number
 }
 
 class TokenBucket {
-  private readonly requestCapacity: number
-  private readonly tokenCapacity?: number
-  private readonly acquireTimeoutMs: number
-  private requestTokens: number
-  private tokenTokens: number
-  private lastRefill: number
+  private readonly capacity: number
+  private readonly refillRatePerMs: number
+  private tokens: number
+  private lastRefillMs: number
+  private queue: Promise<void>
 
-  constructor(options: TokenBucketOptions) {
-    this.requestCapacity = options.requestsPerMinute
-    if (options.tokensPerMinute !== undefined) {
-      this.tokenCapacity = options.tokensPerMinute
+  constructor(tokensPerMinute: number) {
+    if (tokensPerMinute <= 0) {
+      throw new Error('TokenBucket requires tokensPerMinute > 0')
     }
-    this.acquireTimeoutMs = options.acquireTimeoutMs ?? 120000
-    this.requestTokens = options.requestsPerMinute
-    this.tokenTokens = options.tokensPerMinute ?? Infinity
-    this.lastRefill = Date.now()
+    this.capacity = tokensPerMinute
+    this.refillRatePerMs = tokensPerMinute / 60000
+    this.tokens = tokensPerMinute
+    this.lastRefillMs = Date.now()
+    this.queue = Promise.resolve()
   }
 
-  private refill() {
+  consume(count: number): Promise<void> {
+    this.queue = this.queue.then(() => this.consumeInternal(count))
+    return this.queue
+  }
+
+  private refill(): void {
     const now = Date.now()
-    const elapsedMinutes = (now - this.lastRefill) / 60000
-    if (elapsedMinutes <= 0) return
-
-    this.requestTokens = Math.min(
-      this.requestCapacity,
-      this.requestTokens + elapsedMinutes * this.requestCapacity
-    )
-
-    if (this.tokenCapacity !== undefined) {
-      this.tokenTokens = Math.min(
-        this.tokenCapacity,
-        this.tokenTokens + elapsedMinutes * this.tokenCapacity
-      )
-    }
-
-    this.lastRefill = now
+    const elapsed = now - this.lastRefillMs
+    if (elapsed <= 0) return
+    this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.refillRatePerMs)
+    this.lastRefillMs = now
   }
 
-  async acquire(): Promise<void> {
-    const startTime = Date.now()
+  private async consumeInternal(count: number): Promise<void> {
+    const needed = Math.min(count, this.capacity)
     while (true) {
       this.refill()
-      const hasRequestToken = this.requestTokens >= 1
-      const hasTokenBudget = this.tokenCapacity === undefined || this.tokenTokens >= 0
-
-      if (hasRequestToken && hasTokenBudget) {
-        this.requestTokens -= 1
+      if (this.tokens >= needed) {
+        this.tokens -= needed
         return
       }
-
-      if (Date.now() - startTime >= this.acquireTimeoutMs) {
-        throw new Error(`Rate limiter timeout after ${this.acquireTimeoutMs}ms`)
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 250))
+      const deficit = needed - this.tokens
+      const waitMs = Math.ceil(deficit / this.refillRatePerMs)
+      await new Promise((resolve) => setTimeout(resolve, waitMs))
     }
-  }
-
-  consumeTokens(tokens: number) {
-    if (this.tokenCapacity === undefined) return
-    this.refill()
-    this.tokenTokens -= tokens
   }
 }
 
-export function rateLimitingMiddleware(options: {
-  requestsPerMinute: number
-  tokensPerMinute?: number
-  acquireTimeoutMs?: number
-}): SmithersMiddleware {
-  const limiter = new TokenBucket(options)
+function totalTokensUsed(result: AgentResult): number {
+  return (result.tokensUsed?.input ?? 0) + (result.tokensUsed?.output ?? 0)
+}
+
+export function rateLimitingMiddleware(options: RateLimitingOptions): SmithersMiddleware {
+  const requestBucket = new TokenBucket(options.requestsPerMinute)
+  const tokenBucket = options.tokensPerMinute ? new TokenBucket(options.tokensPerMinute) : null
 
   return {
     name: 'rate-limiting',
-    wrapExecute: async (doExecute) => {
-      await limiter.acquire()
+    wrapExecute: async ({ doExecute }) => {
+      await requestBucket.consume(1)
       const result = await doExecute()
-      const totalTokens = (result.tokensUsed?.input ?? 0) + (result.tokensUsed?.output ?? 0)
-      limiter.consumeTokens(totalTokens)
+      if (tokenBucket) {
+        const tokens = totalTokensUsed(result)
+        if (tokens > 0) {
+          await tokenBucket.consume(tokens)
+        }
+      }
       return result
     },
   }
