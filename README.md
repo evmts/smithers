@@ -173,8 +173,8 @@ Goal: Keep iterating until all tests pass, with incremental commits.
 #!/usr/bin/env bun
 import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/night-shift" });
-const executionId = await db.execution.start("Night Shift", "night-shift.tsx");
+const db = createSmithersDB({ path: ".smithers/night-shift" });
+const executionId = db.execution.start("Night Shift", "night-shift.tsx");
 
 function NightShift() {
   return (
@@ -210,8 +210,8 @@ Goal: Plan, implement, test, produce PR summary.
 #!/usr/bin/env bun
 import { createSmithersRoot, createSmithersDB, SmithersProvider, Phase, Step, Claude } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/prd-impl" });
-const executionId = await db.execution.start("PRD Implementation", "prd-impl.tsx");
+const db = createSmithersDB({ path: ".smithers/prd-impl" });
+const executionId = db.execution.start("PRD Implementation", "prd-impl.tsx");
 
 function PRDToImplementation() {
   return (
@@ -261,8 +261,8 @@ Goal: Staged refactoring with checkpoints and rollback capability.
 #!/usr/bin/env bun
 import { createSmithersRoot, createSmithersDB, SmithersProvider, Phase, Step, Claude, Worktree } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/refactor" });
-const executionId = await db.execution.start("Refactor", "refactor.tsx");
+const db = createSmithersDB({ path: ".smithers/refactor" });
+const executionId = db.execution.start("Refactor", "refactor.tsx");
 
 function RefactorWorkflow() {
   return (
@@ -513,16 +513,16 @@ Every run is a "flight recorder" - all state persists in SQLite:
 
 ```tsx
 // Set state (survives restarts)
-await db.state.set("phase", "review");
+db.state.set("phase", "review");
 
 // Get state
-const phase = await db.state.get("phase");
+const phase = db.state.get("phase");
 
 // Query history - see how state evolved
-const history = await db.state.getHistory("phase");
+const history = db.state.getHistory("phase");
 
 // Resume incomplete executions
-const incomplete = await db.execution.findIncomplete();
+const incomplete = db.execution.findIncomplete();
 if (incomplete) {
   // Pick up exactly where you left off
   executionId = incomplete.id;

@@ -108,7 +108,8 @@
         "guides/mcp-integration",
         "guides/vcs-integration",
         "guides/error-handling",
-        "guides/claude-log-format"
+        "guides/claude-log-format",
+        "guides/debugging"
       ]
     },
     {
