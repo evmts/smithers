@@ -71,4 +71,19 @@ describe('LogWriter', () => {
     const content = fs.readFileSync(path1, 'utf-8')
     expect(content).toBe('chunk 1\nchunk 2\n')
   })
+
+  it('should flush multiple streams', async () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+
+    writer.appendLog('first.log', 'first\n')
+    writer.appendLog('second.log', 'second\n')
+
+    await writer.flushAllStreams()
+
+    const firstPath = path.join(TEST_LOG_DIR, 'first.log')
+    const secondPath = path.join(TEST_LOG_DIR, 'second.log')
+
+    expect(fs.readFileSync(firstPath, 'utf-8')).toBe('first\n')
+    expect(fs.readFileSync(secondPath, 'utf-8')).toBe('second\n')
+  })
 })

@@ -97,9 +97,14 @@ type OpenTUIBorderStyle =
   | 'classic'
   | 'none'
 
-export type OpenTUIStyle = Omit<CSSProperties, 'border' | 'borderRight'> & {
+export type OpenTUIStyle = Omit<
+  CSSProperties,
+  'border' | 'borderRight' | 'backgroundColor' | 'borderColor'
+> & {
   fg?: OpenTUIColor
   bg?: OpenTUIColor
+  backgroundColor?: OpenTUIColor | undefined
+  borderColor?: OpenTUIColor | undefined
   selectionBg?: OpenTUIColor
   selectionFg?: OpenTUIColor
   focusedBackgroundColor?: OpenTUIColor
