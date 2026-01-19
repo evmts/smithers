@@ -36,7 +36,7 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
   const [rowOffset, setRowOffset] = useState(0)
   const [isTableListFocused, setIsTableListFocused] = useState(true)
 
-  const tableName = TABLES[selectedTable]
+  const tableName = TABLES[selectedTable] ?? 'executions'
   const { columns, data: tableData } = usePollTableData(db, tableName)
 
   const handleSelectTable = (index: number) => {

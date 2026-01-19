@@ -79,7 +79,7 @@ export function Phase(props: PhaseProps): ReactNode {
   const prevIsActiveRef = useRef(false)
 
   // Determine phase status
-  const isSkipped = props.skipIf?.() ?? false
+  const isSkipped = Boolean(props.skipIf?.())
   const isActive = !isSkipped && (registry ? registry.isPhaseActive(myIndex) : true)
   const isCompleted = !isSkipped && (registry ? registry.isPhaseCompleted(myIndex) : false)
 
