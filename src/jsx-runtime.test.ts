@@ -8,7 +8,8 @@
  * Hook integration tests are in src/reconciler/hooks-integration.test.tsx
  */
 import { describe, test, expect } from 'bun:test'
-import { jsx, jsxs, Fragment, jsxDEV } from './reconciler/jsx-runtime.js'
+import { jsx, jsxs, Fragment, jsxDEV } from './jsx-runtime.js'
+import type { SmithersNode } from './jsx-runtime.js'
 
 describe('jsx-runtime exports', () => {
   test('jsx is exported and callable', () => {
@@ -60,5 +61,14 @@ describe('jsx-runtime exports', () => {
   test('jsxDEV works same as jsx', () => {
     const element = jsxDEV('step', { children: 'Dev mode' })
     expect(element.type).toBe('step')
+  })
+
+  test('SmithersNode type is exported', () => {
+    const node: SmithersNode = {
+      type: 'phase',
+      props: { name: 'test' },
+      children: [],
+    }
+    expect(node.type).toBe('phase')
   })
 })

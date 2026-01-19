@@ -226,4 +226,138 @@ describe('Integration Tests (Core Architecture)', () => {
     expect(rendererMethods.getParentNode(child2)).toBe(parent)
     expect(rendererMethods.getParentNode(child3)).toBe(parent)
   })
+
+  /**
+   * Test anchor-based insertion (insertBefore equivalent)
+   */
+  it('should insert node before anchor', () => {
+    const parent = rendererMethods.createElement('container')
+    const child1 = rendererMethods.createElement('task')
+    const child2 = rendererMethods.createElement('task')
+    const child3 = rendererMethods.createElement('task')
+
+    rendererMethods.insertNode(parent, child1)
+    rendererMethods.insertNode(parent, child3)
+    // Insert child2 BEFORE child3
+    rendererMethods.insertNode(parent, child2, child3)
+
+    expect(parent.children).toHaveLength(3)
+    expect(parent.children[0]).toBe(child1)
+    expect(parent.children[1]).toBe(child2)
+    expect(parent.children[2]).toBe(child3)
+  })
+
+  /**
+   * Test anchor not found falls back to append
+   */
+  it('should append if anchor not found', () => {
+    const parent = rendererMethods.createElement('container')
+    const child1 = rendererMethods.createElement('task')
+    const child2 = rendererMethods.createElement('task')
+    const orphanAnchor = rendererMethods.createElement('task') // not in parent
+
+    rendererMethods.insertNode(parent, child1)
+    rendererMethods.insertNode(parent, child2, orphanAnchor)
+
+    expect(parent.children).toHaveLength(2)
+    expect(parent.children[1]).toBe(child2) // appended
+  })
+
+  /**
+   * Test cross-parent node movement
+   */
+  it('should move node from one parent to another', () => {
+    const parent1 = rendererMethods.createElement('container')
+    const parent2 = rendererMethods.createElement('container')
+    const child = rendererMethods.createElement('task')
+
+    rendererMethods.insertNode(parent1, child)
+    expect(parent1.children).toHaveLength(1)
+    expect(child.parent).toBe(parent1)
+
+    // Move to parent2
+    rendererMethods.insertNode(parent2, child)
+    expect(parent1.children).toHaveLength(0)
+    expect(parent2.children).toHaveLength(1)
+    expect(child.parent).toBe(parent2)
+  })
+
+  /**
+   * Test same-parent reordering
+   */
+  it('should reorder node within same parent', () => {
+    const parent = rendererMethods.createElement('container')
+    const child1 = rendererMethods.createElement('task')
+    const child2 = rendererMethods.createElement('task')
+    const child3 = rendererMethods.createElement('task')
+
+    rendererMethods.insertNode(parent, child1)
+    rendererMethods.insertNode(parent, child2)
+    rendererMethods.insertNode(parent, child3)
+
+    // Move child3 before child1
+    rendererMethods.insertNode(parent, child3, child1)
+
+    expect(parent.children).toHaveLength(3)
+    expect(parent.children[0]).toBe(child3)
+    expect(parent.children[1]).toBe(child1)
+    expect(parent.children[2]).toBe(child2)
+  })
+
+  /**
+   * Test removeNode clears parent pointers recursively
+   */
+  it('should clear parent pointers on descendants when removing subtree', () => {
+    const root = createSmithersRoot()
+    const rootTree = root.getTree()
+
+    const parent = rendererMethods.createElement('container')
+    const child = rendererMethods.createElement('task')
+    const grandchild = rendererMethods.createElement('step')
+
+    rendererMethods.insertNode(child, grandchild)
+    rendererMethods.insertNode(parent, child)
+    rendererMethods.insertNode(rootTree, parent)
+
+    expect(grandchild.parent).toBe(child)
+    expect(child.parent).toBe(parent)
+
+    // Remove parent (should clear all descendant parents)
+    rendererMethods.removeNode(rootTree, parent)
+
+    expect(parent.parent).toBeNull()
+    expect(child.parent).toBeNull()
+    expect(grandchild.parent).toBeNull()
+
+    root.dispose()
+  })
+
+  /**
+   * Test isTextNode helper
+   */
+  it('should correctly identify text nodes', () => {
+    const textNode = rendererMethods.createTextNode('hello')
+    const elementNode = rendererMethods.createElement('div')
+
+    expect(rendererMethods.isTextNode(textNode)).toBe(true)
+    expect(rendererMethods.isTextNode(elementNode)).toBe(false)
+  })
+
+  /**
+   * Test getNextSibling returns undefined for orphan nodes
+   */
+  it('should return undefined for orphan node sibling', () => {
+    const orphan = rendererMethods.createElement('task')
+    expect(rendererMethods.getNextSibling(orphan)).toBeUndefined()
+  })
+
+  /**
+   * Test empty root serialization
+   */
+  it('should serialize empty root as empty string', () => {
+    const root = createSmithersRoot()
+    const xml = root.toXML()
+    expect(xml).toBe('')
+    root.dispose()
+  })
 })

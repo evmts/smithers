@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, afterEach } from 'bun:test'
-import { createSmithersDB, type SmithersDB, ReactiveDatabase, useQuery, useMutation, useQueryOne, useQueryValue } from './index.js'
+import { createSmithersDB, type SmithersDB, ReactiveDatabase } from './index.js'
 
 describe('createSmithersDB', () => {
   let db: SmithersDB | null = null
