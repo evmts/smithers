@@ -139,11 +139,11 @@ describe('14-kitchen-sink', () => {
     expect(claudeCount).toBeGreaterThanOrEqual(3)
 
     // ========================================================================
-    // CHECK 4: Human component in Planning phase
+    // CHECK 4: Human component in Research phase
     // ========================================================================
-    validationChecks.human_component = planningXml.includes('<human')
-    expect(planningXml).toContain('<human')
-    expect(planningXml).toContain('Review the research findings')
+    validationChecks.human_component = researchXml.includes('<human')
+    expect(researchXml).toContain('<human')
+    expect(researchXml).toContain('Review the research findings')
 
     // ========================================================================
     // CHECK 5: Steps rendered in active phase (Research has 3)
