@@ -3,45 +3,209 @@
  * Status bar showing connection state and help hints
  */
 
-import { describe, test } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
+import { StatusBar, type StatusBarProps } from './StatusBar.js'
+
+// Helper to create status bar props
+function createProps(overrides: Partial<StatusBarProps> = {}): StatusBarProps {
+  return {
+    isConnected: true,
+    error: null,
+    dbPath: '/path/to/smithers.db',
+    ...overrides
+  }
+}
 
 describe('tui/components/layout/StatusBar', () => {
   describe('connection status display', () => {
-    test.todo('shows "[Connected]" when isConnected is true')
-    test.todo('shows "[Disconnected]" when isConnected is false')
-    test.todo('uses green (#9ece6a) for connected')
-    test.todo('uses red (#f7768e) for disconnected')
+    test('shows "[Connected]" when isConnected is true', () => {
+      const props = createProps({ isConnected: true })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const connectionText = leftBox.props.children[0]
+      expect(connectionText.props.content).toBe('[Connected]')
+    })
+
+    test('shows "[Disconnected]" when isConnected is false', () => {
+      const props = createProps({ isConnected: false })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const connectionText = leftBox.props.children[0]
+      expect(connectionText.props.content).toBe('[Disconnected]')
+    })
+
+    test('uses green (#9ece6a) for connected', () => {
+      const props = createProps({ isConnected: true })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const connectionText = leftBox.props.children[0]
+      expect(connectionText.props.style.fg).toBe('#9ece6a')
+    })
+
+    test('uses red (#f7768e) for disconnected', () => {
+      const props = createProps({ isConnected: false })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const connectionText = leftBox.props.children[0]
+      expect(connectionText.props.style.fg).toBe('#f7768e')
+    })
   })
 
   describe('dbPath display', () => {
-    test.todo('displays dbPath prop')
-    test.todo('uses gray (#565f89) color')
+    test('displays dbPath prop', () => {
+      const props = createProps({ dbPath: '/custom/path/db.sqlite' })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const pathText = leftBox.props.children[1]
+      expect(pathText.props.content).toBe('/custom/path/db.sqlite')
+    })
+
+    test('uses gray (#565f89) color', () => {
+      const props = createProps()
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const pathText = leftBox.props.children[1]
+      expect(pathText.props.style.fg).toBe('#565f89')
+    })
   })
 
   describe('error display', () => {
-    test.todo('shows error message when error prop is set')
-    test.todo('prefixes error with "Error: "')
-    test.todo('uses red (#f7768e) for error')
-    test.todo('does not render error when error is null')
+    test('shows error message when error prop is set', () => {
+      const props = createProps({ error: 'Connection failed' })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      // Error is third child in the left box when present
+      const errorText = leftBox.props.children[2]
+      expect(errorText).toBeDefined()
+      expect(errorText.props.content).toBe('Error: Connection failed')
+    })
+
+    test('prefixes error with "Error: "', () => {
+      const props = createProps({ error: 'timeout' })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const errorText = leftBox.props.children[2]
+      expect(errorText.props.content).toBe('Error: timeout')
+    })
+
+    test('uses red (#f7768e) for error', () => {
+      const props = createProps({ error: 'Something went wrong' })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const errorText = leftBox.props.children[2]
+      expect(errorText.props.style.fg).toBe('#f7768e')
+    })
+
+    test('does not render error when error is null', () => {
+      const props = createProps({ error: null })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      // With null error, there should only be connection status and dbPath
+      // The third child should be falsy or undefined
+      const children = leftBox.props.children.filter(Boolean)
+      expect(children).toHaveLength(2)
+    })
   })
 
   describe('help hints', () => {
-    test.todo('displays "q:quit  Tab:next  j/k:nav  Enter:select"')
-    test.todo('uses gray (#565f89) color')
+    test('displays "q:quit  Tab:next  j/k:nav  Enter:select"', () => {
+      const props = createProps()
+      const element = StatusBar(props)
+      
+      // Help hints are the second child of the main box
+      const helpText = element.props.children[1]
+      expect(helpText.props.content).toBe('q:quit  Tab:next  j/k:nav  Enter:select')
+    })
+
+    test('uses gray (#565f89) color', () => {
+      const props = createProps()
+      const element = StatusBar(props)
+      
+      const helpText = element.props.children[1]
+      expect(helpText.props.style.fg).toBe('#565f89')
+    })
   })
 
   describe('layout', () => {
-    test.todo('has height of 2')
-    test.todo('has full width')
-    test.todo('uses row flex direction')
-    test.todo('justifies content space-between')
-    test.todo('has left and right padding of 1')
+    test('has height of 2', () => {
+      const props = createProps()
+      const element = StatusBar(props)
+      expect(element.props.style.height).toBe(2)
+    })
+
+    test('has full width', () => {
+      const props = createProps()
+      const element = StatusBar(props)
+      expect(element.props.style.width).toBe('100%')
+    })
+
+    test('uses row flex direction', () => {
+      const props = createProps()
+      const element = StatusBar(props)
+      expect(element.props.style.flexDirection).toBe('row')
+    })
+
+    test('justifies content space-between', () => {
+      const props = createProps()
+      const element = StatusBar(props)
+      expect(element.props.style.justifyContent).toBe('space-between')
+    })
+
+    test('has left and right padding of 1', () => {
+      const props = createProps()
+      const element = StatusBar(props)
+      expect(element.props.style.paddingLeft).toBe(1)
+      expect(element.props.style.paddingRight).toBe(1)
+    })
   })
 
   describe('edge cases', () => {
-    test.todo('handles very long dbPath')
-    test.todo('handles very long error message')
-    test.todo('handles empty dbPath')
-    test.todo('handles special characters in error')
+    test('handles very long dbPath', () => {
+      const longPath = '/very/long/path/' + 'a'.repeat(200) + '/smithers.db'
+      const props = createProps({ dbPath: longPath })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const pathText = leftBox.props.children[1]
+      expect(pathText.props.content).toBe(longPath)
+    })
+
+    test('handles very long error message', () => {
+      const longError = 'Error: ' + 'a'.repeat(200)
+      const props = createProps({ error: longError })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const errorText = leftBox.props.children[2]
+      expect(errorText.props.content).toBe(`Error: ${longError}`)
+    })
+
+    test('handles empty dbPath', () => {
+      const props = createProps({ dbPath: '' })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const pathText = leftBox.props.children[1]
+      expect(pathText.props.content).toBe('')
+    })
+
+    test('handles special characters in error', () => {
+      const props = createProps({ error: '<script>alert("xss")</script>' })
+      const element = StatusBar(props)
+      
+      const leftBox = element.props.children[0]
+      const errorText = leftBox.props.children[2]
+      expect(errorText.props.content).toBe('Error: <script>alert("xss")</script>')
+    })
   })
 })

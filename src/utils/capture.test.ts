@@ -335,3 +335,210 @@ describe('integration: classification accuracy', () => {
     })
   }
 })
+
+// ============================================================================
+// Edge Cases
+// ============================================================================
+
+describe('classifyContent - edge cases', () => {
+  test('handles empty content', () => {
+    const ctx: CaptureContext = { content: '' }
+    const result = classifyContent(ctx)
+    // Should default to issue with low confidence
+    expect(result.type).toBeDefined()
+    expect(result.confidence).toBe(0)
+  })
+
+  test('handles whitespace-only content', () => {
+    const ctx: CaptureContext = { content: '   \n\t  ' }
+    const result = classifyContent(ctx)
+    expect(result.type).toBeDefined()
+  })
+
+  test('handles very long content', () => {
+    const longContent = 'Fix this bug '.repeat(1000)
+    const ctx: CaptureContext = { content: longContent }
+    const result = classifyContent(ctx)
+    expect(result.type).toBeDefined()
+    expect(result.confidence).toBeGreaterThan(0)
+  })
+
+  test('handles content with many matching patterns', () => {
+    const ctx: CaptureContext = {
+      content: 'Commit abc1234 has a bug. We should implement a fix. - [ ] Must do this urgently!',
+    }
+    const result = classifyContent(ctx)
+    // Should pick one type based on scoring
+    expect(['review', 'issue', 'todo', 'prompt']).toContain(result.type)
+  })
+
+  test('handles unicode content', () => {
+    const ctx: CaptureContext = {
+      content: '日本語のコミットメッセージ abc1234',
+    }
+    const result = classifyContent(ctx)
+    expect(result.type).toBe('review') // Has commit hash
+  })
+
+  test('handles content with special characters', () => {
+    const ctx: CaptureContext = {
+      content: 'Fix bug in auth.ts:45 - handle `null` values & "quotes"',
+    }
+    const result = classifyContent(ctx)
+    expect(result.type).toBeDefined()
+  })
+
+  test('confidence is capped at 1.0', () => {
+    const ctx: CaptureContext = {
+      content: 'Put this in Prompt.md: critical bug urgent asap must fix now',
+      commitHash: 'abc1234',
+    }
+    const result = classifyContent(ctx)
+    expect(result.confidence).toBeLessThanOrEqual(1.0)
+  })
+})
+
+describe('extractCommitHash - edge cases', () => {
+  test('handles mixed case hash', () => {
+    expect(extractCommitHash('Commit AbC1234')).toBe('AbC1234')
+  })
+
+  test('handles hash at start of string', () => {
+    expect(extractCommitHash('abc1234 is the commit')).toBe('abc1234')
+  })
+
+  test('handles hash at end of string', () => {
+    expect(extractCommitHash('The commit is abc1234')).toBe('abc1234')
+  })
+
+  test('ignores strings that look like hashes but are not', () => {
+    // Less than 7 chars
+    expect(extractCommitHash('abc123')).toBeUndefined()
+  })
+
+  test('handles hash surrounded by special chars', () => {
+    expect(extractCommitHash('(abc1234)')).toBe('abc1234')
+    expect(extractCommitHash('[abc1234]')).toBe('abc1234')
+  })
+})
+
+describe('extractTitle - edge cases', () => {
+  test('handles multiple heading levels', () => {
+    expect(extractTitle('## Subheading')).toBe('Subheading')
+    expect(extractTitle('#### Deep heading')).toBe('Deep heading')
+  })
+
+  test('handles title with leading whitespace', () => {
+    expect(extractTitle('   Spaced Title')).toBe('Spaced Title')
+  })
+
+  test('handles only whitespace lines before content', () => {
+    expect(extractTitle('\n\n\nActual Title')).toBe('Actual Title')
+  })
+
+  test('handles title with special markdown chars', () => {
+    expect(extractTitle('**Bold Title**')).toBe('**Bold Title**')
+    expect(extractTitle('`Code Title`')).toBe('`Code Title`')
+  })
+})
+
+describe('extractSummary - edge cases', () => {
+  test('handles content with only heading', () => {
+    const content = '# Just a heading'
+    const result = extractSummary(content)
+    expect(result).toBe('# Just a heading')
+  })
+
+  test('handles content with only bullets', () => {
+    const content = `Title
+- bullet 1
+- bullet 2
+- bullet 3`
+    const result = extractSummary(content)
+    // Falls back to title
+    expect(result).toBe('Title')
+  })
+
+  test('handles content with empty lines', () => {
+    const content = `Title
+
+
+
+Actual summary after blank lines.`
+    const result = extractSummary(content)
+    expect(result).toBe('Actual summary after blank lines.')
+  })
+
+  test('respects custom maxLength', () => {
+    const content = `Title\n${'x'.repeat(50)}`
+    const result = extractSummary(content, 20)
+    expect(result.length).toBeLessThanOrEqual(20)
+    expect(result).toEndWith('...')
+  })
+})
+
+describe('inferPriority - edge cases', () => {
+  test('is case insensitive', () => {
+    expect(inferPriority('CRITICAL issue')).toBe('high')
+    expect(inferPriority('Urgent fix')).toBe('high')
+    expect(inferPriority('SHOULD fix')).toBe('medium')
+  })
+
+  test('handles multiple priority keywords (first wins)', () => {
+    // High takes precedence over medium
+    expect(inferPriority('critical and should fix')).toBe('high')
+  })
+
+  test('handles priority in middle of text', () => {
+    expect(inferPriority('This is a critical bug in production')).toBe('high')
+  })
+})
+
+describe('toKebabCase - edge cases', () => {
+  test('handles empty string', () => {
+    expect(toKebabCase('')).toBe('')
+  })
+
+  test('handles only special characters', () => {
+    expect(toKebabCase('!@#$%^&*()')).toBe('')
+  })
+
+  test('handles numbers', () => {
+    expect(toKebabCase('Issue 123')).toBe('issue-123')
+  })
+
+  test('handles leading/trailing hyphens', () => {
+    expect(toKebabCase('-leading and trailing-')).toBe('leading-and-trailing')
+  })
+
+  test('handles consecutive special chars', () => {
+    expect(toKebabCase('word!!!word')).toBe('wordword')
+  })
+})
+
+describe('generatePromptMd', () => {
+  test('trims and adds newline', async () => {
+    const ctx: CaptureContext = { content: '  some content  ' }
+    const { generatePromptMd } = await import('./capture.js')
+    const result = generatePromptMd(ctx)
+    expect(result).toBe('some content\n')
+  })
+
+  test('handles multiline content', async () => {
+    const ctx: CaptureContext = { content: 'line1\nline2\nline3' }
+    const { generatePromptMd } = await import('./capture.js')
+    const result = generatePromptMd(ctx)
+    expect(result).toBe('line1\nline2\nline3\n')
+  })
+})
+
+describe('PATTERNS', () => {
+  test('exports PATTERNS constant', async () => {
+    const { PATTERNS } = await import('./capture.js')
+    expect(PATTERNS).toBeDefined()
+    expect(PATTERNS.review).toBeDefined()
+    expect(PATTERNS.issue).toBeDefined()
+    expect(PATTERNS.todo).toBeDefined()
+    expect(PATTERNS.prompt).toBeDefined()
+  })
+})

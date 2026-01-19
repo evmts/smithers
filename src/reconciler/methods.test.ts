@@ -276,32 +276,382 @@ describe('rendererMethods', () => {
   })
 })
 
-describe('rendererMethods - Missing Coverage', () => {
-  // createElement edge cases
-  test.todo('createElement with empty type string')
-  test.todo('createElement with special characters in type')
-  test.todo('createElement with very long type name')
+describe('rendererMethods - Edge Cases', () => {
+  describe('createElement edge cases', () => {
+    test('createElement with empty type string', () => {
+      const node = rendererMethods.createElement('')
+      expect(node.type).toBe('')
+      expect(node.props).toEqual({})
+      expect(node.children).toEqual([])
+    })
 
-  // createTextNode edge cases
-  test.todo('createTextNode with special characters')
-  test.todo('createTextNode with unicode')
-  test.todo('createTextNode with newlines')
-  test.todo('createTextNode with very long text')
+    test('createElement with special characters in type', () => {
+      const node = rendererMethods.createElement('my-custom-element_v2')
+      expect(node.type).toBe('my-custom-element_v2')
+    })
 
-  // setProperty edge cases
-  test.todo('setProperty overwrites existing prop')
-  test.todo('setProperty with undefined value')
-  test.todo('setProperty with null value')
-  test.todo('setProperty with object value')
-  test.todo('setProperty with array value')
-  test.todo('setProperty with function value')
+    test('createElement with very long type name', () => {
+      const longType = 'a'.repeat(1000)
+      const node = rendererMethods.createElement(longType)
+      expect(node.type).toBe(longType)
+      expect(node.type.length).toBe(1000)
+    })
 
-  // insertNode edge cases
-  test.todo('insertNode with node already at correct position')
-  test.todo('insertNode with anchor at position 0')
-  test.todo('insertNode with many children (performance)')
+    test('createElement with unicode type', () => {
+      const node = rendererMethods.createElement('日本語要素')
+      expect(node.type).toBe('日本語要素')
+    })
 
-  // removeNode edge cases
-  test.todo('removeNode deeply nested descendants')
-  test.todo('removeNode with circular reference (defensive)')
+    test('createElement with emoji type', () => {
+      const node = rendererMethods.createElement('🚀-element')
+      expect(node.type).toBe('🚀-element')
+    })
+  })
+
+  describe('createTextNode edge cases', () => {
+    test('createTextNode with special characters', () => {
+      const node = rendererMethods.createTextNode('Hello <world> & "quotes"')
+      expect(node.props.value).toBe('Hello <world> & "quotes"')
+    })
+
+    test('createTextNode with unicode', () => {
+      const node = rendererMethods.createTextNode('こんにちは世界 🌍')
+      expect(node.props.value).toBe('こんにちは世界 🌍')
+    })
+
+    test('createTextNode with newlines', () => {
+      const text = 'Line 1\nLine 2\nLine 3'
+      const node = rendererMethods.createTextNode(text)
+      expect(node.props.value).toBe(text)
+      expect(node.props.value).toContain('\n')
+    })
+
+    test('createTextNode with very long text', () => {
+      const longText = 'x'.repeat(100000)
+      const node = rendererMethods.createTextNode(longText)
+      expect(node.props.value).toBe(longText)
+      expect((node.props.value as string).length).toBe(100000)
+    })
+
+    test('createTextNode with tabs and special whitespace', () => {
+      const node = rendererMethods.createTextNode('\t\n\r  mixed whitespace  ')
+      expect(node.props.value).toBe('\t\n\r  mixed whitespace  ')
+    })
+
+    test('createTextNode with null bytes', () => {
+      const node = rendererMethods.createTextNode('before\0after')
+      expect(node.props.value).toBe('before\0after')
+    })
+  })
+
+  describe('setProperty edge cases', () => {
+    test('setProperty overwrites existing prop', () => {
+      const node = rendererMethods.createElement('task')
+      rendererMethods.setProperty(node, 'name', 'original')
+      expect(node.props.name).toBe('original')
+      rendererMethods.setProperty(node, 'name', 'updated')
+      expect(node.props.name).toBe('updated')
+    })
+
+    test('setProperty with undefined value', () => {
+      const node = rendererMethods.createElement('task')
+      rendererMethods.setProperty(node, 'value', undefined)
+      expect(node.props.value).toBeUndefined()
+    })
+
+    test('setProperty with null value', () => {
+      const node = rendererMethods.createElement('task')
+      rendererMethods.setProperty(node, 'value', null)
+      expect(node.props.value).toBeNull()
+    })
+
+    test('setProperty with object value', () => {
+      const node = rendererMethods.createElement('task')
+      const obj = { nested: { deep: 'value' } }
+      rendererMethods.setProperty(node, 'config', obj)
+      expect(node.props.config).toBe(obj)
+      expect((node.props.config as any).nested.deep).toBe('value')
+    })
+
+    test('setProperty with array value', () => {
+      const node = rendererMethods.createElement('task')
+      const arr = [1, 2, { key: 'value' }]
+      rendererMethods.setProperty(node, 'items', arr)
+      expect(node.props.items).toBe(arr)
+      expect((node.props.items as any)[2].key).toBe('value')
+    })
+
+    test('setProperty with function value', () => {
+      const node = rendererMethods.createElement('task')
+      const fn = () => 'result'
+      rendererMethods.setProperty(node, 'callback', fn)
+      expect(node.props.callback).toBe(fn)
+      expect((node.props.callback as Function)()).toBe('result')
+    })
+
+    test('setProperty with boolean values', () => {
+      const node = rendererMethods.createElement('task')
+      rendererMethods.setProperty(node, 'enabled', true)
+      rendererMethods.setProperty(node, 'disabled', false)
+      expect(node.props.enabled).toBe(true)
+      expect(node.props.disabled).toBe(false)
+    })
+
+    test('setProperty with symbol value', () => {
+      const node = rendererMethods.createElement('task')
+      const sym = Symbol('test')
+      rendererMethods.setProperty(node, 'symbol', sym)
+      expect(node.props.symbol).toBe(sym)
+    })
+
+    test('setProperty with empty string key', () => {
+      const node = rendererMethods.createElement('task')
+      rendererMethods.setProperty(node, '', 'empty-key-value')
+      expect(node.props['']).toBe('empty-key-value')
+    })
+  })
+
+  describe('insertNode edge cases', () => {
+    test('insertNode with node already at correct position', () => {
+      const parent = rendererMethods.createElement('phase')
+      const a = rendererMethods.createElement('a')
+      const b = rendererMethods.createElement('b')
+      rendererMethods.insertNode(parent, a)
+      rendererMethods.insertNode(parent, b)
+      expect(parent.children).toEqual([a, b])
+      
+      // Re-insert b at end (same position) - should remain stable
+      rendererMethods.insertNode(parent, b)
+      expect(parent.children).toEqual([a, b])
+    })
+
+    test('insertNode with anchor at position 0', () => {
+      const parent = rendererMethods.createElement('phase')
+      const first = rendererMethods.createElement('first')
+      const newFirst = rendererMethods.createElement('new-first')
+      rendererMethods.insertNode(parent, first)
+      rendererMethods.insertNode(parent, newFirst, first)
+      expect(parent.children[0]).toBe(newFirst)
+      expect(parent.children[1]).toBe(first)
+    })
+
+    test('insertNode with many children (performance)', () => {
+      const parent = rendererMethods.createElement('phase')
+      const children: SmithersNode[] = []
+      
+      // Insert 1000 children
+      for (let i = 0; i < 1000; i++) {
+        const child = rendererMethods.createElement(`child-${i}`)
+        children.push(child)
+        rendererMethods.insertNode(parent, child)
+      }
+      
+      expect(parent.children.length).toBe(1000)
+      expect(parent.children[0]).toBe(children[0])
+      expect(parent.children[999]).toBe(children[999])
+    })
+
+    test('insertNode reorder in middle of list', () => {
+      const parent = rendererMethods.createElement('phase')
+      const nodes = Array.from({ length: 5 }, (_, i) => 
+        rendererMethods.createElement(`node-${i}`)
+      )
+      nodes.forEach(n => rendererMethods.insertNode(parent, n))
+      expect(parent.children.map(c => c.type)).toEqual([
+        'node-0', 'node-1', 'node-2', 'node-3', 'node-4'
+      ])
+      
+      // Move node-4 before node-2
+      rendererMethods.insertNode(parent, nodes[4], nodes[2])
+      expect(parent.children.map(c => c.type)).toEqual([
+        'node-0', 'node-1', 'node-4', 'node-2', 'node-3'
+      ])
+    })
+
+    test('insertNode with anchor that is the node itself', () => {
+      const parent = rendererMethods.createElement('phase')
+      const node = rendererMethods.createElement('node')
+      rendererMethods.insertNode(parent, node)
+      
+      // Insert node before itself (edge case)
+      rendererMethods.insertNode(parent, node, node)
+      expect(parent.children.length).toBe(1)
+      expect(parent.children[0]).toBe(node)
+    })
+  })
+
+  describe('removeNode edge cases', () => {
+    test('removeNode deeply nested descendants (3 levels)', () => {
+      const parent = rendererMethods.createElement('root')
+      const child = rendererMethods.createElement('level1')
+      const grandchild = rendererMethods.createElement('level2')
+      const greatGrandchild = rendererMethods.createElement('level3')
+      
+      rendererMethods.insertNode(parent, child)
+      rendererMethods.insertNode(child, grandchild)
+      rendererMethods.insertNode(grandchild, greatGrandchild)
+      
+      expect(greatGrandchild.parent).toBe(grandchild)
+      
+      rendererMethods.removeNode(parent, child)
+      
+      expect(child.parent).toBeNull()
+      expect(grandchild.parent).toBeNull()
+      expect(greatGrandchild.parent).toBeNull()
+    })
+
+    test('removeNode with multiple children at each level', () => {
+      const parent = rendererMethods.createElement('root')
+      const child = rendererMethods.createElement('child')
+      const gc1 = rendererMethods.createElement('gc1')
+      const gc2 = rendererMethods.createElement('gc2')
+      const ggc1 = rendererMethods.createElement('ggc1')
+      const ggc2 = rendererMethods.createElement('ggc2')
+      
+      rendererMethods.insertNode(parent, child)
+      rendererMethods.insertNode(child, gc1)
+      rendererMethods.insertNode(child, gc2)
+      rendererMethods.insertNode(gc1, ggc1)
+      rendererMethods.insertNode(gc2, ggc2)
+      
+      rendererMethods.removeNode(parent, child)
+      
+      expect(child.parent).toBeNull()
+      expect(gc1.parent).toBeNull()
+      expect(gc2.parent).toBeNull()
+      expect(ggc1.parent).toBeNull()
+      expect(ggc2.parent).toBeNull()
+    })
+
+    test('removeNode when node not in parent', () => {
+      const parent1 = rendererMethods.createElement('parent1')
+      const parent2 = rendererMethods.createElement('parent2')
+      const child = rendererMethods.createElement('child')
+      
+      rendererMethods.insertNode(parent1, child)
+      
+      // Try to remove from wrong parent
+      rendererMethods.removeNode(parent2, child)
+      
+      // Child should still be in parent1
+      expect(parent1.children).toContain(child)
+      expect(child.parent).toBe(parent1)
+    })
+
+    test('removeNode called twice on same node', () => {
+      const parent = rendererMethods.createElement('parent')
+      const child = rendererMethods.createElement('child')
+      
+      rendererMethods.insertNode(parent, child)
+      rendererMethods.removeNode(parent, child)
+      
+      expect(parent.children).not.toContain(child)
+      expect(child.parent).toBeNull()
+      
+      // Remove again - should be idempotent
+      rendererMethods.removeNode(parent, child)
+      expect(parent.children).not.toContain(child)
+      expect(child.parent).toBeNull()
+    })
+  })
+
+  describe('replaceText edge cases', () => {
+    test('replaceText with special XML characters', () => {
+      const node = rendererMethods.createTextNode('initial')
+      rendererMethods.replaceText(node, '<script>alert("xss")</script>')
+      expect(node.props.value).toBe('<script>alert("xss")</script>')
+    })
+
+    test('replaceText with unicode', () => {
+      const node = rendererMethods.createTextNode('initial')
+      rendererMethods.replaceText(node, '你好世界 🎉')
+      expect(node.props.value).toBe('你好世界 🎉')
+    })
+
+    test('replaceText with very long string', () => {
+      const node = rendererMethods.createTextNode('short')
+      const longText = 'y'.repeat(50000)
+      rendererMethods.replaceText(node, longText)
+      expect(node.props.value).toBe(longText)
+    })
+
+    test('replaceText preserves other props', () => {
+      const node = rendererMethods.createTextNode('initial')
+      node.props.customProp = 'preserved'
+      rendererMethods.replaceText(node, 'updated')
+      expect(node.props.value).toBe('updated')
+      expect(node.props.customProp).toBe('preserved')
+    })
+  })
+
+  describe('navigation methods edge cases', () => {
+    test('getNextSibling with single child', () => {
+      const parent = rendererMethods.createElement('parent')
+      const only = rendererMethods.createElement('only')
+      rendererMethods.insertNode(parent, only)
+      expect(rendererMethods.getNextSibling(only)).toBeUndefined()
+    })
+
+    test('getNextSibling traversal through all siblings', () => {
+      const parent = rendererMethods.createElement('parent')
+      const children = ['a', 'b', 'c', 'd'].map(t => 
+        rendererMethods.createElement(t)
+      )
+      children.forEach(c => rendererMethods.insertNode(parent, c))
+      
+      expect(rendererMethods.getNextSibling(children[0])).toBe(children[1])
+      expect(rendererMethods.getNextSibling(children[1])).toBe(children[2])
+      expect(rendererMethods.getNextSibling(children[2])).toBe(children[3])
+      expect(rendererMethods.getNextSibling(children[3])).toBeUndefined()
+    })
+
+    test('getFirstChild with nested structure', () => {
+      const root = rendererMethods.createElement('root')
+      const first = rendererMethods.createElement('first')
+      const nested = rendererMethods.createElement('nested')
+      
+      rendererMethods.insertNode(root, first)
+      rendererMethods.insertNode(first, nested)
+      
+      expect(rendererMethods.getFirstChild(root)).toBe(first)
+      expect(rendererMethods.getFirstChild(first)).toBe(nested)
+      expect(rendererMethods.getFirstChild(nested)).toBeUndefined()
+    })
+
+    test('getParentNode chain to root', () => {
+      const root = rendererMethods.createElement('root')
+      const child = rendererMethods.createElement('child')
+      const grandchild = rendererMethods.createElement('grandchild')
+      
+      rendererMethods.insertNode(root, child)
+      rendererMethods.insertNode(child, grandchild)
+      
+      expect(rendererMethods.getParentNode(grandchild)).toBe(child)
+      expect(rendererMethods.getParentNode(child)).toBe(root)
+      expect(rendererMethods.getParentNode(root)).toBeUndefined()
+    })
+  })
+
+  describe('isTextNode edge cases', () => {
+    test('isTextNode with lowercase "text" type', () => {
+      const node: SmithersNode = {
+        type: 'text',
+        props: {},
+        children: [],
+        parent: null
+      }
+      // 'text' is not the same as 'TEXT'
+      expect(rendererMethods.isTextNode(node)).toBe(false)
+    })
+
+    test('isTextNode with exact TEXT type', () => {
+      const node: SmithersNode = {
+        type: 'TEXT',
+        props: { value: 'test' },
+        children: [],
+        parent: null
+      }
+      expect(rendererMethods.isTextNode(node)).toBe(true)
+    })
+  })
 })

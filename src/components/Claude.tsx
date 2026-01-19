@@ -47,7 +47,6 @@ export function Claude(props: ClaudeProps): ReactNode {
   )
   const agentRow = agentRows[0] ?? null
 
-  // Derive state from DB row
   const dbStatus = agentRow?.status
   const status: 'pending' | 'running' | 'complete' | 'error' = 
     dbStatus === 'completed' ? 'complete' :
@@ -61,36 +60,29 @@ export function Claude(props: ClaudeProps): ReactNode {
       input: agentRow.tokens_input ?? 0,
       output: agentRow.tokens_output ?? 0,
     },
-    turnsUsed: 0, // Not stored in DB, default to 0
+    turnsUsed: 0, // Not stored in DB (we ralph), default to 0
     durationMs: agentRow.duration_ms ?? 0,
     stopReason: 'completed',
   } : null
   
   const error: Error | null = agentRow?.error ? new Error(agentRow.error) : null
 
-  // Track task ID for this component
-  const taskIdRef = useRef<string | null>(null)
-  // Limit stored entries in MessageParser to prevent unbounded growth
   const maxEntries = props.tailLogCount ?? 10
+  const taskIdRef = useRef<string | null>(null)
   const messageParserRef = useRef<MessageParser>(new MessageParser(maxEntries * 2))
   const isMounted = useMountedState()
-
-  // Throttle refs for tail log updates to reduce re-renders
   const lastTailLogUpdateRef = useRef<number>(0)
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Execute once per ralphCount change (idempotent, handles React strict mode)
   const shouldExecute = phaseActive && stepActive
   const executionKey = `${ralphCount}:${shouldExecute ? 'active' : 'inactive'}`
 
+  // TODO: should be handled by an event handler not a useEffect
   useEffectOnValueChange(executionKey, () => {
     if (!shouldExecute) return
-    // Fire-and-forget async IIFE
     ;(async () => {
-      // Register task with database
       taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
 
-      // Check if stop has been requested globally
       if (isStopRequested()) {
         db.tasks.complete(taskIdRef.current)
         return
@@ -100,34 +92,27 @@ export function Claude(props: ClaudeProps): ReactNode {
       let retryCount = 0
       const maxRetries = props.maxRetries ?? 3
 
-      // Initialize LogWriter
       const logWriter = new LogWriter(undefined, executionId ?? undefined)
       const logFilename = `agent-${uuid()}.log`
       let logPath: string | undefined
 
       try {
-        // Extract prompt from children
         const childrenString = String(props.children)
 
-        // Check for MCP tool components
         const { configs: mcpConfigs, cleanPrompt, toolInstructions } = extractMCPConfigs(childrenString)
 
-        // Build final prompt with tool instructions
         let prompt = cleanPrompt
         if (toolInstructions) {
           prompt = `${toolInstructions}\n\n---\n\n${cleanPrompt}`
         }
 
-        // Generate MCP config file if needed
         let mcpConfigPath = props.mcpConfig
         if (mcpConfigs.length > 0) {
           const mcpConfig = generateMCPServerConfig(mcpConfigs)
           mcpConfigPath = await writeMCPConfigFile(mcpConfig)
         }
 
-        // Log agent start to database if reporting is enabled
         if (props.reportingEnabled !== false) {
-          // Initialize log file
           logPath = logWriter.appendLog(logFilename, '')
           
           currentAgentId = await db.agents.start(
@@ -139,16 +124,13 @@ export function Claude(props: ClaudeProps): ReactNode {
           agentIdRef.current = currentAgentId
         }
 
-        // Report progress
         props.onProgress?.(`Starting Claude agent with model: ${props.model ?? 'sonnet'}`)
 
-        // Execute with retry logic
         let agentResult: AgentResult | null = null
         let lastError: Error | null = null
 
         while (retryCount <= maxRetries) {
           try {
-            // Execute via Claude CLI
             agentResult = await executeClaudeCLI({
               prompt,
               ...(props.model !== undefined ? { model: props.model } : {}),
@@ -169,27 +151,22 @@ export function Claude(props: ClaudeProps): ReactNode {
               ...(props.schemaRetries !== undefined ? { schemaRetries: props.schemaRetries } : {}),
               ...(props.useSubscription !== undefined ? { useSubscription: props.useSubscription } : {}),
               onProgress: (chunk) => {
-                // Stream to log file
                 if (logFilename) {
                   logWriter.appendLog(logFilename, chunk)
                 }
 
-                // Parse for tail log
                 messageParserRef.current.parseChunk(chunk)
 
-                // Throttle tail log updates to reduce re-renders
                 const now = Date.now()
                 const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
 
                 if (timeSinceLastUpdate >= DEFAULT_TAIL_LOG_THROTTLE_MS) {
-                  // Enough time has passed, update immediately
                   lastTailLogUpdateRef.current = now
                   if (isMounted()) {
                     tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
                     forceUpdate()
                   }
                 } else if (!pendingTailLogUpdateRef.current) {
-                  // Schedule an update for later
                   pendingTailLogUpdateRef.current = setTimeout(() => {
                     pendingTailLogUpdateRef.current = null
                     lastTailLogUpdateRef.current = Date.now()
@@ -200,17 +177,14 @@ export function Claude(props: ClaudeProps): ReactNode {
                   }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
                 }
 
-                // Call original onProgress
                 props.onProgress?.(chunk)
               },
             })
 
-            // Check for execution errors
             if (agentResult.stopReason === 'error') {
               throw new Error(agentResult.output || 'Claude CLI execution failed')
             }
 
-            // Validate result if validator provided
             if (props.validate) {
               const isValid = await props.validate(agentResult)
               if (!isValid) {
@@ -223,7 +197,6 @@ export function Claude(props: ClaudeProps): ReactNode {
               }
             }
 
-            // Success - break out of retry loop
             break
           } catch (err) {
             lastError = err instanceof Error ? err : new Error(String(err))
@@ -242,9 +215,7 @@ export function Claude(props: ClaudeProps): ReactNode {
           throw lastError ?? new Error('No result from Claude CLI')
         }
 
-        // Flush message parser to capture any remaining content
         messageParserRef.current.flush()
-        // Cancel any pending throttled update
         if (pendingTailLogUpdateRef.current) {
           clearTimeout(pendingTailLogUpdateRef.current)
           pendingTailLogUpdateRef.current = null
@@ -252,7 +223,6 @@ export function Claude(props: ClaudeProps): ReactNode {
         tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
         forceUpdate()
 
-        // Log completion to database
         if (props.reportingEnabled !== false && currentAgentId) {
           await db.agents.complete(
             currentAgentId,
@@ -262,7 +232,6 @@ export function Claude(props: ClaudeProps): ReactNode {
           )
         }
 
-        // Add report if there's notable output
         if (props.reportingEnabled !== false && agentResult.output) {
           const reportData = {
             type: 'progress' as const,
@@ -285,19 +254,16 @@ export function Claude(props: ClaudeProps): ReactNode {
         }
 
         if (isMounted()) {
-          // DB update via db.agents.complete() triggers reactive re-render
           props.onFinished?.(agentResult)
         }
       } catch (err) {
         if (isMounted()) {
           const errorObj = err instanceof Error ? err : new Error(String(err))
 
-          // Log failure to database - this triggers reactive re-render
           if (props.reportingEnabled !== false && currentAgentId) {
             await db.agents.fail(currentAgentId, errorObj.message)
           }
 
-          // Add error report
           if (props.reportingEnabled !== false) {
             const errorData = {
               type: 'error' as const,
@@ -328,7 +294,6 @@ export function Claude(props: ClaudeProps): ReactNode {
     })()
   })
 
-  // Render custom element for XML serialization
   const maxLines = props.tailLogLines ?? 10
   const tailLog = tailLogRef.current
   const displayEntries = status === 'complete'
@@ -366,10 +331,6 @@ export function Claude(props: ClaudeProps): ReactNode {
     </claude>
   )
 }
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
 
 export type { ClaudeProps, AgentResult }
 export { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
