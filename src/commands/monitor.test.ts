@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
+import type { ChildProcess } from 'child_process'
 import { cleanupTempDir, createTempDir } from './test-utils'
 
 describe('monitor command', () => {
@@ -11,19 +12,21 @@ describe('monitor command', () => {
   let originalExit: typeof process.exit
   let originalConsoleLog: typeof console.log
   let originalConsoleError: typeof console.error
+  let spawnedChildren: ChildProcess[] = []
 
   beforeEach(() => {
     tempDir = createTempDir(import.meta.dir, '.test-tmp-monitor')
     _exitCode = undefined
     consoleOutput = []
     consoleErrorOutput = []
-    
+    spawnedChildren = []
+
     originalExit = process.exit
     process.exit = ((code?: number) => {
       _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
-    
+
     originalConsoleLog = console.log
     originalConsoleError = console.error
     console.log = (...args: unknown[]) => {
@@ -35,6 +38,13 @@ describe('monitor command', () => {
   })
 
   afterEach(() => {
+    // Kill any spawned children BEFORE restoring mocks
+    for (const child of spawnedChildren) {
+      try {
+        child.kill('SIGKILL')
+      } catch {}
+    }
+    spawnedChildren = []
     cleanupTempDir(tempDir)
     process.exit = originalExit
     console.log = originalConsoleLog
@@ -44,27 +54,29 @@ describe('monitor command', () => {
   describe('file resolution', () => {
     test('uses fileArg when provided', async () => {
       const { monitor } = await import('./monitor')
-      
+
       const testFile = path.join(tempDir, 'test-monitor.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await monitor(testFile)
+        const result = await monitor(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(true).toBe(true) // Just verify it doesn't throw on valid file
     })
 
     test('resolves relative paths correctly', async () => {
       const { monitor } = await import('./monitor')
-      
+
       const testFile = path.join(tempDir, 'relative-test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await monitor(testFile)
+        const result = await monitor(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(true).toBe(true)
     })
   })
@@ -109,15 +121,16 @@ describe('monitor command', () => {
   describe('file permissions', () => {
     test('makes file executable if not already', async () => {
       const { monitor } = await import('./monitor')
-      
+
       const testFile = path.join(tempDir, 'perm-test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
       fs.chmodSync(testFile, '644')
-      
+
       try {
-        await monitor(testFile)
+        const result = await monitor(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       const stats = fs.statSync(testFile)
       expect((stats.mode & 0o100) !== 0).toBe(true)
     })
@@ -126,27 +139,29 @@ describe('monitor command', () => {
   describe('summary option', () => {
     test('enables summary by default', async () => {
       const { monitor } = await import('./monitor')
-      
+
       const testFile = path.join(tempDir, 'summary-test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await monitor(testFile, {})
+        const result = await monitor(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(true).toBe(true)
     })
 
     test('respects options.summary = false', async () => {
       const { monitor } = await import('./monitor')
-      
+
       const testFile = path.join(tempDir, 'no-summary-test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await monitor(testFile, { summary: false })
+        const result = await monitor(testFile, { summary: false, noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(true).toBe(true)
     })
   })
@@ -154,16 +169,17 @@ describe('monitor command', () => {
   describe('edge cases', () => {
     test('handles file paths with spaces', async () => {
       const { monitor } = await import('./monitor')
-      
+
       const spacePath = path.join(tempDir, 'path with spaces')
       fs.mkdirSync(spacePath, { recursive: true })
       const testFile = path.join(spacePath, 'test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await monitor(testFile)
+        const result = await monitor(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(true).toBe(true)
     })
   })
@@ -172,31 +188,39 @@ describe('monitor command', () => {
 describe('findPreloadPath (via monitor)', () => {
   test('throws descriptive error when preload.ts not found', async () => {
     const { monitor } = await import('./monitor')
-    
+
     const tmpDir = createTempDir(import.meta.dir, '.test-preload-monitor')
     const testFile = path.join(tmpDir, 'test.tsx')
     fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-    
-    let originalExit = process.exit
+
+    const originalExit = process.exit
     let _exitCode: number | undefined
-    let originalConsoleLog = console.log
-    let originalConsoleError = console.error
-    
+    const originalConsoleLog = console.log
+    const originalConsoleError = console.error
+    let spawnedChild: ChildProcess | null = null
+
     process.exit = ((code?: number) => {
       _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
     console.log = () => {}
     console.error = () => {}
-    
+
     try {
-      await monitor(testFile)
+      const result = await monitor(testFile, { noExit: true })
+      spawnedChild = result.child
     } catch (e: unknown) {
       // Either it finds preload.ts (spawn starts), or throws descriptive error
       if (e instanceof Error && e.message.includes('preload.ts')) {
         expect(e.message).toContain('smithers-orchestrator')
       }
     } finally {
+      // Kill spawned child before restoring mocks
+      if (spawnedChild) {
+        try {
+          spawnedChild.kill('SIGKILL')
+        } catch {}
+      }
       process.exit = originalExit
       console.log = originalConsoleLog
       console.error = originalConsoleError

@@ -195,7 +195,7 @@ describe('init command', () => {
     test('attempts install when package.json exists', async () => {
       fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name": "test"}')
 
-      await init({ dir: tempDir })
+      await init({ dir: tempDir, skipInstall: true })
 
       expect(consoleOutput.some(line => line.includes('Installing smithers-orchestrator'))).toBe(true)
     })

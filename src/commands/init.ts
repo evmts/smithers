@@ -5,6 +5,7 @@ import { $ } from 'bun'
 
 interface InitOptions {
   dir?: string
+  skipInstall?: boolean
 }
 
 type PackageManager = 'bun' | 'pnpm' | 'yarn' | 'npm'
@@ -85,13 +86,15 @@ export async function init(options: InitOptions = {}) {
 
   if (fs.existsSync(packageJsonPath)) {
     console.log(`📦 Installing smithers-orchestrator via ${pm.name}...`)
-    try {
-      const [cmd, ...args] = pm.installCmd
-      await $`${cmd} ${args}`.cwd(targetDir).quiet()
-      console.log('✅ Installed smithers-orchestrator as dev dependency')
-    } catch {
-      console.warn('⚠️  Failed to install smithers-orchestrator automatically')
-      console.warn(`   Run manually: ${installCmdStr}`)
+    if (!options.skipInstall) {
+      try {
+        const [cmd, ...args] = pm.installCmd
+        await $`${cmd} ${args}`.cwd(targetDir).quiet()
+        console.log('✅ Installed smithers-orchestrator as dev dependency')
+      } catch {
+        console.warn('⚠️  Failed to install smithers-orchestrator automatically')
+        console.warn(`   Run manually: ${installCmdStr}`)
+      }
     }
   } else {
     console.warn('⚠️  No package.json found - skipping smithers-orchestrator install')

@@ -18,9 +18,7 @@ I use Smithers for both long-term (weeks) agentic work, as well as one-off scrip
 ## Table of Contents
 
 - [Why](#why)
-- [Installation](#installation)
-- [Dependencies](#dependencies)
-- [Usage](#usage)
+- [Getting Started](#getting-started)
 - [AI SDK React Hooks](#ai-sdk-react-hooks)
 - [Recipes](#recipes)
 - [Features](#features)
@@ -54,75 +52,52 @@ I wanted a tool that allows me to:
 
 ---
 
-## Installation
+## Getting Started
 
-### Install the Smithers Plugin for Claude Code
-
-**Step 1:** Add the Smithers marketplace:
-
-```bash
-/plugin marketplace add evmts/smithers
-```
-
-**Step 2:** Install the plugin:
-
-```bash
-/plugin install smithers@smithers
-```
-
-This gives Claude Code the `smithers-orchestrator` skill for creating multi-agent workflows.
-
-### Optional: Install the npm package for programmatic use
-
-If you want to use Smithers components directly in your own scripts:
-
-```bash
-bun add smithers-orchestrator
-```
-
----
-
-## Dependencies
-
-### Required
+### Prerequisites
 
 - **[Bun](https://bun.sh/)** - JavaScript runtime (v1.0+)
 - **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** - `bun install -g @anthropic-ai/claude-code`
 
-### Optional
-
+Optional:
 - **[jj (Jujutsu)](https://github.com/martinvonz/jj)** - Alternative VCS with better snapshot support
 - **[Codex CLI](https://github.com/openai/codex)** - Used for post-commit code reviews
 
----
+### Install into Claude Code
 
-## Usage
+Add to your Claude Code settings (`~/.claude/settings.json`):
 
-### Let Your Agent Write Smithers
+```json
+{
+  "projects": {
+    "/path/to/your/project": {
+      "mcpServers": {},
+      "allowedTools": ["smithers-orchestrator:*"]
+    }
+  }
+}
+```
 
-**You don't have to write Smithers yourself.** Tell your agent what you want, and it generates the workflow:
+Then install the package as a dev dependency:
+
+```bash
+bun add -d smithers-orchestrator
+```
+
+### Use It
+
+**You don't have to write Smithers yourself.** Tell Claude what you want:
 
 ```
-User: "Create a workflow that monitors my CI, fixes failures automatically, and escalates after 3 failed attempts"
+User: "Create a workflow that monitors my CI, fixes failures automatically,
+       and escalates after 3 failed attempts"
 
 Claude: *generates ci-recovery.tsx*
 ```
 
-Your agent understands the component model and generates correct, working orchestration scripts.
+Claude understands the component model and generates correct, working orchestration scripts.
 
-### State Persistence
-
-All Smithers state is saved in a **SQLite database** on your system that can be easily inspected:
-
-```bash
-# View execution history
-smithers db executions
-
-# View state for a specific execution
-smithers db state --execution-id abc123
-```
-
-### Basic Example
+### Run a Workflow
 
 ```tsx
 #!/usr/bin/env bun
@@ -154,10 +129,17 @@ await root.mount(MyWorkflow);
 await db.close();
 ```
 
-Run it:
-
 ```bash
 bun my-workflow.tsx
+```
+
+### Inspect State
+
+All state persists in SQLite:
+
+```bash
+smithers db executions                      # View execution history
+smithers db state --execution-id abc123     # View specific execution state
 ```
 
 ---

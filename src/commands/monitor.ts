@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { OutputParser } from '../monitor/output-parser.jsx'
 import { StreamFormatter } from '../monitor/stream-formatter.jsx'
@@ -9,9 +9,16 @@ import { ensureExecutable, findPreloadPath, resolveEntrypoint } from './cli-util
 interface MonitorOptions {
   file?: string
   summary?: boolean
+  /** If true, don't call process.exit() when child exits. Used for testing. */
+  noExit?: boolean
 }
 
-export async function monitor(fileArg?: string, options: MonitorOptions = {}) {
+export interface MonitorResult {
+  child: ChildProcess
+  promise: Promise<number>
+}
+
+export async function monitor(fileArg?: string, options: MonitorOptions = {}): Promise<MonitorResult> {
   const filePath = resolveEntrypoint(fileArg, options.file)
   const enableSummary = options.summary !== false
 
@@ -104,47 +111,57 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}) {
     process.stderr.write(`           📄 Full error: ${logPath}\n\n`)
   })
 
-  child.on('error', (error) => {
-    console.error('')
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.error('')
-    console.error('❌ Execution failed:', error.message)
-    console.error('')
-
-    if (error.message.includes('ENOENT')) {
-      console.error('Bun not found. Install it:')
-      console.error('   curl -fsSL https://bun.sh/install | bash')
+  const promise = new Promise<number>((resolve, reject) => {
+    child.on('error', (error) => {
       console.error('')
-    }
+      console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.error('')
+      console.error('❌ Execution failed:', error.message)
+      console.error('')
 
-    const logPath = logWriter.writeError(error)
-    console.error(`📄 Error log: ${logPath}`)
-    console.error('')
-
-    process.exit(1)
-  })
-
-  child.on('exit', (code) => {
-    const remainingEvents = parser.flush()
-    for (const event of remainingEvents) {
-      const formatted = formatter.formatEvent(event)
-      if (formatted) {
-        process.stdout.write(formatted)
+      if (error.message.includes('ENOENT')) {
+        console.error('Bun not found. Install it:')
+        console.error('   curl -fsSL https://bun.sh/install | bash')
+        console.error('')
       }
-    }
 
-    const duration = Date.now() - startTime
+      const logPath = logWriter.writeError(error)
+      console.error(`📄 Error log: ${logPath}`)
+      console.error('')
 
-    console.log(formatter.formatSummary(duration, logWriter.getLogDir()))
+      reject(error)
+      if (!options.noExit) {
+        process.exit(1)
+      }
+    })
 
-    if (code === 0) {
-      console.log('✅ Orchestration completed successfully')
-      console.log('')
-    } else {
-      console.log(`❌ Orchestration exited with code: ${code}`)
-      console.log('')
-    }
+    child.on('exit', (code) => {
+      const remainingEvents = parser.flush()
+      for (const event of remainingEvents) {
+        const formatted = formatter.formatEvent(event)
+        if (formatted) {
+          process.stdout.write(formatted)
+        }
+      }
 
-    process.exit(code || 0)
+      const duration = Date.now() - startTime
+
+      console.log(formatter.formatSummary(duration, logWriter.getLogDir()))
+
+      if (code === 0) {
+        console.log('✅ Orchestration completed successfully')
+        console.log('')
+      } else {
+        console.log(`❌ Orchestration exited with code: ${code}`)
+        console.log('')
+      }
+
+      resolve(code || 0)
+      if (!options.noExit) {
+        process.exit(code || 0)
+      }
+    })
   })
+
+  return { child, promise }
 }

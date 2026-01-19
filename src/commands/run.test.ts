@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
+import type { ChildProcess } from 'child_process'
 import { cleanupTempDir, createTempDir } from './test-utils'
 
 describe('run command', () => {
@@ -11,19 +12,21 @@ describe('run command', () => {
   let originalExit: typeof process.exit
   let originalConsoleLog: typeof console.log
   let originalConsoleError: typeof console.error
+  let spawnedChildren: ChildProcess[] = []
 
   beforeEach(() => {
     tempDir = createTempDir(import.meta.dir, '.test-tmp-run')
     exitCode = undefined
     consoleOutput = []
     consoleErrorOutput = []
-    
+    spawnedChildren = []
+
     originalExit = process.exit
     process.exit = ((code?: number) => {
       exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
-    
+
     originalConsoleLog = console.log
     originalConsoleError = console.error
     console.log = (...args: unknown[]) => {
@@ -35,6 +38,13 @@ describe('run command', () => {
   })
 
   afterEach(() => {
+    // Kill any spawned children BEFORE restoring mocks
+    for (const child of spawnedChildren) {
+      try {
+        child.kill('SIGKILL')
+      } catch {}
+    }
+    spawnedChildren = []
     cleanupTempDir(tempDir)
     process.exit = originalExit
     console.log = originalConsoleLog
@@ -45,29 +55,31 @@ describe('run command', () => {
     test('uses fileArg when provided as positional argument', async () => {
       // Import dynamically to get fresh module
       const { run } = await import('./run')
-      
+
       const testFile = path.join(tempDir, 'test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       // The run function will try to spawn bun, which will fail in test
       // but we can verify the file path logic
       try {
-        await run(testFile)
+        const result = await run(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(consoleOutput.some(line => line.includes(testFile))).toBe(true)
     })
 
     test('resolves relative paths to absolute paths', async () => {
       const { run } = await import('./run')
-      
+
       const testFile = path.join(tempDir, 'test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await run(testFile)
+        const result = await run(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(consoleOutput.some(line => line.includes(path.resolve(testFile)))).toBe(true)
     })
   })
@@ -112,16 +124,17 @@ describe('run command', () => {
   describe('file permissions', () => {
     test('makes file executable if not already executable', async () => {
       const { run } = await import('./run')
-      
+
       const testFile = path.join(tempDir, 'test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
       fs.chmodSync(testFile, '644') // Not executable
-      
+
       try {
         // This will spawn bun and may fail, but permissions should be fixed
-        await run(testFile)
+        const result = await run(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       const stats = fs.statSync(testFile)
       expect((stats.mode & 0o100) !== 0).toBe(true)
     })
@@ -130,28 +143,30 @@ describe('run command', () => {
   describe('output', () => {
     test('prints running header with file path', async () => {
       const { run } = await import('./run')
-      
+
       const testFile = path.join(tempDir, 'test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await run(testFile)
+        const result = await run(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(consoleOutput.some(line => line.includes('Running Smithers'))).toBe(true)
       expect(consoleOutput.some(line => line.includes('File:'))).toBe(true)
     })
 
     test('prints separator lines', async () => {
       const { run } = await import('./run')
-      
+
       const testFile = path.join(tempDir, 'test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await run(testFile)
+        const result = await run(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(consoleOutput.some(line => line.includes('━'))).toBe(true)
     })
   })
@@ -159,16 +174,17 @@ describe('run command', () => {
   describe('edge cases', () => {
     test('handles file paths with spaces', async () => {
       const { run } = await import('./run')
-      
+
       const spacePath = path.join(tempDir, 'path with spaces')
       fs.mkdirSync(spacePath, { recursive: true })
       const testFile = path.join(spacePath, 'test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-      
+
       try {
-        await run(testFile)
+        const result = await run(testFile, { noExit: true })
+        spawnedChildren.push(result.child)
       } catch {}
-      
+
       expect(consoleOutput.some(line => line.includes('Running Smithers'))).toBe(true)
     })
   })
@@ -180,33 +196,41 @@ describe('findPreloadPath', () => {
     // In test environment running from a temp dir, it may not find preload.ts
     // This test verifies the error message is descriptive
     const { run } = await import('./run')
-    
+
     const tmpDir = createTempDir(import.meta.dir, '.test-preload')
     const testFile = path.join(tmpDir, 'test.tsx')
     fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
-    
-    let originalExit = process.exit
+
+    const originalExit = process.exit
     let _exitCode: number | undefined
-    let consoleOutput: string[] = []
-    let consoleErrorOutput: string[] = []
-    let originalConsoleLog = console.log
-    let originalConsoleError = console.error
-    
+    const consoleOutput: string[] = []
+    const consoleErrorOutput: string[] = []
+    const originalConsoleLog = console.log
+    const originalConsoleError = console.error
+    let spawnedChild: ChildProcess | null = null
+
     process.exit = ((code?: number) => {
       _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
     console.log = (...args: unknown[]) => { consoleOutput.push(args.map(String).join(' ')) }
     console.error = (...args: unknown[]) => { consoleErrorOutput.push(args.map(String).join(' ')) }
-    
+
     try {
-      await run(testFile)
+      const result = await run(testFile, { noExit: true })
+      spawnedChild = result.child
     } catch (e: unknown) {
       // Either it finds preload.ts (spawn starts), or throws descriptive error
       if (e instanceof Error && e.message.includes('preload.ts')) {
         expect(e.message).toContain('smithers-orchestrator')
       }
     } finally {
+      // Kill spawned child before restoring mocks
+      if (spawnedChild) {
+        try {
+          spawnedChild.kill('SIGKILL')
+        } catch {}
+      }
       process.exit = originalExit
       console.log = originalConsoleLog
       console.error = originalConsoleError
