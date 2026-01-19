@@ -19,13 +19,15 @@ The `<Task>` component represents a trackable task within a workflow. Tasks can 
 ## Usage
 
 ```tsx
-import { Task } from "smithers-orchestrator";
+import { Task, Phase, Step } from "smithers-orchestrator";
 
 <Phase name="implementation">
-  <Task done={false}>Research existing patterns</Task>
-  <Task done={true}>Design component API</Task>
-  <Task done={false}>Implement component</Task>
-  <Task done={false}>Write tests</Task>
+  <Step name="tasks">
+    <Task done={false}>Research existing patterns</Task>
+    <Task done={true}>Design component API</Task>
+    <Task done={false}>Implement component</Task>
+    <Task done={false}>Write tests</Task>
+  </Step>
 </Phase>
 ```
 
@@ -46,9 +48,11 @@ import { Task } from "smithers-orchestrator";
 ```tsx
 <SmithersProvider db={db} executionId={executionId}>
   <Phase name="setup">
-    <Task done={true}>Initialize project</Task>
-    <Task done={true}>Configure TypeScript</Task>
-    <Task done={false}>Set up testing framework</Task>
+    <Step name="tasks">
+      <Task done={true}>Initialize project</Task>
+      <Task done={true}>Configure TypeScript</Task>
+      <Task done={false}>Set up testing framework</Task>
+    </Step>
   </Phase>
 </SmithersProvider>
 ```
@@ -78,17 +82,19 @@ function TaskTracker() {
 
   return (
     <Phase name="feature-development">
-      {tasks.map(task => (
-        <Task key={task.id} done={task.done}>
-          {task.name}
-        </Task>
-      ))}
+      <Step name="tasks">
+        {tasks.map(task => (
+          <Task key={task.id} done={task.done}>
+            {task.name}
+          </Task>
+        ))}
 
-      <Claude
-        onFinished={() => markDone(getCurrentTaskId())}
-      >
-        Complete the next incomplete task.
-      </Claude>
+        <Claude
+          onFinished={() => markDone(getCurrentTaskId())}
+        >
+          Complete the next incomplete task.
+        </Claude>
+      </Step>
     </Phase>
   );
 }
@@ -113,11 +119,13 @@ function PersistentTasks() {
 
   return (
     <Phase name="tracked-work">
-      {tasks.map((task, i) => (
-        <Task key={i} done={task.done}>
-          {task.name}
-        </Task>
-      ))}
+      <Step name="tasks">
+        {tasks.map((task, i) => (
+          <Task key={i} done={task.done}>
+            {task.name}
+          </Task>
+        ))}
+      </Step>
     </Phase>
   );
 }
@@ -146,11 +154,13 @@ function TaskDrivenWorkflow() {
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={tasks.length}>
         <Phase name="tasks">
-          {tasks.map((task, i) => (
-            <Task key={i} done={i < currentTaskIndex}>
-              {task}
-            </Task>
-          ))}
+          <Step name="tasks">
+            {tasks.map((task, i) => (
+              <Task key={i} done={i < currentTaskIndex}>
+                {task}
+              </Task>
+            ))}
+          </Step>
         </Phase>
 
         <If condition={currentTaskIndex < tasks.length}>
@@ -195,13 +205,17 @@ The Task component renders as a `<task>` element with a `done` attribute, which 
     Group related tasks within phases:
     ```tsx
     <Phase name="backend">
-      <Task done={true}>Create API endpoint</Task>
-      <Task done={false}>Add authentication</Task>
+      <Step name="tasks">
+        <Task done={true}>Create API endpoint</Task>
+        <Task done={false}>Add authentication</Task>
+      </Step>
     </Phase>
 
     <Phase name="frontend">
-      <Task done={false}>Create form component</Task>
-      <Task done={false}>Add validation</Task>
+      <Step name="tasks">
+        <Task done={false}>Create form component</Task>
+        <Task done={false}>Add validation</Task>
+      </Step>
     </Phase>
     ```
   </Accordion>

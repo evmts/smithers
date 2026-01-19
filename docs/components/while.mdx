@@ -115,18 +115,22 @@ export function FixAndRetryWorkflow() {
   maxIterations={3}
 >
   <Phase name="Review">
-    <Claude
-      schema={reviewSchema}
-      onFinished={async (result) => {
-        await db.state.set('lastReview', result)
-      }}
-    >
-      Review PR and provide structured feedback
-    </Claude>
+    <Step name="review">
+      <Claude
+        schema={reviewSchema}
+        onFinished={async (result) => {
+          await db.state.set('lastReview', result)
+        }}
+      >
+        Review PR and provide structured feedback
+      </Claude>
+    </Step>
   </Phase>
 
   <Phase name="Fix">
-    <Claude>Address review feedback and commit changes</Claude>
+    <Step name="fix">
+      <Claude>Address review feedback and commit changes</Claude>
+    </Step>
   </Phase>
 </While>
 ```
@@ -383,17 +387,21 @@ Always shows current iteration number and status for observability.
   maxIterations={10}
 >
   <Phase name="Refine">
-    <Claude>Analyze code quality metrics and apply improvements</Claude>
+    <Step name="refine">
+      <Claude>Analyze code quality metrics and apply improvements</Claude>
+    </Step>
   </Phase>
   <Phase name="Measure">
-    <Claude
-      onFinished={async (result) => {
-        const score = extractQualityScore(result)
-        await db.state.set('codeQuality', { score })
-      }}
-    >
-      Run static analysis and compute quality score
-    </Claude>
+    <Step name="measure">
+      <Claude
+        onFinished={async (result) => {
+          const score = extractQualityScore(result)
+          await db.state.set('codeQuality', { score })
+        }}
+      >
+        Run static analysis and compute quality score
+      </Claude>
+    </Step>
   </Phase>
 </While>
 ```
@@ -403,17 +411,23 @@ Always shows current iteration number and status for observability.
 ```tsx
 <While id="outer" condition={() => !allFeaturesDone} maxIterations={10}>
   <Phase name="Select Feature">
-    <Claude>Pick next feature from backlog</Claude>
+    <Step name="select">
+      <Claude>Pick next feature from backlog</Claude>
+    </Step>
   </Phase>
 
   <While id="inner" condition={() => !currentFeatureDone} maxIterations={5}>
     <Phase name="Implement and Test">
-      <Claude>Iteratively implement and test feature</Claude>
+      <Step name="implement-test">
+        <Claude>Iteratively implement and test feature</Claude>
+      </Step>
     </Phase>
   </While>
 
   <Phase name="Mark Complete">
-    <Claude>Mark feature as done</Claude>
+    <Step name="complete">
+      <Claude>Mark feature as done</Claude>
+    </Step>
   </Phase>
 </While>
 ```

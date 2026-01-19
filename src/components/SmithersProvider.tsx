@@ -25,8 +25,30 @@ type OrchestrationController = {
 // Tokenized map for per-root orchestration - concurrency-safe
 const orchestrationControllers = new Map<string, OrchestrationController>()
 
-// Current active token (set by SmithersProvider, used by signalOrchestrationComplete)
-let _activeOrchestrationToken: string | null = null
+// Cleanup stale entries after 1 hour (prevents memory leak if orchestration errors without cleanup)
+const ORCHESTRATION_CLEANUP_TIMEOUT_MS = 3600000
+
+// Track cleanup timeouts for each token
+const cleanupTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+
+function scheduleOrchestrationCleanup(token: string): void {
+  const timeoutId = setTimeout(() => {
+    orchestrationControllers.delete(token)
+    cleanupTimeouts.delete(token)
+  }, ORCHESTRATION_CLEANUP_TIMEOUT_MS)
+  cleanupTimeouts.set(token, timeoutId)
+}
+
+function cancelOrchestrationCleanup(token: string): void {
+  const timeoutId = cleanupTimeouts.get(token)
+  if (timeoutId) {
+    clearTimeout(timeoutId)
+    cleanupTimeouts.delete(token)
+  }
+}
+
+// Context for per-provider orchestration token (replaces global _activeOrchestrationToken)
+const OrchestrationTokenContext = createContext<string | null>(null)
 
 /**
  * Create a promise that resolves when orchestration completes.
@@ -37,49 +59,19 @@ export function createOrchestrationPromise(): { promise: Promise<void>; token: s
   const token = crypto.randomUUID()
   const promise = new Promise<void>((resolve, reject) => {
     orchestrationControllers.set(token, { resolve, reject })
+    scheduleOrchestrationCleanup(token)
   })
   return { promise, token }
 }
 
-/**
- * Set the active orchestration token for this execution context.
- * Called by SmithersProvider on mount.
- */
-export function setActiveOrchestrationToken(token: string | null): void {
-  _activeOrchestrationToken = token
-}
 
-/**
- * Signal that orchestration is complete.
- * Uses the active token if set, otherwise no-op.
- */
-export function signalOrchestrationComplete(): void {
-  if (!_activeOrchestrationToken) return
-  const controller = orchestrationControllers.get(_activeOrchestrationToken)
-  if (controller) {
-    controller.resolve()
-    orchestrationControllers.delete(_activeOrchestrationToken)
-  }
-}
-
-/**
- * Signal that orchestration failed.
- * Uses the active token if set, otherwise no-op.
- */
-export function signalOrchestrationError(err: Error): void {
-  if (!_activeOrchestrationToken) return
-  const controller = orchestrationControllers.get(_activeOrchestrationToken)
-  if (controller) {
-    controller.reject(err)
-    orchestrationControllers.delete(_activeOrchestrationToken)
-  }
-}
 
 /**
  * Signal completion for a specific orchestration token.
  * Used by reconciler root.ts for direct control.
  */
 export function signalOrchestrationCompleteByToken(token: string): void {
+  cancelOrchestrationCleanup(token)
   const controller = orchestrationControllers.get(token)
   if (controller) {
     controller.resolve()
@@ -92,11 +84,46 @@ export function signalOrchestrationCompleteByToken(token: string): void {
  * Used by reconciler root.ts for direct control.
  */
 export function signalOrchestrationErrorByToken(token: string, err: Error): void {
+  cancelOrchestrationCleanup(token)
   const controller = orchestrationControllers.get(token)
   if (controller) {
     controller.reject(err)
     orchestrationControllers.delete(token)
   }
+}
+
+/**
+ * Hook to get the current orchestration token from context.
+ * Returns null if not within a SmithersProvider.
+ */
+export function useOrchestrationToken(): string | null {
+  return useContext(OrchestrationTokenContext)
+}
+
+/**
+ * Signal that orchestration is complete.
+ * Use within a SmithersProvider context - reads token from context.
+ * @deprecated Use signalOrchestrationCompleteByToken with an explicit token for concurrency safety.
+ */
+export function signalOrchestrationComplete(): void {
+  console.warn('[SmithersProvider] signalOrchestrationComplete() without token is deprecated. Use signalOrchestrationCompleteByToken(token) for concurrency safety.')
+}
+
+/**
+ * Signal that orchestration failed.
+ * @deprecated Use signalOrchestrationErrorByToken with an explicit token for concurrency safety.
+ */
+export function signalOrchestrationError(err: Error): void {
+  console.warn('[SmithersProvider] signalOrchestrationError() without token is deprecated. Use signalOrchestrationErrorByToken(token, err) for concurrency safety.')
+  void err
+}
+
+/**
+ * Set the active orchestration token.
+ * @deprecated No longer needed - tokens are managed via React context.
+ */
+export function setActiveOrchestrationToken(_token: string | null): void {
+  // No-op for backwards compatibility - token is now stored in React context
 }
 
 // ============================================================================
@@ -454,13 +481,18 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   const stableCountRef = useRef(0)
   const completionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Initialize ralphCount in DB if needed and set orchestration token
-  useMount(() => {
-    // Set this execution's orchestration token as active
-    if (props.orchestrationToken) {
-      setActiveOrchestrationToken(props.orchestrationToken)
-    }
+  // Get orchestration token from props for signaling completion
+  const orchestrationToken = props.orchestrationToken ?? null
 
+  // Helper to signal completion using the token
+  const signalComplete = useMemo(() => () => {
+    if (orchestrationToken) {
+      signalOrchestrationCompleteByToken(orchestrationToken)
+    }
+  }, [orchestrationToken])
+
+  // Initialize ralphCount in DB if needed
+  useMount(() => {
     if (dbRalphCount == null && !reactiveDb.isClosed) {
       reactiveDb.run(
         "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
@@ -626,7 +658,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     // Check if explicitly stopped via prop
     if (props.stopped && !hasCompletedRef.current) {
       hasCompletedRef.current = true
-      signalOrchestrationComplete()
+      signalComplete()
       props.onComplete?.()
       return
     }
@@ -644,7 +676,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       completionCheckTimeoutRef.current = setTimeout(() => {
         if (!hasCompletedRef.current && stableCountRef.current > 0) {
           hasCompletedRef.current = true
-          signalOrchestrationComplete()
+          signalComplete()
           props.onComplete?.()
         }
       }, 500)
@@ -659,7 +691,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       // Check if stop was requested
       if (stopRequested && !hasCompletedRef.current) {
         hasCompletedRef.current = true
-        signalOrchestrationComplete()
+        signalComplete()
         props.onComplete?.()
         return
       }
@@ -668,7 +700,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       if (ralphCount >= maxIterations - 1) {
         if (!hasCompletedRef.current) {
           hasCompletedRef.current = true
-          signalOrchestrationComplete()
+          signalComplete()
           props.onComplete?.()
         }
         return
@@ -679,7 +711,15 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       stableCountRef.current = 0
       props.onIteration?.(nextIteration)
     }, 100) // 100ms debounce
-  }, [hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount, stopRequested, reactiveDb])
+
+    // Cleanup timeout on effect re-run
+    return () => {
+      if (completionCheckTimeoutRef.current) {
+        clearTimeout(completionCheckTimeoutRef.current)
+        completionCheckTimeoutRef.current = null
+      }
+    }
+  }, [hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount, stopRequested, reactiveDb, signalComplete])
 
   // Cleanup on unmount
   useUnmount(() => {
@@ -725,11 +765,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   // Cleanup orchestration on unmount
   useUnmount(() => {
-    // Clear the active orchestration token
-    if (props.orchestrationToken) {
-      setActiveOrchestrationToken(null)
-    }
-
     // Clear timers
     if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current)
     if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
@@ -756,13 +791,15 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   })
 
   return (
-    <SmithersContext.Provider value={value}>
-      <DatabaseProvider db={reactiveDb}>
-        <PhaseRegistryProvider>
-          {props.children}
-        </PhaseRegistryProvider>
-      </DatabaseProvider>
-    </SmithersContext.Provider>
+    <OrchestrationTokenContext.Provider value={orchestrationToken}>
+      <SmithersContext.Provider value={value}>
+        <DatabaseProvider db={reactiveDb}>
+          <PhaseRegistryProvider>
+            {props.children}
+          </PhaseRegistryProvider>
+        </DatabaseProvider>
+      </SmithersContext.Provider>
+    </OrchestrationTokenContext.Provider>
   )
 }
 

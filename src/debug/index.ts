@@ -27,7 +27,7 @@ function isSecretKey(key: string): boolean {
   return SECRET_PATTERNS.some((pattern) => pattern.test(key))
 }
 
-function redactSecrets(obj: unknown, seen = new WeakSet<object>()): unknown {
+export function redactSecrets(obj: unknown, seen = new WeakSet<object>()): unknown {
   if (obj === null || obj === undefined) {
     return obj
   }
@@ -89,6 +89,9 @@ export function createDebugCollector(): DebugCollector {
         case 'info':
           console.info('[Debug]', redacted)
           break
+        case 'debug':
+          console.debug('[Debug]', redacted)
+          break
         default:
           console.log('[Debug]', redacted)
       }
@@ -96,7 +99,7 @@ export function createDebugCollector(): DebugCollector {
   }
 }
 
-export { safeStringify, redactSecrets }
+export { safeStringify }
 
 // ============================================================================
 // STRUCTURED LOGGING

@@ -55,17 +55,19 @@ const files = ["auth.ts", "api.ts", "db.ts"];
 
 ```tsx
 <Phase name="Analysis">
-  <Parallel>
-    <Each items={criticalFiles}>
-      {(file) => (
-        <Step name={file} key={file}>
-          <Claude allowedTools={["Read", "Grep"]}>
-            Analyze {file} for security issues.
-          </Claude>
-        </Step>
-      )}
-    </Each>
-  </Parallel>
+  <Step name="analyze">
+    <Parallel>
+      <Each items={criticalFiles}>
+        {(file) => (
+          <Step name={file} key={file}>
+            <Claude allowedTools={["Read", "Grep"]}>
+              Analyze {file} for security issues.
+            </Claude>
+          </Step>
+        )}
+      </Each>
+    </Parallel>
+  </Step>
 </Phase>
 ```
 

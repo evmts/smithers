@@ -13,14 +13,16 @@ The `<Parallel>` component enables concurrent execution of child components. By 
 import { Phase, Parallel, Step, Claude } from "smithers-orchestrator";
 
 <Phase name="Build">
-  <Parallel>
-    <Step name="Frontend">
-      <Claude>Build the frontend application.</Claude>
-    </Step>
-    <Step name="Backend">
-      <Claude>Build the backend services.</Claude>
-    </Step>
-  </Parallel>
+  <Step name="build-parallel">
+    <Parallel>
+      <Step name="Frontend">
+        <Claude>Build the frontend application.</Claude>
+      </Step>
+      <Step name="Backend">
+        <Claude>Build the backend services.</Claude>
+      </Step>
+    </Parallel>
+  </Step>
 </Phase>
 ```
 
@@ -36,23 +38,25 @@ import { Phase, Parallel, Step, Claude } from "smithers-orchestrator";
 
 ```tsx
 <Phase name="Build">
-  <Parallel>
-    <Step name="lint">
-      <Claude allowedTools={["Bash"]}>
-        Run the linter.
-      </Claude>
-    </Step>
-    <Step name="typecheck">
-      <Claude allowedTools={["Bash"]}>
-        Run TypeScript type checking.
-      </Claude>
-    </Step>
-    <Step name="test">
-      <Claude allowedTools={["Bash"]}>
-        Run the test suite.
-      </Claude>
-    </Step>
-  </Parallel>
+  <Step name="checks">
+    <Parallel>
+      <Step name="lint">
+        <Claude allowedTools={["Bash"]}>
+          Run the linter.
+        </Claude>
+      </Step>
+      <Step name="typecheck">
+        <Claude allowedTools={["Bash"]}>
+          Run TypeScript type checking.
+        </Claude>
+      </Step>
+      <Step name="test">
+        <Claude allowedTools={["Bash"]}>
+          Run the test suite.
+        </Claude>
+      </Step>
+    </Parallel>
+  </Step>
 </Phase>
 ```
 
@@ -68,10 +72,12 @@ import { Phase, Parallel, Step, Claude } from "smithers-orchestrator";
     <Claude>Install dependencies.</Claude>
   </Step>
   
-  <Parallel>
-    <Step name="lint"><Claude>Run linting.</Claude></Step>
-    <Step name="test"><Claude>Run tests.</Claude></Step>
-  </Parallel>
+  <Step name="checks">
+    <Parallel>
+      <Step name="lint"><Claude>Run linting.</Claude></Step>
+      <Step name="test"><Claude>Run tests.</Claude></Step>
+    </Parallel>
+  </Step>
   
   <Step name="deploy">
     <Claude>Deploy to production.</Claude>

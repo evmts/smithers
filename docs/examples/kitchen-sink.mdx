@@ -52,18 +52,20 @@ async function main() {
             </Claude>
           </Step>
 
-          <Parallel>
-            <Step name="analyze-frontend">
-              <Claude model="haiku">
-                Analyze frontend architecture
-              </Claude>
-            </Step>
-            <Step name="analyze-backend">
-              <Claude model="haiku">
-                Analyze backend services
-              </Claude>
-            </Step>
-          </Parallel>
+          <Step name="analyze">
+            <Parallel>
+              <Step name="analyze-frontend">
+                <Claude model="haiku">
+                  Analyze frontend architecture
+                </Claude>
+              </Step>
+              <Step name="analyze-backend">
+                <Claude model="haiku">
+                  Analyze backend services
+                </Claude>
+              </Step>
+            </Parallel>
+          </Step>
         </Phase>
 
         {/* ============================================================
@@ -96,14 +98,16 @@ async function main() {
             </Claude>
           </Step>
 
-          <Parallel>
-            <Step name="write-tests">
-              <Claude model="sonnet">Write comprehensive test suite</Claude>
-            </Step>
-            <Step name="update-docs">
-              <Claude model="haiku">Update documentation</Claude>
-            </Step>
-          </Parallel>
+          <Step name="parallel-tasks">
+            <Parallel>
+              <Step name="write-tests">
+                <Claude model="sonnet">Write comprehensive test suite</Claude>
+              </Step>
+              <Step name="update-docs">
+                <Claude model="haiku">Update documentation</Claude>
+              </Step>
+            </Parallel>
+          </Step>
         </Phase>
       </SmithersProvider>
     );

@@ -60,13 +60,15 @@ export function Worktree(props: WorktreeProps): JSX.Element
 ### Basic Branch Isolation
 
 ```tsx
-import { Worktree, Phase, Claude } from 'smithers-orchestrator'
+import { Worktree, Phase, Step, Claude } from 'smithers-orchestrator'
 
 export function FeatureWorkflow() {
   return (
     <Worktree branch="feature-auth">
       <Phase name="Implement Authentication">
-        <Claude>Implement user authentication system</Claude>
+        <Step name="implement">
+          <Claude>Implement user authentication system</Claude>
+        </Step>
       </Phase>
     </Worktree>
   )
@@ -79,13 +81,17 @@ export function FeatureWorkflow() {
 <>
   <Worktree branch="feature-a" cleanup>
     <Phase name="Feature A">
-      <Claude>Implement feature A independently</Claude>
+      <Step name="implement">
+        <Claude>Implement feature A independently</Claude>
+      </Step>
     </Phase>
   </Worktree>
 
   <Worktree branch="feature-b" cleanup>
     <Phase name="Feature B">
-      <Claude>Implement feature B in parallel</Claude>
+      <Step name="implement">
+        <Claude>Implement feature B in parallel</Claude>
+      </Step>
     </Phase>
   </Worktree>
 </>
@@ -98,7 +104,9 @@ Both execute concurrently without interfering.
 ```tsx
 <Worktree branch="experiment" cleanup>
   <Phase name="Risky Refactor">
-    <Claude>Try aggressive refactoring approach</Claude>
+    <Step name="refactor">
+      <Claude>Try aggressive refactoring approach</Claude>
+    </Step>
   </Phase>
 </Worktree>
 // Worktree automatically deleted on unmount - no cleanup needed
@@ -119,7 +127,9 @@ Both execute concurrently without interfering.
 ```tsx
 <Worktree branch="hotfix" path="/tmp/hotfix-worktree">
   <Phase name="Critical Fix">
-    <Claude>Fix critical production bug</Claude>
+    <Step name="fix">
+      <Claude>Fix critical production bug</Claude>
+    </Step>
   </Phase>
 </Worktree>
 ```
@@ -285,7 +295,9 @@ Both execute concurrently without interfering.
   <Worktree branch="feature">
     {/* Worktree created on first iteration, reused in subsequent iterations */}
     <Phase name="Implement">
-      <Claude>Iteratively improve implementation</Claude>
+      <Step name="implement">
+        <Claude>Iteratively improve implementation</Claude>
+      </Step>
     </Phase>
   </Worktree>
 </Ralph>
@@ -319,19 +331,25 @@ Maintains flexibility for edge cases requiring override.
 <Parallel>
   <Worktree branch="auth-system" cleanup>
     <Phase name="Authentication">
-      <Claude>Implement JWT authentication</Claude>
+      <Step name="implement">
+        <Claude>Implement JWT authentication</Claude>
+      </Step>
     </Phase>
   </Worktree>
 
   <Worktree branch="payment-integration" cleanup>
     <Phase name="Payments">
-      <Claude>Integrate payment provider</Claude>
+      <Step name="implement">
+        <Claude>Integrate payment provider</Claude>
+      </Step>
     </Phase>
   </Worktree>
 
   <Worktree branch="analytics-tracking" cleanup>
     <Phase name="Analytics">
-      <Claude>Add analytics tracking</Claude>
+      <Step name="implement">
+        <Claude>Add analytics tracking</Claude>
+      </Step>
     </Phase>
   </Worktree>
 </Parallel>
@@ -348,7 +366,9 @@ const approaches = ['approach-a', 'approach-b', 'approach-c']
   {approaches.map(approach => (
     <Worktree key={approach} branch={approach} cleanup>
       <Phase name={`Test ${approach}`}>
-        <Claude>Implement and benchmark {approach}</Claude>
+        <Step name="benchmark">
+          <Claude>Implement and benchmark {approach}</Claude>
+        </Step>
       </Phase>
     </Worktree>
   ))}
@@ -363,13 +383,15 @@ const approaches = ['approach-a', 'approach-b', 'approach-c']
 <While id="fix-tests" condition={() => !testsPass} maxIterations={5}>
   <Worktree branch="test-fixes" base="main">
     <Phase name="Fix and Test">
-      <Claude>Fix failing tests</Claude>
-      <Command
-        cmd="bun test"
-        onFinished={(result) => {
-          testsPass = result.exitCode === 0
-        }}
-      />
+      <Step name="fix-and-test">
+        <Claude>Fix failing tests</Claude>
+        <Command
+          cmd="bun test"
+          onFinished={(result) => {
+            testsPass = result.exitCode === 0
+          }}
+        />
+      </Step>
     </Phase>
   </Worktree>
 </While>
@@ -382,19 +404,25 @@ Each iteration starts from clean main branch state.
 ```tsx
 <Worktree branch="outer-feature">
   <Phase name="Main Work">
-    <Claude>Work on outer feature</Claude>
+    <Step name="work">
+      <Claude>Work on outer feature</Claude>
+    </Step>
   </Phase>
 
   <Worktree branch="inner-experiment">
     {/* Inner worktree shadows outer - operates in nested context */}
     <Phase name="Experiment">
-      <Claude>Risky experiment isolated from outer feature</Claude>
+      <Step name="experiment">
+        <Claude>Risky experiment isolated from outer feature</Claude>
+      </Step>
     </Phase>
   </Worktree>
 
   <Phase name="Finalize">
     {/* Back to outer worktree context */}
-    <Claude>Finalize outer feature</Claude>
+    <Step name="finalize">
+      <Claude>Finalize outer feature</Claude>
+    </Step>
   </Phase>
 </Worktree>
 ```

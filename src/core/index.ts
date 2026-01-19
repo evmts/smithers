@@ -1,11 +1,7 @@
 /**
  * Core execution engine - framework-agnostic
+ * Re-exports from reconciler for backwards compatibility
  */
-
-// TODO: execute.ts was removed/moved - this export needs to be updated
-// export { executePlan } from './execute.js'
-
-// Re-export from reconciler for backwards compatibility
 export { serialize } from '../reconciler/serialize.js'
 
 export type {

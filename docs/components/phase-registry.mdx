@@ -10,19 +10,25 @@ The `<PhaseRegistryProvider>` manages sequential phase execution automatically v
 ## Basic Usage
 
 ```tsx
-import { PhaseRegistryProvider, Phase, usePhaseRegistry } from "smithers-orchestrator";
+import { PhaseRegistryProvider, Phase, Step, usePhaseRegistry } from "smithers-orchestrator";
 
 function Workflow() {
   return (
     <PhaseRegistryProvider>
       <Phase name="Research">
-        <Claude>Research the codebase.</Claude>
+        <Step name="research">
+          <Claude>Research the codebase.</Claude>
+        </Step>
       </Phase>
       <Phase name="Implement">
-        <Claude>Implement the feature.</Claude>
+        <Step name="implement">
+          <Claude>Implement the feature.</Claude>
+        </Step>
       </Phase>
       <Phase name="Test">
-        <Claude>Run tests.</Claude>
+        <Step name="test">
+          <Claude>Run tests.</Claude>
+        </Step>
       </Phase>
     </PhaseRegistryProvider>
   );

@@ -4,7 +4,6 @@ import { useCommitWithRetry } from './useCommitWithRetry.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { SmithersProvider } from '../components/SmithersProvider.js'
-import { useMount } from '../reconciler/hooks.js'
 
 interface TestContext {
   db: SmithersDB

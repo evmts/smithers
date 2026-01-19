@@ -88,7 +88,7 @@ describe('VCSQueueModule', () => {
     })
 
     test('skips running items', () => {
-      const id1 = db.vcsQueue.enqueue('first', {})
+      const _id1 = db.vcsQueue.enqueue('first', {})
       db.vcsQueue.enqueue('second', {})
       
       db.vcsQueue.dequeue()
@@ -137,8 +137,8 @@ describe('VCSQueueModule', () => {
     test('sets completed_at timestamp', () => {
       const id = db.vcsQueue.enqueue('test-op', {})
       db.vcsQueue.dequeue()
-      
-      const before = new Date().toISOString()
+
+      const _before = new Date().toISOString()
       db.vcsQueue.complete(id)
       
       const item = db.db.queryOne<{ completed_at: string }>(
@@ -272,7 +272,7 @@ describe('VCSQueueModule', () => {
 
   describe('edge cases', () => {
     test('handles empty payload', () => {
-      const id = db.vcsQueue.enqueue('simple-op', {})
+      const _id = db.vcsQueue.enqueue('simple-op', {})
       const item = db.vcsQueue.dequeue()
       expect(item!.payload).toEqual({})
     })

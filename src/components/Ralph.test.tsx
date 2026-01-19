@@ -15,7 +15,8 @@ import {
   createOrchestrationPromise,
   signalOrchestrationComplete,
   signalOrchestrationError,
-  setActiveOrchestrationToken,
+  signalOrchestrationCompleteByToken,
+  signalOrchestrationErrorByToken,
 } from './Ralph.js'
 import { SmithersProvider, useSmithers } from './SmithersProvider.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
@@ -55,27 +56,24 @@ describe('Orchestration promise functions', () => {
     const { promise, token } = createOrchestrationPromise()
     expect(promise).toBeInstanceOf(Promise)
     expect(typeof token).toBe('string')
-    setActiveOrchestrationToken(token)
-    signalOrchestrationComplete()
+    signalOrchestrationCompleteByToken(token)
   })
 
-  test('signalOrchestrationComplete resolves the promise', async () => {
+  test('signalOrchestrationCompleteByToken resolves the promise', async () => {
     const { promise, token } = createOrchestrationPromise()
-    setActiveOrchestrationToken(token)
     let resolved = false
 
     promise.then(() => {
       resolved = true
     })
 
-    signalOrchestrationComplete()
+    signalOrchestrationCompleteByToken(token)
     await delay(10)
     expect(resolved).toBe(true)
   })
 
-  test('signalOrchestrationError rejects the promise', async () => {
+  test('signalOrchestrationErrorByToken rejects the promise', async () => {
     const { promise, token } = createOrchestrationPromise()
-    setActiveOrchestrationToken(token)
     let rejected = false
     let errorMessage = ''
 
@@ -84,38 +82,36 @@ describe('Orchestration promise functions', () => {
       errorMessage = err.message
     })
 
-    signalOrchestrationError(new Error('test error'))
+    signalOrchestrationErrorByToken(token, new Error('test error'))
     await delay(10)
     expect(rejected).toBe(true)
     expect(errorMessage).toBe('test error')
   })
 
-  test('signalOrchestrationComplete is safe to call without promise', () => {
+  test('signalOrchestrationComplete is safe to call without promise (deprecated)', () => {
     expect(() => signalOrchestrationComplete()).not.toThrow()
   })
 
-  test('signalOrchestrationError is safe to call without promise', () => {
+  test('signalOrchestrationError is safe to call without promise (deprecated)', () => {
     expect(() => signalOrchestrationError(new Error('no-op'))).not.toThrow()
   })
 
   test('calling complete twice is safe', async () => {
     const { promise, token } = createOrchestrationPromise()
-    setActiveOrchestrationToken(token)
     let resolveCount = 0
 
     promise.then(() => {
       resolveCount++
     })
 
-    signalOrchestrationComplete()
-    signalOrchestrationComplete()
+    signalOrchestrationCompleteByToken(token)
+    signalOrchestrationCompleteByToken(token)
     await delay(10)
     expect(resolveCount).toBe(1)
   })
 
   test('calling error after complete is no-op', async () => {
     const { promise, token } = createOrchestrationPromise()
-    setActiveOrchestrationToken(token)
     let resolved = false
     let rejected = false
 
@@ -123,8 +119,8 @@ describe('Orchestration promise functions', () => {
       .then(() => { resolved = true })
       .catch(() => { rejected = true })
 
-    signalOrchestrationComplete()
-    signalOrchestrationError(new Error('should be ignored'))
+    signalOrchestrationCompleteByToken(token)
+    signalOrchestrationErrorByToken(token, new Error('should be ignored'))
     await delay(10)
     expect(resolved).toBe(true)
     expect(rejected).toBe(false)

@@ -1,6 +1,6 @@
 /**
  * Tests for src/core/index.ts
- * The core module is currently a thin re-export layer
+ * The core module is a thin re-export layer for backwards compatibility
  */
 
 import { describe, test, expect } from 'bun:test'
@@ -21,7 +21,6 @@ describe('core/index', () => {
     })
 
     test('type exports are accessible (SmithersNode, ExecutionState, etc.)', () => {
-      // Type-level test: if this compiles, types are exported correctly
       const node: SmithersNode = {
         type: 'task',
         props: { name: 'test' },
@@ -35,7 +34,6 @@ describe('core/index', () => {
       const debugOpts: DebugOptions = { enabled: false }
       const event: DebugEvent = { type: 'start', timestamp: Date.now() }
       
-      // Runtime assertions to use the variables
       expect(node.type).toBe('task')
       expect(state).toBe('pending')
       expect(options).toEqual({})
@@ -58,28 +56,25 @@ describe('core/index', () => {
       expect(result).toBe('<task name="test-task" />')
     })
 
-    test('serialize handles SmithersNode input', () => {
-      const node: SmithersNode = {
-        type: 'phase',
-        props: { id: 'phase-1' },
-        children: [
-          {
-            type: 'step',
-            props: { order: 1 },
-            children: [],
-            key: undefined,
-            parent: null,
-          }
-        ],
+    test('serialize handles SmithersNode with children', () => {
+      const child: SmithersNode = {
+        type: 'TEXT',
+        props: { value: 'hello' },
+        children: [],
         key: undefined,
         parent: null,
       }
-      // Set parent reference
-      node.children[0].parent = node
-      
+      const node: SmithersNode = {
+        type: 'step',
+        props: { name: 'step1' },
+        children: [child],
+        key: undefined,
+        parent: null,
+      }
+      child.parent = node
       const result = serialize(node)
-      expect(result).toContain('<phase')
       expect(result).toContain('<step')
+      expect(result).toContain('hello')
     })
 
     test('serialize returns string output', () => {
@@ -120,14 +115,8 @@ describe('core/index', () => {
     })
 
     test('all documented exports are present', () => {
-      // Verify all exports from core/index.ts are present
       const exports = Object.keys(coreModule)
-      
-      // serialize is the only runtime export
       expect(exports).toContain('serialize')
-      
-      // Type exports don't appear at runtime, but we verified them in the type test above
-      // This test ensures the module doesn't accidentally export extra things
       expect(exports.length).toBe(1)
     })
   })

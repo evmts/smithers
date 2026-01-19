@@ -45,6 +45,7 @@ export function createBuildStateModule(ctx: BuildStateModuleContext): BuildState
   const { rdb } = ctx
 
   const ensureRow = (): void => {
+    if (rdb.isClosed) return
     rdb.run(
       `INSERT INTO build_state (id, status, last_check)
        VALUES (1, 'passing', ?)
@@ -54,27 +55,28 @@ export function createBuildStateModule(ctx: BuildStateModuleContext): BuildState
   }
 
   const get = (): BuildState => {
+    if (rdb.isClosed) return { ...DEFAULT_STATE }
     ensureRow()
     const row = rdb.queryOne<BuildState>('SELECT * FROM build_state WHERE id = 1')
     return row ?? { ...DEFAULT_STATE }
   }
 
   const updateState = (next: Partial<BuildState>): BuildState => {
-    return rdb.transaction(() => {
-      ensureRow()
-      const current = get()
-      const merged = { ...current, ...next }
-      rdb.run(
-        `UPDATE build_state
-         SET status = ?, fixer_agent_id = ?, broken_since = ?, last_check = ?
-         WHERE id = 1`,
-        [merged.status, merged.fixer_agent_id, merged.broken_since, merged.last_check]
-      )
-      return get()
-    })
+    if (rdb.isClosed) return { ...DEFAULT_STATE, ...next }
+    ensureRow()
+    const current = get()
+    const merged = { ...current, ...next }
+    rdb.run(
+      `UPDATE build_state
+       SET status = ?, fixer_agent_id = ?, broken_since = ?, last_check = ?
+       WHERE id = 1`,
+      [merged.status, merged.fixer_agent_id, merged.broken_since, merged.last_check]
+    )
+    return get()
   }
 
   const cleanup = (staleMs: number = DEFAULT_STALE_MS): BuildState => {
+    if (rdb.isClosed) return { ...DEFAULT_STATE }
     ensureRow()
     const current = get()
     if (current.status !== 'fixing' || !current.broken_since) {
@@ -98,6 +100,9 @@ export function createBuildStateModule(ctx: BuildStateModuleContext): BuildState
     agentId: string,
     options?: { waitMs?: number; staleMs?: number }
   ): BuildStateDecision => {
+    if (rdb.isClosed) {
+      return { shouldFix: false, waitMs: options?.waitMs ?? DEFAULT_WAIT_MS, state: { ...DEFAULT_STATE } }
+    }
     const waitMs = options?.waitMs ?? DEFAULT_WAIT_MS
     const staleMs = options?.staleMs ?? DEFAULT_STALE_MS
     const timestamp = now()
@@ -137,6 +142,7 @@ export function createBuildStateModule(ctx: BuildStateModuleContext): BuildState
   }
 
   const markFixed = (): BuildState => {
+    if (rdb.isClosed) return { ...DEFAULT_STATE }
     return updateState({
       status: 'passing',
       fixer_agent_id: null,

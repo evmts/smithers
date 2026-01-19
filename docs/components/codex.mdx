@@ -87,15 +87,17 @@ export function Codex<TSchema extends z.ZodType = z.ZodType>(
 ### Basic Code Generation
 
 ```tsx
-import { Codex, Phase } from 'smithers-orchestrator'
+import { Codex, Phase, Step } from 'smithers-orchestrator'
 
 export function ImplementFeature() {
   return (
     <Phase name="Implementation">
-      <Codex model="gpt-4-turbo">
-        Implement user authentication with JWT tokens.
-        Include login, logout, and token refresh endpoints.
-      </Codex>
+      <Step name="implement">
+        <Codex model="gpt-4-turbo">
+          Implement user authentication with JWT tokens.
+          Include login, logout, and token refresh endpoints.
+        </Codex>
+      </Step>
     </Phase>
   )
 }

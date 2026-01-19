@@ -332,8 +332,8 @@ describe('SmithersDB Integration', () => {
   test('VCS operations during execution', () => {
     db = createSmithersDB({ reset: true })
     db.execution.start('vcs-test', '/path')
-    
-    const commitId = db.vcs.logCommit({
+
+    const _commitId = db.vcs.logCommit({
       vcs_type: 'git',
       commit_hash: 'abc123',
       message: 'feat: add feature',
@@ -341,13 +341,13 @@ describe('SmithersDB Integration', () => {
       insertions: 10,
       deletions: 2
     })
-    
-    const snapshotId = db.vcs.logSnapshot({
+
+    const _snapshotId = db.vcs.logSnapshot({
       change_id: 'change-1',
       files_modified: ['src/utils.ts']
     })
-    
-    const reviewId = db.vcs.logReview({
+
+    const _reviewId = db.vcs.logReview({
       target_type: 'commit',
       target_ref: 'abc123',
       approved: true,

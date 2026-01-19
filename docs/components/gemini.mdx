@@ -94,15 +94,17 @@ export function Gemini<TSchema extends z.ZodType = z.ZodType>(
 ### Basic Text Generation
 
 ```tsx
-import { Gemini, Phase } from 'smithers-orchestrator'
+import { Gemini, Phase, Step } from 'smithers-orchestrator'
 
 export function AnalyzeCode() {
   return (
     <Phase name="Analysis">
-      <Gemini model="gemini-2.5-pro">
-        Analyze this codebase and identify architectural issues.
-        Focus on scalability and maintainability concerns.
-      </Gemini>
+      <Step name="analyze">
+        <Gemini model="gemini-2.5-pro">
+          Analyze this codebase and identify architectural issues.
+          Focus on scalability and maintainability concerns.
+        </Gemini>
+      </Step>
     </Phase>
   )
 }

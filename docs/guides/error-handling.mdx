@@ -25,31 +25,42 @@ Use the `onError` callback:
 Implement retry logic with signals:
 
 ```tsx
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
 function RetryWorkflow() {
-  const [attempts, setAttempts] = useState(0);
-  const [lastError, setLastError] = useState<Error | null>(null);
+  const { db, reactiveDb } = useSmithers();
+
+  const attempts = useQueryValue<number>(
+    reactiveDb,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
+  ) ?? 0;
+
+  const lastError = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'lastError'"
+  );
 
   return (
-    <Ralph maxIterations={5}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
       <If condition={attempts < 3}>
         <Claude
-          onFinished={() => setLastError(null)}
+          onFinished={() => db.state.set("lastError", null)}
           onError={(err) => {
-            setLastError(err);
-            setAttempts(a => a + 1);
+            db.state.set("lastError", err.message);
+            db.state.set("attempts", attempts + 1);
           }}
         >
           <If condition={lastError !== null}>
-            <>Previous attempt failed: {lastError!.message}</>
+            <>Previous attempt failed: {lastError}</>
           </If>
           Attempt the task (attempt {attempts + 1}/3).
         </Claude>
       </If>
 
       <If condition={attempts >= 3}>
-        <Stop reason={`Failed after 3 attempts: ${lastError?.message}`} />
+        <Stop reason={`Failed after 3 attempts: ${lastError}`} />
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```
@@ -138,11 +149,22 @@ Log errors to the database for debugging:
 Fall back to simpler approaches:
 
 ```tsx
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
 function ResilientWorkflow() {
-  const [approach, setApproach] = useState<"full" | "simple" | "manual">("full");
+  const { db, reactiveDb } = useSmithers();
+
+  const approach = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'approach'"
+  ) ?? "full";
+
+  const setApproach = (newApproach: string) => {
+    db.state.set("approach", newApproach);
+  };
 
   return (
-    <Ralph maxIterations={5}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
       <If condition={approach === "full"}>
         <Claude
           model="opus"
@@ -175,7 +197,7 @@ function ResilientWorkflow() {
           Please review manually.
         </Human>
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```
@@ -223,18 +245,33 @@ Handle timeouts explicitly:
 ## Complete Error Handling Pattern
 
 ```tsx
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
 function RobustWorkflow() {
-  const [state, setState] = useState({
-    phase: "start",
-    attempts: 0,
-    errors: [] as string[],
-  });
+  const { db, reactiveDb } = useSmithers();
+
+  const phase = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "start";
+
+  const attempts = useQueryValue<number>(
+    reactiveDb,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
+  ) ?? 0;
+
+  const errorsJson = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'errors'"
+  );
+  const errors: string[] = errorsJson ? JSON.parse(errorsJson) : [];
 
   return (
     <SmithersProvider
       db={db}
       executionId={executionId}
       globalTimeout={3600000}
+      maxIterations={10}
       stopConditions={[
         { type: "total_tokens", value: 100000 },
       ]}
@@ -246,47 +283,43 @@ function RobustWorkflow() {
           content: error.message,
         });
       }}
+      onMaxIterations={() => {
+        console.error("Max iterations reached");
+      }}
     >
-        <Ralph
-          maxIterations={10}
-          onMaxIterations={() => {
-            console.error("Max iterations reached");
+      <If condition={phase === "start" && attempts < 3}>
+        <Claude
+          onFinished={() => db.state.set("phase", "done")}
+          onError={(error) => {
+            const newErrors = [...errors, error.message];
+            db.state.set("errors", JSON.stringify(newErrors));
+            db.state.set("attempts", attempts + 1);
+            if (attempts >= 2) {
+              db.state.set("phase", "fallback");
+            }
           }}
         >
-          <If condition={state.phase === "start" && state.attempts < 3}>
-            <Claude
-              onFinished={() => setState(s => ({ ...s, phase: "done" }))}
-              onError={(error) => {
-                setState(s => ({
-                  ...s,
-                  errors: [...s.errors, error.message],
-                  attempts: s.attempts + 1,
-                  phase: s.attempts >= 2 ? "fallback" : s.phase,
-                }));
-              }}
-            >
-              Primary task.
-              <If condition={state.errors.length > 0}>
-                <>Previous errors: {state.errors.join(", ")}</>
-              </If>
-            </Claude>
+          Primary task.
+          <If condition={errors.length > 0}>
+            <>Previous errors: {errors.join(", ")}</>
           </If>
+        </Claude>
+      </If>
 
-          <If condition={state.phase === "fallback"}>
-            <Human
-              message="Automated task failed"
-              onApprove={() => setState(s => ({ ...s, phase: "done" }))}
-              onReject={() => setState(s => ({ ...s, phase: "cancelled" }))}
-            >
-              Failed {state.attempts} times.
-              Errors: {state.errors.join("; ")}
-            </Human>
-          </If>
+      <If condition={phase === "fallback"}>
+        <Human
+          message="Automated task failed"
+          onApprove={() => db.state.set("phase", "done")}
+          onReject={() => db.state.set("phase", "cancelled")}
+        >
+          Failed {attempts} times.
+          Errors: {errors.join("; ")}
+        </Human>
+      </If>
 
-          <If condition={state.phase === "cancelled"}>
-            <Stop reason="Cancelled after failures" />
-          </If>
-        </Ralph>
+      <If condition={phase === "cancelled"}>
+        <Stop reason="Cancelled after failures" />
+      </If>
     </SmithersProvider>
   );
 }

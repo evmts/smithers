@@ -1,4 +1,3 @@
-import type { AgentResult } from '../components/agents/types.js'
 import type { SmithersMiddleware } from './types.js'
 
 export type RetryBackoff = 'exponential' | 'linear'
@@ -44,6 +43,5 @@ export function retryMiddleware(options: RetryMiddlewareOptions = {}): SmithersM
       }
       throw lastError ?? new Error('Retry middleware failed without error')
     },
-    transformResult: (result: AgentResult) => result,
   }
 }

@@ -56,9 +56,11 @@ Smithers has **two completely independent React reconcilers**:
 <SmithersProvider db={db} executionId={executionId}>
   <Ralph maxIterations={10}>
     <Phase name="Implementation">
-      <Claude model="sonnet" maxTurns={5}>
-        Implement user authentication
-      </Claude>
+      <Step name="implement">
+        <Claude model="sonnet" maxTurns={5}>
+          Implement user authentication
+        </Claude>
+      </Step>
     </Phase>
   </Ralph>
 </SmithersProvider>
@@ -73,8 +75,12 @@ Smithers has **two completely independent React reconcilers**:
       children: [{
         type: 'Phase',
         children: [{
-          type: 'Claude',
-          props: { model: 'sonnet', maxTurns: 5 }
+          type: 'Step',
+          props: { name: 'implement' },
+          children: [{
+            type: 'Claude',
+            props: { model: 'sonnet', maxTurns: 5 }
+          }]
         }]
       }]
     }]
@@ -425,9 +431,11 @@ const treeXml = currentFrame.tree_xml  // Serialized SmithersNode tree
   <SmithersProvider executionId="abc123">
     <Ralph maxIterations="10" currentIteration="2">
       <Phase name="Implementation" status="running">
-        <Claude model="sonnet" status="complete">
-          Implement user authentication
-        </Claude>
+        <Step name="implement" status="complete">
+          <Claude model="sonnet" status="complete">
+            Implement user authentication
+          </Claude>
+        </Step>
       </Phase>
     </Ralph>
   </SmithersProvider>

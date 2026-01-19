@@ -70,11 +70,22 @@ git notes show HEAD
 Review changes before committing:
 
 ```tsx
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
 function ReviewAndCommit() {
-  const [phase, setPhase] = useState("implement");
+  const { db, reactiveDb } = useSmithers();
+
+  const phase = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "implement";
+
+  const setPhase = (newPhase: string) => {
+    db.state.set("phase", newPhase);
+  };
 
   return (
-    <Ralph maxIterations={5}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
       <If condition={phase === "implement"}>
         <Claude
           allowedTools={["Edit", "Write"]}
@@ -108,7 +119,7 @@ function ReviewAndCommit() {
           onFinished={() => setPhase("done")}
         />
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```
@@ -174,75 +185,84 @@ const blocking = await db.vcs.getBlockingReviews();
 ## Complete Workflow
 
 ```tsx
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
 function FeatureWorkflow() {
-  const [phase, setPhase] = useState("implement");
+  const { db, reactiveDb } = useSmithers();
+
+  const phase = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "implement";
+
+  const setPhase = (newPhase: string) => {
+    db.state.set("phase", newPhase);
+  };
 
   return (
-    <SmithersProvider db={db} executionId={executionId} snapshotBeforeStart>
-        <Ralph maxIterations={10}>
-          <If condition={phase === "implement"}>
-            <Phase name="Implementation">
-              <Step name="implement">
-                <Claude
-                  allowedTools={["Edit", "Write"]}
-                  onFinished={() => setPhase("test")}
-                >
-                  Implement the feature.
-                </Claude>
-              </Step>
-            </Phase>
-          </If>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10} snapshotBeforeStart>
+      <If condition={phase === "implement"}>
+        <Phase name="Implementation">
+          <Step name="implement">
+            <Claude
+              allowedTools={["Edit", "Write"]}
+              onFinished={() => setPhase("test")}
+            >
+              Implement the feature.
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
 
-          <If condition={phase === "test"}>
-            <Phase name="Testing">
-              <Step name="test">
-                <Claude
-                  allowedTools={["Bash"]}
-                  onFinished={(result) => {
-                    if (result.output.includes("PASS")) {
-                      setPhase("review");
-                    } else {
-                      setPhase("implement");
-                    }
-                  }}
-                >
-                  Run the tests.
-                </Claude>
-              </Step>
-            </Phase>
-          </If>
+      <If condition={phase === "test"}>
+        <Phase name="Testing">
+          <Step name="test">
+            <Claude
+              allowedTools={["Bash"]}
+              onFinished={(result) => {
+                if (result.output.includes("PASS")) {
+                  setPhase("review");
+                } else {
+                  setPhase("implement");
+                }
+              }}
+            >
+              Run the tests.
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
 
-          <If condition={phase === "review"}>
-            <Phase name="Review">
-              <Step name="review">
-                <Review
-                  target={{ type: "diff", ref: "main" }}
-                  criteria={["No security issues", "Tests pass"]}
-                  onFinished={(review) => {
-                    if (review.approved) {
-                      setPhase("commit");
-                    } else {
-                      setPhase("implement");
-                    }
-                  }}
-                />
-              </Step>
-            </Phase>
-          </If>
+      <If condition={phase === "review"}>
+        <Phase name="Review">
+          <Step name="review">
+            <Review
+              target={{ type: "diff", ref: "main" }}
+              criteria={["No security issues", "Tests pass"]}
+              onFinished={(review) => {
+                if (review.approved) {
+                  setPhase("commit");
+                } else {
+                  setPhase("implement");
+                }
+              }}
+            />
+          </Step>
+        </Phase>
+      </If>
 
-          <If condition={phase === "commit"}>
-            <Phase name="Commit">
-              <Step name="commit">
-                <Commit
-                  autoGenerate
-                  all
-                  notes={{ smithers: true }}
-                  onFinished={() => setPhase("done")}
-                />
-              </Step>
-            </Phase>
-          </If>
-        </Ralph>
+      <If condition={phase === "commit"}>
+        <Phase name="Commit">
+          <Step name="commit">
+            <Commit
+              autoGenerate
+              all
+              notes={{ smithers: true }}
+              onFinished={() => setPhase("done")}
+            />
+          </Step>
+        </Phase>
+      </If>
     </SmithersProvider>
   );
 }

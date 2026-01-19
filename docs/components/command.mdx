@@ -82,21 +82,23 @@ export function Command(props: CommandProps): JSX.Element
 ### Basic Command Execution
 
 ```tsx
-import { Command, Phase } from 'smithers-orchestrator'
+import { Command, Phase, Step } from 'smithers-orchestrator'
 
 export function BuildWorkflow() {
   return (
     <Phase name="Build">
-      <Command
-        cmd="bun"
-        args={["run", "build"]}
-        onFinished={(result) => {
-          console.log(`Build completed in ${result.durationMs}ms`)
-        }}
-        onError={(error) => {
-          console.error(`Build failed: ${error.stderr}`)
-        }}
-      />
+      <Step name="build">
+        <Command
+          cmd="bun"
+          args={["run", "build"]}
+          onFinished={(result) => {
+            console.log(`Build completed in ${result.durationMs}ms`)
+          }}
+          onError={(error) => {
+            console.error(`Build failed: ${error.stderr}`)
+          }}
+        />
+      </Step>
     </Phase>
   )
 }
@@ -111,7 +113,9 @@ export function BuildWorkflow() {
     return (
       <If id="changes-detected" condition={() => hasChanges}>
         <Phase name="Commit Changes">
-          <Claude>Uncommitted changes detected - create commit</Claude>
+          <Step name="commit">
+            <Claude>Uncommitted changes detected - create commit</Claude>
+          </Step>
         </Phase>
       </If>
     )
@@ -394,20 +398,22 @@ Commands inside `<Worktree>` automatically execute in worktree directory.
 
 ```tsx
 <Phase name="CI Checks">
-  <Parallel>
-    <Command
-      cmd="bun run typecheck"
-      onError={() => console.error('Type errors detected')}
-    />
-    <Command
-      cmd="bun run lint"
-      onError={() => console.error('Lint errors detected')}
-    />
-    <Command
-      cmd="bun test"
-      onError={() => console.error('Tests failed')}
-    />
-  </Parallel>
+  <Step name="checks">
+    <Parallel>
+      <Command
+        cmd="bun run typecheck"
+        onError={() => console.error('Type errors detected')}
+      />
+      <Command
+        cmd="bun run lint"
+        onError={() => console.error('Lint errors detected')}
+      />
+      <Command
+        cmd="bun test"
+        onError={() => console.error('Tests failed')}
+      />
+    </Parallel>
+  </Step>
 </Phase>
 ```
 
@@ -415,24 +421,26 @@ Commands inside `<Worktree>` automatically execute in worktree directory.
 
 ```tsx
 <Phase name="Commit and Push">
-  <Command cmd="git add ." />
+  <Step name="commit-push">
+    <Command cmd="git add ." />
 
-  <Command cmd="git status --porcelain">
-    {(result) => {
-      const hasChanges = result.stdout.trim().length > 0
-      return hasChanges ? (
-        <>
-          <Command
-            cmd="git"
-            args={["commit", "-m", "automated commit"]}
-          />
-          <Command cmd="git push origin main" />
-        </>
-      ) : (
-        <text>No changes to commit</text>
-      )
-    }}
-  </Command>
+    <Command cmd="git status --porcelain">
+      {(result) => {
+        const hasChanges = result.stdout.trim().length > 0
+        return hasChanges ? (
+          <>
+            <Command
+              cmd="git"
+              args={["commit", "-m", "automated commit"]}
+            />
+            <Command cmd="git push origin main" />
+          </>
+        ) : (
+          <text>No changes to commit</text>
+        )
+      }}
+    </Command>
+  </Step>
 </Phase>
 ```
 

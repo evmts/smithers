@@ -7,7 +7,8 @@ import {
   createOrchestrationPromise,
   signalOrchestrationComplete,
   signalOrchestrationError,
-  setActiveOrchestrationToken,
+  signalOrchestrationCompleteByToken,
+  signalOrchestrationErrorByToken,
   type SmithersContextValue,
   type RalphContextType,
 } from './SmithersProvider.js'
@@ -22,7 +23,6 @@ describe('SmithersProvider', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
     db.close()
   })
 
@@ -165,30 +165,27 @@ describe('SmithersProvider', () => {
       const { promise, token } = createOrchestrationPromise()
       expect(promise).toBeInstanceOf(Promise)
       expect(typeof token).toBe('string')
-      // Clean up by resolving
-      setActiveOrchestrationToken(token)
-      signalOrchestrationComplete()
+      // Clean up by resolving with token
+      signalOrchestrationCompleteByToken(token)
     })
 
-    test('signalOrchestrationComplete resolves the promise', async () => {
+    test('signalOrchestrationCompleteByToken resolves the promise', async () => {
       const { promise, token } = createOrchestrationPromise()
-      setActiveOrchestrationToken(token)
       let resolved = false
 
       promise.then(() => {
         resolved = true
       })
 
-      signalOrchestrationComplete()
+      signalOrchestrationCompleteByToken(token)
 
       // Give it a tick to resolve
       await new Promise((r) => setTimeout(r, 10))
       expect(resolved).toBe(true)
     })
 
-    test('signalOrchestrationError rejects the promise', async () => {
+    test('signalOrchestrationErrorByToken rejects the promise', async () => {
       const { promise, token } = createOrchestrationPromise()
-      setActiveOrchestrationToken(token)
       let rejected = false
       let errorMessage = ''
 
@@ -197,7 +194,7 @@ describe('SmithersProvider', () => {
         errorMessage = err.message
       })
 
-      signalOrchestrationError(new Error('Test error'))
+      signalOrchestrationErrorByToken(token, new Error('Test error'))
 
       await new Promise((r) => setTimeout(r, 10))
       expect(rejected).toBe(true)
@@ -206,15 +203,14 @@ describe('SmithersProvider', () => {
 
     test('signals are idempotent (second call does nothing)', async () => {
       const { promise, token } = createOrchestrationPromise()
-      setActiveOrchestrationToken(token)
       let resolveCount = 0
 
       promise.then(() => {
         resolveCount++
       })
 
-      signalOrchestrationComplete()
-      signalOrchestrationComplete() // Second call should be no-op
+      signalOrchestrationCompleteByToken(token)
+      signalOrchestrationCompleteByToken(token) // Second call should be no-op
 
       await new Promise((r) => setTimeout(r, 10))
       expect(resolveCount).toBe(1)

@@ -1,0 +1,199 @@
+---
+title: Lifecycle Hooks
+description: Mount, unmount, and async-safe state hooks
+---
+
+# Lifecycle Hooks
+
+Smithers provides vendored lifecycle hooks from `react-use` that are clearer and more robust than raw `useEffect`.
+
+## useMount
+
+Runs a callback exactly once when the component mounts.
+
+```tsx
+import { useMount } from "smithers-orchestrator";
+
+function MyComponent() {
+  useMount(() => {
+    console.log("Component mounted");
+    startTask();
+  });
+
+  return <div>Content</div>;
+}
+```
+
+### Why Use useMount?
+
+More robust than `useEffect(() => fn(), [])` because it:
+- Clearly communicates mount-only intent
+- Is easier to grep for mount behavior
+- Handles strict mode double-invocation correctly
+
+### API
+
+```tsx
+function useMount(fn: () => void): void
+```
+
+## useUnmount
+
+Runs a callback when the component unmounts. More robust than `useEffect` cleanup because it always calls the latest version of the callback via ref.
+
+```tsx
+import { useUnmount } from "smithers-orchestrator";
+
+function MyComponent() {
+  const taskIdRef = useRef<string | null>(null);
+
+  useMount(() => {
+    taskIdRef.current = db.tasks.start("my-task");
+  });
+
+  useUnmount(() => {
+    if (taskIdRef.current) {
+      db.tasks.complete(taskIdRef.current);
+    }
+  });
+
+  return <div>Content</div>;
+}
+```
+
+### Why Use useUnmount?
+
+Avoids stale closure issues that plague normal cleanup functions:
+
+```tsx
+// ❌ Problem: stale closure captures old taskId
+useEffect(() => {
+  const taskId = startTask();
+  return () => completeTask(taskId); // May use stale taskId
+}, []);
+
+// ✅ Solution: useUnmount always uses latest ref
+const taskIdRef = useRef<string | null>(null);
+useMount(() => { taskIdRef.current = startTask(); });
+useUnmount(() => { completeTask(taskIdRef.current); });
+```
+
+### API
+
+```tsx
+function useUnmount(fn: () => void): void
+```
+
+## useMountedState
+
+Returns a function that tells you if the component is currently mounted. Essential for avoiding "setState on unmounted component" warnings in async code.
+
+```tsx
+import { useMountedState } from "smithers-orchestrator";
+
+function AsyncComponent() {
+  const isMounted = useMountedState();
+  const [data, setData] = useState<Data | null>(null);
+
+  useMount(() => {
+    fetchData().then(result => {
+      if (isMounted()) {
+        setData(result);
+      }
+    });
+  });
+
+  return <div>{data ? data.name : "Loading..."}</div>;
+}
+```
+
+### API
+
+```tsx
+function useMountedState(): () => boolean
+```
+
+Returns a getter function (not a boolean) to always get the current mounted state.
+
+## useEffectOnValueChange
+
+Runs an effect when a value changes, with idempotency guarantees. Unlike `useEffect` with `[value]`, this:
+
+- Won't run twice for the same value (handles React strict mode)
+- Updates the "last seen" value synchronously before running the effect
+- Runs on first mount when value first becomes available
+
+```tsx
+import { useEffectOnValueChange } from "smithers-orchestrator";
+
+function RalphAwareComponent() {
+  const ralphCount = useRalphCount();
+
+  useEffectOnValueChange(ralphCount, () => {
+    // Runs once per unique ralphCount value
+    executeTask();
+  });
+
+  return <div>Iteration: {ralphCount}</div>;
+}
+```
+
+### API
+
+```tsx
+function useEffectOnValueChange<T>(
+  value: T,
+  effect: () => void | (() => void),
+  deps?: DependencyList
+): void
+```
+
+## When to Use Each Hook
+
+| Hook | Use Case |
+|------|----------|
+| `useMount` | Code that runs once when component mounts |
+| `useUnmount` | Cleanup that needs latest props/state (avoids stale closures) |
+| `useMountedState` | Async operations that set state (prevents unmounted setState) |
+| `useEffectOnValueChange` | Re-run on dependency changes with idempotency |
+| Raw `useEffect` | Only when you need standard React effect behavior |
+
+## Pattern: Component Execution
+
+Smithers components execute themselves via `useMount`:
+
+```tsx
+function MyAgent({ prompt, onFinished }: Props) {
+  const { db } = useSmithers();
+  const isMounted = useMountedState();
+  const taskIdRef = useRef<string | null>(null);
+
+  useMount(() => {
+    (async () => {
+      taskIdRef.current = db.tasks.start("agent", prompt);
+
+      try {
+        const result = await executeAgent(prompt);
+        if (isMounted()) {
+          onFinished?.(result);
+        }
+      } finally {
+        db.tasks.complete(taskIdRef.current);
+      }
+    })();
+  });
+
+  return <agent-element status="running" />;
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Smithers Hooks" icon="hook" href="/api-reference/hooks">
+    Other Smithers hooks
+  </Card>
+  <Card title="Reactive Hooks" icon="bolt" href="/api-reference/reactive-hooks">
+    SQLite reactive queries
+  </Card>
+</CardGroup>

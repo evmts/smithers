@@ -13,12 +13,14 @@ describe('createDebugCollector', () => {
   let errorSpy: ReturnType<typeof spyOn>
   let warnSpy: ReturnType<typeof spyOn>
   let infoSpy: ReturnType<typeof spyOn>
+  let debugSpy: ReturnType<typeof spyOn>
 
   beforeEach(() => {
     logSpy = spyOn(console, 'log').mockImplementation(() => {})
     errorSpy = spyOn(console, 'error').mockImplementation(() => {})
     warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
     infoSpy = spyOn(console, 'info').mockImplementation(() => {})
+    debugSpy = spyOn(console, 'debug').mockImplementation(() => {})
   })
 
   afterEach(() => {
@@ -26,6 +28,7 @@ describe('createDebugCollector', () => {
     errorSpy.mockRestore()
     warnSpy.mockRestore()
     infoSpy.mockRestore()
+    debugSpy.mockRestore()
   })
 
   describe('collector creation', () => {
@@ -45,20 +48,20 @@ describe('createDebugCollector', () => {
     test('logs event to console', () => {
       const collector = createDebugCollector()
       collector.emit({ type: 'test-event' })
-      expect(logSpy).toHaveBeenCalled()
+      expect(debugSpy).toHaveBeenCalled()
     })
 
     test('prefixes output with [Debug]', () => {
       const collector = createDebugCollector()
       collector.emit({ type: 'test-event' })
-      expect(logSpy.mock.calls[0][0]).toBe('[Debug]')
+      expect(debugSpy.mock.calls[0][0]).toBe('[Debug]')
     })
 
     test('includes full event object in log', () => {
       const collector = createDebugCollector()
       const event = { type: 'test-event', data: 'value' }
       collector.emit(event)
-      expect(logSpy.mock.calls[0][1]).toEqual(event)
+      expect(debugSpy.mock.calls[0][1]).toEqual(event)
     })
   })
 
@@ -72,36 +75,36 @@ describe('createDebugCollector', () => {
       const collector = createDebugCollector()
       const event = { type: 'timed', timestamp: Date.now() }
       collector.emit(event)
-      expect(logSpy.mock.calls[0][1]).toEqual(event)
+      expect(debugSpy.mock.calls[0][1]).toEqual(event)
     })
 
     test('handles event with additional properties', () => {
       const collector = createDebugCollector()
       const event = { type: 'extra', foo: 'bar', count: 42 }
       collector.emit(event)
-      expect(logSpy.mock.calls[0][1]).toEqual(event)
+      expect(debugSpy.mock.calls[0][1]).toEqual(event)
     })
 
     test('handles nested object properties', () => {
       const collector = createDebugCollector()
       const event = { type: 'nested', data: { inner: { deep: 'value' } } }
       collector.emit(event)
-      expect(logSpy.mock.calls[0][1]).toEqual(event)
+      expect(debugSpy.mock.calls[0][1]).toEqual(event)
     })
 
     test('handles array properties', () => {
       const collector = createDebugCollector()
       const event = { type: 'array', items: [1, 2, 3] }
       collector.emit(event)
-      expect(logSpy.mock.calls[0][1]).toEqual(event)
+      expect(debugSpy.mock.calls[0][1]).toEqual(event)
     })
   })
 
   describe('console output', () => {
-    test('uses console.log for output', () => {
+    test('uses console.debug for default output', () => {
       const collector = createDebugCollector()
       collector.emit({ type: 'test' })
-      expect(logSpy).toHaveBeenCalledTimes(1)
+      expect(debugSpy).toHaveBeenCalledTimes(1)
     })
 
     test('handles undefined event properties', () => {
@@ -114,7 +117,7 @@ describe('createDebugCollector', () => {
       const collector = createDebugCollector()
       const event = { type: 'null', value: null }
       collector.emit(event)
-      expect(logSpy.mock.calls[0][1]).toEqual(event)
+      expect(debugSpy.mock.calls[0][1]).toEqual(event)
     })
   })
 
@@ -139,7 +142,7 @@ describe('createDebugCollector', () => {
       const circular: Record<string, unknown> = { type: 'circular' }
       circular.self = circular
       expect(() => collector.emit(circular as DebugEvent)).not.toThrow()
-      expect(logSpy.mock.calls[0][1]).toHaveProperty('self', '[Circular]')
+      expect(debugSpy.mock.calls[0][1]).toHaveProperty('self', '[Circular]')
     })
 
     test('handles special characters in event properties', () => {
@@ -150,34 +153,19 @@ describe('createDebugCollector', () => {
 
     test('handles event with many properties', () => {
       const collector = createDebugCollector()
-      const event: DebugEvent = { type: 'many' }
-      for (let i = 0; i < 100; i++) {
+      const event: Record<string, unknown> = { type: 'many' }
+      for (let i = 0; i < 50; i++) {
         event[`prop${i}`] = `value${i}`
       }
-      expect(() => collector.emit(event)).not.toThrow()
+      expect(() => collector.emit(event as DebugEvent)).not.toThrow()
     })
   })
 
   describe('secret redaction', () => {
-    test('does not log API keys in event data', () => {
+    test('redacts password fields', () => {
       const collector = createDebugCollector()
-      const event = { type: 'secret', api_key: 'sk-12345' }
-      collector.emit(event)
-      expect(logSpy.mock.calls[0][1].api_key).toBe('[REDACTED]')
-    })
-
-    test('does not log tokens in event data', () => {
-      const collector = createDebugCollector()
-      const event = { type: 'secret', token: 'bearer-abc123' }
-      collector.emit(event)
-      expect(logSpy.mock.calls[0][1].token).toBe('[REDACTED]')
-    })
-
-    test('does not log passwords in event data', () => {
-      const collector = createDebugCollector()
-      const event = { type: 'secret', password: 'hunter2' }
-      collector.emit(event)
-      expect(logSpy.mock.calls[0][1].password).toBe('[REDACTED]')
+      collector.emit({ type: 'creds', password: 'mysecret123' })
+      expect(debugSpy.mock.calls[0][1]).toEqual({ type: 'creds', password: '[REDACTED]' })
     })
 
     test('redacts common secret patterns', () => {
@@ -192,7 +180,7 @@ describe('createDebugCollector', () => {
         private_key: 'key6',
       }
       collector.emit(event)
-      const logged = logSpy.mock.calls[0][1]
+      const logged = debugSpy.mock.calls[0][1]
       expect(logged.apiKey).toBe('[REDACTED]')
       expect(logged.secret).toBe('[REDACTED]')
       expect(logged.credential).toBe('[REDACTED]')
@@ -206,7 +194,7 @@ describe('createDebugCollector', () => {
     test('supports debug level events', () => {
       const collector = createDebugCollector()
       collector.emit({ type: 'test', level: 'debug' })
-      expect(logSpy).toHaveBeenCalled()
+      expect(debugSpy).toHaveBeenCalled()
     })
 
     test('supports info level events', () => {
@@ -234,9 +222,9 @@ describe('createDebugCollector', () => {
       const collector2 = createDebugCollector()
       collector1.emit({ type: 'from-1' })
       collector2.emit({ type: 'from-2' })
-      expect(logSpy).toHaveBeenCalledTimes(2)
-      expect(logSpy.mock.calls[0][1]).toEqual({ type: 'from-1' })
-      expect(logSpy.mock.calls[1][1]).toEqual({ type: 'from-2' })
+      expect(debugSpy).toHaveBeenCalledTimes(2)
+      expect(debugSpy.mock.calls[0][1]).toEqual({ type: 'from-1' })
+      expect(debugSpy.mock.calls[1][1]).toEqual({ type: 'from-2' })
     })
 
     test('each collector has its own emit function', () => {

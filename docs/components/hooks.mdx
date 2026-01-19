@@ -129,34 +129,40 @@ function CIRecoveryWorkflow() {
             {(failure) => (
               <>
                 <Phase name="Analyze">
-                  <Claude
-                    allowedTools={["Read", "Grep", "Glob"]}
-                    onFinished={(r) => db.state.set("analysis", r.output)}
-                  >
-                    Analyze these CI failure logs and identify the root cause:
+                  <Step name="analyze">
+                    <Claude
+                      allowedTools={["Read", "Grep", "Glob"]}
+                      onFinished={(r) => db.state.set("analysis", r.output)}
+                    >
+                      Analyze these CI failure logs and identify the root cause:
 
-                    Failed jobs: {failure.failedJobs?.join(", ")}
+                      Failed jobs: {failure.failedJobs?.join(", ")}
 
-                    Logs:
-                    {failure.logs}
-                  </Claude>
+                      Logs:
+                      {failure.logs}
+                    </Claude>
+                  </Step>
                 </Phase>
 
                 <Phase name="Fix">
-                  <Claude
-                    allowedTools={["Read", "Edit", "Write"]}
-                    onFinished={() => db.state.set("phase", "test")}
-                  >
-                    Based on the analysis, fix the failing tests or code.
-                  </Claude>
+                  <Step name="fix">
+                    <Claude
+                      allowedTools={["Read", "Edit", "Write"]}
+                      onFinished={() => db.state.set("phase", "test")}
+                    >
+                      Based on the analysis, fix the failing tests or code.
+                    </Claude>
+                  </Step>
                 </Phase>
 
                 <Phase name="Commit">
-                  <Commit
-                    autoGenerate
-                    all
-                    notes={{ smithers: true, ciRecovery: true }}
-                  />
+                  <Step name="commit">
+                    <Commit
+                      autoGenerate
+                      all
+                      notes={{ smithers: true, ciRecovery: true }}
+                    />
+                  </Step>
                 </Phase>
               </>
             )}

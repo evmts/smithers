@@ -2,11 +2,8 @@
 
 import type { LegacyTool, MCPServer, ToolSpec } from './types.js'
 
-// Re-export types for backwards compatibility
-export type { MCPServer, ToolSpec }
-export type Tool = LegacyTool
-export type { JSONSchema } from '../components/agents/types/schema.js'
-export type { SmithersToolContext as ToolContext } from './types.js'
+// Internal alias for backwards compatibility within this module
+type Tool = LegacyTool
 
 // ============================================================================
 // BUILT-IN TOOLS REGISTRY
@@ -108,7 +105,27 @@ export function isToolName(spec: ToolSpec): spec is string {
 }
 
 /**
- * Parse tool specifications into categorized lists
+ * Parse tool specifications into categorized lists.
+ * 
+ * Categorizes each spec based on its structure:
+ * - String → builtinTools (tool names like 'Read', 'Bash')
+ * - Object with 'command' but no 'execute' → mcpServers
+ * - Object with Zod inputSchema (_def property) → smithersTools
+ * - Object with JSON Schema inputSchema (type property) → legacyTools + customTools
+ * - Other objects with execute → customTools
+ * 
+ * @param specs - Array of tool specifications to categorize
+ * @returns Object with categorized tool arrays
+ * 
+ * @example
+ * ```ts
+ * const { builtinTools, mcpServers, smithersTools } = parseToolSpecs([
+ *   'Read',
+ *   'Bash',
+ *   { name: 'mcp-server', command: 'npx', args: ['@some/mcp'] },
+ *   mySmithersTool
+ * ])
+ * ```
  */
 export function parseToolSpecs(specs: ToolSpec[]): {
   builtinTools: string[]
@@ -142,7 +159,19 @@ export function parseToolSpecs(specs: ToolSpec[]): {
 }
 
 /**
- * Build CLI tool flags from tool specs
+ * Build CLI tool flags from tool specs.
+ * 
+ * Generates command-line flags for passing tools to Claude CLI.
+ * Currently only handles built-in tools via --allowedTools flag.
+ * 
+ * @param specs - Array of tool specifications
+ * @returns Array of CLI flag strings (e.g., ['--allowedTools', 'Read,Bash,Glob'])
+ * 
+ * @example
+ * ```ts
+ * const flags = buildToolFlags(['Read', 'Bash', myCustomTool])
+ * // Returns: ['--allowedTools', 'Read,Bash']
+ * ```
  */
 export function buildToolFlags(specs: ToolSpec[]): string[] {
   const { builtinTools } = parseToolSpecs(specs)

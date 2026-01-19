@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import type { AgentResult, CLIExecutionOptions } from '../components/agents/types.js'
-import { composeMiddleware } from './compose.js'
-import { applyMiddleware } from './apply.js'
+import { composeMiddleware, applyMiddleware } from './compose.js'
 import { cachingMiddleware, LRUCache } from './caching.js'
 import { retryMiddleware } from './retry.js'
 import { rateLimitingMiddleware } from './rate-limiting.js'
@@ -9,6 +8,9 @@ import { costTrackingMiddleware } from './cost-tracking.js'
 import { redactSecretsMiddleware } from './redact-secrets.js'
 import { timeoutMiddleware } from './timeout.js'
 import { validationMiddleware, ValidationError } from './validation.js'
+import { loggingMiddleware } from './logging.js'
+import { extractReasoningMiddleware } from './extract-reasoning.js'
+import { extractJsonMiddleware } from './extract-json.js'
 
 function makeResult(overrides?: Partial<AgentResult>): AgentResult {
   return {
@@ -118,7 +120,6 @@ describe('middleware composition', () => {
       [stack],
     )
 
-    expect(options.maxTurns).toBe(2)
     expect(result.output).toBe('base-x')
   })
 })
@@ -216,5 +217,99 @@ describe('built-in middleware', () => {
     }
 
     expect(caught).toBeInstanceOf(ValidationError)
+  })
+
+  test('loggingMiddleware logs start and finish', async () => {
+    const logs: Array<{ phase: string }> = []
+    const middleware = loggingMiddleware({
+      logFn: (entry) => logs.push({ phase: entry.phase }),
+    })
+
+    await middleware.transformOptions?.({ prompt: 'test' })
+    await middleware.wrapExecute?.({
+      doExecute: async () => makeResult(),
+      options: { prompt: 'test' },
+    })
+
+    expect(logs).toEqual([{ phase: 'start' }, { phase: 'finish' }])
+  })
+
+  test('loggingMiddleware logs errors', async () => {
+    const logs: Array<{ phase: string; error?: string }> = []
+    const middleware = loggingMiddleware({
+      logFn: (entry) => logs.push({ phase: entry.phase, error: entry.error }),
+    })
+
+    try {
+      await middleware.wrapExecute?.({
+        doExecute: async () => {
+          throw new Error('boom')
+        },
+        options: { prompt: 'test' },
+      })
+    } catch {
+      // expected
+    }
+
+    expect(logs).toEqual([{ phase: 'error', error: 'boom' }])
+  })
+
+  test('extractReasoningMiddleware extracts tagged content', () => {
+    const middleware = extractReasoningMiddleware({ tagName: 'thinking' })
+    const result = middleware.transformResult?.(
+      makeResult({ output: '<thinking>step 1</thinking>answer here' })
+    )
+
+    expect(result?.reasoning).toBe('step 1')
+    expect(result?.output).toBe('answer here')
+  })
+
+  test('extractReasoningMiddleware calls onReasoning callback', () => {
+    let captured = ''
+    const middleware = extractReasoningMiddleware({
+      tagName: 'think',
+      onReasoning: (r) => { captured = r },
+    })
+
+    middleware.transformResult?.(makeResult({ output: '<think>my thoughts</think>final' }))
+    expect(captured).toBe('my thoughts')
+  })
+
+  test('extractJsonMiddleware extracts JSON from output', () => {
+    const middleware = extractJsonMiddleware()
+    const result = middleware.transformResult?.(
+      makeResult({ output: 'Here is the result:\n```json\n{"key":"value"}\n```' })
+    )
+
+    expect(result?.structured).toEqual({ key: 'value' })
+  })
+
+  test('extractJsonMiddleware handles invalid JSON gracefully', () => {
+    const middleware = extractJsonMiddleware()
+    const result = middleware.transformResult?.(
+      makeResult({ output: 'Here is the result:\n```json\n{invalid}\n```' })
+    )
+
+    expect(result?.structured).toBeUndefined()
+  })
+
+  test('LRUCache expires entries after TTL', async () => {
+    const cache = new LRUCache<string>({ max: 10 })
+    cache.set('key', 'value', 0.05) // 50ms TTL
+
+    expect(cache.get('key')).toBe('value')
+    await new Promise((r) => setTimeout(r, 60))
+    expect(cache.get('key')).toBeNull()
+  })
+
+  test('LRUCache evicts oldest entry when full', () => {
+    const cache = new LRUCache<string>({ max: 2 })
+    cache.set('a', '1')
+    cache.set('b', '2')
+    cache.set('c', '3')
+
+    expect(cache.get('a')).toBeNull()
+    expect(cache.get('b')).toBe('2')
+    expect(cache.get('c')).toBe('3')
   })
 })

@@ -59,18 +59,20 @@ export function FallbackAgent(props: FallbackAgentProps): JSX.Element
 ### Basic Multi-Provider Failover
 
 ```tsx
-import { FallbackAgent, Claude, Codex, Gemini } from 'smithers-orchestrator'
+import { FallbackAgent, Phase, Step, Claude, Codex, Gemini } from 'smithers-orchestrator'
 
 export function ReviewWorkflow() {
   const prompt = "Review this pull request and provide feedback"
 
   return (
     <Phase name="Review">
-      <FallbackAgent>
-        <Codex>{prompt}</Codex>
-        <Claude model="sonnet">{prompt}</Claude>
-        <Gemini model="2.5-pro">{prompt}</Gemini>
-      </FallbackAgent>
+      <Step name="review">
+        <FallbackAgent>
+          <Codex>{prompt}</Codex>
+          <Claude model="sonnet">{prompt}</Claude>
+          <Gemini model="2.5-pro">{prompt}</Gemini>
+        </FallbackAgent>
+      </Step>
     </Phase>
   )
 }

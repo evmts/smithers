@@ -98,19 +98,25 @@ interface Phase {
 The `<Phase>` component automatically integrates with this module:
 
 ```tsx
-import { Phase } from "smithers-orchestrator";
+import { Phase, Step } from "smithers-orchestrator";
 
 <SmithersProvider db={db} executionId={executionId}>
   <Phase name="research">
-    <Claude>Research the topic.</Claude>
+    <Step name="research">
+      <Claude>Research the topic.</Claude>
+    </Step>
   </Phase>
 
   <Phase name="implementation">
-    <Claude>Implement the feature.</Claude>
+    <Step name="implement">
+      <Claude>Implement the feature.</Claude>
+    </Step>
   </Phase>
 
   <Phase name="testing">
-    <Claude>Write and run tests.</Claude>
+    <Step name="test">
+      <Claude>Write and run tests.</Claude>
+    </Step>
   </Phase>
 </SmithersProvider>
 ```
@@ -123,7 +129,9 @@ Phases track their iteration number for workflows that loop:
 <Ralph maxIterations={5}>
   <Phase name="implement">
     {/* This phase will be tracked with iteration 0, 1, 2, etc. */}
-    <Claude>Implement the feature.</Claude>
+    <Step name="implement">
+      <Claude>Implement the feature.</Claude>
+    </Step>
   </Phase>
 </Ralph>
 ```
@@ -162,23 +170,27 @@ function StateDrivenWorkflow() {
       <Ralph maxIterations={10}>
         <If condition={phase === "implement"}>
           <Phase name="Implementation">
-            <Claude onFinished={() => db.state.set("currentPhase", "review")}>
-              Implement the feature.
-            </Claude>
+            <Step name="implement">
+              <Claude onFinished={() => db.state.set("currentPhase", "review")}>
+                Implement the feature.
+              </Claude>
+            </Step>
           </Phase>
         </If>
 
         <If condition={phase === "review"}>
           <Phase name="Review">
-            <Review
-              onFinished={(r) => {
-                if (r.approved) {
-                  db.state.set("currentPhase", "complete");
-                } else {
-                  db.state.set("currentPhase", "implement");
-                }
-              }}
-            />
+            <Step name="review">
+              <Review
+                onFinished={(r) => {
+                  if (r.approved) {
+                    db.state.set("currentPhase", "complete");
+                  } else {
+                    db.state.set("currentPhase", "implement");
+                  }
+                }}
+              />
+            </Step>
           </Phase>
         </If>
       </Ralph>

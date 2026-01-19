@@ -206,5 +206,124 @@ console.log('Hello from generated script');
       const path2 = path.join(os.tmpdir(), `smithers-subagent-${Date.now() + 1}.tsx`)
       expect(path1).not.toBe(path2)
     })
+
+    test('script execution with bun runs successfully', async () => {
+      const testScript = `#!/usr/bin/env bun
+console.log('SmithersCLI test output')
+`
+      const scriptPath = path.join(os.tmpdir(), `test-smithers-exec-${Date.now()}.ts`)
+
+      try {
+        await fs.writeFile(scriptPath, testScript)
+        await fs.chmod(scriptPath, '755')
+
+        const proc = Bun.spawn(['bun', scriptPath], {
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+
+        const output = await new Response(proc.stdout).text()
+        const exitCode = await proc.exited
+
+        expect(exitCode).toBe(0)
+        expect(output.trim()).toBe('SmithersCLI test output')
+      } finally {
+        await fs.unlink(scriptPath).catch(() => {})
+      }
+    })
+
+    test('script execution handles errors gracefully', async () => {
+      const testScript = `#!/usr/bin/env bun
+throw new Error('Intentional test error')
+`
+      const scriptPath = path.join(os.tmpdir(), `test-smithers-error-${Date.now()}.ts`)
+
+      try {
+        await fs.writeFile(scriptPath, testScript)
+        await fs.chmod(scriptPath, '755')
+
+        const proc = Bun.spawn(['bun', scriptPath], {
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+
+        const exitCode = await proc.exited
+
+        expect(exitCode).not.toBe(0)
+      } finally {
+        await fs.unlink(scriptPath).catch(() => {})
+      }
+    })
+
+    test('script execution with timeout kills process', async () => {
+      const testScript = `#!/usr/bin/env bun
+await new Promise(resolve => setTimeout(resolve, 60000))
+console.log('Should not reach here')
+`
+      const scriptPath = path.join(os.tmpdir(), `test-smithers-timeout-${Date.now()}.ts`)
+
+      try {
+        await fs.writeFile(scriptPath, testScript)
+        await fs.chmod(scriptPath, '755')
+
+        const startTime = Date.now()
+        const timeout = 100 // 100ms timeout
+
+        const proc = Bun.spawn(['bun', scriptPath], {
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+
+        const timeoutId = setTimeout(() => {
+          proc.kill()
+        }, timeout)
+
+        const exitCode = await proc.exited
+        clearTimeout(timeoutId)
+
+        const elapsed = Date.now() - startTime
+
+        // Should have been killed by timeout, not completed naturally
+        expect(elapsed).toBeLessThan(5000)
+        expect(exitCode).not.toBe(0)
+      } finally {
+        await fs.unlink(scriptPath).catch(() => {})
+      }
+    })
+  })
+
+  describe('progress callbacks', () => {
+    test('onProgress callback is called with progress messages', async () => {
+      const messages: string[] = []
+
+      // Just verify the callback mechanism works with options
+      const options: SmithersExecutionOptions = {
+        task: 'test task',
+        timeout: 1,
+        onProgress: (msg) => messages.push(msg),
+      }
+
+      expect(typeof options.onProgress).toBe('function')
+      options.onProgress?.('test message')
+      expect(messages).toContain('test message')
+    })
+
+    test('onScriptGenerated callback receives script and path', () => {
+      let receivedScript = ''
+      let receivedPath = ''
+
+      const options: SmithersExecutionOptions = {
+        task: 'test task',
+        onScriptGenerated: (script, scriptPath) => {
+          receivedScript = script
+          receivedPath = scriptPath
+        },
+      }
+
+      expect(typeof options.onScriptGenerated).toBe('function')
+      options.onScriptGenerated?.('script content', '/tmp/test.tsx')
+      expect(receivedScript).toBe('script content')
+      expect(receivedPath).toBe('/tmp/test.tsx')
+    })
   })
 })

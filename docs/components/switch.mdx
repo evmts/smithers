@@ -74,7 +74,7 @@ export function Default(props: DefaultProps): JSX.Element
 ### Basic Mode Selection
 
 ```tsx
-import { Switch, Case, Default, Phase, Claude } from 'smithers-orchestrator'
+import { Switch, Case, Default, Phase, Step, Claude, useSmithers } from 'smithers-orchestrator'
 
 export function WorkflowModeSwitch() {
   const { db } = useSmithers()
@@ -86,28 +86,38 @@ export function WorkflowModeSwitch() {
     >
       <Case match="fast">
         <Phase name="Quick Implementation">
-          <Claude model="haiku">Implement quickly with minimal checks</Claude>
+          <Step name="quick-implement">
+            <Claude model="haiku">Implement quickly with minimal checks</Claude>
+          </Step>
         </Phase>
       </Case>
 
       <Case match="thorough">
         <Phase name="Research">
-          <Claude model="opus">Deep research and planning</Claude>
+          <Step name="research">
+            <Claude model="opus">Deep research and planning</Claude>
+          </Step>
         </Phase>
         <Phase name="Implementation">
-          <Claude model="sonnet">Careful implementation with tests</Claude>
+          <Step name="implement">
+            <Claude model="sonnet">Careful implementation with tests</Claude>
+          </Step>
         </Phase>
       </Case>
 
       <Case match="experimental">
         <Phase name="Prototype">
-          <Claude>Build experimental prototype</Claude>
+          <Step name="prototype">
+            <Claude>Build experimental prototype</Claude>
+          </Step>
         </Phase>
       </Case>
 
       <Default>
         <Phase name="Standard Flow">
-          <Claude>Standard implementation process</Claude>
+          <Step name="standard">
+            <Claude>Standard implementation process</Claude>
+          </Step>
         </Phase>
       </Default>
     </Switch>
@@ -127,25 +137,33 @@ export function WorkflowModeSwitch() {
 >
   <Case match={["critical", "high"]}>
     <Phase name="Urgent Response">
-      <Claude model="opus">Immediate attention with senior review</Claude>
+      <Step name="urgent">
+        <Claude model="opus">Immediate attention with senior review</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match="medium">
     <Phase name="Standard Response">
-      <Claude model="sonnet">Standard workflow</Claude>
+      <Step name="standard">
+        <Claude model="sonnet">Standard workflow</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match={["low", "trivial"]}>
     <Phase name="Batch Processing">
-      <Claude model="haiku">Queue for batch processing</Claude>
+      <Step name="batch">
+        <Claude model="haiku">Queue for batch processing</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Default>
     <Phase name="Triage">
-      <Claude>Assess and categorize issue</Claude>
+      <Step name="triage">
+        <Claude>Assess and categorize issue</Claude>
+      </Step>
     </Phase>
   </Default>
 </Switch>
@@ -164,37 +182,49 @@ export function WorkflowModeSwitch() {
 >
   <Case match="init">
     <Phase name="Initialize">
-      <Claude>Set up deployment environment</Claude>
+      <Step name="init">
+        <Claude>Set up deployment environment</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match="building">
     <Phase name="Build">
-      <Claude>Build application artifacts</Claude>
+      <Step name="build">
+        <Claude>Build application artifacts</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match="testing">
     <Phase name="Test">
-      <Claude>Run integration tests</Claude>
+      <Step name="test">
+        <Claude>Run integration tests</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match="deploying">
     <Phase name="Deploy">
-      <Claude>Deploy to production</Claude>
+      <Step name="deploy">
+        <Claude>Deploy to production</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match="complete">
     <Phase name="Verify">
-      <Claude>Verify deployment health</Claude>
+      <Step name="verify">
+        <Claude>Verify deployment health</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Default>
     <Phase name="Error Recovery">
-      <Claude>Handle unknown state</Claude>
+      <Step name="recover">
+        <Claude>Handle unknown state</Claude>
+      </Step>
     </Phase>
   </Default>
 </Switch>
@@ -219,19 +249,25 @@ interface TaskType {
 >
   <Case match={{ category: 'bug', complexity: 1 }}>
     <Phase name="Quick Fix">
-      <Claude model="haiku">Apply simple bugfix</Claude>
+      <Step name="quick-fix">
+        <Claude model="haiku">Apply simple bugfix</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match={{ category: 'feature', complexity: 3 }}>
     <Phase name="Complex Feature">
-      <Claude model="opus">Plan and implement complex feature</Claude>
+      <Step name="complex-feature">
+        <Claude model="opus">Plan and implement complex feature</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Default>
     <Phase name="Standard Task">
-      <Claude model="sonnet">Handle standard task</Claude>
+      <Step name="standard-task">
+        <Claude model="sonnet">Handle standard task</Claude>
+      </Step>
     </Phase>
   </Default>
 </Switch>
@@ -372,15 +408,23 @@ interface TaskType {
 ```tsx
 // With If chains (verbose, error-prone)
 <If id="check-fast" condition={() => mode === 'fast'}>
-  <Phase name="Fast">...</Phase>
+  <Phase name="Fast">
+    <Step name="fast">...</Step>
+  </Phase>
 </If>
 <If id="check-thorough" condition={() => mode === 'thorough'}>
-  <Phase name="Thorough">...</Phase>
+  <Phase name="Thorough">
+    <Step name="thorough">...</Step>
+  </Phase>
   <Else>
     <If id="check-experimental" condition={() => mode === 'experimental'}>
-      <Phase name="Experimental">...</Phase>
+      <Phase name="Experimental">
+        <Step name="experimental">...</Step>
+      </Phase>
       <Else>
-        <Phase name="Default">...</Phase>
+        <Phase name="Default">
+          <Step name="default">...</Step>
+        </Phase>
       </Else>
     </If>
   </Else>
@@ -390,10 +434,26 @@ interface TaskType {
 ```tsx
 // With Switch (clean, intent clear)
 <Switch id="mode" value={mode}>
-  <Case match="fast"><Phase name="Fast">...</Phase></Case>
-  <Case match="thorough"><Phase name="Thorough">...</Phase></Case>
-  <Case match="experimental"><Phase name="Experimental">...</Phase></Case>
-  <Default><Phase name="Default">...</Phase></Default>
+  <Case match="fast">
+    <Phase name="Fast">
+      <Step name="fast">...</Step>
+    </Phase>
+  </Case>
+  <Case match="thorough">
+    <Phase name="Thorough">
+      <Step name="thorough">...</Step>
+    </Phase>
+  </Case>
+  <Case match="experimental">
+    <Phase name="Experimental">
+      <Step name="experimental">...</Step>
+    </Phase>
+  </Case>
+  <Default>
+    <Phase name="Default">
+      <Step name="default">...</Step>
+    </Phase>
+  </Default>
 </Switch>
 ```
 
@@ -448,25 +508,33 @@ Custom serializers enable efficient storage and comparison.
 >
   <Case match="production">
     <Phase name="Production Deploy">
-      <Claude>Deploy with production configuration and monitoring</Claude>
+      <Step name="deploy">
+        <Claude>Deploy with production configuration and monitoring</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match={["development", "test"]}>
     <Phase name="Dev Deploy">
-      <Claude>Deploy with debug logging and test fixtures</Claude>
+      <Step name="deploy">
+        <Claude>Deploy with debug logging and test fixtures</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match="staging">
     <Phase name="Staging Deploy">
-      <Claude>Deploy to staging with production-like config</Claude>
+      <Step name="deploy">
+        <Claude>Deploy to staging with production-like config</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Default>
     <Phase name="Unknown Environment">
-      <Claude>Handle unknown environment - fail safe</Claude>
+      <Step name="handle">
+        <Claude>Handle unknown environment - fail safe</Claude>
+      </Step>
     </Phase>
   </Default>
 </Switch>
@@ -484,25 +552,33 @@ Custom serializers enable efficient storage and comparison.
 >
   <Case match="ECONNREFUSED">
     <Phase name="Retry Connection">
-      <Claude>Service unavailable - implement retry with backoff</Claude>
+      <Step name="retry">
+        <Claude>Service unavailable - implement retry with backoff</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match={["EACCES", "EPERM"]}>
     <Phase name="Permission Error">
-      <Claude>Permission denied - check credentials and permissions</Claude>
+      <Step name="permissions">
+        <Claude>Permission denied - check credentials and permissions</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match="ENOENT">
     <Phase name="Not Found">
-      <Claude>Resource not found - verify paths and create if needed</Claude>
+      <Step name="not-found">
+        <Claude>Resource not found - verify paths and create if needed</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Default>
     <Phase name="Generic Error Handler">
-      <Claude>Handle unexpected error with logging and alerting</Claude>
+      <Step name="handle">
+        <Claude>Handle unexpected error with logging and alerting</Claude>
+      </Step>
     </Phase>
   </Default>
 </Switch>
@@ -516,12 +592,16 @@ Custom serializers enable efficient storage and comparison.
     <Switch id="arch" value={process.arch}>
       <Case match="arm64">
         <Phase name="macOS ARM">
-          <Claude>Build for Apple Silicon</Claude>
+          <Step name="build">
+            <Claude>Build for Apple Silicon</Claude>
+          </Step>
         </Phase>
       </Case>
       <Case match="x64">
         <Phase name="macOS Intel">
-          <Claude>Build for Intel Mac</Claude>
+          <Step name="build">
+            <Claude>Build for Intel Mac</Claude>
+          </Step>
         </Phase>
       </Case>
     </Switch>
@@ -529,13 +609,17 @@ Custom serializers enable efficient storage and comparison.
 
   <Case match="linux">
     <Phase name="Linux Build">
-      <Claude>Build for Linux</Claude>
+      <Step name="build">
+        <Claude>Build for Linux</Claude>
+      </Step>
     </Phase>
   </Case>
 
   <Case match="win32">
     <Phase name="Windows Build">
-      <Claude>Build for Windows</Claude>
+      <Step name="build">
+        <Claude>Build for Windows</Claude>
+      </Step>
     </Phase>
   </Case>
 </Switch>

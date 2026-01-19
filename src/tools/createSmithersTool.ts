@@ -7,7 +7,33 @@ import type {
 
 /**
  * Create a SmithersTool from options.
- * Note: AI SDK integration temporarily disabled - 'ai' package not installed.
+ * 
+ * When used within the Smithers orchestrator, tools receive full context including
+ * database access, agent/execution IDs, and proper logging. When used standalone
+ * (e.g., MCP server, direct invocation, testing), a stub context is created with:
+ * - Empty db object (tools should handle gracefully)
+ * - 'stub' agentId/executionId
+ * - process.cwd() and process.env
+ * - console.log for logging
+ * 
+ * This intentional fallback enables tools to work in MCP/standalone contexts
+ * where full Smithers orchestration isn't available.
+ * 
+ * @param options - Tool configuration including name, schema, and execute function
+ * @returns A SmithersTool compatible with both Smithers orchestration and standalone use
+ * 
+ * @example
+ * ```ts
+ * const myTool = createSmithersTool({
+ *   name: 'my-tool',
+ *   description: 'Does something useful',
+ *   inputSchema: z.object({ value: z.string() }),
+ *   execute: async (input, context) => {
+ *     context.log(`Processing: ${input.value}`)
+ *     return { result: input.value.toUpperCase() }
+ *   }
+ * })
+ * ```
  */
 export function createSmithersTool<TInput extends z.ZodType, TOutput>(
   options: CreateSmithersToolOptions<TInput, TOutput>
@@ -26,6 +52,9 @@ export function createSmithersTool<TInput extends z.ZodType, TOutput>(
       
       const abortSignal = execOptions['abortSignal'] as AbortSignal | undefined
       
+      // When no Smithers context provided (MCP/standalone usage), create stub context.
+      // This enables tools to work outside full orchestration - tools should handle
+      // empty db gracefully for standalone compatibility.
       const context: SmithersToolContext & { abortSignal?: AbortSignal } = smithersContext 
         ? {
             ...smithersContext,

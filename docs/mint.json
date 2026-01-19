@@ -131,7 +131,8 @@
       "group": "React Hooks",
       "pages": [
         "api-reference/reactive-hooks",
-        "api-reference/hooks"
+        "api-reference/hooks",
+        "api-reference/lifecycle-hooks"
       ]
     },
     {
