@@ -1,7 +1,8 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState, useEffectOnValueChange } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
+import { useExecutionGate } from '../ExecutionGate.js'
 
 export interface DescribeProps {
   useAgent?: 'claude'
@@ -19,6 +20,7 @@ export function Describe(props: DescribeProps): ReactNode {
   const smithers = useSmithers()
   const execution = useExecutionContext()
   const [, forceUpdate] = useReducer((x) => x + 1, 0)
+  const executionEnabled = useExecutionGate()
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const descriptionRef = useRef<string | null>(null)
@@ -26,13 +28,15 @@ export function Describe(props: DescribeProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
-  useMount(() => {
-    if (!execution.isActive) return
+  useEffectOnValueChange(executionEnabled, () => {
+    if (!executionEnabled) return
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-describe')
 
       try {
         statusRef.current = 'running'
+        descriptionRef.current = null
+        errorRef.current = null
         forceUpdate()
 
         const diff = await Bun.$`jj diff`.text()

@@ -1,8 +1,9 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { jjSnapshot, getJJStatus } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState, useEffectOnValueChange } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
+import { useExecutionGate } from '../ExecutionGate.js'
 
 export interface SnapshotProps {
   message?: string
@@ -19,6 +20,7 @@ export function Snapshot(props: SnapshotProps): ReactNode {
   const smithers = useSmithers()
   const execution = useExecutionContext()
   const [, forceUpdate] = useReducer((x) => x + 1, 0)
+  const executionEnabled = useExecutionGate()
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const changeIdRef = useRef<string | null>(null)
@@ -26,13 +28,15 @@ export function Snapshot(props: SnapshotProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
-  useMount(() => {
-    if (!execution.isActive) return
+  useEffectOnValueChange(executionEnabled, () => {
+    if (!executionEnabled) return
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-snapshot')
 
       try {
         statusRef.current = 'running'
+        changeIdRef.current = null
+        errorRef.current = null
         forceUpdate()
 
         const result = await jjSnapshot(props.message)

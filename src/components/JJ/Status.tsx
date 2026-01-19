@@ -1,8 +1,9 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { getJJStatus } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState, useEffectOnValueChange } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
+import { useExecutionGate } from '../ExecutionGate.js'
 
 export interface StatusProps {
   onDirty?: (status: { modified: string[]; added: string[]; deleted: string[] }) => void
@@ -20,6 +21,7 @@ export function Status(props: StatusProps): ReactNode {
   const smithers = useSmithers()
   const execution = useExecutionContext()
   const [, forceUpdate] = useReducer((x) => x + 1, 0)
+  const executionEnabled = useExecutionGate()
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const isDirtyRef = useRef<boolean | null>(null)
@@ -32,13 +34,16 @@ export function Status(props: StatusProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
-  useMount(() => {
-    if (!execution.isActive) return
+  useEffectOnValueChange(executionEnabled, () => {
+    if (!executionEnabled) return
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-status')
 
       try {
         statusRef.current = 'running'
+        isDirtyRef.current = null
+        fileStatusRef.current = null
+        errorRef.current = null
         forceUpdate()
 
         const jjStatus = await getJJStatus()
