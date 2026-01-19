@@ -221,14 +221,15 @@ describe('generateMCPServerConfig', () => {
     }]
 
     const result = generateMCPServerConfig(configs)
+    const servers = Object.values(result.mcpServers) as Array<{ command: string; args: string[] }>
 
-    expect(result.mcpServers.sqlite).toBeDefined()
-    expect(result.mcpServers.sqlite.command).toBe('bunx')
-    expect(result.mcpServers.sqlite.args).toContain('-y')
-    expect(result.mcpServers.sqlite.args).toContain('@anthropic/mcp-server-sqlite')
-    expect(result.mcpServers.sqlite.args).toContain('--db-path')
-    expect(result.mcpServers.sqlite.args).toContain('./test.db')
-    expect(result.mcpServers.sqlite.args).not.toContain('--read-only')
+    expect(servers).toHaveLength(1)
+    expect(servers[0]!.command).toBe('bunx')
+    expect(servers[0]!.args).toContain('-y')
+    expect(servers[0]!.args).toContain('@anthropic/mcp-server-sqlite')
+    expect(servers[0]!.args).toContain('--db-path')
+    expect(servers[0]!.args).toContain('./test.db')
+    expect(servers[0]!.args).not.toContain('--read-only')
   })
 
   test('creates sqlite config with read-only flag', () => {
@@ -239,8 +240,10 @@ describe('generateMCPServerConfig', () => {
     }]
 
     const result = generateMCPServerConfig(configs)
+    const servers = Object.values(result.mcpServers) as Array<{ args: string[] }>
 
-    expect(result.mcpServers.sqlite.args).toContain('--read-only')
+    expect(servers).toHaveLength(1)
+    expect(servers[0]!.args).toContain('--read-only')
   })
 
   test('handles empty configs array', () => {
@@ -300,8 +303,10 @@ describe('generateMCPServerConfig - edge cases', () => {
     }]
 
     const result = generateMCPServerConfig(configs)
+    const servers = Object.values(result.mcpServers) as Array<{ args: string[] }>
 
-    expect(result.mcpServers.sqlite.args).toContain('/path/with spaces/database.db')
+    expect(servers).toHaveLength(1)
+    expect(servers[0]!.args).toContain('/path/with spaces/database.db')
   })
 
   test('handles path with special characters', () => {
@@ -312,8 +317,10 @@ describe('generateMCPServerConfig - edge cases', () => {
     }]
 
     const result = generateMCPServerConfig(configs)
+    const servers = Object.values(result.mcpServers) as Array<{ args: string[] }>
 
-    expect(result.mcpServers.sqlite.args).toContain('./data-2024_v1.db')
+    expect(servers).toHaveLength(1)
+    expect(servers[0]!.args).toContain('./data-2024_v1.db')
   })
 
   test('handles unicode path', () => {
@@ -324,21 +331,26 @@ describe('generateMCPServerConfig - edge cases', () => {
     }]
 
     const result = generateMCPServerConfig(configs)
+    const servers = Object.values(result.mcpServers) as Array<{ args: string[] }>
 
-    expect(result.mcpServers.sqlite.args).toContain('./日本語/データ.db')
+    expect(servers).toHaveLength(1)
+    expect(servers[0]!.args).toContain('./日本語/データ.db')
   })
 
-  test('last sqlite config wins when multiple provided', () => {
+  test('creates multiple sqlite server entries when multiple provided', () => {
     const configs = [
       { type: 'sqlite' as const, config: { path: './first.db', readOnly: false }, instructions: '' },
       { type: 'sqlite' as const, config: { path: './second.db', readOnly: true }, instructions: '' },
     ]
 
     const result = generateMCPServerConfig(configs)
+    const servers = Object.values(result.mcpServers) as Array<{ args: string[] }>
+    const allArgs = servers.flatMap(server => server.args)
 
-    // Last one should overwrite
-    expect(result.mcpServers.sqlite.args).toContain('./second.db')
-    expect(result.mcpServers.sqlite.args).toContain('--read-only')
+    expect(servers).toHaveLength(2)
+    expect(allArgs).toContain('./first.db')
+    expect(allArgs).toContain('./second.db')
+    expect(servers.some(server => server.args.includes('--read-only'))).toBe(true)
   })
 
   test('handles custom type (placeholder)', () => {
@@ -369,8 +381,10 @@ describe('generateMCPServerConfig - edge cases', () => {
     }]
 
     const result = generateMCPServerConfig(configs)
+    const servers = Object.values(result.mcpServers) as Array<{ args: string[] }>
 
-    expect(result.mcpServers.sqlite.args).not.toContain('--read-only')
+    expect(servers).toHaveLength(1)
+    expect(servers[0]!.args).not.toContain('--read-only')
   })
 })
 

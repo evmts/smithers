@@ -90,7 +90,7 @@ describe('makeScopeId', () => {
 
   test('handles complex nested scope paths', () => {
     const result = makeScopeId('root.child.grandchild', 'component', 'button')
-    expect(result).toBe('root.child.grandchild.component.button')
+    expect(result).toBe('root%2Echild%2Egrandchild.component.button')
   })
 })
 
@@ -171,7 +171,7 @@ describe('integration: scope key generation', () => {
     const level2 = makeScopeId(level1, 'phase', 'review')
     const level3 = makeScopeId(level2, 'agent', 'smithers')
     const key = makeStateKey(level3, 'result')
-    expect(key).toBe('result_app.orchestrator.main.phase.review.agent.smithers')
+    expect(key).toBe('result_app%252Eorchestrator%252Emain%2Ephase%2Ereview.agent.smithers')
   })
 
   test('special characters remain encoded through the chain', () => {

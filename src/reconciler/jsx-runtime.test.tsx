@@ -205,7 +205,7 @@ describe('jsx-runtime - Key Edge Cases', () => {
     root.dispose()
   })
 
-  test('key that is NaN is treated as undefined', async () => {
+  test('key that is NaN is preserved', async () => {
     const root = createSmithersRoot()
     const element = jsx('item', {}, NaN)
     await root.render(element)

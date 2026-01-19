@@ -36,7 +36,6 @@ export async function run(fileArg?: string, options: RunOptions = {}): Promise<R
   const preloadPath = findPreloadPath(import.meta.url)
   const child = spawn('bun', ['--preload', preloadPath, '--install=fallback', filePath], {
     stdio: 'inherit',
-    shell: true,
   })
 
   const promise = new Promise<number>((resolve, reject) => {

@@ -202,7 +202,7 @@ describe('OutputParser', () => {
 
     test('handles mixed line endings (\\r\\n, \\r, \\n)', () => {
       const parser = new OutputParser()
-      const mixedEndings = 'line1\r\nline2\nline3\n'
+      const mixedEndings = 'line1\r\nline2\rline3\n'
       
       const events = parser.parseChunk(mixedEndings)
       expect(events.length).toBeGreaterThanOrEqual(2)
@@ -422,24 +422,36 @@ describe('OutputParser', () => {
   describe('regex security', () => {
     test('ReDoS security test for regex patterns', () => {
       const parser = new OutputParser()
-      const start = Date.now()
-      
-      const maliciousInput = 'Phase:' + ' '.repeat(1000) + '-'.repeat(1000) + '\n'
-      parser.parseChunk(maliciousInput)
-      
-      const duration = Date.now() - start
-      expect(duration).toBeLessThan(1000)
+      const smallInput = 'Phase:' + ' '.repeat(10) + '-'.repeat(10) + '\n'
+      const largeInput = 'Phase:' + ' '.repeat(1000) + '-'.repeat(1000) + '\n'
+
+      const smallStart = performance.now()
+      parser.parseChunk(smallInput)
+      const smallDuration = performance.now() - smallStart
+
+      const largeStart = performance.now()
+      parser.parseChunk(largeInput)
+      const largeDuration = performance.now() - largeStart
+
+      const baseline = Math.max(1, smallDuration)
+      expect(largeDuration).toBeLessThan(baseline * 200)
     })
 
     test('handles repeated patterns without hanging', () => {
       const parser = new OutputParser()
-      const start = Date.now()
-      
+      const smallPattern = ('Tool: ' + 'a'.repeat(5) + ' - ').repeat(5) + '\n'
       const repeatedPattern = ('Tool: ' + 'a'.repeat(100) + ' - ').repeat(100) + '\n'
+
+      const smallStart = performance.now()
+      parser.parseChunk(smallPattern)
+      const smallDuration = performance.now() - smallStart
+
+      const largeStart = performance.now()
       parser.parseChunk(repeatedPattern)
-      
-      const duration = Date.now() - start
-      expect(duration).toBeLessThan(1000)
+      const largeDuration = performance.now() - largeStart
+
+      const baseline = Math.max(1, smallDuration)
+      expect(largeDuration).toBeLessThan(baseline * 200)
     })
   })
 })

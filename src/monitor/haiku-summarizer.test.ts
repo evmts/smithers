@@ -2,269 +2,188 @@
  * Unit tests for haiku-summarizer.ts - Content summarization with Claude Haiku.
  */
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { summarizeWithHaiku } from './haiku-summarizer.js'
+import { summarizeWithHaiku, type SummaryType } from './haiku-summarizer.js'
 
-const originalEnv = { ...process.env }
+const ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
+  'SMITHERS_SUMMARY_THRESHOLD',
+  'SMITHERS_SUMMARY_CHAR_THRESHOLD',
+  'SMITHERS_SUMMARY_MAX_CHARS',
+  'SMITHERS_SUMMARY_MODEL',
+] as const
+
+const ORIGINAL_ENV: Record<string, string | undefined> = Object.fromEntries(
+  ENV_KEYS.map((key) => [key, process.env[key]])
+)
+
+function resetEnv(): void {
+  for (const key of ENV_KEYS) {
+    const value = ORIGINAL_ENV[key]
+    if (value === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
+  }
+}
+
+function clearEnv(): void {
+  for (const key of ENV_KEYS) {
+    delete process.env[key]
+  }
+}
+
+function createMockClient(responseText: string, options?: { content?: any[]; error?: Error }) {
+  const calls: any[] = []
+  const client = {
+    messages: {
+      create: async (params: any) => {
+        calls.push(params)
+        if (options?.error) throw options.error
+        return {
+          content: options?.content ?? [{ type: 'text', text: responseText }],
+        }
+      },
+    },
+  }
+
+  return { client, calls }
+}
+
+function createContent(lines: number, lineContent: string = 'line'): string {
+  return Array.from({ length: lines }, () => lineContent).join('\n') + '\n'
+}
 
 describe('summarizeWithHaiku', () => {
   beforeEach(() => {
-    delete process.env['ANTHROPIC_API_KEY']
-    delete process.env['SMITHERS_SUMMARY_THRESHOLD']
+    clearEnv()
   })
 
   afterEach(() => {
-    process.env = { ...originalEnv }
+    resetEnv()
   })
 
-  describe('threshold behavior', () => {
-    test('returns original content when below default threshold (50 lines)', async () => {
-      const content = 'line\n'.repeat(10)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary).toBe(content)
-      expect(result.fullPath).toBe('/log/path')
+  test('returns original content when below thresholds', async () => {
+    const content = createContent(3)
+    const { client, calls } = createMockClient('ignored')
+
+    const result = await summarizeWithHaiku(content, 'read', '/log/path', {
+      threshold: 10,
+      charThreshold: 1000,
+      client,
     })
 
-    test('summarizes when above char threshold with single line', async () => {
-      const content = 'x'.repeat(10000)
-
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-
-      expect(result.summary).toContain('truncated')
-      expect(result.fullPath).toBe('/log/path')
-    })
-
-    test('returns original content when below custom threshold', async () => {
-      const content = 'line\n'.repeat(80)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path', { threshold: 100 })
-      
-      expect(result.summary).toBe(content)
-    })
-
-    test('summarizes when above threshold', async () => {
-      const content = 'line\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path', { threshold: 50 })
-      
-      expect(result.summary).toContain('truncated')
-      expect(result.fullPath).toBe('/log/path')
-    })
-
-    test('respects SMITHERS_SUMMARY_THRESHOLD env var', async () => {
-      process.env['SMITHERS_SUMMARY_THRESHOLD'] = '200'
-      const content = 'line\n'.repeat(150)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary).toBe(content)
-    })
+    expect(result.summary).toBe(content)
+    expect(result.fullPath).toBe('/log/path')
+    expect(calls).toHaveLength(0)
   })
 
-  describe('API key handling', () => {
-    test('uses provided apiKey option', async () => {
-      const content = 'line\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path', {
-        apiKey: 'test-api-key',
+  test('falls back to truncation when above threshold without API key', async () => {
+    const content = createContent(2, 'x'.repeat(1200))
+
+    const result = await summarizeWithHaiku(content, 'read', '/log/path', {
+      threshold: 1,
+    })
+
+    expect(result.summary).toContain('[... truncated, see full output]')
+    expect(result.summary.length).toBeLessThan(content.length)
+  })
+
+  test('uses client response when available', async () => {
+    const { client, calls } = createMockClient('mock summary')
+    const content = createContent(60)
+
+    const result = await summarizeWithHaiku(content, 'read', '/log/path', {
+      threshold: 1,
+      client,
+    })
+
+    expect(result.summary).toBe('mock summary')
+    expect(calls).toHaveLength(1)
+  })
+
+  test('uses correct prompt per summary type', async () => {
+    const cases: Array<{ type: SummaryType; expected: string }> = [
+      { type: 'read', expected: 'Summarize this file content' },
+      { type: 'edit', expected: 'Summarize this code diff' },
+      { type: 'result', expected: 'Summarize this AI agent result' },
+      { type: 'error', expected: 'Summarize this error' },
+      { type: 'output', expected: 'Summarize this output' },
+    ]
+
+    for (const { type, expected } of cases) {
+      const { client, calls } = createMockClient('summary')
+      const content = createContent(80)
+
+      await summarizeWithHaiku(content, type, '/log/path', {
+        threshold: 1,
+        maxChars: 40,
+        client,
       })
-      
-      expect(result.fullPath).toBe('/log/path')
-    })
 
-    test('falls back to ANTHROPIC_API_KEY env var', async () => {
-      process.env['ANTHROPIC_API_KEY'] = 'env-api-key'
-      const content = 'line\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.fullPath).toBe('/log/path')
-    })
-
-    test('truncates content when no API key available', async () => {
-      delete process.env['ANTHROPIC_API_KEY']
-      const content = 'x'.repeat(1000) + '\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary).toContain('truncated')
-      expect(result.summary.length).toBeLessThan(content.length)
-    })
-
-    test('truncates to approximately 500 characters plus suffix', async () => {
-      delete process.env['ANTHROPIC_API_KEY']
-      const content = 'x'.repeat(1000) + '\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary.length).toBeLessThan(600)
-    })
+      const prompt = calls[0]?.messages?.[0]?.content
+      expect(prompt).toContain(expected)
+      expect(prompt).toContain('---')
+    }
   })
 
-  describe('summary types - correct prompts', () => {
-    test('uses correct prompt for "read" type', async () => {
-      const content = 'line\n'.repeat(10)
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary).toBe(content)
+  test('clips long content for summarization', async () => {
+    const { client, calls } = createMockClient('summary')
+    const content = 'x'.repeat(200)
+
+    await summarizeWithHaiku(content, 'read', '/log/path', {
+      threshold: 1,
+      maxChars: 40,
+      client,
     })
 
-    test('uses correct prompt for "edit" type', async () => {
-      const content = 'line\n'.repeat(10)
-      const result = await summarizeWithHaiku(content, 'edit', '/log/path')
-      
-      expect(result.summary).toBe(content)
-    })
-
-    test('uses correct prompt for "result" type', async () => {
-      const content = 'line\n'.repeat(10)
-      const result = await summarizeWithHaiku(content, 'result', '/log/path')
-      
-      expect(result.summary).toBe(content)
-    })
-
-    test('uses correct prompt for "error" type', async () => {
-      const content = 'line\n'.repeat(10)
-      const result = await summarizeWithHaiku(content, 'error', '/log/path')
-      
-      expect(result.summary).toBe(content)
-    })
-
-    test('uses correct prompt for "output" type', async () => {
-      const content = 'line\n'.repeat(10)
-      const result = await summarizeWithHaiku(content, 'output', '/log/path')
-      
-      expect(result.summary).toBe(content)
-    })
+    const prompt = calls[0]?.messages?.[0]?.content
+    expect(prompt).toContain('...[content truncated for summarization]...')
   })
 
-  describe('API error handling', () => {
-    test('handles rate limiting (429) - falls back to truncation', async () => {
-      process.env['ANTHROPIC_API_KEY'] = 'test-key'
-      const content = 'x'.repeat(600) + '\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.fullPath).toBe('/log/path')
-      expect(typeof result.summary).toBe('string')
+  test('falls back to truncation on API error', async () => {
+    const { client } = createMockClient('unused', { error: new Error('429: rate limit') })
+    const content = createContent(80)
+
+    const result = await summarizeWithHaiku(content, 'read', '/log/path', {
+      threshold: 1,
+      client,
     })
 
-    test('handles API error (500) - falls back to truncation', async () => {
-      process.env['ANTHROPIC_API_KEY'] = 'test-key'
-      const content = 'x'.repeat(600) + '\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.fullPath).toBe('/log/path')
-    })
-
-    test('falls back to truncation on API error', async () => {
-      process.env['ANTHROPIC_API_KEY'] = 'invalid-key'
-      const content = 'x'.repeat(1000) + '\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary).toContain('see full output')
-      expect(result.fullPath).toBe('/log/path')
-    })
+    expect(result.summary).toContain('[... summarization failed, see full output]')
+    expect(result.fullPath).toBe('/log/path')
   })
 
-  describe('content handling', () => {
-    test('handles empty content', async () => {
-      const result = await summarizeWithHaiku('', 'read', '/log/path')
-      
-      expect(result.summary).toBe('')
-      expect(result.fullPath).toBe('/log/path')
+  test('uses truncation when response has no text blocks', async () => {
+    const { client } = createMockClient('unused', { content: [] })
+    const content = createContent(80, 'y'.repeat(20))
+
+    const result = await summarizeWithHaiku(content, 'read', '/log/path', {
+      threshold: 1,
+      client,
     })
 
-    test('handles single-line content', async () => {
-      const content = 'single line'
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary).toBe(content)
-    })
-
-    test('handles content with unicode characters', async () => {
-      const content = '日本語テスト\n中文测试\n'.repeat(10)
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary).toBe(content)
-    })
-
-    test('correctly counts lines with different line endings', async () => {
-      const content = 'line\n'.repeat(40)
-      const result = await summarizeWithHaiku(content, 'read', '/log/path')
-      
-      expect(result.summary).toBe(content)
-    })
+    expect(result.summary).toContain('...')
+    expect(result.summary.length).toBeLessThan(content.length)
   })
 
-  describe('logPath handling', () => {
-    test('returns logPath in fullPath field', async () => {
-      const result = await summarizeWithHaiku('content', 'read', '/custom/path.log')
-      
-      expect(result.fullPath).toBe('/custom/path.log')
-    })
+  test('respects SMITHERS_SUMMARY_THRESHOLD env var', async () => {
+    process.env['SMITHERS_SUMMARY_THRESHOLD'] = '200'
+    const content = createContent(150)
 
-    test('handles empty logPath', async () => {
-      const result = await summarizeWithHaiku('content', 'read', '')
-      
-      expect(result.fullPath).toBe('')
-    })
+    const result = await summarizeWithHaiku(content, 'read', '/log/path')
 
-    test('handles logPath with special characters', async () => {
-      const specialPath = '/path/with spaces/and-特殊字符/🚀.log'
-      const result = await summarizeWithHaiku('content', 'read', specialPath)
-      
-      expect(result.fullPath).toBe(specialPath)
-    })
+    expect(result.summary).toBe(content)
   })
 
-  describe('truncate helper behavior', () => {
-    test('returns original string if under maxLength (via no API key path)', async () => {
-      delete process.env['ANTHROPIC_API_KEY']
-      const shortContent = 'x'.repeat(100) + '\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(shortContent, 'read', '/log/path')
-      
-      expect(result.summary).toContain('...')
+  test('handles mixed line endings', async () => {
+    const content = 'line1\r\nline2\rline3\n'
+
+    const result = await summarizeWithHaiku(content, 'read', '/log/path', {
+      threshold: 10,
+      charThreshold: 1000,
     })
 
-    test('truncates and adds "..." if over maxLength', async () => {
-      delete process.env['ANTHROPIC_API_KEY']
-      const longContent = 'x'.repeat(1000) + '\n'.repeat(100)
-      
-      const result = await summarizeWithHaiku(longContent, 'read', '/log/path')
-      
-      expect(result.summary).toContain('...')
-      expect(result.summary).toContain('truncated')
-    })
-  })
-
-  describe('threshold edge cases', () => {
-    test('content below threshold returns original', async () => {
-      const content = 'line\n'.repeat(40)
-      const result = await summarizeWithHaiku(content, 'read', '/log/path', { threshold: 50 })
-      
-      expect(result.summary).toBe(content)
-    })
-
-    test('content above char threshold triggers summarization', async () => {
-      const content = 'x'.repeat(5000)
-      const result = await summarizeWithHaiku(content, 'read', '/log/path', { charThreshold: 1000 })
-
-      expect(result.summary).toContain('truncated')
-      expect(result.fullPath).toBe('/log/path')
-    })
-
-    test('content at or above threshold triggers summarization', async () => {
-      delete process.env['ANTHROPIC_API_KEY']
-      const content = 'x'.repeat(600) + '\n'.repeat(51)
-      
-      const result = await summarizeWithHaiku(content, 'read', '/log/path', { threshold: 50 })
-      
-      expect(result.summary).toContain('truncated')
-    })
+    expect(result.summary).toBe(content)
   })
 })

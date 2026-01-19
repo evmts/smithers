@@ -4,61 +4,46 @@ import * as path from 'path'
 import * as os from 'os'
 import { LogWriter } from './log-writer.js'
 
-const TEST_LOG_DIR = path.join(os.tmpdir(), 'smithers-test-logs-' + process.pid)
-const TEST_EXECUTIONS_DIR = path.join(os.tmpdir(), 'smithers-test-executions-' + process.pid)
-
-function cleanupDirs() {
-  if (fs.existsSync(TEST_LOG_DIR)) {
-    fs.rmSync(TEST_LOG_DIR, { recursive: true, force: true })
-  }
-  if (fs.existsSync(TEST_EXECUTIONS_DIR)) {
-    fs.rmSync(TEST_EXECUTIONS_DIR, { recursive: true, force: true })
-  }
-  const executionsDir = path.resolve('.smithers/executions')
-  if (fs.existsSync(executionsDir)) {
-    fs.rmSync(executionsDir, { recursive: true, force: true })
-  }
-}
+let testRootDir: string
+let testLogDir: string
+let testExecutionRoot: string
 
 describe('LogWriter', () => {
   beforeEach(() => {
-    cleanupDirs()
+    testRootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smithers-logwriter-'))
+    testLogDir = path.join(testRootDir, 'logs')
+    testExecutionRoot = path.join(testRootDir, 'executions')
   })
 
   afterEach(() => {
-    cleanupDirs()
+    fs.rmSync(testRootDir, { recursive: true, force: true })
   })
 
   it('should create log directory if it does not exist', () => {
-    new LogWriter(TEST_LOG_DIR)
-    expect(fs.existsSync(TEST_LOG_DIR)).toBe(true)
+    new LogWriter(testLogDir)
+    expect(fs.existsSync(testLogDir)).toBe(true)
   })
 
   it('should use execution directory if executionId is provided', () => {
     const executionId = 'test-execution-id'
-    const writer = new LogWriter(TEST_LOG_DIR, executionId)
+    const writer = new LogWriter(testLogDir, executionId, testExecutionRoot)
     // The path resolution logic in LogWriter:
     // if (executionId) {
-    //   this.logDir = path.resolve('.smithers/executions', executionId, 'logs')
+    //   this.logDir = path.resolve(executionBaseDir, executionId, 'logs')
     // }
-    const expectedDir = path.resolve('.smithers/executions', executionId, 'logs')
+    const expectedDir = path.resolve(testExecutionRoot, executionId, 'logs')
     expect(writer.getLogDir()).toBe(expectedDir)
-    
-    // Clean up the execution dir created
-    if (fs.existsSync(expectedDir)) {
-      fs.rmSync(path.resolve('.smithers/executions'), { recursive: true, force: true })
-    }
   })
 
   it('should sanitize executionId to prevent traversal', () => {
-    const writer = new LogWriter(TEST_LOG_DIR, '../evil')
+    const writer = new LogWriter(testLogDir, '../evil', testExecutionRoot)
     const logDir = writer.getLogDir()
-    const root = path.resolve('.smithers/executions')
+    const root = path.resolve(testExecutionRoot)
     expect(logDir.startsWith(root + path.sep)).toBe(true)
   })
 
   it('should write log file with metadata', () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const content = 'test content'
     const metadata = { key: 'value' }
     
@@ -73,7 +58,7 @@ describe('LogWriter', () => {
   })
 
   it('should append to log file', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filename = 'append-test.log'
 
     const path1 = writer.appendLog(filename, 'chunk 1\n')
@@ -87,34 +72,34 @@ describe('LogWriter', () => {
   })
 
   it('should sanitize filenames to prevent traversal', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const path1 = writer.appendLog('../evil.log', 'data\n')
 
     await writer.flushStream('../evil.log')
 
-    const relative = path.relative(TEST_LOG_DIR, path1)
+    const relative = path.relative(testLogDir, path1)
     expect(relative.startsWith('..')).toBe(false)
     expect(path.isAbsolute(relative)).toBe(false)
     expect(fs.readFileSync(path1, 'utf-8')).toContain('data')
   })
 
   it('should flush multiple streams', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
 
     writer.appendLog('first.log', 'first\n')
     writer.appendLog('second.log', 'second\n')
 
     await writer.flushAllStreams()
 
-    const firstPath = path.join(TEST_LOG_DIR, 'first.log')
-    const secondPath = path.join(TEST_LOG_DIR, 'second.log')
+    const firstPath = path.join(testLogDir, 'first.log')
+    const secondPath = path.join(testLogDir, 'second.log')
 
     expect(fs.readFileSync(firstPath, 'utf-8')).toBe('first\n')
     expect(fs.readFileSync(secondPath, 'utf-8')).toBe('second\n')
   })
 
   it('should append stream parts as ndjson', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filename = 'stream-test.ndjson'
 
     writer.appendStreamPart(filename, { type: 'text-start', id: 't1' })
@@ -122,7 +107,7 @@ describe('LogWriter', () => {
 
     await writer.flushStream(filename)
 
-    const content = fs.readFileSync(path.join(TEST_LOG_DIR, filename), 'utf-8').trim()
+    const content = fs.readFileSync(path.join(testLogDir, filename), 'utf-8').trim()
     const lines = content.split('\n').map((line) => JSON.parse(line))
 
     expect(lines[0]).toMatchObject({ type: 'text-start', id: 't1' })
@@ -130,7 +115,7 @@ describe('LogWriter', () => {
   })
 
   it('should reopen stream for appendStreamPart after flush', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filename = 'stream-reopen.ndjson'
 
     writer.appendStreamPart(filename, { type: 'text-start', id: 't1' })
@@ -139,13 +124,13 @@ describe('LogWriter', () => {
     writer.appendStreamPart(filename, { type: 'text-end', id: 't1' })
     await writer.flushStream(filename)
 
-    const content = fs.readFileSync(path.join(TEST_LOG_DIR, filename), 'utf-8').trim()
+    const content = fs.readFileSync(path.join(testLogDir, filename), 'utf-8').trim()
     const lines = content.split('\n').map((line) => JSON.parse(line))
     expect(lines).toHaveLength(2)
   })
 
   it('should write stream summary from counts', () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filename = 'summary-test.ndjson'
     const summaryPath = writer.writeStreamSummaryFromCounts(filename, {
       textBlocks: 1,
@@ -166,7 +151,7 @@ describe('LogWriter', () => {
   })
 
   it('should write stream summary from parts array', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filename = 'parts-summary.ndjson'
     const parts = [
       { type: 'text-end' as const, id: 't1' },
@@ -190,7 +175,7 @@ describe('LogWriter', () => {
   })
 
   it('should write tool call log', () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filepath = writer.writeToolCall('Read', { path: '/test' }, 'file contents here')
 
     expect(fs.existsSync(filepath)).toBe(true)
@@ -201,7 +186,7 @@ describe('LogWriter', () => {
   })
 
   it('should handle circular tool input', () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const input: any = { path: '/test' }
     input.self = input
     const filepath = writer.writeToolCall('Read', input, 'file contents here')
@@ -211,7 +196,7 @@ describe('LogWriter', () => {
   })
 
   it('should write agent result log', () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filepath = writer.writeAgentResult('MainAgent', 'Task completed successfully')
 
     expect(fs.existsSync(filepath)).toBe(true)
@@ -221,7 +206,7 @@ describe('LogWriter', () => {
   })
 
   it('should write error log from Error object', () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const error = new Error('Something went wrong')
     const filepath = writer.writeError(error)
 
@@ -231,7 +216,7 @@ describe('LogWriter', () => {
   })
 
   it('should write error log from string', () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filepath = writer.writeError('String error message')
 
     expect(fs.existsSync(filepath)).toBe(true)
@@ -240,23 +225,21 @@ describe('LogWriter', () => {
   })
 
   it('should close specific stream', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filename = 'close-test.log'
 
     writer.appendLog(filename, 'content\n')
-    writer.closeStream(filename)
+    await writer.closeStream(filename)
 
     // Closing again should not throw
-    writer.closeStream(filename)
+    await writer.closeStream(filename)
 
-    const filepath = path.join(TEST_LOG_DIR, filename)
-    // Wait for stream to finish
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    const filepath = path.join(testLogDir, filename)
     expect(fs.existsSync(filepath)).toBe(true)
   })
 
   it('should return session id', () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const sessionId = writer.getSessionId()
 
     expect(typeof sessionId).toBe('string')
@@ -266,21 +249,19 @@ describe('LogWriter', () => {
   })
 
   it('should close all streams', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
 
     writer.appendLog('stream1.log', 'content1\n')
     writer.appendLog('stream2.log', 'content2\n')
 
-    writer.closeAllStreams()
+    await writer.closeAllStreams()
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
-
-    expect(fs.existsSync(path.join(TEST_LOG_DIR, 'stream1.log'))).toBe(true)
-    expect(fs.existsSync(path.join(TEST_LOG_DIR, 'stream2.log'))).toBe(true)
+    expect(fs.existsSync(path.join(testLogDir, 'stream1.log'))).toBe(true)
+    expect(fs.existsSync(path.join(testLogDir, 'stream2.log'))).toBe(true)
   })
 
   it('should handle appendLog when stream is not writable', async () => {
-    const writer = new LogWriter(TEST_LOG_DIR)
+    const writer = new LogWriter(testLogDir)
     const filename = 'append-fallback.log'
 
     // Write first chunk
@@ -291,10 +272,9 @@ describe('LogWriter', () => {
 
     // Try to append again - should use sync fallback
     writer.appendLog(filename, 'chunk2\n')
-    
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await writer.flushStream(filename)
 
-    const content = fs.readFileSync(path.join(TEST_LOG_DIR, filename), 'utf-8')
+    const content = fs.readFileSync(path.join(testLogDir, filename), 'utf-8')
     expect(content).toContain('chunk1')
     expect(content).toContain('chunk2')
   })

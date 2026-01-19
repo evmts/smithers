@@ -27,7 +27,7 @@ describe('classifyContent', () => {
 
   test('classifies explicit prompt request as prompt', () => {
     const ctx: CaptureContext = {
-      content: 'Put this in Prompt.md: important context for later',
+      content: 'Put this in PROMPT.md: important context for later',
     }
     const result = classifyContent(ctx)
     expect(result.type).toBe('prompt')
@@ -307,7 +307,7 @@ describe('integration: classification accuracy', () => {
       description: 'checkbox + urgent',
     },
     {
-      content: 'Add this to Prompt.md for future reference',
+      content: 'Add this to PROMPT.md for future reference',
       expected: 'prompt',
       description: 'explicit prompt mention',
     },
@@ -392,7 +392,7 @@ describe('classifyContent - edge cases', () => {
 
   test('confidence is capped at 1.0', () => {
     const ctx: CaptureContext = {
-      content: 'Put this in Prompt.md: critical bug urgent asap must fix now',
+      content: 'Put this in PROMPT.md: critical bug urgent asap must fix now',
       commitHash: 'abc1234',
     }
     const result = classifyContent(ctx)

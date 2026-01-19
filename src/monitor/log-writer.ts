@@ -10,10 +10,11 @@ export class LogWriter {
   private streams: Map<string, fs.WriteStream> = new Map()
   private backpressure: Set<string> = new Set()
 
-  constructor(logDir: string = '.smithers/logs', executionId?: string) {
+  constructor(logDir: string = '.smithers/logs', executionId?: string, executionBaseDir?: string) {
     if (executionId) {
       const safeExecutionId = this.sanitizeSegment(executionId, 'execution')
-      this.logDir = path.resolve('.smithers/executions', safeExecutionId, 'logs')
+      const baseDir = executionBaseDir ?? '.smithers/executions'
+      this.logDir = path.resolve(baseDir, safeExecutionId, 'logs')
     } else {
       this.logDir = path.resolve(logDir)
     }
@@ -126,27 +127,17 @@ export class LogWriter {
   }
 
   /**
-   * Close a specific log stream. Call when done writing to a log file.
+   * Close a specific log stream, waiting for writes to complete.
    */
-  closeStream(filename: string): void {
-    const { filename: safeFilename } = this.resolveSafePath(filename, 'log.txt')
-    const stream = this.streams.get(safeFilename)
-    if (stream) {
-      stream.end()
-      this.streams.delete(safeFilename)
-      this.backpressure.delete(safeFilename)
-    }
+  closeStream(filename: string): Promise<void> {
+    return this.flushStream(filename)
   }
 
   /**
-   * Close all open streams. Call when done with the LogWriter.
+   * Close all open streams, waiting for writes to complete.
    */
-  closeAllStreams(): void {
-    for (const [filename, stream] of this.streams) {
-      stream.end()
-      this.streams.delete(filename)
-      this.backpressure.delete(filename)
-    }
+  closeAllStreams(): Promise<void> {
+    return this.flushAllStreams()
   }
 
   /**

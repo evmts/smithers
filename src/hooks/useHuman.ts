@@ -68,10 +68,8 @@ export function useHuman(): UseHumanResult {
   // This will re-render whenever the request row changes
   const { data: request } = useQueryOne<HumanInteraction>(
     db.db, // Pass ReactiveDatabase
-    requestId
-      ? `SELECT * FROM human_interactions WHERE id = ?`
-      : `SELECT 1 WHERE 0`, // No-op query if no ID
-    requestId ? [requestId] : []
+    `SELECT * FROM human_interactions WHERE id = ?`,
+    [requestId ?? '__never__']
   )
 
   // Resolve promise when request status changes

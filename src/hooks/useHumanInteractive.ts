@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 import type { ZodType } from 'zod'
 import { useSmithers } from '../components/SmithersProvider.js'
+import { useExecutionScope } from '../components/ExecutionScope.js'
 import type { HumanInteraction, HumanInteractionRow, InteractiveSessionConfig } from '../db/human.js'
 import { parseHumanInteraction } from '../db/human.js'
 import { parseJson, uuid } from '../db/utils.js'
@@ -69,6 +70,7 @@ const mapOutcome = (status: string): InteractiveSessionResult['outcome'] => {
 
 export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInteractiveResult<T> {
   const { db, reactiveDb } = useSmithers()
+  const executionScope = useExecutionScope()
   const stateKeyRef = useRef(`humanInteractive:${uuid()}`)
   const resolveRef = useRef<((value: T) => void) | null>(null)
   const rejectRef = useRef<((error: Error) => void) | null>(null)
@@ -91,10 +93,8 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
 
   const { data: sessionRow } = useQueryOne<HumanInteractionRow>(
     reactiveDb,
-    state.sessionId
-      ? 'SELECT * FROM human_interactions WHERE id = ?'
-      : 'SELECT 1 WHERE 0',
-    state.sessionId ? [state.sessionId] : []
+    'SELECT * FROM human_interactions WHERE id = ?',
+    [state.sessionId ?? '__never__']
   )
   const session = sessionRow ? parseHumanInteraction(sessionRow) : null
 
@@ -193,7 +193,8 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     if (config.blockOrchestration) {
       taskId = db.tasks.start(
         'human_interactive',
-        `Interactive session: ${prompt.slice(0, 50)}...`
+        `Interactive session: ${prompt.slice(0, 50)}...`,
+        { scopeId: executionScope.scopeId }
       )
     }
 
@@ -206,7 +207,7 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     }, 'human_interactive_request')
 
     return id
-  }, [db, setState])
+  }, [db, executionScope.scopeId, setState])
 
   const request = useCallback((prompt: string, options?: AskInteractiveOptions): void => {
     zodSchemaRef.current = options?.zodSchema ?? null

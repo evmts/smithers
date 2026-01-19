@@ -1,5 +1,5 @@
 export function encodeScopeSegment(segment: string): string {
-  return encodeURIComponent(segment)
+  return encodeURIComponent(segment).replace(/\./g, '%2E')
 }
 
 export function makeScopeId(parentScopeId: string, type: string, id: string, suffix?: string): string {

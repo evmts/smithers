@@ -22,6 +22,7 @@ export {
   getCommitInfo,
   getDiffStats,
   getGitStatus,
+  SMITHERS_NOTES_REF,
   addGitNotes,
   getGitNotes,
   hasGitNotes,

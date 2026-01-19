@@ -7,12 +7,41 @@ export interface SummaryResult {
 
 export type SummaryType = 'read' | 'edit' | 'result' | 'error' | 'output'
 
+type HaikuClient = {
+  messages: {
+    create: (params: Anthropic.Messages.MessageCreateParams) => Promise<{
+      content: Anthropic.Messages.Message['content']
+    }>
+  }
+}
+
+export interface SummarizeOptions {
+  threshold?: number
+  charThreshold?: number
+  maxChars?: number
+  apiKey?: string
+  model?: string
+  client?: HaikuClient
+  createClient?: (apiKey: string) => HaikuClient
+  fetch?: typeof fetch
+}
+
 const PROMPTS: Record<SummaryType, string> = {
   read: 'Summarize this file content in 2-3 sentences. Focus on: what the file does, key exports/functions, and its role in the codebase.',
   edit: 'Summarize this code diff in 2-3 sentences. Focus on: what changed, why it might have changed, and the impact.',
   result: 'Summarize this AI agent result in 2-3 sentences. Focus on: what was accomplished and key findings.',
   error: 'Summarize this error in 1-2 sentences. Focus on: the root cause and suggested fix.',
   output: 'Summarize this output in 2-3 sentences. Focus on: what happened and key information.',
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function normalizePositiveInt(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
 function truncate(str: string, maxLength: number): string {
@@ -42,18 +71,14 @@ export async function summarizeWithHaiku(
   content: string,
   type: SummaryType,
   logPath: string,
-  options: {
-    threshold?: number
-    charThreshold?: number
-    maxChars?: number
-    apiKey?: string
-    model?: string
-  } = {}
+  options: SummarizeOptions = {}
 ): Promise<SummaryResult> {
-  const threshold = options.threshold || parseInt(process.env['SMITHERS_SUMMARY_THRESHOLD'] || '50', 10)
-  const charThreshold =
-    options.charThreshold || parseInt(process.env['SMITHERS_SUMMARY_CHAR_THRESHOLD'] || '4000', 10)
-  const maxChars = options.maxChars || parseInt(process.env['SMITHERS_SUMMARY_MAX_CHARS'] || '20000', 10)
+  const envThreshold = parsePositiveInt(process.env['SMITHERS_SUMMARY_THRESHOLD'], 50)
+  const envCharThreshold = parsePositiveInt(process.env['SMITHERS_SUMMARY_CHAR_THRESHOLD'], 4000)
+  const envMaxChars = parsePositiveInt(process.env['SMITHERS_SUMMARY_MAX_CHARS'], 20000)
+  const threshold = normalizePositiveInt(options.threshold, envThreshold)
+  const charThreshold = normalizePositiveInt(options.charThreshold, envCharThreshold)
+  const maxChars = normalizePositiveInt(options.maxChars, envMaxChars)
   const lineCount = content.split('\n').length
 
   // Don't summarize if below threshold
@@ -64,9 +89,10 @@ export async function summarizeWithHaiku(
     }
   }
 
-  const apiKey = options.apiKey || process.env['ANTHROPIC_API_KEY']
+  const apiKey = options.apiKey ?? process.env['ANTHROPIC_API_KEY']
+  const providedClient = options.client
 
-  if (!apiKey) {
+  if (!providedClient && !apiKey) {
     // Fallback: truncate instead of summarize
     return {
       summary: truncate(content, 500) + '\n[... truncated, see full output]',
@@ -75,7 +101,11 @@ export async function summarizeWithHaiku(
   }
 
   try {
-    const client = new Anthropic({ apiKey })
+    const client =
+      providedClient ??
+      (options.createClient
+        ? options.createClient(apiKey!)
+        : new Anthropic({ apiKey: apiKey!, ...(options.fetch ? { fetch: options.fetch } : {}) }))
     const model = options.model || process.env['SMITHERS_SUMMARY_MODEL'] || 'claude-3-haiku-20240307'
     const clippedContent = clipForSummary(content, maxChars)
 

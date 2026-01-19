@@ -2,10 +2,12 @@
 // Uses Bun.$ for command execution per CLAUDE.md
 
 import * as path from 'node:path'
+import { tmpdir } from 'node:os'
+import { unlink } from 'node:fs/promises'
 import { parseGitStatus } from './parsers.js'
 import type { CommandResult, VCSStatus, DiffStats, CommitInfo, WorktreeInfo } from './types.js'
 
-const SMITHERS_NOTES_REF = 'refs/notes/smithers'
+export const SMITHERS_NOTES_REF = 'refs/notes/smithers'
 
 interface GitOptions {
   cwd?: string
@@ -81,7 +83,7 @@ export async function getCommitInfo(ref: string = 'HEAD', cwd?: string): Promise
  * Get diff statistics
  */
 export async function getDiffStats(ref?: string, cwd?: string): Promise<DiffStats> {
-  const args = ref ? `${ref}...HEAD` : 'HEAD~1'
+  const args = ref ? `${ref}..HEAD` : 'HEAD~1..HEAD'
   let result: string
   try {
     result = await withCwd(Bun.$`git diff --numstat ${args}`, cwd).text()
@@ -131,13 +133,17 @@ export async function addGitNotes(
   } else {
     args.push('add', '-f')
   }
-  args.push('-m', content, ref)
+  const tempPath = path.join(tmpdir(), `smithers-git-notes-${crypto.randomUUID()}.txt`)
 
   try {
+    await Bun.write(tempPath, content)
+    args.push('-F', tempPath, ref)
     await withCwd(Bun.$`git ${args}`, cwd).quiet()
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed to ${append ? 'append' : 'add'} git notes: ${msg}`)
+  } finally {
+    await unlink(tempPath).catch(() => {})
   }
 }
 
