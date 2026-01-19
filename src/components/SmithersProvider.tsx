@@ -7,6 +7,7 @@ import type { SmithersDB } from '../db/index.js'
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { DatabaseProvider } from '../reactive-sqlite/hooks/context.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
+import { PhaseRegistryProvider } from './PhaseRegistry.js'
 import { useMount, useUnmount } from '../reconciler/hooks.js'
 import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
 import { jjSnapshot } from '../utils/vcs.js'
@@ -696,7 +697,9 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   return (
     <SmithersContext.Provider value={value}>
       <DatabaseProvider db={reactiveDb}>
-        {props.children}
+        <PhaseRegistryProvider>
+          {props.children}
+        </PhaseRegistryProvider>
       </DatabaseProvider>
     </SmithersContext.Provider>
   )
