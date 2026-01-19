@@ -1400,9 +1400,6 @@ describe('Claude tail log', () => {
     const parser = new MessageParser(100)
     parser.parseChunk('Partial content without newline')
     
-    let entriesBefore = parser.getEntries()
-    const hasContentBefore = entriesBefore.some(e => e.content.includes('Partial'))
-    
     parser.flush()
     
     const entriesAfter = parser.getEntries()
@@ -1492,7 +1489,7 @@ describe('Claude log writing', () => {
 
   test('creates log directory if not exists', () => {
     const newLogDir = path.join(TEST_LOG_DIR, 'subdir')
-    const writer = new LogWriter(newLogDir)
+    const _writer = new LogWriter(newLogDir)
     
     expect(fs.existsSync(newLogDir)).toBe(true)
   })
