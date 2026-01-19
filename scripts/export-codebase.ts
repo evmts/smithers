@@ -154,6 +154,7 @@ function getLanguage(filePath: string): string {
     'json': 'json',
     'sql': 'sql',
     'md': 'markdown',
+    'mdx': 'markdown',
     'sh': 'bash',
     'yml': 'yaml',
     'yaml': 'yaml',
@@ -293,9 +294,15 @@ async function exportSection(sectionName: string): Promise<void> {
   markdown += `- **Truncated files**: ${truncatedCount}\n`;
   markdown += `- **Export date**: ${new Date().toLocaleString()}\n`;
 
-  // Copy to clipboard
+  // Copy to clipboard (cross-platform)
   console.log("📋 Copying to clipboard...");
-  const proc = Bun.spawn(["pbcopy"], {
+  const clipboardCmd = process.platform === 'darwin' 
+    ? ["pbcopy"] 
+    : process.platform === 'win32' 
+      ? ["clip"] 
+      : ["xclip", "-selection", "clipboard"];
+  
+  const proc = Bun.spawn(clipboardCmd, {
     stdin: "pipe",
   });
 

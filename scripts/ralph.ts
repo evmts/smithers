@@ -123,7 +123,7 @@ function printHelp(): void {
 Ralph - Autonomous Task Runner
 
 Usage:
-  bun src/ralph.ts [options]
+  bun scripts/ralph.ts [options]
 
 Options:
   --duration <time>   Total runtime (default: 6h)
@@ -337,7 +337,7 @@ async function executeClaude(
       output += chunk
       process.stdout.write(chunk)
     }
-  } catch (e) {
+  } catch {
     // Reader closed
   }
 

@@ -9,8 +9,6 @@
  *   bun scripts/worktree.ts --agent codex --thinking xhigh  # Configure agent settings
  */
 
-import { Glob } from 'bun'
-
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -306,7 +304,7 @@ Current working directory: ${worktreePath}
       output += chunk
       process.stdout.write(chunk)
     }
-  } catch (e) {
+  } catch {
     // Reader closed
   }
 

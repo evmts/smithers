@@ -294,7 +294,13 @@ function ReleaseSmoketestOrchestration() {
 
 async function main() {
   console.log(`Starting release smoketest for smithers@${VERSION}`)
-  console.log('Git history entries:', JSON.parse(GIT_HISTORY).length)
+  let historyEntries = 0
+  try {
+    historyEntries = JSON.parse(GIT_HISTORY).length
+  } catch {
+    console.warn('Warning: Could not parse GIT_HISTORY, using empty array')
+  }
+  console.log('Git history entries:', historyEntries)
 
   const db = createSmithersDB({ path: '.smithers/smoketest.db' })
   const executionId = db.execution.start('release-smoketest', 'scripts/release-smoketest.tsx')

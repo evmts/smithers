@@ -235,7 +235,7 @@ Respond with JSON:
 }
 
 async function postReviewToPR() {
-  if (!PR_NUMBER) return
+  if (!PR_NUMBER || PR_NUMBER.trim() === '') return
 
   const allApproved = reviewResults.every(r => r.approved)
   const allIssues = reviewResults.flatMap(r => r.issues.map(i => ({ ...i, agent: r.agent })))

@@ -243,26 +243,41 @@ async function main(): Promise<void> {
   // Override type if specified
   const finalType = config.type ?? classification.type
 
-  // Generate capture
-  const generated = await capture({
-    ...ctx,
-    // If type was overridden, we need to recapture with that type
-  })
+  // Generate capture with optional type override
+  let generated = await capture(ctx)
 
-  // Apply type override to generated output if needed
+  // If type was explicitly overridden, regenerate with correct type
   if (config.type && config.type !== generated.type) {
-    // Re-capture with forced type by modifying content to trigger that classification
-    generated.type = config.type
-    generated.filePath = generated.filePath.replace(
-      new RegExp(`(reviews|issues|TODO|Prompt)`),
-      config.type === 'review'
-        ? 'reviews'
-        : config.type === 'issue'
-          ? 'issues'
-          : config.type === 'todo'
-            ? 'TODO'
-            : 'Prompt'
-    )
+    const {
+      generateReviewTemplate,
+      generateIssueTemplate,
+      generateTodoItem,
+      generatePromptMd,
+      generateFilePath,
+    } = await import('../src/utils/capture.js')
+
+    let content: string
+    let isAppend = false
+
+    switch (config.type) {
+      case 'review':
+        content = generateReviewTemplate(ctx)
+        break
+      case 'issue':
+        content = generateIssueTemplate(ctx)
+        break
+      case 'todo':
+        content = generateTodoItem(ctx)
+        isAppend = true
+        break
+      case 'prompt':
+        content = generatePromptMd(ctx)
+        isAppend = await Bun.file(`${config.cwd}/Prompt.md`).exists()
+        break
+    }
+
+    const filePath = await generateFilePath(config.type, ctx, config.cwd)
+    generated = { type: config.type, filePath, content, isAppend }
   }
 
   // Output
