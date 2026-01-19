@@ -27,6 +27,7 @@ As both an implementation and orchestrator agent you will often be prompting oth
 - Put a high emphasis on agents validating their changes with tests manual tests and more
 - Put a high emphasis on reporting. Think hard about what useful information you want reported at the end of the agent's run
 - Use subagents often to save context and to do things in parallel
+- Never use "You are a ______" persona prompts - they waste tokens. Just give direct instructions
 
 ## Bun vs node.js
 
