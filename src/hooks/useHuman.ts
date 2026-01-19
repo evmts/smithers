@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef } from 'react'
-import { useEffectOnValueChange } from '../reconciler/hooks.js'
+import { useCallback, useRef } from 'react'
+import { useEffectOnValueChange, useMount } from '../reconciler/hooks.js'
 import { useSmithers } from '../components/SmithersProvider.js'
 import type { HumanInteraction } from '../db/human.js'
-import { useQueryOne } from '../reactive-sqlite/index.js'
+import { parseJson, uuid } from '../db/utils.js'
+import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
 
 export interface AskOptions {
   options?: string[]
@@ -45,7 +46,20 @@ export interface UseHumanResult {
  */
 export function useHuman(): UseHumanResult {
   const { db } = useSmithers()
-  const [requestId, setRequestId] = useState<string | null>(null)
+  const requestKeyRef = useRef(`humanRequest:${uuid()}`)
+
+  useMount(() => {
+    if (db.db.isClosed) return
+    if (db.state.get<string | null>(requestKeyRef.current) !== null) return
+    db.state.set(requestKeyRef.current, null, 'human_request_init')
+  })
+
+  const { data: requestIdJson } = useQueryValue<string>(
+    db.db,
+    'SELECT value FROM state WHERE key = ?',
+    [requestKeyRef.current]
+  )
+  const requestId = requestIdJson ? parseJson<string | null>(requestIdJson, null) : null
 
   // Track the promise resolver so we can call it when DB updates
   const resolveRef = useRef<((value: unknown) => void) | null>(null)
@@ -89,7 +103,7 @@ export function useHuman(): UseHumanResult {
       )
 
       // 3. Set ID to start subscription
-      setRequestId(id)
+      db.state.set(requestKeyRef.current, id, 'human_request_created')
     })
   }, [db])
 

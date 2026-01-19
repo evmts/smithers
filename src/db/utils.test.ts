@@ -32,7 +32,7 @@ describe('utils', () => {
     test('returns correct UUID structure with hyphens', () => {
       const id = uuid()
       const parts = id.split('-')
-      expect(parts.length).toBe(5)
+      expect(parts).toHaveLength(5)
       expect(parts[0].length).toBe(8)
       expect(parts[1].length).toBe(4)
       expect(parts[2].length).toBe(4)
@@ -65,6 +65,7 @@ describe('utils', () => {
       const timestamp = now()
       const date = new Date(timestamp)
       expect(date.toString()).not.toBe('Invalid Date')
+      expect(date.getTime()).not.toBeNaN()
     })
 
     test('includes timezone information', () => {
@@ -161,6 +162,13 @@ describe('utils', () => {
       expect(result).toEqual(large)
     })
 
+    test('handles very large JSON arrays', () => {
+      const largeArray = Array.from({ length: 10000 }, (_, i) => i)
+      const input = JSON.stringify(largeArray)
+      const result = parseJson(input, [])
+      expect(result).toEqual(largeArray)
+    })
+
     test('does not throw for invalid JSON', () => {
       expect(() => parseJson('invalid', 'default')).not.toThrow()
     })
@@ -168,6 +176,16 @@ describe('utils', () => {
     test('catches and handles parse errors', () => {
       const result = parseJson('{"unclosed": "brace"', {})
       expect(result).toEqual({})
+    })
+
+    test('preserves type of default value on failure', () => {
+      const objDefault = { fallback: true }
+      const arrDefault = [1, 2, 3]
+      const numDefault = 42
+      
+      expect(parseJson('invalid', objDefault)).toBe(objDefault)
+      expect(parseJson('invalid', arrDefault)).toBe(arrDefault)
+      expect(parseJson('invalid', numDefault)).toBe(numDefault)
     })
   })
 })

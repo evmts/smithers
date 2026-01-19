@@ -1,4 +1,3 @@
-import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
 
@@ -104,6 +103,6 @@ export function generateMCPServerConfig(configs: MCPToolConfig[]): Record<string
 export async function writeMCPConfigFile(config: Record<string, any>): Promise<string> {
   const tmpDir = os.tmpdir()
   const configPath = path.join(tmpDir, `smithers-mcp-${Date.now()}.json`)
-  await fs.writeFile(configPath, JSON.stringify(config, null, 2))
+  await Bun.write(configPath, JSON.stringify(config, null, 2))
   return configPath
 }

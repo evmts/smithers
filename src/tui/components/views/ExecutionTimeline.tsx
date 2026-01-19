@@ -6,6 +6,8 @@ import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { usePollEvents } from '../../hooks/usePollEvents.js'
+import { getStatusColor, colors } from '../../utils/colors.js'
+import { formatTime } from '../../utils/format.js'
 
 export interface ExecutionTimelineProps {
   db: SmithersDB
@@ -108,32 +110,8 @@ function getTypeIcon(type: 'phase' | 'agent' | 'tool'): string {
 
 function getTypeColor(type: 'phase' | 'agent' | 'tool'): string {
   switch (type) {
-    case 'phase': return '#bb9af7'
-    case 'agent': return '#7aa2f7'
-    case 'tool': return '#7dcfff'
-  }
-}
-
-function getStatusColor(status: string): string {
-  switch (status) {
-    case 'running': return '#9ece6a'
-    case 'completed': return '#73daca'
-    case 'failed': return '#f7768e'
-    case 'pending': return '#e0af68'
-    default: return '#565f89'
-  }
-}
-
-function formatTime(timestamp: string): string {
-  try {
-    const date = new Date(timestamp)
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    })
-  } catch {
-    return '--:--:--'
+    case 'phase': return colors.purple
+    case 'agent': return colors.blue
+    case 'tool': return colors.cyan
   }
 }

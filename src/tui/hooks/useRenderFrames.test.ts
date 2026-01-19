@@ -11,10 +11,10 @@ function createMockFrame(overrides: Partial<RenderFrame> = {}): RenderFrame {
   return {
     id: 'frame-123',
     execution_id: 'exec-456',
-    label: 'Test Frame',
-    node_tree: '<root><child /></root>',
-    metadata: null,
-    created_at: new Date('2024-01-15T10:00:00Z'),
+    sequence_number: 0,
+    tree_xml: '<root><child /></root>',
+    ralph_count: 0,
+    created_at: '2024-01-15T10:00:00Z',
     ...overrides
   }
 }
@@ -369,20 +369,16 @@ describe('tui/hooks/useRenderFrames', () => {
       
       expect(frame.id).toBeDefined()
       expect(frame.execution_id).toBeDefined()
-      expect(frame.label).toBeDefined()
-      expect(frame.node_tree).toBeDefined()
+      expect(frame.sequence_number).toBeDefined()
+      expect(frame.tree_xml).toBeDefined()
+      expect(frame.ralph_count).toBeDefined()
       expect(frame.created_at).toBeDefined()
     })
 
-    test('metadata can be null', () => {
-      const frame = createMockFrame({ metadata: null })
-      expect(frame.metadata).toBeNull()
-    })
-
-    test('node_tree contains serialized XML', () => {
-      const frame = createMockFrame({ node_tree: '<smithers><phase name="build" /></smithers>' })
-      expect(frame.node_tree).toContain('<smithers>')
-      expect(frame.node_tree).toContain('<phase')
+    test('tree_xml contains serialized XML', () => {
+      const frame = createMockFrame({ tree_xml: '<smithers><phase name="build" /></smithers>' })
+      expect(frame.tree_xml).toContain('<smithers>')
+      expect(frame.tree_xml).toContain('<phase')
     })
   })
 

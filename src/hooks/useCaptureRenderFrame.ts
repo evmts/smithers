@@ -1,6 +1,8 @@
 import type { SmithersDB } from '../db/index.js'
 import { useEffectOnValueChange } from '../reconciler/hooks.js'
 
+const CAPTURE_DELAY_MS = 50
+
 /**
  * Captures render frame on each Ralph iteration.
  * This is a side-effect hook that stores XML tree snapshots.
@@ -21,7 +23,7 @@ export function useCaptureRenderFrame(
       }
     }
 
-    const timeoutId = setTimeout(captureFrame, 50)
+    const timeoutId = setTimeout(captureFrame, CAPTURE_DELAY_MS)
     return () => clearTimeout(timeoutId)
   }, [db, getTreeXML])
 }

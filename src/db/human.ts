@@ -150,6 +150,7 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
     },
 
     requestInteractive: (prompt: string, config: InteractiveSessionConfig): string => {
+      if (rdb.isClosed) return uuid()
       const executionId = getCurrentExecutionId()
       if (!executionId) throw new Error('No active execution')
 
@@ -183,6 +184,7 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
         error?: string
       }
     ) => {
+      if (rdb.isClosed) return
       rdb.run(
         `UPDATE human_interactions
          SET status = ?, response = ?, session_transcript = ?,
@@ -201,6 +203,7 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
     },
 
     cancelInteractive: (id: string) => {
+      if (rdb.isClosed) return
       rdb.run(
         `UPDATE human_interactions
          SET status = 'cancelled', resolved_at = ?

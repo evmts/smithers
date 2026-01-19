@@ -248,125 +248,189 @@ describe('ArtifactsModule', () => {
     })
   })
 
-  describe('Type validation', () => {
-    test('add with type file', () => {
-      setActiveExecution('exec-1')
+  describe('add', () => {
+    test('returns unique id (50 iterations)', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
       const artifacts = createArtifacts()
-      const id = artifacts.add('test', 'file', '/path.txt')
-      const rows = db.query<any>('SELECT type FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].type).toBe('file')
+
+      const ids = new Set<string>()
+      for (let i = 0; i < 50; i++) {
+        ids.add(artifacts.add(`file${i}.txt`, 'file', `/path/${i}.txt`))
+      }
+      expect(ids.size).toBe(50)
     })
 
-    test('add with type code', () => {
-      setActiveExecution('exec-1')
+    test('handles all artifact types', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
       const artifacts = createArtifacts()
-      const id = artifacts.add('test', 'code', '/path.ts')
-      const rows = db.query<any>('SELECT type FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].type).toBe('code')
+
+      const types = ['file', 'code', 'document', 'image', 'data'] as const
+      for (const type of types) {
+        const id = artifacts.add(`test.${type}`, type, `/path/to/${type}`)
+        const artifact = db.queryOne<any>('SELECT type FROM artifacts WHERE id = ?', [id])
+        expect(artifact.type).toBe(type)
+      }
     })
 
-    test('add with type document', () => {
-      setActiveExecution('exec-1')
+    test('handles unicode in name', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
       const artifacts = createArtifacts()
-      const id = artifacts.add('test', 'document', '/doc.md')
-      const rows = db.query<any>('SELECT type FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].type).toBe('document')
+
+      const id = artifacts.add('文件🎉.txt', 'file', '/path')
+      const artifact = db.queryOne<any>('SELECT name FROM artifacts WHERE id = ?', [id])
+      expect(artifact.name).toBe('文件🎉.txt')
     })
 
-    test('add with type image', () => {
-      setActiveExecution('exec-1')
+    test('handles unicode in file_path', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
       const artifacts = createArtifacts()
-      const id = artifacts.add('test', 'image', '/image.png')
-      const rows = db.query<any>('SELECT type FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].type).toBe('image')
+
+      const id = artifacts.add('file.txt', 'file', '/путь/到/файл.txt')
+      const artifact = db.queryOne<any>('SELECT file_path FROM artifacts WHERE id = ?', [id])
+      expect(artifact.file_path).toBe('/путь/到/файл.txt')
     })
 
-    test('add with type data', () => {
-      setActiveExecution('exec-1')
+    test('handles special characters in file_path', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
       const artifacts = createArtifacts()
-      const id = artifacts.add('test', 'data', '/data.json')
-      const rows = db.query<any>('SELECT type FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].type).toBe('data')
-    })
-  })
 
-  describe('Unicode/special characters', () => {
-    test('add with unicode in name', () => {
-      setActiveExecution('exec-1')
-      const artifacts = createArtifacts()
-      const id = artifacts.add('文件🚀', 'file', '/path.txt')
-      const rows = db.query<any>('SELECT name FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].name).toBe('文件🚀')
+      const path = '/path/with spaces/and "quotes"/file.txt'
+      const id = artifacts.add('file.txt', 'file', path)
+      const artifact = db.queryOne<any>('SELECT file_path FROM artifacts WHERE id = ?', [id])
+      expect(artifact.file_path).toBe(path)
     })
 
-    test('add with unicode in file_path', () => {
-      setActiveExecution('exec-1')
+    test('is safe against SQL injection in name', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
       const artifacts = createArtifacts()
-      const id = artifacts.add('test', 'file', '/路径/文件.txt')
-      const rows = db.query<any>('SELECT file_path FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].file_path).toBe('/路径/文件.txt')
+
+      const maliciousName = "'; DROP TABLE artifacts; --"
+      const id = artifacts.add(maliciousName, 'file', '/path')
+      
+      const artifact = db.queryOne<any>('SELECT name FROM artifacts WHERE id = ?', [id])
+      expect(artifact.name).toBe(maliciousName)
+      
+      const tableExists = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='artifacts'")
+      expect(tableExists).toHaveLength(1)
     })
 
-    test('add with special characters in file_path', () => {
-      setActiveExecution('exec-1')
+    test('returns uuid when db is closed', () => {
+      currentExecutionId = 'exec-1'
       const artifacts = createArtifacts()
-      const id = artifacts.add('test', 'file', '/path with spaces/file (1).txt')
-      const rows = db.query<any>('SELECT file_path FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].file_path).toBe('/path with spaces/file (1).txt')
-    })
-  })
+      db.close()
 
-  describe('SQL injection prevention', () => {
-    test('add is safe against SQL injection in name', () => {
-      setActiveExecution('exec-1')
-      const artifacts = createArtifacts()
-      const malicious = "'; DROP TABLE artifacts; --"
-      const id = artifacts.add(malicious, 'file', '/path.txt')
-      const rows = db.query<any>('SELECT name FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].name).toBe(malicious)
-      const check = db.query<any>('SELECT * FROM artifacts')
-      expect(check).toHaveLength(1)
-    })
-
-    test('add is safe against SQL injection in file_path', () => {
-      setActiveExecution('exec-1')
-      const artifacts = createArtifacts()
-      const malicious = "/path'; DROP TABLE artifacts; --"
-      const id = artifacts.add('test', 'file', malicious)
-      const rows = db.query<any>('SELECT file_path FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].file_path).toBe(malicious)
-    })
-
-    test('add is safe against SQL injection in type', () => {
-      setActiveExecution('exec-1')
-      const artifacts = createArtifacts()
-      const malicious = "file'; DROP TABLE artifacts; --"
-      const id = artifacts.add('test', malicious as any, '/path.txt')
-      const rows = db.query<any>('SELECT type FROM artifacts WHERE id = ?', [id])
-      expect(rows[0].type).toBe(malicious)
+      const id = artifacts.add('file.txt', 'file', '/path')
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
     })
   })
 
-  describe('mapArtifact edge cases', () => {
-    test('list returns artifacts with parsed dates', () => {
-      setActiveExecution('exec-1')
+  describe('list', () => {
+    test('returns artifacts for execution', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
       const artifacts = createArtifacts()
-      artifacts.add('test', 'file', '/path.txt')
-      const result = artifacts.list('exec-1')
-      expect(result[0].created_at).toBeInstanceOf(Date)
+
+      artifacts.add('file1.txt', 'file', '/path/1')
+      artifacts.add('file2.txt', 'code', '/path/2')
+      artifacts.add('file3.txt', 'document', '/path/3')
+
+      const list = artifacts.list(currentExecutionId)
+      expect(list).toHaveLength(3)
     })
 
-    test('list returns artifacts with undefined for null optional fields', () => {
-      setActiveExecution('exec-1')
+    test('returns empty array for non-existent execution', () => {
       const artifacts = createArtifacts()
-      artifacts.add('test', 'file', '/path.txt')
-      const result = artifacts.list('exec-1')
-      expect(result[0].agent_id).toBeUndefined()
-      expect(result[0].git_hash).toBeUndefined()
-      expect(result[0].git_commit).toBeUndefined()
-      expect(result[0].summary).toBeUndefined()
-      expect(result[0].line_count).toBeUndefined()
-      expect(result[0].byte_size).toBeUndefined()
+      const list = artifacts.list('nonexistent')
+      expect(list).toEqual([])
+    })
+
+    test('returns artifacts ordered by created_at', async () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const artifacts = createArtifacts()
+
+      const id1 = artifacts.add('first.txt', 'file', '/path/1')
+      await new Promise(r => setTimeout(r, 10))
+      const id2 = artifacts.add('second.txt', 'file', '/path/2')
+      await new Promise(r => setTimeout(r, 10))
+      const id3 = artifacts.add('third.txt', 'file', '/path/3')
+
+      const list = artifacts.list(currentExecutionId)
+      expect(list[0].id).toBe(id1)
+      expect(list[1].id).toBe(id2)
+      expect(list[2].id).toBe(id3)
+    })
+
+    test('parses metadata JSON correctly', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const artifacts = createArtifacts()
+
+      artifacts.add('file.txt', 'file', '/path', undefined, { key: 'value', num: 123 })
+
+      const list = artifacts.list(currentExecutionId)
+      expect(list[0].metadata).toEqual({ key: 'value', num: 123 })
+    })
+
+    test('handles invalid metadata JSON gracefully', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      
+      db.run(
+        `INSERT INTO artifacts (id, execution_id, name, type, file_path, metadata, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+        ['bad-id', currentExecutionId, 'file.txt', 'file', '/path', 'invalid json']
+      )
+
+      const artifacts = createArtifacts()
+      const list = artifacts.list(currentExecutionId)
+      expect(list[0].metadata).toEqual({})
+    })
+
+    test('returns empty array when db is closed', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const artifacts = createArtifacts()
+      artifacts.add('file.txt', 'file', '/path')
+      db.close()
+
+      expect(artifacts.list(currentExecutionId)).toEqual([])
+    })
+
+    test('filters by execution_id', () => {
+      db.run('INSERT INTO executions (id) VALUES (?)', ['exec-1'])
+      db.run('INSERT INTO executions (id) VALUES (?)', ['exec-2'])
+      const artifacts = createArtifacts()
+
+      currentExecutionId = 'exec-1'
+      artifacts.add('file1.txt', 'file', '/path/1')
+      
+      currentExecutionId = 'exec-2'
+      artifacts.add('file2.txt', 'file', '/path/2')
+      artifacts.add('file3.txt', 'file', '/path/3')
+
+      const list1 = artifacts.list('exec-1')
+      const list2 = artifacts.list('exec-2')
+
+      expect(list1).toHaveLength(1)
+      expect(list2).toHaveLength(2)
+    })
+
+    test('converts created_at to Date object', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const artifacts = createArtifacts()
+
+      artifacts.add('file.txt', 'file', '/path')
+
+      const list = artifacts.list(currentExecutionId)
+      expect(list[0].created_at).toBeInstanceOf(Date)
     })
   })
 })

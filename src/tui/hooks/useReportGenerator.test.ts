@@ -76,9 +76,9 @@ describe('tui/hooks/useReportGenerator', () => {
 
     test('calls generateReport from service', () => {
       // The hook calls: await generateReport(db)
-      const generateReport = mock(async () => ({ id: '123' }))
-      generateReport({} as any)
-      expect(generateReport).toHaveBeenCalled()
+      const mockGenerateReport = mock(async () => ({ id: '123' }))
+      mockGenerateReport()
+      expect(mockGenerateReport).toHaveBeenCalled()
     })
 
     test('prepends new report to reports array', () => {

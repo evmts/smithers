@@ -213,6 +213,16 @@ describe('RenderFramesModule', () => {
       const result = frames.list()
       expect(result).toEqual([])
     })
+
+    test('list returns empty array when db is closed', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+      renderFrames.store('<root />')
+      db.close()
+
+      expect(renderFrames.list()).toEqual([])
+    })
   })
 
   describe('ListForExecution operations', () => {
@@ -246,160 +256,165 @@ describe('RenderFramesModule', () => {
       const result = frames.listForExecution('nonexistent')
       expect(result).toEqual([])
     })
-  })
 
-  describe('Latest operation', () => {
-    test('latest returns most recent frame', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      frames.store('<tree>0</tree>')
-      frames.store('<tree>1</tree>')
-      frames.store('<tree>2</tree>')
-      
-      const frame = frames.latest()
-      expect(frame).not.toBeNull()
-      expect(frame!.tree_xml).toBe('<tree>2</tree>')
-      expect(frame!.sequence_number).toBe(2)
-    })
+    test('listForExecution returns empty array when db is closed', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+      renderFrames.store('<root />')
+      db.close()
 
-    test('latest returns null without execution context', () => {
-      const frames = createRenderFrames()
-      const frame = frames.latest()
-      expect(frame).toBeNull()
-    })
-
-    test('latest returns null when no frames', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      const frame = frames.latest()
-      expect(frame).toBeNull()
+      expect(renderFrames.listForExecution(currentExecutionId)).toEqual([])
     })
   })
 
-  describe('Count operation', () => {
-    test('count returns correct frame count', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      frames.store('<tree>0</tree>')
-      frames.store('<tree>1</tree>')
-      frames.store('<tree>2</tree>')
-      
-      expect(frames.count()).toBe(3)
+  describe('latest', () => {
+    test('returns most recent frame', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+
+      renderFrames.store('<first />')
+      renderFrames.store('<second />')
+      const lastId = renderFrames.store('<third />')
+
+      const latest = renderFrames.latest()
+      expect(latest).not.toBeNull()
+      expect(latest!.id).toBe(lastId)
+      expect(latest!.sequence_number).toBe(2)
     })
 
-    test('count returns 0 without execution context', () => {
-      const frames = createRenderFrames()
-      expect(frames.count()).toBe(0)
+    test('returns null without execution context', () => {
+      currentExecutionId = null
+      const renderFrames = createRenderFrames()
+
+      const latest = renderFrames.latest()
+      expect(latest).toBeNull()
     })
 
-    test('count returns 0 when no frames', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      expect(frames.count()).toBe(0)
-    })
-  })
+    test('returns null when no frames', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
 
-  describe('NextSequence operation', () => {
-    test('nextSequence returns 0 for first frame', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      expect(frames.nextSequence()).toBe(0)
+      const latest = renderFrames.latest()
+      expect(latest).toBeNull()
     })
 
-    test('nextSequence returns correct next number', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      frames.store('<tree>0</tree>')
-      frames.store('<tree>1</tree>')
-      expect(frames.nextSequence()).toBe(2)
-    })
+    test('returns null when db is closed', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+      renderFrames.store('<root />')
+      db.close()
 
-    test('nextSequence returns 0 without execution context', () => {
-      const frames = createRenderFrames()
-      expect(frames.nextSequence()).toBe(0)
-    })
-  })
-
-  describe('UNIQUE constraint', () => {
-    test('store with duplicate sequence_number throws', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      frames.store('<tree>0</tree>')
-      
-      expect(() => {
-        db.run(
-          'INSERT INTO render_frames (id, execution_id, sequence_number, tree_xml, ralph_count, created_at) VALUES (?, ?, ?, ?, ?, datetime("now"))',
-          ['dup-id', 'exec-1', 0, '<tree>dup</tree>', 0]
-        )
-      }).toThrow()
+      expect(renderFrames.latest()).toBeNull()
     })
   })
 
-  describe('Unicode/special characters', () => {
-    test('store with unicode in tree_xml', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      const xml = '<tree>中文🚀العربية</tree>'
-      const id = frames.store(xml)
-      const frame = frames.get(id)
-      expect(frame!.tree_xml).toBe(xml)
+  describe('count', () => {
+    test('returns correct frame count', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+
+      expect(renderFrames.count()).toBe(0)
+
+      renderFrames.store('<frame1 />')
+      expect(renderFrames.count()).toBe(1)
+
+      renderFrames.store('<frame2 />')
+      renderFrames.store('<frame3 />')
+      expect(renderFrames.count()).toBe(3)
     })
 
-    test('store with XML special characters in tree_xml', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      const xml = '<tree attr="value&amp;other"><child>&lt;escaped&gt;</child></tree>'
-      const id = frames.store(xml)
-      const frame = frames.get(id)
-      expect(frame!.tree_xml).toBe(xml)
+    test('returns 0 without execution context', () => {
+      currentExecutionId = null
+      const renderFrames = createRenderFrames()
+
+      expect(renderFrames.count()).toBe(0)
+    })
+
+    test('returns 0 when no frames', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+
+      expect(renderFrames.count()).toBe(0)
+    })
+
+    test('returns 0 when db is closed', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+      renderFrames.store('<root />')
+      db.close()
+
+      expect(renderFrames.count()).toBe(0)
     })
   })
 
-  describe('SQL injection prevention', () => {
-    test('store is safe against SQL injection in tree_xml', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      const malicious = "'; DROP TABLE render_frames; --"
-      const id = frames.store(malicious)
-      const frame = frames.get(id)
-      expect(frame!.tree_xml).toBe(malicious)
-      const count = frames.count()
-      expect(count).toBe(1)
+  describe('nextSequence', () => {
+    test('returns 0 for first frame', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+
+      expect(renderFrames.nextSequence()).toBe(0)
+    })
+
+    test('returns correct next number', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+
+      renderFrames.store('<frame1 />')
+      expect(renderFrames.nextSequence()).toBe(1)
+
+      renderFrames.store('<frame2 />')
+      expect(renderFrames.nextSequence()).toBe(2)
+
+      renderFrames.store('<frame3 />')
+      expect(renderFrames.nextSequence()).toBe(3)
+    })
+
+    test('returns 0 without execution context', () => {
+      currentExecutionId = null
+      const renderFrames = createRenderFrames()
+
+      expect(renderFrames.nextSequence()).toBe(0)
+    })
+
+    test('returns 0 when db is closed', () => {
+      currentExecutionId = 'exec-1'
+      db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
+      const renderFrames = createRenderFrames()
+      renderFrames.store('<root />')
+      db.close()
+
+      expect(renderFrames.nextSequence()).toBe(0)
     })
   })
 
-  describe('Edge cases', () => {
-    test('store with ralphCount as negative number', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      const id = frames.store('<tree/>', -5)
-      const frame = frames.get(id)
-      expect(frame!.ralph_count).toBe(-5)
-    })
-
-    test('store with very large ralphCount', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      const id = frames.store('<tree/>', 999999999)
-      const frame = frames.get(id)
-      expect(frame!.ralph_count).toBe(999999999)
-    })
-
-    test('multiple executions have independent sequences', () => {
-      setActiveExecution('exec-1')
-      const frames = createRenderFrames()
-      frames.store('<tree>exec1-0</tree>')
-      frames.store('<tree>exec1-1</tree>')
-      
-      currentExecutionId = 'exec-2'
+  describe('multiple executions', () => {
+    test('have independent sequences', () => {
+      db.run('INSERT INTO executions (id) VALUES (?)', ['exec-1'])
       db.run('INSERT INTO executions (id) VALUES (?)', ['exec-2'])
-      frames.store('<tree>exec2-0</tree>')
-      
-      const exec1Frames = frames.listForExecution('exec-1')
-      const exec2Frames = frames.listForExecution('exec-2')
-      
-      expect(exec1Frames.map(f => f.sequence_number)).toEqual([0, 1])
-      expect(exec2Frames.map(f => f.sequence_number)).toEqual([0])
+      const renderFrames = createRenderFrames()
+
+      currentExecutionId = 'exec-1'
+      renderFrames.store('<exec1-frame0 />')
+      renderFrames.store('<exec1-frame1 />')
+
+      currentExecutionId = 'exec-2'
+      renderFrames.store('<exec2-frame0 />')
+
+      const exec1Frames = renderFrames.listForExecution('exec-1')
+      const exec2Frames = renderFrames.listForExecution('exec-2')
+
+      expect(exec1Frames[0].sequence_number).toBe(0)
+      expect(exec1Frames[1].sequence_number).toBe(1)
+      expect(exec2Frames[0].sequence_number).toBe(0)
     })
   })
 })

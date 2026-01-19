@@ -6,6 +6,7 @@ import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { usePollTableData } from '../../hooks/usePollTableData.js'
+import { truncateTilde, formatValue } from '../../utils/format.js'
 
 const TABLES = [
   'executions',
@@ -115,7 +116,7 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
             {columns.slice(0, 5).map((col) => (
               <text
                 key={col}
-                content={truncate(col, 15)}
+                content={truncateTilde(col, 15)}
                 style={{
                   fg: '#bb9af7',
                   width: 16,
@@ -136,7 +137,7 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
               {columns.slice(0, 5).map((col) => (
                 <text
                   key={col}
-                  content={truncate(formatValue(row[col]), 15)}
+                  content={truncateTilde(formatValue(row[col]), 15)}
                   style={{
                     fg: '#c0caf5',
                     width: 16
@@ -152,15 +153,4 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
       </box>
     </box>
   )
-}
-
-function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str
-  return str.slice(0, maxLen - 1) + '~'
-}
-
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return 'NULL'
-  if (typeof value === 'object') return JSON.stringify(value).slice(0, 20)
-  return String(value)
 }

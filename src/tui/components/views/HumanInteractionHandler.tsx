@@ -6,6 +6,7 @@ import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { useHumanRequests } from '../../hooks/useHumanRequests.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
+import { truncate } from '../../utils/format.js'
 
 export interface HumanInteractionHandlerProps {
   db: SmithersDB
@@ -200,9 +201,4 @@ export function HumanInteractionHandler({ db }: HumanInteractionHandlerProps) {
       )}
     </box>
   )
-}
-
-function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str
-  return str.slice(0, maxLen - 3) + '...'
 }

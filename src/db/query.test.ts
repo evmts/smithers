@@ -36,7 +36,9 @@ describe('QueryModule', () => {
     test('query returns results for valid SQL', () => {
       db.run('INSERT INTO test_table (id, name, value) VALUES (?, ?, ?)', ['1', 'test', 42])
       const query = createQuery()
+      
       const results = query<{ id: string; name: string; value: number }>('SELECT * FROM test_table')
+      
       expect(results).toHaveLength(1)
       expect(results[0]).toEqual({ id: '1', name: 'test', value: 42 })
     })
@@ -139,6 +141,14 @@ describe('QueryModule', () => {
       const results = query<{ id: string }>('SELECT * FROM test_table WHERE name = ?', ['alice'])
       expect(results[0].id).toBe('1')
     })
+
+    test('query with boolean parameters', () => {
+      db.run('INSERT INTO test_table (id, name, value) VALUES (?, ?, ?)', ['1', 'test', 1])
+      const query = createQuery()
+      
+      const results = query('SELECT * FROM test_table WHERE value = ?', [true])
+      expect(results).toHaveLength(1)
+    })
   })
 
   describe('SQL injection prevention', () => {
@@ -153,7 +163,7 @@ describe('QueryModule', () => {
     })
   })
 
-  describe('Unicode/special characters', () => {
+  describe('Unicode and special characters', () => {
     test('query with unicode in params', () => {
       db.run('INSERT INTO test_table (id, name, value) VALUES (?, ?, ?)', ['1', '中文🚀', 42])
       const query = createQuery()

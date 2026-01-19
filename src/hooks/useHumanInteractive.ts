@@ -59,6 +59,14 @@ const DEFAULT_STATE: HookState = {
   taskId: null,
 }
 
+const mapOutcome = (status: string): InteractiveSessionResult['outcome'] => {
+  if (status === 'completed') return 'completed'
+  if (status === 'cancelled') return 'cancelled'
+  if (status === 'timeout') return 'timeout'
+  if (status === 'failed') return 'failed'
+  return 'completed'
+}
+
 export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInteractiveResult<T> {
   const { db, reactiveDb } = useSmithers()
   const stateKeyRef = useRef(`humanInteractive:${uuid()}`)
@@ -93,14 +101,6 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   const setState = useCallback((next: HookState, trigger: string) => {
     db.state.set(stateKeyRef.current, next, trigger)
   }, [db])
-
-  const mapOutcome = (status: string): InteractiveSessionResult['outcome'] => {
-    if (status === 'completed') return 'completed'
-    if (status === 'cancelled') return 'cancelled'
-    if (status === 'timeout') return 'timeout'
-    if (status === 'failed') return 'failed'
-    return 'completed'
-  }
 
   const handleCompletion = useCallback((session: HumanInteraction, current: HookState) => {
     let response = session.response

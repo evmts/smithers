@@ -1,6 +1,6 @@
 import { test, expect, describe } from 'bun:test'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from './mcp-config.js'
-import * as fs from 'fs/promises'
+import { unlink } from 'fs/promises'
 
 describe('extractMCPConfigs', () => {
   test('parses sqlite tool from children string', () => {
@@ -278,12 +278,12 @@ describe('writeMCPConfigFile', () => {
     expect(configPath.endsWith('.json')).toBe(true)
 
     // Verify file contents
-    const contents = await fs.readFile(configPath, 'utf-8')
+    const contents = await Bun.file(configPath).text()
     const parsed = JSON.parse(contents)
     expect(parsed.mcpServers.sqlite).toBeDefined()
 
     // Clean up
-    await fs.unlink(configPath)
+    await unlink(configPath)
   })
 })
 
@@ -384,10 +384,10 @@ describe('writeMCPConfigFile - edge cases', () => {
 
     const configPath = await writeMCPConfigFile(config)
 
-    const contents = await fs.readFile(configPath, 'utf-8')
+    const contents = await Bun.file(configPath).text()
     expect(JSON.parse(contents)).toEqual({})
 
-    await fs.unlink(configPath)
+    await unlink(configPath)
   })
 
   test('writes nested config with proper formatting', async () => {
@@ -401,12 +401,12 @@ describe('writeMCPConfigFile - edge cases', () => {
 
     const configPath = await writeMCPConfigFile(config)
 
-    const contents = await fs.readFile(configPath, 'utf-8')
+    const contents = await Bun.file(configPath).text()
     // Should be formatted with 2-space indentation
     expect(contents).toContain('  ')
     expect(JSON.parse(contents)).toEqual(config)
 
-    await fs.unlink(configPath)
+    await unlink(configPath)
   })
 
   test('writes config with arrays', async () => {
@@ -417,10 +417,10 @@ describe('writeMCPConfigFile - edge cases', () => {
 
     const configPath = await writeMCPConfigFile(config)
 
-    const contents = await fs.readFile(configPath, 'utf-8')
+    const contents = await Bun.file(configPath).text()
     expect(JSON.parse(contents)).toEqual(config)
 
-    await fs.unlink(configPath)
+    await unlink(configPath)
   })
 
   test('writes config with unicode values', async () => {
@@ -431,10 +431,10 @@ describe('writeMCPConfigFile - edge cases', () => {
 
     const configPath = await writeMCPConfigFile(config)
 
-    const contents = await fs.readFile(configPath, 'utf-8')
+    const contents = await Bun.file(configPath).text()
     expect(JSON.parse(contents)).toEqual(config)
 
-    await fs.unlink(configPath)
+    await unlink(configPath)
   })
 
   test('returns path in temp directory', async () => {
@@ -445,7 +445,7 @@ describe('writeMCPConfigFile - edge cases', () => {
 
     expect(configPath.startsWith(os.tmpdir())).toBe(true)
 
-    await fs.unlink(configPath)
+    await unlink(configPath)
   })
 
   test('creates files with timestamp in name', async () => {
@@ -456,7 +456,7 @@ describe('writeMCPConfigFile - edge cases', () => {
     // Filename should contain timestamp pattern
     expect(configPath).toMatch(/smithers-mcp-\d+\.json$/)
 
-    await fs.unlink(configPath)
+    await unlink(configPath)
   })
 })
 
