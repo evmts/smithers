@@ -3,7 +3,7 @@
 
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
-import { useMount, useUnmount } from '../../reconciler/hooks.js'
+import { useUnmount, useExecutionMount } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { useExecutionContext } from '../ExecutionContext.js'
 
@@ -123,7 +123,7 @@ const DEFAULT_CI_STATE: CIFailureState = {
 }
 
 export function OnCIFailure(props: OnCIFailureProps): ReactNode {
-  const { db, reactiveDb } = useSmithers()
+  const { db, reactiveDb, executionEnabled } = useSmithers()
   const execution = useExecutionContext()
 
   // Query state from db.state reactively
@@ -143,8 +143,8 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
   const intervalMs = props.pollInterval ?? 30000
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  useMount(() => {
-    if (!execution.isActive) return
+  const shouldExecute = executionEnabled && execution.isActive
+  useExecutionMount(shouldExecute, () => {
     // Initialize state if not present
     const currentState = db.state.get<CIFailureState>('hook:ciFailure')
     if (!currentState) {
@@ -233,7 +233,7 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
       // Start polling
       pollIntervalRef.current = setInterval(checkCI, intervalMs)
     })()
-  })
+  }, [db, executionEnabled, intervalMs, props.onFailure, props.provider])
 
   useUnmount(() => {
     if (pollIntervalRef.current) {

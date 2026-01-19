@@ -43,7 +43,7 @@ type AgentRow = {
  * ```
  */
 export function Claude(props: ClaudeProps): ReactNode {
-  const { db, reactiveDb, executionId, isStopRequested, middleware: providerMiddleware } = useSmithers()
+  const { db, reactiveDb, executionId, isStopRequested, middleware: providerMiddleware, executionEnabled } = useSmithers()
   const worktree = useWorktree()
   const phase = usePhaseContext()
   const phaseActive = phase?.isActive ?? true
@@ -90,14 +90,13 @@ export function Claude(props: ClaudeProps): ReactNode {
   const lastTailLogUpdateRef = useRef<number>(0)
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const shouldExecute = phaseActive && stepActive
-  const executionKey = `${ralphCount}:${shouldExecute ? 'active' : 'inactive'}`
+  const shouldExecute = executionEnabled && phaseActive && stepActive
+  const executionKey = shouldExecute ? ralphCount : null
 
-  // TODO: should be handled by an event handler not a useEffect
   useEffectOnValueChange(executionKey, () => {
     if (!shouldExecute) return
     ;(async () => {
-      taskIdRef.current = db.tasks.start('claude')
+      taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
 
       if (isStopRequested()) {
         db.tasks.complete(taskIdRef.current)
@@ -342,7 +341,7 @@ export function Claude(props: ClaudeProps): ReactNode {
       console.error('Agent execution failed:', err)
       props.onError?.(err instanceof Error ? err : new Error(String(err)))
     })
-  })
+  }, [shouldExecute])
 
   const maxLines = props.tailLogLines ?? 10
   const tailLog = tailLogRef.current
