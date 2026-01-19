@@ -7,3 +7,6 @@
 [submodule "reference/anthropic-sdk-typescript"]
 	path = reference/anthropic-sdk-typescript
 	url = https://github.com/anthropics/anthropic-sdk-typescript.git
+[submodule "reference/react"]
+	path = reference/react
+	url = https://github.com/facebook/react.git
