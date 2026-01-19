@@ -2,22 +2,53 @@
  * Shared utilities for reactive SQLite hooks
  */
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useCallback, useSyncExternalStore } from 'react'
 
 /**
- * Hook for version tracking to force re-renders
+ * Hook for a simple in-memory signal store.
+ * Allows manual invalidation without useState.
+ */
+export function useStoreSignal() {
+  const listenersRef = useRef(new Set<() => void>())
+
+  const subscribe = useCallback((listener: () => void) => {
+    listenersRef.current.add(listener)
+    return () => {
+      listenersRef.current.delete(listener)
+    }
+  }, [])
+
+  const notify = useCallback(() => {
+    for (const listener of listenersRef.current) {
+      listener()
+    }
+  }, [])
+
+  return { subscribe, notify }
+}
+
+/**
+ * Hook for version tracking to force re-renders without useState.
  */
 export function useVersionTracking() {
   const versionRef = useRef(0)
-  const [, forceUpdate] = useState(0)
+  const updateRef = useRef(0)
+  const { subscribe, notify } = useStoreSignal()
+
+  useSyncExternalStore(
+    subscribe,
+    () => updateRef.current,
+    () => updateRef.current
+  )
 
   const incrementVersion = useCallback(() => {
-    versionRef.current++
+    versionRef.current += 1
   }, [])
 
   const invalidateAndUpdate = useCallback(() => {
-    forceUpdate(v => v + 1)
-  }, [])
+    updateRef.current += 1
+    notify()
+  }, [notify])
 
   return {
     versionRef,

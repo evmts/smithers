@@ -6,7 +6,7 @@ import { useSyncExternalStore, useCallback, useMemo, useEffect } from 'react'
 import type { ReactiveDatabase } from '../database.js'
 import { extractReadTables } from '../parser.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
-import { useVersionTracking, useQueryCache } from './shared.js'
+import { useQueryCache, useStoreSignal } from './shared.js'
 import { useDatabaseOptional } from './context.js'
 
 /**
@@ -75,9 +75,8 @@ export function useQuery<T = Record<string, unknown>>(
 
   const { skip = false, deps = [] } = options
 
-  // Track version for forcing re-renders
-  const { invalidateAndUpdate } = useVersionTracking()
   const { cacheRef, invalidateCache } = useQueryCache<T>()
+  const { subscribe: subscribeSignal, notify } = useStoreSignal()
 
   // Memoize the query key
   const queryKey = useMemo(
@@ -107,13 +106,17 @@ export function useQuery<T = Record<string, unknown>>(
       }
 
       const tables = extractReadTables(sql)
-      return db.subscribe(tables, () => {
-        invalidateCache()  // Clear cache so getSnapshot() recomputes
-        invalidateAndUpdate()  // Force render if store snapshot stays referentially equal
+      const unsubscribeDb = db.subscribe(tables, () => {
+        invalidateCache() // Clear cache so getSnapshot() recomputes
         onStoreChange()
       })
+      const unsubscribeSignal = subscribeSignal(onStoreChange)
+      return () => {
+        unsubscribeDb()
+        unsubscribeSignal()
+      }
     },
-    [db, sql, skip, invalidateCache, invalidateAndUpdate]
+    [db, sql, skip, invalidateCache, subscribeSignal]
   )
 
   // Get current snapshot
@@ -140,15 +143,15 @@ export function useQuery<T = Record<string, unknown>>(
   useEffect(() => {
     if (deps.length > 0) {
       invalidateCache()
-      invalidateAndUpdate()
+      notify()
     }
   }, deps)
 
   // Refetch function
   const refetch = useCallback(() => {
     invalidateCache()
-    invalidateAndUpdate()
-  }, [invalidateCache, invalidateAndUpdate])
+    notify()
+  }, [invalidateCache, notify])
 
   return {
     data: snapshot.data,
