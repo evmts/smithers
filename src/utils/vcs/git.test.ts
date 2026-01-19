@@ -1,0 +1,136 @@
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import {
+  git,
+  getCommitHash,
+  getCommitInfo,
+  getDiffStats,
+  getGitStatus,
+  isGitRepo,
+  getCurrentBranch,
+  addGitNotes,
+  getGitNotes,
+  hasGitNotes,
+} from './git.js'
+
+describe('git utilities', () => {
+  let testDir: string
+  let originalCwd: string
+
+  beforeAll(async () => {
+    originalCwd = process.cwd()
+    testDir = path.join('/tmp', `git-test-${Date.now()}`)
+    fs.mkdirSync(testDir, { recursive: true })
+    process.chdir(testDir)
+    await Bun.$`git init`.quiet()
+    await Bun.$`git config user.email "test@test.com"`.quiet()
+    await Bun.$`git config user.name "Test User"`.quiet()
+    fs.writeFileSync(path.join(testDir, 'test.txt'), 'hello')
+    await Bun.$`git add .`.quiet()
+    await Bun.$`git commit -m "Initial commit"`.quiet()
+  })
+
+  afterAll(async () => {
+    process.chdir(originalCwd)
+    fs.rmSync(testDir, { recursive: true, force: true })
+  })
+
+  describe('git()', () => {
+    test('executes git command and returns stdout', async () => {
+      const result = await git('status', '--porcelain')
+      expect(result.stdout).toBeDefined()
+    })
+
+    test('throws on invalid command', async () => {
+      await expect(git('invalid-command-xyz')).rejects.toThrow()
+    })
+  })
+
+  describe('getCommitHash()', () => {
+    test('returns 40-char SHA for HEAD', async () => {
+      const hash = await getCommitHash('HEAD')
+      expect(hash).toMatch(/^[a-f0-9]{40}$/)
+    })
+
+    test('throws for non-existent ref', async () => {
+      await expect(getCommitHash('nonexistent-ref')).rejects.toThrow()
+    })
+  })
+
+  describe('getCommitInfo()', () => {
+    test('returns commit info with hash, author, message', async () => {
+      const info = await getCommitInfo('HEAD')
+      expect(info.hash).toMatch(/^[a-f0-9]{40}$/)
+      expect(info.author).toBe('Test User')
+      expect(info.message).toBe('Initial commit')
+    })
+  })
+
+  describe('getDiffStats()', () => {
+    test('returns diff stats with files array', async () => {
+      fs.writeFileSync(path.join(testDir, 'new.txt'), 'new content')
+      await Bun.$`git add .`.quiet()
+      await Bun.$`git commit -m "Add new file"`.quiet()
+      const stats = await getDiffStats()
+      expect(stats.files).toBeInstanceOf(Array)
+      expect(typeof stats.insertions).toBe('number')
+      expect(typeof stats.deletions).toBe('number')
+    })
+  })
+
+  describe('getGitStatus()', () => {
+    test('returns VCSStatus with staged, modified, untracked', async () => {
+      fs.writeFileSync(path.join(testDir, 'untracked.txt'), 'untracked')
+      const status = await getGitStatus()
+      expect(status.untracked).toContain('untracked.txt')
+      fs.unlinkSync(path.join(testDir, 'untracked.txt'))
+    })
+  })
+
+  describe('isGitRepo()', () => {
+    test('returns true inside git repo', async () => {
+      expect(await isGitRepo()).toBe(true)
+    })
+
+    test('returns false outside git repo', async () => {
+      const tmpDir = path.join('/tmp', `non-git-${Date.now()}`)
+      fs.mkdirSync(tmpDir, { recursive: true })
+      const prevCwd = process.cwd()
+      process.chdir(tmpDir)
+      const result = await isGitRepo()
+      process.chdir(prevCwd)
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('getCurrentBranch()', () => {
+    test('returns branch name', async () => {
+      const branch = await getCurrentBranch()
+      expect(branch).toBeDefined()
+      expect(typeof branch).toBe('string')
+    })
+  })
+
+  describe('git notes', () => {
+    test('addGitNotes and getGitNotes round-trip', async () => {
+      await addGitNotes('test note content', 'HEAD', false)
+      const notes = await getGitNotes('HEAD')
+      expect(notes).toContain('test note content')
+    })
+
+    test('hasGitNotes returns true when notes exist', async () => {
+      const has = await hasGitNotes('HEAD')
+      expect(has).toBe(true)
+    })
+
+    test('getGitNotes returns null for commit without notes', async () => {
+      fs.writeFileSync(path.join(testDir, 'another.txt'), 'content')
+      await Bun.$`git add .`.quiet()
+      await Bun.$`git commit -m "Another commit"`.quiet()
+      const notes = await getGitNotes('HEAD')
+      expect(notes).toBe(null)
+    })
+  })
+})

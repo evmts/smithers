@@ -381,6 +381,19 @@ declare module 'react' {
       pr: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
       success: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
       error: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+
+      // Additional elements from worktree-pr-finalize
+      ready: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      conflicts: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      files: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      reviews: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'pending-reviews': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'stack-status': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'is-stacked': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'base-pr': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      blocked: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      discovered: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      agents: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
     }
   }
 }

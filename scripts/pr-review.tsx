@@ -17,13 +17,13 @@ import { Claude } from '../src/components/Claude.js'
 import { Parallel } from '../src/components/Parallel.js'
 import { Phase } from '../src/components/Phase.js'
 import { Step } from '../src/components/Step.js'
-import { PhaseRegistry } from '../src/components/PhaseRegistry.js'
+import { PhaseRegistryProvider } from '../src/components/PhaseRegistry.js'
 import { createSmithersDB } from '../src/db/index.js'
 import { createSmithersRoot } from '../src/reconciler/index.js'
 
-const PR_NUMBER = process.env.PR_NUMBER ?? ''
-const PR_HEAD_SHA = process.env.PR_HEAD_SHA ?? 'HEAD'
-const PR_BASE_SHA = process.env.PR_BASE_SHA ?? 'HEAD~1'
+const PR_NUMBER = process.env['PR_NUMBER'] ?? ''
+const PR_HEAD_SHA = process.env['PR_HEAD_SHA'] ?? 'HEAD'
+const PR_BASE_SHA = process.env['PR_BASE_SHA'] ?? 'HEAD~1'
 
 interface ReviewResult {
   agent: string
@@ -36,7 +36,7 @@ const reviewResults: ReviewResult[] = []
 
 function PRReviewOrchestration() {
   return (
-    <PhaseRegistry>
+    <PhaseRegistryProvider>
       {/* Phase 1: Parallel reviews with thinking models */}
       <Phase name="parallel-reviews">
         <Parallel>
@@ -230,7 +230,7 @@ Respond with JSON:
           </Claude>
         </Step>
       </Phase>
-    </PhaseRegistry>
+    </PhaseRegistryProvider>
   )
 }
 

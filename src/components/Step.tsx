@@ -67,7 +67,7 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   useMount(() => {
     if (!props.isParallel) {
       const existing = db.state.get<number>(stateKey)
-      if (existing === null) {
+      if (existing === null || existing === undefined) {
         db.state.set(stateKey, 0, 'step_registry_init')
       }
     }

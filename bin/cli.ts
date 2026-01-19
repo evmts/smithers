@@ -28,13 +28,8 @@ program
 
 program
   .command("run [file]")
-  .description("Run a Smithers orchestration file")
-  .option(
-    "-f, --file <file>",
-    "Orchestration file to run",
-    ".smithers/main.tsx",
-  )
-  .action(run);
+  .description("Run a Smithers orchestration file (default: .smithers/main.tsx)")
+  .action((file?: string) => run({ file: file || '.smithers/main.tsx' }));
 
 program
   .command("monitor [file]")
@@ -58,15 +53,31 @@ program
   .description("Launch observability TUI dashboard")
   .option("-p, --path <path>", "Database path", ".smithers/data")
   .action(async (options: { path: string }) => {
-    await launchTUI({ dbPath: options.path });
+    try {
+      await launchTUI({ dbPath: options.path });
+    } catch (error) {
+      console.error('❌ Failed to launch TUI:', error instanceof Error ? error.message : error);
+      if (!process.stdout.isTTY) {
+        console.error('   TUI requires an interactive terminal');
+      }
+      process.exit(1);
+    }
   });
 
 // Hook trigger command - called by git hooks to notify orchestration
+const VALID_HOOK_TYPES = ['pre-commit', 'post-commit', 'pre-push', 'post-merge'] as const
+
 program
   .command("hook-trigger <type> <data>")
   .description("Trigger a hook event (used by git hooks). Data must be valid JSON.")
   .option("--path <path>", "Database path", ".smithers/data/smithers.db")
   .action(async (type: string, data: string, options: { path: string }) => {
+    if (!VALID_HOOK_TYPES.includes(type as typeof VALID_HOOK_TYPES[number])) {
+      console.error(`❌ Invalid hook type: ${type}`)
+      console.error(`   Valid types: ${VALID_HOOK_TYPES.join(', ')}`)
+      process.exit(1)
+    }
+
     let parsedData: unknown
     try {
       parsedData = JSON.parse(data)

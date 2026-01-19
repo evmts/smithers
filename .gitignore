@@ -5,3 +5,4 @@ dist/
 .env
 bun.lockb
 .worktrees/
+PROMPT.md

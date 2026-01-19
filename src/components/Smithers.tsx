@@ -280,7 +280,9 @@ export function Smithers(props: SmithersProps): ReactNode {
           })
         }
 
-        props.onError?.(errorObj)
+        if (isMounted()) {
+          props.onError?.(errorObj)
+        }
       } finally {
         // Complete task
         if (taskIdRef.current) {
@@ -289,7 +291,9 @@ export function Smithers(props: SmithersProps): ReactNode {
       }
     })().catch(err => {
       console.error('Agent execution failed:', err)
-      props.onError?.(err instanceof Error ? err : new Error(String(err)))
+      if (isMounted()) {
+        props.onError?.(err instanceof Error ? err : new Error(String(err)))
+      }
     })
   })
 
