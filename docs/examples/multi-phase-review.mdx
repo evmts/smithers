@@ -12,18 +12,18 @@ A workflow that implements features, reviews them, and iterates until approved.
 ```tsx
 #!/usr/bin/env bun
 
-import { useState } from "react";
 import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
-  Ralph,
   Phase,
   Step,
   Claude,
   Review,
   If,
+  useSmithers,
 } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/review-workflow" });
@@ -38,83 +38,91 @@ async function main() {
     executionId = await db.execution.start("Review Workflow", "review-workflow.tsx");
   }
 
-  // Load persisted state
-  const savedPhase = await db.state.get<string>("phase");
-
   function ReviewWorkflow() {
-    const [phase, setPhase] = useState(savedPhase ?? "implement");
+    const { db, reactiveDb } = useSmithers();
 
-    // Sync phase changes to database
-    const updatePhase = async (newPhase: string) => {
-      setPhase(newPhase);
-      await db.state.set("phase", newPhase, `transition_to_${newPhase}`);
+    // State in SQLite, reactive via useQueryValue
+    const phase = useQueryValue<string>(
+      reactiveDb,
+      "SELECT value FROM state WHERE key = 'phase'"
+    ) ?? "implement";
+
+    const setPhase = (newPhase: string) => {
+      db.state.set("phase", newPhase, `transition_to_${newPhase}`);
     };
 
+    return (
+      <>
+        <If condition={phase === "implement"}>
+          <Phase name="Implementation">
+            <Step name="implement">
+              <Claude
+                model="sonnet"
+                allowedTools={["Read", "Edit", "Write", "Glob", "Grep"]}
+                onFinished={() => setPhase("review")}
+              >
+                Implement the user authentication feature:
+                1. Create a login form component
+                2. Add authentication API endpoint
+                3. Implement session management
+
+                Follow existing patterns in the codebase.
+              </Claude>
+            </Step>
+          </Phase>
+        </If>
+
+        <If condition={phase === "review"}>
+          <Phase name="Code Review">
+            <Step name="review">
+              <Review
+                target={{ type: "diff", ref: "main" }}
+                model="sonnet"
+                criteria={[
+                  "No security vulnerabilities",
+                  "No hardcoded secrets or credentials",
+                  "Input validation is comprehensive",
+                  "Error handling covers edge cases",
+                  "Code follows project conventions",
+                ]}
+                onFinished={(review) => {
+                  if (review.approved) {
+                    console.log("Review passed!");
+                    setPhase("complete");
+                  } else {
+                    console.log("Review failed. Issues:");
+                    review.issues.forEach(issue => {
+                      console.log(`  [${issue.severity}] ${issue.file}: ${issue.description}`);
+                    });
+                    setPhase("implement");
+                  }
+                }}
+              />
+            </Step>
+          </Phase>
+        </If>
+
+        {/* When phase is "complete", nothing renders, loop ends */}
+      </>
+    );
+  }
+
+  function App() {
     return (
       <SmithersProvider
         db={db}
         executionId={executionId}
+        maxIterations={10}
         globalTimeout={3600000}
         onComplete={() => console.log("Workflow complete!")}
       >
-        <Ralph maxIterations={10}>
-          <If condition={phase === "implement"}>
-            <Phase name="Implementation">
-              <Step name="implement">
-                <Claude
-                  model="sonnet"
-                  allowedTools={["Read", "Edit", "Write", "Glob", "Grep"]}
-                  onFinished={() => updatePhase("review")}
-                >
-                  Implement the user authentication feature:
-                  1. Create a login form component
-                  2. Add authentication API endpoint
-                  3. Implement session management
-
-                  Follow existing patterns in the codebase.
-                </Claude>
-              </Step>
-            </Phase>
-          </If>
-
-          <If condition={phase === "review"}>
-            <Phase name="Code Review">
-              <Step name="review">
-                <Review
-                  target={{ type: "diff", ref: "main" }}
-                  model="sonnet"
-                  criteria={[
-                    "No security vulnerabilities",
-                    "No hardcoded secrets or credentials",
-                    "Input validation is comprehensive",
-                    "Error handling covers edge cases",
-                    "Code follows project conventions",
-                  ]}
-                  onFinished={(review) => {
-                    if (review.approved) {
-                      console.log("Review passed!");
-                      updatePhase("complete");
-                    } else {
-                      console.log("Review failed. Issues:");
-                      review.issues.forEach(issue => {
-                        console.log(`  [${issue.severity}] ${issue.file}: ${issue.description}`);
-                      });
-                      updatePhase("implement");
-                    }
-                  }}
-                />
-              </Step>
-            </Phase>
-          </If>
-
-          {/* When phase is "complete", nothing renders, loop ends */}
-        </Ralph>
+        <ReviewWorkflow />
       </SmithersProvider>
     );
   }
 
   const root = createSmithersRoot();
-  await root.mount(ReviewWorkflow);
+  await root.mount(App);
 
   await db.execution.complete(executionId);
   await db.close();
@@ -149,16 +157,23 @@ main();
 
 ## State Persistence
 
-The workflow state is persisted to the database:
+The workflow state is persisted to the database using SQLite:
 
 ```tsx
 // State is saved on each transition
-await db.state.set("phase", "review", "transition_to_review");
+db.state.set("phase", "review", "transition_to_review");
 
-// On restart, state is restored
-const savedPhase = await db.state.get<string>("phase");
-const [phase, setPhase] = useState(savedPhase ?? "implement");
+// State is read reactively via useQueryValue
+const phase = useQueryValue<string>(
+  reactiveDb,
+  "SELECT value FROM state WHERE key = 'phase'"
+) ?? "implement";
 ```
+
+This approach ensures:
+- State survives process restarts
+- No stale closures (common with useState)
+- Automatic re-renders when state changes
 
 ## Inspecting State
 
@@ -208,7 +223,7 @@ Add human approval before review:
   <Card title="Review Component" icon="magnifying-glass" href="/components/review">
     Review API reference
   </Card>
-  <Card title="State Management" icon="database" href="/concepts/state-management">
+  <Card title="Database Persistence" icon="database" href="/concepts/database-persistence">
     State persistence
   </Card>
 </CardGroup>
