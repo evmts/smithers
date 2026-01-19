@@ -19,6 +19,7 @@ import {
   SmithersProvider,
   Ralph,
   Phase,
+  Step,
   Claude,
   Smithers,
   If,
@@ -38,100 +39,106 @@ async function main() {
           {/* Phase 1: High-level planning */}
           <If condition={phase === "plan"}>
             <Phase name="Planning">
-              <Claude
-                model="opus"
-                allowedTools={["Read", "Glob", "Grep"]}
-                onFinished={(result) => {
-                  setPlan(result.output);
-                  setPhase("implement");
-                }}
-              >
-                Analyze the codebase and create a high-level implementation plan for:
+              <Step name="plan">
+                <Claude
+                  model="opus"
+                  allowedTools={["Read", "Glob", "Grep"]}
+                  onFinished={(result) => {
+                    setPlan(result.output);
+                    setPhase("implement");
+                  }}
+                >
+                  Analyze the codebase and create a high-level implementation plan for:
 
-                "Add a notification system with:
-                 - Database schema for notifications
-                 - REST API endpoints
-                 - Real-time WebSocket updates
-                 - React UI components"
+                  "Add a notification system with:
+                   - Database schema for notifications
+                   - REST API endpoints
+                   - Real-time WebSocket updates
+                   - React UI components"
 
-                Identify the key files, patterns, and technologies used.
-                Output a structured plan with phases.
-              </Claude>
+                  Identify the key files, patterns, and technologies used.
+                  Output a structured plan with phases.
+                </Claude>
+              </Step>
             </Phase>
           </If>
 
           {/* Phase 2: Subagent implements the feature */}
           <If condition={phase === "implement"}>
             <Phase name="Implementation">
-              <Smithers
-                plannerModel="opus"
-                executionModel="sonnet"
-                timeout={3600000}
-                keepScript
-                context={`
-                  Previous analysis:
-                  ${plan}
+              <Step name="execute-subagent">
+                <Smithers
+                  plannerModel="opus"
+                  executionModel="sonnet"
+                  timeout={3600000}
+                  keepScript
+                  context={`
+                    Previous analysis:
+                    ${plan}
 
-                  This is a TypeScript project using:
-                  - Bun runtime
-                  - React frontend
-                  - PostgreSQL database
-                  - WebSocket for real-time updates
-                `}
-                onScriptGenerated={(script, path) => {
-                  console.log(`Generated implementation script: ${path}`);
-                  db.vcs.addReport({
-                    type: "progress",
-                    severity: "info",
-                    title: "Script Generated",
-                    content: script.substring(0, 500) + "...",
-                  });
-                }}
-                onProgress={(msg) => console.log(`[Subagent] ${msg}`)}
-                onFinished={(result) => {
-                  console.log("Subagent completed!");
-                  console.log(`Duration: ${result.durationMs}ms`);
-                  console.log(`Tokens: ${result.tokensUsed.input + result.tokensUsed.output}`);
-                  setPhase("test");
-                }}
-                onError={(err) => {
-                  console.error("Subagent failed:", err);
-                  setPhase("plan");  // Go back to planning
-                }}
-              >
-                Implement the notification system based on the plan.
+                    This is a TypeScript project using:
+                    - Bun runtime
+                    - React frontend
+                    - PostgreSQL database
+                    - WebSocket for real-time updates
+                  `}
+                  onScriptGenerated={(script, path) => {
+                    console.log(`Generated implementation script: ${path}`);
+                    db.vcs.addReport({
+                      type: "progress",
+                      severity: "info",
+                      title: "Script Generated",
+                      content: script.substring(0, 500) + "...",
+                    });
+                  }}
+                  onProgress={(msg) => console.log(`[Subagent] ${msg}`)}
+                  onFinished={(result) => {
+                    console.log("Subagent completed!");
+                    console.log(`Duration: ${result.durationMs}ms`);
+                    console.log(`Tokens: ${result.tokensUsed.input + result.tokensUsed.output}`);
+                    setPhase("test");
+                  }}
+                  onError={(err) => {
+                    console.error("Subagent failed:", err);
+                    setPhase("plan");  // Go back to planning
+                  }}
+                >
+                  Implement the notification system based on the plan.
 
-                Requirements:
-                1. Create database migration for notifications table
-                2. Implement CRUD API endpoints
-                3. Add WebSocket handler for real-time updates
-                4. Create React components for notification UI
-                5. Write tests for each layer
+                  Requirements:
+                  1. Create database migration for notifications table
+                  2. Implement CRUD API endpoints
+                  3. Add WebSocket handler for real-time updates
+                  4. Create React components for notification UI
+                  5. Write tests for each layer
 
-                Follow existing patterns and conventions.
-              </Smithers>
+                  Follow existing patterns and conventions.
+                </Smithers>
+              </Step>
             </Phase>
           </If>
 
           {/* Phase 3: Verify implementation */}
           <If condition={phase === "test"}>
             <Phase name="Verification">
-              <Claude
-                model="sonnet"
-                allowedTools={["Bash", "Read"]}
-                onFinished={(result) => {
-                  if (result.output.includes("All tests pass")) {
-                    setPhase("done");
-                  } else {
-                    setPhase("implement");
-                  }
-                }}
-              >
-                Run the test suite and verify the notification system works:
-                1. Run unit tests: bun test
-                2. Check TypeScript compilation: bun run typecheck
-                3. Verify the API endpoints exist
-              </Claude>
+              <Step name="verify">
+                <Claude
+                  model="sonnet"
+                  allowedTools={["Bash", "Read"]}
+                  onFinished={(result) => {
+                    if (result.output.includes("All tests pass")) {
+                      setPhase("done");
+                    } else {
+                      setPhase("implement");
+                    }
+                  }}
+                >
+                  Run the test suite and verify the notification system works:
+                  1. Run unit tests: bun test
+                  2. Check TypeScript compilation: bun run typecheck
+                  3. Verify the API endpoints exist
+                </Claude>
+              </Step>
             </Phase>
           </If>
         </Ralph>

@@ -1,23 +1,9 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { fileURLToPath } from 'url'
+import { findPackageRoot } from './cli-utils.js'
 
 interface InitOptions {
   dir?: string
-}
-
-/**
- * Find the package root by looking for package.json
- */
-function findPackageRoot(startDir: string): string {
-  let dir = startDir
-  while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, 'package.json'))) {
-      return dir
-    }
-    dir = path.dirname(dir)
-  }
-  return startDir
 }
 
 export async function init(options: InitOptions = {}) {
@@ -29,7 +15,6 @@ export async function init(options: InitOptions = {}) {
   console.log('🔧 Initializing Smithers orchestration...')
   console.log('')
 
-  // Check if .smithers already exists
   if (fs.existsSync(smithersDir)) {
     console.log('⚠️  .smithers/ directory already exists')
     console.log('')
@@ -39,7 +24,6 @@ export async function init(options: InitOptions = {}) {
     process.exit(1)
   }
 
-  // Check write permission before creating directories
   try {
     fs.accessSync(targetDir, fs.constants.W_OK)
   } catch {
@@ -47,7 +31,6 @@ export async function init(options: InitOptions = {}) {
     process.exit(1)
   }
 
-  // Create directories
   try {
     fs.mkdirSync(smithersDir, { recursive: true })
     fs.mkdirSync(logsDir, { recursive: true })
@@ -56,13 +39,9 @@ export async function init(options: InitOptions = {}) {
     process.exit(1)
   }
 
-  // Get template path - find package root first
-  const __filename = fileURLToPath(import.meta.url)
-  const __dirname = path.dirname(__filename)
-  const packageRoot = findPackageRoot(__dirname)
+  const packageRoot = findPackageRoot(import.meta.url)
   const templatePath = path.join(packageRoot, 'templates/main.tsx.template')
 
-  // Copy template
   if (!fs.existsSync(templatePath)) {
     console.error(`❌ Template not found: ${templatePath}`)
     process.exit(1)
@@ -70,7 +49,7 @@ export async function init(options: InitOptions = {}) {
 
   const templateContent = fs.readFileSync(templatePath, 'utf-8')
   fs.writeFileSync(mainFile, templateContent)
-  fs.chmodSync(mainFile, '755') // Make executable
+  fs.chmodSync(mainFile, '755')
 
   console.log('✅ Smithers orchestration initialized!')
   console.log('')

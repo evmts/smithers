@@ -1,6 +1,5 @@
-// Stats view for database inspection
-
 import type { SmithersDB } from '../../db/index.js'
+import { printSectionHeader } from './view-utils.js'
 
 // Whitelist of allowed table names for SQL injection prevention
 const ALLOWED_TABLES = new Set([
@@ -15,10 +14,8 @@ const ALLOWED_TABLES = new Set([
 ])
 
 export async function showStats(db: SmithersDB) {
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('DATABASE STATISTICS')
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('')
+  const headerLine = '═══════════════════════════════════════════════════════════'
+  printSectionHeader(headerLine, 'DATABASE STATISTICS')
 
   for (const table of ALLOWED_TABLES) {
     const result = await db.query(

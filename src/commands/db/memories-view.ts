@@ -1,6 +1,5 @@
-// Memories view for database inspection
-
 import type { SmithersDB } from '../../db/index.js'
+import { printSectionHeader } from './view-utils.js'
 
 interface MemoryStats {
   total: number
@@ -17,10 +16,8 @@ interface Memory {
 }
 
 export async function showMemories(db: SmithersDB) {
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('MEMORIES')
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('')
+  const headerLine = '═══════════════════════════════════════════════════════════'
+  printSectionHeader(headerLine, 'MEMORIES')
 
   const stats: MemoryStats = await db.memories.stats()
 
@@ -39,7 +36,6 @@ export async function showMemories(db: SmithersDB) {
   }
   console.log('')
 
-  // Show recent memories
   const recent: Memory[] = await db.memories.list(undefined, undefined, 5)
 
   if (recent.length > 0) {

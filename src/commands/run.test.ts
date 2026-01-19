@@ -1,27 +1,7 @@
-/**
- * Tests for run command
- * 
- * Covers: File execution, spawn handling, error cases
- */
-
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
-
-
-// Helper to create temp directory
-function createTempDir(): string {
-  const tmpDir = path.join(import.meta.dir, '.test-tmp-run-' + Date.now() + '-' + Math.random().toString(36).slice(2))
-  fs.mkdirSync(tmpDir, { recursive: true })
-  return tmpDir
-}
-
-// Helper to cleanup temp directory
-function cleanupTempDir(dir: string) {
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-}
+import { cleanupTempDir, createTempDir } from './test-utils'
 
 describe('run command', () => {
   let tempDir: string
@@ -33,7 +13,7 @@ describe('run command', () => {
   let originalConsoleError: typeof console.error
 
   beforeEach(() => {
-    tempDir = createTempDir()
+    tempDir = createTempDir(import.meta.dir, '.test-tmp-run')
     exitCode = undefined
     consoleOutput = []
     consoleErrorOutput = []
@@ -66,7 +46,6 @@ describe('run command', () => {
       // Import dynamically to get fresh module
       const { run } = await import('./run')
       
-      // Create a test file
       const testFile = path.join(tempDir, 'test.tsx')
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
       
@@ -89,7 +68,6 @@ describe('run command', () => {
         await run(testFile)
       } catch {}
       
-      // Output should contain the absolute path
       expect(consoleOutput.some(line => line.includes(path.resolve(testFile)))).toBe(true)
     })
   })
@@ -144,7 +122,6 @@ describe('run command', () => {
         await run(testFile)
       } catch {}
       
-      // Check file is now executable
       const stats = fs.statSync(testFile)
       expect((stats.mode & 0o100) !== 0).toBe(true)
     })
@@ -192,7 +169,6 @@ describe('run command', () => {
         await run(testFile)
       } catch {}
       
-      // Should not fail due to spaces in path
       expect(consoleOutput.some(line => line.includes('Running Smithers'))).toBe(true)
     })
   })
@@ -205,8 +181,7 @@ describe('findPreloadPath', () => {
     // This test verifies the error message is descriptive
     const { run } = await import('./run')
     
-    const tmpDir = path.join(import.meta.dir, '.test-preload-' + Date.now())
-    fs.mkdirSync(tmpDir, { recursive: true })
+    const tmpDir = createTempDir(import.meta.dir, '.test-preload')
     const testFile = path.join(tmpDir, 'test.tsx')
     fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
     
@@ -235,7 +210,7 @@ describe('findPreloadPath', () => {
       process.exit = originalExit
       console.log = originalConsoleLog
       console.error = originalConsoleError
-      fs.rmSync(tmpDir, { recursive: true, force: true })
+      cleanupTempDir(tmpDir)
     }
   })
 })

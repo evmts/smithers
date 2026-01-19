@@ -1,12 +1,9 @@
-// Current execution view for database inspection
-
 import type { SmithersDB } from '../../db/index.js'
+import { printKeyValueEntries, printSectionHeader } from './view-utils.js'
 
 export async function showCurrent(db: SmithersDB) {
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('CURRENT EXECUTION')
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('')
+  const headerLine = '═══════════════════════════════════════════════════════════'
+  printSectionHeader(headerLine, 'CURRENT EXECUTION')
 
   const execution = await db.execution.current()
 
@@ -22,7 +19,6 @@ export async function showCurrent(db: SmithersDB) {
   console.log(`  File: ${execution.file_path}`)
   console.log('')
 
-  // Show current phase
   const phase = await db.phases.current()
   if (phase) {
     console.log(`  Current Phase: ${phase.name} (iteration ${phase.iteration})`)
@@ -30,7 +26,6 @@ export async function showCurrent(db: SmithersDB) {
     console.log('')
   }
 
-  // Show current agent
   const agent = await db.agents.current()
   if (agent) {
     console.log(`  Current Agent: ${agent.model}`)
@@ -39,7 +34,6 @@ export async function showCurrent(db: SmithersDB) {
     console.log('')
   }
 
-  // Show recent tool calls
   if (agent) {
     const tools = await db.tools.list(agent.id)
     if (tools.length > 0) {
@@ -51,11 +45,8 @@ export async function showCurrent(db: SmithersDB) {
     }
   }
 
-  // Show state
   const state = await db.state.getAll()
   console.log('  State:')
-  for (const [key, value] of Object.entries(state)) {
-    console.log(`    ${key}: ${JSON.stringify(value)}`)
-  }
+  printKeyValueEntries(state, { indent: '    ' })
   console.log('')
 }

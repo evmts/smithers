@@ -1,8 +1,6 @@
-// Database inspection command - main dispatcher
-
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { createSmithersDB } from '../../db/index.js'
+import { resolveDbPaths } from '../cli-utils.js'
 import { showState } from './state-view.js'
 import { showTransitions } from './transitions-view.js'
 import { showExecutions } from './executions-view.js'
@@ -22,8 +20,7 @@ export async function dbCommand(subcommand: string | undefined, options: DbOptio
     return
   }
 
-  const dbPath = options.path || '.smithers/data'
-  const dbFile = join(dbPath, 'smithers.db')
+  const { requestedPath, dbFile } = resolveDbPaths(options.path)
 
   if (!existsSync(dbFile)) {
     console.error(`❌ Database not found: ${dbFile}`)
@@ -33,10 +30,10 @@ export async function dbCommand(subcommand: string | undefined, options: DbOptio
   }
 
   console.log(`📊 Smithers Database Inspector`)
-  console.log(`   Database: ${dbPath}`)
+  console.log(`   Database: ${requestedPath}`)
   console.log('')
 
-  const db = await createSmithersDB({ path: dbPath })
+  const db = await createSmithersDB({ path: dbFile })
 
   try {
     switch (subcommand) {
@@ -79,7 +76,6 @@ export async function dbCommand(subcommand: string | undefined, options: DbOptio
   }
 }
 
-// Re-export all view functions for direct access
 export { showState } from './state-view.js'
 export { showTransitions } from './transitions-view.js'
 export { showExecutions } from './executions-view.js'

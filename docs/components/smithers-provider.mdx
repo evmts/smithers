@@ -7,7 +7,7 @@ description: Unified context provider for database, execution state, and task or
 
 The `<SmithersProvider>` component provides unified context to all child components, including database access, execution state, task orchestration, global timeouts, and stop conditions. It's required at the root of every Smithers workflow.
 
-SmithersProvider extends [Ralph](/components/ralph) with additional database and orchestration features. All Ralph props (`maxIterations`, `onIteration`, `onComplete`) are supported and documented below.
+SmithersProvider includes the Ralph loop internally. The `<Ralph>` component is deprecated, but its loop props (`maxIterations`, `onIteration`, `onComplete`) are supported here and documented below.
 
 ## Basic Usage
 

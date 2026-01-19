@@ -143,7 +143,9 @@ function CommandRunner() {
     <>
       <button onClick={runScript}>Start Dev Server</button>
       <pre>{output}</pre>
-      {isRunning && <spinner>Running...</spinner>}
+      <If condition={isRunning}>
+        <spinner>Running...</spinner>
+      </If>
     </>
   )
 }
@@ -535,7 +537,9 @@ function BuildPipeline() {
     <>
       <button onClick={runBuild} disabled={cmd.isRunning}>Build</button>
       <status>Stage: {stage}</status>
-      {cmd.error && <error>{cmd.error.message}</error>}
+      <If condition={!!cmd.error}>
+        <error>{cmd.error.message}</error>
+      </If>
     </>
   )
 }
@@ -561,7 +565,9 @@ function CommandTerminal() {
     <>
       <terminal>
         {history.map((line, i) => <div key={i}>{line}</div>)}
-        {cmd.isRunning && <spinner>Running...</spinner>}
+        <If condition={cmd.isRunning}>
+          <spinner>Running...</spinner>
+        </If>
       </terminal>
       <input onSubmit={runCommand} />
     </>

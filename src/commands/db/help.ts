@@ -1,5 +1,3 @@
-// Help display for database inspection command
-
 export function showHelp() {
   console.log('Usage: smithers db <subcommand> [options]')
   console.log('')

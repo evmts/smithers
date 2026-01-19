@@ -1,13 +1,10 @@
-// Transitions view for database inspection
-
 import type { SmithersDB } from '../../db/index.js'
 import type { Transition } from '../../db/types.js'
+import { printSectionHeader } from './view-utils.js'
 
 export async function showTransitions(db: SmithersDB) {
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('STATE TRANSITIONS (last 20)')
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('')
+  const headerLine = '═══════════════════════════════════════════════════════════'
+  printSectionHeader(headerLine, 'STATE TRANSITIONS (last 20)')
 
   const transitions: Transition[] = await db.state.history(undefined, 20)
 

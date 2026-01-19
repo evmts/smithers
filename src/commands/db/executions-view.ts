@@ -1,12 +1,9 @@
-// Executions view for database inspection
-
 import type { SmithersDB } from '../../db/index.js'
+import { printSectionHeader } from './view-utils.js'
 
 export async function showExecutions(db: SmithersDB) {
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('RECENT EXECUTIONS (last 10)')
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('')
+  const headerLine = '═══════════════════════════════════════════════════════════'
+  printSectionHeader(headerLine, 'RECENT EXECUTIONS (last 10)')
 
   const executions = await db.execution.list(10)
 

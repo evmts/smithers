@@ -1,26 +1,7 @@
-/**
- * Tests for monitor command
- * 
- * Covers: Output parsing, stream formatting, log writing, summarization
- */
-
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
-
-// Helper to create temp directory
-function createTempDir(): string {
-  const tmpDir = path.join(import.meta.dir, '.test-tmp-monitor-' + Date.now() + '-' + Math.random().toString(36).slice(2))
-  fs.mkdirSync(tmpDir, { recursive: true })
-  return tmpDir
-}
-
-// Helper to cleanup temp directory
-function cleanupTempDir(dir: string) {
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-}
+import { cleanupTempDir, createTempDir } from './test-utils'
 
 describe('monitor command', () => {
   let tempDir: string
@@ -32,7 +13,7 @@ describe('monitor command', () => {
   let originalConsoleError: typeof console.error
 
   beforeEach(() => {
-    tempDir = createTempDir()
+    tempDir = createTempDir(import.meta.dir, '.test-tmp-monitor')
     _exitCode = undefined
     consoleOutput = []
     consoleErrorOutput = []
@@ -71,7 +52,6 @@ describe('monitor command', () => {
         await monitor(testFile)
       } catch {}
       
-      // The file path should be resolved
       expect(true).toBe(true) // Just verify it doesn't throw on valid file
     })
 
@@ -85,7 +65,6 @@ describe('monitor command', () => {
         await monitor(testFile)
       } catch {}
       
-      // Should resolve to absolute path internally
       expect(true).toBe(true)
     })
   })
@@ -152,7 +131,6 @@ describe('monitor command', () => {
       fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
       
       try {
-        // Default options should have summary enabled
         await monitor(testFile, {})
       } catch {}
       
@@ -186,7 +164,6 @@ describe('monitor command', () => {
         await monitor(testFile)
       } catch {}
       
-      // Should not throw due to spaces
       expect(true).toBe(true)
     })
   })
@@ -196,8 +173,7 @@ describe('findPreloadPath (via monitor)', () => {
   test('throws descriptive error when preload.ts not found', async () => {
     const { monitor } = await import('./monitor')
     
-    const tmpDir = path.join(import.meta.dir, '.test-preload-monitor-' + Date.now())
-    fs.mkdirSync(tmpDir, { recursive: true })
+    const tmpDir = createTempDir(import.meta.dir, '.test-preload-monitor')
     const testFile = path.join(tmpDir, 'test.tsx')
     fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
     
@@ -224,7 +200,7 @@ describe('findPreloadPath (via monitor)', () => {
       process.exit = originalExit
       console.log = originalConsoleLog
       console.error = originalConsoleError
-      fs.rmSync(tmpDir, { recursive: true, force: true })
+      cleanupTempDir(tmpDir)
     }
   })
 })

@@ -6,6 +6,7 @@ import { run } from "../src/commands/run.ts";
 import { monitor } from "../src/commands/monitor.ts";
 import { dbCommand } from "../src/commands/db.ts";
 import { launchTUI } from "../src/tui/index.tsx";
+import { DEFAULT_DB_DIR, DEFAULT_MAIN_FILE, resolveDbPaths } from "../src/commands/cli-utils.ts";
 
 const program = new Command();
 
@@ -29,7 +30,7 @@ program
 program
   .command("run [file]")
   .description("Run a Smithers orchestration file (default: .smithers/main.tsx)")
-  .action((file?: string) => run({ file: file || '.smithers/main.tsx' }));
+  .action((file?: string) => run(file));
 
 program
   .command("monitor [file]")
@@ -37,7 +38,7 @@ program
   .option(
     "-f, --file <file>",
     "Orchestration file to monitor",
-    ".smithers/main.tsx",
+    DEFAULT_MAIN_FILE,
   )
   .option("--no-summary", "Disable Haiku summarization")
   .action(monitor);
@@ -45,7 +46,7 @@ program
 program
   .command("db [subcommand]")
   .description("Inspect and manage the SQLite database")
-  .option("--path <path>", "Database path", ".smithers/data/smithers.db")
+  .option("--path <path>", "Database path", DEFAULT_DB_DIR)
   .action(dbCommand);
 
 program
@@ -64,13 +65,12 @@ program
     }
   });
 
-// Hook trigger command - called by git hooks to notify orchestration
 const VALID_HOOK_TYPES = ['pre-commit', 'post-commit', 'pre-push', 'post-merge'] as const
 
 program
   .command("hook-trigger <type> <data>")
   .description("Trigger a hook event (used by git hooks). Data must be valid JSON.")
-  .option("--path <path>", "Database path", ".smithers/data/smithers.db")
+  .option("--path <path>", "Database path", DEFAULT_DB_DIR)
   .action(async (type: string, data: string, options: { path: string }) => {
     if (!VALID_HOOK_TYPES.includes(type as typeof VALID_HOOK_TYPES[number])) {
       console.error(`❌ Invalid hook type: ${type}`)
@@ -92,7 +92,8 @@ program
         "../src/db/index.ts"
       );
 
-      const db = createSmithersDB({ path: options.path });
+      const { dbFile } = resolveDbPaths(options.path);
+      const db = createSmithersDB({ path: dbFile });
 
       db.state.set(
         "last_hook_trigger",

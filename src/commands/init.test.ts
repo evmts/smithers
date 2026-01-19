@@ -1,27 +1,8 @@
-/**
- * Tests for init command
- * 
- * Covers: Directory creation, template copying, error cases
- */
-
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
 import { init } from './init'
-
-// Helper to create temp directory
-function createTempDir(): string {
-  const tmpDir = path.join(import.meta.dir, '.test-tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2))
-  fs.mkdirSync(tmpDir, { recursive: true })
-  return tmpDir
-}
-
-// Helper to cleanup temp directory
-function cleanupTempDir(dir: string) {
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-}
+import { cleanupTempDir, createTempDir } from './test-utils'
 
 describe('init command', () => {
   let tempDir: string
@@ -34,20 +15,18 @@ describe('init command', () => {
   let originalConsoleError: typeof console.error
 
   beforeEach(() => {
-    tempDir = createTempDir()
+    tempDir = createTempDir(import.meta.dir, '.test-tmp')
     _originalCwd = process.cwd()
     _exitCode = undefined
     consoleOutput = []
     consoleErrorOutput = []
     
-    // Mock process.exit
     originalExit = process.exit
     process.exit = ((code?: number) => {
       _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
     
-    // Capture console output
     originalConsoleLog = console.log
     originalConsoleError = console.error
     console.log = (...args: unknown[]) => {

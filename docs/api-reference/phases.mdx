@@ -163,15 +163,15 @@ function StateDrivenWorkflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={10}>
-        {phase === "implement" && (
+        <If condition={phase === "implement"}>
           <Phase name="Implementation">
             <Claude onFinished={() => db.state.set("currentPhase", "review")}>
               Implement the feature.
             </Claude>
           </Phase>
-        )}
+        </If>
 
-        {phase === "review" && (
+        <If condition={phase === "review"}>
           <Phase name="Review">
             <Review
               onFinished={(r) => {
@@ -183,7 +183,7 @@ function StateDrivenWorkflow() {
               }}
             />
           </Phase>
-        )}
+        </If>
       </Ralph>
     </SmithersProvider>
   );

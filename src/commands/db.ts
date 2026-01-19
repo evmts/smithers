@@ -1,6 +1,3 @@
-// Database inspection command
-// Re-exports from db/ folder for backward compatibility
-
 export {
   dbCommand,
   showState,

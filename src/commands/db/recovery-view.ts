@@ -1,12 +1,9 @@
-// Recovery view for database inspection
-
 import type { SmithersDB } from '../../db/index.js'
+import { printKeyValueEntries, printSectionHeader } from './view-utils.js'
 
 export async function showRecovery(db: SmithersDB) {
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('CRASH RECOVERY')
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('')
+  const headerLine = '═══════════════════════════════════════════════════════════'
+  printSectionHeader(headerLine, 'CRASH RECOVERY')
 
   const incomplete = await db.execution.findIncomplete()
 
@@ -25,15 +22,11 @@ export async function showRecovery(db: SmithersDB) {
   console.log(`  Started: ${incomplete.started_at ? incomplete.started_at.toLocaleString() : 'Unknown'}`)
   console.log('')
 
-  // Get last known state
   const state = await db.state.getAll()
   console.log('  Last Known State:')
-  for (const [key, value] of Object.entries(state)) {
-    console.log(`    ${key}: ${JSON.stringify(value)}`)
-  }
+  printKeyValueEntries(state, { indent: '    ' })
   console.log('')
 
-  // Get transition history
   const transitions = await db.state.history(undefined, 5)
   console.log(`  Last ${transitions.length} Transitions:`)
   for (const t of transitions) {

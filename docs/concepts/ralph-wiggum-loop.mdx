@@ -47,7 +47,7 @@ Smithers uses a reactive render loop powered by React state:
 You can control the Ralph loop using the `stopped` prop. This is the idiomatic way to stop iteration:
 
 ```tsx
-import { SmithersProvider, useSmithers } from "smithers-orchestrator";
+import { SmithersProvider, useSmithers, Claude, If } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function IterativeWorkflow() {
@@ -105,7 +105,7 @@ Ralph also stops implicitly when nothing renders for an iteration. If no compone
 The power of the Ralph Loop comes from React reactivity:
 
 ```tsx
-import { SmithersProvider, useSmithers } from "smithers-orchestrator";
+import { SmithersProvider, useSmithers, Claude } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function PhaseWorkflow() {
@@ -247,7 +247,9 @@ The orchestration context tracks:
       "SELECT value FROM state WHERE key = 'phase'") ?? "start";
     const setPhase = (p: string) =>
       db.db.run("INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)", [p]);
-    {phase === "start" && <Claude onFinished={() => setPhase("next")} />}
+    <If condition={phase === "start"}>
+      <Claude onFinished={() => setPhase("next")} />
+    </If>
 
     // Avoid - imperative
     let phase = "start";

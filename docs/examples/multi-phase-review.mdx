@@ -19,6 +19,7 @@ import {
   SmithersProvider,
   Ralph,
   Phase,
+  Step,
   Claude,
   Review,
   If,
@@ -59,46 +60,50 @@ async function main() {
         <Ralph maxIterations={10}>
           <If condition={phase === "implement"}>
             <Phase name="Implementation">
-              <Claude
-                model="sonnet"
-                allowedTools={["Read", "Edit", "Write", "Glob", "Grep"]}
-                onFinished={() => updatePhase("review")}
-              >
-                Implement the user authentication feature:
-                1. Create a login form component
-                2. Add authentication API endpoint
-                3. Implement session management
+              <Step name="implement">
+                <Claude
+                  model="sonnet"
+                  allowedTools={["Read", "Edit", "Write", "Glob", "Grep"]}
+                  onFinished={() => updatePhase("review")}
+                >
+                  Implement the user authentication feature:
+                  1. Create a login form component
+                  2. Add authentication API endpoint
+                  3. Implement session management
 
-                Follow existing patterns in the codebase.
-              </Claude>
+                  Follow existing patterns in the codebase.
+                </Claude>
+              </Step>
             </Phase>
           </If>
 
           <If condition={phase === "review"}>
             <Phase name="Code Review">
-              <Review
-                target={{ type: "diff", ref: "main" }}
-                model="sonnet"
-                criteria={[
-                  "No security vulnerabilities",
-                  "No hardcoded secrets or credentials",
-                  "Input validation is comprehensive",
-                  "Error handling covers edge cases",
-                  "Code follows project conventions",
-                ]}
-                onFinished={(review) => {
-                  if (review.approved) {
-                    console.log("Review passed!");
-                    updatePhase("complete");
-                  } else {
-                    console.log("Review failed. Issues:");
-                    review.issues.forEach(issue => {
-                      console.log(`  [${issue.severity}] ${issue.file}: ${issue.description}`);
-                    });
-                    updatePhase("implement");
-                  }
-                }}
-              />
+              <Step name="review">
+                <Review
+                  target={{ type: "diff", ref: "main" }}
+                  model="sonnet"
+                  criteria={[
+                    "No security vulnerabilities",
+                    "No hardcoded secrets or credentials",
+                    "Input validation is comprehensive",
+                    "Error handling covers edge cases",
+                    "Code follows project conventions",
+                  ]}
+                  onFinished={(review) => {
+                    if (review.approved) {
+                      console.log("Review passed!");
+                      updatePhase("complete");
+                    } else {
+                      console.log("Review failed. Issues:");
+                      review.issues.forEach(issue => {
+                        console.log(`  [${issue.severity}] ${issue.file}: ${issue.description}`);
+                      });
+                      updatePhase("implement");
+                    }
+                  }}
+                />
+              </Step>
             </Phase>
           </If>
 
