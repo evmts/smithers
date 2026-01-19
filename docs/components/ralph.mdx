@@ -10,7 +10,7 @@ The `<Ralph>` component is a loop controller in Smithers workflows. It manages i
 ## Basic Usage
 
 ```tsx
-import { Ralph } from "smithers-orchestrator/components";
+import { Ralph } from "smithers-orchestrator";
 
 <Ralph maxIterations={10}>
   <Claude onFinished={() => { /* state change triggers re-render */ }}>
@@ -24,7 +24,7 @@ import { Ralph } from "smithers-orchestrator/components";
 You can access the current iteration count via context:
 
 ```tsx
-import { useSmithers } from 'smithers-orchestrator/components';
+import { useSmithers } from "smithers-orchestrator";
 
 function MyComponent() {
   const { ralphCount } = useSmithers();

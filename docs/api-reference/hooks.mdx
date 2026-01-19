@@ -12,7 +12,7 @@ Smithers provides React hooks for common workflow patterns.
 Hook to pause execution and request human input.
 
 ```tsx
-import { useHuman } from "smithers-orchestrator/hooks";
+import { useHuman } from "smithers-orchestrator";
 
 function DeployWorkflow() {
   const { ask, status, requestId } = useHuman();
@@ -115,7 +115,7 @@ interface UseHumanInteractiveResult<T = InteractiveSessionResult> {
 Hook to get the current Ralph iteration count reactively.
 
 ```tsx
-import { useRalphCount } from "smithers-orchestrator/hooks";
+import { useRalphCount } from "smithers-orchestrator";
 
 function IterationDisplay() {
   const count = useRalphCount();
@@ -179,7 +179,7 @@ function IterationAwareComponent() {
 Hook to access the Smithers context (database, execution ID, etc.).
 
 ```tsx
-import { useSmithers } from "smithers-orchestrator/components";
+import { useSmithers } from "smithers-orchestrator";
 
 function MyComponent() {
   const { db, executionId, isStopRequested } = useSmithers();

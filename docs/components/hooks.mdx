@@ -12,7 +12,7 @@ Hook components listen for external events and trigger their children when those
 Monitors CI status and triggers children when a failure is detected.
 
 ```tsx
-import { OnCIFailure } from "smithers-orchestrator/components/Hooks";
+import { OnCIFailure } from "smithers-orchestrator";
 
 <OnCIFailure
   provider="github-actions"
@@ -72,7 +72,7 @@ interface CIFailure {
 Triggers children when a git commit is made.
 
 ```tsx
-import { PostCommit } from "smithers-orchestrator/components/Hooks";
+import { PostCommit } from "smithers-orchestrator";
 
 <PostCommit runOn="smithers-only">
   <Claude>

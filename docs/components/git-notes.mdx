@@ -1,0 +1,110 @@
+---
+title: Git Notes
+description: Add metadata to commits via git notes
+---
+
+# Git Notes Component
+
+The `<Notes>` component adds or appends structured metadata to git commits via git notes.
+
+## Basic Usage
+
+```tsx
+import { Notes } from "smithers-orchestrator";
+
+<Notes
+  data={{
+    reviewedBy: "smithers",
+    confidence: 0.95,
+    issues: []
+  }}
+  onFinished={(result) => console.log("Notes added:", result)}
+/>
+```
+
+## Props
+
+<ParamField path="commitRef" type="string" default="HEAD">
+  Git commit reference to attach notes to.
+
+  ```tsx
+  <Notes commitRef="abc123" data={{ reviewed: true }} />
+  ```
+</ParamField>
+
+<ParamField path="data" type="Record<string, any>" required>
+  Structured data to store in notes. Automatically includes smithers metadata.
+
+  ```tsx
+  <Notes data={{ 
+    phase: "review",
+    score: 85,
+    suggestions: ["Add tests", "Update docs"]
+  }} />
+  ```
+</ParamField>
+
+<ParamField path="append" type="boolean" default={false}>
+  Append to existing notes instead of replacing.
+
+  ```tsx
+  <Notes append data={{ additionalReview: true }} />
+  ```
+</ParamField>
+
+<ParamField path="onFinished" type="(result: NotesResult) => void">
+  Callback when notes are successfully added.
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Callback on error.
+</ParamField>
+
+## NotesResult
+
+```typescript
+interface NotesResult {
+  commitRef: string;
+  data: Record<string, any>;
+  previousNotes: string | null;
+}
+```
+
+## Automatic Metadata
+
+Notes automatically include smithers tracking:
+
+```json
+{
+  "smithers": true,
+  "executionId": "exec-123",
+  "timestamp": 1705596000000,
+  "reviewedBy": "smithers",
+  "confidence": 0.95
+}
+```
+
+## Example: Post-Review Notes
+
+```tsx
+<Git.Commit message="feat: add auth">
+  <Notes
+    data={{
+      reviewPassed: true,
+      lintClean: true,
+      testsRun: 42
+    }}
+  />
+</Git.Commit>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Git Commit" icon="code-commit" href="/components/commit">
+    Commit changes with VCS tracking
+  </Card>
+  <Card title="Hooks" icon="webhook" href="/components/hooks">
+    Git hook automation
+  </Card>
+</CardGroup>

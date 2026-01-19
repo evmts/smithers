@@ -1,0 +1,100 @@
+---
+title: PhaseRegistry
+description: Automatic sequential phase state management via SQLite
+---
+
+# PhaseRegistry Component
+
+The `<PhaseRegistryProvider>` manages sequential phase execution automatically via SQLite state, eliminating manual phase tracking.
+
+## Basic Usage
+
+```tsx
+import { PhaseRegistryProvider, Phase, usePhaseRegistry } from "smithers-orchestrator";
+
+function Workflow() {
+  return (
+    <PhaseRegistryProvider>
+      <Phase name="Research">
+        <Claude>Research the codebase.</Claude>
+      </Phase>
+      <Phase name="Implement">
+        <Claude>Implement the feature.</Claude>
+      </Phase>
+      <Phase name="Test">
+        <Claude>Run tests.</Claude>
+      </Phase>
+    </PhaseRegistryProvider>
+  );
+}
+```
+
+## Hooks
+
+### usePhaseRegistry
+
+Access the phase registry context:
+
+```tsx
+function PhaseController() {
+  const { 
+    currentPhaseIndex,
+    advancePhase,
+    isPhaseActive,
+    isPhaseCompleted,
+    totalPhases 
+  } = usePhaseRegistry();
+
+  return (
+    <Claude onFinished={() => advancePhase()}>
+      Complete current phase work.
+    </Claude>
+  );
+}
+```
+
+### usePhaseIndex
+
+Get a phase's index during registration:
+
+```tsx
+function MyPhase({ name, children }) {
+  const index = usePhaseIndex(name);
+  const { isPhaseActive } = usePhaseRegistry();
+
+  if (!isPhaseActive(index)) return null;
+  return <>{children}</>;
+}
+```
+
+## Context Value
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `registerPhase` | `(name: string) => number` | Register phase, returns index |
+| `currentPhaseIndex` | `number` | Active phase index (from SQLite) |
+| `advancePhase` | `() => void` | Move to next phase |
+| `isPhaseActive` | `(index: number) => boolean` | Check if phase is active |
+| `isPhaseCompleted` | `(index: number) => boolean` | Check if phase completed |
+| `totalPhases` | `number` | Total registered phases |
+
+## Resume Support
+
+Phase state persists in SQLite, enabling workflow resume:
+
+```tsx
+// State survives restarts - workflow resumes at correct phase
+const existing = db.state.get<number>('currentPhaseIndex');
+// Returns last active phase index
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Phase" icon="layer-group" href="/components/phase">
+    Group related steps
+  </Card>
+  <Card title="Step" icon="shoe-prints" href="/components/step">
+    Individual steps within phases
+  </Card>
+</CardGroup>

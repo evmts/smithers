@@ -1,0 +1,90 @@
+---
+title: WorktreeProvider
+description: Context provider for git worktree information
+---
+
+# WorktreeProvider Component
+
+The `<WorktreeProvider>` provides worktree context to child components, enabling access to worktree-specific information like working directory and branch.
+
+## Basic Usage
+
+```tsx
+import { WorktreeProvider, useWorktree } from "smithers-orchestrator";
+
+<WorktreeProvider value={{ cwd: "/path/to/worktree", branch: "feature-x", isWorktree: true }}>
+  <MyWorkflow />
+</WorktreeProvider>
+```
+
+## useWorktree Hook
+
+Access worktree context from any child component:
+
+```tsx
+function MyComponent() {
+  const worktree = useWorktree();
+
+  if (!worktree) {
+    return <text>Not in a worktree</text>;
+  }
+
+  return (
+    <Claude>
+      Working in {worktree.cwd} on branch {worktree.branch}
+    </Claude>
+  );
+}
+```
+
+## Context Value
+
+```typescript
+interface WorktreeContextValue {
+  cwd: string;      // Working directory path
+  branch: string;   // Git branch name
+  isWorktree: true; // Always true within provider
+}
+```
+
+## With Worktree Component
+
+Usually used internally by the `<Worktree>` component:
+
+```tsx
+import { Worktree, useWorktree } from "smithers-orchestrator";
+
+function ParallelFeatures() {
+  return (
+    <Parallel>
+      <Worktree branch="feature-a">
+        <FeatureWorkflow />
+      </Worktree>
+      <Worktree branch="feature-b">
+        <FeatureWorkflow />
+      </Worktree>
+    </Parallel>
+  );
+}
+
+function FeatureWorkflow() {
+  const { cwd, branch } = useWorktree()!;
+  
+  return (
+    <Claude cwd={cwd}>
+      Implement feature on {branch}
+    </Claude>
+  );
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Worktree" icon="code-branch" href="/components/worktree">
+    Git worktree isolation
+  </Card>
+  <Card title="Parallel" icon="arrows-split-up-and-left" href="/components/parallel">
+    Concurrent execution
+  </Card>
+</CardGroup>
