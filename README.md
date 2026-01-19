@@ -90,8 +90,7 @@ bun add smithers
 ### Optional
 
 - **[jj (Jujutsu)](https://github.com/martinvonz/jj)** - Alternative VCS with better snapshot support
-- **Gemini CLI** - For Gemini model support (coming soon)
-- **Codex CLI** - For OpenAI model support (coming soon)
+- **[Codex CLI](https://github.com/openai/codex)** - Used for post-commit code reviews
 
 ---
 
