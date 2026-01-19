@@ -24,21 +24,23 @@ console.log('test script')
 `
       const scriptPath = path.join(os.tmpdir(), `test-smithers-${Date.now()}.tsx`)
 
-      // Write script
-      await fs.writeFile(scriptPath, testScript)
-      await fs.chmod(scriptPath, '755')
+      try {
+        // Write script
+        await fs.writeFile(scriptPath, testScript)
+        await fs.chmod(scriptPath, '755')
 
-      // Verify file exists and is executable
-      const stats = await fs.stat(scriptPath)
-      expect(stats.isFile()).toBe(true)
-      expect(stats.mode & 0o111).toBeGreaterThan(0) // Has execute bits
+        // Verify file exists and is executable
+        const stats = await fs.stat(scriptPath)
+        expect(stats.isFile()).toBe(true)
+        expect(stats.mode & 0o111).toBeGreaterThan(0) // Has execute bits
 
-      // Read back content
-      const content = await fs.readFile(scriptPath, 'utf-8')
-      expect(content).toBe(testScript)
-
-      // Clean up
-      await fs.unlink(scriptPath)
+        // Read back content
+        const content = await fs.readFile(scriptPath, 'utf-8')
+        expect(content).toBe(testScript)
+      } finally {
+        // Clean up even if assertions fail
+        await fs.unlink(scriptPath).catch(() => {})
+      }
     })
 
     test.skip('script execution with bun works', async () => {
@@ -47,23 +49,25 @@ console.log('Hello from test script')
 `
       const scriptPath = path.join(os.tmpdir(), `test-exec-${Date.now()}.ts`)
 
-      await fs.writeFile(scriptPath, testScript)
-      await fs.chmod(scriptPath, '755')
+      try {
+        await fs.writeFile(scriptPath, testScript)
+        await fs.chmod(scriptPath, '755')
 
-      // Execute with bun
-      const proc = Bun.spawn(['bun', scriptPath], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
+        // Execute with bun
+        const proc = Bun.spawn(['bun', scriptPath], {
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
 
-      const output = await new Response(proc.stdout).text()
-      const exitCode = await proc.exited
+        const output = await new Response(proc.stdout).text()
+        const exitCode = await proc.exited
 
-      expect(exitCode).toBe(0)
-      expect(output.trim()).toBe('Hello from test script')
-
-      // Clean up
-      await fs.unlink(scriptPath)
+        expect(exitCode).toBe(0)
+        expect(output.trim()).toBe('Hello from test script')
+      } finally {
+        // Clean up even if assertions fail
+        await fs.unlink(scriptPath).catch(() => {})
+      }
     })
   })
 

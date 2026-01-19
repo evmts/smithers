@@ -57,9 +57,10 @@ describe('Snapshot component rendering', () => {
   })
 
   afterEach(async () => {
+    // Wait for async operations to complete before restoring spies
+    await new Promise((r) => setTimeout(r, 10))
     jjSnapshotSpy.mockRestore()
     getJJStatusSpy.mockRestore()
-    await new Promise((r) => setTimeout(r, 10))
     db.close()
   })
 

@@ -73,10 +73,11 @@ describe('Commit component rendering', () => {
   })
 
   afterEach(async () => {
+    // Wait for async operations to complete before restoring spies
+    await new Promise((r) => setTimeout(r, 10))
     jjCommitSpy.mockRestore()
     getJJDiffStatsSpy.mockRestore()
     addGitNotesSpy.mockRestore()
-    await new Promise((r) => setTimeout(r, 10))
     db.close()
   })
 
