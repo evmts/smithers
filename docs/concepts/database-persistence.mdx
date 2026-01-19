@@ -18,6 +18,7 @@ Smithers uses **SQLite** (via reactive-sqlite) to persist all workflow state. Th
 import { createSmithersDB } from "smithers-orchestrator/db";
 
 // Create a database at a specific path
+// .smithers/my-workflow is the default location we recommend for workflow databases
 const db = await createSmithersDB({
   path: ".smithers/my-workflow"
 });

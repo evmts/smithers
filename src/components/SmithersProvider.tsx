@@ -10,6 +10,7 @@ import { useQueryValue } from '../reactive-sqlite/index.js'
 import { PhaseRegistryProvider } from './PhaseRegistry.js'
 import { useMount, useUnmount } from '../reconciler/hooks.js'
 import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
+import { jjSnapshot } from '../utils/vcs.js'
 
 // ============================================================================
 // GLOBAL STORE (for universal renderer compatibility)
@@ -63,6 +64,30 @@ export function signalOrchestrationError(err: Error): void {
 // ============================================================================
 // TYPES
 // ============================================================================
+
+export interface GlobalStopCondition {
+  type: 'total_tokens' | 'total_agents' | 'total_time' | 'report_severity' | 'ci_failure' | 'custom'
+  value?: number | string
+  fn?: (context: OrchestrationContext) => boolean | Promise<boolean>
+  message?: string
+}
+
+export interface OrchestrationContext {
+  executionId: string
+  totalTokens: number
+  totalAgents: number
+  totalToolCalls: number
+  elapsedTimeMs: number
+}
+
+export interface OrchestrationResult {
+  executionId: string
+  status: 'completed' | 'stopped' | 'failed' | 'cancelled'
+  totalAgents: number
+  totalToolCalls: number
+  totalTokens: number
+  durationMs: number
+}
 
 export interface SmithersConfig {
   /**
@@ -233,6 +258,36 @@ export interface SmithersProviderProps {
   onComplete?: () => void
 
   /**
+   * Global timeout in milliseconds
+   */
+  globalTimeout?: number
+
+  /**
+   * Global stop conditions
+   */
+  stopConditions?: GlobalStopCondition[]
+
+  /**
+   * Create JJ snapshot before starting
+   */
+  snapshotBeforeStart?: boolean
+
+  /**
+   * Callback when an error occurs
+   */
+  onError?: (error: Error) => void
+
+  /**
+   * Callback when stop is requested
+   */
+  onStopRequested?: (reason: string) => void
+
+  /**
+   * Cleanup on complete (close DB, etc.)
+   */
+  cleanupOnComplete?: boolean
+
+  /**
    * Children components
    */
   children: ReactNode
@@ -241,24 +296,37 @@ export interface SmithersProviderProps {
 /**
  * SmithersProvider - Unified root context provider
  *
- * Consolidates SmithersProvider, RalphContext, and DatabaseProvider into one.
- * Task tracking is now fully database-backed via the tasks table.
+ * Consolidates SmithersProvider, RalphContext, DatabaseProvider, and Orchestration into one.
+ * Task tracking is fully database-backed via the tasks table.
+ * Provides global timeouts, stop conditions, VCS snapshots, and cleanup.
  *
  * Usage:
  * ```tsx
  * const db = await createSmithersDB({ path: '.smithers/data' })
  * const executionId = await db.execution.start('My Orchestration', './main.tsx')
  *
- * <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
- *   <Orchestration>
- *     <Claude>Do something</Claude>
- *   </Orchestration>
+ * <SmithersProvider
+ *   db={db}
+ *   executionId={executionId}
+ *   maxIterations={10}
+ *   globalTimeout={3600000}
+ *   stopConditions={[
+ *     { type: 'total_tokens', value: 500000, message: 'Token budget exceeded' }
+ *   ]}
+ *   snapshotBeforeStart
+ * >
+ *   <Claude>Do something</Claude>
  * </SmithersProvider>
  * ```
  */
 export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   const maxIterations = props.maxIterations ?? props.config?.maxIterations ?? 100
   const reactiveDb = props.db.db
+
+  // Orchestration refs for timers and start time
+  const startTimeRef = useRef(Date.now())
+  const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const checkIntervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Read stop/rebase signals from database reactively
   const { data: stopRequested } = useQueryValue<boolean>(
@@ -308,6 +376,116 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
         "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
       )
     }
+  })
+
+  // Orchestration setup (timeout, snapshots, stop conditions)
+  useMount(() => {
+    const startTime = startTimeRef.current
+
+    ;(async () => {
+      try {
+        // Create snapshot if requested
+        if (props.snapshotBeforeStart) {
+          try {
+            const { changeId, description } = await jjSnapshot('Before orchestration start')
+            await props.db.vcs.logSnapshot({
+              change_id: changeId,
+              description,
+            })
+            console.log(`[SmithersProvider] Created initial snapshot: ${changeId}`)
+          } catch (error) {
+            // JJ might not be available, that's okay
+            console.warn('[SmithersProvider] Could not create JJ snapshot:', error)
+          }
+        }
+
+        // Set up global timeout
+        if (props.globalTimeout) {
+          timeoutIdRef.current = setTimeout(() => {
+            if (!stopRequested) {
+              const message = `Global timeout of ${props.globalTimeout}ms exceeded`
+              props.db.state.set('stop_requested', {
+                reason: message,
+                timestamp: Date.now(),
+                executionId: props.executionId,
+              })
+              props.onStopRequested?.(message)
+            }
+          }, props.globalTimeout)
+        }
+
+        // Set up stop condition checking
+        if (props.stopConditions && props.stopConditions.length > 0) {
+          checkIntervalIdRef.current = setInterval(async () => {
+            if (stopRequested) {
+              if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
+              return
+            }
+
+            const execution = await props.db.execution.current()
+            if (!execution) return
+
+            const context: OrchestrationContext = {
+              executionId: props.executionId,
+              totalTokens: execution.total_tokens_used,
+              totalAgents: execution.total_agents,
+              totalToolCalls: execution.total_tool_calls,
+              elapsedTimeMs: Date.now() - startTime,
+            }
+
+            for (const condition of props.stopConditions!) {
+              let shouldStop = false
+              let message = condition.message ?? 'Stop condition met'
+
+              switch (condition.type) {
+                case 'total_tokens':
+                  shouldStop = context.totalTokens >= (condition.value as number)
+                  message = message || `Token limit ${condition.value} exceeded`
+                  break
+
+                case 'total_agents':
+                  shouldStop = context.totalAgents >= (condition.value as number)
+                  message = message || `Agent limit ${condition.value} exceeded`
+                  break
+
+                case 'total_time':
+                  shouldStop = context.elapsedTimeMs >= (condition.value as number)
+                  message = message || `Time limit ${condition.value}ms exceeded`
+                  break
+
+                case 'report_severity':
+                  const criticalReports = await props.db.vcs.getCriticalReports()
+                  shouldStop = criticalReports.length > 0
+                  message = message || `Critical report(s) found: ${criticalReports.length}`
+                  break
+
+                case 'custom':
+                  if (condition.fn) {
+                    shouldStop = await condition.fn(context)
+                  }
+                  break
+              }
+
+              if (shouldStop) {
+                console.log(`[SmithersProvider] Stop condition met: ${message}`)
+                props.db.state.set('stop_requested', {
+                  reason: message,
+                  timestamp: Date.now(),
+                  executionId: props.executionId,
+                })
+                props.onStopRequested?.(message)
+
+                if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
+                break
+              }
+            }
+          }, 1000) // Check every second
+        }
+      } catch (error) {
+        console.error('[SmithersProvider] Setup error:', error)
+        props.onError?.(error as Error)
+      }
+    })()
   })
 
   // Increment ralphCount in DB
@@ -445,8 +623,33 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   // React's Context API may not propagate properly
   globalSmithersContext = value
 
-  // Cleanup global context on unmount to prevent cross-run contamination
+  // Cleanup global context and orchestration on unmount
   useUnmount(() => {
+    // Clear timers
+    if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current)
+    if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
+
+    // Generate completion result
+    ;(async () => {
+      try {
+        const execution = await props.db.execution.current()
+        if (execution) {
+          // Note: Could generate OrchestrationResult here and pass to onComplete if needed in the future
+          // (executionId, status, totalAgents, totalToolCalls, totalTokens, durationMs)
+          props.onComplete?.()
+        }
+
+        // Cleanup if requested
+        if (props.cleanupOnComplete) {
+          await props.db.close()
+        }
+      } catch (error) {
+        console.error('[SmithersProvider] Cleanup error:', error)
+        props.onError?.(error as Error)
+      }
+    })()
+
+    // Clean up global context
     if (globalSmithersContext === value) {
       globalSmithersContext = null
     }
