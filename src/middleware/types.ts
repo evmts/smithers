@@ -4,7 +4,7 @@ export type ClaudeExecutionParams = CLIExecutionOptions
 
 /**
  * Smithers middleware for enhancing Claude execution.
- * Inspired by Vercel AI SDK's LanguageModelMiddleware.
+ * Operates at the CLI execution level.
  */
 export interface SmithersMiddleware {
   /**
@@ -13,19 +13,18 @@ export interface SmithersMiddleware {
   name?: string
 
   /**
-   * Transform execution parameters before running.
+   * Transform CLI execution options before running.
    */
-  transformParams?: (options: {
-    type: 'execute'
-    params: ClaudeExecutionParams
-  }) => ClaudeExecutionParams | Promise<ClaudeExecutionParams>
+  transformOptions?: (
+    options: CLIExecutionOptions
+  ) => CLIExecutionOptions | Promise<CLIExecutionOptions>
 
   /**
    * Wrap the execution operation.
    */
   wrapExecute?: (options: {
     doExecute: () => Promise<AgentResult>
-    params: ClaudeExecutionParams
+    options: CLIExecutionOptions
   }) => Promise<AgentResult>
 
   /**
