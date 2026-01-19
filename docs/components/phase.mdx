@@ -133,7 +133,7 @@ function FeatureWorkflow() {
   const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
-    <Ralph maxIterations={10}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
       <If condition={phase === "research"}>
         <Phase name="Research">
           <Step name="find-files">
@@ -178,7 +178,7 @@ function FeatureWorkflow() {
           </Step>
         </Phase>
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```
@@ -202,7 +202,7 @@ const phases = await db.phases.list({ executionId });
   <Card title="Step" icon="shoe-prints" href="/components/step">
     Individual steps within phases
   </Card>
-  <Card title="Ralph" icon="rotate" href="/components/ralph">
-    Loop control
+  <Card title="SmithersProvider" icon="cube" href="/components/smithers-provider">
+    Orchestration context provider
   </Card>
 </CardGroup>

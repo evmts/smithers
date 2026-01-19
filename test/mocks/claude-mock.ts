@@ -6,8 +6,14 @@
 
 export interface MockResponse {
   output: string
-  model: string
-  turns: number
+  model: 'claude-mock'
+  turns: 1
+  tokensUsed: {
+    input: number
+    output: number
+  }
+  durationMs: number
+  stopReason: 'completed' | 'stop_condition' | 'error' | 'cancelled'
 }
 
 export interface ClaudeMockOptions {
@@ -38,6 +44,9 @@ export function createClaudeMock(options: ClaudeMockOptions = {}) {
       output: response,
       model: 'claude-mock',
       turns: 1,
+      tokensUsed: { input: prompt.length, output: response.length },
+      durationMs: delay,
+      stopReason: 'completed',
     }
   }
 }
@@ -52,14 +61,21 @@ export function createStaticMock(response: string, delay = 10) {
       output: response,
       model: 'claude-mock',
       turns: 1,
+      tokensUsed: { input: _prompt.length, output: response.length },
+      durationMs: delay,
+      stopReason: 'completed',
     }
   }
 }
 
 /**
  * Create a mock that returns responses in sequence.
+ * @throws {Error} if responses array is empty
  */
 export function createSequenceMock(responses: string[], delay = 10) {
+  if (responses.length === 0) {
+    throw new Error('createSequenceMock requires at least one response')
+  }
   let index = 0
 
   return async (_prompt: string): Promise<MockResponse> => {
@@ -70,6 +86,9 @@ export function createSequenceMock(responses: string[], delay = 10) {
       output: response,
       model: 'claude-mock',
       turns: 1,
+      tokensUsed: { input: _prompt.length, output: response.length },
+      durationMs: delay,
+      stopReason: 'completed',
     }
   }
 }

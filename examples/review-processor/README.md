@@ -37,7 +37,7 @@ Parallel review processing workflow with 16 concurrent subagents.
                 </if>
                 <else>
                   <action>implement</action>
-                  <commit no-verify="true" />
+                  <commit />
                   <delete file="reviews/{name}.md" />
                 </else>
               </decide>
@@ -66,7 +66,7 @@ Parallel review processing workflow with 16 concurrent subagents.
         <step name="difficult-{name}">
           <claude>
             <careful-analysis />
-            <incremental-commits no-verify="true" />
+            <incremental-commits />
             <verify-with-tests />
           </claude>
         </step>
@@ -134,10 +134,10 @@ Parallel review processing workflow with 16 concurrent subagents.
 </Parallel>
 ```
 
-### 2. Chaos-Resistant Commits
+### 2. Commit Hygiene
 ```tsx
 <Claude>
-  Use `git commit --no-verify` to bypass precommit hooks
+  Do not bypass precommit hooks
 </Claude>
 ```
 
@@ -156,9 +156,11 @@ Parallel review processing workflow with 16 concurrent subagents.
 
 ### 4. SQLite State Management
 ```tsx
-const state: ProcessorState = storedState
-  ? JSON.parse(storedState)
-  : { reviews: [], scanned: false }
+const state: ProcessorState = (() => {
+  if (!storedState) return { reviews: [], scanned: false }
+  try { return JSON.parse(storedState) }
+  catch { return { reviews: [], scanned: false } }
+})()
 
 // Update state
 db.state.set(stateKey, newState, 'scan-complete')

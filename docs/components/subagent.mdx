@@ -7,6 +7,10 @@ description: Group and organize Claude executions with named execution boundarie
 
 The `<Subagent>` component wraps child components in a named execution boundary. This provides better organization, debugging visibility, and optional parallel execution.
 
+<Note>
+**Stable.** The `parallel` prop is currently metadata-only and does not enforce execution semantics.
+</Note>
+
 <Info>
 **Current Implementation:** Subagent provides named grouping for debugging and plan visualization. The `parallel` prop is currently a metadata hint only—it does not enforce parallel or sequential execution. For actual parallel execution, use the `<Parallel>` component which wraps children in a parallel StepRegistryProvider.
 </Info>

@@ -7,6 +7,10 @@ description: Execute children concurrently within a Phase
 
 The `<Parallel>` component enables concurrent execution of child components. By default, Steps within a Phase execute sequentially—wrap them in Parallel to execute simultaneously.
 
+<Warning>
+**Experimental.** Parallel execution works but has limitations with phase advancement. See limitations section below.
+</Warning>
+
 ## Basic Usage
 
 ```tsx

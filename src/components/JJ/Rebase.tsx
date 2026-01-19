@@ -38,7 +38,7 @@ function parseConflicts(output: string): string[] {
 /**
  * JJ Rebase component - performs JJ rebase with conflict handling.
  *
- * React pattern: Uses useRef + forceUpdate for fire-and-forget VCS ops.
+ * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
 export function Rebase(props: RebaseProps): ReactNode {

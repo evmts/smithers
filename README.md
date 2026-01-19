@@ -5,45 +5,136 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
 
-**Let your agent write agents.**
+**JSX workflow engine for coding agents—phases, parallelism, and persistent state for long-running repo automation.**
 
-React-style orchestration your coding agent can generate, then run safely as durable Ralph loops.
-
-<!-- TODO: Add GIF demo -->
-
-![Smithers Demo](https://via.placeholder.com/800x400?text=Demo+GIF+Coming+Soon)
+Run CI recovery, PR finalization, stacked merges, release smoketests, and review processing as resumable workflows—not fragile scripts.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  React tree  ──▶  Smithers executor  ──▶  Tools + Claude  ──▶  SQLite DB   │
+│                         Smithers Workflow Engine                            │
+├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  "React syntax, non-UI renderer"                                            │
+│   JSX Orchestration  ──▶  Claude Agents  ──▶  SQLite State                 │
+│                                                                             │
+│   ┌─────────────┐        ┌─────────────┐      ┌─────────────┐              │
+│   │   Phases    │───────▶│  Parallel   │─────▶│  Resumable  │              │
+│   │   & Steps   │        │   Agents    │      │   History   │              │
+│   └─────────────┘        └─────────────┘      └─────────────┘              │
+│                                                                             │
+│   Worktrees • CI Polling • PR Merging • Review Handling • Reports          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Agent-native syntax** - Easy for Claude Code to generate, easy for humans to review
-- **Sophisticated loops** - Multi-phase, parallel agents, conditional branches
-- **Composable** - Build complex workflows from simple React components
+- **Declarative workflow composition** - JSX syntax readable by humans, writable by Claude
+- **Resumable and observable** - SQLite-backed state, execution history, XML output
+- **Real engineering primitives** - Phases, steps, worktrees, PR tooling, CI polling
 
 ---
 
 ## Table of Contents
 
+- [Quickstart](#quickstart)
+- [Hero Workflows](#hero-workflows)
 - [Why Smithers](#why-smithers)
-- [Getting Started](#getting-started)
-- [Starter Workflows](#starter-workflows)
 - [Features](#features)
-  - [Claude Component](#claude-component)
-  - [Sophisticated Ralph Loops](#sophisticated-ralph-loops)
-  - [Structured Output with Zod](#structured-output-with-zod)
-  - [MCP Tool Integration](#mcp-tool-integration)
-  - [Smithers Subagent](#smithers-subagent)
-  - [Git/JJ VCS Integration](#gitjj-vcs-integration)
-  - [PhaseRegistry & Step](#phaseregistry--step)
-  - [Parallel Execution](#parallel-execution)
-  - [Database Persistence](#database-persistence)
+- [Safety](#safety)
 - [FAQ](#faq)
 - [Contributing](#contributing)
+
+---
+
+## Quickstart
+
+```bash
+# Install
+bun add smithers-orchestrator
+
+# Run the PR finalize workflow (status mode - safe, read-only)
+bun examples/worktree-pr-finalize/index.tsx --worktree my-branch
+
+# Or run the stacked PR merge (status only)
+bun examples/stacked-pr-merge/index.tsx --status
+```
+
+**Prerequisites:** [Bun](https://bun.sh/) v1.0+ and [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)
+
+**Let Claude write your workflows.** Describe what you want:
+
+```
+User: "Create a workflow that monitors CI, fixes failures, escalates after 3 attempts"
+Claude: *generates ci-recovery.tsx*
+```
+
+---
+
+## Hero Workflows
+
+### PR Finalize Autopilot
+
+Get all your worktree PRs into a mergeable state and merged—parallel or sequential.
+
+```bash
+# Finalize all worktrees in parallel
+bun examples/worktree-pr-finalize/index.tsx
+
+# Finalize single worktree
+bun examples/worktree-pr-finalize/index.tsx --worktree fix-auth-bug
+
+# Sequential mode with merge commits
+bun examples/worktree-pr-finalize/index.tsx --sequential --merge-method merge
+```
+
+**Phases:** StackCheck → Rebase → Review → Push → Poll CI → Merge
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  PR Finalize Autopilot                                                 │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  Worktree 1 ─┬─▶ [Stack?] ─▶ [Rebase] ─▶ [Review] ─▶ [Push] ─▶ [CI] ─▶ [Merge]
+│              │                                                         │
+│  Worktree 2 ─┤   (Parallel execution with coordination)               │
+│              │                                                         │
+│  Worktree N ─┘                                                         │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Stacked PR Merge
+
+Merge worktree PRs into clean linear history on main.
+
+```bash
+# Status only (safe, shows merge candidates)
+bun examples/stacked-pr-merge/index.tsx --status
+
+# Full merge with rebase
+bun examples/stacked-pr-merge/index.tsx
+
+# Skip rebase, cherry-pick directly
+bun examples/stacked-pr-merge/index.tsx --skip-rebase
+```
+
+**Phases:** Status → Order (Claude validates) → Rebase Stack → Cherry-pick Merge
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  Stacked PR Merge                                                      │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  Worktrees ──▶ [Status] ──▶ [Order] ──▶ [Rebase] ──▶ [Cherry-pick]    │
+│                               │                                        │
+│                    Claude validates merge order                        │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### More Examples
+
+| Workflow | Description | Command |
+|----------|-------------|---------|
+| Review Processor | Parallel processing of review backlogs | `bun examples/review-processor/index.tsx` |
+| Task Audit | Audit task management across codebase | `bun examples/task-management-audit/index.tsx` |
 
 ---
 
@@ -51,69 +142,28 @@ React-style orchestration your coding agent can generate, then run safely as dur
 
 ### The Problem
 
-Simple Ralph loops work great for basic iteration. But as workflows grow complex:
-- Multi-phase orchestration becomes hard to manage
-- Parallel agents need coordination
-- Plans live in prompts, not reviewable code
-- Manual orchestration doesn't scale
+Agent scripts don't survive contact with reality:
+- **No state** - Can't resume after restart
+- **No observability** - Hard to trust what happened
+- **Poor concurrency** - Parallel chaos
+- **Brittle sequencing** - Steps run out of order
 
 ### The Solution
 
-Smithers uses React's component model + markup-like syntax to define execution plans. This isn't UI - it renders to **execution**.
+Smithers uses React's component model to define execution plans as **reviewable code**.
 
-**One syntax both humans and agents can work with:**
-- You can read and review it
-- Claude Code can generate it reliably
-- Git can version it
-
-**Sophisticated Ralph loops that stay reliable:**
-- Multi-phase workflows with parallel agents
-- Conditional branches, phases, steps
-- Composable components you can reuse
-- Persist state and audit history when you need it
+- **You can read it** - JSX is familiar, composable, diffable
+- **Claude can generate it** - Agent-native syntax
+- **Git can version it** - Workflows are code, not prompts
 
 ---
 
-## Getting Started
+## Features
 
-### Prerequisites
+<details>
+<summary><strong>Click to expand full feature list</strong></summary>
 
-- **[Bun](https://bun.sh/)** v1.0+ (JavaScript runtime)
-- **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** - `bun install -g @anthropic-ai/claude-code`
-
-### Install
-
-```bash
-bun add smithers-orchestrator
-```
-
-### Let Claude Write It
-
-**You don't have to write Smithers yourself.** Describe what you want:
-
-```
-User: "Create a workflow that monitors my CI, fixes failures automatically,
-       and escalates after 3 failed attempts"
-
-Claude: *generates ci-recovery.tsx*
-```
-
-### Run It
-
-```bash
-bun my-workflow.tsx
-```
-
-### Inspect History
-
-```bash
-smithers db executions                      # View execution history
-smithers db state --execution-id abc123     # Inspect specific run
-```
-
----
-
-## Starter Workflows
+### Starter Workflows
 
 ### 1. Night Shift: Run Until Tests Pass
 
@@ -484,6 +534,54 @@ if (incomplete) {
 smithers db executions                    # List all runs
 smithers db state --execution-id abc123   # See state for a run
 smithers db stats                         # Database statistics
+```
+
+</details>
+
+---
+
+## Safety
+
+Smithers workflows can perform destructive operations. Built-in safeguards:
+
+### Status-Only Mode
+
+Most examples support `--status` flag for safe, read-only inspection:
+
+```bash
+bun examples/stacked-pr-merge/index.tsx --status  # See what would happen
+```
+
+### Destructive Operations
+
+These operations require explicit flags or are gated:
+
+| Operation | Protection |
+|-----------|------------|
+| Force push | Worktree isolation |
+| Rebase | `--skip-rebase` to disable |
+| PR close | `--no-close` to disable |
+| Branch delete | `--no-delete` to disable |
+| Merge | Requires CI pass + review |
+
+### Worktree Isolation
+
+Operations run in git worktrees, not your main checkout:
+
+```tsx
+<Worktree branch="feature" cleanup>
+  {/* All changes happen in isolated worktree */}
+  <Claude>Implement feature</Claude>
+</Worktree>
+```
+
+### Audit Trail
+
+Every execution is logged in SQLite with full history:
+
+```bash
+smithers db executions                    # What ran
+smithers db state --execution-id abc123   # State at each point
 ```
 
 ---

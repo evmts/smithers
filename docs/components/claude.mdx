@@ -74,11 +74,29 @@ import { Claude } from "smithers-orchestrator";
 <ParamField path="tools" type="Tool[]">
   Custom tools to provide to Claude.
   
-  <Info>Reserved for future implementation. Use `allowedTools`/`disallowedTools` for built-in tools, or MCP for custom tools.</Info>
+  <Warning>**Experimental.** Custom tool support is functional but API may change. Use `allowedTools`/`disallowedTools` for built-in tools, or the `<Sqlite>` component for database access.</Warning>
 
   ```tsx
-  <Claude tools={[myCustomTool]}>
-    Use the custom tool.
+  <Claude
+    tools={[
+      {
+        name: "query_database",
+        description: "Query the PostgreSQL database",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "SQL query" },
+          },
+          required: ["query"],
+        },
+        execute: async (input) => {
+          const result = await db.query(input.query);
+          return JSON.stringify(result);
+        },
+      },
+    ]}
+  >
+    Query the database for statistics.
   </Claude>
   ```
 </ParamField>
@@ -370,7 +388,7 @@ function ConditionalClaude() {
   const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
-    <Ralph maxIterations={5}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
       <If condition={phase === "research"}>
         <Claude
           allowedTools={["Read", "Glob"]}
@@ -388,7 +406,7 @@ function ConditionalClaude() {
           Implement the solution.
         </Claude>
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```
@@ -425,7 +443,7 @@ function ResilientClaude() {
   ) ?? null;
 
   return (
-    <Ralph maxIterations={3}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={3}>
       <If condition={error !== null && attempts < 3}>
         <Claude
           onFinished={() => db.state.set('error', null)}
@@ -447,7 +465,7 @@ function ResilientClaude() {
           Complete the task.
         </Claude>
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```

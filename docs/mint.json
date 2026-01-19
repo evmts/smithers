@@ -53,7 +53,8 @@
       "pages": [
         "introduction",
         "quickstart",
-        "installation"
+        "installation",
+        "examples/hello-world"
       ]
     },
     {
@@ -71,7 +72,6 @@
         "components/claude-api",
         "components/codex",
         "components/gemini",
-        "components/ralph",
         "components/smithers",
         "components/phase",
         "components/phase-registry",
@@ -97,7 +97,8 @@
         "components/command",
         "components/persona",
         "components/constraints",
-        "components/sqlite"
+        "components/sqlite",
+        "components/ralph"
       ]
     },
     {

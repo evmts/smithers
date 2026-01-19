@@ -1,4 +1,4 @@
-import { useRef, useReducer, useMemo, type ReactNode } from 'react'
+import { useRef, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
 import { useExecutionScope } from './ExecutionScope.js'
@@ -10,7 +10,7 @@ import { useMountedState, useEffectOnValueChange, useUnmount } from '../reconcil
 import { LogWriter } from '../monitor/log-writer.js'
 import { uuid } from '../db/utils.js'
 import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
-import { useQuery } from '../reactive-sqlite/index.js'
+import { useQuery, useVersionTracking } from '../reactive-sqlite/index.js'
 import { extractText } from '../utils/extract-text.js'
 import { composeMiddleware } from '../middleware/compose.js'
 import { retryMiddleware } from '../middleware/retry.js'
@@ -56,7 +56,7 @@ export function Amp(props: AmpProps): ReactNode {
 
   const agentIdRef = useRef<string | null>(null)
   const tailLogRef = useRef<TailLogEntry[]>([])
-  const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
+  const { invalidateAndUpdate } = useVersionTracking()
   const { data: agentRows } = useQuery<AgentRow>(
     reactiveDb,
     "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",
@@ -208,7 +208,7 @@ export function Amp(props: AmpProps): ReactNode {
             lastTailLogUpdateRef.current = now
             if (isMounted()) {
               tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-              forceUpdate()
+              invalidateAndUpdate()
             }
           } else if (!pendingTailLogUpdateRef.current) {
             pendingTailLogUpdateRef.current = setTimeout(() => {
@@ -216,7 +216,7 @@ export function Amp(props: AmpProps): ReactNode {
               lastTailLogUpdateRef.current = Date.now()
               if (isMounted()) {
                 tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-                forceUpdate()
+                invalidateAndUpdate()
               }
             }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
           }
@@ -268,7 +268,7 @@ export function Amp(props: AmpProps): ReactNode {
           pendingTailLogUpdateRef.current = null
         }
         tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-        forceUpdate()
+        invalidateAndUpdate()
 
         if (props.reportingEnabled !== false && currentAgentId) {
           await db.agents.complete(

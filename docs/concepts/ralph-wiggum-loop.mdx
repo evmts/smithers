@@ -212,6 +212,96 @@ This means:
 - State updates cause re-renders
 - New components mount and execute
 
+## React Workflow Rules
+
+Smithers uses React as a workflow DSL. Understanding these rules prevents common mistakes.
+
+### What persists vs what doesn't
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ PERSISTS (survives restarts)          DOES NOT PERSIST          │
+│ ─────────────────────────             ─────────────────────     │
+│ SQLite state (db.state)               useState / useRef         │
+│ db.tasks entries                      Local variables           │
+│ db.phases / db.steps                  Closures                  │
+│ Execution records                     In-memory caches          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Dos and Don'ts
+
+<AccordionGroup>
+  <Accordion title="✅ DO: Store state in SQLite">
+    ```tsx
+    // Good - durable
+    const phase = useQueryValue<string>(db.db,
+      "SELECT value FROM state WHERE key = 'phase'") ?? "start";
+    const setPhase = (p: string) => db.state.set('phase', p);
+    ```
+  </Accordion>
+
+  <Accordion title="❌ DON'T: Use useState for workflow state">
+    ```tsx
+    // Bad - lost on restart, causes hydration issues
+    const [phase, setPhase] = useState("start");
+    ```
+  </Accordion>
+
+  <Accordion title="✅ DO: Register async work with db.tasks">
+    ```tsx
+    // Good - orchestrator waits for this to complete
+    const taskId = db.tasks.start('fetch-data');
+    await fetchData();
+    db.tasks.complete(taskId);
+    ```
+  </Accordion>
+
+  <Accordion title="❌ DON'T: Run untracked async work">
+    ```tsx
+    // Bad - orchestrator may advance before this completes
+    useMount(() => {
+      fetchData(); // No tracking!
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="✅ DO: Use onFinished callbacks to drive state">
+    ```tsx
+    // Good - state change triggers re-render
+    <Claude onFinished={() => db.state.set('phase', 'next')}>
+      Do work
+    </Claude>
+    ```
+  </Accordion>
+
+  <Accordion title="❌ DON'T: Expect re-renders without state changes">
+    ```tsx
+    // Bad - nothing triggers advancement
+    <Claude onFinished={() => console.log('done')}>
+      Do work
+    </Claude>
+    // Workflow stalls because state didn't change
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### What triggers re-renders
+
+1. **SQLite state changes** via `useQueryValue` or `useQuery`
+2. **Task completion** detected by orchestration loop
+3. **Phase/Step advancement** managed by PhaseRegistryProvider
+4. **Stop conditions** met (token limit, pattern match, timeout)
+
+### Common anti-patterns
+
+| Anti-Pattern | Problem | Fix |
+|--------------|---------|-----|
+| `useState` for phase | Lost on restart | Use `db.state` + `useQueryValue` |
+| Untracked promises | Orchestrator advances early | Use `db.tasks.start/complete` |
+| No `onFinished` callback | Workflow stalls | Always update state in `onFinished` |
+| Infinite `maxIterations` | Runaway loops | Set reasonable limits (10-100) |
+
 ## Orchestration Context
 
 SmithersProvider exposes orchestration context. `useRalph` is deprecated; use `db.tasks` for task coordination:

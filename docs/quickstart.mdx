@@ -9,11 +9,24 @@ description: Get up and running with durable Ralph loops in 2 minutes
 
 ## Prerequisites
 
-- **[Bun](https://bun.sh)** v1.0+ (JavaScript runtime)
-- **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** - `bun install -g @anthropic-ai/claude-code`
+<Info>
+**Bun is required.** Smithers uses Bun-specific features (bun:sqlite, Bun.spawn). Node.js is not currently supported.
+</Info>
+
+| Requirement | Version | Install |
+|-------------|---------|---------|
+| [Bun](https://bun.sh) | 1.0+ | `curl -fsSL https://bun.sh/install \| bash` |
+| [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) | latest | `bun install -g @anthropic-ai/claude-code` |
+| Git | 2.0+ | Pre-installed on most systems |
+
+**Optional:**
+
+| Tool | Purpose |
+|------|---------|
+| [Jujutsu (jj)](https://github.com/martinvonz/jj) | Better VCS snapshot support |
 
 <Note>
-Smithers uses Claude Code's subscription for API access - no separate API key needed.
+Smithers uses Claude Code's subscription for API access - no separate Anthropic API key needed.
 </Note>
 
 ## Installation

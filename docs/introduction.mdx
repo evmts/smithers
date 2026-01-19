@@ -1,23 +1,24 @@
 ---
 title: Introduction
-description: Let your agent write agents - React-style orchestration for durable Ralph loops
+description: JSX workflow engine for coding agents—phases, parallelism, and persistent state
 ---
 
 # Welcome to Smithers
 
-**Let your agent write agents.**
+**JSX workflow engine for coding agents—phases, parallelism, and persistent state for long-running repo automation.**
 
-Smithers is React-style orchestration your coding agent can generate, then run safely as durable Ralph loops. Built for long-running "night shift" sessions with persistence, history, and restart-safe execution.
+Run CI recovery, PR finalization, stacked merges, release smoketests, and review processing as resumable workflows—not fragile scripts.
 
 ```jsx
 import { SmithersProvider, Phase, Claude, Parallel } from 'smithers-orchestrator'
-import { createDb } from 'smithers-orchestrator/db'
+import { createSmithersDB } from 'smithers-orchestrator/db'
 
 function FeatureWorkflow({ featureSpec }) {
-  const db = createDb('.smithers/workflow.db')
+  const db = createSmithersDB({ path: '.smithers/workflow.db' })
+  const executionId = db.execution.start('feature-workflow', 'feature.tsx')
 
   return (
-    <SmithersProvider db={db} maxIterations={20}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={20}>
       <Phase name="Plan">
         <Claude model="sonnet">
           Analyze the codebase and create an implementation plan for: {featureSpec}
@@ -153,16 +154,16 @@ Every run persists in SQLite - your workflow's audit trail:
 
 ```tsx
 // Set state (survives restarts)
-await db.state.set("phase", "review");
+db.state.set("phase", "review");
 
 // Resume incomplete executions
-const incomplete = await db.execution.findIncomplete();
+const incomplete = db.execution.findIncomplete();
 if (incomplete) {
   executionId = incomplete.id; // Pick up where you left off
 }
 
 // Query history - see how state evolved
-const history = await db.state.getHistory("phase");
+const history = db.state.getHistory("phase");
 ```
 
 ### MCP Tool Integration
@@ -177,6 +178,16 @@ Give Claude access to external tools via Model Context Protocol:
   What are the top 10 most common user actions this week?
 </Claude>
 ```
+
+## Component Naming
+
+| Component | Purpose |
+|-----------|---------|
+| `<SmithersProvider>` | Root orchestration context (required) |
+| `<Subagent>` | Named grouping boundary for organizing agent tasks |
+| `<Smithers>` | Nested orchestration - spawns planner + executor |
+
+See component docs for details. `<Smithers>` is the only component that spawns a separate planning model.
 
 ## How It Works
 

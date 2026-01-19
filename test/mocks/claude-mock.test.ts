@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { createClaudeMock, createStaticMock, createSequenceMock } from './claude-mock'
+import { createClaudeMock, createStaticMock, createSequenceMock, type MockResponse } from './claude-mock'
 
 describe('Claude Mock Utilities', () => {
   describe('createClaudeMock', () => {
@@ -46,6 +46,89 @@ describe('Claude Mock Utilities', () => {
       await expect(mock('first')).resolves.toBeDefined()
       await expect(mock('second')).rejects.toThrow('Mock failure on call 2')
     })
+
+    it('should succeed on calls after failure', async () => {
+      const mock = createClaudeMock({ delay: 0, failOnCall: 2 })
+
+      await mock('first')
+      await expect(mock('second')).rejects.toThrow('Mock failure on call 2')
+      const r3 = await mock('third')
+      expect(r3.output).toContain('Mock response 3')
+    })
+  })
+
+  describe('delay behavior', () => {
+    it('should respect delay option', async () => {
+      const delayMs = 50
+      const mock = createClaudeMock({ delay: delayMs })
+
+      const start = performance.now()
+      await mock('test')
+      const elapsed = performance.now() - start
+
+      expect(elapsed).toBeGreaterThanOrEqual(delayMs - 5) // allow small timing variance
+    })
+
+    it('should resolve immediately with zero delay', async () => {
+      const mock = createClaudeMock({ delay: 0 })
+
+      const start = performance.now()
+      await mock('test')
+      const elapsed = performance.now() - start
+
+      expect(elapsed).toBeLessThan(10)
+    })
+  })
+
+  describe('shape invariants', () => {
+    it('should always have model as claude-mock', async () => {
+      const mocks = [
+        createClaudeMock({ delay: 0 }),
+        createStaticMock('test', 0),
+        createSequenceMock(['a', 'b'], 0),
+      ]
+
+      for (const mock of mocks) {
+        const result = await mock('prompt')
+        expect(result.model).toBe('claude-mock')
+      }
+    })
+
+    it('should always have turns as 1', async () => {
+      const mocks = [
+        createClaudeMock({ delay: 0 }),
+        createStaticMock('test', 0),
+        createSequenceMock(['a', 'b'], 0),
+      ]
+
+      for (const mock of mocks) {
+        const result = await mock('prompt')
+        expect(result.turns).toBe(1)
+      }
+    })
+
+    it('should include tokensUsed and durationMs', async () => {
+      const mock = createClaudeMock({ delay: 0 })
+      const result = await mock('test prompt')
+
+      expect(result.tokensUsed).toEqual({ input: expect.any(Number), output: expect.any(Number) })
+      expect(result.durationMs).toEqual(expect.any(Number))
+      expect(result.stopReason).toBe('completed')
+    })
+
+    it('should satisfy MockResponse interface', async () => {
+      const mock = createClaudeMock({ delay: 0 })
+      const result: MockResponse = await mock('test')
+
+      expect(result).toMatchObject({
+        output: expect.any(String),
+        model: 'claude-mock',
+        turns: 1,
+        tokensUsed: { input: expect.any(Number), output: expect.any(Number) },
+        durationMs: expect.any(Number),
+        stopReason: 'completed',
+      })
+    })
   })
 
   describe('createStaticMock', () => {
@@ -77,6 +160,18 @@ describe('Claude Mock Utilities', () => {
       expect((await mock('_')).output).toBe('b')
       expect((await mock('_')).output).toBe('a') // wraps
       expect((await mock('_')).output).toBe('b')
+    })
+
+    it('should work with single item', async () => {
+      const mock = createSequenceMock(['only'], 0)
+
+      expect((await mock('_')).output).toBe('only')
+      expect((await mock('_')).output).toBe('only')
+      expect((await mock('_')).output).toBe('only')
+    })
+
+    it('should throw on empty responses array', () => {
+      expect(() => createSequenceMock([], 0)).toThrow('createSequenceMock requires at least one response')
     })
   })
 })

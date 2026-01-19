@@ -14,7 +14,7 @@ export interface StatusProps {
 /**
  * JJ Status component - checks JJ working copy status.
  *
- * React pattern: Uses useRef + forceUpdate for fire-and-forget VCS ops.
+ * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
 export function Status(props: StatusProps): ReactNode {

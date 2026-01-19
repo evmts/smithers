@@ -15,7 +15,7 @@ export interface CommitProps {
 /**
  * JJ Commit component - creates a JJ commit with optional auto-describe.
  *
- * React pattern: Uses useRef + forceUpdate for fire-and-forget VCS ops.
+ * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
 export function Commit(props: CommitProps): ReactNode {

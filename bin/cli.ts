@@ -7,6 +7,7 @@ import { monitor } from "../src/commands/monitor.ts";
 import { dbCommand } from "../src/commands/db.ts";
 import { launchTUI } from "../src/tui/index.tsx";
 import { DEFAULT_DB_DIR, DEFAULT_MAIN_FILE, resolveDbPaths } from "../src/commands/cli-utils.ts";
+import pkg from "../package.json";
 
 const program = new Command();
 
@@ -15,7 +16,7 @@ program
   .description(
     "CLI tool for multi-agent AI orchestration with Smithers framework",
   )
-  .version("0.1.0");
+  .version(pkg.version);
 
 program
   .command("init")
