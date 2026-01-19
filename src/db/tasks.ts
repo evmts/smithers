@@ -2,7 +2,7 @@
 // Replaces React state-based task tracking with database-backed tracking
 
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
-import { uuid, now } from './utils.js'
+import { uuid, now, parseJson } from './utils.js'
 
 export interface Task {
   id: string
@@ -143,7 +143,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
       const result = rdb.queryOne<{ value: string }>(
         "SELECT value FROM state WHERE key = 'ralphCount'"
       )
-      return result ? JSON.parse(result.value) : 0
+      return parseJson(result?.value, 0)
     },
   }
 

@@ -2,7 +2,7 @@
 // Handles requests for human input/confirmation
 
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
-import { uuid, now } from './utils.js'
+import { uuid, now, parseJson } from './utils.js'
 
 export interface HumanInteraction {
   id: string
@@ -74,8 +74,8 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
       if (!row) return null
       return {
         ...row,
-        options: row.options ? JSON.parse(row.options) : null,
-        response: row.response ? JSON.parse(row.response) : null
+        options: parseJson(row.options, null),
+          response: parseJson(row.response, null)
       }
     },
 
@@ -88,8 +88,8 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
        )
        return rows.map(row => ({
          ...row,
-          options: row.options ? JSON.parse(row.options) : null,
-          response: row.response ? JSON.parse(row.response) : null
+          options: parseJson(row.options, null),
+          response: parseJson(row.response, null)
        }))
     }
   }
