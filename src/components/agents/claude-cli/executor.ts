@@ -11,6 +11,12 @@ import { buildClaudeArgs } from './arg-builder.js'
 import { checkStopConditions } from './stop-conditions.js'
 import { parseClaudeOutput } from './output-parser.js'
 
+/** Default timeout for Claude CLI execution (5 minutes) */
+export const DEFAULT_CLI_TIMEOUT_MS = 300000
+
+/** Default number of schema validation retries */
+export const DEFAULT_SCHEMA_RETRIES = 2
+
 /**
  * Check if CLI output indicates subscription/auth failure that could be retried with API key
  */
@@ -43,7 +49,7 @@ export async function executeClaudeCLIOnce(
   const command = ['claude', ...args]
 
   // Set up timeout
-  const timeout = options.timeout ?? 300000 // 5 minutes default
+  const timeout = options.timeout ?? DEFAULT_CLI_TIMEOUT_MS
 
   let proc: ReturnType<typeof Bun.spawn> | null = null
   let killed = false
@@ -220,7 +226,7 @@ export async function executeClaudeCLIOnce(
  */
 export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<AgentResult> {
   const startTime = Date.now()
-  const maxSchemaRetries = options.schemaRetries ?? 2
+  const maxSchemaRetries = options.schemaRetries ?? DEFAULT_SCHEMA_RETRIES
 
   // If schema is provided, add structured output instructions to system prompt
   let effectiveOptions = { ...options }

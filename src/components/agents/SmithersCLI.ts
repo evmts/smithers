@@ -7,6 +7,15 @@ import * as os from 'os'
 import type { AgentResult, ClaudeModel } from './types.js'
 import { executeClaudeCLI } from './ClaudeCodeCLI.js'
 
+/** Default timeout for Smithers script execution (10 minutes) */
+export const DEFAULT_SCRIPT_TIMEOUT_MS = 600000
+
+/** Default timeout for planning phase (2 minutes) */
+export const DEFAULT_PLANNING_TIMEOUT_MS = 120000
+
+/** Default max planning turns */
+export const DEFAULT_MAX_PLANNING_TURNS = 5
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -190,9 +199,9 @@ Return ONLY the script body code, no markdown fences or explanations.`
   const planningResult = await executeClaudeCLI({
     prompt,
     model: options.plannerModel || 'sonnet',
-    maxTurns: options.maxPlanningTurns || 5,
+    maxTurns: options.maxPlanningTurns || DEFAULT_MAX_PLANNING_TURNS,
     systemPrompt: PLANNING_SYSTEM_PROMPT,
-    timeout: options.timeout || 120000,
+    timeout: options.timeout || DEFAULT_PLANNING_TIMEOUT_MS,
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   })
 
@@ -238,7 +247,7 @@ async function executeScript(
   options: SmithersExecutionOptions
 ): Promise<{ output: string; exitCode: number; durationMs: number }> {
   const startTime = Date.now()
-  const timeout = options.timeout || 600000 // 10 minutes default
+  const timeout = options.timeout || DEFAULT_SCRIPT_TIMEOUT_MS
 
   options.onProgress?.(`Executing Smithers script: ${scriptPath}`)
 

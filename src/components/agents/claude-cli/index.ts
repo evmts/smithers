@@ -16,9 +16,11 @@ export { checkStopConditions } from './stop-conditions.js'
 export { parseClaudeOutput } from './output-parser.js'
 export type { ParsedOutput } from './output-parser.js'
 
-// Executor functions
+// Executor functions and constants
 export {
   executeClaudeCLI,
   executeClaudeShell,
   executeClaudeCLIOnce,
+  DEFAULT_CLI_TIMEOUT_MS,
+  DEFAULT_SCHEMA_RETRIES,
 } from './executor.js'

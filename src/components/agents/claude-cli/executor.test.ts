@@ -12,6 +12,17 @@ import type { CLIExecutionOptions, AgentResult, StopCondition } from '../types.j
 import { buildClaudeArgs } from './arg-builder.js'
 import { parseClaudeOutput } from './output-parser.js'
 import { checkStopConditions } from './stop-conditions.js'
+import { DEFAULT_CLI_TIMEOUT_MS, DEFAULT_SCHEMA_RETRIES } from './executor.js'
+
+describe('executor constants', () => {
+  test('DEFAULT_CLI_TIMEOUT_MS is 5 minutes', () => {
+    expect(DEFAULT_CLI_TIMEOUT_MS).toBe(300000)
+  })
+
+  test('DEFAULT_SCHEMA_RETRIES is 2', () => {
+    expect(DEFAULT_SCHEMA_RETRIES).toBe(2)
+  })
+})
 
 describe('executeClaudeCLIOnce', () => {
   describe('basic execution', () => {
