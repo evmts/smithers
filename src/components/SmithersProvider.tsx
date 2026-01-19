@@ -466,6 +466,12 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
                   message = message || `Critical report(s) found: ${criticalReports.length}`
                   break
 
+                case 'ci_failure':
+                  const ciFailure = await props.db.state.get('last_ci_failure')
+                  shouldStop = ciFailure !== null
+                  message = message || `CI failure detected: ${ciFailure?.value?.message ?? 'unknown'}`
+                  break
+
                 case 'custom':
                   if (condition.fn) {
                     shouldStop = await condition.fn(context)
