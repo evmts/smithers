@@ -6,11 +6,23 @@ export interface TableData {
   data: Record<string, unknown>[]
 }
 
+const ALLOWED_TABLES = [
+  'executions', 'phases', 'agents', 'tool_calls', 'human_interactions',
+  'render_frames', 'tasks', 'steps', 'reports', 'memories',
+  'state', 'transitions', 'artifacts', 'commits', 'snapshots', 'reviews'
+]
+
 export function usePollTableData(db: SmithersDB, tableName: string): TableData {
   const [columns, setColumns] = useState<string[]>([])
   const [data, setData] = useState<Record<string, unknown>[]>([])
 
   useEffect(() => {
+    if (!ALLOWED_TABLES.includes(tableName)) {
+      setColumns([])
+      setData([])
+      return
+    }
+
     const poll = () => {
       try {
         const pragmaResult = db.query<{ name: string }>(`PRAGMA table_info(${tableName})`)

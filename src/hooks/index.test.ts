@@ -4,6 +4,8 @@ import * as hooksIndex from './index.js'
 import { useRalphCount } from './useRalphCount.js'
 import { useHuman, type UseHumanResult, type AskOptions } from './useHuman.js'
 import { useCaptureRenderFrame } from './useCaptureRenderFrame.js'
+import { useCommitWithRetry } from './useCommitWithRetry.js'
+import { useHumanInteractive } from './useHumanInteractive.js'
 
 describe('hooks/index exports', () => {
   describe('named exports', () => {
@@ -20,6 +22,16 @@ describe('hooks/index exports', () => {
     test('exports useCaptureRenderFrame', () => {
       expect(hooksIndex.useCaptureRenderFrame).toBeDefined()
       expect(typeof hooksIndex.useCaptureRenderFrame).toBe('function')
+    })
+
+    test('exports useCommitWithRetry', () => {
+      expect(hooksIndex.useCommitWithRetry).toBeDefined()
+      expect(typeof hooksIndex.useCommitWithRetry).toBe('function')
+    })
+
+    test('exports useHumanInteractive', () => {
+      expect(hooksIndex.useHumanInteractive).toBeDefined()
+      expect(typeof hooksIndex.useHumanInteractive).toBe('function')
     })
 
     test('exports UseHumanResult type (type-only, verify via import)', () => {
@@ -48,6 +60,14 @@ describe('hooks/index exports', () => {
 
     test('useCaptureRenderFrame matches ./useCaptureRenderFrame export', () => {
       expect(hooksIndex.useCaptureRenderFrame).toBe(useCaptureRenderFrame)
+    })
+
+    test('useCommitWithRetry matches ./useCommitWithRetry export', () => {
+      expect(hooksIndex.useCommitWithRetry).toBe(useCommitWithRetry)
+    })
+
+    test('useHumanInteractive matches ./useHumanInteractive export', () => {
+      expect(hooksIndex.useHumanInteractive).toBe(useHumanInteractive)
     })
   })
 

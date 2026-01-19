@@ -6,6 +6,8 @@ import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { useReportGenerator } from '../../hooks/useReportGenerator.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
+import { truncate, formatTimestamp } from '../../utils/format.js'
+import { getSeverityColor, colors } from '../../utils/colors.js'
 
 export interface ReportViewerProps {
   db: SmithersDB
@@ -146,32 +148,11 @@ export function ReportViewer({ db }: ReportViewerProps) {
   )
 }
 
-function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str
-  return str.slice(0, maxLen - 3) + '...'
-}
-
-function getSeverityColor(severity: string): string {
-  switch (severity) {
-    case 'warning': return '#e0af68'
-    case 'critical': return '#f7768e'
-    default: return '#7aa2f7'
-  }
-}
-
-function formatTimestamp(timestamp: string): string {
-  try {
-    return new Date(timestamp).toLocaleString()
-  } catch {
-    return timestamp
-  }
-}
-
 function getLineColor(line: string): string {
-  if (line.startsWith('##')) return '#bb9af7'
-  if (line.startsWith('###')) return '#7aa2f7'
-  if (line.startsWith('-')) return '#7dcfff'
-  if (line.includes('Error') || line.includes('Failed')) return '#f7768e'
-  if (line.includes('Warning')) return '#e0af68'
-  return '#c0caf5'
+  if (line.startsWith('##')) return colors.purple
+  if (line.startsWith('###')) return colors.blue
+  if (line.startsWith('-')) return colors.cyan
+  if (line.includes('Error') || line.includes('Failed')) return colors.red
+  if (line.includes('Warning')) return colors.orange
+  return colors.fg
 }

@@ -31,6 +31,7 @@ export function createToolsModule(ctx: ToolsModuleContext): ToolsModule {
 
   const tools: ToolsModule = {
     start: (agentId: string, toolName: string, input: Record<string, any>): string => {
+      if (rdb.isClosed) return uuid()
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()

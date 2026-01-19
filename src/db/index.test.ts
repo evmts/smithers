@@ -2,8 +2,8 @@
  * Tests for index module - SmithersDB factory and integration
  */
 
-import { describe, test, afterEach } from 'bun:test'
-import { type SmithersDB } from './index.js'
+import { describe, test, expect, afterEach } from 'bun:test'
+import { createSmithersDB, type SmithersDB, ReactiveDatabase, useQuery, useQueryOne, useQueryValue } from './index.js'
 
 describe('createSmithersDB', () => {
   let db: SmithersDB | null = null
@@ -15,82 +15,480 @@ describe('createSmithersDB', () => {
     }
   })
 
-  // ==================== MISSING TESTS (ALL) ====================
-  
-  // Factory creation
-  test.todo('creates SmithersDB with in-memory database by default')
-  test.todo('creates SmithersDB with specified path')
-  test.todo('creates SmithersDB with reset option')
-  test.todo('initializes all modules')
-  test.todo('exposes raw db property')
-  
-  // Schema initialization
-  test.todo('creates all required tables')
-  test.todo('creates all required indexes')
-  test.todo('initializes default state values')
-  
-  // Migration handling
-  test.todo('runMigrations adds log_path column if missing')
-  test.todo('runMigrations does not fail if log_path exists')
-  
-  // Reset behavior
-  test.todo('reset drops all tables before recreating')
-  test.todo('reset clears all data')
-  test.todo('reset recreates default state')
-  
-  // Module integration
-  test.todo('state module is accessible')
-  test.todo('memories module is accessible')
-  test.todo('execution module is accessible')
-  test.todo('phases module is accessible')
-  test.todo('agents module is accessible')
-  test.todo('steps module is accessible')
-  test.todo('tasks module is accessible')
-  test.todo('tools module is accessible')
-  test.todo('artifacts module is accessible')
-  test.todo('human module is accessible')
-  test.todo('vcs module is accessible')
-  test.todo('renderFrames module is accessible')
-  test.todo('query function is accessible')
-  
-  // Close behavior
-  test.todo('close closes underlying database')
-  test.todo('modules return safe defaults after close')
-  
-  // Context sharing
-  test.todo('modules share execution context')
-  test.todo('modules share phase context')
-  test.todo('modules share agent context')
-  test.todo('modules share step context')
-  
-  // Error handling
-  test.todo('handles missing schema.sql file')
-  test.todo('handles invalid database path')
-  test.todo('handles file permission errors')
-  
-  // Re-exports
-  test.todo('re-exports types from types.js')
-  test.todo('re-exports ReactiveDatabase')
-  test.todo('re-exports useQuery hook')
-  test.todo('re-exports useMutation hook')
-  test.todo('re-exports useQueryOne hook')
-  test.todo('re-exports useQueryValue hook')
-  test.todo('re-exports module types')
+  describe('factory creation', () => {
+    test('creates SmithersDB with in-memory database by default', () => {
+      db = createSmithersDB()
+      expect(db).toBeDefined()
+      expect(db.db).toBeInstanceOf(ReactiveDatabase)
+    })
+
+    test('creates SmithersDB with reset option', () => {
+      db = createSmithersDB({ reset: true })
+      expect(db).toBeDefined()
+      
+      const tables = db.db.query<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+      )
+      expect(tables.length).toBeGreaterThan(0)
+    })
+
+    test('initializes all modules', () => {
+      db = createSmithersDB()
+      expect(db.state).toBeDefined()
+      expect(db.memories).toBeDefined()
+      expect(db.execution).toBeDefined()
+      expect(db.phases).toBeDefined()
+      expect(db.agents).toBeDefined()
+      expect(db.steps).toBeDefined()
+      expect(db.tasks).toBeDefined()
+      expect(db.tools).toBeDefined()
+      expect(db.artifacts).toBeDefined()
+      expect(db.human).toBeDefined()
+      expect(db.vcs).toBeDefined()
+      expect(db.renderFrames).toBeDefined()
+      expect(db.buildState).toBeDefined()
+      expect(db.vcsQueue).toBeDefined()
+      expect(db.query).toBeDefined()
+    })
+
+    test('exposes raw db property', () => {
+      db = createSmithersDB()
+      expect(db.db).toBeDefined()
+      expect(typeof db.db.query).toBe('function')
+      expect(typeof db.db.run).toBe('function')
+    })
+  })
+
+  describe('schema initialization', () => {
+    test('creates all required tables', () => {
+      db = createSmithersDB()
+      const tables = db.db.query<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+      )
+      const tableNames = tables.map(t => t.name)
+      
+      expect(tableNames).toContain('memories')
+      expect(tableNames).toContain('executions')
+      expect(tableNames).toContain('phases')
+      expect(tableNames).toContain('agents')
+      expect(tableNames).toContain('tool_calls')
+      expect(tableNames).toContain('state')
+      expect(tableNames).toContain('transitions')
+      expect(tableNames).toContain('artifacts')
+      expect(tableNames).toContain('commits')
+      expect(tableNames).toContain('snapshots')
+      expect(tableNames).toContain('reviews')
+      expect(tableNames).toContain('reports')
+      expect(tableNames).toContain('tasks')
+      expect(tableNames).toContain('steps')
+      expect(tableNames).toContain('human_interactions')
+      expect(tableNames).toContain('render_frames')
+    })
+
+    test('initializes default state values', () => {
+      db = createSmithersDB()
+      
+      expect(db.state.get('phase')).toBe('initial')
+      expect(db.state.get('ralphCount')).toBe(0)
+      expect(db.state.get('data')).toBeNull()
+    })
+  })
+
+  describe('reset behavior', () => {
+    test('reset clears all data', () => {
+      db = createSmithersDB()
+      db.state.set('testKey', 'testValue')
+      db.close()
+      
+      db = createSmithersDB({ reset: true })
+      expect(db.state.get('testKey')).toBeNull()
+    })
+
+    test('reset recreates default state', () => {
+      db = createSmithersDB({ reset: true })
+      
+      expect(db.state.get('phase')).toBe('initial')
+      expect(db.state.get('ralphCount')).toBe(0)
+    })
+  })
+
+  describe('module accessibility', () => {
+    test('state module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.state.get).toBe('function')
+      expect(typeof db.state.set).toBe('function')
+    })
+
+    test('memories module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.memories.add).toBe('function')
+      expect(typeof db.memories.get).toBe('function')
+    })
+
+    test('execution module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.execution.start).toBe('function')
+      expect(typeof db.execution.complete).toBe('function')
+    })
+
+    test('phases module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.phases.start).toBe('function')
+      expect(typeof db.phases.complete).toBe('function')
+    })
+
+    test('agents module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.agents.start).toBe('function')
+      expect(typeof db.agents.complete).toBe('function')
+    })
+
+    test('steps module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.steps.start).toBe('function')
+      expect(typeof db.steps.complete).toBe('function')
+    })
+
+    test('tasks module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.tasks.start).toBe('function')
+      expect(typeof db.tasks.complete).toBe('function')
+    })
+
+    test('tools module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.tools.start).toBe('function')
+      expect(typeof db.tools.complete).toBe('function')
+    })
+
+    test('artifacts module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.artifacts.add).toBe('function')
+      expect(typeof db.artifacts.list).toBe('function')
+    })
+
+    test('human module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.human.request).toBe('function')
+      expect(typeof db.human.resolve).toBe('function')
+    })
+
+    test('vcs module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.vcs.logCommit).toBe('function')
+      expect(typeof db.vcs.getCommits).toBe('function')
+    })
+
+    test('renderFrames module is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.renderFrames.store).toBe('function')
+      expect(typeof db.renderFrames.list).toBe('function')
+    })
+
+    test('query function is accessible', () => {
+      db = createSmithersDB()
+      expect(typeof db.query).toBe('function')
+      
+      const result = db.query<{ key: string }>('SELECT key FROM state LIMIT 1')
+      expect(Array.isArray(result)).toBe(true)
+    })
+  })
+
+  describe('close behavior', () => {
+    test('close closes underlying database', () => {
+      db = createSmithersDB()
+      expect(db.db.isClosed).toBe(false)
+      
+      db.close()
+      expect(db.db.isClosed).toBe(true)
+      db = null
+    })
+
+    test('modules return safe defaults after close', () => {
+      db = createSmithersDB()
+      db.state.set('key', 'value')
+      db.close()
+      
+      expect(db.state.get('key')).toBeNull()
+      expect(db.state.getAll()).toEqual({})
+      expect(db.execution.list()).toEqual([])
+      db = null
+    })
+  })
+
+  describe('context sharing', () => {
+    test('modules share execution context', () => {
+      db = createSmithersDB()
+      const execId = db.execution.start('test', '/path')
+      
+      const phaseId = db.phases.start('build')
+      const phase = db.db.queryOne<{ execution_id: string }>('SELECT execution_id FROM phases WHERE id = ?', [phaseId])
+      expect(phase!.execution_id).toBe(execId)
+    })
+
+    test('modules share phase context', () => {
+      db = createSmithersDB()
+      db.execution.start('test', '/path')
+      const phaseId = db.phases.start('build')
+      
+      const agentId = db.agents.start('prompt')
+      const agent = db.db.queryOne<{ phase_id: string }>('SELECT phase_id FROM agents WHERE id = ?', [agentId])
+      expect(agent!.phase_id).toBe(phaseId)
+    })
+  })
+
+  describe('re-exports', () => {
+    test('re-exports ReactiveDatabase', () => {
+      expect(ReactiveDatabase).toBeDefined()
+      expect(typeof ReactiveDatabase).toBe('function')
+    })
+
+    test('re-exports useQuery hook', () => {
+      expect(useQuery).toBeDefined()
+      expect(typeof useQuery).toBe('function')
+    })
+
+    test('re-exports useQueryOne hook', () => {
+      expect(useQueryOne).toBeDefined()
+      expect(typeof useQueryOne).toBe('function')
+    })
+
+    test('re-exports useQueryValue hook', () => {
+      expect(useQueryValue).toBeDefined()
+      expect(typeof useQueryValue).toBe('function')
+    })
+  })
 })
 
 describe('SmithersDB integration', () => {
-  // ==================== E2E INTEGRATION TESTS ====================
-  
-  test.todo('full execution lifecycle: start -> phase -> agent -> tool -> complete')
-  test.todo('state transitions trigger transition logging')
-  test.todo('nested context: execution -> phase -> step -> agent -> tool')
-  test.todo('concurrent agents in same phase')
-  test.todo('multiple iterations with task tracking')
-  test.todo('VCS operations during execution')
-  test.todo('human interactions during execution')
-  test.todo('render frames capture during execution')
-  test.todo('memory operations during execution')
-  test.todo('artifact creation during execution')
-  test.todo('report creation during execution')
-  test.todo('review creation during execution')
+  let db: SmithersDB | null = null
+
+  afterEach(() => {
+    if (db) {
+      db.close()
+      db = null
+    }
+  })
+
+  test('full execution lifecycle: start -> phase -> agent -> tool -> complete', () => {
+    db = createSmithersDB({ reset: true })
+    
+    const execId = db.execution.start('integration-test', '/path/to/file.tsx')
+    expect(db.execution.current()!.status).toBe('running')
+    
+    const phaseId = db.phases.start('build', 0)
+    expect(db.phases.current()!.status).toBe('running')
+    
+    const agentId = db.agents.start('Build the feature')
+    expect(db.agents.current()!.status).toBe('running')
+    
+    const toolId = db.tools.start(agentId, 'Read', { path: '/src/file.ts' })
+    db.tools.complete(toolId, 'file contents')
+    
+    db.agents.complete(agentId, 'Feature built', undefined, { input: 100, output: 50 })
+    expect(db.agents.current()).toBeNull()
+    
+    db.phases.complete(phaseId)
+    expect(db.phases.current()).toBeNull()
+    
+    db.execution.complete(execId, { success: true })
+    expect(db.execution.current()).toBeNull()
+    
+    const exec = db.execution.get(execId)
+    expect(exec!.status).toBe('completed')
+    expect(exec!.total_agents).toBe(1)
+    expect(exec!.total_tool_calls).toBe(1)
+    expect(exec!.total_tokens_used).toBe(150)
+  })
+
+  test('state transitions trigger transition logging', () => {
+    db = createSmithersDB({ reset: true })
+    db.execution.start('state-test', '/path')
+    
+    db.state.set('status', 'active', 'user_action')
+    db.state.set('status', 'paused', 'system')
+    db.state.set('status', 'completed', 'agent_finished')
+    
+    const transitions = db.state.history('status')
+    expect(transitions).toHaveLength(3)
+    const triggers = transitions.map(t => t.trigger)
+    expect(triggers).toContain('user_action')
+    expect(triggers).toContain('system')
+    expect(triggers).toContain('agent_finished')
+  })
+
+  test('nested context: execution -> phase -> step -> agent -> tool', () => {
+    db = createSmithersDB({ reset: true })
+    
+    const execId = db.execution.start('nested-test', '/path')
+    const phaseId = db.phases.start('phase1')
+    const stepId = db.steps.start('step1')
+    const agentId = db.agents.start('agent prompt')
+    const toolId = db.tools.start(agentId, 'Bash', { command: 'ls' })
+    
+    const tool = db.db.queryOne<{ execution_id: string; agent_id: string }>(
+      'SELECT execution_id, agent_id FROM tool_calls WHERE id = ?', [toolId]
+    )
+    expect(tool!.execution_id).toBe(execId)
+    expect(tool!.agent_id).toBe(agentId)
+    
+    const agent = db.db.queryOne<{ phase_id: string }>(
+      'SELECT phase_id FROM agents WHERE id = ?', [agentId]
+    )
+    expect(agent!.phase_id).toBe(phaseId)
+    
+    const step = db.db.queryOne<{ phase_id: string }>(
+      'SELECT phase_id FROM steps WHERE id = ?', [stepId]
+    )
+    expect(step!.phase_id).toBe(phaseId)
+  })
+
+  test('concurrent agents in same phase', () => {
+    db = createSmithersDB({ reset: true })
+    
+    db.execution.start('concurrent-test', '/path')
+    db.phases.start('parallel-phase')
+    
+    const agent1 = db.agents.start('Agent 1 prompt')
+    const agent2 = db.agents.start('Agent 2 prompt')
+    const agent3 = db.agents.start('Agent 3 prompt')
+    
+    const agents = db.agents.list(db.execution.current()!.id)
+    expect(agents).toHaveLength(3)
+    expect(agents.filter(a => a.status === 'running')).toHaveLength(3)
+    
+    db.agents.complete(agent2, 'Agent 2 done')
+    db.agents.fail(agent3, 'Agent 3 failed')
+    
+    const updatedAgents = db.agents.list(db.execution.current()!.id)
+    expect(updatedAgents.find(a => a.id === agent1)!.status).toBe('running')
+    expect(updatedAgents.find(a => a.id === agent2)!.status).toBe('completed')
+    expect(updatedAgents.find(a => a.id === agent3)!.status).toBe('failed')
+  })
+
+  test('multiple iterations with task tracking', () => {
+    db = createSmithersDB({ reset: true })
+    
+    db.execution.start('iteration-test', '/path')
+    
+    db.state.set('ralphCount', 0)
+    const task1 = db.tasks.start('claude', 'task-iter-0')
+    db.tasks.complete(task1)
+    
+    db.state.set('ralphCount', 1)
+    const task2 = db.tasks.start('claude', 'task-iter-1')
+    const task3 = db.tasks.start('step', 'task-iter-1')
+    db.tasks.complete(task2)
+    db.tasks.fail(task3)
+    
+    expect(db.tasks.getTotalCount(0)).toBe(1)
+    expect(db.tasks.getTotalCount(1)).toBe(2)
+    expect(db.tasks.getRunningCount(0)).toBe(0)
+    expect(db.tasks.getRunningCount(1)).toBe(0)
+  })
+
+  test('VCS operations during execution', () => {
+    db = createSmithersDB({ reset: true })
+    db.execution.start('vcs-test', '/path')
+    
+    const commitId = db.vcs.logCommit({
+      vcs_type: 'git',
+      commit_hash: 'abc123',
+      message: 'feat: add feature',
+      files_changed: ['src/index.ts'],
+      insertions: 10,
+      deletions: 2
+    })
+    
+    const snapshotId = db.vcs.logSnapshot({
+      change_id: 'change-1',
+      files_modified: ['src/utils.ts']
+    })
+    
+    const reviewId = db.vcs.logReview({
+      target_type: 'commit',
+      target_ref: 'abc123',
+      approved: true,
+      summary: 'LGTM',
+      issues: []
+    })
+    
+    expect(db.vcs.getCommits()).toHaveLength(1)
+    expect(db.vcs.getSnapshots()).toHaveLength(1)
+    expect(db.vcs.getReviews()).toHaveLength(1)
+  })
+
+  test('human interactions during execution', () => {
+    db = createSmithersDB({ reset: true })
+    db.execution.start('human-test', '/path')
+    
+    const requestId = db.human.request('confirmation', 'Deploy to production?', ['yes', 'no'])
+    
+    expect(db.human.listPending()).toHaveLength(1)
+    
+    db.human.resolve(requestId, 'approved', { choice: 'yes' })
+    
+    const interaction = db.human.get(requestId)
+    expect(interaction!.status).toBe('approved')
+    expect(interaction!.response).toEqual({ choice: 'yes' })
+  })
+
+  test('render frames capture during execution', () => {
+    db = createSmithersDB({ reset: true })
+    db.execution.start('render-test', '/path')
+    
+    db.renderFrames.store('<root><child1 /></root>', 0)
+    db.renderFrames.store('<root><child1 /><child2 /></root>', 1)
+    db.renderFrames.store('<root><child1 /><child2 /><child3 /></root>', 2)
+    
+    expect(db.renderFrames.count()).toBe(3)
+    expect(db.renderFrames.latest()!.ralph_count).toBe(2)
+    expect(db.renderFrames.getBySequence(1)!.tree_xml).toBe('<root><child1 /><child2 /></root>')
+  })
+
+  test('memory operations during execution', () => {
+    db = createSmithersDB({ reset: true })
+    db.execution.start('memory-test', '/path')
+    
+    db.memories.addFact('language', 'TypeScript')
+    db.memories.addLearning('pattern', 'Use composition over inheritance')
+    db.memories.addPreference('style', 'functional', 'project')
+    
+    expect(db.memories.get('fact', 'language')!.content).toBe('TypeScript')
+    expect(db.memories.list('learning')).toHaveLength(1)
+    expect(db.memories.stats().total).toBe(3)
+  })
+
+  test('artifact creation during execution', () => {
+    db = createSmithersDB({ reset: true })
+    const execId = db.execution.start('artifact-test', '/path')
+    
+    db.artifacts.add('output.json', 'data', '/tmp/output.json', undefined, { size: 1024 })
+    db.artifacts.add('report.md', 'document', '/tmp/report.md')
+    
+    const artifacts = db.artifacts.list(execId)
+    expect(artifacts).toHaveLength(2)
+    expect(artifacts[0].metadata).toEqual({ size: 1024 })
+  })
+
+  test('report creation during execution', () => {
+    db = createSmithersDB({ reset: true })
+    db.execution.start('report-test', '/path')
+    
+    db.vcs.addReport({
+      type: 'finding',
+      title: 'Security Issue',
+      content: 'SQL injection vulnerability found',
+      severity: 'critical'
+    })
+    
+    db.vcs.addReport({
+      type: 'progress',
+      title: 'Step 1 complete',
+      content: 'Analysis finished'
+    })
+    
+    expect(db.vcs.getReports()).toHaveLength(2)
+    expect(db.vcs.getCriticalReports()).toHaveLength(1)
+  })
 })

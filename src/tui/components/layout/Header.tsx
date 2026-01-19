@@ -1,6 +1,7 @@
 // Header component showing execution info and branding
 
 import { TextAttributes } from '@opentui/core'
+import { getStatusColor } from '../../utils/colors.js'
 
 export interface HeaderProps {
   executionName: string
@@ -33,14 +34,4 @@ export function Header({ executionName, status }: HeaderProps) {
       </box>
     </box>
   )
-}
-
-function getStatusColor(status: string): string {
-  switch (status) {
-    case 'running': return '#9ece6a'
-    case 'completed': return '#73daca'
-    case 'failed': return '#f7768e'
-    case 'pending': return '#e0af68'
-    default: return '#565f89'
-  }
 }

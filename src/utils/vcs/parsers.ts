@@ -35,7 +35,7 @@ export function parseJJStatus(output: string): VCSStatus {
   const added: string[] = []
   const deleted: string[] = []
 
-  for (const line of output.split('\n')) {
+  for (const line of output.split(/\r?\n/)) {
     if (!line.trim()) continue
 
     if (line.startsWith('M ')) modified.push(line.substring(2).trim())

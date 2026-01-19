@@ -126,4 +126,4 @@ src/hooks/
 2. **All state transitions in store actions** - Use `db.state.set()` or explicit action calls
 3. **Side-effects only in named hooks** - `useSubscribeToX`, `usePollY`, `useSyncZ`
 4. **Derive, don't sync** - Compute values instead of storing derived state
-5. **Use `useMount`/`useUnmount`** from `reconciler/hooks.ts` for lifecycle
+5. **Use `useMount`/`useUnmount`** from `smithers-orchestrator` for lifecycle

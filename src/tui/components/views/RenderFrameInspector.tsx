@@ -5,6 +5,7 @@ import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { useRenderFrames } from '../../hooks/useRenderFrames.js'
+import { formatTimestamp } from '../../utils/format.js'
 
 export interface RenderFrameInspectorProps {
   db: SmithersDB
@@ -106,12 +107,4 @@ export function RenderFrameInspector({ db, height }: RenderFrameInspectorProps) 
       </box>
     </box>
   )
-}
-
-function formatTimestamp(timestamp: string): string {
-  try {
-    return new Date(timestamp).toLocaleString()
-  } catch {
-    return timestamp
-  }
 }

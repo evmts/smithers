@@ -1055,7 +1055,7 @@ Potential optimization using `useQueryValue`:
 const events = usePollEvents(db)  // Polls every 500ms
 
 // Use reactive query
-import { useQuery } from 'smithers-orchestrator/db'
+import { useQuery } from 'smithers-orchestrator/reactive-sqlite'
 
 const events = useQuery<TimelineEvent>(
   db.db,

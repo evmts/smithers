@@ -11,9 +11,9 @@ import { useQueryValue } from '../reactive-sqlite/index.js'
  * @returns The current ralph iteration count (0-indexed)
  */
 export function useRalphCount(): number {
-  const { reactiveDb } = useSmithers()
+  const { db } = useSmithers()
   const { data } = useQueryValue<number>(
-    reactiveDb,
+    db.db,
     "SELECT CAST(value AS INTEGER) as count FROM state WHERE key = 'ralphCount'"
   )
   return data ?? 0

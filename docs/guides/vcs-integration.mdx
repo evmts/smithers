@@ -12,7 +12,7 @@ Smithers has first-class support for Git and Jujutsu (jj) version control.
 Create commits with the Commit component:
 
 ```tsx
-import { Commit } from "smithers-orchestrator/components/Git";
+import { Commit } from "smithers-orchestrator";
 
 <Commit
   message="feat: Add user authentication"
@@ -182,56 +182,64 @@ function FeatureWorkflow() {
         <Ralph maxIterations={10}>
           <If condition={phase === "implement"}>
             <Phase name="Implementation">
-              <Claude
-                allowedTools={["Edit", "Write"]}
-                onFinished={() => setPhase("test")}
-              >
-                Implement the feature.
-              </Claude>
+              <Step name="implement">
+                <Claude
+                  allowedTools={["Edit", "Write"]}
+                  onFinished={() => setPhase("test")}
+                >
+                  Implement the feature.
+                </Claude>
+              </Step>
             </Phase>
           </If>
 
           <If condition={phase === "test"}>
             <Phase name="Testing">
-              <Claude
-                allowedTools={["Bash"]}
-                onFinished={(result) => {
-                  if (result.output.includes("PASS")) {
-                    setPhase("review");
-                  } else {
-                    setPhase("implement");
-                  }
-                }}
-              >
-                Run the tests.
-              </Claude>
+              <Step name="test">
+                <Claude
+                  allowedTools={["Bash"]}
+                  onFinished={(result) => {
+                    if (result.output.includes("PASS")) {
+                      setPhase("review");
+                    } else {
+                      setPhase("implement");
+                    }
+                  }}
+                >
+                  Run the tests.
+                </Claude>
+              </Step>
             </Phase>
           </If>
 
           <If condition={phase === "review"}>
             <Phase name="Review">
-              <Review
-                target={{ type: "diff", ref: "main" }}
-                criteria={["No security issues", "Tests pass"]}
-                onFinished={(review) => {
-                  if (review.approved) {
-                    setPhase("commit");
-                  } else {
-                    setPhase("implement");
-                  }
-                }}
-              />
+              <Step name="review">
+                <Review
+                  target={{ type: "diff", ref: "main" }}
+                  criteria={["No security issues", "Tests pass"]}
+                  onFinished={(review) => {
+                    if (review.approved) {
+                      setPhase("commit");
+                    } else {
+                      setPhase("implement");
+                    }
+                  }}
+                />
+              </Step>
             </Phase>
           </If>
 
           <If condition={phase === "commit"}>
             <Phase name="Commit">
-              <Commit
-                autoGenerate
-                all
-                notes={{ smithers: true }}
-                onFinished={() => setPhase("done")}
-              />
+              <Step name="commit">
+                <Commit
+                  autoGenerate
+                  all
+                  notes={{ smithers: true }}
+                  onFinished={() => setPhase("done")}
+                />
+              </Step>
             </Phase>
           </If>
         </Ralph>
