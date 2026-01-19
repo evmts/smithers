@@ -75,8 +75,8 @@ describe('ReactiveDatabase', () => {
 
   describe('close()', () => {
     test('clears subscriptions', () => {
-      let callCount = 0
-      db.subscribe(['users'], () => { callCount++ })
+      let _callCount = 0
+      db.subscribe(['users'], () => { _callCount++ })
       
       db.close()
       
@@ -485,10 +485,10 @@ describe('ReactiveDatabase', () => {
       db.run('INSERT INTO books (id, author_id, title) VALUES (?, ?, ?)', [2, 1, 'Book2'])
       
       let authorsCount = 0
-      let booksCount = 0
+      let _booksCount = 0
       
       db.subscribe(['authors'], () => { authorsCount++ })
-      db.subscribe(['books'], () => { booksCount++ })
+      db.subscribe(['books'], () => { _booksCount++ })
       
       // Delete author - should cascade to books
       db.run('DELETE FROM authors WHERE id = ?', [1])

@@ -6,7 +6,7 @@
  * SmithersProvider for iteration management.
  */
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
-import { createContext, useContext } from 'react'
+import { useContext } from 'react'
 import { createSmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB } from '../db/index.js'
 import {

@@ -11,7 +11,7 @@
  * - runOn filter behavior
  * - Error handling
  */
-import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import React from 'react'
 import type { PostCommitProps } from './PostCommit.js'
 import { PostCommit } from './PostCommit.js'
@@ -731,14 +731,14 @@ describe('PostCommit integration', () => {
   })
 
   test('works with SmithersProvider orchestration', async () => {
-    let onCompleteCalledCount = 0
+    let _onCompleteCalledCount = 0
     
     await ctx.root.render(
       <SmithersProvider
         db={ctx.db}
         executionId={ctx.executionId}
         stopped={true}
-        onComplete={() => { onCompleteCalledCount++ }}
+        onComplete={() => { _onCompleteCalledCount++ }}
       >
         <PostCommit>
           <test-child />

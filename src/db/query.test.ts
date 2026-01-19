@@ -28,7 +28,7 @@ describe('QueryModule', () => {
     db.close()
   })
 
-  const createQuery = () => {
+  const _createQuery = () => {
     return createQueryModule({ rdb: db })
   }
 

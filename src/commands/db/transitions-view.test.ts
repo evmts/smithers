@@ -4,7 +4,7 @@
  * Covers: Transition history display, formatting, date handling
  */
 
-import { describe, it, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { showTransitions } from './transitions-view'
 
 describe('showTransitions', () => {

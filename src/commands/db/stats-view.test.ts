@@ -4,7 +4,7 @@
  * Covers: Table statistics, count queries, formatting
  */
 
-import { describe, it, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { showStats } from './stats-view'
 
 describe('showStats', () => {

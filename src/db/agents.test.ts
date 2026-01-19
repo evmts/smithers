@@ -476,7 +476,7 @@ describe('AgentsModule', () => {
     })
 
     it('includes all agent statuses', () => {
-      const id1 = agents.start('running')
+      agents.start('running')
       const id2 = agents.start('completed')
       agents.complete(id2, 'done')
       const id3 = agents.start('failed')

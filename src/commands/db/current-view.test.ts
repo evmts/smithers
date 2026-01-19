@@ -4,7 +4,7 @@
  * Covers: Current execution details, phase, agent, tool calls, state
  */
 
-import { describe, it, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { showCurrent } from './current-view'
 
 describe('showCurrent', () => {

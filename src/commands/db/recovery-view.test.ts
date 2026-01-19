@@ -4,7 +4,7 @@
  * Covers: Incomplete execution detection, state recovery, transition history
  */
 
-import { describe, it, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { showRecovery } from './recovery-view'
 
 describe('showRecovery', () => {

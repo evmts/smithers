@@ -5,7 +5,7 @@
  * They use mock data where possible to test parsing logic.
  */
 
-import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 import { parseJJStatus, parseDiffStats } from './parsers.js'
 
 // ============================================================================

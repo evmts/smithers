@@ -68,7 +68,7 @@ function renderOnCIFailure(
 }
 
 // Mock GitHub CLI responses
-interface MockGHRun {
+interface _MockGHRun {
   status: string
   conclusion: string | null
   databaseId: number

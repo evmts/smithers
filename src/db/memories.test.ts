@@ -501,7 +501,7 @@ describe('MemoriesModule', () => {
       const memories = createMemories()
       const specialContent = `Unicode: 日本語 中文 한국어\nEmoji: 🚀 💻 🎉\nSymbols: © ® ™ § ¶\nQuotes: "double" 'single' \`backtick\``
 
-      const id = memories.add({
+      memories.add({
         category: 'fact',
         key: 'special',
         content: specialContent
@@ -515,7 +515,7 @@ describe('MemoriesModule', () => {
       const memories = createMemories()
       const maliciousContent = "'; DROP TABLE memories; --"
 
-      const id = memories.add({
+      memories.add({
         category: 'fact',
         key: 'sql-test',
         content: maliciousContent
