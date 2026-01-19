@@ -1,3 +1,15 @@
+/**
+ * Stub MCP server for Smithers tools.
+ * 
+ * This file is spawned as a subprocess by createSmithersToolServer() to expose
+ * SmithersTools via MCP protocol. Currently unimplemented - exits with error.
+ * 
+ * Implementation would require:
+ * 1. Parse SMITHERS_TOOLS env var containing tool definitions
+ * 2. Start MCP server on stdio
+ * 3. Handle tool invocation requests
+ * 4. Route to appropriate tool execute() function
+ */
 const rawTools = process.env['SMITHERS_TOOLS'] ?? '[]'
 
 try {

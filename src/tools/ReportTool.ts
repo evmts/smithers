@@ -91,7 +91,7 @@ Severity levels:
         ...(input.data && { data: input.data }),
       })
 
-      console.log(`[Report] ${severity.toUpperCase()}: ${input.title}`)
+      context.log(`[Report] ${severity.toUpperCase()}: ${input.title}`)
 
       return {
         success: true,

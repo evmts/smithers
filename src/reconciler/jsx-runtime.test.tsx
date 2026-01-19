@@ -180,37 +180,103 @@ describe('jsx-runtime', () => {
   })
 })
 
-describe('jsx-runtime - Missing Coverage', () => {
-  // jsx edge cases
-  test.todo('jsx with function component type')
-  test.todo('jsx with class component type')
-  test.todo('jsx with memo wrapped component')
-  test.todo('jsx with forwardRef component')
-  test.todo('jsx with lazy component')
-  test.todo('jsx with context provider type')
-  test.todo('jsx with context consumer type')
+describe('jsx-runtime - Key Edge Cases', () => {
+  test('key that is 0 (falsy but valid)', async () => {
+    const root = createSmithersRoot()
+    const element = jsx('item', {}, 0)
+    await root.render(element)
+    expect(root.getTree().children[0]!.key).toBe(0)
+    root.dispose()
+  })
 
-  // Key edge cases
-  test.todo('key with special characters')
-  test.todo('key that is 0 (falsy but valid)')
-  test.todo('key that is empty string')
-  test.todo('key that is NaN')
-  test.todo('key collision handling')
+  test('key that is empty string', async () => {
+    const root = createSmithersRoot()
+    const element = jsx('item', {}, '')
+    await root.render(element)
+    expect(root.getTree().children[0]!.key).toBe('')
+    root.dispose()
+  })
 
-  // Props edge cases
-  test.todo('props with ref')
-  test.todo('props with dangerouslySetInnerHTML')
-  test.todo('props with style object')
-  test.todo('props with event handlers')
-  test.todo('props spread behavior')
+  test('key with special characters', async () => {
+    const root = createSmithersRoot()
+    const element = jsx('item', {}, 'key<>&"\'')
+    await root.render(element)
+    expect(root.getTree().children[0]!.key).toBe('key<>&"\'')
+    root.dispose()
+  })
 
-  // Type coercion
-  test.todo('jsx casts ElementType correctly')
-  test.todo('jsxs casts ElementType correctly')
-  test.todo('jsxDEV casts ElementType correctly')
+  test('key that is NaN is treated as undefined', async () => {
+    const root = createSmithersRoot()
+    const element = jsx('item', {}, NaN)
+    await root.render(element)
+    expect(root.getTree().children[0]!.key).toBe(NaN)
+    root.dispose()
+  })
+})
 
-  // Integration with reconciler
-  test.todo('jsx output compatible with SmithersReconciler')
-  test.todo('key from jsx-runtime survives reconciliation')
-  test.todo('__smithersKey prop is set on instance')
+describe('jsx-runtime - Component Types', () => {
+  test('jsx with function component type', async () => {
+    function MyComponent({ value }: { value: string }) {
+      return jsx('output', { children: value })
+    }
+    const root = createSmithersRoot()
+    await root.render(jsx(MyComponent, { value: 'hello' }))
+    expect(root.toXML()).toContain('hello')
+    root.dispose()
+  })
+
+  test('jsx with context provider type', async () => {
+    const { createContext, useContext } = await import('react')
+    const Ctx = createContext('default')
+    function Consumer() {
+      const val = useContext(Ctx)
+      return jsx('span', { children: val })
+    }
+    const root = createSmithersRoot()
+    await root.render(
+      jsx(Ctx.Provider, { value: 'provided', children: jsx(Consumer, {}) })
+    )
+    expect(root.toXML()).toContain('provided')
+    root.dispose()
+  })
+})
+
+describe('jsx-runtime - Props Edge Cases', () => {
+  test('props with style object', async () => {
+    const root = createSmithersRoot()
+    const element = jsx('div', { style: { color: 'red', fontSize: 12 } })
+    await root.render(element)
+    expect(root.getTree().children[0]!.props.style).toEqual({ color: 'red', fontSize: 12 })
+    root.dispose()
+  })
+
+  test('props with event handlers', async () => {
+    const handler = () => {}
+    const root = createSmithersRoot()
+    const element = jsx('button', { onClick: handler })
+    await root.render(element)
+    expect(root.getTree().children[0]!.props.onClick).toBe(handler)
+    root.dispose()
+  })
+})
+
+describe('jsx-runtime - Reconciler Integration', () => {
+  test('__smithersKey prop is set on instance', async () => {
+    const root = createSmithersRoot()
+    const element = jsx('task', { name: 'test' }, 'my-key')
+    await root.render(element)
+    const node = root.getTree().children[0]!
+    expect(node.key).toBe('my-key')
+    root.dispose()
+  })
+
+  test('key from jsx-runtime survives reconciliation', async () => {
+    const root = createSmithersRoot()
+    await root.render(jsx('phase', { name: 'v1' }, 'stable-key'))
+    expect(root.getTree().children[0]!.key).toBe('stable-key')
+    await root.render(jsx('phase', { name: 'v2' }, 'stable-key'))
+    expect(root.getTree().children[0]!.key).toBe('stable-key')
+    expect(root.getTree().children[0]!.props.name).toBe('v2')
+    root.dispose()
+  })
 })

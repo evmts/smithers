@@ -1,40 +1,12 @@
 // Tools registry - built-in and custom tool support
 
-import type { SmithersDB } from '../db/index.js'
+import type { LegacyTool, MCPServer, ToolSpec } from './types.js'
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
-export interface JSONSchema {
-  type: string
-  properties?: Record<string, JSONSchema>
-  required?: string[]
-  description?: string
-  enum?: string[]
-  items?: JSONSchema
-  [key: string]: any
-}
-
-export interface ToolContext {
-  db: SmithersDB
-  agentId: string
-  executionId: string
-}
-
-export interface Tool {
-  name: string
-  description: string
-  inputSchema: JSONSchema
-  execute: (input: any, context: ToolContext) => Promise<any>
-}
-
-export interface MCPServer {
-  name: string
-  command: string
-  args?: string[]
-  env?: Record<string, string>
-}
+// Re-export types for backwards compatibility
+export type { MCPServer, ToolSpec }
+export type Tool = LegacyTool
+export type { JSONSchema } from '../components/agents/types/schema.js'
+export type { SmithersToolContext as ToolContext } from './types.js'
 
 // ============================================================================
 // BUILT-IN TOOLS REGISTRY
@@ -82,8 +54,6 @@ export function getToolInfo(name: string): (typeof BUILTIN_TOOLS)[BuiltinToolNam
 // ============================================================================
 // TOOL SPECIFICATION HELPERS
 // ============================================================================
-
-export type ToolSpec = string | Tool | MCPServer
 
 /**
  * Check if a tool spec is a custom Tool object
