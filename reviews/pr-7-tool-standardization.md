@@ -61,3 +61,15 @@ Issue spec mentions streaming tool results via generators. Claude CLI doesn't su
 - [ ] Add production path fallback for MCP server
 - [ ] Document generator limitation in README
 - [ ] Consider trimming unused AI SDK framework adapters
+
+## Status: RESOLVED
+
+**Evidence:** PR #7 was never merged. The codebase uses a simpler tool system:
+
+- No `ai` or `@ai-sdk/*` packages in [package.json](file:///Users/williamcory/smithers/package.json)
+- No `createSmithersTool()` function exists
+- No `experimental_context` usage
+- No `smithers-mcp-server.ts` or `toolToMCPDefinition()`
+- [registry.ts](file:///Users/williamcory/smithers/src/tools/registry.ts) uses a plain `Tool` interface with `inputSchema: JSONSchema` (no Zod)
+
+The review concerns are moot since the proposed AI SDK integration approach was not adopted.

@@ -88,3 +88,54 @@ The design doc specifies:
 - Follows existing patterns (SmithersProvider, middleware)
 - Clear type interfaces already designed
 - Can leverage `@anthropic-ai/sdk` for API calls
+
+## Debugging Plan
+
+### Files to Investigate
+- `src/components/Claude.tsx` - Current retry logic (validation only, lines 213+)
+- `src/db/agents.ts:51-61` - Existing token tracking schema
+- `issues/rate-limit-module.md` - Full design spec
+- `issues/middleware-integration-revised.md` - Middleware patterns
+
+### Grep Patterns to Find Related Code
+```bash
+# Current API call sites that need rate limit handling
+grep -r "anthropic" src/ --include="*.ts" --include="*.tsx"
+grep -r "messages.create\|stream" src/ --include="*.ts"
+
+# Existing retry/backoff logic
+grep -r "retry\|backoff\|exponential" src/
+
+# Token tracking for usage estimation
+grep -r "input_tokens\|output_tokens" src/
+```
+
+### Test Commands to Reproduce
+```bash
+# No direct reproduction - feature gap, not bug
+# To verify absence:
+ls src/rate-limits/  # Should fail (dir doesn't exist)
+grep -r "RateLimitMonitor" src/  # Should return nothing
+```
+
+### Proposed Fix Approach
+1. **Create module structure:** `src/rate-limits/{types,providers,store,monitor,throttle,middleware,index}.ts`
+2. **Start with types.ts:** Define `RateLimitInfo`, `RateLimitStatus`, `UsageSnapshot` interfaces per design doc
+3. **Anthropic provider:** Parse `anthropic-ratelimit-*` headers from API responses
+4. **In-memory store:** LRU cache with TTL for rate limit snapshots
+5. **Monitor class:** Query API with minimal Haiku call, track execution-scoped usage
+6. **Throttle controller:** Calculate delays, implement exponential backoff near limits
+7. **Middleware wrapper:** Integrate with SmithersProvider context
+8. **Update exports:** Re-export from `src/index.ts`
+
+## Review Verification (2026-01-18)
+
+**Status: STILL RELEVANT**
+
+Verified absence:
+- `src/rate-limits/` directory does not exist
+- No `RateLimitMonitor` or `ThrottleController` implementations found
+- No `anthropic-ratelimit` header parsing in codebase
+- Claude.tsx line 213+ is UI throttling (tail log updates), not API rate limit handling
+
+Feature gap confirmed - implementation has not started.

@@ -76,6 +76,75 @@ But error handling path also needs check:
 
 ## Action Items
 - [ ] Verify removed eval assertions are intentional
-- [ ] Change `=== null` to `== null` for PhaseRegistry
+- [x] Change `=== null` to `== null` for PhaseRegistry *(FIXED in PhaseRegistry.tsx:69)*
 - [ ] Add useState test to confirm full hook support
 - [ ] Confirm all async paths have isMounted guards
+
+## Status: RELEVANT
+
+### Findings (2025-01-18)
+
+**Fixed:**
+- PhaseRegistry.tsx:69 now uses `existing === null || existing === undefined`
+
+**Still Outstanding:**
+
+1. **Step.tsx:70** - Still uses `=== null` without undefined check:
+   ```typescript
+   if (existing === null) {
+   ```
+
+2. **No useState test** - `test/` has no useState usage; hook support not fully verified
+
+3. **Smithers.tsx:277** - `onError` callback lacks isMounted guard:
+   ```typescript
+   props.onError?.(errorObj)  // Called without isMounted() check
+   ```
+
+## Debugging Plan
+
+### Files to Investigate
+- [`src/components/Step.tsx#L70`](file:///Users/williamcory/smithers/src/components/Step.tsx#L70) - null check issue
+- [`src/components/Smithers.tsx#L277`](file:///Users/williamcory/smithers/src/components/Smithers.tsx#L277) - missing isMounted guard
+- `test/hooks-integration.test.tsx` - needs useState test
+
+### Grep Patterns
+```bash
+# Find all === null checks missing undefined
+grep -n "=== null" src/components/*.tsx
+
+# Find all callback invocations in catch blocks
+grep -n "props\\.on.*\\?\\." src/components/Smithers.tsx
+```
+
+### Test Commands
+```bash
+# Run existing hook tests
+bun test test/hooks-integration.test.tsx
+
+# Verify reconciler properly handles useState
+bun test src/jsx-runtime.test.ts
+```
+
+### Proposed Fixes
+
+1. **Step.tsx** - Change line 70:
+   ```typescript
+   if (existing === null || existing === undefined) {
+   ```
+
+2. **Smithers.tsx** - Add isMounted check at line 277:
+   ```typescript
+   if (isMounted()) {
+     props.onError?.(errorObj)
+   }
+   ```
+
+3. **Add useState test** in hooks-integration.test.tsx:
+   ```typescript
+   function UseStateComponent() {
+     const [count, setCount] = useState(42)
+     useEffect(() => { setCount(43) }, [])
+     return <text>{count}</text>
+   }
+   ```

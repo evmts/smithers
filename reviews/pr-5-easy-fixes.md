@@ -52,3 +52,61 @@ The `/capture` skill was not specified in any `issues/*.md` file. Implementing u
 - [ ] Create `issues/capture-skill.md` for new feature
 - [ ] Split PR: one for fixes, one for capture
 - [ ] Actually implement the easy fixes listed
+
+---
+
+## Debugging Plan
+
+### Files to Investigate
+- `/Users/williamcory/smithers/PROMPT.md` - still committed, should be gitignored
+- `/Users/williamcory/smithers/.gitignore` - missing PROMPT.md entry
+- `/Users/williamcory/smithers/scripts/capture.ts` - feature without issue tracking
+- `/Users/williamcory/smithers/src/utils/capture.ts` - feature without issue tracking
+- `/Users/williamcory/smithers/issues/` - no capture-skill.md exists
+
+### Grep Patterns
+```bash
+# Check if PROMPT.md is tracked
+git ls-files | grep -i prompt
+
+# Find easy fixes mentioned but not implemented
+grep -r "componentName" src/ --include="*.ts"
+grep -r "host config" src/ --include="*.ts"
+grep -r "License" src/ --include="*.ts" | head -5
+```
+
+### Test Commands
+```bash
+# Verify branch state
+git diff main..issue/easy-fixes --stat
+
+# Check what should have been fixed
+cat PROMPT.md
+```
+
+### Proposed Fix Approach
+1. Add `PROMPT.md` to `.gitignore`
+2. Remove `PROMPT.md` from git tracking: `git rm --cached PROMPT.md`
+3. Create `issues/capture-skill.md` documenting the capture feature
+4. Split PR:
+   - New branch for capture feature only
+   - Keep `issue/easy-fixes` for actual easy fixes from original PROMPT.md
+5. Rebase/amend commits to separate concerns
+
+---
+
+## Status Check: 2026-01-18
+
+**STILL RELEVANT** - Issues persist:
+
+| Issue | Status |
+|-------|--------|
+| PROMPT.md tracked in git | ❌ Still tracked (not in .gitignore) |
+| issues/capture-skill.md missing | ❌ Does not exist |
+| capture.ts files without issue | ❌ Still present at scripts/ and src/utils/ |
+| Branch issue/easy-fixes exists | ⚠️ Branch still active |
+
+### Immediate Actions Required
+1. `echo "PROMPT.md" >> .gitignore && git rm --cached PROMPT.md`
+2. Create `issues/capture-skill.md` with feature spec
+3. Decide: merge capture as-is or split PR

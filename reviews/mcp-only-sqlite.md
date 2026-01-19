@@ -72,3 +72,70 @@ Create React components in `src/components/MCP/` following `Sqlite.tsx` pattern:
 
 ## Estimated Effort
 1-2 hours per server type (4-8 hours total for all four common servers)
+
+## Debugging Plan
+
+### Files to Investigate
+1. `src/utils/mcp-config.ts` - Main config generator (lines 89-94 have placeholders)
+2. `src/components/MCP/Sqlite.tsx` - Reference implementation for component pattern
+3. `src/components/MCP/index.ts` - Exports only Sqlite currently
+
+### Grep Patterns
+```bash
+# Find all MCP server type references
+grep -r "filesystem\|github\|custom" src/
+
+# Find MCP tool usages to understand expected config shape
+grep -r "mcp-tool" src/
+
+# Check for any existing MCP server packages
+grep -r "@modelcontextprotocol" .
+```
+
+### Test Commands
+```bash
+# Run existing MCP tests
+bun test src/utils/mcp-config.test.ts
+
+# Verify SQLite implementation works
+bun test --grep "MCP"
+```
+
+### Proposed Fix Approach
+1. **Implement `filesystem` case** in `generateMCPServerConfig()`:
+   ```typescript
+   case 'filesystem':
+     mcpConfig['mcpServers']['filesystem'] = {
+       command: 'bunx',
+       args: ['-y', '@modelcontextprotocol/server-filesystem', tool.config['rootPath']],
+     }
+     break
+   ```
+
+2. **Create `Filesystem.tsx`** component following `Sqlite.tsx` pattern
+
+3. **Repeat for `github`** with auth token handling
+
+4. **Update exports** in `src/components/MCP/index.ts`
+
+5. **Add tests** in `src/utils/mcp-config.test.ts` for each new type
+
+## Debugging Plan
+
+**Verified 2026-01-18: Issue still exists**
+
+### Confirmed Current State
+- `src/utils/mcp-config.ts:89-94` still has placeholder cases for `filesystem`, `github`, `custom`
+- `src/components/MCP/` only contains `Sqlite.tsx` and `index.ts`
+
+### Investigation Steps
+1. **Review Sqlite.tsx pattern** - understand component structure for replication
+2. **Check MCP package availability** - verify `@modelcontextprotocol/server-filesystem` and `@modelcontextprotocol/server-github` exist
+3. **Run existing tests** - `bun test src/utils/mcp-config.test.ts` to understand test patterns
+
+### Implementation Order
+1. `filesystem` - simplest, just `rootPath` config
+2. `github` - needs `GITHUB_PERSONAL_ACCESS_TOKEN` env handling  
+3. Add corresponding React components in `src/components/MCP/`
+4. Update exports in `index.ts`
+5. Add test cases for each type

@@ -66,3 +66,44 @@ Based on codebase patterns:
 
 ## Estimated Effort
 2-3 hours (reduced from 3-4 due to existing test infrastructure)
+
+## Debugging Plan
+
+### Files to Investigate
+- `/Users/williamcory/smithers/src/components/agents/claude-cli/output-parser.ts` (L54-66)
+- `/Users/williamcory/smithers/src/components/agents/claude-cli/message-parser.ts` (L21, L124, L146)
+- `/Users/williamcory/smithers/src/components/agents/types.ts` (ClaudeOutputFormat type)
+
+### Grep Patterns
+```bash
+# Find all regex-based parsing
+grep -rn "\.match\(/" src/components/agents/claude-cli/
+
+# Find output format handling
+grep -rn "outputFormat\|stream-json" src/
+
+# Find tool boundary detection
+grep -rn "Tool:|TOOL:|<invoke" src/
+```
+
+### Test Commands
+```bash
+bun test src/components/agents/claude-cli/output-parser.test.ts
+bun test src/components/agents/claude-cli/message-parser.test.ts
+```
+
+### Proposed Fix Approach
+1. **Add structured fallback chain** in `output-parser.ts`:
+   - Keep JSON parse as primary (already exists L30-51)
+   - Add warning log when falling back to regex (L54-66)
+   - Consider deprecation path for text-format token extraction
+
+2. **Improve tool boundary robustness** in `message-parser.ts`:
+   - Add structured event parsing if CLI supports it
+   - Log warnings when using heuristic boundaries (L124 double-newline)
+   - Consider state machine approach vs regex for tool parsing
+
+3. **Integration test with real CLI**:
+   - Add test that captures actual `claude` CLI output
+   - Verify patterns still match current format
+   - Run in CI to catch format drift

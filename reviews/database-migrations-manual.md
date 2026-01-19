@@ -105,3 +105,55 @@ bun run -e "import {createSmithersDB} from './src/db'; const db = createSmithers
    - Insert record into `schema_migrations` after each
 5. Add migration helper: `createMigration(version: number, name: string, up: (db) => void)`
 6. Write tests in `src/db/migrations.test.ts`
+
+## Debugging Plan
+
+### Step 1: Verify Current State
+```bash
+# Confirm manual migration pattern exists
+grep -n "PRAGMA table_info\|ALTER TABLE" src/db/index.ts
+```
+
+### Step 2: Add schema_migrations Table
+Add to `src/db/schema.sql`:
+```sql
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at TEXT DEFAULT (datetime('now'))
+);
+```
+
+### Step 3: Create Migration Infrastructure
+1. Create `src/db/migrations/` directory
+2. Create `src/db/runMigrations.ts` with:
+   - `Migration` interface: `{ version: number, name: string, up: (db: ReactiveDatabase) => void }`
+   - `runMigrations(db)` that reads migrations, checks `schema_migrations`, applies pending
+
+### Step 4: Convert Existing Migration
+Create `src/db/migrations/001_add_log_path_to_agents.ts`:
+```typescript
+export const version = 1
+export const name = 'add_log_path_to_agents'
+export function up(db: ReactiveDatabase): void {
+  db.exec('ALTER TABLE agents ADD COLUMN log_path TEXT')
+}
+```
+
+### Step 5: Update index.ts
+Replace manual `runMigrations()` with import from new module.
+
+### Step 6: Test
+```bash
+bun test src/db/
+# Verify new DB gets log_path column
+# Verify existing DB with log_path doesn't fail
+# Verify schema_migrations records applied version
+```
+
+### Acceptance Criteria
+- [ ] `schema_migrations` table exists
+- [ ] Migrations run in order by version
+- [ ] Applied migrations are recorded
+- [ ] Existing databases upgrade correctly
+- [ ] Tests pass for migration system

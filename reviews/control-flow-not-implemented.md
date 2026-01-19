@@ -193,3 +193,17 @@ bun test src/components/If.test.tsx  # if exists
 1. Test nested While loops with Phase/Step inside
 2. Test crash recovery mid-iteration
 3. Test If/While/Switch combinations
+
+## Status Check: 2026-01-18
+
+**STILL RELEVANT** - Verified against current codebase:
+
+| Component/Pattern | Status |
+|-------------------|--------|
+| `scopeId` in context | ❌ Not implemented |
+| `ScopeProvider.tsx` | ❌ Does not exist |
+| `While.tsx` | ❌ Does not exist |
+| `Switch.tsx` | ❌ Does not exist |
+| `If.tsx` | ⚠️ Exists but simple ternary (L25-26: `return condition ? children : null`) |
+
+The existing Debugging Plan above remains accurate and actionable.

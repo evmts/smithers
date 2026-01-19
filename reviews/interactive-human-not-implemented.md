@@ -187,3 +187,12 @@ grep -E "session_config|session_transcript|session_duration" src/db/schema.sql
 1. Unit tests for DB module extensions
 2. Integration tests for hook with mock harness
 3. Test single-session enforcement throws
+
+## Status: STILL RELEVANT (2026-01-18)
+
+Verified all gaps remain:
+- `useHumanInteractive.ts` hook not created (only `useHuman.ts` exists in `/src/hooks/`)
+- Schema columns `session_config`, `session_transcript`, `session_duration`, `error` not in `human_interactions` table
+- `requestInteractive()`, `completeInteractive()`, `cancelInteractive()` methods not in `human.ts`
+
+Review remains actionable. Implementation can proceed per the debugging plan above.

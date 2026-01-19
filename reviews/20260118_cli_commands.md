@@ -90,3 +90,44 @@ rm .smithers/db.sqlite && bunx smithers-orchestrator db stats
    ```
 6. **Wrap table counts in try/catch** in stats-view.ts or check table existence first
 7. **Replace process.exit()** with thrown errors caught at CLI entry point
+
+## Status: STILL RELEVANT (verified 2026-01-18)
+
+All issues confirmed present in codebase:
+
+| Issue | Location | Status |
+|-------|----------|--------|
+| `shell: true` | run.ts:60, monitor.ts:67 | ❌ Present |
+| `process.exit()` | 8 calls in run/init/monitor | ❌ Present |
+| `started_at!` assertion | recovery-view.ts:36, executions-view.ts:42 | ❌ Present |
+| Unconditional ellipsis | current-view.ts:61 | ❌ Present |
+| Unsafe stringify | state-view.ts:15 | ❌ Present |
+| Unguarded table queries | stats-view.ts:21-23 | ❌ Present |
+
+## Debugging Plan
+
+### Priority Order (by risk)
+
+1. **HIGH - shell:true injection risk**
+   - Edit `src/commands/run.ts:60` → remove `shell: true`
+   - Edit `src/commands/monitor.ts:67` → remove `shell: true`
+
+2. **HIGH - Runtime crashes**
+   - `state-view.ts:15`: Add null check before `.split()`
+   - `stats-view.ts`: Wrap queries in try/catch or check `sqlite_master`
+   - `recovery-view.ts:36`, `executions-view.ts:42`: Guard `started_at` with nullish coalescing
+
+3. **MEDIUM - Output correctness**
+   - `current-view.ts:61`: Only append `...` when `prompt.length > 100`
+
+4. **LOW - Testability**
+   - Replace `process.exit()` with thrown errors in run/init/monitor
+   - Add top-level catch in CLI entry point
+
+### Verification Commands
+```bash
+# After fixes, run:
+bun test src/commands/
+bunx smithers-orchestrator db stats  # on fresh db
+bunx smithers-orchestrator db current
+```

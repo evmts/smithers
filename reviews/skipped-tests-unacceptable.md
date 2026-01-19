@@ -136,3 +136,52 @@ Note: This is a larger refactor. Consider if eval tests are critical for MVP or 
 3. Evaluate if eval tests are critical for MVP
    - If yes: invest 8-12 hours in JSX test environment
    - If no: defer to post-MVP and accept 15 skips in eval suite
+
+## Debugging Plan
+
+### Files to Investigate
+```
+src/components/Ralph.tsx              # Source of skipped RalphContext tests
+src/components/Ralph.test.tsx         # 2 describe.skip blocks
+src/components/agents/SmithersCLI.test.ts  # 1 test.skip (Bun.spawn issue)
+evals/renderer.test.tsx               # 2 describe.skip blocks
+evals/components.test.tsx             # 10 describe.skip blocks
+evals/hello-world.test.tsx            # 1 describe.skip block
+evals/01-basic-rendering.test.tsx     # Reference for what's already covered
+test/integration.test.ts              # Pattern for non-JSX testing
+```
+
+### Grep Patterns
+```bash
+# Find all skips in main codebase (excluding reference/)
+grep -r "describe\.skip\|test\.skip\|it\.skip" --include="*.ts" --include="*.tsx" src/ evals/ test/
+
+# Find Ralph orchestration functions to extract
+grep -n "createOrchestrationPromise\|signalOrchestrationComplete\|signalOrchestrationError" src/
+
+# Check SmithersCLI Bun.spawn usage
+grep -n "Bun\.spawn" src/components/agents/
+```
+
+### Test Commands to Reproduce
+```bash
+# Run all tests, see current skip count
+bun test
+
+# Run specific skipped test files
+bun test src/components/Ralph.test.tsx
+bun test src/components/agents/SmithersCLI.test.ts
+bun test evals/components.test.tsx
+```
+
+### Proposed Fix Approach
+
+**Phase 1: Quick Wins (3 hrs)**
+1. **Ralph utils extraction**: Create `src/components/Ralph/utils.ts`, move orchestration promise functions there, update imports, unskip 2 describe blocks
+2. **SmithersCLI**: Mock `Bun.spawn` or use test fixtures to isolate behavior, unskip 1 test
+
+**Phase 2: Eval Suite Decision (1-12 hrs)**
+- Option A (1-2 hrs): Prune redundant eval suites if `evals/01-basic-rendering.test.tsx` covers them
+- Option B (8-12 hrs): Build JSX reconciler test harness for full eval coverage
+
+**Expected Outcome**: 0-3 skips (MVP) or 0 skips (ideal)

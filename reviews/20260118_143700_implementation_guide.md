@@ -697,3 +697,67 @@ transaction<T>(fn: () => T): T {
 ```
 
 **Fix 6:** Requires schema migration - add `execution_id` column to state table with compound PK
+
+## Status: STILL RELEVANT (2026-01-18 Re-review)
+
+**Verified against current codebase:**
+
+### Fix 5 (Transaction Invalidation) - CONFIRMED OPEN
+- [database.ts#L304-306](file:///Users/williamcory/smithers/src/reactive-sqlite/database.ts#L304-L306): `transaction()` has no batching
+- `run()` calls `invalidate()` immediately (L106-110)
+- No `inTransaction` counter or `pendingInvalidations` set exists
+
+### Fix 6 (Execution-Scoped State) - CONFIRMED OPEN
+- [schema.sql#L187-191](file:///Users/williamcory/smithers/src/db/schema.sql#L187-L191): State table uses `key TEXT PRIMARY KEY`
+- No `execution_id` column present
+- Seeds `ralphCount` at L197
+
+## Debugging Plan
+
+### Step 1: Implement Transaction Batching (Fix 5)
+
+```
+Files: src/reactive-sqlite/database.ts
+
+Add to class:
+- private inTransaction = 0
+- private pendingInvalidations = new Set<string>()
+
+Modify run():
+- If inTransaction > 0, queue to pendingInvalidations instead of calling invalidate()
+
+Modify transaction():
+- Increment inTransaction before
+- On success: flush pendingInvalidations via invalidate()
+- On failure: clear pendingInvalidations
+- Decrement inTransaction in finally
+
+Test: bun test src/reactive-sqlite/database.test.ts
+```
+
+### Step 2: Add Execution-Scoped State (Fix 6)
+
+```
+Files: 
+- src/db/schema.sql
+- src/db/state.ts
+
+Schema change:
+- Add execution_id TEXT NOT NULL REFERENCES executions(id)
+- Change PK to (execution_id, key)
+- Update seed INSERT to include execution_id
+
+StateModule changes:
+- Inject ExecutionContextProvider or accept executionId param
+- All queries add WHERE execution_id = ?
+
+Migration: Need to handle existing rows - either drop state on upgrade or migrate with default execution_id
+```
+
+### Step 3: Validate
+
+```bash
+bun test src/reactive-sqlite/
+bun test src/db/
+bun run typecheck
+```

@@ -627,3 +627,25 @@ removeNode(parent: SmithersNode, node: SmithersNode): void {
 1. After `removeNode(parent, node)`: either descendants have consistent parent pointers OR both parent pointers AND children arrays are cleared
 2. After `clearContainer(container)`: same invariant applies to all detached subtrees
 3. Add unit tests verifying the chosen invariant model
+
+---
+
+## Relevance Check: 2026-01-18
+
+**Status: STILL RELEVANT**
+
+### Verified Current State
+
+| Issue | File:Lines | Current Behavior | Still Open? |
+|-------|------------|------------------|-------------|
+| **P1: removeNode invariants** | `methods.ts:70-87` | Clears descendant `parent` pointers but leaves `node.children` arrays intact | ✅ YES |
+| **P1: clearContainer incomplete** | `host-config.ts:185-191` | Only clears immediate children's `parent`; descendants keep their pointers | ✅ YES |
+
+### Why Still Relevant
+
+1. **removeNode**: Lines 78-86 clear descendant `parent = null` but never touch `node.children`. Detached node still references children who no longer reference it back.
+
+2. **clearContainer**: Lines 185-191 iterate only `container.children`, not using `removeNode`. If any child has descendants, those descendants retain stale `parent` pointers.
+
+### Next Steps
+Implement one of the fix options in the Debugging Plan above, then add unit tests to verify invariants.

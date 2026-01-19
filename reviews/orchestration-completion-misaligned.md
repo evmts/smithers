@@ -177,3 +177,74 @@ await root.mount(() => (
 root.dispose()
 expect(completeCalled).toBe(true)
 ```
+
+## Status: RELEVANT
+
+**Re-verified on 2026-01-18 by Amp**
+
+Both issues still exist in the codebase:
+
+1. **Missing `ci_failure` case**: [SmithersProvider.tsx#L446-L473](file:///Users/williamcory/smithers/src/components/SmithersProvider.tsx#L446-L473) - switch handles `total_tokens`, `total_agents`, `total_time`, `report_severity`, `custom` but NOT `ci_failure` despite type definition including it at line 69
+2. **No `root.dispose()` after mount**: [main.tsx.template#L228](file:///Users/williamcory/smithers/templates/main.tsx.template#L228) - calls `await root.mount(App)` but never disposes, meaning useUnmount hooks won't fire
+
+## Debugging Plan
+
+### Files to Investigate
+```
+src/components/SmithersProvider.tsx      # Lines 446-473 (switch statement)
+templates/main.tsx.template              # Line 228 (mount without dispose)
+src/components/Hooks/OnCIFailure.tsx     # Line 209 (sets 'last_ci_failure' state key)
+```
+
+### Grep Patterns
+```bash
+# Find all switch cases for stop conditions
+grep -n "case 'total_" src/components/SmithersProvider.tsx
+
+# Check if ci_failure state is read anywhere
+grep -rn "ci_failure\|ci_status" src/
+
+# Find all places that call mount() without dispose()
+grep -rn "root.mount" --include="*.tsx" --include="*.ts"
+```
+
+### Test Commands
+```bash
+# Run existing SmithersProvider tests
+bun test src/components/SmithersProvider.test.ts
+
+# Manual reproduction: create test that uses ci_failure stop condition
+# and verify it doesn't trigger (because case is missing)
+```
+
+### Proposed Fix Approach
+
+**Fix 1: Add ci_failure case (SmithersProvider.tsx:472)**
+```tsx
+case 'ci_failure':
+  const ciFailure = await props.db.state.get('last_ci_failure')
+  shouldStop = ciFailure !== null
+  message = message || `CI failure detected: ${ciFailure?.value?.message ?? 'unknown'}`
+  break
+```
+
+**Fix 2: Add dispose() after mount (main.tsx.template:228)**
+```tsx
+await root.mount(App)
+root.dispose()  // Triggers useUnmount → fires onComplete callbacks
+```
+
+**Fix 3: Add test coverage**
+```tsx
+test('ci_failure stop condition triggers on CI failure state', async () => {
+  await db.state.set('last_ci_failure', { message: 'Build failed' })
+  // Verify stop condition triggers
+})
+
+test('onComplete fires after dispose', async () => {
+  let called = false
+  await root.mount(() => <SmithersProvider onComplete={() => called = true}>...</SmithersProvider>)
+  root.dispose()
+  expect(called).toBe(true)
+})
+```

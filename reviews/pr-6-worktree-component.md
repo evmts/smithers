@@ -57,6 +57,47 @@ Error state shows error message but no retry mechanism. Consider adding `onRetry
 ---
 
 ## Action Items
-- [ ] Verify Phase children visibility change doesn't break existing tests
-- [ ] Export git utilities from vcs/index.ts
-- [ ] Consider retry mechanism for error state
+- [x] Verify Phase children visibility change doesn't break existing tests - **RESOLVED**: Phase.tsx L146 only renders children when `isActive`
+- [x] Export git utilities from vcs/index.ts - **RESOLVED**: All 4 functions exported at L32-35
+- [ ] Consider retry mechanism for error state - **STILL OPEN**
+
+## Status: PARTIALLY RESOLVED
+
+**Verified 2025-01-18**
+
+| Issue | Status |
+|-------|--------|
+| #1 State Management (SQLite) | ✅ As designed per CLAUDE.md |
+| #2 Phase Children Always Render | ✅ Fixed - children only render when `isActive` |
+| #3 Missing Git Utilities Export | ✅ Fixed - all 4 functions exported |
+| #4 Error State UX (no retry) | ❌ Still missing (verified 2026-01-18) |
+
+## Debugging Plan (Issue #4: Missing Retry Mechanism)
+
+### Files to Investigate
+- `src/components/Worktree.tsx` (L106-112) - error state rendering, no retry
+- `src/components/SmithersProvider.tsx` - db.state access patterns
+
+### Grep Patterns
+```bash
+# Find retry patterns in other components
+grep -r "onRetry\|retry" src/components/
+# Find error handling patterns
+grep -r "status.*error" src/components/
+```
+
+### Proposed Fix
+1. Add `onRetry?: () => void` prop to `WorktreeProps`
+2. Add retry button/mechanism in error state JSX
+3. Reset state to 'pending' and re-run mount logic on retry
+4. Example:
+```tsx
+if (state.status === 'error') {
+  return (
+    <worktree branch={props.branch} status="error" error={state.error}>
+      {state.error ?? 'Failed to set up worktree'}
+      {props.onRetry && <retry onClick={props.onRetry} />}
+    </worktree>
+  )
+}
+```

@@ -233,3 +233,75 @@ Current recommendation: **Leave as visualization-only** unless specific executio
 ### Related Reviews
 - `/Users/williamcory/smithers/reviews/stop-handling-starts-task.md` - Stop component orchestration issue
 - `/Users/williamcory/smithers/reviews/interactive-human-not-implemented.md` - Advanced human interaction feature
+
+## Debugging Plan
+
+**Verified 2026-01-18:** Issue still exists. Components serialize to XML but lack execution wiring.
+
+### Files to Investigate
+
+| File | Purpose |
+|------|---------|
+| `src/components/Stop.tsx` | Add `requestStop()` call on mount |
+| `src/components/Human.tsx` | Add `db.human.request()` + task blocking |
+| `src/components/Claude.tsx` | Add `<persona>`/`<constraints>` extraction (line ~149) |
+| `src/utils/mcp-config.ts` | Reference pattern for extraction logic |
+| `src/components/SmithersProvider.tsx` | `requestStop()` at line 608 |
+
+### Grep Patterns
+
+```bash
+# Verify Stop still not wired
+grep -n "useSmithers\|requestStop" src/components/Stop.tsx
+
+# Verify Human still not wired  
+grep -n "db\.human\|useMount" src/components/Human.tsx
+
+# Check if persona/constraints extraction exists
+grep -n "<persona\|<constraints" src/components/Claude.tsx
+
+# Find extraction pattern to copy
+grep -n "extractMCPConfigs" src/components/Claude.tsx
+```
+
+### Test Commands
+
+```bash
+# Run component tests
+bun test src/components/Stop.test.ts
+bun test src/components/Human.test.ts
+
+# Check if tests exist for execution behavior
+grep -r "requestStop" test/ evals/
+grep -r "db.human" test/ evals/
+```
+
+### Proposed Fix Approach
+
+**Stop (5 min):**
+1. Import `useSmithers`, `useMount` 
+2. Call `requestStop(props.reason)` in `useMount`
+
+**Human (15 min):**
+1. Import `useSmithers`, `useMount`, `useRef`
+2. Register blocking task via `db.tasks.start()`
+3. Create human request via `db.human.request()`
+4. Poll/subscribe for resolution, call callbacks
+
+**Persona/Constraints (30 min):**
+1. Add regex extraction in Claude.tsx after line 149
+2. Prepend persona to systemPrompt
+3. Append constraints to systemPrompt
+4. Strip from cleanPrompt
+
+## Status Check: 2026-01-18
+
+**STILL RELEVANT** - Verified all issues persist:
+
+| Component | Current State | Evidence |
+|-----------|--------------|----------|
+| Stop | ❌ Not wired | `Stop.tsx` L23-28: Only renders `<smithers-stop>`, no `requestStop()` call |
+| Human | ❌ Not wired | `Human.tsx` L28-33: Only renders `<human>`, no `db.human` or task blocking |
+| Persona/Constraints | ❌ Not extracted | `Claude.tsx`: No regex matches for `<persona>` or `<constraints>` |
+
+MCP extraction remains the only working example (`extractMCPConfigs()` in mcp-config.ts).

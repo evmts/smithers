@@ -61,3 +61,16 @@ export type { SmithersStreamPart } from './streaming/types.js'
 - [ ] Define explicit input types for stream parser
 - [ ] Move ExecutionGateProvider to components/
 - [ ] Export SmithersStreamPart from index.ts
+
+## Status: RESOLVED
+
+**Evidence:** The streaming protocol features reviewed here were never implemented:
+
+- No `src/streaming/` directory exists
+- No `SmithersStreamPart` type in codebase
+- No `ClaudeStreamParser` class
+- No `agent_stream_events` table in `src/db/schema.sql`
+- No `ExecutionGateProvider` component
+- No `experimentalTypedStreaming`, `legacyLogFormat`, or `recordStreamEvents` props
+
+The PR appears to have been abandoned or superseded. The design spec still exists at `issues/streaming-protocol.md` but was never merged. This review is now moot.

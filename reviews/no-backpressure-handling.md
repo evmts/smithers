@@ -70,3 +70,56 @@ invalidate(tables?: string[]): void {
 
 ## Estimated Effort
 2-3 hours (easy scope - add batching layer, test with bulk mutations)
+
+## Debugging Plan
+
+### Files to Investigate
+- [`src/reactive-sqlite/database.ts`](file:///Users/williamcory/smithers/src/reactive-sqlite/database.ts) - Core issue location (L282-299 `invalidate()`, L242-276 `invalidateWithRowFilter()`)
+- [`src/reactive-sqlite/hooks/useQuery.ts`](file:///Users/williamcory/smithers/src/reactive-sqlite/hooks/useQuery.ts) - Consumer of callbacks via `useSyncExternalStore`
+- [`reference/opentui/packages/core/src/lib/queue.ts`](file:///Users/williamcory/smithers/reference/opentui/packages/core/src/lib/queue.ts) - Reference pattern for ProcessQueue
+
+### Grep Patterns
+```bash
+# Find all callback invocations
+grep -n "subscription.callback()" src/reactive-sqlite/
+
+# Check for existing batching attempts
+grep -rn "queueMicrotask\|pendingInvalidations\|batchScheduled" src/reactive-sqlite/
+
+# Find all invalidate call sites
+grep -rn "\.invalidate\(" src/
+```
+
+### Test Commands to Reproduce
+```typescript
+// Add to database.test.ts - should show N callbacks for N mutations
+test('bulk insert triggers callback per mutation (no batching)', () => {
+  const db = new ReactiveDatabase(':memory:')
+  db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY)')
+  
+  let callCount = 0
+  db.subscribe(['t'], () => callCount++)
+  
+  for (let i = 0; i < 100; i++) {
+    db.run('INSERT INTO t (id) VALUES (?)', [i])
+  }
+  
+  // Currently: callCount === 100 (bad)
+  // After fix: callCount === 1 (batched)
+  expect(callCount).toBe(100) // Will fail after fix
+})
+```
+
+### Proposed Fix Approach
+1. Add `pendingInvalidations: Set<string>` and `batchScheduled: boolean` private fields
+2. Modify `invalidate()` to collect tables in set and schedule via `queueMicrotask`
+3. Add `flushInvalidations()` private method to execute batched callbacks
+4. Same pattern for `invalidateWithRowFilter()` with row filter deduplication
+5. Add `invalidationMode: 'sync' | 'batched'` config option for backward compat
+6. Update tests to verify batching behavior
+
+## Last Reviewed: 2026-01-18
+
+**Status: STILL RELEVANT**
+
+Verified `invalidate()` at L282-299 still loops synchronously over subscriptions with no batching. Grep confirms no `queueMicrotask`, `pendingInvalidations`, or `batchScheduled` patterns exist in `src/reactive-sqlite/`.

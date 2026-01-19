@@ -125,3 +125,56 @@ Changes needed:
 - Claude.tsx has identical issue at line 93
 - Both components part of agent execution system
 - Other components (Persona, Task, Human, etc.) properly pass children to JSX which reconciler serializes correctly
+
+## Debugging Plan
+
+**Status:** RELEVANT (verified 2025-01-18)
+
+Issue still exists at updated line numbers:
+- `src/components/Smithers.tsx:191` - `const task = String(props.children)`
+- `src/components/Claude.tsx:146` - `const childrenString = String(props.children)`
+- Also found: `src/components/Git/Commit.tsx:112` - `message = String(props.children)`
+
+### Files to Investigate
+
+| File | Purpose |
+|------|---------|
+| `src/components/Smithers.tsx` | Line 191 - naive String() coercion |
+| `src/components/Claude.tsx` | Line 146 - same issue |
+| `src/components/Git/Commit.tsx` | Line 112 - same pattern |
+| `src/reconciler/serialize.ts` | Existing serializer for SmithersNode trees |
+| `src/utils/` | Check if extractText utility already exists |
+
+### Grep Patterns
+
+```bash
+# Find all String(props.children) usages
+grep -rn "String(props.children)" src/
+
+# Find all String(.*children patterns
+grep -rn "String(.*children" src/components/
+
+# Check existing text extraction utilities
+grep -rn "extractText\|textContent" src/utils/
+```
+
+### Test Commands to Reproduce
+
+```tsx
+// Test case in bun test or manual REPL:
+import { render } from './src/reconciler'
+import { Smithers, Claude } from './src/components'
+
+// This will produce "[object Object][object Object]"
+const result = <Smithers>
+  <Persona>You are a reviewer</Persona>
+  <Task>Review the code</Task>
+</Smithers>
+```
+
+### Proposed Fix Approach
+
+1. **Create `src/utils/extract-text.ts`** with ReactNode text extractor (Option 2 from recommendations)
+2. **Update all three components** to use `extractText()` instead of `String()`
+3. **Add unit tests** for extractText utility with various ReactNode inputs
+4. **Consider Option 1 hybrid** - add TypeScript type narrowing + runtime warning for non-string children

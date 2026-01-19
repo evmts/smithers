@@ -300,3 +300,37 @@ Implementation is complete when:
 - This planning doc can be archived
 - Create new issue for transaction batching if needed
 - [x] All documentation updated
+
+## Debugging Plan
+
+The two remaining issues require targeted fixes:
+
+### 1. Transaction Invalidation Batching (P0)
+
+**File:** `src/reactive-sqlite/database.ts` lines 304-306
+
+**Problem:** Each `run()` inside a transaction triggers immediate invalidation callbacks, causing UI churn during multi-step atomic updates.
+
+**Fix Steps:**
+1. Add `inTransaction: boolean` flag to ReactiveDatabase class
+2. Add `pendingInvalidations: Set<string>` to collect table names during transaction
+3. Modify `transaction()` to:
+   - Set `inTransaction = true` before `fn()`
+   - After `fn()` completes, flush all `pendingInvalidations` at once
+   - Reset flag/set
+4. Modify `invalidateTable()` to check `inTransaction` and defer if true
+5. Add test: multiple writes in transaction → single invalidation batch
+
+### 2. AsyncLocalStorage Context for Parallel Subagents (P1)
+
+**Problem:** No execution-scoped context isolation. Parallel subagents may corrupt shared global state.
+
+**Fix Steps:**
+1. Create `src/context/execution-context.ts` with:
+   ```typescript
+   import { AsyncLocalStorage } from 'node:async_hooks'
+   export const executionContext = new AsyncLocalStorage<{ executionId: string, db: ReactiveDatabase }>()
+   ```
+2. Wrap subagent spawns with `executionContext.run({ ... }, async () => { ... })`
+3. Update `db/state.ts`, `db/agents.ts` to use `executionContext.getStore()?.executionId`
+4. Add test: spawn 10 parallel subagents, verify each reads its own execution's state

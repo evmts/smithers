@@ -139,3 +139,42 @@ This matches the pattern used by git/jj/hook components that already follow best
 - No refactoring or state management required
 - Follows existing codebase patterns
 - Zero breaking changes to callers
+
+## Debugging Plan
+
+**Status: RELEVANT** - Issue confirmed present (verified 2026-01-18)
+
+### Files to Modify
+
+| File | Line | Current | Change to |
+|------|------|---------|-----------|
+| `src/components/Claude.tsx` | 127 | `db.tasks.start('claude', props.model ?? 'sonnet')` | `db.tasks.start('claude')` |
+| `src/components/Smithers.tsx` | 187 | `db.tasks.start('smithers', props.plannerModel ?? 'sonnet')` | `db.tasks.start('smithers')` |
+| `src/components/Review/Review.tsx` | 197 | `smithers.db.tasks.start('review', props.target.type)` | `smithers.db.tasks.start('review')` |
+| `src/components/Hooks/OnCIFailure.tsx` | 204 | `db.tasks.start('ci-failure-hook', props.provider)` | `db.tasks.start('ci-failure-hook')` |
+
+### Verification Grep Patterns
+
+```bash
+# Confirm fixes applied:
+grep -n "db\.tasks\.start\('claude'\)" src/components/Claude.tsx
+grep -n "db\.tasks\.start\('smithers'\)" src/components/Smithers.tsx
+grep -n "db\.tasks\.start\('review'\)" src/components/Review/Review.tsx
+grep -n "db\.tasks\.start\('ci-failure-hook'\)" src/components/Hooks/OnCIFailure.tsx
+
+# Ensure no other misuses exist:
+grep -rn "db\.tasks\.start\('[^']*',\s*props\." src/components/
+```
+
+### Test Commands
+
+```bash
+bun run build        # Typecheck
+bun test             # Existing tests pass
+```
+
+### Fix Approach
+
+1. Option 1 (simplest): Remove second argument from all 4 calls
+2. 4 single-line edits, no interface changes
+3. Run typecheck + tests to confirm no regressions

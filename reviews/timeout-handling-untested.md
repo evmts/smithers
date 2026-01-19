@@ -68,3 +68,42 @@ Based on existing test patterns in `evals/` directory:
 
 ## Estimated Effort
 **2-3 hours** - Write 5-7 integration test cases following eval test patterns
+
+## Debugging Plan
+
+### Files to Investigate
+- `src/components/SmithersProvider.tsx` (lines 408-480) - timeout & stopConditions logic
+- `evals/setup.ts` - test utilities (`waitFor`, `delay`)
+- `evals/13-composition-advanced.test.tsx` - pattern to follow
+
+### Grep Patterns
+```bash
+# Find timeout timer setup/cleanup
+grep -n "timeoutIdRef\|checkIntervalIdRef" src/components/SmithersProvider.tsx
+
+# Find stop request flow
+grep -n "stop_requested\|requestStop\|onStopRequested" src/components/
+
+# Find existing eval patterns
+grep -n "SmithersProvider\|createTestEnvironment" evals/*.tsx
+```
+
+### Test Commands to Reproduce
+```bash
+# Run existing evals to understand pattern
+bun test evals/13-composition-advanced.test.tsx
+
+# After creating test file
+bun test evals/15-orchestration-timeout.test.tsx
+```
+
+### Proposed Fix Approach
+1. Create `evals/15-orchestration-timeout.test.tsx`
+2. Test cases:
+   - `globalTimeout` fires and calls `onStopRequested`
+   - Timer cleanup on unmount (no memory leak)
+   - `stopConditions` triggers before `globalTimeout`
+   - DB state shows `status='stopped'` after timeout
+   - Concurrent stop conditions handled gracefully
+3. Use short timeouts (50-100ms) for fast tests
+4. Follow pattern from `evals/13-composition-advanced.test.tsx`

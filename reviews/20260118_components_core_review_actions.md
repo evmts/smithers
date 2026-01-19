@@ -97,3 +97,16 @@ bun test src/components/SmithersProvider.test.tsx
 bun test src/components/Smithers.test.tsx
 bun test src/components/Claude.test.tsx
 ```
+
+## Status: RELEVANT (verified 2026-01-18)
+
+All 4 issues confirmed present in current codebase:
+
+| Issue | File | Line(s) | Status |
+|-------|------|---------|--------|
+| P1: Stop-condition message fallback | SmithersProvider.tsx | 444-465 | `message = message \|\|` never triggers since message is truthy from ?? |
+| P1: Smithers structured result | Smithers.tsx | 139, 168-169 | Reads `result_structured` expecting full `SmithersResult` schema |
+| P2: Tail-log throttle cleanup | Claude.tsx | 327-363 | `catch`/`finally` blocks missing `pendingTailLogUpdateRef` cleanup |
+| P2: Grace period hardcoded | SmithersProvider.tsx | 550 | `stableCount > 50` still hardcoded |
+
+**Next step:** Execute fixes per Debugging Plan above.

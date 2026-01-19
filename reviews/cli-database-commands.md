@@ -101,3 +101,44 @@ smithers db state --execution-id abc   # Flag ignored - not implemented
 2. **Query subcommand (P1)**: Add `src/commands/db/query-view.ts` that executes arbitrary SQL and formats results
 3. **Phases subcommand (P2)**: Add `src/commands/db/phases-view.ts` querying phase-related tables
 4. **Execution-id filter (P2)**: Add `--execution-id` option to DbOptions, pass to view functions, add WHERE clauses
+
+---
+
+## Status Check: 2026-01-18
+
+**STILL RELEVANT** - All 4 issues confirmed unresolved:
+
+| Issue | Status | Evidence |
+|-------|--------|----------|
+| Binary name mismatch | ❌ OPEN | 9 occurrences of `smithers-orchestrator db` in docs/*.mdx |
+| Missing `query` subcommand | ❌ OPEN | No case in src/commands/db/index.ts, no query-view.ts |
+| Missing `phases` subcommand | ❌ OPEN | No case in index.ts, no phases-view.ts |
+| Missing `--execution-id` flag | ❌ OPEN | DbOptions only has `path` field |
+
+### Immediate Fix Steps
+
+**P0 - Binary name (5 min):**
+```bash
+# Fix all 9 occurrences
+sed -i '' 's/smithers-orchestrator db/smithers db/g' \
+  docs/quickstart.mdx \
+  docs/examples/multi-phase-review.mdx \
+  docs/concepts/database-persistence.mdx
+```
+
+**P1 - Query subcommand (30 min):**
+1. Create `src/commands/db/query-view.ts`:
+   ```typescript
+   export async function runQuery(db: SmithersDB, sql: string) {
+     const stmt = db.db.prepare(sql)
+     const results = stmt.all()
+     console.table(results)
+   }
+   ```
+2. Add case in index.ts: `case 'query': await runQuery(db, args[0]); break`
+3. Update help.ts with query usage
+
+**P2 - Phases + execution-id (1 hr):**
+1. Add `executionId?: string` to DbOptions
+2. Pass to view functions, add WHERE clauses
+3. Create phases-view.ts querying phase-related data
