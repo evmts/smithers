@@ -1086,7 +1086,7 @@ describe('Claude database integration', () => {
     
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Claude model="sonnet" onError={onError}>Fail this task</Claude>
+        <Claude model="sonnet" onError={onError} maxRetries={0}>Fail this task</Claude>
       </SmithersProvider>
     )
     
@@ -1133,7 +1133,7 @@ describe('Claude database integration', () => {
     
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Claude model="haiku" onError={onError}>Crash this agent</Claude>
+        <Claude model="haiku" onError={onError} maxRetries={0}>Crash this agent</Claude>
       </SmithersProvider>
     )
     
