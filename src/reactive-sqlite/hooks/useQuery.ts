@@ -2,7 +2,7 @@
  * useQuery hook for reactive SQLite queries
  */
 
-import { useSyncExternalStore, useCallback, useMemo } from 'react'
+import { useSyncExternalStore, useCallback, useMemo, useRef } from 'react'
 import type { ReactiveDatabase } from '../database.js'
 import { extractReadTables } from '../parser.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
@@ -79,10 +79,17 @@ export function useQuery<T = Record<string, unknown>>(
   const { cacheRef, invalidateCache } = useQueryCache<T>()
   const { subscribe: subscribeSignal, notify } = useStoreSignal()
 
-  // Memoize the query key
+  // Memoize the query key - include db identity to invalidate cache on db change
+  // Use a ref counter that increments when db changes for stable identity tracking
+  const dbIdRef = useRef({ db, id: 0 })
+  if (dbIdRef.current.db !== db) {
+    dbIdRef.current = { db, id: dbIdRef.current.id + 1 }
+  }
+  const dbId = dbIdRef.current.id
+  
   const queryKey = useMemo(
-    () => JSON.stringify({ sql, params, skip }),
-    [sql, JSON.stringify(params), skip]
+    () => JSON.stringify({ sql, params, skip, dbId }),
+    [sql, JSON.stringify(params), skip, dbId]
   )
 
   // Execute query and update cache

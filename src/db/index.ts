@@ -140,6 +140,21 @@ function runMigrations(rdb: ReactiveDatabase): void {
   if (!hasHumanError) {
     rdb.exec('ALTER TABLE human_interactions ADD COLUMN error TEXT')
   }
+
+  // Migration: Add End component columns to executions table if missing
+  const executionsColumns = rdb.query<{ name: string }>('PRAGMA table_info(executions)')
+  const hasEndSummary = executionsColumns.some((col) => col.name === 'end_summary')
+  if (!hasEndSummary) {
+    rdb.exec('ALTER TABLE executions ADD COLUMN end_summary TEXT')
+  }
+  const hasEndReason = executionsColumns.some((col) => col.name === 'end_reason')
+  if (!hasEndReason) {
+    rdb.exec('ALTER TABLE executions ADD COLUMN end_reason TEXT')
+  }
+  const hasExitCode = executionsColumns.some((col) => col.name === 'exit_code')
+  if (!hasExitCode) {
+    rdb.exec('ALTER TABLE executions ADD COLUMN exit_code INTEGER DEFAULT 0')
+  }
 }
 
 /**

@@ -42,6 +42,7 @@ export {
 // Basic workflow components
 export { If, type IfProps } from './If.js'
 export { Stop, type StopProps } from './Stop.js'
+export { End, type EndProps, type EndSummary } from './End.js'
 export { Subagent, type SubagentProps } from './Subagent.js'
 export { Persona, type PersonaProps } from './Persona.js'
 export { Constraints, type ConstraintsProps } from './Constraints.js'

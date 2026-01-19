@@ -39,7 +39,6 @@ describe('14-kitchen-sink', () => {
     const startTime = Date.now()
     const validationChecks: Record<string, boolean> = {}
 
-    // Render comprehensive workflow
     await env.root.render(
       <SmithersProvider db={env.db} executionId={env.executionId}>
         <Phase name="Research">

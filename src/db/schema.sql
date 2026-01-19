@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS executions (
   result TEXT,
   error TEXT,                    -- Error message if failed
 
+  -- End component data
+  end_summary TEXT,              -- JSON: EndSummary from <End> component
+  end_reason TEXT,               -- Reason for ending (success, failure, max_iterations, etc.)
+  exit_code INTEGER DEFAULT 0,   -- Process exit code
+
   -- Timing
   started_at TEXT,
   completed_at TEXT,

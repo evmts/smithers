@@ -1,0 +1,351 @@
+---
+title: Kitchen Sink
+description: Comprehensive example showcasing all major framework features
+---
+
+# Kitchen Sink Example
+
+A comprehensive workflow that demonstrates all major framework features:
+- Multiple phases (Research, Planning, Implementation)
+- Sequential and parallel step execution
+- Claude components with different models (Opus, Sonnet, Haiku)
+- Human interaction components
+- Task tracking
+- Complex component nesting
+
+## Code
+
+```tsx
+#!/usr/bin/env bun
+
+import { createSmithersRoot } from "smithers";
+import { createSmithersDB } from "smithers-orchestrator/db";
+import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
+import { Phase } from "smithers-orchestrator/components/Phase";
+import { Step } from "smithers-orchestrator/components/Step";
+import { Claude } from "smithers-orchestrator/components/Claude";
+import { Human } from "smithers-orchestrator/components/Human";
+import { Parallel } from "smithers-orchestrator/components/Parallel";
+import { Task } from "smithers-orchestrator/components/Task";
+
+async function main() {
+  const db = await createSmithersDB({ path: ".smithers/kitchen-sink" });
+
+  const executionId = await db.execution.start(
+    "Kitchen Sink Demo",
+    "kitchen-sink.tsx"
+  );
+
+  function KitchenSinkWorkflow() {
+    return (
+      <SmithersProvider db={db} executionId={executionId}>
+        {/* ============================================================
+            PHASE 1: Research
+            Demonstrates: Sequential step → Parallel steps
+            ============================================================ */}
+        <Phase name="Research">
+          <Step name="gather">
+            <Claude model="sonnet">
+              Research the codebase and identify key files
+            </Claude>
+          </Step>
+
+          <Parallel>
+            <Step name="analyze-frontend">
+              <Claude model="haiku">
+                Analyze frontend architecture
+              </Claude>
+            </Step>
+            <Step name="analyze-backend">
+              <Claude model="haiku">
+                Analyze backend services
+              </Claude>
+            </Step>
+          </Parallel>
+        </Phase>
+
+        {/* ============================================================
+            PHASE 2: Planning
+            Demonstrates: Human interaction, Task components
+            ============================================================ */}
+        <Phase name="Planning">
+          <Step name="review">
+            <Human message="Review the research findings and approve the plan?" />
+          </Step>
+
+          <Step name="create-plan">
+            <Claude model="sonnet">
+              Create detailed implementation plan based on research
+            </Claude>
+          </Step>
+
+          <Task done={false}>Define acceptance criteria</Task>
+          <Task done={false}>Identify potential risks</Task>
+        </Phase>
+
+        {/* ============================================================
+            PHASE 3: Implementation
+            Demonstrates: Opus for complex work, parallel execution
+            ============================================================ */}
+        <Phase name="Implementation">
+          <Step name="implement">
+            <Claude model="opus">
+              Implement the planned changes with high quality
+            </Claude>
+          </Step>
+
+          <Parallel>
+            <Step name="write-tests">
+              <Claude model="sonnet">Write comprehensive test suite</Claude>
+            </Step>
+            <Step name="update-docs">
+              <Claude model="haiku">Update documentation</Claude>
+            </Step>
+          </Parallel>
+        </Phase>
+      </SmithersProvider>
+    );
+  }
+
+  const root = createSmithersRoot();
+  await root.mount(KitchenSinkWorkflow);
+
+  await db.execution.complete(executionId);
+  await db.close();
+}
+
+main();
+```
+
+## How It Works
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ PHASE 1: Research                                                │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Step: gather                                                    │
+│  ┌────────────────────────────────────────────┐                │
+│  │ Claude (Sonnet)                            │                │
+│  │ "Research codebase..."                     │                │
+│  └────────────────────────────────────────────┘                │
+│                        │                                         │
+│                        ▼                                         │
+│  Parallel Execution:                                            │
+│  ┌──────────────────────┐   ┌──────────────────────┐          │
+│  │ Step: analyze-       │   │ Step: analyze-       │          │
+│  │       frontend       │   │       backend        │          │
+│  │ ┌─────────────────┐  │   │ ┌─────────────────┐  │          │
+│  │ │ Claude (Haiku)  │  │   │ │ Claude (Haiku)  │  │          │
+│  │ └─────────────────┘  │   │ └─────────────────┘  │          │
+│  └──────────────────────┘   └──────────────────────┘          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│ PHASE 2: Planning                                                │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Step: review                                                    │
+│  ┌────────────────────────────────────────────┐                │
+│  │ Human Interaction                          │                │
+│  │ "Review findings and approve?"             │                │
+│  └────────────────────────────────────────────┘                │
+│                        │                                         │
+│                        ▼                                         │
+│  Step: create-plan                                              │
+│  ┌────────────────────────────────────────────┐                │
+│  │ Claude (Sonnet)                            │                │
+│  │ "Create implementation plan..."            │                │
+│  └────────────────────────────────────────────┘                │
+│                        │                                         │
+│                        ▼                                         │
+│  Task Tracking:                                                 │
+│  ☐ Define acceptance criteria                                   │
+│  ☐ Identify potential risks                                     │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│ PHASE 3: Implementation                                          │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Step: implement                                                 │
+│  ┌────────────────────────────────────────────┐                │
+│  │ Claude (Opus)                              │                │
+│  │ "Implement planned changes..."             │                │
+│  └────────────────────────────────────────────┘                │
+│                        │                                         │
+│                        ▼                                         │
+│  Parallel Execution:                                            │
+│  ┌──────────────────────┐   ┌──────────────────────┐          │
+│  │ Step: write-tests    │   │ Step: update-docs    │          │
+│  │ ┌─────────────────┐  │   │ ┌─────────────────┐  │          │
+│  │ │ Claude (Sonnet) │  │   │ │ Claude (Haiku)  │  │          │
+│  │ └─────────────────┘  │   │ └─────────────────┘  │          │
+│  └──────────────────────┘   └──────────────────────┘          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## Features Demonstrated
+
+### 1. Multi-Phase Orchestration
+
+```tsx
+<Phase name="Research">
+  {/* Research work */}
+</Phase>
+<Phase name="Planning">
+  {/* Planning work */}
+</Phase>
+<Phase name="Implementation">
+  {/* Implementation work */}
+</Phase>
+```
+
+### 2. Sequential and Parallel Execution
+
+```tsx
+{/* Sequential: steps run one after another */}
+<Step name="gather">
+  <Claude model="sonnet">Research...</Claude>
+</Step>
+
+{/* Parallel: steps run concurrently */}
+<Parallel>
+  <Step name="analyze-frontend">
+    <Claude model="haiku">Analyze frontend...</Claude>
+  </Step>
+  <Step name="analyze-backend">
+    <Claude model="haiku">Analyze backend...</Claude>
+  </Step>
+</Parallel>
+```
+
+### 3. Multiple Claude Models
+
+Choose the right model for the task:
+
+| Model | Use Case | Example |
+|-------|----------|---------|
+| **Haiku** | Fast, simple tasks | Code analysis, doc updates |
+| **Sonnet** | Complex reasoning | Research, planning, test writing |
+| **Opus** | High-quality implementation | Critical features, refactoring |
+
+```tsx
+<Claude model="haiku">Quick analysis</Claude>
+<Claude model="sonnet">Complex planning</Claude>
+<Claude model="opus">High-quality implementation</Claude>
+```
+
+### 4. Human Interaction
+
+```tsx
+<Human message="Review the research findings and approve the plan?" />
+```
+
+Pauses workflow for human approval before proceeding.
+
+### 5. Task Tracking
+
+```tsx
+<Task done={false}>Define acceptance criteria</Task>
+<Task done={false}>Identify potential risks</Task>
+```
+
+Track work items within phases.
+
+### 6. Complex Nesting
+
+```tsx
+<Phase>
+  <Step>
+    <Parallel>
+      <Step>
+        <Claude>...</Claude>
+      </Step>
+    </Parallel>
+  </Step>
+</Phase>
+```
+
+Arbitrary nesting of components for complex workflows.
+
+## Customization
+
+### Add More Parallel Work
+
+```tsx
+<Parallel>
+  <Step name="security-audit">
+    <Claude model="sonnet">Audit security vulnerabilities</Claude>
+  </Step>
+  <Step name="performance-check">
+    <Claude model="sonnet">Check performance bottlenecks</Claude>
+  </Step>
+  <Step name="accessibility">
+    <Claude model="haiku">Verify accessibility standards</Claude>
+  </Step>
+</Parallel>
+```
+
+### Add Verification Phase
+
+```tsx
+<Phase name="Verification">
+  <Step name="run-tests">
+    <Claude model="sonnet">
+      Run the test suite and verify all tests pass
+    </Claude>
+  </Step>
+
+  <Step name="manual-qa">
+    <Human message="Perform manual QA and approve deployment?" />
+  </Step>
+</Phase>
+```
+
+### Track More Tasks
+
+```tsx
+<Task done={false}>Set up CI/CD pipeline</Task>
+<Task done={false}>Configure monitoring</Task>
+<Task done={false}>Update changelog</Task>
+<Task done={false}>Notify stakeholders</Task>
+```
+
+## Inspecting Execution
+
+View the execution state in the database:
+
+```bash
+# View all phases
+smithers db phases
+
+# View execution details
+smithers db executions
+
+# View tasks
+smithers db tasks
+
+# Export to XML for inspection
+smithers db export --execution-id <id>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Phase Component" icon="diagram-project" href="/components/phase">
+    Multi-phase orchestration
+  </Card>
+  <Card title="Parallel Component" icon="arrows-split-up-and-left" href="/components/parallel">
+    Concurrent execution
+  </Card>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    AI agent execution
+  </Card>
+  <Card title="Human Component" icon="user" href="/components/human">
+    Human-in-the-loop
+  </Card>
+</CardGroup>

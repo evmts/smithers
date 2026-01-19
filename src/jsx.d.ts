@@ -38,6 +38,15 @@ declare module 'react' {
         [key: string]: unknown
       }
 
+      end: {
+        status?: string
+        reason?: string
+        'exit-code'?: number
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
       subagent: {
         children?: React.ReactNode
         key?: string | number
