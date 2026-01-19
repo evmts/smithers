@@ -48,7 +48,7 @@ interface AgentRow {
 
 const mapAgent = (row: AgentRow | null): Agent | null => {
   if (!row) return null
-  return {
+  const agent: Agent = {
     id: row.id,
     execution_id: row.execution_id,
     phase_id: row.phase_id ?? undefined,
@@ -67,8 +67,14 @@ const mapAgent = (row: AgentRow | null): Agent | null => {
     tokens_input: row.tokens_input ?? undefined,
     tokens_output: row.tokens_output ?? undefined,
     tool_calls_count: row.tool_calls_count,
-    stream_summary: row.stream_summary ? parseJson(row.stream_summary, undefined) : undefined,
   }
+  if (row.stream_summary) {
+    const parsed = parseJson<StreamSummary | null>(row.stream_summary, null)
+    if (parsed) {
+      agent.stream_summary = parsed
+    }
+  }
+  return agent
 }
 
 export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
