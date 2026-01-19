@@ -150,7 +150,7 @@ export function useCherryPickMerge(options: UseCherryPickMergeOptions): {
             })
 
             db.vcs.addReport({
-              type: 'success',
+              type: 'progress',
               title: `Merged ${branch}`,
               content: `Commit: ${commitSha}`,
             })

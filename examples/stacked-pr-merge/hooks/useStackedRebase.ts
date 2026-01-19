@@ -122,7 +122,7 @@ export function useStackedRebase(options: UseStackedRebaseOptions): {
               type: 'error',
               title: `Rebase failed: ${branch}`,
               content: errorObj.message,
-              severity: 'error',
+              severity: 'critical',
             })
 
             break
