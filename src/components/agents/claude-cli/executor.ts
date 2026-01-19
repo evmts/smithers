@@ -16,8 +16,9 @@ import { parseClaudeOutput } from './output-parser.js'
  */
 export async function executeClaudeCLIOnce(
   options: CLIExecutionOptions,
-  startTime: number
-): Promise<AgentResult & { sessionId?: string }> {
+  startTime: number,
+  useApiKey = false
+): Promise<AgentResult & { sessionId?: string; shouldRetryWithApiKey?: boolean }> {
   const args = buildClaudeArgs(options)
 
   // Build the command
@@ -30,11 +31,17 @@ export async function executeClaudeCLIOnce(
   let killed = false
 
   try {
+    // Build environment - try subscription first (no API key), fall back to API key if specified
+    const env = useApiKey
+      ? { ...process.env }
+      : Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ANTHROPIC_API_KEY'))
+
     // Execute using Bun.spawn for streaming output
     proc = Bun.spawn(command, {
       cwd: options.cwd ?? process.cwd(),
       stdout: 'pipe',
       stderr: 'pipe',
+      env,
     })
 
     // Set up timeout
