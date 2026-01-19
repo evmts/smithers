@@ -231,6 +231,11 @@ export interface SmithersContextValue {
   reactiveDb: ReactiveDatabase
 
   /**
+   * Optional tree serialization callback for plan introspection.
+   */
+  getTreeXML?: () => string | null
+
+  /**
    * Whether execution is enabled for this subtree
    */
   executionEnabled: boolean
@@ -693,6 +698,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     executionId: props.executionId,
     config: props.config ?? {},
     ...(props.middleware !== undefined ? { middleware: props.middleware } : {}),
+    ...(props.getTreeXML ? { getTreeXML: props.getTreeXML } : {}),
 
     requestStop: (reason: string) => {
       props.db.state.set('stop_requested', {
@@ -721,7 +727,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     ralphCount,
     reactiveDb,
     executionEnabled: true,
-  }), [props.db, props.executionId, props.config, props.middleware, stopRequested, rebaseRequested, registerTask, completeTask, ralphCount, reactiveDb])
+  }), [props.db, props.executionId, props.config, props.middleware, props.getTreeXML, stopRequested, rebaseRequested, registerTask, completeTask, ralphCount, reactiveDb])
 
   // Cleanup orchestration on unmount
   useUnmount(() => {

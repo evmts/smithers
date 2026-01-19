@@ -5,6 +5,7 @@ import { useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { useSmithers, ExecutionBoundary } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 type PhaseStatus = 'pending' | 'active' | 'completed' | 'skipped'
 
@@ -69,6 +70,7 @@ export function Phase(props: PhaseProps): ReactNode {
   const { db, ralphCount, executionEnabled } = useSmithers()
   const registry = usePhaseRegistry()
   const myIndex = usePhaseIndex(props.name)
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   const phaseIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
@@ -148,14 +150,16 @@ export function Phase(props: PhaseProps): ReactNode {
   // Wrap children in StepRegistryProvider to enforce sequential step execution
   // Wrap in ExecutionBoundary so execution is controlled by isActive
   return (
-    <phase name={props.name} status={status}>
-      {isActive && (
-        <ExecutionBoundary enabled={isActive}>
-          <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
-            {props.children}
-          </StepRegistryProvider>
-        </ExecutionBoundary>
-      )}
-    </phase>
+    <PlanNodeProvider nodeId={nodeId}>
+      <phase name={props.name} status={status} {...planNodeProps}>
+        {isActive && (
+          <ExecutionBoundary enabled={isActive}>
+            <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
+              {props.children}
+            </StepRegistryProvider>
+          </ExecutionBoundary>
+        )}
+      </phase>
+    </PlanNodeProvider>
   )
 }

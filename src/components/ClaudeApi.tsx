@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface ClaudeApiProps {
   children?: ReactNode
@@ -28,9 +29,12 @@ export interface ClaudeApiProps {
  * ```
  */
 export function ClaudeApi(props: ClaudeApiProps): ReactNode {
+  const { nodeId, planNodeProps } = usePlanNodeProps()
   return (
-    <claude-api model={props.model}>
-      {props.children}
-    </claude-api>
+    <PlanNodeProvider nodeId={nodeId}>
+      <claude-api model={props.model} {...planNodeProps}>
+        {props.children}
+      </claude-api>
+    </PlanNodeProvider>
   )
 }

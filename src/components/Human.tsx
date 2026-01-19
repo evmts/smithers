@@ -4,6 +4,7 @@ import { useSmithers } from './SmithersProvider.js'
 import { useMount, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useQueryOne } from '../reactive-sqlite/index.js'
 import type { HumanInteraction } from '../db/human.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface HumanProps {
   message?: string
@@ -34,6 +35,7 @@ export function Human(props: HumanProps): ReactNode {
   const { db } = useSmithers()
   const taskIdRef = useRef<string | null>(null)
   const requestIdRef = useRef<string | null>(null)
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   useMount(() => {
     // Register blocking task
@@ -74,8 +76,10 @@ export function Human(props: HumanProps): ReactNode {
   })
 
   return (
-    <human message={props.message}>
-      {props.children}
-    </human>
+    <PlanNodeProvider nodeId={nodeId}>
+      <human message={props.message} {...planNodeProps}>
+        {props.children}
+      </human>
+    </PlanNodeProvider>
   )
 }

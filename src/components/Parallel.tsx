@@ -3,6 +3,7 @@
 
 import type { ReactNode } from 'react'
 import { StepRegistryProvider } from './Step.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface ParallelProps {
   /**
@@ -28,13 +29,16 @@ export interface ParallelProps {
  * ```
  */
 export function Parallel(props: ParallelProps): ReactNode {
+  const { nodeId, planNodeProps } = usePlanNodeProps()
   // Wrap children in StepRegistryProvider with isParallel to enable concurrent execution
   // The <parallel> intrinsic element marks this in the output tree
   return (
-    <parallel>
-      <StepRegistryProvider isParallel>
-        {props.children}
-      </StepRegistryProvider>
-    </parallel>
+    <PlanNodeProvider nodeId={nodeId}>
+      <parallel {...planNodeProps}>
+        <StepRegistryProvider isParallel>
+          {props.children}
+        </StepRegistryProvider>
+      </parallel>
+    </PlanNodeProvider>
   )
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface ConstraintsProps {
   children?: ReactNode
@@ -23,9 +24,12 @@ export interface ConstraintsProps {
  * ```
  */
 export function Constraints(props: ConstraintsProps): ReactNode {
+  const { nodeId, planNodeProps } = usePlanNodeProps()
   return (
-    <constraints>
-      {props.children}
-    </constraints>
+    <PlanNodeProvider nodeId={nodeId}>
+      <constraints {...planNodeProps}>
+        {props.children}
+      </constraints>
+    </PlanNodeProvider>
   )
 }

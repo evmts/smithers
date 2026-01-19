@@ -11,6 +11,7 @@ import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
 import { extractText } from '../utils/extract-text.js'
 import { useExecutionScope } from './ExecutionScope.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 // ============================================================================
 // Types
@@ -127,6 +128,7 @@ export function Smithers(props: SmithersProps): ReactNode {
   const executionScope = useExecutionScope()
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   const subagentIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
@@ -344,21 +346,24 @@ export function Smithers(props: SmithersProps): ReactNode {
 
   // Render custom element for XML serialization
   return (
-    <smithers-subagent
-      status={status}
-      {...(subagentIdRef.current ? { 'subagent-id': subagentIdRef.current } : {})}
-      {...(executionId ? { 'execution-id': executionId } : {})}
-      planner-model={props.plannerModel ?? 'sonnet'}
-      execution-model={props.executionModel ?? 'sonnet'}
-      {...(result?.scriptPath ? { 'script-path': result.scriptPath } : {})}
-      {...(result?.output ? { output: result.output.slice(0, 200) } : {})}
-      {...(error?.message ? { error: error.message } : {})}
-      {...(result?.tokensUsed?.input !== undefined ? { 'tokens-input': result.tokensUsed.input } : {})}
-      {...(result?.tokensUsed?.output !== undefined ? { 'tokens-output': result.tokensUsed.output } : {})}
-      {...(result?.durationMs !== undefined ? { 'duration-ms': result.durationMs } : {})}
-    >
-      {props.children}
-    </smithers-subagent>
+    <PlanNodeProvider nodeId={nodeId}>
+      <smithers-subagent
+        status={status}
+        {...(subagentIdRef.current ? { 'subagent-id': subagentIdRef.current } : {})}
+        {...(executionId ? { 'execution-id': executionId } : {})}
+        planner-model={props.plannerModel ?? 'sonnet'}
+        execution-model={props.executionModel ?? 'sonnet'}
+        {...(result?.scriptPath ? { 'script-path': result.scriptPath } : {})}
+        {...(result?.output ? { output: result.output.slice(0, 200) } : {})}
+        {...(error?.message ? { error: error.message } : {})}
+        {...(result?.tokensUsed?.input !== undefined ? { 'tokens-input': result.tokensUsed.input } : {})}
+        {...(result?.tokensUsed?.output !== undefined ? { 'tokens-output': result.tokensUsed.output } : {})}
+        {...(result?.durationMs !== undefined ? { 'duration-ms': result.durationMs } : {})}
+        {...planNodeProps}
+      >
+        {props.children}
+      </smithers-subagent>
+    </PlanNodeProvider>
   )
 }
 

@@ -2,6 +2,7 @@ import { createContext, type ReactNode } from 'react'
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { useSmithers, type RalphContextType } from './SmithersProvider.js'
 import { PhaseRegistryProvider } from './PhaseRegistry.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 // Re-export RalphContextType for backwards compatibility
 export type { RalphContextType } from './SmithersProvider.js'
@@ -97,6 +98,7 @@ export interface RalphProps {
 export function Ralph(props: RalphProps): ReactNode {
   // Get context from SmithersProvider
   const smithers = useSmithers()
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   // Build RalphContext value from SmithersProvider
   // Note: registerTask/completeTask are deprecated no-ops
@@ -114,12 +116,15 @@ export function Ralph(props: RalphProps): ReactNode {
   return (
     <RalphContext.Provider value={contextValue}>
       <PhaseRegistryProvider>
-        <ralph
-          iteration={smithers.ralphCount}
-          maxIterations={props.maxIterations ?? smithers.config.maxIterations ?? 100}
-        >
-          {props.children}
-        </ralph>
+        <PlanNodeProvider nodeId={nodeId}>
+          <ralph
+            iteration={smithers.ralphCount}
+            maxIterations={props.maxIterations ?? smithers.config.maxIterations ?? 100}
+            {...planNodeProps}
+          >
+            {props.children}
+          </ralph>
+        </PlanNodeProvider>
       </PhaseRegistryProvider>
     </RalphContext.Provider>
   )

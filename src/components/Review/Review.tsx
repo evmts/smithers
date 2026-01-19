@@ -4,6 +4,7 @@ import { addGitNotes } from '../../utils/vcs.js'
 import type { ReviewTarget, ReviewResult, ReviewProps } from './types.js'
 import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
+import { PlanNodeProvider, usePlanNodeProps } from '../PlanNodeContext.js'
 
 /**
  * Fetch content to review based on target type
@@ -184,6 +185,7 @@ ${issuesText}
 export function Review(props: ReviewProps): ReactNode {
   const smithers = useSmithers()
   const execution = useExecutionContext()
+  const { nodeId, planNodeProps } = usePlanNodeProps()
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const resultRef = useRef<ReviewResult | null>(null)
   const errorRef = useRef<Error | null>(null)
@@ -278,15 +280,18 @@ export function Review(props: ReviewProps): ReactNode {
   }, [props.blocking, props.criteria, props.model, props.onFinished, props.postToGitHub, props.postToGitNotes, props.target, smithers])
 
   return (
-    <review
-      status={statusRef.current}
-      approved={resultRef.current?.approved}
-      summary={resultRef.current?.summary}
-      issue-count={resultRef.current?.issues.length}
-      error={errorRef.current?.message}
-      target-type={props.target.type}
-      target-ref={props.target.ref}
-      blocking={props.blocking}
-    />
+    <PlanNodeProvider nodeId={nodeId}>
+      <review
+        status={statusRef.current}
+        approved={resultRef.current?.approved}
+        summary={resultRef.current?.summary}
+        issue-count={resultRef.current?.issues.length}
+        error={errorRef.current?.message}
+        target-type={props.target.type}
+        target-ref={props.target.ref}
+        blocking={props.blocking}
+        {...planNodeProps}
+      />
+    </PlanNodeProvider>
   )
 }

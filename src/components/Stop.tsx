@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useMount } from '../reconciler/hooks.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface StopProps {
   reason?: string
@@ -24,14 +25,17 @@ export interface StopProps {
  */
 export function Stop(props: StopProps): ReactNode {
   const { requestStop } = useSmithers()
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   useMount(() => {
     requestStop(props.reason ?? 'Stop component rendered')
   })
 
   return (
-    <smithers-stop reason={props.reason}>
-      {props.children}
-    </smithers-stop>
+    <PlanNodeProvider nodeId={nodeId}>
+      <smithers-stop reason={props.reason} {...planNodeProps}>
+        {props.children}
+      </smithers-stop>
+    </PlanNodeProvider>
   )
 }

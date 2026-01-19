@@ -5,6 +5,7 @@ import { WorktreeProvider, type WorktreeContextValue } from './WorktreeProvider.
 import { useMount, useUnmount, useMountedState } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { addWorktree, removeWorktree, worktreeExists, branchExists } from '../utils/vcs/git.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface WorktreeProps {
   branch: string
@@ -27,6 +28,7 @@ export function Worktree(props: WorktreeProps): ReactNode {
   const opIdRef = useRef(crypto.randomUUID())
   const stateKey = `worktree:${opIdRef.current}`
   const isMounted = useMountedState()
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   const { data: storedState } = useQueryValue<string>(
     smithers.db.db,
@@ -111,17 +113,21 @@ export function Worktree(props: WorktreeProps): ReactNode {
 
   if (state.status === 'pending') {
     return (
-      <worktree branch={props.branch} status="pending">
-        Setting up worktree...
-      </worktree>
+      <PlanNodeProvider nodeId={nodeId}>
+        <worktree branch={props.branch} status="pending" {...planNodeProps}>
+          Setting up worktree...
+        </worktree>
+      </PlanNodeProvider>
     )
   }
 
   if (state.status === 'error') {
     return (
-      <worktree branch={props.branch} status="error" {...(state.error ? { error: state.error } : {})}>
-        {state.error ?? 'Failed to set up worktree'}
-      </worktree>
+      <PlanNodeProvider nodeId={nodeId}>
+        <worktree branch={props.branch} status="error" {...(state.error ? { error: state.error } : {})} {...planNodeProps}>
+          {state.error ?? 'Failed to set up worktree'}
+        </worktree>
+      </PlanNodeProvider>
     )
   }
 
@@ -132,10 +138,12 @@ export function Worktree(props: WorktreeProps): ReactNode {
   }
 
   return (
-    <worktree branch={props.branch} status="ready" {...(state.path ? { path: state.path } : {})}>
-      <WorktreeProvider value={contextValue}>
-        {props.children}
-      </WorktreeProvider>
-    </worktree>
+    <PlanNodeProvider nodeId={nodeId}>
+      <worktree branch={props.branch} status="ready" {...(state.path ? { path: state.path } : {})} {...planNodeProps}>
+        <WorktreeProvider value={contextValue}>
+          {props.children}
+        </WorktreeProvider>
+      </worktree>
+    </PlanNodeProvider>
   )
 }

@@ -3,6 +3,7 @@ import { useRef, useMemo, createContext, useContext } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useMount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/hooks/useQueryValue.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 interface WhileProps {
   id: string
@@ -28,6 +29,7 @@ export function While(props: WhileProps): ReactNode {
   const { db } = useSmithers()
   const { id: whileId, maxIterations = 10 } = props
   const hasInitializedRef = useRef(false)
+  const { nodeId, planNodeProps } = usePlanNodeProps()
   
   const iterationKey = `while.${whileId}.iteration`
   const statusKey = `while.${whileId}.status`
@@ -94,13 +96,15 @@ export function While(props: WhileProps): ReactNode {
   const isRunning = statusValue === 'running'
 
   return (
-    <while id={whileId} iteration={iterationValue} status={statusValue} maxIterations={maxIterations}>
-      {isRunning && (
-        <WhileIterationContext.Provider value={contextValue}>
-          {props.children}
-        </WhileIterationContext.Provider>
-      )}
-    </while>
+    <PlanNodeProvider nodeId={nodeId}>
+      <while id={whileId} iteration={iterationValue} status={statusValue} maxIterations={maxIterations} {...planNodeProps}>
+        {isRunning && (
+          <WhileIterationContext.Provider value={contextValue}>
+            {props.children}
+          </WhileIterationContext.Provider>
+        )}
+      </while>
+    </PlanNodeProvider>
   )
 }
 

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useRef } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useMount } from '../reconciler/hooks.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface EndSummary {
   /** Overall status */
@@ -70,6 +71,7 @@ export function End(props: EndProps): ReactNode {
   const { db, executionId, requestStop } = useSmithers()
   const taskIdRef = useRef<string | null>(null)
   const hasEndedRef = useRef(false)
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   useMount(() => {
     if (hasEndedRef.current) return
@@ -122,6 +124,8 @@ export function End(props: EndProps): ReactNode {
         : 'failure')
 
   return (
-    <end status="ending" reason={reason} exit-code={props.exitCode ?? 0} />
+    <PlanNodeProvider nodeId={nodeId}>
+      <end status="ending" reason={reason} exit-code={props.exitCode ?? 0} {...planNodeProps} />
+    </PlanNodeProvider>
   )
 }

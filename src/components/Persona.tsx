@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface PersonaProps {
   role?: string
@@ -23,9 +24,12 @@ export interface PersonaProps {
  * ```
  */
 export function Persona(props: PersonaProps): ReactNode {
+  const { nodeId, planNodeProps } = usePlanNodeProps()
   return (
-    <persona {...(props.role ? { role: props.role } : {})}>
-      {props.children}
-    </persona>
+    <PlanNodeProvider nodeId={nodeId}>
+      <persona {...(props.role ? { role: props.role } : {})} {...planNodeProps}>
+        {props.children}
+      </persona>
+    </PlanNodeProvider>
   )
 }

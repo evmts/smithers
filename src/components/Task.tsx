@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface TaskProps {
   done?: boolean
@@ -21,9 +22,12 @@ export interface TaskProps {
  * ```
  */
 export function Task(props: TaskProps): ReactNode {
+  const { nodeId, planNodeProps } = usePlanNodeProps()
   return (
-    <task done={props.done}>
-      {props.children}
-    </task>
+    <PlanNodeProvider nodeId={nodeId}>
+      <task done={props.done} {...planNodeProps}>
+        {props.children}
+      </task>
+    </PlanNodeProvider>
   )
 }

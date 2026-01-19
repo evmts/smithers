@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 export interface SubagentProps {
   name?: string
@@ -24,9 +25,12 @@ export interface SubagentProps {
  * ```
  */
 export function Subagent(props: SubagentProps): ReactNode {
+  const { nodeId, planNodeProps } = usePlanNodeProps()
   return (
-    <subagent name={props.name} parallel={props.parallel}>
-      {props.children}
-    </subagent>
+    <PlanNodeProvider nodeId={nodeId}>
+      <subagent name={props.name} parallel={props.parallel} {...planNodeProps}>
+        {props.children}
+      </subagent>
+    </PlanNodeProvider>
   )
 }

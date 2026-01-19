@@ -19,6 +19,7 @@ import { validationMiddleware, ValidationError } from '../middleware/validation.
 import { ClaudeStreamParser } from '../streaming/claude-parser.js'
 import type { SmithersStreamPart } from '../streaming/types.js'
 import type { StreamSummary } from '../db/types.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
 
@@ -54,6 +55,7 @@ export function Claude(props: ClaudeProps): ReactNode {
   const stepActive = step?.isActive ?? true
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   // TODO abstract all the following block of lines into named hooks
   const agentIdRef = useRef<string | null>(null)
@@ -447,34 +449,37 @@ export function Claude(props: ClaudeProps): ReactNode {
     : tailLog.slice(-maxEntries)
 
   return (
-    <claude
-      status={status}
-      agent-id={agentIdRef.current}
-      execution-id={executionId}
-      model={props.model ?? 'sonnet'}
-      {...(error?.message ? { error: error.message } : {})}
-      {...(result?.tokensUsed?.input !== undefined ? { 'tokens-input': result.tokensUsed.input } : {})}
-      {...(result?.tokensUsed?.output !== undefined ? { 'tokens-output': result.tokensUsed.output } : {})}
-      {...(result?.turnsUsed !== undefined ? { 'turns-used': result.turnsUsed } : {})}
-      {...(result?.durationMs !== undefined ? { 'duration-ms': result.durationMs } : {})}
-    >
-      {displayEntries.length > 0 && (
-        <messages count={displayEntries.length}>
-          {displayEntries.map(entry =>
-            entry.type === 'message' ? (
-              <message key={entry.index} index={entry.index}>
-                {truncateToLastLines(entry.content, maxLines)}
-              </message>
-            ) : (
-              <tool-call key={entry.index} name={entry.toolName} index={entry.index}>
-                {truncateToLastLines(entry.content, maxLines)}
-              </tool-call>
-            )
-          )}
-        </messages>
-      )}
-      {props.children}
-    </claude>
+    <PlanNodeProvider nodeId={nodeId}>
+      <claude
+        status={status}
+        agent-id={agentIdRef.current}
+        execution-id={executionId}
+        model={props.model ?? 'sonnet'}
+        {...(error?.message ? { error: error.message } : {})}
+        {...(result?.tokensUsed?.input !== undefined ? { 'tokens-input': result.tokensUsed.input } : {})}
+        {...(result?.tokensUsed?.output !== undefined ? { 'tokens-output': result.tokensUsed.output } : {})}
+        {...(result?.turnsUsed !== undefined ? { 'turns-used': result.turnsUsed } : {})}
+        {...(result?.durationMs !== undefined ? { 'duration-ms': result.durationMs } : {})}
+        {...planNodeProps}
+      >
+        {displayEntries.length > 0 && (
+          <messages count={displayEntries.length}>
+            {displayEntries.map(entry =>
+              entry.type === 'message' ? (
+                <message key={entry.index} index={entry.index}>
+                  {truncateToLastLines(entry.content, maxLines)}
+                </message>
+              ) : (
+                <tool-call key={entry.index} name={entry.toolName} index={entry.index}>
+                  {truncateToLastLines(entry.content, maxLines)}
+                </tool-call>
+              )
+            )}
+          </messages>
+        )}
+        {props.children}
+      </claude>
+    </PlanNodeProvider>
   )
 }
 

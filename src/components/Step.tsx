@@ -7,6 +7,7 @@ import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
 import { useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
+import { PlanNodeProvider, usePlanNodeProps } from './PlanNodeContext.js'
 
 // ============================================================================
 // STEP REGISTRY CONTEXT (for sequential execution within a phase)
@@ -186,6 +187,7 @@ export function Step(props: StepProps): ReactNode {
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
   const executionScope = useExecutionScope()
+  const { nodeId, planNodeProps } = usePlanNodeProps()
 
   const stepIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
@@ -372,10 +374,12 @@ export function Step(props: StepProps): ReactNode {
   })
 
   return (
-    <step {...(props.name ? { name: props.name } : {})} status={status}>
-      <ExecutionScopeProvider enabled={canExecute}>
-        {props.children}
-      </ExecutionScopeProvider>
-    </step>
+    <PlanNodeProvider nodeId={nodeId}>
+      <step {...(props.name ? { name: props.name } : {})} status={status} {...planNodeProps}>
+        <ExecutionScopeProvider enabled={canExecute}>
+          {props.children}
+        </ExecutionScopeProvider>
+      </step>
+    </PlanNodeProvider>
   )
 }

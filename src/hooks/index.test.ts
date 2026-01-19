@@ -6,6 +6,7 @@ import { useHuman, type UseHumanResult, type AskOptions } from './useHuman.js'
 import { useCaptureRenderFrame } from './useCaptureRenderFrame.js'
 import { useCommitWithRetry } from './useCommitWithRetry.js'
 import { useHumanInteractive } from './useHumanInteractive.js'
+import { usePlan } from './usePlan.js'
 
 describe('hooks/index exports', () => {
   describe('named exports', () => {
@@ -32,6 +33,11 @@ describe('hooks/index exports', () => {
     test('exports useHumanInteractive', () => {
       expect(hooksIndex.useHumanInteractive).toBeDefined()
       expect(typeof hooksIndex.useHumanInteractive).toBe('function')
+    })
+
+    test('exports usePlan', () => {
+      expect(hooksIndex.usePlan).toBeDefined()
+      expect(typeof hooksIndex.usePlan).toBe('function')
     })
 
     test('exports UseHumanResult type (type-only, verify via import)', () => {
@@ -69,6 +75,10 @@ describe('hooks/index exports', () => {
     test('useHumanInteractive matches ./useHumanInteractive export', () => {
       expect(hooksIndex.useHumanInteractive).toBe(useHumanInteractive)
     })
+
+    test('usePlan matches ./usePlan export', () => {
+      expect(hooksIndex.usePlan).toBe(usePlan)
+    })
   })
 
   describe('module structure', () => {
@@ -80,6 +90,7 @@ describe('hooks/index exports', () => {
       expect(useRalphCount.length).toBe(0)
       expect(useHuman.length).toBe(0)
       expect(useCaptureRenderFrame.length).toBe(3)
+      expect(usePlan.length).toBe(0)
     })
   })
 })

@@ -180,6 +180,34 @@ function IterationAwareComponent() {
 }
 ```
 
+## usePlan
+
+Hook to get the current XML plan and the active plan node for the caller.
+
+```tsx
+import { usePlan } from "smithers-orchestrator";
+
+function PlanViewer() {
+  const { plan, activeNodeId } = usePlan();
+
+  return (
+    <XMLViewer xml={plan} activeNodeId={activeNodeId} />
+  );
+}
+```
+
+### API
+
+```tsx
+function usePlan(): { plan: string; activeNodeId: string | null }
+```
+
+### Notes
+
+- `plan` is the latest XML plan snapshot for the current execution.
+- `activeNodeId` matches the `plan-node-id` attribute in the XML.
+- The active node is tagged with `plan-active="true"` in the returned XML.
+
 ## useSmithers
 
 Hook to access the Smithers context (database, execution ID, etc.).
