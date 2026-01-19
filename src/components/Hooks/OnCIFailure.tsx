@@ -129,7 +129,11 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
     reactiveDb,
     "SELECT value FROM state WHERE key = 'hook:ciFailure'"
   )
-  const state: CIFailureState = stateJson ? JSON.parse(stateJson) : DEFAULT_CI_STATE
+  const state: CIFailureState = (() => {
+    if (!stateJson) return DEFAULT_CI_STATE
+    try { return JSON.parse(stateJson) }
+    catch { return DEFAULT_CI_STATE }
+  })()
   const { ciStatus, currentFailure, triggered, error } = state
 
   const taskIdRef = useRef<string | null>(null)

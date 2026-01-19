@@ -26,22 +26,31 @@ export async function git(...args: string[]): Promise<CommandResult> {
  * Get current commit hash
  */
 export async function getCommitHash(ref: string = 'HEAD'): Promise<string> {
-  const result = await Bun.$`git rev-parse ${ref}`.text()
-  return result.trim()
+  try {
+    const result = await Bun.$`git rev-parse ${ref}`.text()
+    return result.trim()
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to resolve ref '${ref}': ${msg}`)
+  }
 }
 
 /**
  * Get commit information
  */
 export async function getCommitInfo(ref: string = 'HEAD'): Promise<CommitInfo> {
-  const hash = await Bun.$`git rev-parse ${ref}`.text()
-  const author = await Bun.$`git log -1 --format=%an ${ref}`.text()
-  const message = await Bun.$`git log -1 --format=%s ${ref}`.text()
-
-  return {
-    hash: hash.trim(),
-    author: author.trim(),
-    message: message.trim(),
+  try {
+    const hash = await Bun.$`git rev-parse ${ref}`.text()
+    const author = await Bun.$`git log -1 --format=%an ${ref}`.text()
+    const message = await Bun.$`git log -1 --format=%s ${ref}`.text()
+    return {
+      hash: hash.trim(),
+      author: author.trim(),
+      message: message.trim(),
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to get commit info for '${ref}': ${msg}`)
   }
 }
 
@@ -50,7 +59,13 @@ export async function getCommitInfo(ref: string = 'HEAD'): Promise<CommitInfo> {
  */
 export async function getDiffStats(ref?: string): Promise<DiffStats> {
   const args = ref ? `${ref}...HEAD` : 'HEAD~1'
-  const result = await Bun.$`git diff --numstat ${args}`.text()
+  let result: string
+  try {
+    result = await Bun.$`git diff --numstat ${args}`.text()
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to get diff stats for '${args}': ${msg}`)
+  }
 
   const files: string[] = []
   let insertions = 0

@@ -92,7 +92,11 @@ export function PostCommit(props: PostCommitProps): ReactNode {
     reactiveDb,
     "SELECT value FROM state WHERE key = 'hook:postCommit'"
   )
-  const state: PostCommitState = stateJson ? JSON.parse(stateJson) : DEFAULT_STATE
+  const state: PostCommitState = (() => {
+    if (!stateJson) return DEFAULT_STATE
+    try { return JSON.parse(stateJson) }
+    catch { return DEFAULT_STATE }
+  })()
   const { triggered, currentTrigger, hookInstalled, error } = state
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)

@@ -73,9 +73,12 @@ export function Commit(props: CommitProps): ReactNode {
     "SELECT value FROM state WHERE key = ?",
     [stateKey]
   )
-  const { status, result, error }: CommitState = opState
-    ? JSON.parse(opState)
-    : { status: 'pending', result: null, error: null }
+  const defaultState = { status: 'pending' as const, result: null, error: null }
+  const { status, result, error }: CommitState = (() => {
+    if (!opState) return defaultState
+    try { return JSON.parse(opState) }
+    catch { return defaultState }
+  })()
 
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()

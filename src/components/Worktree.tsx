@@ -33,9 +33,12 @@ export function Worktree(props: WorktreeProps): ReactNode {
     "SELECT value FROM state WHERE key = ?",
     [stateKey]
   )
-  const state: WorktreeState = storedState
-    ? JSON.parse(storedState)
-    : { status: 'pending', path: null, error: null }
+  const state: WorktreeState = (() => {
+    const defaultState = { status: 'pending' as const, path: null, error: null }
+    if (!storedState) return defaultState
+    try { return JSON.parse(storedState) }
+    catch { return defaultState }
+  })()
 
   const createdWorktreeRef = useRef(false)
   const taskIdRef = useRef<string | null>(null)
