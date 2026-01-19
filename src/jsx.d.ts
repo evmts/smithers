@@ -326,6 +326,61 @@ declare module 'react' {
         key?: string | number
         [key: string]: unknown
       }
+
+      // Custom semantic elements for orchestration scripts/examples
+      // These are rendered to XML output and represent domain-specific structures
+
+      // Processing/workflow elements
+      'parallel-status': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'parallel-processing': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'serial-status': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'serial-processing': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      processor: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+
+      // Report elements
+      report: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      total: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      implemented: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      closed: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      failed: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      pending: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+
+      // Scan elements
+      'scan-results': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'normal-reviews': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'difficult-reviews': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+
+      // Merge elements
+      'merge-order': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'merge-progress': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'merge-candidates': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      merged: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      position: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'current-operation': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+
+      // Rebase elements
+      'rebase-progress': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      rebased: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      completed: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      conflict: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+
+      // Stacked PR elements
+      'stacked-pr-merge': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'worktree-finalize': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'worktree-finalize-orchestrator': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'not-ready': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      candidate: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+
+      // Context/state elements
+      context: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      checks: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'failed-checks': { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      check: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      config: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      waiting: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      pr: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      success: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      error: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
     }
   }
 }

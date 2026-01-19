@@ -7,8 +7,8 @@ export interface WorktreeInfo {
   branch: string
   path: string
   hasPR: boolean
-  prNumber?: number
-  prTitle?: string
+  prNumber?: number | undefined
+  prTitle?: string | undefined
   buildPasses: boolean
   testsPassing: boolean
   mergeCandidate: boolean
