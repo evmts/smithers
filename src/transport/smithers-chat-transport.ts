@@ -185,8 +185,7 @@ function wrapWithProvider(
 
   return createElement(
     SmithersProvider,
-    { db, executionId, ...(config ? { config } : {}) },
-    node
+    { db, executionId, ...(config ? { config } : {}), children: node }
   )
 }
 
@@ -500,7 +499,7 @@ export class SmithersChatTransport implements ChatTransport<SmithersMessage, Smi
       executionId,
       root: null,
       status,
-      error: execution?.error ?? undefined,
+      ...(execution?.error ? { error: execution.error } : {}),
       controllers: new Set(),
     }
 
