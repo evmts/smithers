@@ -1,11 +1,26 @@
 ---
-title: Ralph Wiggum Loop
+title: Durable Ralphing
 description: The core execution model that powers Smithers orchestration
 ---
 
-# Ralph Wiggum Loop
+# Durable Ralphing
 
-The Ralph Wiggum Loop is the core execution model of Smithers. Named after Ralph Wiggum's famous "I'm in danger" catchphrase, it controls iterative loops that could potentially run away.
+**Ralphing** = continuous agent iteration with verification gates. Run → verify → feedback → run again until done.
+
+**Durable Ralphing** = Smithers' implementation that makes Ralph loops **resumable, inspectable, and controllable**.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  RALPH LOOP (the technique)                                                 │
+│  while (!done) { run_agent(); verify(); if (pass) done = true; }            │
+│                                                                             │
+│  DURABLE RALPHING (Smithers' implementation)                                │
+│  + Persists every iteration to SQLite                                       │
+│  + Resumes from crash/restart at exact iteration                            │
+│  + Explicit verification gates and stop conditions                          │
+│  + Audit trail of what happened and why                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## The Execution Model
 
@@ -32,15 +47,19 @@ Smithers uses a reactive render loop powered by React state:
 4. **Re-render**: State changes trigger reactive updates
 5. **Loop**: Process repeats until no pending agents remain
 
-## How It Differs from Other Frameworks
+## Why Smithers for Ralphing
 
-| Traditional Agent Loops | Smithers Ralph Loop |
-|------------------------|---------------------|
-| Bespoke abstractions LLMs are often not tuned to writing | Familiar reactive declarative framework (React) |
-| Imperative while loops | Declarative reactive rendering |
-| Manual state tracking | Automatic state propagation |
-| Hard to visualize flow | Components describe the flow |
-| State scattered in closures | Centralized in React state |
+Traditional Ralph loops work great for simple iteration. Smithers lets you build **sophisticated** Ralph loops while staying reliable:
+
+| Simple Ralph Loop | Smithers Ralph Loop |
+|-------------------|---------------------|
+| Single agent iterating | Multi-phase workflows with parallel agents |
+| Linear control flow | Conditional branches, phases, steps |
+| Ad-hoc structure | Composable React components |
+| Plans in prompts | Plans as reviewable, versionable code |
+| Manual orchestration | Declarative - Claude can generate it |
+
+**Smithers doesn't replace simple Ralph loops. It's for when your Ralph loop needs structure.**
 
 ## Controlling the Ralph Loop
 
@@ -225,48 +244,60 @@ The orchestration context tracks:
 - Iteration count
 - Stop/timeout state
 
-## Best Practices
+## Best Practices for Durable Ralphing
 
 <AccordionGroup>
   <Accordion title="Always set maxIterations">
     Without a limit, a bug in your state logic could cause infinite loops:
     ```tsx
-    // Good
-    <Ralph maxIterations={10}>...</Ralph>
+    // Good - explicit limit
+    <SmithersProvider maxIterations={50}>...</SmithersProvider>
 
-    // Risky
-    <Ralph>...</Ralph>
+    // Risky - could run forever
+    <SmithersProvider maxIterations={Infinity}>...</SmithersProvider>
     ```
   </Accordion>
 
-  <Accordion title="Use SQLite state for phase transitions">
-    Let reactivity drive the flow instead of imperative logic. Store state in SQLite, not useState:
+  <Accordion title="Use SQLite state for durability">
+    State in SQLite survives restarts. State in memory doesn't:
     ```tsx
-    // Good - reactive with SQLite
+    // Good - durable, survives restarts
     const phase = useQueryValue<string>(db.db,
       "SELECT value FROM state WHERE key = 'phase'") ?? "start";
     const setPhase = (p: string) =>
       db.db.run("INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)", [p]);
-    <If condition={phase === "start"}>
-      <Claude onFinished={() => setPhase("next")} />
-    </If>
 
-    // Avoid - imperative
-    let phase = "start";
-    while (phase !== "done") { ... }
+    // Bad - lost on restart
+    const [phase, setPhase] = useState("start");
     ```
   </Accordion>
 
-  <Accordion title="Handle the maxIterations callback">
+  <Accordion title="Handle iteration limits gracefully">
     Know when you've hit the limit:
     ```tsx
-    <Ralph
-      maxIterations={10}
+    <SmithersProvider
+      maxIterations={50}
       onMaxIterations={() => {
-        console.error("Workflow did not complete in 10 iterations");
-        db.state.set("status", "failed");
+        console.error("Workflow did not complete in 50 iterations");
+        db.state.set("status", "needs_attention");
       }}
     >
+    ```
+  </Accordion>
+
+  <Accordion title="Add verification gates">
+    Explicit verification makes loops trustworthy:
+    ```tsx
+    <Claude
+      onFinished={(result) => {
+        if (result.output.includes("All tests pass")) {
+          db.state.set("verified", "true");
+        }
+        // Iteration continues until verified
+      }}
+    >
+      Run tests. If any fail, fix them.
+    </Claude>
     ```
   </Accordion>
 </AccordionGroup>

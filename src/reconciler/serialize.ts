@@ -5,23 +5,57 @@ import type { SmithersNode } from './types.js'
  * If a known type appears under an unknown parent, we add a warning.
  */
 const KNOWN_TYPES = new Set([
+  // Core orchestration
   'claude',
   'ralph',
   'phase',
   'step',
   'task',
+  'orchestration',
+  'root',
+
+  // Control flow
+  'while',
+  'if',
+  'switch',
+  'each',
+  'parallel',
+  'end',
+
+  // Agent components
+  'subagent',
+  'smithers-subagent',
+  'claude-api',
+  'codex',
+  'gemini',
+  'fallback-agent',
+
+  // Prompt building
   'persona',
   'constraints',
-  'human',
-  'smithers-stop',
-  'subagent',
-  'orchestration',
-  'review',
   'text',
-  'root',
   'messages',
   'message',
   'tool-call',
+
+  // Human interaction
+  'human',
+  'smithers-stop',
+  'review',
+
+  // VCS/Git
+  'worktree',
+  'commit',
+  'git-notes',
+  'jj',
+
+  // MCP
+  'mcp-tool',
+  'sqlite',
+
+  // Infrastructure
+  'command',
+  'hooks',
 ])
 
 /**
@@ -133,31 +167,59 @@ function serializeNode(node: SmithersNode): string {
 }
 
 /**
+ * Check if a value contains functions (recursively).
+ * Used to filter out non-serializable props like middleware arrays.
+ */
+function containsFunctions(value: unknown, seen = new WeakSet()): boolean {
+  if (typeof value === 'function') return true
+  if (value === null || typeof value !== 'object') return false
+
+  // Prevent infinite recursion on circular references
+  if (seen.has(value as object)) return false
+  seen.add(value as object)
+
+  if (Array.isArray(value)) {
+    return value.some(item => containsFunctions(item, seen))
+  }
+  return Object.values(value as Record<string, unknown>).some(v => containsFunctions(v, seen))
+}
+
+/**
  * Serialize props to XML attributes.
  *
  * GOTCHA: Several props must be filtered out:
  * - callbacks (onFinished, onError, etc.)
  * - children (handled separately)
  * - key (handled separately via node.key)
- * - any function values
+ * - any function values (including nested in arrays/objects)
  */
 function serializeProps(props: Record<string, unknown>): string {
-  // Props that should never appear in XML
+  // Props that should never appear in XML (common callback/config names)
   const nonSerializable = new Set([
     'children',      // Handled separately, not a prop
     'onFinished',    // Callbacks are runtime-only
     'onError',
+    'onStart',
+    'onComplete',
+    'onIteration',
+    'onProgress',
     'onStreamStart',
     'onStreamDelta',
     'onStreamEnd',
+    'onStreamPart',
+    'onToolCall',
+    'onReady',
+    'onApprove',
+    'onReject',
     'validate',      // Functions don't serialize
+    'middleware',    // Middleware arrays contain functions
     'key',           // Stored on node.key, not props
   ])
 
   return Object.entries(props)
     .filter(([key]) => !nonSerializable.has(key))
     .filter(([, value]) => value !== undefined && value !== null)
-    .filter(([, value]) => typeof value !== 'function')  // Extra safety: no functions
+    .filter(([, value]) => !containsFunctions(value))  // Filter functions recursively
     .map(([key, value]) => {
       // GOTCHA: Object props need to be serialized as JSON
       if (typeof value === 'object') {

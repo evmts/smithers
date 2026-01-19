@@ -1,8 +1,7 @@
 import { useRef, useReducer, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
-import { usePhaseContext } from './PhaseContext.js'
-import { useStepContext } from './StepContext.js'
+import { useExecutionScope } from './ExecutionScope.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
@@ -49,10 +48,9 @@ type AgentRow = {
 export function Claude(props: ClaudeProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested, middleware: providerMiddleware, executionEnabled } = useSmithers()
   const worktree = useWorktree()
-  const phase = usePhaseContext()
-  const phaseActive = phase?.isActive ?? true
-  const step = useStepContext()
-  const stepActive = step?.isActive ?? true
+  // Use ExecutionScope for consistent gating with Step/Phase
+  // ExecutionScope is set by Step's ExecutionScopeProvider based on whether the step is active
+  const executionScope = useExecutionScope()
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
 
@@ -100,7 +98,8 @@ export function Claude(props: ClaudeProps): ReactNode {
   const lastTailLogUpdateRef = useRef<number>(0)
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const shouldExecute = executionEnabled && phaseActive && stepActive
+  // Unified execution gating: global executionEnabled AND scope-local enabled (from Step/Phase)
+  const shouldExecute = executionEnabled && executionScope.enabled
   const executionKey = shouldExecute ? ralphCount : null
 
   useUnmount(() => {
@@ -486,14 +485,14 @@ export function Claude(props: ClaudeProps): ReactNode {
   return (
     <claude
       status={status}
-      agent-id={agentIdRef.current}
-      execution-id={executionId}
+      agentId={agentIdRef.current}
+      executionId={executionId}
       model={props.model ?? 'sonnet'}
       {...(error?.message ? { error: error.message } : {})}
-      {...(result?.tokensUsed?.input !== undefined ? { 'tokens-input': result.tokensUsed.input } : {})}
-      {...(result?.tokensUsed?.output !== undefined ? { 'tokens-output': result.tokensUsed.output } : {})}
-      {...(result?.turnsUsed !== undefined ? { 'turns-used': result.turnsUsed } : {})}
-      {...(result?.durationMs !== undefined ? { 'duration-ms': result.durationMs } : {})}
+      {...(result?.tokensUsed?.input !== undefined ? { tokensInput: result.tokensUsed.input } : {})}
+      {...(result?.tokensUsed?.output !== undefined ? { tokensOutput: result.tokensUsed.output } : {})}
+      {...(result?.turnsUsed !== undefined ? { turnsUsed: result.turnsUsed } : {})}
+      {...(result?.durationMs !== undefined ? { durationMs: result.durationMs } : {})}
     >
       {displayEntries.length > 0 && (
         <messages count={displayEntries.length}>

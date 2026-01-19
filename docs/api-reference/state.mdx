@@ -9,12 +9,14 @@ The state API provides key-value storage with full history tracking and time-tra
 
 ## Methods
 
+All State API methods are **synchronous** (use SQLite's synchronous API via bun:sqlite).
+
 ### get
 
 Get a value by key.
 
 ```tsx
-const phase = await db.state.get<string>("phase");
+const phase = db.state.get<string>("phase");
 // "review" | null
 ```
 
@@ -23,10 +25,10 @@ const phase = await db.state.get<string>("phase");
 Set a value with optional trigger.
 
 ```tsx
-await db.state.set("phase", "review");
+db.state.set("phase", "review");
 
 // With trigger for tracking what caused the change
-await db.state.set("phase", "review", "tests_passed");
+db.state.set("phase", "review", "tests_passed");
 ```
 
 ### setMany
@@ -34,14 +36,14 @@ await db.state.set("phase", "review", "tests_passed");
 Set multiple values atomically.
 
 ```tsx
-await db.state.setMany({
+db.state.setMany({
   phase: "complete",
   completedAt: Date.now(),
   result: { success: true },
 });
 
 // With trigger
-await db.state.setMany(
+db.state.setMany(
   { phase: "review", reviewer: "claude" },
   "implementation_done"
 );
@@ -52,7 +54,7 @@ await db.state.setMany(
 Get all state as an object.
 
 ```tsx
-const state = await db.state.getAll();
+const state = db.state.getAll();
 // { phase: "review", attempts: 3, data: {...} }
 ```
 
@@ -61,7 +63,7 @@ const state = await db.state.getAll();
 Clear all state.
 
 ```tsx
-await db.state.reset();
+db.state.reset();
 ```
 
 ### history
@@ -69,15 +71,39 @@ await db.state.reset();
 Get state transition history.
 
 ```tsx
-// History for a specific key
-const phaseHistory = await db.state.history({ key: "phase", limit: 10 });
+// History for a specific key (positional args: key, limit)
+const phaseHistory = db.state.history("phase", 10);
 // [
-//   { id: "t1", key: "phase", value: "start", trigger: "init", timestamp: ... },
-//   { id: "t2", key: "phase", value: "review", trigger: "tests_passed", ... },
+//   { id: "t1", key: "phase", old_value: null, new_value: "start", trigger: "init", ... },
+//   { id: "t2", key: "phase", old_value: "start", new_value: "review", trigger: "tests_passed", ... },
 // ]
 
-// All history
-const allHistory = await db.state.history({ limit: 50 });
+// All history (no key filter)
+const allHistory = db.state.history(undefined, 50);
+
+// Default: last 100 transitions
+const recentHistory = db.state.history();
+```
+
+### has
+
+Check if a key exists in state.
+
+```tsx
+if (db.state.has("phase")) {
+  console.log("Phase key exists");
+}
+```
+
+### delete
+
+Delete a key from state (with optional trigger for tracking).
+
+```tsx
+db.state.delete("tempData");
+
+// With trigger for auditing
+db.state.delete("cache", "cleanup");
 ```
 
 ### replayTo
@@ -86,7 +112,7 @@ Time-travel: restore state to a previous transition.
 
 ```tsx
 // Get history
-const history = await db.state.history("phase");
+const history = db.state.history("phase");
 
 // Replay to an earlier state
 await db.state.replayTo(history[0].id);
@@ -178,19 +204,26 @@ try {
 ## Types
 
 ```tsx
-interface StateEntry {
-  key: string;
-  value: any;
-  updatedAt: Date;
+interface StateModule {
+  get: <T>(key: string) => T | null;
+  set: <T>(key: string, value: T, trigger?: string) => void;
+  setMany: (updates: Record<string, unknown>, trigger?: string) => void;
+  getAll: () => Record<string, unknown>;
+  reset: () => void;
+  history: (key?: string, limit?: number) => Transition[];
+  has: (key: string) => boolean;
+  delete: (key: string, trigger?: string) => void;
 }
 
 interface Transition {
   id: string;
+  execution_id?: string;
   key: string;
-  previousValue: any;
-  value: any;
+  old_value: any;
+  new_value: any;
   trigger?: string;
-  timestamp: Date;
+  trigger_agent_id?: string;
+  created_at: Date;
 }
 ```
 

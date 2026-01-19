@@ -1,16 +1,16 @@
 ---
 title: Quick Start
-description: Get up and running with Smithers in minutes
+description: Get up and running with durable Ralph loops in 2 minutes
 ---
 
 # Quick Start
 
-This guide walks you through creating and running your first Smithers workflow.
+**Let your agent write agents.** This guide gets you running in 2 minutes.
 
 ## Prerequisites
 
-- **[Bun](https://bun.sh)** v1.0+ (required runtime)
-- **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** - `npm install -g @anthropic-ai/claude-code`
+- **[Bun](https://bun.sh)** v1.0+ (JavaScript runtime)
+- **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** - `bun install -g @anthropic-ai/claude-code`
 
 <Note>
 Smithers uses Claude Code's subscription for API access - no separate API key needed.
@@ -200,7 +200,7 @@ await db.close();
 
 ## Let Claude Write It
 
-The real power of Smithers: tell your agent what you want and it generates the workflow:
+The real power: **you don't have to write Smithers yourself**. Describe what you want:
 
 ```
 User: "Create a workflow that monitors my CI, fixes failures automatically,
@@ -209,12 +209,13 @@ User: "Create a workflow that monitors my CI, fixes failures automatically,
 Claude: *generates ci-recovery.tsx*
 ```
 
-Install the Claude Code plugin to enable this:
+Claude understands the component model and generates working orchestration scripts. This is the "agents write agents" loop:
 
-```bash
-/plugin marketplace add evmts/smithers
-/plugin install smithers@smithers
-```
+1. Describe the workflow you want to Claude Code
+2. Claude generates a Smithers plan (TSX)
+3. You review it like any other code
+4. Smithers executes it as a durable workflow
+5. Ralph until it's done
 
 ## Inspecting State
 
@@ -234,16 +235,16 @@ smithers db stats
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Ralph Wiggum Loop" icon="rotate" href="/concepts/ralph-wiggum-loop">
+  <Card title="Durable Ralphing" icon="rotate" href="/concepts/ralph-wiggum-loop">
     Understand the execution model
   </Card>
   <Card title="Claude Component" icon="cube" href="/components/claude">
     Learn the full Claude API
   </Card>
   <Card title="Database Persistence" icon="database" href="/concepts/database-persistence">
-    Master database persistence
+    Flight recorder for your workflows
   </Card>
   <Card title="Examples" icon="code" href="/examples/hello-world">
-    See more workflow patterns
+    Copy-paste starter workflows
   </Card>
 </CardGroup>

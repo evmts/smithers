@@ -124,7 +124,7 @@ describe('End component', () => {
       )
 
       const xml = root.toXML()
-      expect(xml).toContain('exit-code="1"')
+      expect(xml).toContain('exitCode="1"')
       root.dispose()
     })
 

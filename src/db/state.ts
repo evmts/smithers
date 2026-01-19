@@ -11,6 +11,10 @@ export interface StateModule {
   getAll: () => Record<string, unknown>
   reset: () => void
   history: (key?: string, limit?: number) => Transition[]
+  /** Check if a key exists in state */
+  has: (key: string) => boolean
+  /** Delete a key from state */
+  delete: (key: string, trigger?: string) => void
 }
 
 export interface StateModuleContext {
@@ -82,6 +86,30 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
         'SELECT * FROM transitions ORDER BY created_at DESC LIMIT ?',
         [limit]
       )
+    },
+
+    has: (key: string): boolean => {
+      if (rdb.isClosed) return false
+      const row = rdb.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM state WHERE key = ?', [key])
+      return (row?.count ?? 0) > 0
+    },
+
+    delete: (key: string, trigger?: string): void => {
+      if (rdb.isClosed) return
+      const oldValue = state.get(key)
+      if (oldValue === null) return // Key doesn't exist
+
+      rdb.run('DELETE FROM state WHERE key = ?', [key])
+      rdb.invalidate(['state'])
+
+      // Log transition
+      const currentExecutionId = getCurrentExecutionId()
+      if (currentExecutionId) {
+        rdb.run(
+          'INSERT INTO transitions (id, execution_id, key, old_value, new_value, trigger, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [uuid(), currentExecutionId, key, JSON.stringify(oldValue), 'null', trigger ?? 'delete', now()]
+        )
+      }
     },
   }
 

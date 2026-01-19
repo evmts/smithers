@@ -45,14 +45,20 @@ src/reconciler/
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                         JSX RUNTIME (jsx-runtime.ts)                            │
 │                                                                                 │
-│   // This file simply re-exports React's JSX runtime:                           │
-│   export { jsx, jsxs, Fragment } from 'react/jsx-runtime'                       │
+│   // CUSTOM wrapper around React's JSX runtime that exposes React's key:        │
+│   import { jsx as reactJsx } from 'react/jsx-runtime'                           │
 │                                                                                 │
-│   // React handles component calls and hook dispatcher setup.                   │
-│   // Our hostConfig transforms React elements → SmithersNode trees.             │
+│   function withSmithersKey(props, key) {                                        │
+│     if (key == null) return props                                               │
+│     return { ...props, __smithersKey: key }  // Inject key as prop              │
+│   }                                                                             │
 │                                                                                 │
-│   // Note: React's special props (key, ref) are NOT passed to components        │
-│   // or the reconciler - they're consumed by React's internal fiber system.     │
+│   export function jsx(type, props, key) {                                       │
+│     return reactJsx(type, withSmithersKey(props, key), key)                     │
+│   }                                                                             │
+│                                                                                 │
+│   // This allows SmithersNode.key to be populated from React's key              │
+│   // for plan serialization (key="0" appears in XML output).                    │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                         │
                                         │ React processes component tree
@@ -231,39 +237,59 @@ You could build SmithersNode trees manually, but React gives you:
 
 **Important distinction:**
 
-- **React's `key` prop** - Used by React's reconciliation algorithm to track component identity. When a component's key changes, React unmounts the old instance and mounts a new one. **This prop is NEVER passed to your component or the reconciler** - it's consumed internally by React's fiber system.
+- **React's `key` prop** - Used by React's reconciliation algorithm to track component identity. When a component's key changes, React unmounts the old instance and mounts a new one. React normally doesn't pass `key` to components or the reconciler.
 
-- **SmithersNode.key** - An optional field on our SmithersNode data structure that gets serialized to XML as `key="..."` attribute for display purposes.
+- **SmithersNode.key** - An optional field on our SmithersNode data structure that gets serialized to XML as `key="..."` attribute for plan display.
+
+### How Smithers exposes React's key:
+
+Our custom `jsx-runtime.ts` intercepts JSX creation and injects the React key as `__smithersKey` prop:
+
+```tsx
+// When you write:
+<MyComponent key={0}>...</MyComponent>
+
+// jsx-runtime transforms it to include __smithersKey:
+jsx(MyComponent, { __smithersKey: 0, children: ... }, 0)
+
+// methods.ts then stores this on SmithersNode.key:
+rendererMethods.setProperty(node, '__smithersKey', 0)
+// → node.key = 0
+```
 
 ### How to use keys correctly:
 
 ```tsx
-// ❌ WRONG - trying to access React's key
+// React's key DOES appear in plan XML output (via __smithersKey injection):
+<Claude key={iteration}>...</Claude>
+// Serializes to: <claude key="0" ...>
+
+// Inside components, key is still not available as props.key:
 function MyComponent({ key }) {  // key is always undefined!
-  return <phase key={key}>...</phase>
+  // Use iteration or another prop if you need the value
 }
 
-// ✅ RIGHT - use a regular prop for data you need to access
-function MyComponent({ planKey, iteration }) {
-  // You can manually set SmithersNode.key if needed via a ref or prop
-  return <phase planKey={planKey} iteration={iteration}>...</phase>
-}
-
-// React's key is still useful for forcing remounts:
-<MyComponent key={count} planKey={count} iteration={count} />
-//           ^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
-//           Forces       Available       Available
-//           remount      in component    in component
+// Pattern: use key for React remounting AND a regular prop for component access:
+<MyComponent key={count} iteration={count} />
+//           ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+//           Forces       Available in
+//           remount      component props
 ```
 
-### Current implementation:
+### Key propagation flow:
 
-The `methods.ts` file contains code to handle `key` as a prop (line 36-40), but this code is **never executed** because React doesn't pass `key` as a regular prop. If you need keys in your serialized XML output, use a different prop name like `planKey`, `loopKey`, or `iteration`.
+```
+JSX: <phase key="build">        jsx-runtime.ts              host-config.ts
+     ────────────────────>  { __smithersKey: "build" }  ───────────────>  node.key = "build"
+                                                                               │
+                                                          serialize.ts         │
+                                     <phase key="build">  <────────────────────┘
+```
 
 ## Key Files Explained
 
 ### `jsx-runtime.ts`
-Re-exports React's JSX runtime. React handles component calls and sets up the hook dispatcher context, then our host-config transforms React elements into SmithersNode objects.
+Custom JSX runtime that wraps React's runtime to expose the `key` prop. Injects `__smithersKey` into props so it reaches our reconciler and can be stored on `SmithersNode.key` for plan serialization.
 
 ### `host-config.ts`
 Implements React's reconciler interface. React calls `createInstance()`, `appendChild()`, etc. and we create/modify SmithersNodes.

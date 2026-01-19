@@ -3,16 +3,11 @@ title: While Component
 description: Iterative loop component that repeats children until condition met or max iterations reached
 ---
 
-<Warning>
-  **Planned Feature** - This component is not yet implemented.
-  See [GitHub issues](https://github.com/evmts/smithers/issues) for design details and implementation plan.
-</Warning>
-
 # While Component
 
-Repeats child components while condition remains true, persisting iteration state for crash-resume. Core primitive for review loops, convergence workflows, polling, and iterative refinement. After implementation, Ralph will be refactored to wrap `<While>` internally.
+Repeats child components while condition remains true, persisting iteration state in SQLite for crash-resume. Core primitive for review loops, convergence workflows, polling, and iterative refinement.
 
-## Planned API
+## API
 
 ```tsx
 interface WhileProps {
@@ -55,21 +50,23 @@ interface WhileProps {
 export function While(props: WhileProps): JSX.Element
 ```
 
-## Proposed Usage
+## Usage
 
 ### Retry Until Success
 
 ```tsx
-import { While, Phase, Step, Claude } from 'smithers-orchestrator'
+import { While, Phase, Step, Claude, useSmithers } from 'smithers-orchestrator'
 
 export function FixAndRetryWorkflow() {
+  // Get db at component level (hooks must be called at top level)
   const { db } = useSmithers()
 
   return (
     <While
       id="fix-and-retry"
       condition={async () => {
-        const result = await db.state.get('testResult')
+        // db is captured from closure - not calling hooks inside condition
+        const result = db.state.get<{ passed: boolean }>('testResult')
         return result?.passed !== true
       }}
       maxIterations={5}
@@ -86,10 +83,11 @@ export function FixAndRetryWorkflow() {
         </Step>
         <Step name="Run Tests">
           <Claude
-            onFinished={async (result) => {
-              await db.state.set('testResult', {
-                passed: result.includes('PASS'),
-                output: result
+            onFinished={(result) => {
+              // result.output is the string output from Claude
+              db.state.set('testResult', {
+                passed: result.output.includes('PASS'),
+                output: result.output
               })
             }}
           >
@@ -105,34 +103,41 @@ export function FixAndRetryWorkflow() {
 ### Review-Fix Loop
 
 ```tsx
-<While
-  id="review-loop"
-  condition={async () => {
-    const { db } = useSmithers()
-    const review = await db.state.get('lastReview')
-    return review?.decision === 'request_changes'
-  }}
-  maxIterations={3}
->
-  <Phase name="Review">
-    <Step name="review">
-      <Claude
-        schema={reviewSchema}
-        onFinished={async (result) => {
-          await db.state.set('lastReview', result)
-        }}
-      >
-        Review PR and provide structured feedback
-      </Claude>
-    </Step>
-  </Phase>
+function ReviewFixLoop() {
+  // Get db at component level (hooks must be called at top level)
+  const { db } = useSmithers()
 
-  <Phase name="Fix">
-    <Step name="fix">
-      <Claude>Address review feedback and commit changes</Claude>
-    </Step>
-  </Phase>
-</While>
+  return (
+    <While
+      id="review-loop"
+      condition={async () => {
+        // db captured from closure - no hook calls inside condition
+        const review = db.state.get<{ decision: string }>('lastReview')
+        return review?.decision === 'request_changes'
+      }}
+      maxIterations={3}
+    >
+      <Phase name="Review">
+        <Step name="review">
+          <Claude
+            schema={reviewSchema}
+            onFinished={(result) => {
+              db.state.set('lastReview', result.structured ?? result.output)
+            }}
+          >
+            Review PR and provide structured feedback
+          </Claude>
+        </Step>
+      </Phase>
+
+      <Phase name="Fix">
+        <Step name="fix">
+          <Claude>Address review feedback and commit changes</Claude>
+        </Step>
+      </Phase>
+    </While>
+  )
+}
 ```
 
 ### Polling Loop
@@ -153,7 +158,7 @@ export function FixAndRetryWorkflow() {
 </While>
 ```
 
-## Props (Planned)
+## Props
 
 <ParamField path="id" type="string" required>
   Stable identifier for component identity across restarts. Used to build iteration scope IDs.
@@ -182,14 +187,21 @@ export function FixAndRetryWorkflow() {
   **Task gating:** Holds control-flow task during evaluation to prevent race conditions.
 
   ```tsx
-  // Sync condition
+  // Sync condition (using closure-captured variable)
   condition={() => attemptCount < 3}
 
-  // Async condition (database query)
+  // Database condition (db captured from component-level useSmithers)
+  // ✅ CORRECT - db is captured from closure, not calling hooks in condition
+  const { db } = useSmithers()  // at component top-level
   condition={async () => {
-    const { db } = useSmithers()
-    const result = await db.state.get('converged')
+    const result = db.state.get('converged')
     return result !== true
+  }}
+
+  // ❌ WRONG - calling hooks inside condition violates Rules of Hooks
+  condition={async () => {
+    const { db } = useSmithers()  // ERROR: hooks can't be called in callbacks
+    return db.state.get('converged') !== true
   }}
 
   // Async condition (API call)
@@ -265,26 +277,20 @@ export function FixAndRetryWorkflow() {
 ## Implementation Status
 
 <Steps>
-  <Step title="Design Phase">
-    Issue created with state machine, scoping design, and Ralph refactor plan.
-    [View on GitHub](https://github.com/evmts/smithers/issues)
+  <Step title="Core Implementation" status="complete">
+    While component with condition evaluation, iteration state persistence, and WhileIterationContext.
   </Step>
 
-  <Step title="Prerequisites (Blocked)">
-    Requires control-flow infrastructure: ExecutionBoundary, makeScopeId, tasks.scope_id.
-    [View dependencies on GitHub](https://github.com/evmts/smithers/issues)
+  <Step title="SQLite State" status="complete">
+    Iteration count and status persisted in `state` table with keys `while.{id}.iteration` and `while.{id}.status`.
   </Step>
 
-  <Step title="Implementation (Pending)">
-    Component implementation, iteration state persistence, WhileIterationProvider context.
+  <Step title="Context Provider" status="complete">
+    `useWhileIteration()` hook provides `iteration` number and `signalComplete()` for child components.
   </Step>
 
-  <Step title="Ralph Refactor (Pending)">
-    Refactor Ralph to wrap While with condition={() => db.tasks.hasPending()}.
-  </Step>
-
-  <Step title="Testing (Future)">
-    Unit tests (condition eval, max iterations), integration tests (Phase/Step re-execution), crash-resume tests.
+  <Step title="Testing">
+    Additional test coverage for edge cases (crash-resume, max iterations, nested While loops).
   </Step>
 </Steps>
 

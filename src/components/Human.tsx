@@ -6,6 +6,11 @@ import { useQueryOne } from '../reactive-sqlite/index.js'
 import type { HumanInteraction } from '../db/human.js'
 
 export interface HumanProps {
+  /**
+   * Stable identifier for resumability. Required for crash-resume.
+   * Must be deterministic across restarts - no random IDs.
+   */
+  id?: string
   message?: string
   onApprove?: () => void
   onReject?: () => void
@@ -32,10 +37,21 @@ export interface HumanProps {
  */
 export function Human(props: HumanProps): ReactNode {
   const { db } = useSmithers()
+  // Use stable id for resumability (falls back to random if not provided)
+  const humanId = props.id ?? crypto.randomUUID()
+  const stateKey = `human:${humanId}`
   const taskIdRef = useRef<string | null>(null)
   const requestIdRef = useRef<string | null>(null)
 
   useMount(() => {
+    // Check for existing request (resumability)
+    const existingRequestId = db.state.get<string>(stateKey)
+    if (existingRequestId) {
+      requestIdRef.current = existingRequestId
+      // Don't start a new task if resuming
+      return
+    }
+
     // Register blocking task
     taskIdRef.current = db.tasks.start('human_interaction', props.message ?? 'Human input required')
 
@@ -44,6 +60,9 @@ export function Human(props: HumanProps): ReactNode {
       'confirmation',
       props.message ?? 'Approve to continue'
     )
+
+    // Store request id for resumability
+    db.state.set(stateKey, requestIdRef.current, 'human_request')
   })
 
   // Reactive subscription to the request

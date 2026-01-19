@@ -7,6 +7,11 @@ import { useQueryValue } from '../reactive-sqlite/index.js'
 import { addWorktree, removeWorktree, worktreeExists, branchExists } from '../utils/vcs/git.js'
 
 export interface WorktreeProps {
+  /**
+   * Stable identifier for resumability. If not provided, uses branch name.
+   * Must be deterministic across restarts - no random IDs.
+   */
+  id?: string
   branch: string
   base?: string
   path?: string
@@ -24,8 +29,9 @@ interface WorktreeState {
 
 export function Worktree(props: WorktreeProps): ReactNode {
   const smithers = useSmithers()
-  const opIdRef = useRef(crypto.randomUUID())
-  const stateKey = `worktree:${opIdRef.current}`
+  // Use stable id for resumability (defaults to branch name if not provided)
+  const worktreeId = props.id ?? props.branch
+  const stateKey = `worktree:${worktreeId}`
   const isMounted = useMountedState()
 
   const { data: storedState } = useQueryValue<string>(

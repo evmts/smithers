@@ -159,7 +159,12 @@ const hostConfig = {
 
     for (const [key, value] of Object.entries(updatePayload)) {
       if (value === undefined) {
-        delete instance.props[key]
+        // Handle removal: __smithersKey/key stored on instance.key, not props
+        if (key === '__smithersKey' || key === 'key') {
+          delete instance.key
+        } else {
+          delete instance.props[key]
+        }
       } else {
         rendererMethods.setProperty(instance, key, value)
       }

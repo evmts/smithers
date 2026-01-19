@@ -53,6 +53,17 @@ export interface TasksModule {
    * Get current iteration from the state table.
    */
   getCurrentIteration: () => number
+
+  /**
+   * Execute a function within a task lifecycle.
+   * Automatically starts task before execution and completes/fails after.
+   * Ensures task is always properly completed even on errors.
+   */
+  withTask: <T>(
+    componentType: string,
+    componentName: string | undefined,
+    fn: () => T | Promise<T>
+  ) => Promise<T>
 }
 
 export interface TasksModuleContext {
@@ -144,6 +155,22 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
         "SELECT value FROM state WHERE key = 'ralphCount'"
       )
       return parseJson(result?.value, 0)
+    },
+
+    withTask: async <T>(
+      componentType: string,
+      componentName: string | undefined,
+      fn: () => T | Promise<T>
+    ): Promise<T> => {
+      const taskId = tasks.start(componentType, componentName)
+      try {
+        const result = await fn()
+        tasks.complete(taskId)
+        return result
+      } catch (error) {
+        tasks.fail(taskId)
+        throw error
+      }
     },
   }
 

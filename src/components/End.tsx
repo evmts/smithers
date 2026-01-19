@@ -122,6 +122,6 @@ export function End(props: EndProps): ReactNode {
         : 'failure')
 
   return (
-    <end status="ending" reason={reason} exit-code={props.exitCode ?? 0} />
+    <end status="ending" reason={reason} exitCode={props.exitCode ?? 0} />
   )
 }
