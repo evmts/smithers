@@ -1,0 +1,29 @@
+# Test artifacts
+src/.smithers/
+**/*.test.ts
+**/*.test.tsx
+
+# Dev files
+.git/
+.github/
+.husky/
+.turbo/
+.worktrees/
+reference/
+docs/
+evals/
+examples/
+issues/
+reviews/
+scripts/
+test/
+prompts/
+*.md
+!README.md
+
+# Config
+.gitignore
+.gitmodules
+tsconfig*.json
+babel.config.json
+oxlint.json
