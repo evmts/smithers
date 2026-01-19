@@ -2,6 +2,16 @@
 // Phases are always rendered in output, but only active phase renders children
 
 import { useRef, useEffect, useCallback, type ReactNode } from 'react'
+
+type PhaseStatus = 'pending' | 'active' | 'completed' | 'skipped'
+
+function getPhaseStatus(isSkipped: boolean, isActive: boolean, isCompleted: boolean): PhaseStatus {
+  if (isSkipped) return 'skipped'
+  if (isActive) return 'active'
+  if (isCompleted) return 'completed'
+  return 'pending'
+}
+
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
@@ -74,13 +84,7 @@ export function Phase(props: PhaseProps): ReactNode {
   const isCompleted = !isSkipped && registry.isPhaseCompleted(myIndex)
 
   // Compute status string for output
-  const status: 'pending' | 'active' | 'completed' | 'skipped' = isSkipped
-    ? 'skipped'
-    : isActive
-      ? 'active'
-      : isCompleted
-        ? 'completed'
-        : 'pending'
+  const status = getPhaseStatus(isSkipped, isActive, isCompleted)
 
   // Track if we've already processed the skip for this phase
   const hasSkippedRef = useRef(false)
