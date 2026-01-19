@@ -79,12 +79,11 @@ describe('App keyboard handling', () => {
 
     await root.render(<App dbPath="/tmp" hooks={hooks} />)
 
-    let handler = keyboardHandlerRef()
+    const handler = keyboardHandlerRef()
     handler!({ name: 'f4', ctrl: false, shift: false })
     await waitForEffects()
     expect(readTuiState('tui:app:activeTab', 'timeline')).toBe('chat')
 
-    handler = keyboardHandlerRef()
     handler!({ name: 'tab', ctrl: false, shift: false })
     await waitForEffects()
     expect(readTuiState('tui:app:activeTab', 'timeline')).toBe('chat')
