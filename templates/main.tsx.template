@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+/** @jsxImportSource smithers-orchestrator */
 import { createSmithersRoot } from 'smithers-orchestrator'
 import { createSmithersDB } from 'smithers-orchestrator/db'
 import {

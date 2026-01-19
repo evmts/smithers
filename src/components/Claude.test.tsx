@@ -400,15 +400,15 @@ describe('buildClaudeArgs', () => {
   })
 
   test('maps shorthand model names to full IDs', () => {
-    expect(modelMap.opus).toBe('claude-opus-4')
-    expect(modelMap.sonnet).toBe('claude-sonnet-4')
-    expect(modelMap.haiku).toBe('claude-haiku-3')
+    expect(modelMap.opus).toBe('claude-opus-4-20250514')
+    expect(modelMap.sonnet).toBe('claude-sonnet-4-20250514')
+    expect(modelMap.haiku).toBe('claude-haiku-3-20250514')
   })
 
   test('includes model flag when specified', () => {
     const args = buildClaudeArgs({ prompt: 'test', model: 'opus' })
     expect(args).toContain('--model')
-    expect(args).toContain('claude-opus-4')
+    expect(args).toContain('claude-opus-4-20250514')
   })
 
   test('passes through full model ID', () => {

@@ -9,7 +9,15 @@ import {
   jsx as reactJsx,
   jsxs as reactJsxs,
 } from 'react/jsx-runtime'
-import { jsxDEV as reactJsxDEV } from 'react/jsx-dev-runtime'
+
+// In production mode, jsxDEV is undefined - fallback to jsx
+let reactJsxDEV: typeof import('react/jsx-dev-runtime').jsxDEV | undefined
+try {
+  const devRuntime = await import('react/jsx-dev-runtime')
+  reactJsxDEV = devRuntime.jsxDEV
+} catch {
+  // Fallback handled below
+}
 
 type Props = Record<string, unknown> | null
 
@@ -44,6 +52,10 @@ export function jsxDEV(
   source: { fileName: string; lineNumber: number; columnNumber: number } | undefined,
   self: unknown
 ) {
+  // Fallback to jsx in production mode where jsxDEV is undefined
+  if (!reactJsxDEV) {
+    return reactJsx(type as React.ElementType, withSmithersKey(props, key), key)
+  }
   return reactJsxDEV(type as React.ElementType, withSmithersKey(props, key), key, isStaticChildren, source, self)
 }
 

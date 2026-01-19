@@ -6,16 +6,16 @@ import { describe, test, expect } from 'bun:test'
 import { buildClaudeArgs, modelMap, permissionFlags, formatMap } from './arg-builder.js'
 
 describe('modelMap', () => {
-  test('maps opus to claude-opus-4', () => {
-    expect(modelMap.opus).toBe('claude-opus-4')
+  test('maps opus to claude-opus-4-20250514', () => {
+    expect(modelMap.opus).toBe('claude-opus-4-20250514')
   })
 
-  test('maps sonnet to claude-sonnet-4', () => {
-    expect(modelMap.sonnet).toBe('claude-sonnet-4')
+  test('maps sonnet to claude-sonnet-4-20250514', () => {
+    expect(modelMap.sonnet).toBe('claude-sonnet-4-20250514')
   })
 
-  test('maps haiku to claude-haiku-3', () => {
-    expect(modelMap.haiku).toBe('claude-haiku-3')
+  test('maps haiku to claude-haiku-3-20250514', () => {
+    expect(modelMap.haiku).toBe('claude-haiku-3-20250514')
   })
 })
 
@@ -65,7 +65,7 @@ describe('buildClaudeArgs', () => {
       const args = buildClaudeArgs({ prompt: 'test', model: 'opus' })
 
       expect(args).toContain('--model')
-      expect(args).toContain('claude-opus-4')
+      expect(args).toContain('claude-opus-4-20250514')
     })
 
     test('passes through custom model name', () => {
@@ -283,7 +283,7 @@ describe('buildClaudeArgs', () => {
 
       expect(args[0]).toBe('--print')
       expect(args).toContain('--model')
-      expect(args).toContain('claude-sonnet-4')
+      expect(args).toContain('claude-sonnet-4-20250514')
       expect(args).toContain('--max-turns')
       expect(args).toContain('10')
       expect(args).toContain('--dangerously-skip-permissions')

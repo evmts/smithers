@@ -45,7 +45,7 @@ describe('executeClaudeCLIOnce', () => {
 
       const args = buildClaudeArgs(options)
       expect(args).toContain('--model')
-      expect(args).toContain('claude-sonnet-4')
+      expect(args).toContain('claude-sonnet-4-20250514')
     })
 
     test('buildClaudeArgs includes output format', () => {
@@ -269,7 +269,7 @@ describe('arg-builder integration', () => {
 
     expect(args).toContain('--print')
     expect(args).toContain('--model')
-    expect(args).toContain('claude-sonnet-4')
+    expect(args).toContain('claude-sonnet-4-20250514')
     expect(args).toContain('--max-turns')
     expect(args).toContain('5')
     expect(args[args.length - 1]).toBe('test')
@@ -294,7 +294,7 @@ describe('arg-builder integration', () => {
 
     expect(args[0]).toBe('--print')
     expect(args).toContain('--model')
-    expect(args).toContain('claude-opus-4')
+    expect(args).toContain('claude-opus-4-20250514')
     expect(args).toContain('--max-turns')
     expect(args).toContain('10')
     expect(args).toContain('--dangerously-skip-permissions')

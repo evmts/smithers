@@ -5,11 +5,12 @@ import type { CLIExecutionOptions, ClaudePermissionMode, ClaudeOutputFormat } fr
 
 /**
  * Model name mapping from shorthand to full model ID
+ * Uses latest dated versions for API compatibility
  */
 export const modelMap: Record<string, string> = {
-  opus: 'claude-opus-4',
-  sonnet: 'claude-sonnet-4',
-  haiku: 'claude-haiku-3',
+  opus: 'claude-opus-4-20250514',
+  sonnet: 'claude-sonnet-4-20250514',
+  haiku: 'claude-haiku-3-20250514',
 }
 
 /**
