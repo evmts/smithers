@@ -26,6 +26,8 @@ interface ReviewResult {
   summary: string
 }
 
+// TODO: Stress in both CLAUDE.md and in docs that SQLLite is the preferred state solution for most th ings
+// TODO: store this in sqllite
 let reviewResult: ReviewResult = {
   needsChanges: false,
   filesChanged: [],

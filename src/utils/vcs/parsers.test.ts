@@ -84,11 +84,11 @@ describe('parseDiffStats - basic', () => {
 // ============================================================================
 
 describe('parseGitStatus - edge cases', () => {
-  test('handles renamed files (R status) - not currently tracked', () => {
+  test('handles renamed files (R status) - tracked as modified', () => {
     const output = `R  old-name.ts -> new-name.ts`
     const result = parseGitStatus(output)
-    // R status is not tracked, so all arrays should be empty
-    expect(result.modified).toHaveLength(0)
+    // R status is tracked as modified
+    expect(result.modified).toHaveLength(1)
     expect(result.added).toHaveLength(0)
     expect(result.deleted).toHaveLength(0)
   })

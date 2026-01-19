@@ -27,7 +27,9 @@ export async function showExecutions(db: SmithersDB) {
       }
 
       if (exec.completed_at && exec.started_at) {
-        const duration = exec.completed_at.getTime() - exec.started_at.getTime()
+        const startTime = exec.started_at instanceof Date ? exec.started_at.getTime() : new Date(exec.started_at).getTime()
+        const endTime = exec.completed_at instanceof Date ? exec.completed_at.getTime() : new Date(exec.completed_at).getTime()
+        const duration = endTime - startTime
         console.log(`    Duration: ${duration}ms`)
       }
 

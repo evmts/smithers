@@ -222,31 +222,22 @@ describe('showRecovery', () => {
   })
 
   describe('recovery options', () => {
-    test('displays resume option', async () => {
+    test('displays recovery instruction', async () => {
       const db = createMockDb({
         incomplete: { id: '1', file_path: '/test.tsx', started_at: '2024-01-01T10:00:00Z' }
       })
       await showRecovery(db)
       
-      expect(consoleOutput.some(line => line.includes('Resume from last state'))).toBe(true)
+      expect(consoleOutput.some(line => line.includes('To recover, run: smithers run'))).toBe(true)
     })
 
-    test('displays restart option', async () => {
+    test('displays auto-detection message', async () => {
       const db = createMockDb({
         incomplete: { id: '1', file_path: '/test.tsx', started_at: '2024-01-01T10:00:00Z' }
       })
       await showRecovery(db)
       
-      expect(consoleOutput.some(line => line.includes('Restart from beginning'))).toBe(true)
-    })
-
-    test('displays mark-failed option', async () => {
-      const db = createMockDb({
-        incomplete: { id: '1', file_path: '/test.tsx', started_at: '2024-01-01T10:00:00Z' }
-      })
-      await showRecovery(db)
-      
-      expect(consoleOutput.some(line => line.includes('Mark as failed'))).toBe(true)
+      expect(consoleOutput.some(line => line.includes('orchestration will detect the incomplete state'))).toBe(true)
     })
   })
 

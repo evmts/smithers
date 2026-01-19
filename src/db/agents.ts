@@ -52,7 +52,7 @@ const mapAgent = (row: AgentRow | null): Agent | null => {
     prompt: row.prompt,
     status: row.status as Agent['status'],
     result: row.result ?? undefined,
-    result_structured: row.result_structured ? parseJson(row.result_structured, {}) : undefined,
+    result_structured: row.result_structured ? parseJson(row.result_structured, undefined) : undefined,
     log_path: row.log_path ?? undefined,
     error: row.error ?? undefined,
     started_at: row.started_at ? new Date(row.started_at) : undefined,

@@ -46,7 +46,7 @@ const mapExecution = (row: ExecutionRow | null): Execution | null => {
     file_path: row.file_path,
     status: row.status as Execution['status'],
     config: parseJson(row.config, {}),
-    result: row.result ? parseJson(row.result, {}) : undefined,
+    result: row.result ? parseJson(row.result, undefined) : undefined,
     error: row.error ?? undefined,
     started_at: row.started_at ? new Date(row.started_at) : undefined,
     completed_at: row.completed_at ? new Date(row.completed_at) : undefined,
