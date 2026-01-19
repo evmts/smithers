@@ -15,6 +15,7 @@ function getPhaseStatus(isSkipped: boolean, isActive: boolean, isCompleted: bool
 import { useSmithers } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex, PhaseRegistryProvider } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
+import { ExecutionGateProvider, useExecutionGate } from './ExecutionGate.js'
 
 
 export interface PhaseProps {
@@ -72,6 +73,7 @@ export function Phase(props: PhaseProps): ReactNode {
   const { db, ralphCount } = useSmithers()
   const registry = usePhaseRegistry()
   const myIndex = usePhaseIndex(props.name)
+  const parentExecutionEnabled = useExecutionGate()
 
   const phaseIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
@@ -84,13 +86,22 @@ export function Phase(props: PhaseProps): ReactNode {
   const isCompleted = !isSkipped && (registry ? registry.isPhaseCompleted(myIndex) : false)
 
   // Compute status string for output
-  const status = getPhaseStatus(isSkipped, isActive, isCompleted)
+  const status: PhaseStatus = isSkipped
+    ? 'skipped'
+    : parentExecutionEnabled
+      ? isActive
+        ? 'active'
+        : isCompleted
+          ? 'completed'
+          : 'pending'
+      : 'pending'
 
   // Track if we've already processed the skip for this phase
   const hasSkippedRef = useRef(false)
 
   // Handle skipped phases only when they become active (not on mount)
   useEffect(() => {
+    if (!parentExecutionEnabled) return
     if (registry?.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
       hasSkippedRef.current = true
       // Log skipped phase to database
@@ -104,10 +115,11 @@ export function Phase(props: PhaseProps): ReactNode {
       // Advance to next phase immediately
       registry?.advancePhase()
     }
-  }, [registry?.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry])
+  }, [parentExecutionEnabled, registry?.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry])
 
   // Handle phase lifecycle transitions
   useEffect(() => {
+    if (!parentExecutionEnabled) return
     if (isSkipped) return
 
     // Activation: transition from inactive to active
@@ -133,14 +145,14 @@ export function Phase(props: PhaseProps): ReactNode {
     }
 
     prevIsActiveRef.current = isActive
-  }, [isActive, isSkipped, props.name, ralphCount, db, props.onStart, props.onComplete])
+  }, [parentExecutionEnabled, isActive, isSkipped, props.name, ralphCount, db, props.onStart, props.onComplete])
 
   // Handler for when all steps in this phase complete
   const handleAllStepsComplete = useCallback(() => {
-    if (registry?.isPhaseActive(myIndex)) {
+    if (parentExecutionEnabled && registry?.isPhaseActive(myIndex)) {
       registry?.advancePhase()
     }
-  }, [registry, myIndex])
+  }, [parentExecutionEnabled, registry, myIndex])
 
   // Always render the phase element (visible in plan output)
   // Only render children when active (executes work)

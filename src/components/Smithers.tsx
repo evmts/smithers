@@ -127,6 +127,7 @@ export function Smithers(props: SmithersProps): ReactNode {
   const executionScope = useExecutionScope()
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
+  const executionEnabled = useExecutionGate()
 
   const subagentIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)

@@ -50,6 +50,7 @@ export interface StepRegistryProviderProps {
 export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
   const { db, reactiveDb } = useSmithers()
   const stateKey = `stepIndex_${props.phaseId ?? 'default'}`
+  const executionEnabled = useExecutionGate()
 
   // Track registered steps using ref for synchronous updates during render
   // This avoids race conditions when multiple Step components mount simultaneously
@@ -58,19 +59,20 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   // Read current step index from SQLite (for sequential mode)
   const { data: dbStepIndex } = useQueryValue<number>(
     reactiveDb,
-    `SELECT CAST(value AS INTEGER) as idx FROM state WHERE key = ?`,
-    [stateKey]
+    !props.isParallel && executionEnabled
+      ? `SELECT CAST(value AS INTEGER) as idx FROM state WHERE key = ?`
+      : `SELECT 0 as idx`,
+    !props.isParallel && executionEnabled ? [stateKey] : []
   )
 
   const currentStepIndex = props.isParallel ? -1 : (dbStepIndex ?? 0)
 
   // Initialize step index in DB
-  useMount(() => {
-    if (!props.isParallel) {
-      const existing = db.state.get<number>(stateKey)
-      if (existing === null || existing === undefined) {
-        db.state.set(stateKey, 0, 'step_registry_init')
-      }
+  useEffectOnValueChange(executionEnabled, () => {
+    if (!executionEnabled || props.isParallel) return
+    const existing = db.state.get<number>(stateKey)
+    if (existing === null || existing === undefined) {
+      db.state.set(stateKey, 0, 'step_registry_init')
     }
   })
 
@@ -85,7 +87,7 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   }, []) // No dependencies needed - ref is mutable
 
   const advanceStep = useCallback(() => {
-    if (props.isParallel) return
+    if (!executionEnabled || props.isParallel) return
     const nextIndex = currentStepIndex + 1
     if (nextIndex < stepsRef.current.length) {
       db.state.set(stateKey, nextIndex, 'step_advance')
@@ -93,7 +95,7 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
       // All steps complete - signal phase completion
       props.onAllStepsComplete?.()
     }
-  }, [db, stateKey, currentStepIndex, props.isParallel, props.onAllStepsComplete])
+  }, [db, executionEnabled, stateKey, currentStepIndex, props.isParallel, props.onAllStepsComplete])
 
   const isStepActive = useCallback((index: number): boolean => {
     if (props.isParallel) return true // All steps active in parallel mode

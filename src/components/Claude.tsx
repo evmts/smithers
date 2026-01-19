@@ -16,6 +16,7 @@ import { extractText } from '../utils/extract-text.js'
 import { composeMiddleware } from '../middleware/compose.js'
 import { retryMiddleware } from '../middleware/retry.js'
 import { validationMiddleware, ValidationError } from '../middleware/validation.js'
+import { useExecutionGate } from './ExecutionGate.js'
 
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
 
@@ -45,12 +46,11 @@ type AgentRow = {
 export function Claude(props: ClaudeProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested, middleware: providerMiddleware } = useSmithers()
   const worktree = useWorktree()
-  const phase = usePhaseContext()
-  const phaseActive = phase?.isActive ?? true
-  const step = useStepContext()
-  const stepActive = step?.isActive ?? true
+  usePhaseContext()
+  useStepContext()
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
+  const executionEnabled = useExecutionGate()
 
   // TODO abstract all the following block of lines into named hooks
   const agentIdRef = useRef<string | null>(null)
@@ -90,12 +90,12 @@ export function Claude(props: ClaudeProps): ReactNode {
   const lastTailLogUpdateRef = useRef<number>(0)
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const shouldExecute = phaseActive && stepActive
-  const executionKey = `${ralphCount}:${shouldExecute ? 'active' : 'inactive'}`
+  // Execute once per ralphCount change (idempotent, handles React strict mode)
+  const executionKey = executionEnabled ? ralphCount : -1
 
-  // TODO: should be handled by an event handler not a useEffect
   useEffectOnValueChange(executionKey, () => {
-    if (!shouldExecute) return
+    if (!executionEnabled) return
+    // Fire-and-forget async IIFE
     ;(async () => {
       taskIdRef.current = db.tasks.start('claude')
 
