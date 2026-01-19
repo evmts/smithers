@@ -15,6 +15,20 @@ description: Loop controller component for iteration-based workflows
 
 The `<Ralph>` component is the internal loop controller that powers Smithers workflows. It manages iteration count and task tracking for workflows that need to loop until completion. SmithersProvider wraps Ralph automatically—this page documents Ralph for advanced users who need direct access.
 
+## Minimum Viable Ralph
+
+The simplest possible orchestration is just `<Ralph>` with a `<Claude>` inside:
+
+```tsx
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph>
+    <Claude>Your prompt here</Claude>
+  </Ralph>
+</SmithersProvider>
+```
+
+This creates a single-agent loop that runs until Claude completes its task. The `<Claude>` component handles the LLM call and tool execution internally.
+
 ## Basic Usage
 
 ```tsx
