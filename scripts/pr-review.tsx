@@ -274,6 +274,12 @@ async function main() {
   const executionId = db.execution.start('pr-review', 'scripts/pr-review.tsx')
 
   console.log('Starting PR Review...')
+
+  if (!PR_NUMBER || PR_NUMBER.trim() === '') {
+    console.error('Error: PR_NUMBER environment variable is required')
+    process.exit(1)
+  }
+
   console.log(`PR: #${PR_NUMBER}`)
   console.log(`Range: ${PR_BASE_SHA}...${PR_HEAD_SHA}`)
 

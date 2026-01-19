@@ -6,9 +6,9 @@
  * per iteration, completing it, then sleeping between iterations.
  *
  * Usage:
- *   bun src/ralph.ts                          # Default: 6 hours with opus
- *   bun src/ralph.ts --duration 15m --model sonnet  # Quick test
- *   bun src/ralph.ts --dry-run                # Preview tasks without executing
+ *   bun scripts/ralph.ts                          # Default: 6 hours with opus
+ *   bun scripts/ralph.ts --duration 15m --model sonnet  # Quick test
+ *   bun scripts/ralph.ts --dry-run                # Preview tasks without executing
  */
 
 import { Glob } from 'bun'
@@ -141,10 +141,10 @@ Environment Variables:
   RALPH_MAX_TURNS     Same as --max-turns
 
 Examples:
-  bun src/ralph.ts                              # 6 hours with opus
-  bun src/ralph.ts --duration 15m               # Quick 15 minute run
-  bun src/ralph.ts --dry-run                    # Preview tasks
-  RALPH_DURATION=12h bun src/ralph.ts           # 12 hour overnight run
+  bun scripts/ralph.ts                              # 6 hours with opus
+  bun scripts/ralph.ts --duration 15m               # Quick 15 minute run
+  bun scripts/ralph.ts --dry-run                    # Preview tasks
+  RALPH_DURATION=12h bun scripts/ralph.ts           # 12 hour overnight run
 `)
 }
 
