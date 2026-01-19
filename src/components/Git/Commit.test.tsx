@@ -164,7 +164,9 @@ describe('Commit component integration', () => {
     executionId = await db.execution.start('commit-test', 'test.tsx')
   })
 
-  afterAll(() => {
+  afterAll(async () => {
+    // Allow pending React effects to complete before closing db
+    await new Promise((r) => setTimeout(r, 50))
     db.close()
   })
 
