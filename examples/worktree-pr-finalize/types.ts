@@ -61,21 +61,21 @@ export interface RebaseResult {
   success: boolean
   beforeSha: string
   afterSha: string
-  conflictFiles?: string[]
-  error?: string
+  conflictFiles?: string[] | undefined
+  error?: string | undefined
 }
 
 export interface PushResult {
   success: boolean
   sha: string
-  error?: string
+  error?: string | undefined
 }
 
 export interface MergeResult {
   success: boolean
   method: 'merge' | 'squash' | 'rebase'
-  sha?: string
-  error?: string
+  sha?: string | undefined
+  error?: string | undefined
 }
 
 export interface WorktreeAgentReport {
@@ -90,6 +90,6 @@ export interface WorktreeAgentReport {
     poll: PhaseStatus
     merge: PhaseStatus
   }
-  error?: string
-  mergedSha?: string
+  error?: string | undefined
+  mergedSha?: string | undefined
 }

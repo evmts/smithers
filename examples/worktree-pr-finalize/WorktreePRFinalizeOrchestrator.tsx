@@ -6,7 +6,6 @@
  */
 
 import { useRef, type ReactNode } from 'react'
-import { Each } from '../../src/components/Each.js'
 import { useSmithers } from '../../src/components/SmithersProvider.js'
 import { useMount } from '../../src/reconciler/hooks.js'
 import { useQueryValue } from '../../src/reactive-sqlite/index.js'
@@ -131,18 +130,16 @@ export function WorktreePRFinalizeOrchestrator({
 
       {/* Spawn subagent for each worktree */}
       <agents>
-        <Each items={worktrees}>
-          {(wt: WorktreeContext) => (
-            <agent key={wt.name} worktree={wt.name}>
-              <WorktreePRFinalize
-                worktree={wt}
-                mergeMethod={mergeMethod}
-                deleteAfterMerge={deleteAfterMerge}
-                onComplete={(result) => handleComplete(wt, result)}
-              />
-            </agent>
-          )}
-        </Each>
+        {worktrees.map((wt: WorktreeContext) => (
+          <agent key={wt.name} worktree={wt.name}>
+            <WorktreePRFinalize
+              worktree={wt}
+              mergeMethod={mergeMethod}
+              deleteAfterMerge={deleteAfterMerge}
+              onComplete={(result) => handleComplete(wt, result)}
+            />
+          </agent>
+        ))}
       </agents>
 
       {/* Summary when all complete */}

@@ -386,20 +386,29 @@ Compose prompts with child components:
 
 ```tsx
 function ResilientClaude() {
-  const [attempts, setAttempts] = useState(0);
-  const [error, setError] = useState<Error | null>(null);
+  const { db } = useSmithers();
+  
+  const attempts = useQueryValue<number>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'attempts'"
+  ) ?? 0;
+  
+  const error = useQueryValue<string | null>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'error'"
+  ) ?? null;
 
   return (
     <Ralph maxIterations={3}>
       {error && attempts < 3 && (
         <Claude
-          onFinished={() => setError(null)}
+          onFinished={() => db.state.set('error', null)}
           onError={(err) => {
-            setError(err);
-            setAttempts(a => a + 1);
+            db.state.set('error', err.message);
+            db.state.set('attempts', attempts + 1);
           }}
         >
-          Previous attempt failed: {error?.message}
+          Previous attempt failed: {error}
           Try a different approach.
         </Claude>
       )}
@@ -407,7 +416,7 @@ function ResilientClaude() {
       {!error && (
         <Claude
           onFinished={(r) => console.log("Success:", r.output)}
-          onError={setError}
+          onError={(err) => db.state.set('error', err.message)}
         >
           Complete the task.
         </Claude>
