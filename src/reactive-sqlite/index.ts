@@ -54,4 +54,5 @@ export type {
   ReactiveDatabaseConfig,
   DatabaseEvent,
   DatabaseEventType,
+  RowFilter,
 } from './types.js'

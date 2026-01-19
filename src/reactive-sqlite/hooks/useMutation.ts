@@ -2,7 +2,8 @@
  * useMutation hook for reactive SQLite mutations
  */
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef } from 'react'
+import { useVersionTracking } from './shared.js'
 import type { ReactiveDatabase } from '../database.js'
 import type { UseMutationResult, UseMutationOptions } from '../types.js'
 import { useDatabaseOptional } from './context.js'
@@ -68,13 +69,16 @@ export function useMutation<TParams extends any[] = any[]>(
   }
 
   const { invalidateTables, onSuccess, onError } = options
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
+  
+  // Use refs for ephemeral state (per AGENTS.md: no useState)
+  const isLoadingRef = useRef(false)
+  const errorRef = useRef<Error | null>(null)
+  const { invalidateAndUpdate } = useVersionTracking()
 
   const mutate = useCallback(
     (...params: TParams) => {
-      setIsLoading(true)
-      setError(null)
+      isLoadingRef.current = true
+      errorRef.current = null
 
       try {
         db.run(sql, params)
@@ -86,20 +90,20 @@ export function useMutation<TParams extends any[] = any[]>(
 
         onSuccess?.()
       } catch (err) {
-        const error = err as Error
-        setError(error)
-        onError?.(error)
+        errorRef.current = err as Error
+        onError?.(err as Error)
       } finally {
-        setIsLoading(false)
+        isLoadingRef.current = false
+        invalidateAndUpdate()
       }
     },
-    [db, sql, invalidateTables, onSuccess, onError]
+    [db, sql, invalidateTables, onSuccess, onError, invalidateAndUpdate]
   )
 
   const mutateAsync = useCallback(
     async (...params: TParams): Promise<void> => {
-      setIsLoading(true)
-      setError(null)
+      isLoadingRef.current = true
+      errorRef.current = null
 
       try {
         db.run(sql, params)
@@ -110,21 +114,21 @@ export function useMutation<TParams extends any[] = any[]>(
 
         onSuccess?.()
       } catch (err) {
-        const error = err as Error
-        setError(error)
-        onError?.(error)
-        throw error
+        errorRef.current = err as Error
+        onError?.(err as Error)
+        throw err
       } finally {
-        setIsLoading(false)
+        isLoadingRef.current = false
+        invalidateAndUpdate()
       }
     },
-    [db, sql, invalidateTables, onSuccess, onError]
+    [db, sql, invalidateTables, onSuccess, onError, invalidateAndUpdate]
   )
 
   return {
     mutate,
     mutateAsync,
-    isLoading,
-    error,
+    isLoading: isLoadingRef.current,
+    error: errorRef.current,
   }
 }

@@ -765,6 +765,13 @@ describe('ReactiveDatabase', () => {
       const result = stmt.get(1)
       expect(result?.name).toBe('Alice')
     })
+
+    test('throws on closed database', () => {
+      db.close()
+      expect(() => {
+        db.prepare('SELECT * FROM users')
+      }).toThrow('Cannot prepare statement on closed database')
+    })
   })
 
   describe('raw getter', () => {

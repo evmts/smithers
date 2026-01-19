@@ -121,14 +121,7 @@ export function extractAllTables(sql: string): { read: string[]; write: string[]
   }
 }
 
-/**
- * Row filter result for fine-grained invalidation
- */
-export interface RowFilter {
-  table: string
-  column: string
-  value: string | number
-}
+import type { RowFilter } from "./types.js"
 
 /**
  * Extract row filter from simple WHERE clauses
