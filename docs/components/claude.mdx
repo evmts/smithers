@@ -46,7 +46,7 @@ import { Claude } from "smithers-orchestrator";
 <ParamField path="maxTokens" type="number">
   Maximum tokens for the response.
   
-  <Warning>Not yet implemented - this prop is reserved for future use.</Warning>
+  <Info>Reserved for future implementation. Currently has no effect.</Info>
 </ParamField>
 
 <ParamField path="timeout" type="number">
@@ -74,7 +74,7 @@ import { Claude } from "smithers-orchestrator";
 <ParamField path="tools" type="Tool[]">
   Custom tools to provide to Claude.
   
-  <Warning>Not yet implemented. Use `allowedTools` and `disallowedTools` to control built-in tools, or MCP configuration for custom tools.</Warning>
+  <Info>Reserved for future implementation. Use `allowedTools`/`disallowedTools` for built-in tools, or MCP for custom tools.</Info>
 
   ```tsx
   <Claude tools={[myCustomTool]}>

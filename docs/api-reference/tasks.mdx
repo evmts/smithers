@@ -31,7 +31,7 @@ db.tasks.fail(taskId);
 Starts a new task and returns its ID.
 
 ```tsx
-const taskId = db.tasks.start(componentType: string, componentName?: string): string
+function start(componentType: string, componentName?: string): string
 ```
 
 <ParamField path="componentType" type="string" required>
@@ -49,7 +49,7 @@ const taskId = db.tasks.start(componentType: string, componentName?: string): st
 Marks a task as completed.
 
 ```tsx
-db.tasks.complete(id: string): void
+function complete(id: string): void
 ```
 
 <ParamField path="id" type="string" required>
@@ -61,7 +61,7 @@ db.tasks.complete(id: string): void
 Marks a task as failed.
 
 ```tsx
-db.tasks.fail(id: string): void
+function fail(id: string): void
 ```
 
 <ParamField path="id" type="string" required>
@@ -73,7 +73,7 @@ db.tasks.fail(id: string): void
 Gets the count of running tasks for a specific iteration.
 
 ```tsx
-const count = db.tasks.getRunningCount(iteration: number): number
+function getRunningCount(iteration: number): number
 ```
 
 <ParamField path="iteration" type="number" required>
@@ -85,7 +85,7 @@ const count = db.tasks.getRunningCount(iteration: number): number
 Gets the count of all tasks for a specific iteration.
 
 ```tsx
-const count = db.tasks.getTotalCount(iteration: number): number
+function getTotalCount(iteration: number): number
 ```
 
 ### list
@@ -93,7 +93,7 @@ const count = db.tasks.getTotalCount(iteration: number): number
 Gets all tasks for the current execution.
 
 ```tsx
-const tasks = db.tasks.list(): Task[]
+function list(): Task[]
 ```
 
 ### getCurrentIteration
@@ -101,7 +101,7 @@ const tasks = db.tasks.list(): Task[]
 Gets the current Ralph iteration from the state table.
 
 ```tsx
-const iteration = db.tasks.getCurrentIteration(): number
+function getCurrentIteration(): number
 ```
 
 ## Task Type

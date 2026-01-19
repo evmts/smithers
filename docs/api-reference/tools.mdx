@@ -95,6 +95,7 @@ Lists all tool calls for an agent.
 
 ```tsx
 const toolCalls = db.tools.list(agentId: string): ToolCall[]
+// For filtering, use options: db.tools.list(agentId, { toolName, status })
 ```
 
 ### getOutput

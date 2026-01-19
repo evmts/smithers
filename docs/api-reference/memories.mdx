@@ -92,13 +92,13 @@ List memories by category and/or scope.
 
 ```tsx
 // All facts
-const facts = await db.memories.list("fact");
+const facts = await db.memories.list({ category: "fact" });
 
 // Project-scoped preferences
-const prefs = await db.memories.list("preference", "project");
+const prefs = await db.memories.list({ category: "preference", scope: "project" });
 
 // All memories, limited
-const all = await db.memories.list(undefined, undefined, 100);
+const all = await db.memories.list({ limit: 100 });
 ```
 
 ### search

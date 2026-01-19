@@ -28,10 +28,7 @@ db.phases.complete(phaseId);
 Starts a new phase.
 
 ```tsx
-const phaseId = db.phases.start(
-  name: string,
-  iteration?: number
-): string
+function start(name: string, iteration?: number): string
 ```
 
 <ParamField path="name" type="string" required>
@@ -49,7 +46,7 @@ const phaseId = db.phases.start(
 Marks a phase as completed.
 
 ```tsx
-db.phases.complete(id: string): void
+function complete(id: string): void
 ```
 
 <ParamField path="id" type="string" required>
@@ -61,7 +58,7 @@ db.phases.complete(id: string): void
 Marks a phase as failed.
 
 ```tsx
-db.phases.fail(id: string): void
+function fail(id: string): void
 ```
 
 ### current
@@ -69,7 +66,7 @@ db.phases.fail(id: string): void
 Gets the currently active phase.
 
 ```tsx
-const phase = db.phases.current(): Phase | null
+function current(): Phase | null
 ```
 
 ### list
@@ -77,7 +74,7 @@ const phase = db.phases.current(): Phase | null
 Lists all phases for an execution.
 
 ```tsx
-const phases = db.phases.list({ executionId: string }): Phase[]
+function list(options: { executionId: string }): Phase[]
 ```
 
 ## Phase Type
