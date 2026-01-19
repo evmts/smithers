@@ -56,9 +56,7 @@ function DocsReviewOrchestration() {
               }
             }}
           >
-            {`You are a documentation correctness reviewer for the Smithers orchestrator project.
-
-## Task
+            {`## Task
 Review ALL documentation in the \`docs/\` directory for correctness against the actual codebase.
 
 ## Important Guidelines
