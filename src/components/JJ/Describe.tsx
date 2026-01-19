@@ -1,7 +1,7 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
-import { useExecutionContext } from '../ExecutionContext.js'
+import { useEffectOnValueChange, useMountedState } from '../../reconciler/hooks.js'
+import { useExecutionEnabled } from '../../hooks/useExecutionEnabled.js'
 
 export interface DescribeProps {
   useAgent?: 'claude'
@@ -17,7 +17,6 @@ export interface DescribeProps {
  */
 export function Describe(props: DescribeProps): ReactNode {
   const smithers = useSmithers()
-  const execution = useExecutionContext()
   const [, forceUpdate] = useReducer((x) => x + 1, 0)
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
@@ -25,9 +24,18 @@ export function Describe(props: DescribeProps): ReactNode {
   const errorRef = useRef<Error | null>(null)
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
+  const executionEnabled = useExecutionEnabled()
+  const hasStartedRef = useRef(false)
 
-  useMount(() => {
-    if (!execution.isActive) return
+  useEffectOnValueChange(executionEnabled, () => {
+    if (!executionEnabled) {
+      hasStartedRef.current = false
+      return
+    }
+    if (hasStartedRef.current) {
+      return
+    }
+    hasStartedRef.current = true
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-describe')
 

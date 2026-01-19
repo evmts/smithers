@@ -1,9 +1,9 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes, getGitNotes } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useEffectOnValueChange, useMountedState } from '../../reconciler/hooks.js'
+import { useExecutionEnabled } from '../../hooks/useExecutionEnabled.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { useExecutionContext } from '../ExecutionContext.js'
 
 interface NotesState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -37,7 +37,6 @@ export interface NotesResult {
  */
 export function Notes(props: NotesProps): ReactNode {
   const smithers = useSmithers()
-  const execution = useExecutionContext()
   const opIdRef = useRef(crypto.randomUUID())
   const stateKey = `git-notes:${opIdRef.current}`
 
@@ -55,13 +54,22 @@ export function Notes(props: NotesProps): ReactNode {
 
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
+  const executionEnabled = useExecutionEnabled()
+  const hasStartedRef = useRef(false)
 
   const setState = (newState: NotesState) => {
     smithers.db.state.set(stateKey, newState, 'git-notes')
   }
 
-  useMount(() => {
-    if (!execution.isActive) return
+  useEffectOnValueChange(executionEnabled, () => {
+    if (!executionEnabled) {
+      hasStartedRef.current = false
+      return
+    }
+    if (hasStartedRef.current) {
+      return
+    }
+    hasStartedRef.current = true
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
