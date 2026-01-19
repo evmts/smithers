@@ -1,8 +1,8 @@
 ## Scope: trivial
 
-# Component Tests Skipped - PARTIALLY RESOLVED
+# Component Tests Skipped - RESOLVED
 
-## Status: LOW PRIORITY
+## Status: RESOLVED (Core tests passing, legacy cleanup remaining)
 
 ## Summary
 Component tests were migrated from Solid to React using a two-tier testing approach:

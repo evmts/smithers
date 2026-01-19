@@ -29,6 +29,9 @@ I use Smithers for both long-term (weeks) agentic work, as well as one-off scrip
   - [MCP Tool Integration](#mcp-tool-integration)
   - [Smithers Subagent](#smithers-subagent)
   - [Git/JJ VCS Integration](#gitjj-vcs-integration)
+  - [Orchestration Lifecycle](#orchestration-lifecycle)
+  - [PhaseRegistry & Step](#phaseregistry--step)
+  - [Parallel Execution](#parallel-execution)
   - [Database State Management](#database-state-management)
 - [Contributing](#contributing)
 
@@ -116,9 +119,6 @@ smithers-orchestrator db executions
 
 # View state for a specific execution
 smithers-orchestrator db state --execution-id abc123
-
-# Query the database directly
-smithers-orchestrator db query "SELECT * FROM agents ORDER BY started_at DESC LIMIT 10"
 ```
 
 ### Basic Example
@@ -366,6 +366,52 @@ First-class version control support:
 // Jujutsu (jj)
 <Snapshot description="Before refactoring" />
 <Commit autoDescribe />
+```
+
+### Orchestration Lifecycle
+
+Global timeout and completion logic for workflows:
+
+```tsx
+<Orchestration
+  globalTimeout={3600000} // 1 hour max
+  onComplete={() => console.log("Workflow finished")}
+  onTimeout={() => console.log("Workflow timed out")}
+>
+  {/* Your workflow components */}
+</Orchestration>
+```
+
+### PhaseRegistry & Step
+
+Manage multi-phase sequential execution:
+
+```tsx
+<PhaseRegistry>
+  <Phase name="implement">
+    <Step name="write-code" snapshotBefore commitAfter commitMessage="feat: Implementation">
+      <Claude>Implement the feature</Claude>
+    </Step>
+    <Step name="write-tests">
+      <Claude>Write tests for the implementation</Claude>
+    </Step>
+  </Phase>
+  <Phase name="review">
+    <Review target={{ type: "diff", ref: "main" }} />
+  </Phase>
+</PhaseRegistry>
+```
+
+### Parallel Execution
+
+Run multiple agents concurrently within a step:
+
+```tsx
+<Parallel>
+  <Claude model="haiku">Quick task 1</Claude>
+  <Claude model="haiku">Quick task 2</Claude>
+  <Claude model="haiku">Quick task 3</Claude>
+</Parallel>
 ```
 
 ### Database State Management

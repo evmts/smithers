@@ -46,16 +46,8 @@ smithers/
 ├── smithers-orchestrator/  # CLI and database
 │   ├── src/
 │   │   ├── components/     # Enhanced components with DB integration
-│   │   ├── db/             # PGlite database layer
+│   │   ├── db/             # SQLite database layer (bun:sqlite)
 │   │   └── utils/          # CLI utilities
 │   └── bin/                # CLI entry point
-└── examples/               # Example workflows
-```
-
-## Running Examples
-
-```bash
-bun examples/hello-world.tsx
-bun examples/review-workflow.tsx
-bun examples/ci-recovery.tsx
+└── evals/                  # Integration tests and examples
 ```

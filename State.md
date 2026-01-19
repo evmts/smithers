@@ -620,8 +620,9 @@ Key SQLite tables used by state management:
 
 - `state` - Key-value store for global state (phaseIndex, stepIndex, ralphCount, etc.)
 - `tasks` - Task lifecycle tracking (status, executionId, parentTaskId, etc.)
-- `orchestration_signals` - Stop/rebase signals
-- `hook_triggers` - Git hook event queue
-- `ci_failures` - GitHub Actions failure tracking
+- `agents` - Agent execution state (status, result, error, tokens)
+- `executions` - Orchestration run metadata
+- `phases` - Phase workflow stages
+- `steps` - Fine-grained step tracking
 
 See `src/db/schema.sql` for full schema.

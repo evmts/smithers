@@ -58,8 +58,6 @@ export const BUILTIN_TOOLS = {
 
   // Smithers-specific tools
   Report: { cli: 'smithers', builtin: true, description: 'Report progress to orchestration' },
-  Memory: { cli: 'smithers', builtin: true, description: 'Store/retrieve long-term memory' },
-  Snapshot: { cli: 'smithers', builtin: true, description: 'Create VCS snapshot' },
 } as const
 
 export type BuiltinToolName = keyof typeof BUILTIN_TOOLS
