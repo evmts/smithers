@@ -465,6 +465,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
   iteration INTEGER NOT NULL DEFAULT 0,
+  scope_id TEXT,
   component_type TEXT NOT NULL,
   component_name TEXT,
   status TEXT NOT NULL DEFAULT 'running',
@@ -475,6 +476,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_execution ON tasks(execution_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_iteration_status ON tasks(iteration, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(scope_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(started_at DESC);
 

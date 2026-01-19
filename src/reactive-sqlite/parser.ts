@@ -5,6 +5,22 @@
  * It doesn't need to be a full SQL parser - just enough to track dependencies.
  */
 
+const IDENTIFIER_PATTERN = '"[^"]+"|`[^`]+`|\\[[^\\]]+\\]|[a-z_][a-z0-9_]*'
+const QUALIFIER_PATTERN = `(?:${IDENTIFIER_PATTERN})\\s*\\.\\s*`
+const TABLE_NAME_PATTERN =
+  `(?:${QUALIFIER_PATTERN})?(?:"([^"]+)"|` +
+  '`([^`]+)`' +
+  `|\\[([^\\]]+)\\]|([a-z_][a-z0-9_]*))`
+const COLUMN_NAME_PATTERN =
+  `(?:${QUALIFIER_PATTERN})?(?:"([^"]+)"|` +
+  '`([^`]+)`' +
+  `|\\[([^\\]]+)\\]|([a-z_][a-z0-9_]*))`
+
+function extractIdentifier(match: RegExpMatchArray): string | null {
+  const identifier = match[1] || match[2] || match[3] || match[4]
+  return identifier ? identifier.toLowerCase() : null
+}
+
 /**
  * Extract table names that are being READ from a SELECT query
  */
@@ -17,17 +33,23 @@ export function extractReadTables(sql: string): string[] {
     .trim()
     .toLowerCase()
 
-  // FROM clause: FROM table_name, FROM table_name AS alias
-  const fromRegex = /\bfrom\s+([a-z_][a-z0-9_]*)/gi
+  // FROM clause: FROM table_name, FROM schema.table_name, quoted identifiers
+  const fromRegex = new RegExp(`\\bfrom\\s+${TABLE_NAME_PATTERN}`, 'gi')
   let match
   while ((match = fromRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   // JOIN clauses: JOIN table_name, LEFT JOIN table_name, etc.
-  const joinRegex = /\bjoin\s+([a-z_][a-z0-9_]*)/gi
+  const joinRegex = new RegExp(`\\bjoin\\s+${TABLE_NAME_PATTERN}`, 'gi')
   while ((match = joinRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   // Subqueries in FROM (simplified - just look for nested FROM)
@@ -50,46 +72,70 @@ export function extractWriteTables(sql: string): string[] {
     .toLowerCase()
 
   // INSERT INTO table_name
-  const insertRegex = /\binsert\s+(?:or\s+\w+\s+)?into\s+([a-z_][a-z0-9_]*)/gi
+  const insertRegex = new RegExp(`\\binsert\\s+(?:or\\s+\\w+\\s+)?into\\s+${TABLE_NAME_PATTERN}`, 'gi')
   let match
   while ((match = insertRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   // UPDATE table_name
-  const updateRegex = /\bupdate\s+(?:or\s+\w+\s+)?([a-z_][a-z0-9_]*)/gi
+  const updateRegex = new RegExp(`\\bupdate\\s+(?:or\\s+\\w+\\s+)?${TABLE_NAME_PATTERN}`, 'gi')
   while ((match = updateRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   // DELETE FROM table_name
-  const deleteRegex = /\bdelete\s+from\s+([a-z_][a-z0-9_]*)/gi
+  const deleteRegex = new RegExp(`\\bdelete\\s+from\\s+${TABLE_NAME_PATTERN}`, 'gi')
   while ((match = deleteRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   // REPLACE INTO table_name (standalone, not INSERT OR REPLACE which is handled by insertRegex)
-  const replaceRegex = /\breplace\s+into\s+([a-z_][a-z0-9_]*)/gi
+  const replaceRegex = new RegExp(`\\breplace\\s+into\\s+${TABLE_NAME_PATTERN}`, 'gi')
   while ((match = replaceRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   // CREATE TABLE table_name
-  const createRegex = /\bcreate\s+(?:temp\s+|temporary\s+)?table\s+(?:if\s+not\s+exists\s+)?([a-z_][a-z0-9_]*)/gi
+  const createRegex = new RegExp(
+    `\\bcreate\\s+(?:temp\\s+|temporary\\s+)?table\\s+(?:if\\s+not\\s+exists\\s+)?${TABLE_NAME_PATTERN}`,
+    'gi'
+  )
   while ((match = createRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   // DROP TABLE table_name
-  const dropRegex = /\bdrop\s+table\s+(?:if\s+exists\s+)?([a-z_][a-z0-9_]*)/gi
+  const dropRegex = new RegExp(`\\bdrop\\s+table\\s+(?:if\\s+exists\\s+)?${TABLE_NAME_PATTERN}`, 'gi')
   while ((match = dropRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   // ALTER TABLE table_name
-  const alterRegex = /\balter\s+table\s+([a-z_][a-z0-9_]*)/gi
+  const alterRegex = new RegExp(`\\balter\\s+table\\s+${TABLE_NAME_PATTERN}`, 'gi')
   while ((match = alterRegex.exec(normalized)) !== null) {
-    tables.add(match[1]!)
+    const table = extractIdentifier(match)
+    if (table) {
+      tables.add(table)
+    }
   }
 
   return Array.from(tables)
@@ -126,10 +172,9 @@ import type { RowFilter } from "./types.js"
 /**
  * Extract row filter from simple WHERE clauses
  *
- * Only extracts filters from simple equality conditions like:
+ * Only extracts filters from simple equality conditions on id/rowid like:
  * - WHERE id = ?
- * - WHERE id = 123
- * - WHERE user_id = ? AND ...
+ * - WHERE rowid = 123
  *
  * Returns null for complex conditions (OR, IN, LIKE, subqueries, etc.)
  */
@@ -169,21 +214,23 @@ export function extractRowFilter(sql: string, params: unknown[] = []): RowFilter
   let table: string | null = null
 
   // UPDATE table SET ... WHERE
-  const updateMatch = normalized.match(/\bupdate\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
-  if (updateMatch && (updateMatch[1] || updateMatch[2])) {
-    table = (updateMatch[1] || updateMatch[2])!.toLowerCase()
+  const updateMatch = normalized.match(
+    new RegExp(`\\bupdate\\s+(?:or\\s+\\w+\\s+)?${TABLE_NAME_PATTERN}`, 'i')
+  )
+  if (updateMatch) {
+    table = extractIdentifier(updateMatch)
   }
 
   // DELETE FROM table WHERE
-  const deleteMatch = normalized.match(/\bdelete\s+from\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
-  if (deleteMatch && (deleteMatch[1] || deleteMatch[2])) {
-    table = (deleteMatch[1] || deleteMatch[2])!.toLowerCase()
+  const deleteMatch = normalized.match(new RegExp(`\\bdelete\\s+from\\s+${TABLE_NAME_PATTERN}`, 'i'))
+  if (deleteMatch) {
+    table = extractIdentifier(deleteMatch)
   }
 
   // SELECT ... FROM table WHERE
-  const selectMatch = normalized.match(/\bfrom\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i)
-  if (selectMatch && !table && (selectMatch[1] || selectMatch[2])) {
-    table = (selectMatch[1] || selectMatch[2])!.toLowerCase()
+  const selectMatch = normalized.match(new RegExp(`\\bfrom\\s+${TABLE_NAME_PATTERN}`, 'i'))
+  if (selectMatch && !table) {
+    table = extractIdentifier(selectMatch)
   }
 
   if (!table) {
@@ -198,66 +245,75 @@ export function extractRowFilter(sql: string, params: unknown[] = []): RowFilter
 
   const whereClause = whereMatch[1]
 
-  // For AND conditions, take the first condition for row-level filtering
-  // (Note: This may miss invalidations for other columns in AND clauses)
-  const conditions = whereClause.split(/\band\b/i)
-  if (!conditions[0]) {
-    return null
-  }
-  const firstCondition = conditions[0].trim()
-
-  // Match simple equality: column = ? or column = value
-  // Handle quoted identifiers
-  const equalityMatch = firstCondition.match(
-    /^(?:"([^"]+)"|([a-z_][a-z0-9_]*))\s*=\s*(.+)$/i
-  )
-
-  if (!equalityMatch || !equalityMatch[3]) {
+  const conditions = whereClause.split(/\band\b/i).map((condition) => condition.trim()).filter(Boolean)
+  if (conditions.length === 0) {
     return null
   }
 
-  const column = ((equalityMatch[1] || equalityMatch[2]) || '').toLowerCase()
-  const valueExpr = equalityMatch[3].trim()
+  // Count ? before the WHERE clause to find the right param index base
+  const beforeWhere = normalized.substring(0, normalized.toLowerCase().indexOf('where'))
+  const paramsBefore = (beforeWhere.match(/\?/g) || []).length
+  let paramsOffset = 0
 
-  // Determine the value
-  let value: string | number
+  let selected: RowFilter | null = null
+  let selectedRank = -1
 
-  if (valueExpr === '?') {
-    // Parameterized query - need to figure out which param
-    // Count ? before the WHERE clause to find the right param index
-    const beforeWhere = normalized.substring(0, normalized.toLowerCase().indexOf('where'))
-    const paramsBefore = (beforeWhere.match(/\?/g) || []).length
+  for (const condition of conditions) {
+    const conditionParamCount = (condition.match(/\?/g) || []).length
 
-    // For AND conditions, count ? in conditions before this one
-    // (but for the first condition, it's just paramsBefore)
-    const paramIndex = paramsBefore
+    // Match simple equality: column = ? or column = value (optionally table-prefixed)
+    const equalityMatch = condition.match(
+      new RegExp(`^${COLUMN_NAME_PATTERN}\\s*=\\s*(.+)$`, 'i')
+    )
 
-    if (paramIndex >= params.length) {
-      return null
+    if (!equalityMatch || !equalityMatch[5]) {
+      paramsOffset += conditionParamCount
+      continue
     }
 
-    value = params[paramIndex] as string | number
-  } else {
-    // Literal value - parse it
-    // Try numeric
-    const numMatch = valueExpr.match(/^(\d+)$/)
-    if (numMatch && numMatch[1]) {
-      value = parseInt(numMatch[1], 10)
+    const column = (extractIdentifier(equalityMatch) || '').toLowerCase()
+    if (column !== 'id' && column !== 'rowid') {
+      paramsOffset += conditionParamCount
+      continue
+    }
+
+    const valueExpr = equalityMatch[5].trim()
+    let value: string | number | null = null
+
+    if (valueExpr === '?') {
+      const paramIndex = paramsBefore + paramsOffset
+      if (paramIndex >= params.length) {
+        paramsOffset += conditionParamCount
+        continue
+      }
+      const paramValue = params[paramIndex]
+      if (typeof paramValue === 'string' || typeof paramValue === 'number') {
+        value = paramValue
+      }
     } else {
-      // Try quoted string
-      const strMatch = valueExpr.match(/^['"](.+)['"]$/)
-      if (strMatch && strMatch[1]) {
-        value = strMatch[1]
+      const numMatch = valueExpr.match(/^(\d+)$/)
+      if (numMatch && numMatch[1]) {
+        value = parseInt(numMatch[1], 10)
       } else {
-        // Unquoted string or other literal
-        value = valueExpr
+        const strMatch = valueExpr.match(/^['"](.+)['"]$/)
+        if (strMatch && strMatch[1]) {
+          value = strMatch[1]
+        } else {
+          value = valueExpr
+        }
       }
     }
+
+    if (value !== null) {
+      const rank = column === 'id' ? 2 : 1
+      if (rank > selectedRank) {
+        selected = { table, column, value }
+        selectedRank = rank
+      }
+    }
+
+    paramsOffset += conditionParamCount
   }
 
-  return {
-    table,
-    column,
-    value
-  }
+  return selected
 }

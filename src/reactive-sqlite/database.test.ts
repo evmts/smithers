@@ -83,6 +83,9 @@ describe('ReactiveDatabase', () => {
       
       db.close()
       expect(db.isClosed).toBe(true)
+
+      db.run('INSERT INTO users (name) VALUES (?)', ['After close'])
+      expect(callCount).toBe(1)
     })
 
     test('idempotency - multiple close calls are safe', () => {
@@ -285,18 +288,15 @@ describe('ReactiveDatabase', () => {
       let callCount = 0
       db.subscribe(['users'], () => { callCount++ })
       
-      // Each run() inside transaction will trigger invalidation
-      // But if we want to batch, we'd need savepoints
       db.transaction(() => {
         db.run('INSERT INTO users (id, name) VALUES (?, ?)', [1, 'Alice'])
         db.run('INSERT INTO users (id, name) VALUES (?, ?)', [2, 'Bob'])
       })
       
-      // Each run() triggers invalidation currently
-      expect(callCount).toBe(2)
+      expect(callCount).toBe(1)
     })
 
-    test('rollback does not prevent invalidation during transaction', () => {
+    test('rollback skips invalidation during transaction', () => {
       let callCount = 0
       db.subscribe(['users'], () => { callCount++ })
       
@@ -309,8 +309,7 @@ describe('ReactiveDatabase', () => {
         // Expected
       }
       
-      // run() was called before the throw, so invalidation happened
-      expect(callCount).toBe(1)
+      expect(callCount).toBe(0)
     })
   })
 
@@ -548,6 +547,38 @@ describe('ReactiveDatabase', () => {
     })
   })
 
+  describe('subscription fallbacks', () => {
+    test('subscribeQuery falls back to wildcard when no tables detected', () => {
+      let callCount = 0
+      db.subscribeQuery('SELECT 1', () => {
+        callCount++
+      })
+
+      db.run('INSERT INTO users (name) VALUES (?)', ['Alice'])
+      expect(callCount).toBe(1)
+    })
+
+    test('exec invalidates globally when write table extraction fails', () => {
+      let callCount = 0
+      db.subscribe(['users'], () => {
+        callCount++
+      })
+
+      db.exec('CREATE INDEX idx_users_name ON users(name)')
+      expect(callCount).toBe(1)
+    })
+
+    test('run invalidates globally when write table extraction fails', () => {
+      let callCount = 0
+      db.subscribe(['users'], () => {
+        callCount++
+      })
+
+      db.run('CREATE INDEX idx_users_name_run ON users(name)')
+      expect(callCount).toBe(1)
+    })
+  })
+
   describe('row-level subscription', () => {
     test('subscribeWithRowFilter only triggers for matching rows', () => {
       db.run('INSERT INTO users (id, name) VALUES (?, ?)', [1, 'Alice'])
@@ -660,6 +691,22 @@ describe('ReactiveDatabase', () => {
       db.run('UPDATE users SET active = 0 WHERE name LIKE ?', ['%ob%'])
 
       // Should trigger because we fall back to table-level invalidation
+      expect(callCount).toBe(1)
+    })
+
+    test('row-filtered subscription invalidates on joined table updates', () => {
+      db.run('INSERT INTO users (id, name) VALUES (?, ?)', [1, 'Alice'])
+      db.run('INSERT INTO posts (id, user_id, title) VALUES (?, ?, ?)', [1, 1, 'First'])
+
+      let callCount = 0
+      db.subscribeWithRowFilter(
+        'SELECT users.id, posts.title FROM users JOIN posts ON posts.user_id = users.id WHERE users.id = ?',
+        [1],
+        () => { callCount++ }
+      )
+
+      db.run('UPDATE posts SET title = ? WHERE id = ?', ['Updated', 1])
+
       expect(callCount).toBe(1)
     })
   })

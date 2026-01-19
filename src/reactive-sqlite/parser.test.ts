@@ -16,6 +16,18 @@ describe('extractReadTables', () => {
     expect(extractReadTables('SELECT * FROM users')).toEqual(['users'])
   })
 
+  test('extracts table from quoted SELECT', () => {
+    expect(extractReadTables('SELECT * FROM "users"')).toEqual(['users'])
+  })
+
+  test('extracts table from schema-qualified SELECT', () => {
+    expect(extractReadTables('SELECT * FROM main.users')).toEqual(['users'])
+  })
+
+  test('extracts table from quoted schema-qualified SELECT', () => {
+    expect(extractReadTables('SELECT * FROM "main"."users"')).toEqual(['users'])
+  })
+
   test('extracts table with alias (FROM users AS u)', () => {
     expect(extractReadTables('SELECT u.name FROM users AS u')).toEqual(['users'])
   })
@@ -294,43 +306,37 @@ describe('extractReadTables', () => {
 
   // === SCHEMA-QUALIFIED TABLE NAMES ===
   test('extracts table from schema-qualified name (main.users)', () => {
-    // Current implementation extracts 'main' as the table name
-    // This documents current behavior
     const sql = 'SELECT * FROM main.users'
     const tables = extractReadTables(sql)
-    expect(tables).toContain('main')
+    expect(tables).toContain('users')
   })
 
   test('handles schema-qualified join', () => {
     const sql = 'SELECT * FROM schema1.table1 JOIN schema2.table2 ON schema1.table1.id = schema2.table2.id'
     const tables = extractReadTables(sql)
-    expect(tables).toContain('schema1')
-    expect(tables).toContain('schema2')
+    expect(tables).toContain('table1')
+    expect(tables).toContain('table2')
   })
 
   // === QUOTED IDENTIFIERS ===
   test('handles backtick quoted table names', () => {
-    // Current regex doesn't match backticks - documents current limitation
     const sql = 'SELECT * FROM `my-table`'
     const tables = extractReadTables(sql)
-    // Current implementation won't extract this
-    expect(tables).toEqual([])
+    expect(tables).toEqual(['my-table'])
   })
 
   test('handles bracket quoted table names', () => {
     // SQL Server style brackets
     const sql = 'SELECT * FROM [my table]'
     const tables = extractReadTables(sql)
-    // Current implementation won't extract this
-    expect(tables).toEqual([])
+    expect(tables).toEqual(['my table'])
   })
 
   test('handles double-quoted table names', () => {
     // Double quotes in SQL are for identifiers
     const sql = 'SELECT * FROM "reserved_word_table"'
     const tables = extractReadTables(sql)
-    // Current implementation won't extract quoted identifiers
-    expect(tables).toEqual([])
+    expect(tables).toEqual(['reserved_word_table'])
   })
 
   // === EDGE CASES ===
@@ -383,6 +389,18 @@ describe('extractWriteTables', () => {
     expect(extractWriteTables('REPLACE INTO users (id, name) VALUES (?, ?)')).toEqual(['users'])
   })
 
+  test('extracts table from quoted INSERT', () => {
+    expect(extractWriteTables('INSERT INTO "users" (name) VALUES (?)')).toEqual(['users'])
+  })
+
+  test('extracts table from schema-qualified UPDATE', () => {
+    expect(extractWriteTables('UPDATE main.users SET name = ?')).toEqual(['users'])
+  })
+
+  test('extracts table from quoted schema-qualified DELETE', () => {
+    expect(extractWriteTables('DELETE FROM "main"."users" WHERE id = ?')).toEqual(['users'])
+  })
+
   test('extracts table from INSERT OR IGNORE INTO', () => {
     expect(extractWriteTables('INSERT OR IGNORE INTO users (id, name) VALUES (?, ?)')).toEqual(['users'])
   })
@@ -409,6 +427,10 @@ describe('extractWriteTables', () => {
 
   test('extracts table from CREATE TEMPORARY TABLE', () => {
     expect(extractWriteTables('CREATE TEMPORARY TABLE temp_data (id INTEGER)')).toEqual(['temp_data'])
+  })
+
+  test('extracts table from quoted CREATE TABLE', () => {
+    expect(extractWriteTables('CREATE TABLE "users" (id INTEGER PRIMARY KEY)')).toEqual(['users'])
   })
 
   test('extracts table from CREATE TABLE IF NOT EXISTS', () => {
@@ -921,6 +943,11 @@ describe('extractRowFilter', () => {
     expect(result).toEqual({ table: 'users', column: 'id', value: 42 })
   })
 
+  test('extracts filter from WHERE rowid = ?', () => {
+    const result = extractRowFilter('SELECT * FROM users WHERE rowid = ?', [99])
+    expect(result).toEqual({ table: 'users', column: 'rowid', value: 99 })
+  })
+
   test('extracts filter from WHERE id = numeric literal', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE id = 123', [])
     expect(result).toEqual({ table: 'users', column: 'id', value: 123 })
@@ -936,9 +963,14 @@ describe('extractRowFilter', () => {
     expect(result).toEqual({ table: 'users', column: 'id', value: 'test' })
   })
 
-  test('takes first condition from AND conditions', () => {
+  test('prefers id when present in AND conditions', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE id = ? AND name = ?', [1, 'Alice'])
     expect(result).toEqual({ table: 'users', column: 'id', value: 1 })
+  })
+
+  test('prefers id when it appears after other conditions', () => {
+    const result = extractRowFilter('SELECT * FROM users WHERE tenant_id = ? AND id = ?', [7, 2])
+    expect(result).toEqual({ table: 'users', column: 'id', value: 2 })
   })
 
   test('returns null for OR conditions', () => {
@@ -986,9 +1018,9 @@ describe('extractRowFilter', () => {
     expect(result).toBeNull()
   })
 
-  test('handles quoted identifiers ("column_name")', () => {
+  test('returns null for non-id columns even when quoted', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE "user_id" = ?', [42])
-    expect(result).toEqual({ table: 'users', column: 'user_id', value: 42 })
+    expect(result).toBeNull()
   })
 
   test('tracks parameter index with multiple ? before WHERE', () => {
@@ -1201,47 +1233,43 @@ describe('extractRowFilter', () => {
 
   test('handles string value with spaces', () => {
     const result = extractRowFilter("SELECT * FROM users WHERE name = 'John Doe'", [])
-    expect(result).toEqual({ table: 'users', column: 'name', value: 'John Doe' })
+    expect(result).toBeNull()
   })
 
   test('handles negative numeric literal', () => {
     const result = extractRowFilter('SELECT * FROM accounts WHERE balance = -100', [])
-    // Current implementation may not parse negative numbers correctly
-    expect(result?.value).toBe('-100')
+    expect(result).toBeNull()
   })
 
   test('handles float numeric literal', () => {
     const result = extractRowFilter('SELECT * FROM products WHERE price = 19.99', [])
-    // Current implementation uses parseInt, so may not parse decimals
-    expect(result?.value).toBe('19.99')
+    expect(result).toBeNull()
   })
 
   test('handles column with underscore prefix', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE _internal_id = ?', [42])
-    expect(result).toEqual({ table: 'users', column: '_internal_id', value: 42 })
+    expect(result).toBeNull()
   })
 
   test('handles column with numbers', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE field2 = ?', ['value'])
-    expect(result).toEqual({ table: 'users', column: 'field2', value: 'value' })
+    expect(result).toBeNull()
   })
 
   test('extracts value from boolean-like string', () => {
     const result = extractRowFilter("SELECT * FROM users WHERE active = 'true'", [])
-    expect(result).toEqual({ table: 'users', column: 'active', value: 'true' })
+    expect(result).toBeNull()
   })
 
   test('handles SQLite TRUE/FALSE keywords', () => {
     // SQLite treats TRUE as 1 and FALSE as 0
     const result = extractRowFilter('SELECT * FROM users WHERE active = TRUE', [])
-    // Current implementation preserves case for unquoted literals
-    expect(result?.value).toBe('TRUE')
+    expect(result).toBeNull()
   })
 
   test('handles NULL literal in WHERE', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE deleted_at = NULL', [])
-    // = NULL is different from IS NULL, current impl treats NULL as literal
-    expect(result?.value).toBe('NULL')
+    expect(result).toBeNull()
   })
 
   test('handles multiple spaces around equals', () => {
@@ -1266,20 +1294,20 @@ describe('extractRowFilter', () => {
 
   test('handles empty string as parameter value', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE name = ?', [''])
-    expect(result).toEqual({ table: 'users', column: 'name', value: '' })
+    expect(result).toBeNull()
   })
 
   test('handles null as parameter value', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE data = ?', [null])
-    expect(result).toEqual({ table: 'users', column: 'data', value: null })
+    expect(result).toBeNull()
   })
 
   test('handles undefined as parameter value', () => {
     const result = extractRowFilter('SELECT * FROM users WHERE data = ?', [undefined])
-    expect(result).toEqual({ table: 'users', column: 'data', value: undefined })
+    expect(result).toBeNull()
   })
 
-  test('returns null for complex SELECT with table-prefixed column in WHERE', () => {
+  test('handles table-prefixed column in WHERE', () => {
     const sql = `
       SELECT u.*, p.name as profile_name
       FROM users u
@@ -1287,8 +1315,7 @@ describe('extractRowFilter', () => {
       WHERE u.id = ?
     `
     const result = extractRowFilter(sql, [42])
-    // Table-prefixed columns (u.id) don't match the simple column regex
-    expect(result).toBeNull()
+    expect(result).toEqual({ table: 'users', column: 'id', value: 42 })
   })
 
   test('extracts from SELECT with JOIN but simple column reference', () => {

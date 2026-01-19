@@ -54,15 +54,32 @@ export function useQuery<T = Record<string, unknown>>(
   if (typeof sqlOrDb === 'string') {
     // New signature: useQuery(sql, params?, options?, explicitDb?)
     sql = sqlOrDb
-    params = Array.isArray(sqlOrParams) ? sqlOrParams : []
-    options = (Array.isArray(sqlOrParams) ? paramsOrOptions : sqlOrParams) as UseQueryOptions ?? {}
-    const explicitDb = Array.isArray(sqlOrParams) ? optionsOrDb : paramsOrOptions
 
-    if (explicitDb && typeof explicitDb !== 'object') {
-      throw new Error('Invalid arguments to useQuery')
+    const isDb = (obj: unknown): obj is ReactiveDatabase =>
+      obj !== null && typeof obj === 'object' && 'subscribe' in obj && typeof (obj as any).subscribe === 'function'
+
+    if (Array.isArray(sqlOrParams)) {
+      // useQuery(sql, params, ...) - 3rd arg could be options or db
+      params = sqlOrParams
+      if (isDb(paramsOrOptions)) {
+        options = {}
+        db = paramsOrOptions
+      } else {
+        options = (paramsOrOptions as UseQueryOptions) ?? {}
+        db = isDb(optionsOrDb) ? optionsOrDb : contextDb!
+      }
+    } else {
+      // useQuery(sql) or useQuery(sql, options) or useQuery(sql, db)
+      params = []
+      if (isDb(sqlOrParams)) {
+        options = {}
+        db = sqlOrParams
+      } else {
+        options = (sqlOrParams as UseQueryOptions) ?? {}
+        db = isDb(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
+      }
     }
 
-    db = (explicitDb as ReactiveDatabase) ?? contextDb!
     if (!db) {
       throw new Error('useQuery requires either a DatabaseProvider or an explicit db argument')
     }

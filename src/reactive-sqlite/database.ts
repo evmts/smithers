@@ -8,7 +8,6 @@ import { Database } from "bun:sqlite";
 import {
   extractReadTables,
   extractWriteTables,
-  isWriteOperation,
   extractRowFilter,
 } from "./parser.js";
 import type {
@@ -17,6 +16,12 @@ import type {
   ReactiveDatabaseConfig,
   RowFilter,
 } from "./types.js";
+
+type PendingInvalidation = {
+  tables: Set<string>;
+  rowFilters: RowFilter[];
+  invalidateAll: boolean;
+};
 
 /**
  * ReactiveDatabase wraps bun:sqlite with reactive subscriptions
@@ -40,6 +45,8 @@ export class ReactiveDatabase {
   private subscriptions: Map<string, QuerySubscription> = new Map();
   private nextSubscriptionId = 0;
   private closed = false;
+  private txDepth = 0;
+  private pendingInvalidations: PendingInvalidation[] = [];
 
   constructor(config: ReactiveDatabaseConfig | string) {
     const options = typeof config === "string" ? { path: config } : config;
@@ -71,11 +78,11 @@ export class ReactiveDatabase {
     this.db.exec(sql);
 
     // Check if this affects any tables
-    if (isWriteOperation(sql)) {
-      const tables = extractWriteTables(sql);
-      if (tables.length > 0) {
-        this.invalidate(tables);
-      }
+    const tables = extractWriteTables(sql);
+    if (tables.length > 0) {
+      this.invalidate(tables);
+    } else if (hasWriteKeywords(sql)) {
+      this.invalidate();
     }
   }
 
@@ -112,6 +119,9 @@ export class ReactiveDatabase {
         // Fall back to table-level invalidation
         this.invalidate(tables);
       }
+    } else {
+      // Unknown write target; invalidate everything to avoid stale subscribers.
+      this.invalidate();
     }
 
     return result as any;
@@ -189,11 +199,12 @@ export class ReactiveDatabase {
     const id = String(this.nextSubscriptionId++);
     const tables = extractReadTables(sql);
     const rowFilter = extractRowFilter(sql, params);
+    const useRowFilter = rowFilter && tables.length === 1;
 
     const subscription: QuerySubscription = {
       id,
       tables: new Set(tables.map((t) => t.toLowerCase())),
-      ...(rowFilter && { rowFilters: [rowFilter] }),
+      ...(useRowFilter && { rowFilters: [rowFilter] }),
       callback,
     };
 
@@ -202,6 +213,37 @@ export class ReactiveDatabase {
     return () => {
       this.subscriptions.delete(id);
     };
+  }
+
+  private notifySubscription(subscription: QuerySubscription): void {
+    try {
+      subscription.callback();
+    } catch (error) {
+      console.error('[ReactiveDatabase] subscription callback error', error);
+    }
+  }
+
+  private applyInvalidate(tables?: string[]): void {
+    const normalizedTables = tables?.map((t) => t.toLowerCase());
+
+    for (const subscription of this.subscriptions.values()) {
+      if (subscription.tables.size === 0) {
+        this.notifySubscription(subscription);
+        continue;
+      }
+
+      if (!normalizedTables) {
+        this.notifySubscription(subscription);
+        continue;
+      }
+
+      for (const table of normalizedTables) {
+        if (subscription.tables.has(table)) {
+          this.notifySubscription(subscription);
+          break;
+        }
+      }
+    }
   }
 
   /**
@@ -214,29 +256,50 @@ export class ReactiveDatabase {
   ): void {
     const normalizedTable = table.toLowerCase();
     const normalizedColumn = column.toLowerCase();
+
+    if (this.txDepth > 0) {
+      const pending = this.pendingInvalidations[this.pendingInvalidations.length - 1];
+      if (!pending) return;
+      for (const value of values) {
+        pending.rowFilters.push({
+          table: normalizedTable,
+          column: normalizedColumn,
+          value,
+        });
+      }
+      return;
+    }
+
     const valueSet = new Set(values.map(v => String(v)));
 
     for (const subscription of this.subscriptions.values()) {
+      if (subscription.tables.size === 0) {
+        this.notifySubscription(subscription);
+        continue;
+      }
+
       // Check if subscription is for this table
       if (!subscription.tables.has(normalizedTable)) {
         continue;
       }
 
-      // If subscription has row filters, check if any match
-      if (subscription.rowFilters && subscription.rowFilters.length > 0) {
-        const matches = subscription.rowFilters.some(
-          (filter) =>
-            filter.table.toLowerCase() === normalizedTable &&
-            filter.column.toLowerCase() === normalizedColumn &&
-            valueSet.has(String(filter.value))
-        );
+      const tableFilters = subscription.rowFilters?.filter(
+        (filter) => filter.table.toLowerCase() === normalizedTable
+      ) ?? [];
 
-        if (matches) {
-          subscription.callback();
-        }
-      } else {
-        // No row filters - this is a table-level subscription, trigger it
-        subscription.callback();
+      if (!subscription.rowFilters || subscription.rowFilters.length === 0 || tableFilters.length === 0) {
+        this.notifySubscription(subscription);
+        continue;
+      }
+
+      const matches = tableFilters.some(
+        (filter) =>
+          filter.column.toLowerCase() === normalizedColumn &&
+          valueSet.has(String(filter.value))
+      );
+
+      if (matches) {
+        this.notifySubscription(subscription);
       }
     }
   }
@@ -246,37 +309,76 @@ export class ReactiveDatabase {
    * and falls back to table-level for subscriptions without row filters
    */
   private invalidateWithRowFilter(tables: string[], rowFilter: RowFilter): void {
+    const normalizedRowFilter = {
+      table: rowFilter.table.toLowerCase(),
+      column: rowFilter.column.toLowerCase(),
+      value: rowFilter.value,
+    };
+
+    if (this.txDepth > 0) {
+      const pending = this.pendingInvalidations[this.pendingInvalidations.length - 1];
+      if (!pending) return;
+      pending.rowFilters.push(normalizedRowFilter);
+      for (const table of tables.map((t) => t.toLowerCase())) {
+        if (table !== normalizedRowFilter.table) {
+          pending.tables.add(table);
+        }
+      }
+      return;
+    }
+
+    this.applyInvalidateWithRowFilter(tables, normalizedRowFilter);
+  }
+
+  private applyInvalidateWithRowFilter(tables: string[], rowFilter: RowFilter): void {
     const normalizedTables = tables.map((t) => t.toLowerCase());
+    const normalizedRowFilter = {
+      table: rowFilter.table.toLowerCase(),
+      column: rowFilter.column.toLowerCase(),
+      value: rowFilter.value,
+    };
 
     for (const subscription of this.subscriptions.values()) {
-      // Check if subscription depends on any of the invalidated tables
-      let affectedTable: string | null = null;
+      if (subscription.tables.size === 0) {
+        this.notifySubscription(subscription);
+        continue;
+      }
+
+      let shouldNotify = false;
+
       for (const table of normalizedTables) {
-        if (subscription.tables.has(table)) {
-          affectedTable = table;
+        if (!subscription.tables.has(table)) {
+          continue;
+        }
+
+        const tableFilters = subscription.rowFilters?.filter(
+          (filter) => filter.table.toLowerCase() === table
+        ) ?? [];
+
+        if (!subscription.rowFilters || subscription.rowFilters.length === 0 || tableFilters.length === 0) {
+          shouldNotify = true;
+          break;
+        }
+
+        if (normalizedRowFilter.table !== table) {
+          shouldNotify = true;
+          break;
+        }
+
+        const matches = tableFilters.some(
+          (filter) =>
+            filter.column.toLowerCase() === normalizedRowFilter.column &&
+            String(filter.value) === String(normalizedRowFilter.value)
+        );
+
+        if (matches) {
+          shouldNotify = true;
           break;
         }
       }
 
-      if (!affectedTable) {
-        continue;
-      }
-
-      // If subscription has row filters, check if this row filter matches
-      if (subscription.rowFilters && subscription.rowFilters.length > 0) {
-        const matches = subscription.rowFilters.some(
-          (filter) =>
-            filter.table.toLowerCase() === rowFilter.table.toLowerCase() &&
-            filter.column.toLowerCase() === rowFilter.column.toLowerCase() &&
-            String(filter.value) === String(rowFilter.value)
-        );
-
-        if (matches) {
-          subscription.callback();
-        }
-      } else {
-        // No row filters - this is a table-level subscription, always trigger
-        subscription.callback();
+      if (shouldNotify) {
+        this.notifySubscription(subscription);
       }
     }
   }
@@ -286,29 +388,105 @@ export class ReactiveDatabase {
    * If no tables specified, invalidates all queries
    */
   invalidate(tables?: string[]): void {
-    const normalizedTables = tables?.map((t) => t.toLowerCase());
+    if (this.txDepth > 0) {
+      const pending = this.pendingInvalidations[this.pendingInvalidations.length - 1];
+      if (!pending) return;
 
-    for (const subscription of this.subscriptions.values()) {
-      if (!normalizedTables) {
-        // Invalidate all
-        subscription.callback();
-      } else {
-        // Check if subscription depends on any of the invalidated tables
-        for (const table of normalizedTables) {
-          if (subscription.tables.has(table)) {
-            subscription.callback();
-            break;
-          }
-        }
+      if (!tables) {
+        pending.invalidateAll = true;
+        return;
       }
+
+      for (const table of tables) {
+        pending.tables.add(table.toLowerCase());
+      }
+
+      return;
     }
+
+    this.applyInvalidate(tables);
+  }
+
+  private flushPendingInvalidations(pending: PendingInvalidation): void {
+    if (pending.invalidateAll) {
+      this.applyInvalidate();
+      return;
+    }
+
+    if (pending.tables.size > 0) {
+      this.applyInvalidate(Array.from(pending.tables));
+    }
+
+    if (pending.rowFilters.length === 0) {
+      return;
+    }
+
+    const tableSet = pending.tables;
+    const seen = new Set<string>();
+
+    for (const rowFilter of pending.rowFilters) {
+      const table = rowFilter.table.toLowerCase();
+      if (tableSet.has(table)) {
+        continue;
+      }
+
+      const key = `${table}|${rowFilter.column.toLowerCase()}|${String(rowFilter.value)}`;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      this.applyInvalidateWithRowFilter([table], {
+        table,
+        column: rowFilter.column.toLowerCase(),
+        value: rowFilter.value,
+      });
+    }
+  }
+
+  private mergePendingInvalidations(target: PendingInvalidation, source: PendingInvalidation): void {
+    if (source.invalidateAll) {
+      target.invalidateAll = true;
+    }
+
+    for (const table of source.tables) {
+      target.tables.add(table);
+    }
+
+    target.rowFilters.push(...source.rowFilters);
   }
 
   /**
    * Run a function in a transaction
    */
   transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn)();
+    this.txDepth += 1;
+    this.pendingInvalidations.push({
+      tables: new Set(),
+      rowFilters: [],
+      invalidateAll: false,
+    });
+
+    let success = false;
+    try {
+      const result = this.db.transaction(fn)();
+      success = true;
+      return result;
+    } finally {
+      const pending = this.pendingInvalidations.pop();
+      this.txDepth = Math.max(0, this.txDepth - 1);
+
+      if (pending && success) {
+        if (this.txDepth > 0) {
+          const parent = this.pendingInvalidations[this.pendingInvalidations.length - 1];
+          if (parent) {
+            this.mergePendingInvalidations(parent, pending);
+          }
+        } else {
+          this.flushPendingInvalidations(pending);
+        }
+      }
+    }
   }
 
   /**
@@ -337,4 +515,13 @@ export function createReactiveDatabase(
   config: ReactiveDatabaseConfig | string,
 ): ReactiveDatabase {
   return new ReactiveDatabase(config);
+}
+
+function hasWriteKeywords(sql: string): boolean {
+  const normalized = sql
+    .replace(/--.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .toLowerCase()
+
+  return /\b(insert|update|delete|create|drop|alter|replace)\b/.test(normalized)
 }

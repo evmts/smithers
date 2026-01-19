@@ -45,12 +45,12 @@ describe('extractRowFilter', () => {
 
     test('handles string id values', () => {
       const result = extractRowFilter(
-        'UPDATE posts SET title = ? WHERE slug = ?',
+        'UPDATE posts SET title = ? WHERE id = ?',
         ['New Title', 'my-post']
       )
       expect(result).toEqual({
         table: 'posts',
-        column: 'slug',
+        column: 'id',
         value: 'my-post'
       })
     })
@@ -131,12 +131,12 @@ describe('extractRowFilter', () => {
   describe('edge cases', () => {
     test('handles table names with underscores', () => {
       const result = extractRowFilter(
-        'UPDATE user_profiles SET bio = ? WHERE user_id = ?',
+        'UPDATE user_profiles SET bio = ? WHERE id = ?',
         ['Bio text', 99]
       )
       expect(result).toEqual({
         table: 'user_profiles',
-        column: 'user_id',
+        column: 'id',
         value: 99
       })
     })

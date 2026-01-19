@@ -187,6 +187,14 @@ function runMigrations(rdb: ReactiveDatabase): void {
   if (!hasExitCode) {
     rdb.exec('ALTER TABLE executions ADD COLUMN exit_code INTEGER DEFAULT 0')
   }
+
+  // Migration: Add scope_id column to tasks table if missing
+  const tasksColumns = rdb.query<{ name: string }>('PRAGMA table_info(tasks)')
+  const hasScopeId = tasksColumns.some((col) => col.name === 'scope_id')
+  if (!hasScopeId) {
+    rdb.exec('ALTER TABLE tasks ADD COLUMN scope_id TEXT')
+  }
+  rdb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(scope_id)')
 }
 
 /**

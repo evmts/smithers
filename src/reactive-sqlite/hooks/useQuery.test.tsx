@@ -64,6 +64,46 @@ describe('useQuery', () => {
     })
   })
 
+  describe('overloads', () => {
+    test('useQuery(sql, db) works with explicit db', async () => {
+      db.run('INSERT INTO users (name) VALUES (?)', ['Alice'])
+
+      let result: ReturnType<typeof useQuery> | null = null
+
+      function Consumer() {
+        result = useQuery('SELECT * FROM users', db)
+        return <status ready />
+      }
+
+      const root = createSmithersRoot()
+      await root.render(<Consumer />)
+
+      expect(result!.data).toHaveLength(1)
+
+      root.dispose()
+    })
+
+    test('useQuery(sql, params, db) works with explicit db', async () => {
+      db.run('INSERT INTO users (name, active) VALUES (?, ?)', ['Alice', 1])
+      db.run('INSERT INTO users (name, active) VALUES (?, ?)', ['Bob', 0])
+
+      let result: ReturnType<typeof useQuery> | null = null
+
+      function Consumer() {
+        result = useQuery('SELECT * FROM users WHERE active = ?', [1], db)
+        return <status ready />
+      }
+
+      const root = createSmithersRoot()
+      await root.render(<Consumer />)
+
+      expect(result!.data).toHaveLength(1)
+      expect(result!.data[0]!.name).toBe('Alice')
+
+      root.dispose()
+    })
+  })
+
   describe('error handling', () => {
     test('sets error state on query throw', async () => {
       let result: ReturnType<typeof useQuery> | null = null
@@ -467,6 +507,33 @@ describe('useQuery', () => {
       expect(result!.data).toHaveLength(1)
 
       root.dispose()
+    })
+
+    test('useQuery(sql, params, db) prefers explicit db over provider', async () => {
+      const otherDb = new ReactiveDatabase(':memory:')
+      otherDb.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
+      otherDb.run('INSERT INTO users (id, name) VALUES (?, ?)', [1, 'Other'])
+
+      db.run('INSERT INTO users (id, name) VALUES (?, ?)', [1, 'Primary'])
+
+      let result: ReturnType<typeof useQuery<{ name: string }>> | null = null
+
+      function Consumer() {
+        result = useQuery<{ name: string }>('SELECT * FROM users WHERE id = ?', [1], otherDb)
+        return <status ready />
+      }
+
+      const root = createSmithersRoot()
+      await root.render(
+        <DatabaseProvider db={db}>
+          <Consumer />
+        </DatabaseProvider>
+      )
+
+      expect(result!.data[0]!.name).toBe('Other')
+
+      root.dispose()
+      otherDb.close()
     })
   })
 

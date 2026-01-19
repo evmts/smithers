@@ -252,6 +252,7 @@ export interface Task {
   id: string
   execution_id: string
   iteration: number
+  scope_id: string | null
   component_type: string
   component_name: string | null
   status: 'running' | 'completed' | 'failed'

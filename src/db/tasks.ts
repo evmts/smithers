@@ -8,6 +8,7 @@ export interface Task {
   id: string
   execution_id: string
   iteration: number
+  scope_id: string | null
   component_type: string
   component_name: string | null
   status: 'running' | 'completed' | 'failed'
@@ -21,7 +22,7 @@ export interface TasksModule {
    * Start a new task and return its ID.
    * Replaces registerTask() in RalphContext.
    */
-  start: (componentType: string, componentName?: string) => string
+  start: (componentType: string, componentName?: string, options?: { scopeId?: string | null }) => string
 
   /**
    * Complete a task by ID.
@@ -62,6 +63,7 @@ export interface TasksModule {
   withTask: <T>(
     componentType: string,
     componentName: string | undefined,
+    options: { scopeId?: string | null } | undefined,
     fn: () => T | Promise<T>
   ) => Promise<T>
 }
@@ -75,7 +77,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
   const { rdb, getCurrentExecutionId } = ctx
 
   const tasks: TasksModule = {
-    start: (componentType: string, componentName?: string): string => {
+    start: (componentType: string, componentName?: string, options?: { scopeId?: string | null }): string => {
       if (rdb.isClosed) {
         return uuid()
       }
@@ -84,12 +86,13 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
 
       // Get current iteration from state
       const iteration = tasks.getCurrentIteration()
+      const scopeId = options?.scopeId ?? null
 
       const id = uuid()
       rdb.run(
-        `INSERT INTO tasks (id, execution_id, iteration, component_type, component_name, status, started_at)
-         VALUES (?, ?, ?, ?, ?, 'running', ?)`,
-        [id, executionId, iteration, componentType, componentName ?? null, now()]
+        `INSERT INTO tasks (id, execution_id, iteration, scope_id, component_type, component_name, status, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', ?)`,
+        [id, executionId, iteration, scopeId, componentType, componentName ?? null, now()]
       )
       return id
     },
@@ -160,9 +163,10 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
     withTask: async <T>(
       componentType: string,
       componentName: string | undefined,
+      options: { scopeId?: string | null } | undefined,
       fn: () => T | Promise<T>
     ): Promise<T> => {
-      const taskId = tasks.start(componentType, componentName)
+      const taskId = tasks.start(componentType, componentName, options)
       try {
         const result = await fn()
         tasks.complete(taskId)
