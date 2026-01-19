@@ -58,6 +58,10 @@ import { Phase, Parallel, Step, Claude } from "smithers-orchestrator";
 
 ### Mixed Sequential and Parallel
 
+<Note>
+**Aspirational example.** Sequential Steps before/after Parallel may not sequence as expected with the current implementation. See [Known Limitations](#known-limitations).
+</Note>
+
 ```tsx
 <Phase name="CI">
   <Step name="setup">
@@ -91,6 +95,29 @@ import { Phase, Parallel, Step, Claude } from "smithers-orchestrator";
 ## How It Works
 
 The Parallel component wraps children in a `StepRegistryProvider` with `isParallel` enabled. This signals to the orchestrator that child Steps should execute concurrently rather than waiting for each to complete before starting the next.
+
+## Known Limitations
+
+<Warning>
+**Parallel completion semantics are experimental.**
+
+- Steps inside `<Parallel>` use a separate step registry and don't participate in the parent phase's sequential step tracking
+- A Phase containing only `<Parallel>` Steps may not advance automatically - use Phase `onComplete` callback for explicit control
+- The "Mixed Sequential and Parallel" example is aspirational - sequential Steps before/after Parallel may not sequence as expected with the current implementation
+</Warning>
+
+For reliable phase-based workflows, wrap each Phase's content in explicit Steps:
+
+```tsx
+<Phase name="Build" onComplete={() => advanceToNextPhase()}>
+  <Step name="parallel-builds">
+    <Parallel>
+      <Claude>Build frontend</Claude>
+      <Claude>Build backend</Claude>
+    </Parallel>
+  </Step>
+</Phase>
+```
 
 ## Rendering
 

@@ -7,6 +7,10 @@ description: Define constraints and rules for Claude's responses
 
 The `<Constraints>` component defines rules and constraints that guide Claude's behavior and output format. Constraints are added to the prompt to enforce specific requirements.
 
+<Info>
+**Current Implementation:** Constraints are serialized into the prompt as a `<constraints>` element. The constraint text is included in the prompt children and will be visible to Claude. Dedicated constraint enforcement beyond prompt inclusion is planned for a future release.
+</Info>
+
 ## Usage
 
 ```tsx

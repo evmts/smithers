@@ -55,7 +55,7 @@ interface WorktreeProps {
 export function Worktree(props: WorktreeProps): JSX.Element
 ```
 
-## Proposed Usage
+## Usage
 
 ### Basic Branch Isolation
 
@@ -124,7 +124,7 @@ Both execute concurrently without interfering.
 </Worktree>
 ```
 
-## Props (Planned)
+## Props
 
 <ParamField path="branch" type="string" required>
   Branch name for the worktree.
@@ -229,34 +229,6 @@ Both execute concurrently without interfering.
   }}
   ```
 </ParamField>
-
-## Implementation Status
-
-<Steps>
-  <Step title="Design Phase">
-    Complete design with git utilities, context propagation, and agent integration.
-  </Step>
-
-  <Step title="Git Utilities">
-    Implemented worktree management functions: listWorktrees, addWorktree, removeWorktree, branchExists, worktreeExists.
-  </Step>
-
-  <Step title="WorktreeContext">
-    Create context provider for cwd, branch, isWorktree propagation.
-  </Step>
-
-  <Step title="Component Implementation (Pending)">
-    Worktree component with lifecycle management and error handling.
-  </Step>
-
-  <Step title="Agent Integration (Pending)">
-    Update Claude, Smithers, Command components to respect worktree context.
-  </Step>
-
-  <Step title="Testing (Future)">
-    Unit tests for git utilities, integration tests for context propagation and agent execution.
-  </Step>
-</Steps>
 
 ## Design Rationale
 

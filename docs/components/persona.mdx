@@ -7,6 +7,10 @@ description: Define a persona or role for Claude
 
 The `<Persona>` component defines a role or persona for Claude to adopt. Personas are rendered as part of the system message and help guide Claude's behavior and expertise.
 
+<Info>
+**Current Implementation:** Persona content is serialized into the prompt as a `<persona>` element but is not yet automatically extracted into the Claude system message. The persona text is included in the prompt children and will be visible to Claude, but dedicated system message integration is planned for a future release.
+</Info>
+
 ## Usage
 
 ```tsx

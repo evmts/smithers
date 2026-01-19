@@ -70,12 +70,26 @@ export function Worktree(props: WorktreeProps): ReactNode {
 
         if (!isMounted()) return
         setState({ status: 'ready', path: worktreePath, error: null })
+
+        // Complete setup task - worktree is ready
+        if (taskIdRef.current) {
+          smithers.db.tasks.complete(taskIdRef.current)
+          taskIdRef.current = null
+        }
+
         props.onReady?.(worktreePath)
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err))
         console.error('[Worktree] Error setting up worktree:', errorObj)
         if (!isMounted()) return
         setState({ status: 'error', path: null, error: errorObj.message })
+
+        // Complete setup task with error
+        if (taskIdRef.current) {
+          smithers.db.tasks.complete(taskIdRef.current)
+          taskIdRef.current = null
+        }
+
         props.onError?.(errorObj)
       }
     })()
@@ -91,10 +105,7 @@ export function Worktree(props: WorktreeProps): ReactNode {
           console.warn('[Worktree] Could not remove worktree:', err)
         }
       }
-
-      if (taskIdRef.current) {
-        smithers.db.tasks.complete(taskIdRef.current)
-      }
+      // Task is already completed in mount - no need to complete here
     })()
   })
 

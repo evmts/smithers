@@ -10,26 +10,111 @@ The `<Phase>` component groups related steps semantically, providing structure a
 ## Basic Usage
 
 ```tsx
-import { Phase } from "smithers-orchestrator";
+import { Phase, Step } from "smithers-orchestrator";
 
 <Phase name="Research">
-  <Claude allowedTools={["Read", "Glob", "Grep"]}>
-    Research the codebase.
-  </Claude>
+  <Step name="analyze">
+    <Claude allowedTools={["Read", "Glob", "Grep"]}>
+      Research the codebase.
+    </Claude>
+  </Step>
 </Phase>
 ```
 
+<Warning>
+A Phase requires at least one `<Step>` child to advance automatically. Phases advance when all Steps complete. Without Steps, use `onComplete` with manual phase progression.
+</Warning>
+
 ## Props
 
-<ParamField path="name" type="string">
-  Name of the phase for logging and tracking.
+<ParamField path="name" type="string" required>
+  Name of the phase for logging and tracking. Must be unique within the orchestration.
 
   ```tsx
   <Phase name="Implementation">
-    <Claude>Implement the feature.</Claude>
+    <Step name="code">
+      <Claude>Implement the feature.</Claude>
+    </Step>
   </Phase>
   ```
 </ParamField>
+
+<ParamField path="skipIf" type="() => unknown">
+  Skip this phase if condition returns truthy. Takes precedence over automatic state management.
+
+  ```tsx
+  const hasTests = useQueryValue(db.db, "SELECT value FROM state WHERE key = 'has_tests'");
+
+  <Phase name="WriteTests" skipIf={() => hasTests}>
+    <Step name="tests">
+      <Claude>Write unit tests.</Claude>
+    </Step>
+  </Phase>
+  ```
+</ParamField>
+
+<ParamField path="onStart" type="() => void">
+  Callback when phase starts (becomes active).
+
+  ```tsx
+  <Phase 
+    name="Research" 
+    onStart={() => console.log("Starting research phase")}
+  >
+    <Step name="analyze">
+      <Claude>Research the codebase.</Claude>
+    </Step>
+  </Phase>
+  ```
+</ParamField>
+
+<ParamField path="onComplete" type="() => void">
+  Callback when phase completes.
+
+  ```tsx
+  <Phase 
+    name="Research" 
+    onComplete={() => db.state.set('research_done', 'true')}
+  >
+    <Step name="analyze">
+      <Claude>Research the codebase.</Claude>
+    </Step>
+  </Phase>
+  ```
+</ParamField>
+
+## Runtime Semantics
+
+Understanding how phases execute is critical for building correct workflows:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ PhaseRegistryProvider (SmithersProvider/Ralph)                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │ Phase 1 [active]     → children rendered                   ││
+│  │   └─ Step 1.1 [done]                                       ││
+│  │   └─ Step 1.2 [running] → when done, Phase 1 advances      ││
+│  ├─────────────────────────────────────────────────────────────┤│
+│  │ Phase 2 [pending]    → children NOT rendered               ││
+│  │   └─ Step 2.1                                              ││
+│  ├─────────────────────────────────────────────────────────────┤│
+│  │ Phase 3 [pending]    → children NOT rendered               ││
+│  │   └─ Step 3.1                                              ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key behaviors:**
+
+1. **Phases advance when all Steps complete** - The phase monitors its child Steps via `StepRegistryProvider`. When every Step reaches completion, the phase automatically advances to the next.
+
+2. **A Phase with no Steps will not automatically advance** - Without Steps, the phase has no completion signal. Use `onComplete` callback with manual phase control if you need stepless phases.
+
+3. **Only the active phase renders children** - Pending/completed phases render their `<phase>` element in output (for observability) but skip child execution.
+
+4. **Must be under PhaseRegistryProvider** - Phases require context from `SmithersProvider` or `Ralph`. Without it, all phases render as active (no sequencing).
+
+5. **Sequential by default** - Phases execute in declaration order. Use `skipIf` to conditionally skip phases.
 
 ## Multi-Phase Workflow
 
@@ -77,18 +162,20 @@ function FeatureWorkflow() {
 
       <If condition={phase === "test"}>
         <Phase name="Testing">
-          <Claude
-            allowedTools={["Bash"]}
-            onFinished={(r) => {
-              if (r.output.includes("PASS")) {
-                setPhase("done");
-              } else {
-                setPhase("implement");
-              }
-            }}
-          >
-            Run the tests.
-          </Claude>
+          <Step name="run-tests">
+            <Claude
+              allowedTools={["Bash"]}
+              onFinished={(r) => {
+                if (r.output.includes("PASS")) {
+                  setPhase("done");
+                } else {
+                  setPhase("implement");
+                }
+              }}
+            >
+              Run the tests.
+            </Claude>
+          </Step>
         </Phase>
       </If>
     </Ralph>
