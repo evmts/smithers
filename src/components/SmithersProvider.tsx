@@ -419,7 +419,8 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
         // Set up global timeout
         if (props.globalTimeout) {
           timeoutIdRef.current = setTimeout(() => {
-            if (!stopRequested) {
+            const currentStopRequested = props.db.state.get('stop_requested')
+            if (!currentStopRequested) {
               const message = `Global timeout of ${props.globalTimeout}ms exceeded`
               props.db.state.set('stop_requested', {
                 reason: message,
