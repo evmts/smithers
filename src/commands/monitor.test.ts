@@ -4,7 +4,7 @@
  * Covers: Output parsing, stream formatting, log writing, summarization
  */
 
-import { describe, it, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -24,7 +24,7 @@ function cleanupTempDir(dir: string) {
 
 describe('monitor command', () => {
   let tempDir: string
-  let exitCode: number | undefined
+  let _exitCode: number | undefined
   let consoleOutput: string[]
   let consoleErrorOutput: string[]
   let originalExit: typeof process.exit
@@ -33,13 +33,13 @@ describe('monitor command', () => {
 
   beforeEach(() => {
     tempDir = createTempDir()
-    exitCode = undefined
+    _exitCode = undefined
     consoleOutput = []
     consoleErrorOutput = []
     
     originalExit = process.exit
     process.exit = ((code?: number) => {
-      exitCode = code ?? 0
+      _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
     
@@ -96,8 +96,10 @@ describe('monitor command', () => {
       
       const nonExistentFile = path.join(tempDir, 'nonexistent.tsx')
       
-      await expect(monitor(nonExistentFile)).rejects.toThrow('process.exit(1)')
-      expect(exitCode).toBe(1)
+      try {
+        await monitor(nonExistentFile)
+      } catch {}
+      expect(_exitCode).toBe(1)
     })
 
     test('prints file not found error', async () => {
@@ -200,12 +202,12 @@ describe('findPreloadPath (via monitor)', () => {
     fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
     
     let originalExit = process.exit
-    let exitCode: number | undefined
+    let _exitCode: number | undefined
     let originalConsoleLog = console.log
     let originalConsoleError = console.error
     
     process.exit = ((code?: number) => {
-      exitCode = code ?? 0
+      _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
     console.log = () => {}

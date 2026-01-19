@@ -10,11 +10,11 @@ export function parseGitStatus(output: string): VCSStatus {
   const added: string[] = []
   const deleted: string[] = []
 
-  for (const line of output.split('\n')) {
+  for (const line of output.split(/\r?\n/)) {
     if (!line.trim()) continue
 
     const status = line.substring(0, 2)
-    const file = line.substring(3)
+    const file = line.substring(3).trim()
 
     if (status.includes('M')) modified.push(file)
     else if (status.includes('A')) added.push(file)
@@ -51,7 +51,7 @@ export function parseDiffStats(output: string): DiffStats {
   let insertions = 0
   let deletions = 0
 
-  const lines = output.split('\n')
+  const lines = output.split(/\r?\n/)
 
   for (const line of lines) {
     if (!line.trim()) continue

@@ -2,7 +2,7 @@
  * Tests for render-frames module - time-travel debugging frame storage
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, beforeEach, afterEach } from 'bun:test'
 import { ReactiveDatabase } from '../reactive-sqlite/database.js'
 import { createRenderFramesModule } from './render-frames.js'
 
@@ -38,7 +38,7 @@ describe('RenderFramesModule', () => {
     db.close()
   })
 
-  const createRenderFrames = () => {
+  const _createRenderFrames = () => {
     return createRenderFramesModule({
       rdb: db,
       getCurrentExecutionId: () => currentExecutionId

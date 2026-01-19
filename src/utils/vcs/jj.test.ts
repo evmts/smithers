@@ -209,36 +209,46 @@ random text
 })
 
 // ============================================================================
-// Message handling tests
+// JJ Status with special commit messages (parsing tests)
 // ============================================================================
 
-describe('jj message handling', () => {
-  test('handles empty message gracefully', () => {
-    // Test that empty strings are handled
-    const emptyMessage = ''
-    expect(emptyMessage.length).toBe(0)
+describe('jj status with special content', () => {
+  test('parses files with paths containing commit-like strings', () => {
+    const output = `M src/abc1234.ts
+A src/commit-message.ts`
+    const result = parseJJStatus(output)
+    
+    expect(result.modified).toEqual(['src/abc1234.ts'])
+    expect(result.added).toEqual(['src/commit-message.ts'])
   })
 
-  test('handles message with special characters', () => {
-    const specialMessage = 'Fix bug: handle "quotes" and \'apostrophes\''
-    expect(specialMessage).toContain('"')
-    expect(specialMessage).toContain("'")
+  test('parses files with deeply nested paths', () => {
+    const output = `M src/components/ui/buttons/primary/styles.ts
+A test/integration/e2e/auth/login.test.ts
+D old/legacy/deprecated/removed.ts`
+    const result = parseJJStatus(output)
+    
+    expect(result.modified).toEqual(['src/components/ui/buttons/primary/styles.ts'])
+    expect(result.added).toEqual(['test/integration/e2e/auth/login.test.ts'])
+    expect(result.deleted).toEqual(['old/legacy/deprecated/removed.ts'])
   })
 
-  test('handles message with newlines', () => {
-    const multilineMessage = `First line
-
-Second paragraph
-
-- bullet 1
-- bullet 2`
-    expect(multilineMessage.split('\n').length).toBeGreaterThan(1)
+  test('parses files with dots in names', () => {
+    const output = `M src/file.test.spec.ts
+A config.env.local.json`
+    const result = parseJJStatus(output)
+    
+    expect(result.modified).toEqual(['src/file.test.spec.ts'])
+    expect(result.added).toEqual(['config.env.local.json'])
   })
 
-  test('handles unicode in messages', () => {
-    const unicodeMessage = '✨ Add feature 日本語 émoji 🎉'
-    expect(unicodeMessage).toContain('✨')
-    expect(unicodeMessage).toContain('日本語')
+  test('parses files with numeric names', () => {
+    const output = `M 123.ts
+A 456789.json`
+    const result = parseJJStatus(output)
+    
+    expect(result.modified).toEqual(['123.ts'])
+    expect(result.added).toEqual(['456789.json'])
   })
 })
 

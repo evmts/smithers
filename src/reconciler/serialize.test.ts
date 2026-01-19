@@ -45,9 +45,7 @@ describe('serialize', () => {
     const node = createNode('step', {}, ['Hello world'])
     const xml = serialize(node)
 
-    expect(xml).toContain('<step>')
-    expect(xml).toContain('Hello world')
-    expect(xml).toContain('</step>')
+    expect(xml).toBe('<step>\n  Hello world\n</step>')
   })
 
   test('serializes nested elements with indentation', () => {
@@ -55,10 +53,7 @@ describe('serialize', () => {
     const parent = createNode('phase', { name: 'main' }, [child])
     const xml = serialize(parent)
 
-    expect(xml).toContain('<phase name="main">')
-    expect(xml).toContain('</phase>')
-    // Child should be indented
-    expect(xml).toMatch(/\n\s+<step>/)
+    expect(xml).toBe('<phase name="main">\n  <step>\n    Do work\n  </step>\n</phase>')
   })
 
   test('serializes ROOT node by serializing children only', () => {
@@ -77,8 +72,7 @@ describe('serialize', () => {
     const parent = createNode('phase', { name: 'multi' }, [child1, child2])
     const xml = serialize(parent)
 
-    expect(xml).toContain('Step 1')
-    expect(xml).toContain('Step 2')
+    expect(xml).toBe('<phase name="multi">\n  <step>\n    Step 1\n  </step>\n  <step>\n    Step 2\n  </step>\n</phase>')
   })
 
   test('serializes boolean props', () => {
@@ -209,9 +203,7 @@ describe('unknown parent warnings', () => {
     const node = createNode('loop', { iterations: '3' }, ['Do work'])
     const xml = serialize(node)
 
-    expect(xml).toContain('<loop iterations="3">')
-    expect(xml).toContain('Do work')
-    expect(xml).toContain('</loop>')
+    expect(xml).toBe('<loop iterations="3">\n  Do work\n</loop>')
   })
 
   test('adds warning when known type is inside unknown parent', () => {
@@ -256,10 +248,7 @@ describe('unknown parent warnings', () => {
     const loop = createNode('loop', { iterations: '3' }, [condition])
     const xml = serialize(loop)
 
-    expect(xml).toContain('<loop iterations="3">')
-    expect(xml).toContain('<if condition="test-pass">')
-    expect(xml).toContain('<mytask>')
-    expect(xml).toContain('Do work')
+    expect(xml).toBe('<loop iterations="3">\n  <if condition="test-pass">\n    <mytask>\n      Do work\n    </mytask>\n  </if>\n</loop>')
   })
 
   test('serialize is idempotent - calling multiple times does not duplicate warnings', () => {

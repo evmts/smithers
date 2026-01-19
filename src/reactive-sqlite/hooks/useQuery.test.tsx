@@ -323,10 +323,12 @@ describe('useQuery', () => {
   })
 
   describe('unmount unsubscription', () => {
-    test('unsubscribes on unmount', async () => {
+    test('unsubscribes on unmount without errors', async () => {
       let setShowConsumer: ((show: boolean) => void) | null = null
+      let renderCount = 0
 
       function Consumer() {
+        renderCount++
         useQuery(db, 'SELECT * FROM users')
         return <status consuming />
       }
@@ -340,15 +342,14 @@ describe('useQuery', () => {
       const root = createSmithersRoot()
       await root.render(<App />)
 
-      // Unmount consumer
+      const rendersBeforeUnmount = renderCount
+
       setShowConsumer!(false)
       await root.render(<App />)
 
-      // Inserting data should not cause issues after unmount
       db.run('INSERT INTO users (name) VALUES (?)', ['Alice'])
 
-      // No error should be thrown
-      expect(true).toBe(true)
+      expect(renderCount).toBe(rendersBeforeUnmount)
 
       root.dispose()
     })

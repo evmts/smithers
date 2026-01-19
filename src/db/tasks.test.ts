@@ -1,16 +1,16 @@
-import { test, expect, beforeAll, afterAll, beforeEach, afterEach, describe } from 'bun:test'
+import { test, expect, beforeEach, afterEach, describe } from 'bun:test'
 import { createSmithersDB, type SmithersDB } from './index.js'
 
 describe('Tasks module', () => {
   let db: SmithersDB
   let executionId: string
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     db = await createSmithersDB({ reset: true })
     executionId = await db.execution.start('test-execution', 'test.tsx')
   })
 
-  afterAll(() => {
+  afterEach(() => {
     db.close()
   })
 

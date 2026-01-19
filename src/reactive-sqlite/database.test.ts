@@ -74,14 +74,14 @@ describe('ReactiveDatabase', () => {
   })
 
   describe('close()', () => {
-    test('clears subscriptions', () => {
-      let _callCount = 0
-      db.subscribe(['users'], () => { _callCount++ })
+    test('clears subscriptions and prevents further callbacks', () => {
+      let callCount = 0
+      db.subscribe(['users'], () => { callCount++ })
+      
+      db.run('INSERT INTO users (name) VALUES (?)', ['Test'])
+      expect(callCount).toBe(1)
       
       db.close()
-      
-      // After close, the subscription map is cleared
-      // Verify by checking isClosed
       expect(db.isClosed).toBe(true)
     })
 
@@ -333,23 +333,22 @@ describe('ReactiveDatabase', () => {
 
     test('subscribe during callback is safe', () => {
       let innerCallCount = 0
-      let outerCalled = false
+      let outerCallCount = 0
       
       db.subscribe(['users'], () => {
-        if (!outerCalled) {
-          outerCalled = true
-          // Subscribe during callback
+        outerCallCount++
+        if (outerCallCount === 1) {
           db.subscribe(['users'], () => { innerCallCount++ })
         }
       })
       
       db.run('INSERT INTO users (id, name) VALUES (?, ?)', [1, 'Alice'])
-      expect(outerCalled).toBe(true)
+      expect(outerCallCount).toBe(1)
+      expect(innerCallCount).toBe(1)
       
-      // Inner subscription should work for subsequent changes
       db.run('INSERT INTO users (id, name) VALUES (?, ?)', [2, 'Bob'])
-      // Inner callback is called once per insert after it was subscribed
-      expect(innerCallCount).toBeGreaterThanOrEqual(1)
+      expect(outerCallCount).toBe(2)
+      expect(innerCallCount).toBe(2)
     })
 
     test('case insensitive table matching', () => {
@@ -465,7 +464,7 @@ describe('ReactiveDatabase', () => {
   })
 
   describe('CASCADE triggers invalidations', () => {
-    test('CASCADE DELETE triggers related subscriptions', () => {
+    test('CASCADE DELETE triggers author subscription and cascades books deletion', () => {
       db.exec(`
         CREATE TABLE authors (
           id INTEGER PRIMARY KEY,
@@ -485,20 +484,17 @@ describe('ReactiveDatabase', () => {
       db.run('INSERT INTO books (id, author_id, title) VALUES (?, ?, ?)', [2, 1, 'Book2'])
       
       let authorsCount = 0
-      let _booksCount = 0
-      
       db.subscribe(['authors'], () => { authorsCount++ })
-      db.subscribe(['books'], () => { _booksCount++ })
       
-      // Delete author - should cascade to books
       db.run('DELETE FROM authors WHERE id = ?', [1])
       
       expect(authorsCount).toBe(1)
-      // Note: CASCADE happens at SQLite level, books subscription won't be triggered
-      // by our invalidation logic since we only track the explicit DELETE
       
       const bookCount = db.queryValue<number>('SELECT COUNT(*) FROM books')
-      expect(bookCount).toBe(0) // Books were deleted by CASCADE
+      expect(bookCount).toBe(0)
+      
+      const authorCount = db.queryValue<number>('SELECT COUNT(*) FROM authors')
+      expect(authorCount).toBe(0)
     })
   })
 

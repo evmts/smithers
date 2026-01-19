@@ -258,8 +258,11 @@ describe('AgentsModule', () => {
       expect(currentAgentId).toBe(agentId2)
     })
 
-    it('handles complete on non-existent agent gracefully', () => {
-      expect(() => agents.complete('non-existent-id', 'result')).not.toThrow()
+    it('handles complete on non-existent agent gracefully - no throw, no side effects', () => {
+      const beforeCount = db.query<{ id: string }>('SELECT id FROM agents').length
+      agents.complete('non-existent-id', 'result')
+      const afterCount = db.query<{ id: string }>('SELECT id FROM agents').length
+      expect(afterCount).toBe(beforeCount)
     })
 
     it('handles complete with undefined structured result', () => {
@@ -335,8 +338,11 @@ describe('AgentsModule', () => {
       expect(currentAgentId).toBe(agentId2)
     })
 
-    it('handles fail on non-existent agent gracefully', () => {
-      expect(() => agents.fail('non-existent-id', 'error')).not.toThrow()
+    it('handles fail on non-existent agent gracefully - no throw, no side effects', () => {
+      const beforeCount = db.query<{ id: string }>('SELECT id FROM agents').length
+      agents.fail('non-existent-id', 'error')
+      const afterCount = db.query<{ id: string }>('SELECT id FROM agents').length
+      expect(afterCount).toBe(beforeCount)
     })
 
     it('handles error message with special characters', () => {

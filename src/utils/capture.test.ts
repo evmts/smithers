@@ -344,15 +344,16 @@ describe('classifyContent - edge cases', () => {
   test('handles empty content', () => {
     const ctx: CaptureContext = { content: '' }
     const result = classifyContent(ctx)
-    // Should default to issue with low confidence
-    expect(result.type).toBeDefined()
+    expect(result.type).toBe('issue') // Default fallback
     expect(result.confidence).toBe(0)
+    expect(result.reasoning).toBeDefined()
   })
 
   test('handles whitespace-only content', () => {
     const ctx: CaptureContext = { content: '   \n\t  ' }
     const result = classifyContent(ctx)
-    expect(result.type).toBeDefined()
+    expect(result.type).toBe('issue') // Default fallback
+    expect(result.confidence).toBe(0)
   })
 
   test('handles very long content', () => {
@@ -385,7 +386,8 @@ describe('classifyContent - edge cases', () => {
       content: 'Fix bug in auth.ts:45 - handle `null` values & "quotes"',
     }
     const result = classifyContent(ctx)
-    expect(result.type).toBeDefined()
+    expect(result.type).toBe('review') // "auth.ts:45" triggers file:line pattern -> review
+    expect(result.confidence).toBeGreaterThan(0)
   })
 
   test('confidence is capped at 1.0', () => {

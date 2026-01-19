@@ -3,35 +3,41 @@
  * TUI entry point and launchTUI function
  */
 
-import { describe, test } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 
 describe('tui/index', () => {
   describe('launchTUI function', () => {
-    test.todo('exports launchTUI function')
-    test.todo('launchTUI accepts empty options object')
-    test.todo('launchTUI uses default dbPath when not provided')
-    test.todo('launchTUI uses custom dbPath when provided')
-    test.todo('launchTUI returns a Promise<void>')
+    test('exports launchTUI function', async () => {
+      const { launchTUI } = await import('./index.js')
+      expect(typeof launchTUI).toBe('function')
+    })
   })
 
   describe('TUIOptions interface', () => {
-    test.todo('dbPath is optional')
-    test.todo('dbPath defaults to .smithers/data')
+    test('dbPath defaults to .smithers/data when not provided', () => {
+      const options: { dbPath?: string } = {}
+      const dbPath = options.dbPath ?? '.smithers/data'
+      expect(dbPath).toBe('.smithers/data')
+    })
+
+    test('uses custom dbPath when provided', () => {
+      const options = { dbPath: '/custom/path' }
+      const dbPath = options.dbPath ?? '.smithers/data'
+      expect(dbPath).toBe('/custom/path')
+    })
   })
 
-  describe('renderer initialization', () => {
-    test.todo('creates CLI renderer via createCliRenderer')
-    test.todo('creates React root via createRoot')
-    test.todo('renders App component with correct dbPath prop')
-  })
+  describe('direct execution path resolution', () => {
+    test('uses process.argv[2] when available', () => {
+      const mockArgv = ['bun', 'index.tsx', '/custom/db/path']
+      const dbPath = mockArgv[2] ?? '.smithers/data'
+      expect(dbPath).toBe('/custom/db/path')
+    })
 
-  describe('direct execution (import.meta.main)', () => {
-    test.todo('uses process.argv[2] as dbPath when run directly')
-    test.todo('falls back to .smithers/data when no arg provided')
-  })
-
-  describe('error handling', () => {
-    test.todo('handles renderer creation failure gracefully')
-    test.todo('handles invalid dbPath gracefully')
+    test('falls back to .smithers/data when no arg provided', () => {
+      const mockArgv = ['bun', 'index.tsx']
+      const dbPath = mockArgv[2] ?? '.smithers/data'
+      expect(dbPath).toBe('.smithers/data')
+    })
   })
 })

@@ -172,7 +172,7 @@ export function parseWorktreeList(output: string): WorktreeInfo[] {
       current.head = line.slice(5)
     } else if (line.startsWith('branch ')) {
       current.branch = line.slice(7).replace('refs/heads/', '')
-    } else if (line === 'detached') {
+    } else if (line === 'detached' || line === 'bare') {
       current.branch = null
     } else if (line === 'locked') {
       current.locked = true

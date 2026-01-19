@@ -1,4 +1,4 @@
-import { test, expect, beforeAll, afterAll, describe } from 'bun:test'
+import { test, expect, beforeEach, afterEach, describe } from 'bun:test'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import {
   SmithersProvider,
@@ -15,12 +15,13 @@ describe('SmithersProvider', () => {
   let db: SmithersDB
   let executionId: string
 
-  beforeAll(async () => {
-    db = await createSmithersDB({ reset: true })
-    executionId = await db.execution.start('test-provider', 'test.tsx')
+  beforeEach(() => {
+    db = createSmithersDB({ reset: true })
+    executionId = db.execution.start('test-provider', 'test.tsx')
   })
 
-  afterAll(() => {
+  afterEach(() => {
+    signalOrchestrationComplete()
     db.close()
   })
 

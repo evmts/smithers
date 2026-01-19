@@ -534,9 +534,9 @@ describe('StepsModule', () => {
       db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
 
       const steps = createSteps()
-      const id1 = steps.start('step1')
-      const id2 = steps.start('step2')
-      const id3 = steps.start('step3')
+      steps.start('step1')
+      steps.start('step2')
+      steps.start('step3')
 
       const runningSteps = db.query<any>('SELECT * FROM steps WHERE status = ?', ['running'])
       expect(runningSteps).toHaveLength(3)

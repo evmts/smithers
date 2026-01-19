@@ -1,25 +1,32 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
+import * as os from 'os'
 import { LogWriter } from './log-writer.js'
 
-const TEST_LOG_DIR = '.smithers/test-logs'
+const TEST_LOG_DIR = path.join(os.tmpdir(), 'smithers-test-logs-' + process.pid)
+const TEST_EXECUTIONS_DIR = path.join(os.tmpdir(), 'smithers-test-executions-' + process.pid)
+
+function cleanupDirs() {
+  if (fs.existsSync(TEST_LOG_DIR)) {
+    fs.rmSync(TEST_LOG_DIR, { recursive: true, force: true })
+  }
+  if (fs.existsSync(TEST_EXECUTIONS_DIR)) {
+    fs.rmSync(TEST_EXECUTIONS_DIR, { recursive: true, force: true })
+  }
+  const executionsDir = path.resolve('.smithers/executions')
+  if (fs.existsSync(executionsDir)) {
+    fs.rmSync(executionsDir, { recursive: true, force: true })
+  }
+}
 
 describe('LogWriter', () => {
   beforeEach(() => {
-    if (fs.existsSync(TEST_LOG_DIR)) {
-      fs.rmSync(TEST_LOG_DIR, { recursive: true, force: true })
-    }
+    cleanupDirs()
   })
 
   afterEach(() => {
-    if (fs.existsSync(TEST_LOG_DIR)) {
-      fs.rmSync(TEST_LOG_DIR, { recursive: true, force: true })
-    }
-    const executionsDir = path.resolve('.smithers/executions')
-    if (fs.existsSync(executionsDir)) {
-      fs.rmSync(executionsDir, { recursive: true, force: true })
-    }
+    cleanupDirs()
   })
 
   it('should create log directory if it does not exist', () => {

@@ -1,8 +1,8 @@
-import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
+import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot } from '../reconciler/root.js'
 import { Parallel, type ParallelProps } from './Parallel.js'
-import { SmithersProvider } from './SmithersProvider.js'
+import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
 import { Phase } from './Phase.js'
 import { useStepRegistry } from './Step.js'
 import { useEffect, useRef } from 'react'
@@ -11,12 +11,13 @@ describe('Parallel component', () => {
   let db: SmithersDB
   let executionId: string
 
-  beforeAll(async () => {
-    db = await createSmithersDB({ reset: true })
-    executionId = await db.execution.start('test-parallel', 'Parallel.test.ts')
+  beforeEach(() => {
+    db = createSmithersDB({ reset: true })
+    executionId = db.execution.start('test-parallel', 'Parallel.test.ts')
   })
 
-  afterAll(() => {
+  afterEach(() => {
+    signalOrchestrationComplete()
     db.close()
   })
 

@@ -331,11 +331,15 @@ describe('MemoriesModule', () => {
       expect(memory).toBeNull()
     })
 
-    test('handles non-existent id gracefully', () => {
+    test('handles non-existent id gracefully - no throw, no side effects', () => {
       const memories = createMemories()
+      memories.add({ category: 'fact', key: 'test', content: 'value' })
+      const beforeCount = db.queryValue<number>('SELECT COUNT(*) FROM memories')
 
-      // Should not throw
-      expect(() => memories.delete('nonexistent')).not.toThrow()
+      memories.delete('nonexistent')
+      
+      const afterCount = db.queryValue<number>('SELECT COUNT(*) FROM memories')
+      expect(afterCount).toBe(beforeCount)
     })
   })
 
@@ -532,7 +536,7 @@ describe('MemoriesModule', () => {
     test('handles special characters in key', () => {
       const memories = createMemories()
 
-      const id = memories.add({
+      memories.add({
         category: 'fact',
         key: 'key/with/slashes-and_underscores.and.dots',
         content: 'value'
@@ -545,7 +549,7 @@ describe('MemoriesModule', () => {
     test('handles empty content', () => {
       const memories = createMemories()
 
-      const id = memories.add({
+      memories.add({
         category: 'fact',
         key: 'empty',
         content: ''
@@ -559,7 +563,7 @@ describe('MemoriesModule', () => {
       const memories = createMemories()
       const longContent = 'x'.repeat(100000)
 
-      const id = memories.add({
+      memories.add({
         category: 'fact',
         key: 'long',
         content: longContent
@@ -574,7 +578,7 @@ describe('MemoriesModule', () => {
       const memories = createMemories()
       const content = "line1\nline2\n\tindented\r\nwindows"
 
-      const id = memories.add({
+      memories.add({
         category: 'fact',
         key: 'whitespace',
         content
@@ -807,12 +811,18 @@ describe('MemoriesModule', () => {
       expect(memory.expires_at).toBeNull()
     })
 
-    test('update non-existent id does not throw', () => {
+    test('update non-existent id does not throw and has no side effects', () => {
       const memories = createMemories()
+      memories.add({ category: 'fact', key: 'existing', content: 'original' })
+      const beforeCount = db.queryValue<number>('SELECT COUNT(*) FROM memories')
 
-      expect(() => {
-        memories.update('non-existent-id', { content: 'new' })
-      }).not.toThrow()
+      memories.update('non-existent-id', { content: 'new' })
+      
+      const afterCount = db.queryValue<number>('SELECT COUNT(*) FROM memories')
+      expect(afterCount).toBe(beforeCount)
+      
+      const existing = memories.get('fact', 'existing')
+      expect(existing!.content).toBe('original')
     })
 
     test('update multiple fields at once', () => {

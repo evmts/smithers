@@ -8,7 +8,7 @@ import { SmithersProvider } from '../SmithersProvider.js'
 import { Commit, type CommitProps, type CommitResult } from './Commit.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 
 const SMITHERS_NOTES_REF = 'refs/notes/smithers'
 
@@ -48,7 +48,7 @@ async function getNotesForCommit(cwd: string, ref: string = 'HEAD'): Promise<str
 }
 
 // Helper: Get last commit hash
-async function getLastCommitHash(cwd: string): Promise<string> {
+async function _getLastCommitHash(cwd: string): Promise<string> {
   return (await Bun.$`git rev-parse HEAD`.cwd(cwd).text()).trim()
 }
 

@@ -553,7 +553,7 @@ describe('PhasesModule', () => {
       expect(phase.status).toBe('failed')
     })
 
-    test('fail does not set duration_ms', () => {
+    test('fail does not calculate duration_ms (unlike complete)', () => {
       currentExecutionId = 'exec-1'
       db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
 
@@ -681,7 +681,7 @@ describe('PhasesModule', () => {
 
       const phases = createPhases()
       
-      const runningId = phases.start('running')
+      phases.start('running')
       const completedId = phases.start('completed')
       phases.complete(completedId)
       const failedId = phases.start('failed')
@@ -764,7 +764,7 @@ describe('PhasesModule', () => {
       const list = phases.list(currentExecutionId)
       expect(list).toHaveLength(50)
       
-      list.forEach((phase, idx) => {
+      list.forEach((phase) => {
         expect(phase.status).toBe('running')
       })
     })

@@ -4,7 +4,7 @@
  * Covers: Directory creation, template copying, error cases
  */
 
-import { describe, it, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
 import { init } from './init'
@@ -25,9 +25,9 @@ function cleanupTempDir(dir: string) {
 
 describe('init command', () => {
   let tempDir: string
-  let originalCwd: string
+  let _originalCwd: string
   let originalExit: typeof process.exit
-  let exitCode: number | undefined
+  let _exitCode: number | undefined
   let consoleOutput: string[]
   let consoleErrorOutput: string[]
   let originalConsoleLog: typeof console.log
@@ -35,15 +35,15 @@ describe('init command', () => {
 
   beforeEach(() => {
     tempDir = createTempDir()
-    originalCwd = process.cwd()
-    exitCode = undefined
+    _originalCwd = process.cwd()
+    _exitCode = undefined
     consoleOutput = []
     consoleErrorOutput = []
     
     // Mock process.exit
     originalExit = process.exit
     process.exit = ((code?: number) => {
-      exitCode = code ?? 0
+      _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
     
@@ -105,7 +105,7 @@ describe('init command', () => {
       fs.mkdirSync(smithersDir, { recursive: true })
       
       await expect(init({ dir: tempDir })).rejects.toThrow('process.exit(1)')
-      expect(exitCode).toBe(1)
+      expect(_exitCode).toBe(1)
     })
 
     test('prints warning message when .smithers exists', async () => {

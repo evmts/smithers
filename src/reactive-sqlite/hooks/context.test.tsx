@@ -285,12 +285,13 @@ describe('provider unmount', () => {
     db.close()
   })
 
-  test('unmounting provider does not throw', async () => {
+  test('unmounting provider removes context access', async () => {
     let setShowProvider: ((show: boolean) => void) | null = null
+    let capturedDb: ReactiveDatabase | null = null
 
     function Consumer() {
-      const dbFromContext = useDatabase()
-      return <status connected={!!dbFromContext} />
+      capturedDb = useDatabase()
+      return <status connected={!!capturedDb} />
     }
 
     function App() {
@@ -308,12 +309,17 @@ describe('provider unmount', () => {
     const root = createSmithersRoot()
     await root.render(<App />)
 
-    // Unmount provider
+    expect(capturedDb).toBe(db)
+    const tree = root.getTree()
+    expect(tree.children[0]!.type).toBe('status')
+    expect(tree.children[0]!.props.connected).toBe(true)
+
     setShowProvider!(false)
     await root.render(<App />)
 
-    // Should not throw
-    expect(true).toBe(true)
+    const treeAfter = root.getTree()
+    expect(treeAfter.children[0]!.type).toBe('status')
+    expect(treeAfter.children[0]!.props.hidden).toBe(true)
 
     root.dispose()
   })

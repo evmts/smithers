@@ -2,12 +2,12 @@
  * Unit tests for Claude.tsx - Claude component interface and rendering tests.
  * Tests the component's props, rendering, lifecycle, and CLI integration.
  */
-import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test'
+import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test'
 import { createSmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { SmithersProvider } from './SmithersProvider.js'
 import type { ClaudeProps, AgentResult } from './Claude.js'
-import { buildClaudeArgs, modelMap, permissionFlags, formatMap } from './agents/claude-cli/arg-builder.js'
+import { buildClaudeArgs, modelMap, formatMap } from './agents/claude-cli/arg-builder.js'
 import { parseClaudeOutput } from './agents/claude-cli/output-parser.js'
 import { checkStopConditions } from './agents/claude-cli/stop-conditions.js'
 import { extractMCPConfigs, generateMCPServerConfig } from '../utils/mcp-config.js'
@@ -916,11 +916,11 @@ describe('Claude validation', () => {
 
 describe('Claude database integration', () => {
   let db: SmithersDB
-  let executionId: string
+  let _executionId: string
 
   beforeEach(() => {
     db = createSmithersDB({ path: ':memory:' })
-    executionId = db.execution.start('test-execution', '/test/file.tsx')
+    _executionId = db.execution.start('test-execution', '/test/file.tsx')
   })
 
   afterEach(() => {

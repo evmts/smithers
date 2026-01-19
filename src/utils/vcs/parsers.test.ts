@@ -165,7 +165,6 @@ A  src/émoji.ts`
   test('handles status line shorter than 3 characters', () => {
     const output = `M `
     const result = parseGitStatus(output)
-    // Empty file path
     expect(result.modified).toHaveLength(1)
     expect(result.modified[0]).toBe('')
   })
@@ -173,25 +172,26 @@ A  src/émoji.ts`
   test('handles status line with only status codes', () => {
     const output = `M`
     const result = parseGitStatus(output)
-    // Line is too short (only 1 char), so substring(3) returns empty and modified gets empty string
-    // After trimming, empty strings are still added since the line isn't empty
-    expect(result.modified.length).toBeGreaterThanOrEqual(0)
+    // Line is too short (only 1 char), substring(3) returns empty string
+    expect(result.modified).toHaveLength(1)
+    expect(result.modified[0]).toBe('')
   })
 
   test('handles CRLF line endings', () => {
     const output = `M  src/file1.ts\r\nA  src/file2.ts\r\n`
     const result = parseGitStatus(output)
-    // Trim should handle \r
-    expect(result.modified.length).toBeGreaterThanOrEqual(1)
-    expect(result.added.length).toBeGreaterThanOrEqual(1)
+    expect(result.modified).toHaveLength(1)
+    expect(result.modified).toContain('src/file1.ts')
+    expect(result.added).toHaveLength(1)
+    expect(result.added).toContain('src/file2.ts')
   })
 
   test('handles mixed line endings', () => {
     const output = `M  src/file1.ts\nA  src/file2.ts\r\nD  src/file3.ts`
     const result = parseGitStatus(output)
-    expect(result.modified.length).toBeGreaterThanOrEqual(1)
-    expect(result.added.length).toBeGreaterThanOrEqual(1)
-    expect(result.deleted.length).toBeGreaterThanOrEqual(1)
+    expect(result.modified).toEqual(['src/file1.ts'])
+    expect(result.added).toEqual(['src/file2.ts'])
+    expect(result.deleted).toEqual(['src/file3.ts'])
   })
 
   test('handles very long file paths (>260 chars)', () => {
@@ -293,8 +293,8 @@ Z src/another.ts`
   test('handles CRLF line endings', () => {
     const output = `M src/file1.ts\r\nA src/file2.ts\r\n`
     const result = parseJJStatus(output)
-    expect(result.modified.length).toBeGreaterThanOrEqual(1)
-    expect(result.added.length).toBeGreaterThanOrEqual(1)
+    expect(result.modified).toEqual(['src/file1.ts'])
+    expect(result.added).toEqual(['src/file2.ts'])
   })
 
   test('handles empty lines in output', () => {
@@ -417,13 +417,11 @@ describe('parseDiffStats - edge cases', () => {
   })
 
   test('handles path with pipe character - edge case', () => {
-    // This is a tricky case - pipe in filename could confuse parsing
-    // The regex splits on first | so this might not work correctly
+    // Pipe in filename is handled correctly by using non-greedy .+? regex
     const output = ` src/file|test.ts | 5 +++++`
     const result = parseDiffStats(output)
-    // First pipe matches, so file would be 'src/file'
-    // This is a limitation of the current parser
-    expect(result.files.length).toBeGreaterThanOrEqual(0)
+    expect(result.files).toEqual(['src/file|test.ts'])
+    expect(result.insertions).toBe(5)
   })
 
   test('handles leading whitespace variations', () => {

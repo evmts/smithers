@@ -2,7 +2,7 @@
  * Tests for human module - human interaction tracking
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, beforeEach, afterEach } from 'bun:test'
 import { ReactiveDatabase } from '../reactive-sqlite/database.js'
 import { createHumanModule } from './human.js'
 
@@ -40,7 +40,7 @@ describe('HumanModule', () => {
     db.close()
   })
 
-  const createHuman = () => {
+  const _createHuman = () => {
     return createHumanModule({
       rdb: db,
       getCurrentExecutionId: () => currentExecutionId

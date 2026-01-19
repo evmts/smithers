@@ -321,14 +321,14 @@ describe('ToolsModule', () => {
       expect(toolCall!.duration_ms).toBeGreaterThanOrEqual(0)
     })
 
-    test('handles non-existent tool id gracefully', () => {
+    test('handles non-existent tool id gracefully - no row created, no throw', () => {
       currentExecutionId = 'exec-1'
       db.run('INSERT INTO executions (id) VALUES (?)', [currentExecutionId])
       db.run('INSERT INTO agents (id, execution_id) VALUES (?, ?)', ['agent-1', currentExecutionId])
 
       const tools = createTools()
+      
       // Complete a tool that doesn't exist - should not throw
-      // The startRow query returns null, so durationMs is null
       tools.complete('nonexistent-tool', 'output')
 
       // Verify no row was created (UPDATE on non-existent row does nothing)
@@ -336,8 +336,11 @@ describe('ToolsModule', () => {
         'SELECT id FROM tool_calls WHERE id = ?',
         ['nonexistent-tool']
       )
-
       expect(toolCall).toBeNull()
+
+      // Verify table is not corrupted - count should be 0
+      const count = db.queryValue<number>('SELECT COUNT(*) FROM tool_calls')
+      expect(count).toBe(0)
     })
   })
 

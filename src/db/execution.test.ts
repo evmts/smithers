@@ -613,9 +613,9 @@ describe('ExecutionModule', () => {
     test('multiple running executions can exist', () => {
       const execution = createExecution()
 
-      const id1 = execution.start('exec1', '/path1')
-      const id2 = execution.start('exec2', '/path2')
-      const id3 = execution.start('exec3', '/path3')
+      execution.start('exec1', '/path1')
+      execution.start('exec2', '/path2')
+      execution.start('exec3', '/path3')
 
       const rows = db.query<any>('SELECT id, status FROM executions WHERE status = ?', ['running'])
       expect(rows).toHaveLength(3)
@@ -707,22 +707,34 @@ describe('ExecutionModule', () => {
   })
 
   describe('error cases', () => {
-    test('complete on non-existent execution does not throw', () => {
+    test('complete on non-existent execution does not throw and has no side effects', () => {
       const execution = createExecution()
+      const beforeCount = db.query<{ id: string }>('SELECT id FROM executions').length
 
-      expect(() => execution.complete('non-existent')).not.toThrow()
+      execution.complete('non-existent')
+      
+      const afterCount = db.query<{ id: string }>('SELECT id FROM executions').length
+      expect(afterCount).toBe(beforeCount)
     })
 
-    test('fail on non-existent execution does not throw', () => {
+    test('fail on non-existent execution does not throw and has no side effects', () => {
       const execution = createExecution()
+      const beforeCount = db.query<{ id: string }>('SELECT id FROM executions').length
 
-      expect(() => execution.fail('non-existent', 'error')).not.toThrow()
+      execution.fail('non-existent', 'error')
+      
+      const afterCount = db.query<{ id: string }>('SELECT id FROM executions').length
+      expect(afterCount).toBe(beforeCount)
     })
 
-    test('cancel on non-existent execution does not throw', () => {
+    test('cancel on non-existent execution does not throw and has no side effects', () => {
       const execution = createExecution()
+      const beforeCount = db.query<{ id: string }>('SELECT id FROM executions').length
 
-      expect(() => execution.cancel('non-existent')).not.toThrow()
+      execution.cancel('non-existent')
+      
+      const afterCount = db.query<{ id: string }>('SELECT id FROM executions').length
+      expect(afterCount).toBe(beforeCount)
     })
 
     test('list on empty database returns empty array', () => {

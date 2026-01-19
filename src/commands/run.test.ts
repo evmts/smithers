@@ -4,10 +4,10 @@
  * Covers: File execution, spawn handling, error cases
  */
 
-import { describe, it, test, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
-import { spawn, type ChildProcess } from 'child_process'
+
 
 // Helper to create temp directory
 function createTempDir(): string {
@@ -100,7 +100,9 @@ describe('run command', () => {
       
       const nonExistentFile = path.join(tempDir, 'nonexistent.tsx')
       
-      await expect(run(nonExistentFile)).rejects.toThrow('process.exit(1)')
+      try {
+        await run(nonExistentFile)
+      } catch {}
       expect(exitCode).toBe(1)
     })
 
@@ -209,14 +211,14 @@ describe('findPreloadPath', () => {
     fs.writeFileSync(testFile, '#!/usr/bin/env bun\nconsole.log("test")')
     
     let originalExit = process.exit
-    let exitCode: number | undefined
+    let _exitCode: number | undefined
     let consoleOutput: string[] = []
     let consoleErrorOutput: string[] = []
     let originalConsoleLog = console.log
     let originalConsoleError = console.error
     
     process.exit = ((code?: number) => {
-      exitCode = code ?? 0
+      _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
     console.log = (...args: unknown[]) => { consoleOutput.push(args.map(String).join(' ')) }
