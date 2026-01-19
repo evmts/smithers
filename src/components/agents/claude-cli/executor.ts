@@ -321,16 +321,31 @@ export async function executeClaudeShell(
       durationMs,
       exitCode: 0,
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     const durationMs = Date.now() - startTime
 
+    const getErrorOutput = (): string => {
+      if (error && typeof error === 'object') {
+        if ('stderr' in error && typeof error.stderr === 'string') return error.stderr
+        if ('message' in error && typeof error.message === 'string') return error.message
+      }
+      return String(error)
+    }
+
+    const getExitCode = (): number => {
+      if (error && typeof error === 'object' && 'exitCode' in error && typeof error.exitCode === 'number') {
+        return error.exitCode
+      }
+      return -1
+    }
+
     return {
-      output: error.stderr || error.message || String(error),
+      output: getErrorOutput(),
       tokensUsed: { input: 0, output: 0 },
       turnsUsed: 0,
       stopReason: 'error',
       durationMs,
-      exitCode: error.exitCode ?? -1,
+      exitCode: getExitCode(),
     }
   }
 }
