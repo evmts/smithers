@@ -4,7 +4,7 @@ See: `../../../issues/uimessage-format.md`
 
 ## Task
 
-Implement the solution described in the issue.
+GitHub Actions PR Review Loop
 
 ## Workflow
 
