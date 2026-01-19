@@ -13,14 +13,16 @@ A workflow that implements features, reviews them, and iterates until approved.
 #!/usr/bin/env bun
 
 import { useState } from "react";
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Ralph } from "smithers-orchestrator/components/Ralph";
-import { Phase } from "smithers-orchestrator/components/Phase";
-import { Claude } from "smithers-orchestrator/components/Claude";
-import { Review } from "smithers-orchestrator/components/Review";
-import { If } from "smithers-orchestrator/components/If";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Ralph,
+  Phase,
+  Claude,
+  Review,
+  If,
+} from "smithers-orchestrator";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/review-workflow" });
@@ -184,7 +186,7 @@ smithers db transitions
 Add human approval before review:
 
 ```tsx
-{phase === "pre-review" && (
+<If condition={phase === "pre-review"}>
   <Human
     message="Review implementation before AI review?"
     onApprove={() => updatePhase("review")}
@@ -192,7 +194,7 @@ Add human approval before review:
   >
     Implementation complete. Ready for AI review?
   </Human>
-)}
+</If>
 ```
 
 ## Related

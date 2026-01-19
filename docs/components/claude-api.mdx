@@ -125,7 +125,9 @@ function SimpleCompletion() {
         Summarize the key points of functional programming in 3 bullet points.
       </ClaudeApi>
 
-      {result && <div>Result: {result}</div>}
+      <If condition={result !== null}>
+        <div>Result: {result}</div>
+      </If>
     </SmithersProvider>
   );
 }

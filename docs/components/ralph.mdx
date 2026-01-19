@@ -6,21 +6,27 @@ description: Loop controller component for iteration-based workflows
 # Ralph Component
 
 <Note>
-**Most users should use [`<SmithersProvider>`](/components/smithers-provider) instead.** SmithersProvider is the canonical orchestrator that handles Ralph internally along with database, state management, and lifecycle concerns. Use Ralph directly only if you need fine-grained control over the iteration loop.
+**Most users should use [`<SmithersProvider>`](/components/smithers-provider) instead.** SmithersProvider is the canonical orchestrator that handles Ralph internally along with database, state management, and lifecycle concerns. Use `<Ralph>` only for legacy compatibility or when you specifically need the `<ralph>` element in serialized output.
 </Note>
+
+<Warning>
+**Deprecated.** `<Ralph>` is a compatibility wrapper and does not control the loop by itself. Pass `maxIterations`, `onIteration`, and `onComplete` to `<SmithersProvider>` instead.
+</Warning>
 
 The `<Ralph>` component is the internal loop controller that powers Smithers workflows. It manages iteration count and task tracking for workflows that need to loop until completion. SmithersProvider wraps Ralph automatically—this page documents Ralph for advanced users who need direct access.
 
 ## Basic Usage
 
 ```tsx
-import { Ralph } from "smithers-orchestrator";
+import { SmithersProvider, Ralph } from "smithers-orchestrator";
 
-<Ralph maxIterations={10}>
-  <Claude onFinished={() => { /* state change triggers re-render */ }}>
-    Keep improving until tests pass.
-  </Claude>
-</Ralph>
+<SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+  <Ralph>
+    <Claude onFinished={() => { /* state change triggers re-render */ }}>
+      Keep improving until tests pass.
+    </Claude>
+  </Ralph>
+</SmithersProvider>
 ```
 
 ## Accessing Iteration Count
@@ -40,15 +46,15 @@ function MyComponent() {
 ## Props
 
 <ParamField path="maxIterations" type="number" default="100">
-  Maximum number of iteration loops before stopping.
+  Deprecated on `<Ralph>`. Configure `maxIterations` on `<SmithersProvider>` instead.
 </ParamField>
 
 <ParamField path="onIteration" type="(iteration: number) => void">
-  Called at the start of each iteration. Useful for logging or progress tracking.
+  Deprecated on `<Ralph>`. Use `<SmithersProvider onIteration>` instead.
 </ParamField>
 
 <ParamField path="onComplete" type="() => void">
-  Called when orchestration completes (all tasks finished or max iterations reached).
+  Deprecated on `<Ralph>`. Use `<SmithersProvider onComplete>` instead.
 </ParamField>
 
 <ParamField path="onMaxIterations" type="() => void">

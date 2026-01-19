@@ -115,7 +115,7 @@ function DataWorkflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={5}>
-        {phase === "analyze" && (
+        <If condition={phase === "analyze"}>
           <Claude
             model="sonnet"
             onFinished={(result) => {
@@ -129,9 +129,9 @@ function DataWorkflow() {
             </Sqlite>
             Analyze Q4 sales performance.
           </Claude>
-        )}
+        </If>
 
-        {phase === "report" && (
+        <If condition={phase === "report"}>
           <Claude
             allowedTools={["Write"]}
             onFinished={() => setPhase("done")}
@@ -141,7 +141,7 @@ function DataWorkflow() {
 
             Save to reports/q4-analysis.md
           </Claude>
-        )}
+        </If>
       </Ralph>
     </SmithersProvider>
   );

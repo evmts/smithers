@@ -31,7 +31,7 @@ function RetryWorkflow() {
 
   return (
     <Ralph maxIterations={5}>
-      {attempts < 3 && (
+      <If condition={attempts < 3}>
         <Claude
           onFinished={() => setLastError(null)}
           onError={(err) => {
@@ -39,16 +39,16 @@ function RetryWorkflow() {
             setAttempts(a => a + 1);
           }}
         >
-          {lastError && (
+          <If condition={lastError !== null}>
             <>Previous attempt failed: {lastError!.message}</>
-          )}
+          </If>
           Attempt the task (attempt {attempts + 1}/3).
         </Claude>
-      )}
+      </If>
 
-      {attempts >= 3 && (
+      <If condition={attempts >= 3}>
         <Stop reason={`Failed after 3 attempts: ${lastError?.message}`} />
-      )}
+      </If>
     </Ralph>
   );
 }
@@ -143,7 +143,7 @@ function ResilientWorkflow() {
 
   return (
     <Ralph maxIterations={5}>
-      {approach === "full" && (
+      <If condition={approach === "full"}>
         <Claude
           model="opus"
           maxTurns={20}
@@ -152,9 +152,9 @@ function ResilientWorkflow() {
         >
           Comprehensive analysis with full toolset.
         </Claude>
-      )}
+      </If>
 
-      {approach === "simple" && (
+      <If condition={approach === "simple"}>
         <Claude
           model="sonnet"
           maxTurns={5}
@@ -164,9 +164,9 @@ function ResilientWorkflow() {
         >
           Simplified analysis, read-only.
         </Claude>
-      )}
+      </If>
 
-      {approach === "manual" && (
+      <If condition={approach === "manual"}>
         <Human
           message="Automated analysis failed"
           onApprove={() => setApproach("done")}
@@ -174,7 +174,7 @@ function ResilientWorkflow() {
           Both automated approaches failed.
           Please review manually.
         </Human>
-      )}
+      </If>
     </Ralph>
   );
 }
@@ -253,7 +253,7 @@ function RobustWorkflow() {
             console.error("Max iterations reached");
           }}
         >
-          {state.phase === "start" && state.attempts < 3 && (
+          <If condition={state.phase === "start" && state.attempts < 3}>
             <Claude
               onFinished={() => setState(s => ({ ...s, phase: "done" }))}
               onError={(error) => {
@@ -266,13 +266,13 @@ function RobustWorkflow() {
               }}
             >
               Primary task.
-              {state.errors.length > 0 && (
+              <If condition={state.errors.length > 0}>
                 <>Previous errors: {state.errors.join(", ")}</>
-              )}
+              </If>
             </Claude>
-          )}
+          </If>
 
-          {state.phase === "fallback" && (
+          <If condition={state.phase === "fallback"}>
             <Human
               message="Automated task failed"
               onApprove={() => setState(s => ({ ...s, phase: "done" }))}
@@ -281,11 +281,11 @@ function RobustWorkflow() {
               Failed {state.attempts} times.
               Errors: {state.errors.join("; ")}
             </Human>
-          )}
+          </If>
 
-          {state.phase === "cancelled" && (
+          <If condition={state.phase === "cancelled"}>
             <Stop reason="Cancelled after failures" />
-          )}
+          </If>
         </Ralph>
     </SmithersProvider>
   );

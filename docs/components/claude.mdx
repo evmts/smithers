@@ -371,23 +371,23 @@ function ConditionalClaude() {
 
   return (
     <Ralph maxIterations={5}>
-      {phase === "research" && (
+      <If condition={phase === "research"}>
         <Claude
           allowedTools={["Read", "Glob"]}
           onFinished={() => setPhase("implement")}
         >
           Research the codebase.
         </Claude>
-      )}
+      </If>
 
-      {phase === "implement" && (
+      <If condition={phase === "implement"}>
         <Claude
           allowedTools={["Edit", "Write"]}
           onFinished={() => setPhase("done")}
         >
           Implement the solution.
         </Claude>
-      )}
+      </If>
     </Ralph>
   );
 }
@@ -426,7 +426,7 @@ function ResilientClaude() {
 
   return (
     <Ralph maxIterations={3}>
-      {error && attempts < 3 && (
+      <If condition={error !== null && attempts < 3}>
         <Claude
           onFinished={() => db.state.set('error', null)}
           onError={(err) => {
@@ -437,16 +437,16 @@ function ResilientClaude() {
           Previous attempt failed: {error}
           Try a different approach.
         </Claude>
-      )}
+      </If>
 
-      {!error && (
+      <If condition={error === null}>
         <Claude
           onFinished={(r) => console.log("Success:", r.output)}
           onError={(err) => db.state.set('error', err.message)}
         >
           Complete the task.
         </Claude>
-      )}
+      </If>
     </Ralph>
   );
 }

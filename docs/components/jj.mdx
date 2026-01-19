@@ -148,28 +148,28 @@ function JJWorkflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={5}>
-        {phase === "snapshot" && (
+        <If condition={phase === "snapshot"}>
           <Snapshot
             message="Before feature implementation"
             onFinished={() => setPhase("implement")}
           />
-        )}
+        </If>
 
-        {phase === "implement" && (
+        <If condition={phase === "implement"}>
           <Claude
             onFinished={() => setPhase("commit")}
           >
             Implement the feature.
           </Claude>
-        )}
+        </If>
 
-        {phase === "commit" && (
+        <If condition={phase === "commit"}>
           <Commit
             autoDescribe
             notes="Smithers automated commit"
             onFinished={() => setPhase("done")}
           />
-        )}
+        </If>
       </Ralph>
     </SmithersProvider>
   );

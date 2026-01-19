@@ -13,14 +13,16 @@ Use the Smithers component to spawn subagents that plan and execute complex task
 #!/usr/bin/env bun
 
 import { useState } from "react";
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Ralph } from "smithers-orchestrator/components/Ralph";
-import { Phase } from "smithers-orchestrator/components/Phase";
-import { Claude } from "smithers-orchestrator/components/Claude";
-import { Smithers } from "smithers-orchestrator/components/Smithers";
-import { If } from "smithers-orchestrator/components/If";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Ralph,
+  Phase,
+  Claude,
+  Smithers,
+  If,
+} from "smithers-orchestrator";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/feature-dev" });
@@ -76,8 +78,8 @@ async function main() {
                   - PostgreSQL database
                   - WebSocket for real-time updates
                 `}
-                onScriptGenerated={(script) => {
-                  console.log("Generated implementation script");
+                onScriptGenerated={(script, path) => {
+                  console.log(`Generated implementation script: ${path}`);
                   db.vcs.addReport({
                     type: "progress",
                     severity: "info",
@@ -134,8 +136,7 @@ async function main() {
           </If>
         </Ralph>
       </SmithersProvider>
-      );
-    };
+    );
   }
 
   const root = createSmithersRoot();

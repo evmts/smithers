@@ -12,8 +12,7 @@ SmithersProvider extends [Ralph](/components/ralph) with additional database and
 ## Basic Usage
 
 ```tsx
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider, Claude } from "smithers-orchestrator/components";
+import { createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
 
 const db = await createSmithersDB({ path: ".smithers/my-workflow" });
 const executionId = await db.execution.start("My Workflow", "workflow.tsx");
@@ -168,7 +167,7 @@ function Workflow() {
 Child components can access the context using the `useSmithers` hook:
 
 ```tsx
-import { useSmithers } from "smithers-orchestrator/components";
+import { useSmithers } from "smithers-orchestrator";
 
 function MyComponent() {
   const {
@@ -196,9 +195,8 @@ function MyComponent() {
 Components can register and complete tasks using the database-backed task system:
 
 ```tsx
-import { useSmithers } from "smithers-orchestrator/components";
+import { useSmithers, useMount } from "smithers-orchestrator";
 import { useRef } from "react";
-import { useMount } from "smithers-orchestrator/reconciler/hooks";
 
 function CustomAsyncStep() {
   const { db } = useSmithers();
@@ -314,7 +312,7 @@ function TaskMonitor() {
 
 ```tsx
 import { createSmithersRoot, createSmithersDB } from "smithers-orchestrator";
-import { SmithersProvider, Claude, useSmithers } from "smithers-orchestrator/components";
+import { SmithersProvider, Claude, useSmithers } from "smithers-orchestrator";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/example" });
@@ -371,11 +369,11 @@ function WorkflowContent() {
 
   return (
     <>
-      {phase === "start" && (
+      <If condition={phase === "start"}>
         <Claude onFinished={() => setPhase("done")}>
           Complete the task.
         </Claude>
-      )}
+      </If>
     </>
   );
 }

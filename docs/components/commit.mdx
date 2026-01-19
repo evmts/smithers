@@ -102,16 +102,16 @@ function CommitWorkflow() {
 
   return (
     <Ralph maxIterations={5}>
-      {phase === "implement" && (
+      <If condition={phase === "implement"}>
         <Claude
           allowedTools={["Edit", "Write"]}
           onFinished={() => setPhase("commit")}
         >
           Implement the feature.
         </Claude>
-      )}
+      </If>
 
-      {phase === "commit" && (
+      <If condition={phase === "commit"}>
         <Commit
           message="feat: Add new feature"
           all
@@ -128,7 +128,7 @@ function CommitWorkflow() {
             setPhase("implement");
           }}
         />
-      )}
+      </If>
     </Ralph>
   );
 }

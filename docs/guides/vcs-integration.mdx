@@ -75,16 +75,16 @@ function ReviewAndCommit() {
 
   return (
     <Ralph maxIterations={5}>
-      {phase === "implement" && (
+      <If condition={phase === "implement"}>
         <Claude
           allowedTools={["Edit", "Write"]}
           onFinished={() => setPhase("review")}
         >
           Implement the feature.
         </Claude>
-      )}
+      </If>
 
-      {phase === "review" && (
+      <If condition={phase === "review"}>
         <Review
           target={{ type: "diff", ref: "main" }}
           criteria={[
@@ -99,15 +99,15 @@ function ReviewAndCommit() {
             }
           }}
         />
-      )}
+      </If>
 
-      {phase === "commit" && (
+      <If condition={phase === "commit"}>
         <Commit
           autoGenerate
           all
           onFinished={() => setPhase("done")}
         />
-      )}
+      </If>
     </Ralph>
   );
 }
@@ -180,7 +180,7 @@ function FeatureWorkflow() {
   return (
     <SmithersProvider db={db} executionId={executionId} snapshotBeforeStart>
         <Ralph maxIterations={10}>
-          {phase === "implement" && (
+          <If condition={phase === "implement"}>
             <Phase name="Implementation">
               <Claude
                 allowedTools={["Edit", "Write"]}
@@ -189,9 +189,9 @@ function FeatureWorkflow() {
                 Implement the feature.
               </Claude>
             </Phase>
-          )}
+          </If>
 
-          {phase === "test" && (
+          <If condition={phase === "test"}>
             <Phase name="Testing">
               <Claude
                 allowedTools={["Bash"]}
@@ -206,9 +206,9 @@ function FeatureWorkflow() {
                 Run the tests.
               </Claude>
             </Phase>
-          )}
+          </If>
 
-          {phase === "review" && (
+          <If condition={phase === "review"}>
             <Phase name="Review">
               <Review
                 target={{ type: "diff", ref: "main" }}
@@ -222,9 +222,9 @@ function FeatureWorkflow() {
                 }}
               />
             </Phase>
-          )}
+          </If>
 
-          {phase === "commit" && (
+          <If condition={phase === "commit"}>
             <Phase name="Commit">
               <Commit
                 autoGenerate
@@ -233,7 +233,7 @@ function FeatureWorkflow() {
                 onFinished={() => setPhase("done")}
               />
             </Phase>
-          )}
+          </If>
         </Ralph>
     </SmithersProvider>
   );

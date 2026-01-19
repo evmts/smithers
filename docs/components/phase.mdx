@@ -119,8 +119,8 @@ Understanding how phases execute is critical for building correct workflows:
 ## Multi-Phase Workflow
 
 ```tsx
-import { useSmithers, useQueryValue } from "smithers-orchestrator";
-import { If } from "smithers-orchestrator";
+import { useSmithers, If } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function FeatureWorkflow() {
   const { db } = useSmithers();

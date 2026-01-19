@@ -113,10 +113,12 @@ Create a test file `test.tsx`:
 ```tsx
 #!/usr/bin/env bun
 
-import { createSmithersRoot } from "smithers-orchestrator";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Claude } from "smithers-orchestrator/components/Claude";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Claude,
+} from "smithers-orchestrator";
 
 const db = await createSmithersDB({ path: ".smithers/test" });
 const executionId = await db.execution.start("Test", "test.tsx");

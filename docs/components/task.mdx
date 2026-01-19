@@ -153,13 +153,13 @@ function TaskDrivenWorkflow() {
           ))}
         </Phase>
 
-        {currentTaskIndex < tasks.length && (
+        <If condition={currentTaskIndex < tasks.length}>
           <Claude
             onFinished={() => db.state.set('currentTaskIndex', currentTaskIndex + 1)}
           >
             Complete this task: {tasks[currentTaskIndex]}
           </Claude>
-        )}
+        </If>
       </Ralph>
     </SmithersProvider>
   );

@@ -106,7 +106,7 @@ function DataWorkflow() {
 
   return (
     <Ralph maxIterations={5}>
-      {phase === "analyze" && (
+      <If condition={phase === "analyze"}>
         <Claude
           model="sonnet"
           onFinished={() => setPhase("report")}
@@ -118,9 +118,9 @@ function DataWorkflow() {
           Analyze Q4 sales performance.
           Identify trends and anomalies.
         </Claude>
-      )}
+      </If>
 
-      {phase === "report" && (
+      <If condition={phase === "report"}>
         <Claude
           allowedTools={["Write"]}
           onFinished={() => setPhase("done")}
@@ -128,7 +128,7 @@ function DataWorkflow() {
           Create a formatted markdown report with the findings.
           Save to reports/q4-analysis.md
         </Claude>
-      )}
+      </If>
     </Ralph>
   );
 }

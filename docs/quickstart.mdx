@@ -82,9 +82,11 @@ function Workflow() {
       </Phase>
 
       <Phase name="Review">
-        <Claude model="sonnet">
-          Review all changes and ensure quality standards are met.
-        </Claude>
+        <Step name="Review changes">
+          <Claude model="sonnet">
+            Review all changes and ensure quality standards are met.
+          </Claude>
+        </Step>
       </Phase>
     </SmithersProvider>
   );

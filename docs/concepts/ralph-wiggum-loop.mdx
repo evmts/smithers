@@ -47,7 +47,8 @@ Smithers uses a reactive render loop powered by React state:
 You can control the Ralph loop using the `stopped` prop. This is the idiomatic way to stop iteration:
 
 ```tsx
-import { useSmithers, useQueryValue } from "smithers";
+import { SmithersProvider, useSmithers } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function IterativeWorkflow() {
   const { db } = useSmithers();
@@ -72,7 +73,7 @@ function IterativeWorkflow() {
       onIteration={(i) => console.log(`Iteration ${i}`)}
       onComplete={() => console.log("Workflow complete")}
     >
-      {!testsPassing && (
+      <If condition={!testsPassing}>
         <Claude
           model="sonnet"
           onFinished={(result) => {
@@ -89,7 +90,7 @@ function IterativeWorkflow() {
         >
           Fix the failing tests. Current attempt: {attempts}
         </Claude>
-      )}
+      </If>
     </SmithersProvider>
   );
 }
@@ -104,7 +105,8 @@ Ralph also stops implicitly when nothing renders for an iteration. If no compone
 The power of the Ralph Loop comes from React reactivity:
 
 ```tsx
-import { useSmithers, useQueryValue } from "smithers";
+import { SmithersProvider, useSmithers } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function PhaseWorkflow() {
   const { db } = useSmithers();
@@ -131,19 +133,19 @@ function PhaseWorkflow() {
     >
       {/* This block re-renders when phase changes */}
 
-      {phase === "research" && (
+      <If condition={phase === "research"}>
         <Claude onFinished={() => setPhase("implement")}>
           Research the problem space.
         </Claude>
-      )}
+      </If>
 
-      {phase === "implement" && (
+      <If condition={phase === "implement"}>
         <Claude onFinished={() => setPhase("test")}>
           Implement the solution.
         </Claude>
-      )}
+      </If>
 
-      {phase === "test" && (
+      <If condition={phase === "test"}>
         <Claude onFinished={(r) => {
           if (r.output.includes("PASS")) {
             setPhase("done");
@@ -153,7 +155,7 @@ function PhaseWorkflow() {
         }}>
           Run and verify tests.
         </Claude>
-      )}
+      </If>
     </SmithersProvider>
   );
 }
@@ -170,7 +172,7 @@ When `setPhase("implement")` is called:
 Components use `useMount` to execute when they mount:
 
 ```tsx
-import { useMount } from "smithers";
+import { useMount } from "smithers-orchestrator";
 
 function Claude(props) {
   useMount(() => {
@@ -193,19 +195,23 @@ This means:
 
 ## Orchestration Context
 
-The `<Ralph>` component provides context for task coordination:
+SmithersProvider exposes orchestration context. `useRalph` is deprecated; use `db.tasks` for task coordination:
 
 ```tsx
-import { useRalph, useMount } from "smithers";
+import { useSmithers, useMount } from "smithers-orchestrator";
+import { useRef } from "react";
 
 function CustomStep() {
-  const ralph = useRalph();
+  const { db } = useSmithers();
+  const taskIdRef = useRef<string | null>(null);
 
   useMount(() => {
-    const taskId = ralph.registerTask();
+    taskIdRef.current = db.tasks.start("custom-step");
 
-    doSomeWork().then(() => {
-      ralph.completeTask(taskId);
+    doSomeWork().finally(() => {
+      if (taskIdRef.current) {
+        db.tasks.complete(taskIdRef.current);
+      }
     });
   });
 
@@ -213,11 +219,11 @@ function CustomStep() {
 }
 ```
 
-The Ralph context tracks:
-- Active tasks
+The orchestration context tracks:
+- Active tasks (db.tasks)
 - Completed tasks
 - Iteration count
-- Orchestration state
+- Stop/timeout state
 
 ## Best Practices
 
@@ -274,7 +280,7 @@ By default, `<SmithersProvider>` runs the Ralph loop for up to **100 iterations*
 For long-running orchestrations that need to continue indefinitely (like CI/CD monitors, autonomous agents, or server processes), you can configure it to run forever:
 
 ```tsx
-import { SmithersProvider } from "smithers";
+import { SmithersProvider } from "smithers-orchestrator";
 
 <SmithersProvider
   db={db}

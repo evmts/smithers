@@ -35,7 +35,7 @@ function ConditionalWorkflow() {
 
   return (
     <Ralph maxIterations={10}>
-      {status === "running" && (
+      <If condition={status === "running"}>
         <Claude
           onFinished={(result) => {
             if (result.output.includes("CRITICAL")) {
@@ -47,15 +47,15 @@ function ConditionalWorkflow() {
         >
           Process the task.
         </Claude>
-      )}
+      </If>
 
-      {status === "error" && (
+      <If condition={status === "error"}>
         <Stop reason="Critical error detected" />
-      )}
+      </If>
 
-      {status === "complete" && (
+      <If condition={status === "complete"}>
         <Stop reason="Task completed" />
-      )}
+      </If>
     </Ralph>
   );
 }
@@ -72,9 +72,9 @@ function ConditionalWorkflow() {
   Review the changes.
 </Human>
 
-{phase === "cancelled" && (
+<If condition={phase === "cancelled"}>
   <Stop reason="Rejected by human" />
-)}
+</If>
 ```
 
 ## Related

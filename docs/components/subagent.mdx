@@ -119,7 +119,7 @@ function ResearchWorkflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph maxIterations={5}>
-        {phase === "gather" && (
+        <If condition={phase === "gather"}>
           <Subagent name="data-gathering" parallel={true}>
             <Claude onFinished={() => setPhase("analyze")}>
               Gather requirements from the codebase.
@@ -128,15 +128,15 @@ function ResearchWorkflow() {
               Gather similar implementations from open source.
             </Claude>
           </Subagent>
-        )}
+        </If>
 
-        {phase === "analyze" && (
+        <If condition={phase === "analyze"}>
           <Subagent name="analysis">
             <Claude onFinished={() => setPhase("done")}>
               Analyze gathered data and create recommendations.
             </Claude>
           </Subagent>
-        )}
+        </If>
       </Ralph>
     </SmithersProvider>
   );

@@ -6,6 +6,39 @@ export interface CacheStore<T> {
   set: (key: string, value: T, ttlSeconds?: number) => void | Promise<void>
 }
 
+export class LRUCache<T> implements CacheStore<T> {
+  private cache = new Map<string, { value: T; expiry?: number }>()
+  private max: number
+
+  constructor(options: { max: number }) {
+    this.max = options.max
+  }
+
+  get(key: string): T | null {
+    const entry = this.cache.get(key)
+    if (!entry) return null
+    if (entry.expiry && Date.now() > entry.expiry) {
+      this.cache.delete(key)
+      return null
+    }
+    this.cache.delete(key)
+    this.cache.set(key, entry)
+    return entry.value
+  }
+
+  set(key: string, value: T, ttlSeconds?: number): void {
+    if (this.cache.size >= this.max) {
+      const firstKey = this.cache.keys().next().value
+      if (firstKey) this.cache.delete(firstKey)
+    }
+    const entry: { value: T; expiry?: number } = { value }
+    if (ttlSeconds) {
+      entry.expiry = Date.now() + ttlSeconds * 1000
+    }
+    this.cache.set(key, entry)
+  }
+}
+
 export interface CachingMiddlewareOptions {
   cache: CacheStore<AgentResult>
   ttl?: number

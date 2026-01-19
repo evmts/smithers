@@ -38,7 +38,8 @@ import { If } from "smithers-orchestrator";
 ## Multi-Phase Workflow
 
 ```tsx
-import { If, Ralph, Phase, Claude, useSmithers, useQueryValue } from "smithers-orchestrator";
+import { If, Ralph, Phase, Claude, useSmithers } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function Workflow() {
   const { db } = useSmithers();

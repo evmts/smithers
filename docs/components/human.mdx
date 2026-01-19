@@ -54,13 +54,13 @@ function ApprovalWorkflow() {
 
   return (
     <Ralph maxIterations={10}>
-      {phase === "implement" && (
+      <If condition={phase === "implement"}>
         <Claude onFinished={() => setPhase("review")}>
           Implement the feature.
         </Claude>
-      )}
+      </If>
 
-      {phase === "review" && (
+      <If condition={phase === "review"}>
         <Human
           message="Review Implementation"
           onApprove={() => setPhase("deploy")}
@@ -69,20 +69,20 @@ function ApprovalWorkflow() {
           The feature has been implemented.
           Please review the changes in the diff.
         </Human>
-      )}
+      </If>
 
-      {phase === "deploy" && (
+      <If condition={phase === "deploy"}>
         <Claude
           allowedTools={["Bash"]}
           onFinished={() => setPhase("done")}
         >
           Deploy the changes.
         </Claude>
-      )}
+      </If>
 
-      {phase === "cancelled" && (
+      <If condition={phase === "cancelled"}>
         <Stop reason="Human rejected changes" />
-      )}
+      </If>
     </Ralph>
   );
 }
@@ -98,7 +98,7 @@ function StrictWorkflow() {
 
   return (
     <Ralph maxIterations={20}>
-      {phase === "prompt-input" && (
+      <If condition={phase === "prompt-input"}>
         <Human
           message="Confirm Feature Request"
           onApprove={() => setPhase("research")}
@@ -107,15 +107,15 @@ function StrictWorkflow() {
           Feature: Add user authentication
           Are you sure you want to proceed?
         </Human>
-      )}
+      </If>
 
-      {phase === "research" && (
+      <If condition={phase === "research"}>
         <Claude onFinished={() => setPhase("plan-review")}>
           Research the implementation approach.
         </Claude>
-      )}
+      </If>
 
-      {phase === "plan-review" && (
+      <If condition={phase === "plan-review"}>
         <Human
           message="Approve Plan"
           onApprove={() => setPhase("implement")}
@@ -123,15 +123,15 @@ function StrictWorkflow() {
         >
           Review the implementation plan.
         </Human>
-      )}
+      </If>
 
-      {phase === "implement" && (
+      <If condition={phase === "implement"}>
         <Claude onFinished={() => setPhase("final-review")}>
           Implement the feature.
         </Claude>
-      )}
+      </If>
 
-      {phase === "final-review" && (
+      <If condition={phase === "final-review"}>
         <Human
           message="Final Review"
           onApprove={() => setPhase("done")}
@@ -139,11 +139,11 @@ function StrictWorkflow() {
         >
           Final review before completion.
         </Human>
-      )}
+      </If>
 
-      {phase === "cancelled" && (
+      <If condition={phase === "cancelled"}>
         <Stop reason="Workflow cancelled by human" />
-      )}
+      </If>
     </Ralph>
   );
 }

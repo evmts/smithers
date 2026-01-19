@@ -18,15 +18,17 @@ A comprehensive workflow that demonstrates all major framework features:
 ```tsx
 #!/usr/bin/env bun
 
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Phase } from "smithers-orchestrator/components/Phase";
-import { Step } from "smithers-orchestrator/components/Step";
-import { Claude } from "smithers-orchestrator/components/Claude";
-import { Human } from "smithers-orchestrator/components/Human";
-import { Parallel } from "smithers-orchestrator/components/Parallel";
-import { Task } from "smithers-orchestrator/components/Task";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Phase,
+  Step,
+  Claude,
+  Human,
+  Parallel,
+  Task,
+} from "smithers-orchestrator";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/kitchen-sink" });
