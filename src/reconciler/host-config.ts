@@ -44,14 +44,15 @@ function diffProps(oldProps: Props, newProps: Props): UpdatePayload | null {
  * React Reconciler host configuration for SmithersNode trees.
  * This maps React's reconciliation operations to our SmithersNode structure.
  *
- * Note: Using type assertion because react-reconciler types don't fully match
- * the actual API requirements for React 19.
+ * Note: react-reconciler typings lag the React 19 host config surface.
+ * We keep this object untyped and rely on runtime behavior.
  */
 const hostConfig = {
   // Core configuration
   supportsMutation: true,
   supportsPersistence: false,
   supportsHydration: false,
+  // Primary renderer in this process (no DOM renderer expected alongside).
   isPrimaryRenderer: true,
 
   // Optional capability flags
@@ -202,11 +203,12 @@ const hostConfig = {
   },
 
   clearContainer(container: Container): void {
-    // Detach all children first to avoid stale parent pointers
-    for (const child of container.children) {
-      child.parent = null
+    // Detach full subtrees to avoid stale parent pointers; preserve array reference.
+    const children = [...container.children]
+    for (const child of children) {
+      rendererMethods.removeNode(container, child)
     }
-    container.children.length = 0 // Preserve array reference
+    container.children.length = 0
   },
 
   // Event handling (not used for Smithers)

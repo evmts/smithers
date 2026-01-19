@@ -1,9 +1,10 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import {
   createSmithersRoot,
   getCurrentTreeXML,
   setGlobalFrameCaptureRoot,
 } from './root.js'
+import * as SmithersProvider from '../components/SmithersProvider.js'
 
 describe('SmithersRoot mount', () => {
   test('rejects instead of hanging on render errors', async () => {
@@ -50,5 +51,29 @@ describe('SmithersRoot mount', () => {
 
     rootA.dispose()
     rootB.dispose()
+  })
+
+  test('propagates orchestration promise rejection', async () => {
+    const root = createSmithersRoot()
+    const error = new Error('orchestration failed')
+    const createPromiseSpy = spyOn(SmithersProvider, 'createOrchestrationPromise')
+      .mockImplementation(() => ({
+        promise: new Promise<void>((_resolve, reject) => {
+          queueMicrotask(() => reject(error))
+        }),
+        token: 'test-token',
+      }))
+
+    try {
+      const result = await root.mount(() => <phase name="test" />).then(
+        () => 'complete',
+        (err) => err
+      )
+
+      expect(result).toBe(error)
+    } finally {
+      createPromiseSpy.mockRestore()
+      root.dispose()
+    }
   })
 })

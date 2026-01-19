@@ -84,6 +84,7 @@ export const rendererMethods = {
       }
     }
     clearDescendants(node)
+    // Note: node.children is intentionally left intact for debugging/inspection.
   },
 
   isTextNode(node: SmithersNode): boolean {

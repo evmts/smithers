@@ -224,6 +224,19 @@ describe('unknown parent warnings', () => {
     expect(myelem.warnings).toBeUndefined()
   })
 
+  test('no warning for TEXT nodes under unknown parent', () => {
+    const textNode: SmithersNode = {
+      type: 'TEXT',
+      props: { value: 'hello' },
+      children: [],
+      parent: null,
+    }
+    const loop = createNode('loop', {}, [textNode])
+    serialize(loop)
+
+    expect(textNode.warnings).toBeUndefined()
+  })
+
   test('no warning when known type is inside known parent', () => {
     const step = createNode('step', {}, ['Do work'])
     const phase = createNode('phase', { name: 'main' }, [step])
@@ -459,6 +472,14 @@ describe('serialize - Edge Cases', () => {
   })
 
   describe('prop serialization edge cases', () => {
+    test('filters out ref props', () => {
+      const node = createNode('task', { name: 'test', ref: { current: 123 } })
+      const xml = serialize(node)
+
+      expect(xml).toContain('name="test"')
+      expect(xml).not.toContain('ref=')
+    })
+
     test('serializes deeply nested object as JSON', () => {
       const node = createNode('task', { 
         config: { a: { b: { c: { d: 'deep' } } } } 

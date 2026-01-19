@@ -206,9 +206,10 @@ The key insight is how React's reconciliation enables iterative orchestration:
 │   4. Components can react to iteration changes and re-execute                │
 │      Loop continues until max iterations or explicit completion              │
 │                                                                              │
-│   Note: React's `key` prop can force remounts but is NOT accessible to      │
-│   components or the reconciler. Use regular props (like `iteration`) for    │
-│   state that components need to access.                                     │
+│   Note: React's `key` prop can force remounts but is not passed as          │
+│   props.key or to host config. Smithers injects __smithersKey for           │
+│   serialization; treat it as internal and prefer explicit props            │
+│   (like `iteration`) inside components.                                    │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -237,7 +238,7 @@ You could build SmithersNode trees manually, but React gives you:
 
 **Important distinction:**
 
-- **React's `key` prop** - Used by React's reconciliation algorithm to track component identity. When a component's key changes, React unmounts the old instance and mounts a new one. React normally doesn't pass `key` to components or the reconciler.
+- **React's `key` prop** - Used by React's reconciliation algorithm to track component identity. When a component's key changes, React unmounts the old instance and mounts a new one. React does not pass `key` as `props.key` or expose it to host config APIs.
 
 - **SmithersNode.key** - An optional field on our SmithersNode data structure that gets serialized to XML as `key="..."` attribute for plan display.
 
@@ -269,6 +270,7 @@ function MyComponent({ key }) {  // key is always undefined!
   // Use iteration or another prop if you need the value
 }
 
+// __smithersKey *is* visible if you read/forward props, but treat it as internal.
 // Pattern: use key for React remounting AND a regular prop for component access:
 <MyComponent key={count} iteration={count} />
 //           ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^

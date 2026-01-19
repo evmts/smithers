@@ -68,6 +68,14 @@ function addWarningsForUnknownParents(node: SmithersNode): void {
   // Clear previous warnings to ensure idempotency when serialize() is called multiple times
   node.warnings = []
 
+  if (node.type === 'TEXT') {
+    delete node.warnings
+    for (const child of node.children) {
+      addWarningsForUnknownParents(child)
+    }
+    return
+  }
+
   const type = node.type.toLowerCase()
   const isKnown = KNOWN_TYPES.has(type)
 
@@ -108,8 +116,10 @@ function addWarningsForUnknownParents(node: SmithersNode): void {
  * Serialize a SmithersNode tree to XML string.
  * This XML is the "plan" shown to users before execution.
  *
- * GOTCHA: When testing entity escaping, create nodes MANUALLY without JSX!
- * JSX pre-escapes entities, so using JSX in tests will cause double-escaping.
+ * NOTE: serialize mutates nodes by setting/clearing warnings during validation.
+ *
+ * GOTCHA: When testing entity escaping, create nodes MANUALLY with raw strings.
+ * If input already contains XML entities, serialization will escape them again.
  *
  * Example transformations:
  * - { type: 'task', props: { name: 'test' }, children: [] } → '<task name="test" />'
@@ -215,6 +225,7 @@ function serializeProps(props: Record<string, unknown>): string {
     'validate',      // Functions don't serialize
     'middleware',    // Middleware arrays contain functions
     'key',           // Stored on node.key, not props
+    'ref',           // React refs should not serialize
   ])
 
   return Object.entries(props)

@@ -84,6 +84,7 @@ export function createSmithersRoot(): SmithersRoot {
       // Token-based API ensures concurrency safety across multiple roots
       const { promise: completionPromise, token: orchestrationToken } = createOrchestrationPromise()
       let fatalError: unknown | null = null
+      let completionError: unknown | null = null
       let errorResolve: (() => void) | null = null
       const errorPromise = new Promise<void>((resolve) => {
         errorResolve = resolve
@@ -127,9 +128,17 @@ export function createSmithersRoot(): SmithersRoot {
       SmithersReconciler.updateContainer(element, fiberRoot, null, () => {})
 
       // Wait for orchestration to complete or a fatal error to surface
-      await Promise.race([completionPromise.catch(() => {}), errorPromise])
+      await Promise.race([
+        completionPromise.catch((err) => {
+          completionError = err
+        }),
+        errorPromise,
+      ])
       if (fatalError) {
         throw fatalError
+      }
+      if (completionError) {
+        throw completionError
       }
     },
 

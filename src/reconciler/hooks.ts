@@ -66,6 +66,7 @@ export const useMount = (fn: () => void) => {
  * More robust than useEffect cleanup because it:
  * - Always calls the latest version of the callback (via ref)
  * - Avoids stale closure issues that plague normal cleanup functions
+ * Note: React strict mode may invoke cleanup during dev-only replays.
  */
 export const useUnmount = (fn: () => void): void => {
   const fnRef = useRef(fn);
@@ -196,6 +197,7 @@ export function useEffectOnValueChange<T>(
  * - executionEnabled check from SmithersProvider context
  * - hasStartedRef idempotency guard
  * - Proper dependency handling
+ * This is distinct from ExecutionGateProvider, which is a global gate.
  * 
  * @param executionEnabled - Whether execution is enabled (from useSmithers())
  * @param fn - Callback to run once when execution becomes enabled

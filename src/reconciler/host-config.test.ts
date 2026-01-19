@@ -289,21 +289,25 @@ describe('host-config', () => {
       }
       const child1 = rendererMethods.createElement('a')
       const child2 = rendererMethods.createElement('b')
+      const nested = rendererMethods.createElement('nested')
 
       rendererMethods.insertNode(container, child1)
       rendererMethods.insertNode(container, child2)
+      rendererMethods.insertNode(child1, nested)
 
       expect(container.children.length).toBe(2)
 
       // Simulate clearContainer
-      for (const child of container.children) {
-        child.parent = null
+      const children = [...container.children]
+      for (const child of children) {
+        rendererMethods.removeNode(container, child)
       }
       container.children.length = 0
 
       expect(container.children.length).toBe(0)
       expect(child1.parent).toBeNull()
       expect(child2.parent).toBeNull()
+      expect(nested.parent).toBeNull()
     })
 
     test('preserves container array reference', () => {

@@ -1,8 +1,9 @@
 /**
  * Direct tests for serialize() function.
  *
- * CRITICAL: These tests create nodes MANUALLY (not with JSX) to properly
- * test entity escaping. JSX pre-escapes entities which would cause false positives.
+ * CRITICAL: These tests create nodes MANUALLY (not with JSX) to control
+ * input strings. If input already contains XML entities, serialization
+ * will escape again and can mask bugs.
  *
  * This is the #1 gotcha in XML serialization testing!
  */
@@ -14,7 +15,7 @@ import type { SmithersNode } from './types.js'
 describe('XML Serialization (Direct Node Creation)', () => {
   /**
    * GOTCHA #1: Entity Escaping
-   * Create nodes MANUALLY - JSX pre-escapes entities!
+   * Create nodes MANUALLY with raw strings to avoid double-escape confusion.
    */
   it('should escape XML entities in text content', () => {
     // DON'T use JSX here - it will pre-escape!
