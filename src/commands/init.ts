@@ -59,7 +59,7 @@ export async function init(options: InitOptions = {}) {
     try {
       await $`bun add -d smithers-orchestrator`.cwd(targetDir).quiet()
       console.log('✅ Installed smithers-orchestrator as dev dependency')
-    } catch (error) {
+    } catch {
       console.warn('⚠️  Failed to install smithers-orchestrator automatically')
       console.warn('   Run manually: bun add -d smithers-orchestrator')
     }
