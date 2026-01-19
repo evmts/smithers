@@ -52,3 +52,38 @@ If you keep the local shim instead of upstream types:
 ## Notes
 - `src/tui/opentui.d.ts` currently supplies `<box>`/`<scrollbox>` typings. Make sure those remain when switching to upstream definitions.
 - This change should be isolated from reconciler JSX runtime behavior; it only affects TUI typing.
+
+## Debugging Plan
+
+1. **Create `tsconfig.tui.json`** at repo root:
+   ```json
+   {
+     "extends": "./tsconfig.json",
+     "compilerOptions": {
+       "types": ["bun", "@opentui/react/jsx-namespace"]
+     },
+     "include": ["src/tui/**/*"],
+     "exclude": []
+   }
+   ```
+
+2. **Update `src/tui/opentui.d.ts`**:
+   - Add `text` and `input` to `JSX.IntrinsicElements`
+   - Remove duplicate `OpenTUIStyle` (use `CSSProperties` augmentation only)
+   - Remove `[key: string]: unknown` from both interfaces
+
+3. **Test TUI typecheck isolation**:
+   ```bash
+   bunx tsc --noEmit -p tsconfig.tui.json
+   ```
+   - Fix any errors surfaced
+
+4. **Remove exclusion from root config**:
+   - Delete `"src/tui"` from `tsconfig.json` exclude array (line 57)
+
+5. **Verify full build**:
+   ```bash
+   bunx tsc --noEmit
+   ```
+
+6. **Optional**: If upstream `@opentui/react/jsx-namespace` types are sufficient, replace local shim entirely with a triple-slash reference.

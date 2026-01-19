@@ -107,3 +107,18 @@ bun test src/components/agents/claude-cli/message-parser.test.ts
    - Add test that captures actual `claude` CLI output
    - Verify patterns still match current format
    - Run in CI to catch format drift
+
+---
+
+## Validation (2026-01-18)
+
+**Status: STILL RELEVANT**
+
+Verified regex patterns still exist at documented locations:
+- `output-parser.ts` L54: `/tokens?:\s*(\d+)\s*input,?\s*(\d+)\s*output/i`
+- `output-parser.ts` L63: `/turns?:\s*(\d+)/i`
+- `message-parser.ts` L21: `/^(Tool:|TOOL:|\s*<invoke)/m`
+- `message-parser.ts` L124: `/\n\n(?=[A-Za-z\d])/`
+- `message-parser.ts` L146: `(?:Tool:|TOOL:)\s*(\w+)` and `<invoke\s+name="([^"]+)"`
+
+No changes made to core parsing approach. Existing debugging plan remains actionable.

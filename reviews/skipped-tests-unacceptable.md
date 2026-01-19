@@ -185,3 +185,18 @@ bun test evals/components.test.tsx
 - Option B (8-12 hrs): Build JSX reconciler test harness for full eval coverage
 
 **Expected Outcome**: 0-3 skips (MVP) or 0 skips (ideal)
+
+## Status Check: 2026-01-18
+
+**STILL RELEVANT** - 17 skipped tests remain (down from 18 in last review).
+
+Current skip distribution:
+```
+src/components/Ralph.test.tsx           - 2 describe.skip
+src/components/agents/SmithersCLI.test.ts - 1 test.skip
+evals/components.test.tsx               - 11 describe.skip
+evals/renderer.test.tsx                 - 2 describe.skip
+evals/hello-world.test.tsx              - 1 describe.skip
+```
+
+**Action**: Execute Phase 1 quick wins (Ralph utils extraction + SmithersCLI mock) to reduce to ~14 skips, then decide on eval suite pruning vs JSX harness investment.

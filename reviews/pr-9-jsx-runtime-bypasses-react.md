@@ -148,3 +148,48 @@ bun test src/jsx-runtime.test.ts
      return <text>{count}</text>
    }
    ```
+
+## Status Check: 2025-01-18
+
+**STILL RELEVANT** - All 3 issues verified present:
+
+| Issue | File | Line | Status |
+|-------|------|------|--------|
+| `=== null` missing undefined | Step.tsx | 70 | ❌ Open |
+| onError lacks isMounted guard | Smithers.tsx | 277 | ❌ Open |
+| No useState test | test/ | - | ❌ Open |
+
+## Debugging Plan
+
+### Priority 1: Fix null checks
+```bash
+# Step.tsx:70
+sed -i 's/existing === null/existing === null || existing === undefined/' src/components/Step.tsx
+```
+
+### Priority 2: Add isMounted guard to onError
+In Smithers.tsx around line 277, wrap callback:
+```typescript
+if (isMounted()) {
+  props.onError?.(errorObj)
+}
+```
+
+### Priority 3: Add useState verification test
+Create test in `test/hooks-integration.test.tsx`:
+```typescript
+test('useState works through reconciler', async () => {
+  function Counter() {
+    const [count] = useState(42)
+    return <text>count:{count}</text>
+  }
+  const output = await render(<Counter />)
+  expect(output).toContain('count:42')
+})
+```
+
+### Verification
+```bash
+bun test test/hooks-integration.test.tsx
+bun run build
+```

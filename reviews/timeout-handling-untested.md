@@ -107,3 +107,39 @@ bun test evals/15-orchestration-timeout.test.tsx
    - Concurrent stop conditions handled gracefully
 3. Use short timeouts (50-100ms) for fast tests
 4. Follow pattern from `evals/13-composition-advanced.test.tsx`
+
+## Debugging Plan
+
+**Status: RELEVANT** (reviewed 2026-01-18)
+
+### Concrete Steps
+
+1. **Study existing eval pattern**
+   ```bash
+   bun test evals/13-composition-advanced.test.tsx --dry-run
+   ```
+   Read `evals/13-composition-advanced.test.tsx` for SmithersProvider test setup
+
+2. **Create test file** `evals/15-orchestration-timeout.test.tsx`:
+   - Import from `evals/setup` (createTestEnvironment, waitFor, delay)
+   - Test `globalTimeout` triggers `onStopRequested` callback
+   - Test `stopConditions` with `total_time` type fires before globalTimeout
+   - Verify `db.state.get('stop_requested')` contains correct reason
+   - Test timer cleanup by unmounting before timeout fires
+
+3. **Implementation targets**
+   - `src/components/SmithersProvider.tsx:408-421` → globalTimeout logic
+   - `src/components/SmithersProvider.tsx:424-484` → stopConditions interval
+   - `src/components/SmithersProvider.tsx:644-645` → cleanup in useUnmount
+
+4. **Run tests**
+   ```bash
+   bun test evals/15-orchestration-timeout.test.tsx
+   ```
+
+5. **Verify coverage** by checking all 5 test cases pass:
+   - Basic timeout fires
+   - Timer cleanup on unmount
+   - stopCondition fires before globalTimeout
+   - DB state on timeout
+   - Concurrent stops handled
