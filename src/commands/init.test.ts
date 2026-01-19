@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
-import { init } from './init'
+import { init, detectPackageManager } from './init'
 import { cleanupTempDir, createTempDir } from './test-utils'
 
 describe('init command', () => {
@@ -205,6 +205,59 @@ describe('init command', () => {
 
       expect(consoleOutput.some(line => line.includes('bun smithers-orchestrator monitor'))).toBe(true)
       expect(consoleOutput.every(line => !line.includes('bunx smithers-orchestrator monitor'))).toBe(true)
+    })
+  })
+
+  describe('detectPackageManager', () => {
+    test('detects bun from bun.lockb', () => {
+      fs.writeFileSync(path.join(tempDir, 'bun.lockb'), '')
+      const pm = detectPackageManager(tempDir)
+      expect(pm.name).toBe('bun')
+      expect(pm.installCmd).toEqual(['bun', 'add', '-d', 'smithers-orchestrator'])
+      expect(pm.runCmd).toBe('bun')
+    })
+
+    test('detects bun from bun.lock', () => {
+      fs.writeFileSync(path.join(tempDir, 'bun.lock'), '')
+      const pm = detectPackageManager(tempDir)
+      expect(pm.name).toBe('bun')
+    })
+
+    test('detects pnpm with -w flag', () => {
+      fs.writeFileSync(path.join(tempDir, 'pnpm-lock.yaml'), '')
+      const pm = detectPackageManager(tempDir)
+      expect(pm.name).toBe('pnpm')
+      expect(pm.installCmd).toEqual(['pnpm', 'add', '-D', '-w', 'smithers-orchestrator'])
+      expect(pm.runCmd).toBe('pnpm')
+    })
+
+    test('detects yarn', () => {
+      fs.writeFileSync(path.join(tempDir, 'yarn.lock'), '')
+      const pm = detectPackageManager(tempDir)
+      expect(pm.name).toBe('yarn')
+      expect(pm.installCmd).toEqual(['yarn', 'add', '-D', 'smithers-orchestrator'])
+      expect(pm.runCmd).toBe('yarn')
+    })
+
+    test('detects npm', () => {
+      fs.writeFileSync(path.join(tempDir, 'package-lock.json'), '')
+      const pm = detectPackageManager(tempDir)
+      expect(pm.name).toBe('npm')
+      expect(pm.installCmd).toEqual(['npm', 'install', '-D', 'smithers-orchestrator'])
+      expect(pm.runCmd).toBe('npx')
+    })
+
+    test('defaults to bun when no lockfile', () => {
+      const pm = detectPackageManager(tempDir)
+      expect(pm.name).toBe('bun')
+    })
+
+    test('bun takes priority over other lockfiles', () => {
+      fs.writeFileSync(path.join(tempDir, 'bun.lockb'), '')
+      fs.writeFileSync(path.join(tempDir, 'package-lock.json'), '')
+      fs.writeFileSync(path.join(tempDir, 'yarn.lock'), '')
+      const pm = detectPackageManager(tempDir)
+      expect(pm.name).toBe('bun')
     })
   })
 })

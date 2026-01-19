@@ -7,6 +7,32 @@ interface InitOptions {
   dir?: string
 }
 
+type PackageManager = 'bun' | 'pnpm' | 'yarn' | 'npm'
+
+interface PackageManagerConfig {
+  name: PackageManager
+  installCmd: string[]
+  runCmd: string
+}
+
+export function detectPackageManager(dir: string): PackageManagerConfig {
+  // Check lockfiles in priority order
+  if (fs.existsSync(path.join(dir, 'bun.lockb')) || fs.existsSync(path.join(dir, 'bun.lock'))) {
+    return { name: 'bun', installCmd: ['bun', 'add', '-d', 'smithers-orchestrator'], runCmd: 'bun' }
+  }
+  if (fs.existsSync(path.join(dir, 'pnpm-lock.yaml'))) {
+    return { name: 'pnpm', installCmd: ['pnpm', 'add', '-D', '-w', 'smithers-orchestrator'], runCmd: 'pnpm' }
+  }
+  if (fs.existsSync(path.join(dir, 'yarn.lock'))) {
+    return { name: 'yarn', installCmd: ['yarn', 'add', '-D', 'smithers-orchestrator'], runCmd: 'yarn' }
+  }
+  if (fs.existsSync(path.join(dir, 'package-lock.json'))) {
+    return { name: 'npm', installCmd: ['npm', 'install', '-D', 'smithers-orchestrator'], runCmd: 'npx' }
+  }
+  // Default to bun
+  return { name: 'bun', installCmd: ['bun', 'add', '-d', 'smithers-orchestrator'], runCmd: 'bun' }
+}
+
 export async function init(options: InitOptions = {}) {
   const targetDir = options.dir || process.cwd()
   const smithersDir = path.join(targetDir, '.smithers')
@@ -52,20 +78,24 @@ export async function init(options: InitOptions = {}) {
   fs.writeFileSync(mainFile, templateContent)
   fs.chmodSync(mainFile, '755')
 
-  // Install smithers-orchestrator as dev dependency
+  // Detect package manager and install smithers-orchestrator as dev dependency
   const packageJsonPath = path.join(targetDir, 'package.json')
+  const pm = detectPackageManager(targetDir)
+  const installCmdStr = pm.installCmd.join(' ')
+
   if (fs.existsSync(packageJsonPath)) {
-    console.log('📦 Installing smithers-orchestrator...')
+    console.log(`📦 Installing smithers-orchestrator via ${pm.name}...`)
     try {
-      await $`bun add -d smithers-orchestrator`.cwd(targetDir).quiet()
+      const [cmd, ...args] = pm.installCmd
+      await $`${cmd} ${args}`.cwd(targetDir).quiet()
       console.log('✅ Installed smithers-orchestrator as dev dependency')
     } catch {
       console.warn('⚠️  Failed to install smithers-orchestrator automatically')
-      console.warn('   Run manually: bun add -d smithers-orchestrator')
+      console.warn(`   Run manually: ${installCmdStr}`)
     }
   } else {
     console.warn('⚠️  No package.json found - skipping smithers-orchestrator install')
-    console.warn('   Run manually: bun add -d smithers-orchestrator')
+    console.warn(`   Run manually: ${installCmdStr}`)
   }
   console.log('')
 
@@ -84,10 +114,10 @@ export async function init(options: InitOptions = {}) {
   console.log(`   ${mainFile}`)
   console.log('')
   console.log('2. Run with monitoring (recommended):')
-  console.log('   bun smithers-orchestrator monitor')
+  console.log(`   ${pm.runCmd} smithers-orchestrator monitor`)
   console.log('')
   console.log('   Or run directly:')
-  console.log('   bun smithers-orchestrator run')
+  console.log(`   ${pm.runCmd} smithers-orchestrator run`)
   console.log('')
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log('')
