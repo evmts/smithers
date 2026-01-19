@@ -88,7 +88,7 @@ const SECTIONS: Record<string, SectionConfig> = Object.fromEntries(
   SECTION_CATEGORIES.flatMap(cat => Object.entries(cat.sections))
 );
 
-const TEXT_EXTENSIONS = ['ts', 'tsx', 'js', 'jsx', 'json', 'sql', 'md', 'txt', 'yml', 'yaml', 'css', 'html'];
+const TEXT_EXTENSIONS = ['ts', 'tsx', 'js', 'jsx', 'json', 'sql', 'md', 'mdx', 'txt', 'yml', 'yaml', 'css', 'html'];
 
 function isTextFile(filePath: string): boolean {
   const ext = filePath.split('.').pop()?.toLowerCase();
@@ -174,8 +174,8 @@ function formatFileEntry(entry: FileEntry): string {
   return output;
 }
 
-async function calculateSectionSize(patterns: string | string[]): Promise<{ files: number; size: number }> {
-  const files = await getFiles(patterns);
+async function calculateSectionSize(patterns: string | string[], includeTests = false): Promise<{ files: number; size: number }> {
+  const files = await getFiles(patterns, includeTests);
   let totalSize = 0;
 
   for (const file of files) {
@@ -197,26 +197,32 @@ function formatSize(bytes: number): string {
 
 async function showHelp(): Promise<void> {
   console.log("📦 Codebase Export Tool\n");
-  console.log("Exports source code sections for LLM context sharing.\n");
+  console.log("Exports source code, docs, and tests for LLM context sharing.\n");
   console.log("Usage:");
   console.log("  bun scripts/export-codebase.ts --<section>  Export a specific section");
   console.log("  bun scripts/export-codebase.ts --help       Show this help\n");
   console.log("Calculating section sizes...\n");
 
-  console.log("Available sections:\n");
-  console.log("  Section                Size        Files   Description");
-  console.log("  ─────────────────────────────────────────────────────────────────");
+  for (const category of SECTION_CATEGORIES) {
+    console.log(`${category.name}:`);
+    console.log("  Section                Size        Files   Description");
+    console.log("  ─────────────────────────────────────────────────────────────────");
 
-  for (const [name, config] of Object.entries(SECTIONS)) {
-    const { files, size } = await calculateSectionSize(config.pattern);
-    const sizeStr = formatSize(size).padStart(10);
-    const filesStr = String(files).padStart(5);
-    const flagName = `--${name}`.padEnd(22);
-    console.log(`  ${flagName} ${sizeStr}  ${filesStr}   ${config.description}`);
+    for (const [name, config] of Object.entries(category.sections)) {
+      const includeTests = isTestSection(name);
+      const { files, size } = await calculateSectionSize(config.pattern, includeTests);
+      const sizeStr = formatSize(size).padStart(10);
+      const filesStr = String(files).padStart(5);
+      const flagName = `--${name}`.padEnd(22);
+      console.log(`  ${flagName} ${sizeStr}  ${filesStr}   ${config.description}`);
+    }
+    console.log("");
   }
 
-  console.log("\nExample:");
-  console.log("  bun scripts/export-codebase.ts --reconciler");
+  console.log("Examples:");
+  console.log("  bun scripts/export-codebase.ts --reconciler        # Export reconciler source");
+  console.log("  bun scripts/export-codebase.ts --docs-guides       # Export guide docs");
+  console.log("  bun scripts/export-codebase.ts --tests-reactive-sqlite  # Export reactive-sqlite tests");
 }
 
 function parseArgs(): string | null {
@@ -245,6 +251,7 @@ function parseArgs(): string | null {
 
 async function exportSection(sectionName: string): Promise<void> {
   const config = SECTIONS[sectionName]!;
+  const includeTests = isTestSection(sectionName);
   console.log(`🔍 Exporting section: ${sectionName} (${config.description})...`);
 
   let markdown = `# Smithers Codebase Export: ${sectionName}\n\n`;
@@ -252,7 +259,7 @@ async function exportSection(sectionName: string): Promise<void> {
   markdown += `Section: ${sectionName} - ${config.description}\n\n`;
   markdown += "---\n";
 
-  const files = await getFiles(config.pattern);
+  const files = await getFiles(config.pattern, includeTests);
   console.log(`📂 Found ${files.length} files...`);
 
   let processedCount = 0;
