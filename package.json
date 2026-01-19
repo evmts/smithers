@@ -38,6 +38,9 @@
   },
   "files": [
     "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/.smithers",
     "bin",
     "skills",
     "templates",
