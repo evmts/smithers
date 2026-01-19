@@ -60,8 +60,59 @@ export interface VcsModuleContext {
   getCurrentExecutionId: () => string | null
 }
 
-// Helper mappers
-const mapCommit = (row: any): Commit | null => {
+interface CommitRow {
+  id: string
+  execution_id: string | null
+  agent_id: string | null
+  sha: string
+  message: string
+  author: string
+  timestamp: string
+  files_changed: string | null
+  smithers_metadata: string | null
+  created_at: string
+}
+
+interface SnapshotRow {
+  id: string
+  execution_id: string | null
+  agent_id: string | null
+  commit_sha: string
+  files_modified: string | null
+  files_added: string | null
+  files_deleted: string | null
+  has_conflicts: number
+  description: string | null
+  created_at: string
+}
+
+interface ReviewRow {
+  id: string
+  execution_id: string | null
+  agent_id: string | null
+  commit_sha: string
+  reviewer: string
+  approved: number
+  issues: string | null
+  summary: string | null
+  approvals: string | null
+  blocking: number
+  posted_to_github: number
+  posted_to_git_notes: number
+  created_at: string
+}
+
+interface ReportRow {
+  id: string
+  execution_id: string | null
+  agent_id: string | null
+  type: string
+  data: string | null
+  summary: string | null
+  created_at: string
+}
+
+const mapCommit = (row: CommitRow | null): Commit | null => {
   if (!row) return null
   return {
     ...row,
@@ -70,7 +121,7 @@ const mapCommit = (row: any): Commit | null => {
   }
 }
 
-const mapSnapshot = (row: any): Snapshot | null => {
+const mapSnapshot = (row: SnapshotRow | null): Snapshot | null => {
   if (!row) return null
   return {
     ...row,
@@ -81,7 +132,7 @@ const mapSnapshot = (row: any): Snapshot | null => {
   }
 }
 
-const mapReview = (row: any): Review | null => {
+const mapReview = (row: ReviewRow | null): Review | null => {
   if (!row) return null
   return {
     ...row,
@@ -94,7 +145,7 @@ const mapReview = (row: any): Review | null => {
   }
 }
 
-const mapReport = (row: any): Report | null => {
+const mapReport = (row: ReportRow | null): Report | null => {
   if (!row) return null
   return {
     ...row,

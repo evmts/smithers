@@ -111,9 +111,9 @@ export interface SmithersConfig {
   verbose?: boolean
 
   /**
-   * Additional configuration
+   * Additional configuration for extensibility
    */
-  [key: string]: any
+  extra?: Record<string, unknown>
 }
 
 /**
@@ -662,7 +662,9 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
         console.error('[SmithersProvider] Cleanup error:', error)
         props.onError?.(error as Error)
       }
-    })()
+    })().catch((err) => {
+      console.error('[SmithersProvider] Unexpected cleanup error:', err)
+    })
 
     // Clean up global context
     if (globalSmithersContext === value) {

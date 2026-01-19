@@ -64,9 +64,18 @@ program
 // Hook trigger command - called by git hooks to notify orchestration
 program
   .command("hook-trigger <type> <data>")
-  .description("Trigger a hook event (used by git hooks)")
+  .description("Trigger a hook event (used by git hooks). Data must be valid JSON.")
   .option("--path <path>", "Database path", ".smithers/data/smithers.db")
   .action(async (type: string, data: string, options: { path: string }) => {
+    let parsedData: unknown
+    try {
+      parsedData = JSON.parse(data)
+    } catch {
+      console.error(`❌ Invalid JSON data: ${data}`)
+      console.error('   Data must be valid JSON')
+      process.exit(1)
+    }
+
     try {
       const { createSmithersDB } = await import(
         "../src/db/index.ts"
@@ -78,7 +87,7 @@ program
         "last_hook_trigger",
         {
           type,
-          data,
+          data: parsedData,
           timestamp: Date.now(),
         },
         "hook-trigger",
@@ -86,7 +95,7 @@ program
 
       db.close();
 
-      console.log(`[Hook] Triggered: ${type} with ${data}`);
+      console.log(`[Hook] Triggered: ${type}`);
     } catch (error) {
       console.error("[Hook] Error:", error);
       process.exit(1);

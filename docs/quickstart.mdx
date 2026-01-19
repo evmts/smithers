@@ -188,13 +188,13 @@ View execution history and state with the database:
 
 ```bash
 # View execution history
-smithers-orchestrator db executions
+smithers db executions
 
-# View state for a specific execution
-smithers-orchestrator db state --execution-id abc123
+# View current state
+smithers db state
 
-# Query the database directly
-smithers-orchestrator db query "SELECT * FROM agents ORDER BY started_at DESC LIMIT 10"
+# View database statistics
+smithers db stats
 ```
 
 ## Next Steps

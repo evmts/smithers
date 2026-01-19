@@ -20,7 +20,9 @@ export async function git(...args: string[]): Promise<CommandResult> {
   } catch (error) {
     const stderr = error instanceof Object && 'stderr' in error ? String((error as { stderr: unknown }).stderr) : ''
     const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(`git ${args.join(' ')} failed: ${stderr || msg}`)
+    const wrapped = new Error(`git ${args.join(' ')} failed: ${stderr || msg}`)
+    wrapped.cause = error
+    throw wrapped
   }
 }
 

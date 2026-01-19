@@ -1,4 +1,4 @@
-import { Children, isValidElement, type ReactNode } from 'react'
+import { isValidElement, type ReactNode, type ReactElement } from 'react'
 
 export function extractText(node: ReactNode): string {
   if (node == null) return ''
@@ -7,7 +7,8 @@ export function extractText(node: ReactNode): string {
   if (typeof node === 'boolean') return ''
   if (Array.isArray(node)) return node.map(extractText).join('')
   if (isValidElement(node)) {
-    return extractText(node.props.children)
+    const element = node as ReactElement<{ children?: ReactNode }>
+    return extractText(element.props.children)
   }
   return String(node)
 }

@@ -277,16 +277,16 @@ Use the CLI to inspect database contents:
 
 ```bash
 # List executions
-smithers-orchestrator db executions
+smithers db executions
 
-# View state
-smithers-orchestrator db state --execution-id abc123
+# View current state
+smithers db state
 
-# Custom query
-smithers-orchestrator db query "SELECT * FROM agents LIMIT 10"
+# View database statistics
+smithers db stats
 
-# View phases and steps
-smithers-orchestrator db phases --execution-id abc123
+# View current execution
+smithers db current
 ```
 
 ## Best Practices

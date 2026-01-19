@@ -112,10 +112,15 @@ interface ReviewIssue {
 ## Review Workflow Example
 
 ```tsx
-import { useState } from "react";
-
 function ReviewWorkflow() {
-  const [phase, setPhase] = useState("implement");
+  const { db } = useSmithers();
+  
+  const phase = useQueryValue<string>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "implement";
+  
+  const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
     <Ralph maxIterations={5}>
@@ -141,7 +146,6 @@ function ReviewWorkflow() {
             if (review.approved) {
               setPhase("done");
             } else {
-              // Log issues and go back to implement
               console.log("Issues:", review.issues);
               setPhase("implement");
             }

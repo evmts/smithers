@@ -49,17 +49,20 @@ export function createPhasesModule(ctx: PhasesModuleContext): PhasesModule {
     },
 
     fail: (id: string) => {
+      if (rdb.isClosed) return
       rdb.run(`UPDATE phases SET status = 'failed', completed_at = ? WHERE id = ?`, [now(), id])
       if (getCurrentPhaseId() === id) setCurrentPhaseId(null)
     },
 
     current: (): Phase | null => {
+      if (rdb.isClosed) return null
       const currentPhaseId = getCurrentPhaseId()
       if (!currentPhaseId) return null
       return rdb.queryOne('SELECT * FROM phases WHERE id = ?', [currentPhaseId])
     },
 
     list: (executionId: string): Phase[] => {
+      if (rdb.isClosed) return []
       return rdb.query('SELECT * FROM phases WHERE execution_id = ? ORDER BY created_at', [executionId])
     },
   }

@@ -357,17 +357,13 @@ async function main() {
 
 function WorkflowContent() {
   const { db, requestStop, isStopRequested } = useSmithers();
-  const [phase, setPhase] = useState("start");
-
-  useMount(async () => {
-    const savedPhase = await db.state.get("phase");
-    if (savedPhase) setPhase(savedPhase);
-  });
-
-  const updatePhase = async (newPhase: string) => {
-    setPhase(newPhase);
-    await db.state.set("phase", newPhase);
-  };
+  
+  const phase = useQueryValue<string>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "start";
+  
+  const setPhase = (p: string) => db.state.set('phase', p);
 
   if (isStopRequested()) {
     return <Stop reason="Stop requested" />;
@@ -376,7 +372,7 @@ function WorkflowContent() {
   return (
     <>
       {phase === "start" && (
-        <Claude onFinished={() => updatePhase("done")}>
+        <Claude onFinished={() => setPhase("done")}>
           Complete the task.
         </Claude>
       )}

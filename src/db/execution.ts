@@ -21,8 +21,24 @@ export interface ExecutionModuleContext {
   setCurrentExecutionId: (id: string | null) => void
 }
 
-// Helper to map row to typed object with JSON parsing
-const mapExecution = (row: any): Execution | null => {
+interface ExecutionRow {
+  id: string
+  name: string | null
+  file_path: string
+  status: string
+  config: string | null
+  result: string | null
+  error: string | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  total_iterations: number
+  total_agents: number
+  total_tool_calls: number
+  total_tokens_used: number
+}
+
+const mapExecution = (row: ExecutionRow | null): Execution | null => {
   if (!row) return null
   return {
     ...row,
@@ -36,6 +52,7 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
 
   const execution: ExecutionModule = {
     start: (name: string, filePath: string, config?: Record<string, any>): string => {
+      if (rdb.isClosed) return uuid()
       const id = uuid()
       rdb.run(
         `INSERT INTO executions (id, name, file_path, status, config, started_at, created_at)
@@ -47,6 +64,7 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
     },
 
     complete: (id: string, result?: Record<string, any>) => {
+      if (rdb.isClosed) return
       rdb.run(
         `UPDATE executions SET status = 'completed', result = ?, completed_at = ? WHERE id = ?`,
         [result ? JSON.stringify(result) : null, now(), id]
@@ -55,6 +73,7 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
     },
 
     fail: (id: string, error: string) => {
+      if (rdb.isClosed) return
       rdb.run(
         `UPDATE executions SET status = 'failed', error = ?, completed_at = ? WHERE id = ?`,
         [error, now(), id]
@@ -63,6 +82,7 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
     },
 
     cancel: (id: string) => {
+      if (rdb.isClosed) return
       rdb.run(
         `UPDATE executions SET status = 'cancelled', completed_at = ? WHERE id = ?`,
         [now(), id]
@@ -71,22 +91,26 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
     },
 
     current: (): Execution | null => {
+      if (rdb.isClosed) return null
       const currentId = getCurrentExecutionId()
       if (!currentId) return null
       return mapExecution(rdb.queryOne('SELECT * FROM executions WHERE id = ?', [currentId]))
     },
 
     get: (id: string): Execution | null => {
+      if (rdb.isClosed) return null
       return mapExecution(rdb.queryOne('SELECT * FROM executions WHERE id = ?', [id]))
     },
 
     list: (limit: number = 20): Execution[] => {
+      if (rdb.isClosed) return []
       return rdb.query<any>('SELECT * FROM executions ORDER BY created_at DESC LIMIT ?', [limit])
         .map(mapExecution)
         .filter((e): e is Execution => e !== null)
     },
 
     findIncomplete: (): Execution | null => {
+      if (rdb.isClosed) return null
       return mapExecution(rdb.queryOne(
         "SELECT * FROM executions WHERE status IN ('pending', 'running') ORDER BY created_at DESC LIMIT 1"
       ))

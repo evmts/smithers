@@ -14,11 +14,22 @@ export interface ArtifactsModuleContext {
   getCurrentExecutionId: () => string | null
 }
 
-// Helper to map row to typed object with JSON parsing
-const mapArtifact = (row: any): Artifact | null => {
+interface ArtifactRow {
+  id: string
+  execution_id: string
+  agent_id: string | null
+  name: string
+  type: string
+  file_path: string
+  metadata: string | null
+  created_at: string
+}
+
+const mapArtifact = (row: ArtifactRow | null): Artifact | null => {
   if (!row) return null
   return {
     ...row,
+    type: row.type as Artifact['type'],
     metadata: parseJson(row.metadata, {}),
   }
 }

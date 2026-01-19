@@ -3,6 +3,7 @@ import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
+import { extractText } from '../../utils/extract-text.js'
 
 interface CommitState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -112,7 +113,7 @@ export function Commit(props: CommitProps): ReactNode {
 
         if (!message && props.children) {
           // Use children content as message
-          message = String(props.children)
+          message = extractText(props.children)
         }
 
         if (!message && props.autoGenerate) {

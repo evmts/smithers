@@ -323,7 +323,14 @@ Use state to control when Claude runs:
 
 ```tsx
 function ConditionalClaude() {
-  const [phase, setPhase] = useState("research");
+  const { db } = useSmithers();
+  
+  const phase = useQueryValue<string>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "research";
+  
+  const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
     <Ralph maxIterations={5}>

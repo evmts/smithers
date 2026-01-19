@@ -20,8 +20,27 @@ export interface AgentsModuleContext {
   setCurrentAgentId: (id: string | null) => void
 }
 
-// Helper to map row to typed object with JSON parsing
-const mapAgent = (row: any): Agent | null => {
+interface AgentRow {
+  id: string
+  execution_id: string
+  phase_id: string | null
+  model: string
+  system_prompt: string | null
+  prompt: string
+  status: string
+  result: string | null
+  result_structured: string | null
+  error: string | null
+  tokens_input: number | null
+  tokens_output: number | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  duration_ms: number | null
+  log_path: string | null
+}
+
+const mapAgent = (row: AgentRow | null): Agent | null => {
   if (!row) return null
   return {
     ...row,

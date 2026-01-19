@@ -14,8 +14,15 @@ export async function jj(...args: string[]): Promise<CommandResult> {
       stdout: result.stdout.toString(),
       stderr: result.stderr.toString(),
     }
-  } catch (error: any) {
-    throw new Error(`jj ${args.join(' ')} failed: ${error.stderr?.toString() || error.message}`)
+  } catch (error: unknown) {
+    const stderr = error && typeof error === 'object' && 'stderr' in error
+      ? String(error.stderr)
+      : ''
+    const message = error instanceof Error ? error.message : String(error)
+    const details = stderr || message || 'Unknown error'
+    const wrapped = new Error(`jj ${args.join(' ')} failed: ${details}`)
+    wrapped.cause = error
+    throw wrapped
   }
 }
 

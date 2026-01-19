@@ -1,7 +1,7 @@
 // Memory CRUD operations module for Smithers DB
 
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
-import type { Memory, MemoryInput } from './types.js'
+import type { Memory, MemoryInput, SqlParam } from './types.js'
 import { uuid, now } from './utils.js'
 
 export interface MemoriesModule {
@@ -51,7 +51,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
 
     list: (category?: string, scope?: string, limit: number = 100): Memory[] => {
       let sql = 'SELECT * FROM memories WHERE 1=1'
-      const params: any[] = []
+      const params: SqlParam[] = []
       if (category) { sql += ' AND category = ?'; params.push(category) }
       if (scope) { sql += ' AND scope = ?'; params.push(scope) }
       sql += ' ORDER BY created_at DESC LIMIT ?'
@@ -61,16 +61,16 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
 
     search: (query: string, category?: string, limit: number = 20): Memory[] => {
       let sql = 'SELECT * FROM memories WHERE content LIKE ?'
-      const params: any[] = [`%${query}%`]
+      const params: SqlParam[] = [`%${query}%`]
       if (category) { sql += ' AND category = ?'; params.push(category) }
       sql += ' ORDER BY created_at DESC LIMIT ?'
       params.push(limit)
       return rdb.query<Memory>(sql, params)
     },
 
-    update: (id: string, updates: any) => {
+    update: (id: string, updates: Partial<Pick<Memory, 'content' | 'confidence' | 'expires_at'>>) => {
       const sets: string[] = ['updated_at = ?']
-      const params: any[] = [now()]
+      const params: SqlParam[] = [now()]
       if (updates.content !== undefined) { sets.push('content = ?'); params.push(updates.content) }
       if (updates.confidence !== undefined) { sets.push('confidence = ?'); params.push(updates.confidence) }
       if (updates.expires_at !== undefined) { sets.push('expires_at = ?'); params.push(updates.expires_at?.toISOString() ?? null) }

@@ -6,7 +6,7 @@ interface IncompleteExecution {
   id: string
   name?: string
   file_path: string
-  started_at?: string
+  started_at?: Date
 }
 
 interface Transition {
@@ -35,7 +35,7 @@ export async function showRecovery(db: SmithersDB) {
   console.log(`  Name: ${incomplete.name || 'Unnamed'}`)
   console.log(`  ID: ${incomplete.id}`)
   console.log(`  File: ${incomplete.file_path}`)
-  console.log(`  Started: ${new Date(incomplete.started_at!).toLocaleString()}`)
+  console.log(`  Started: ${incomplete.started_at?.toLocaleString() ?? 'Unknown'}`)
   console.log('')
 
   // Get last known state

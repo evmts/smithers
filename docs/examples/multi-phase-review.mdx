@@ -157,10 +157,10 @@ const [phase, setPhase] = useState(savedPhase ?? "implement");
 
 ```bash
 # View current state
-smithers-orchestrator db state
+smithers db state
 
 # View transition history
-smithers-orchestrator db query "SELECT * FROM transitions ORDER BY timestamp DESC LIMIT 10"
+smithers db transitions
 ```
 
 ## Customization

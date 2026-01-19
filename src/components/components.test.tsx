@@ -176,43 +176,148 @@ describe('Component composition', () => {
 })
 
 describe('If component', () => {
-  test.todo('renders children when condition=true')
-  test.todo('renders null when condition=false')
-  test.todo('children prop is required')
-  test.todo('condition prop is required boolean')
-  test.todo('handles empty children')
-  test.todo('handles multiple children')
+  test('renders children when condition=true', async () => {
+    const { If } = await import('./If.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(
+      <If condition={true}>
+        <step>Visible</step>
+      </If>
+    )
+    expect(root.toXML()).toContain('<step>')
+    expect(root.toXML()).toContain('Visible')
+    root.dispose()
+  })
+
+  test('renders null when condition=false', async () => {
+    const { If } = await import('./If.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(
+      <If condition={false}>
+        <step>Hidden</step>
+      </If>
+    )
+    expect(root.toXML()).not.toContain('<step>')
+    expect(root.toXML()).not.toContain('Hidden')
+    root.dispose()
+  })
+
+  test('handles multiple children', async () => {
+    const { If } = await import('./If.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(
+      <If condition={true}>
+        <step>First</step>
+        <step>Second</step>
+      </If>
+    )
+    expect(root.toXML()).toContain('First')
+    expect(root.toXML()).toContain('Second')
+    root.dispose()
+  })
 })
 
 describe('Stop component', () => {
-  test.todo('renders <smithers-stop> element')
-  test.todo('renders reason attribute when provided')
-  test.todo('renders without reason attribute when not provided')
-  test.todo('renders children inside element')
-  test.todo('renders without children')
+  test('renders <smithers-stop> element', async () => {
+    const { Stop } = await import('./Stop.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Stop />)
+    expect(root.toXML()).toContain('<smithers-stop')
+    root.dispose()
+  })
+
+  test('renders reason attribute when provided', async () => {
+    const { Stop } = await import('./Stop.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Stop reason="All done" />)
+    expect(root.toXML()).toContain('reason="All done"')
+    root.dispose()
+  })
+
+  test('renders children inside element', async () => {
+    const { Stop } = await import('./Stop.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Stop>Work complete</Stop>)
+    expect(root.toXML()).toContain('Work complete')
+    root.dispose()
+  })
 })
 
 describe('Constraints component', () => {
-  test.todo('renders <constraints> element')
-  test.todo('renders children inside element')
-  test.todo('accepts arbitrary props')
+  test('renders <constraints> element', async () => {
+    const { Constraints } = await import('./Constraints.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Constraints>Be concise</Constraints>)
+    expect(root.toXML()).toContain('<constraints>')
+    expect(root.toXML()).toContain('Be concise')
+    root.dispose()
+  })
 })
 
 describe('Persona component', () => {
-  test.todo('renders <persona> element')
-  test.todo('renders role attribute when provided')
-  test.todo('renders without role attribute when not provided')
-  test.todo('renders children inside element')
-  test.todo('accepts arbitrary props')
+  test('renders <persona> element', async () => {
+    const { Persona } = await import('./Persona.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Persona>Security expert</Persona>)
+    expect(root.toXML()).toContain('<persona>')
+    expect(root.toXML()).toContain('Security expert')
+    root.dispose()
+  })
+
+  test('renders role attribute when provided', async () => {
+    const { Persona } = await import('./Persona.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Persona role="security expert" />)
+    expect(root.toXML()).toContain('role="security expert"')
+    root.dispose()
+  })
+
+  test('renders without role attribute when not provided', async () => {
+    const { Persona } = await import('./Persona.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Persona>Description</Persona>)
+    expect(root.toXML()).not.toContain('role=')
+    root.dispose()
+  })
 })
 
 describe('Human component', () => {
-  test.todo('renders <human> element')
-  test.todo('renders message attribute')
-  test.todo('renders children inside element')
-  test.todo('onApprove callback is available')
-  test.todo('onReject callback is available')
-  test.todo('accepts arbitrary props')
+  test('renders <human> element', async () => {
+    const { Human } = await import('./Human.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Human message="Approve?" />)
+    expect(root.toXML()).toContain('<human')
+    root.dispose()
+  })
+
+  test('renders message attribute', async () => {
+    const { Human } = await import('./Human.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Human message="Confirm deploy?" />)
+    expect(root.toXML()).toContain('message="Confirm deploy?"')
+    root.dispose()
+  })
+
+  test('renders children inside element', async () => {
+    const { Human } = await import('./Human.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Human message="Review">Details here</Human>)
+    expect(root.toXML()).toContain('Details here')
+    root.dispose()
+  })
 })
 
 describe('Subagent component', () => {
