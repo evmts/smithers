@@ -43,7 +43,7 @@ console.log('test script')
       }
     })
 
-    test.skip('script execution with bun works', async () => {
+    test('script execution with bun works', async () => {
       const testScript = `#!/usr/bin/env bun
 console.log('Hello from test script')
 `

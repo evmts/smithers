@@ -60,16 +60,18 @@ export function createBuildStateModule(ctx: BuildStateModuleContext): BuildState
   }
 
   const updateState = (next: Partial<BuildState>): BuildState => {
-    ensureRow()
-    const current = get()
-    const merged = { ...current, ...next }
-    rdb.run(
-      `UPDATE build_state
-       SET status = ?, fixer_agent_id = ?, broken_since = ?, last_check = ?
-       WHERE id = 1`,
-      [merged.status, merged.fixer_agent_id, merged.broken_since, merged.last_check]
-    )
-    return get()
+    return rdb.transaction(() => {
+      ensureRow()
+      const current = get()
+      const merged = { ...current, ...next }
+      rdb.run(
+        `UPDATE build_state
+         SET status = ?, fixer_agent_id = ?, broken_since = ?, last_check = ?
+         WHERE id = 1`,
+        [merged.status, merged.fixer_agent_id, merged.broken_since, merged.last_check]
+      )
+      return get()
+    })
   }
 
   const cleanup = (staleMs: number = DEFAULT_STALE_MS): BuildState => {

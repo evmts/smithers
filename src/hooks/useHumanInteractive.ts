@@ -65,6 +65,7 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   const resolveRef = useRef<((value: T) => void) | null>(null)
   const rejectRef = useRef<((error: Error) => void) | null>(null)
   const zodSchemaRef = useRef<ZodType | null>(null)
+  const handledSessionIdRef = useRef<string | null>(null)
 
   useMount(() => {
     const existing = db.state.get<HookState>(stateKeyRef.current)
@@ -160,8 +161,10 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   useEffectOnValueChange(session?.status, () => {
     if (!session || session.status === 'pending') return
     if (db.db.isClosed) return
+    if (handledSessionIdRef.current === session.id) return
     const current = db.state.get<HookState>(stateKeyRef.current) ?? DEFAULT_STATE
     if (current.status !== 'pending') return
+    handledSessionIdRef.current = session.id
     handleCompletion(session, current)
   }, [session, db, handleCompletion])
 
@@ -236,6 +239,7 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
     resolveRef.current = null
     rejectRef.current = null
     zodSchemaRef.current = null
+    handledSessionIdRef.current = null
   }, [state.taskId, setState])
 
   return {

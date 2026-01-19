@@ -181,8 +181,7 @@ export function Commit(props: CommitProps): ReactNode {
           props.onError?.(errorObj)
         }
       } finally {
-        // Complete task
-        if (taskIdRef.current && isMounted()) {
+        if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
       }

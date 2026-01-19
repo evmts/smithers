@@ -30,7 +30,6 @@
     "./middleware": "./src/middleware/index.ts",
     "./db": "./src/db/index.ts",
     "./monitor": "./src/monitor/index.ts",
-    "./middleware": "./src/middleware/index.ts",
     "./rate-limits": "./src/rate-limits/index.ts",
     "./tools": "./src/tools/index.ts",
     "./reactive-sqlite": "./src/reactive-sqlite/index.ts",

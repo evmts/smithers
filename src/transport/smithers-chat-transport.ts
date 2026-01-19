@@ -280,7 +280,7 @@ export class SmithersChatTransport implements ChatTransport<SmithersMessage, Smi
         ? this.options.orchestration
         : this.options.executionFilePath ?? 'smithers-chat'
     const executionId = db.execution.start(executionName, filePath, {
-      ...(this.options.config),
+      ...this.options.config,
       chatId,
     })
 
