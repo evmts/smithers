@@ -67,6 +67,151 @@ describe('extractMCPConfigs', () => {
   })
 })
 
+// ============================================================================
+// extractMCPConfigs - Edge Cases
+// ============================================================================
+
+describe('extractMCPConfigs - edge cases', () => {
+  test('handles empty string input', () => {
+    const result = extractMCPConfigs('')
+    
+    expect(result.configs).toHaveLength(0)
+    expect(result.cleanPrompt).toBe('')
+    expect(result.toolInstructions).toBe('')
+  })
+
+  test('handles whitespace-only input', () => {
+    const result = extractMCPConfigs('   \n\t  ')
+    
+    expect(result.configs).toHaveLength(0)
+    expect(result.cleanPrompt).toBe('')
+  })
+
+  test('handles malformed config JSON gracefully', () => {
+    const input = `<mcp-tool type="sqlite" config="not valid json">
+    Instructions here.
+  </mcp-tool>
+  
+  Query text.`
+
+    const result = extractMCPConfigs(input)
+    
+    // Should skip the malformed config but not crash
+    expect(result.configs).toHaveLength(0)
+    expect(result.cleanPrompt).toContain('Query text')
+  })
+
+  test('handles missing type attribute', () => {
+    const input = `<mcp-tool config="{&quot;path&quot;:&quot;./data.db&quot;}">
+    Instructions.
+  </mcp-tool>`
+
+    const result = extractMCPConfigs(input)
+    
+    // Regex won't match without type
+    expect(result.configs).toHaveLength(0)
+  })
+
+  test('handles missing config attribute', () => {
+    const input = `<mcp-tool type="sqlite">
+    Instructions.
+  </mcp-tool>`
+
+    const result = extractMCPConfigs(input)
+    
+    // Regex won't match without config
+    expect(result.configs).toHaveLength(0)
+  })
+
+  test('handles config with special characters in path', () => {
+    const input = `<mcp-tool type="sqlite" config="{&quot;path&quot;:&quot;/path/with spaces/data.db&quot;}">
+    Database with spaces in path.
+  </mcp-tool>`
+
+    const result = extractMCPConfigs(input)
+    
+    expect(result.configs).toHaveLength(1)
+    expect(result.configs[0].config.path).toBe('/path/with spaces/data.db')
+  })
+
+  test('handles instructions with special characters', () => {
+    const input = `<mcp-tool type="sqlite" config="{&quot;path&quot;:&quot;./data.db&quot;}">
+    Database has "quoted" text and 'apostrophes' & <angles>.
+  </mcp-tool>`
+
+    const result = extractMCPConfigs(input)
+    
+    expect(result.configs).toHaveLength(1)
+    expect(result.configs[0].instructions).toContain('quoted')
+    expect(result.configs[0].instructions).toContain('apostrophes')
+  })
+
+  test('handles multiline instructions', () => {
+    const input = `<mcp-tool type="sqlite" config="{&quot;path&quot;:&quot;./data.db&quot;}">
+    Line 1 of instructions.
+    Line 2 of instructions.
+    Line 3 of instructions.
+  </mcp-tool>`
+
+    const result = extractMCPConfigs(input)
+    
+    expect(result.configs).toHaveLength(1)
+    expect(result.configs[0].instructions).toContain('Line 1')
+    expect(result.configs[0].instructions).toContain('Line 2')
+    expect(result.configs[0].instructions).toContain('Line 3')
+  })
+
+  test('preserves prompt text before and after mcp-tool', () => {
+    const input = `Before the tool.
+    
+<mcp-tool type="sqlite" config="{&quot;path&quot;:&quot;./data.db&quot;}">
+    Instructions.
+  </mcp-tool>
+
+After the tool.`
+
+    const result = extractMCPConfigs(input)
+    
+    expect(result.cleanPrompt).toContain('Before the tool')
+    expect(result.cleanPrompt).toContain('After the tool')
+    expect(result.cleanPrompt).not.toContain('mcp-tool')
+  })
+
+  test('handles unicode in config and instructions', () => {
+    const input = `<mcp-tool type="sqlite" config="{&quot;path&quot;:&quot;./日本語.db&quot;}">
+    データベースの説明 🎉
+  </mcp-tool>`
+
+    const result = extractMCPConfigs(input)
+    
+    expect(result.configs).toHaveLength(1)
+    expect(result.configs[0].config.path).toBe('./日本語.db')
+    expect(result.configs[0].instructions).toContain('データベースの説明')
+  })
+
+  test('handles nested config objects', () => {
+    const input = `<mcp-tool type="sqlite" config="{&quot;path&quot;:&quot;./data.db&quot;,&quot;options&quot;:{&quot;timeout&quot;:5000}}">
+    Database with options.
+  </mcp-tool>`
+
+    const result = extractMCPConfigs(input)
+    
+    expect(result.configs).toHaveLength(1)
+    expect(result.configs[0].config.options).toEqual({ timeout: 5000 })
+  })
+
+  test('handles array values in config', () => {
+    const input = `<mcp-tool type="filesystem" config="{&quot;paths&quot;:[&quot;/path1&quot;,&quot;/path2&quot;]}">
+    Filesystem tool.
+  </mcp-tool>`
+
+    const result = extractMCPConfigs(input)
+    
+    expect(result.configs).toHaveLength(1)
+    expect(result.configs[0].config.paths).toEqual(['/path1', '/path2'])
+  })
+})
+
 describe('generateMCPServerConfig', () => {
   test('creates sqlite config', () => {
     const configs = [{
@@ -139,5 +284,212 @@ describe('writeMCPConfigFile', () => {
 
     // Clean up
     await fs.unlink(configPath)
+  })
+})
+
+// ============================================================================
+// generateMCPServerConfig - Edge Cases
+// ============================================================================
+
+describe('generateMCPServerConfig - edge cases', () => {
+  test('handles path with spaces', () => {
+    const configs = [{
+      type: 'sqlite' as const,
+      config: { path: '/path/with spaces/database.db', readOnly: false },
+      instructions: ''
+    }]
+
+    const result = generateMCPServerConfig(configs)
+
+    expect(result.mcpServers.sqlite.args).toContain('/path/with spaces/database.db')
+  })
+
+  test('handles path with special characters', () => {
+    const configs = [{
+      type: 'sqlite' as const,
+      config: { path: './data-2024_v1.db', readOnly: false },
+      instructions: ''
+    }]
+
+    const result = generateMCPServerConfig(configs)
+
+    expect(result.mcpServers.sqlite.args).toContain('./data-2024_v1.db')
+  })
+
+  test('handles unicode path', () => {
+    const configs = [{
+      type: 'sqlite' as const,
+      config: { path: './日本語/データ.db', readOnly: false },
+      instructions: ''
+    }]
+
+    const result = generateMCPServerConfig(configs)
+
+    expect(result.mcpServers.sqlite.args).toContain('./日本語/データ.db')
+  })
+
+  test('last sqlite config wins when multiple provided', () => {
+    const configs = [
+      { type: 'sqlite' as const, config: { path: './first.db', readOnly: false }, instructions: '' },
+      { type: 'sqlite' as const, config: { path: './second.db', readOnly: true }, instructions: '' },
+    ]
+
+    const result = generateMCPServerConfig(configs)
+
+    // Last one should overwrite
+    expect(result.mcpServers.sqlite.args).toContain('./second.db')
+    expect(result.mcpServers.sqlite.args).toContain('--read-only')
+  })
+
+  test('handles custom type (placeholder)', () => {
+    const configs = [{
+      type: 'custom' as const,
+      config: { any: 'value' },
+      instructions: ''
+    }]
+
+    const result = generateMCPServerConfig(configs)
+
+    // Custom type is not implemented, so mcpServers should be empty
+    expect(result.mcpServers).toEqual({})
+  })
+
+  test('returns object with mcpServers key even when empty', () => {
+    const result = generateMCPServerConfig([])
+    
+    expect(result).toHaveProperty('mcpServers')
+    expect(typeof result.mcpServers).toBe('object')
+  })
+
+  test('handles missing readOnly (defaults to no --read-only flag)', () => {
+    const configs = [{
+      type: 'sqlite' as const,
+      config: { path: './test.db' },  // No readOnly specified
+      instructions: ''
+    }]
+
+    const result = generateMCPServerConfig(configs)
+
+    expect(result.mcpServers.sqlite.args).not.toContain('--read-only')
+  })
+})
+
+// ============================================================================
+// writeMCPConfigFile - Edge Cases
+// ============================================================================
+
+describe('writeMCPConfigFile - edge cases', () => {
+  test('writes empty config', async () => {
+    const config = {}
+
+    const configPath = await writeMCPConfigFile(config)
+
+    const contents = await fs.readFile(configPath, 'utf-8')
+    expect(JSON.parse(contents)).toEqual({})
+
+    await fs.unlink(configPath)
+  })
+
+  test('writes nested config with proper formatting', async () => {
+    const config = {
+      level1: {
+        level2: {
+          level3: 'value'
+        }
+      }
+    }
+
+    const configPath = await writeMCPConfigFile(config)
+
+    const contents = await fs.readFile(configPath, 'utf-8')
+    // Should be formatted with 2-space indentation
+    expect(contents).toContain('  ')
+    expect(JSON.parse(contents)).toEqual(config)
+
+    await fs.unlink(configPath)
+  })
+
+  test('writes config with arrays', async () => {
+    const config = {
+      items: [1, 2, 3],
+      nested: { arr: ['a', 'b'] }
+    }
+
+    const configPath = await writeMCPConfigFile(config)
+
+    const contents = await fs.readFile(configPath, 'utf-8')
+    expect(JSON.parse(contents)).toEqual(config)
+
+    await fs.unlink(configPath)
+  })
+
+  test('writes config with unicode values', async () => {
+    const config = {
+      message: 'Hello 日本語 🎉',
+      path: './データ.db'
+    }
+
+    const configPath = await writeMCPConfigFile(config)
+
+    const contents = await fs.readFile(configPath, 'utf-8')
+    expect(JSON.parse(contents)).toEqual(config)
+
+    await fs.unlink(configPath)
+  })
+
+  test('returns path in temp directory', async () => {
+    const config = { test: true }
+    const os = await import('os')
+
+    const configPath = await writeMCPConfigFile(config)
+
+    expect(configPath.startsWith(os.tmpdir())).toBe(true)
+
+    await fs.unlink(configPath)
+  })
+
+  test('creates unique files for concurrent calls', async () => {
+    const config = { test: true }
+
+    const [path1, path2] = await Promise.all([
+      writeMCPConfigFile(config),
+      writeMCPConfigFile(config)
+    ])
+
+    expect(path1).not.toBe(path2)
+
+    await Promise.all([
+      fs.unlink(path1),
+      fs.unlink(path2)
+    ])
+  })
+})
+
+// ============================================================================
+// Type Tests
+// ============================================================================
+
+describe('MCP Config Types', () => {
+  test('MCPToolConfig type is correct', () => {
+    const config = {
+      type: 'sqlite' as const,
+      config: { path: './test.db' },
+      instructions: 'Test'
+    }
+    
+    expect(config.type).toBe('sqlite')
+    expect(config.config.path).toBe('./test.db')
+    expect(config.instructions).toBe('Test')
+  })
+
+  test('ExtractedMCPConfig has required properties', () => {
+    const result = extractMCPConfigs('')
+    
+    expect(result).toHaveProperty('configs')
+    expect(result).toHaveProperty('cleanPrompt')
+    expect(result).toHaveProperty('toolInstructions')
+    expect(Array.isArray(result.configs)).toBe(true)
+    expect(typeof result.cleanPrompt).toBe('string')
+    expect(typeof result.toolInstructions).toBe('string')
   })
 })

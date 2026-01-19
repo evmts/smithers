@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
-import React, { useRef } from 'react'
+import React from 'react'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
@@ -10,7 +10,6 @@ import {
   type PhaseRegistryContextValue,
   type PhaseRegistryProviderProps,
 } from './PhaseRegistry.js'
-import { Phase } from './Phase.js'
 
 // ============================================================================
 // MODULE EXPORTS
