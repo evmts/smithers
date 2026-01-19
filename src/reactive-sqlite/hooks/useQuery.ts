@@ -108,7 +108,6 @@ export function useQuery<T = Record<string, unknown>>(
       const tables = extractReadTables(sql)
       const unsubscribeDb = db.subscribe(tables, () => {
         invalidateCache() // Clear cache so getSnapshot() recomputes
-        console.log('[useQuery] db change', { sql })
         onStoreChange()
       })
       const unsubscribeSignal = subscribeSignal(onStoreChange)
@@ -123,9 +122,7 @@ export function useQuery<T = Record<string, unknown>>(
   // Get current snapshot
   const getSnapshot = useCallback(() => {
     if (!cacheRef.current || cacheRef.current.key !== queryKey) {
-      console.log('[useQuery] snapshot recompute', { queryKey })
       const result = executeQuery()
-      console.log('[useQuery] query result', { rows: result.data.length })
       cacheRef.current = {
         key: queryKey,
         data: result.data,
