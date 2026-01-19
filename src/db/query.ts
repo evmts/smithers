@@ -1,8 +1,9 @@
 // Raw query access module for Smithers DB
 
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
+import type { SqlParam } from './types.js'
 
-export type QueryFunction = <T>(sql: string, params?: any[]) => T[]
+export type QueryFunction = <T>(sql: string, params?: SqlParam[]) => T[]
 
 export interface QueryModuleContext {
   rdb: ReactiveDatabase
@@ -11,7 +12,7 @@ export interface QueryModuleContext {
 export function createQueryModule(ctx: QueryModuleContext): QueryFunction {
   const { rdb } = ctx
 
-  return <T>(sql: string, params?: any[]): T[] => {
+  return <T>(sql: string, params?: SqlParam[]): T[] => {
     return rdb.query<T>(sql, params ?? [])
   }
 }

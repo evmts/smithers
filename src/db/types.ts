@@ -1,5 +1,7 @@
 // Type definitions for Smithers DB
 
+export type SqlParam = string | number | boolean | null | Uint8Array
+
 export interface Memory {
   id: string
   category: 'fact' | 'learning' | 'preference' | 'context' | 'skill'
