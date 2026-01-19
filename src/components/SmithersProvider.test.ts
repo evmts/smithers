@@ -7,6 +7,7 @@ import {
   createOrchestrationPromise,
   signalOrchestrationComplete,
   signalOrchestrationError,
+  setActiveOrchestrationToken,
   type SmithersContextValue,
   type RalphContextType,
 } from './SmithersProvider.js'
@@ -161,14 +162,17 @@ describe('SmithersProvider', () => {
 
   describe('Orchestration signals', () => {
     test('createOrchestrationPromise returns a promise', () => {
-      const promise = createOrchestrationPromise()
+      const { promise, token } = createOrchestrationPromise()
       expect(promise).toBeInstanceOf(Promise)
+      expect(typeof token).toBe('string')
       // Clean up by resolving
+      setActiveOrchestrationToken(token)
       signalOrchestrationComplete()
     })
 
     test('signalOrchestrationComplete resolves the promise', async () => {
-      const promise = createOrchestrationPromise()
+      const { promise, token } = createOrchestrationPromise()
+      setActiveOrchestrationToken(token)
       let resolved = false
 
       promise.then(() => {
@@ -183,7 +187,8 @@ describe('SmithersProvider', () => {
     })
 
     test('signalOrchestrationError rejects the promise', async () => {
-      const promise = createOrchestrationPromise()
+      const { promise, token } = createOrchestrationPromise()
+      setActiveOrchestrationToken(token)
       let rejected = false
       let errorMessage = ''
 
@@ -200,7 +205,8 @@ describe('SmithersProvider', () => {
     })
 
     test('signals are idempotent (second call does nothing)', async () => {
-      const promise = createOrchestrationPromise()
+      const { promise, token } = createOrchestrationPromise()
+      setActiveOrchestrationToken(token)
       let resolveCount = 0
 
       promise.then(() => {

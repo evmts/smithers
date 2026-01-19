@@ -81,6 +81,16 @@ interface SmithersIntrinsicElements {
         [key: string]: unknown
       }
 
+      while: {
+        id?: string
+        iteration?: number
+        status?: string
+        maxIterations?: number
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
       phase: {
         name?: string
         children?: React.ReactNode

@@ -44,7 +44,7 @@
     {
       "name": "npm",
       "icon": "npm",
-      "url": "https://www.npmjs.com/package/smithers"
+      "url": "https://www.npmjs.com/package/smithers-orchestrator"
     }
   ],
   "navigation": [

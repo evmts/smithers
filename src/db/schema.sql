@@ -566,3 +566,21 @@ CREATE TABLE IF NOT EXISTS render_frames (
 CREATE INDEX IF NOT EXISTS idx_render_frames_execution ON render_frames(execution_id);
 CREATE INDEX IF NOT EXISTS idx_render_frames_sequence ON render_frames(execution_id, sequence_number);
 CREATE INDEX IF NOT EXISTS idx_render_frames_created ON render_frames(created_at DESC);
+
+-- ============================================================================
+-- 17. VCS_QUEUE - VCS Operation Queue for Serialized Git/JJ Operations
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS vcs_queue (
+  id INTEGER PRIMARY KEY,
+  execution_id TEXT,
+  operation TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT DEFAULT (datetime('now')),
+  started_at TEXT,
+  completed_at TEXT,
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_vcs_queue_status ON vcs_queue(status);

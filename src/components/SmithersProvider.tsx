@@ -14,43 +14,88 @@ import { jjSnapshot } from '../utils/vcs.js'
 import type { SmithersMiddleware } from '../middleware/types.js'
 
 // ============================================================================
-// ORCHESTRATION COMPLETION SIGNALS
+// ORCHESTRATION COMPLETION SIGNALS (per-root via token)
 // ============================================================================
 
-// Global completion tracking for the root to await
-let _orchestrationResolve: (() => void) | null = null
-let _orchestrationReject: ((err: Error) => void) | null = null
+type OrchestrationController = {
+  resolve: () => void
+  reject: (err: Error) => void
+}
+
+// Tokenized map for per-root orchestration - concurrency-safe
+const orchestrationControllers = new Map<string, OrchestrationController>()
+
+// Current active token (set by SmithersProvider, used by signalOrchestrationComplete)
+let _activeOrchestrationToken: string | null = null
 
 /**
  * Create a promise that resolves when orchestration completes.
+ * Returns a token that can be used to signal completion.
  * Called by createSmithersRoot before mounting.
  */
-export function createOrchestrationPromise(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    _orchestrationResolve = resolve
-    _orchestrationReject = reject
+export function createOrchestrationPromise(): { promise: Promise<void>; token: string } {
+  const token = crypto.randomUUID()
+  const promise = new Promise<void>((resolve, reject) => {
+    orchestrationControllers.set(token, { resolve, reject })
   })
+  return { promise, token }
 }
 
 /**
- * Signal that orchestration is complete (called internally)
+ * Set the active orchestration token for this execution context.
+ * Called by SmithersProvider on mount.
+ */
+export function setActiveOrchestrationToken(token: string | null): void {
+  _activeOrchestrationToken = token
+}
+
+/**
+ * Signal that orchestration is complete.
+ * Uses the active token if set, otherwise no-op.
  */
 export function signalOrchestrationComplete(): void {
-  if (_orchestrationResolve) {
-    _orchestrationResolve()
-    _orchestrationResolve = null
-    _orchestrationReject = null
+  if (!_activeOrchestrationToken) return
+  const controller = orchestrationControllers.get(_activeOrchestrationToken)
+  if (controller) {
+    controller.resolve()
+    orchestrationControllers.delete(_activeOrchestrationToken)
   }
 }
 
 /**
- * Signal that orchestration failed (called internally)
+ * Signal that orchestration failed.
+ * Uses the active token if set, otherwise no-op.
  */
 export function signalOrchestrationError(err: Error): void {
-  if (_orchestrationReject) {
-    _orchestrationReject(err)
-    _orchestrationResolve = null
-    _orchestrationReject = null
+  if (!_activeOrchestrationToken) return
+  const controller = orchestrationControllers.get(_activeOrchestrationToken)
+  if (controller) {
+    controller.reject(err)
+    orchestrationControllers.delete(_activeOrchestrationToken)
+  }
+}
+
+/**
+ * Signal completion for a specific orchestration token.
+ * Used by reconciler root.ts for direct control.
+ */
+export function signalOrchestrationCompleteByToken(token: string): void {
+  const controller = orchestrationControllers.get(token)
+  if (controller) {
+    controller.resolve()
+    orchestrationControllers.delete(token)
+  }
+}
+
+/**
+ * Signal error for a specific orchestration token.
+ * Used by reconciler root.ts for direct control.
+ */
+export function signalOrchestrationErrorByToken(token: string, err: Error): void {
+  const controller = orchestrationControllers.get(token)
+  if (controller) {
+    controller.reject(err)
+    orchestrationControllers.delete(token)
   }
 }
 
@@ -317,6 +362,13 @@ export interface SmithersProviderProps {
   stopped?: boolean
 
   /**
+   * Orchestration token for signaling completion.
+   * Created by createOrchestrationPromise() in root.ts.
+   * Required for concurrency-safe multi-root execution.
+   */
+  orchestrationToken?: string
+
+  /**
    * Children components
    */
   children: ReactNode
@@ -398,8 +450,13 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   // Track if we've already completed to avoid double-completion
   const hasCompletedRef = useRef(false)
 
-  // Initialize ralphCount in DB if needed
+  // Initialize ralphCount in DB if needed and set orchestration token
   useMount(() => {
+    // Set this execution's orchestration token as active
+    if (props.orchestrationToken) {
+      setActiveOrchestrationToken(props.orchestrationToken)
+    }
+
     if (dbRalphCount == null && !reactiveDb.isClosed) {
       reactiveDb.run(
         "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
@@ -679,6 +736,11 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   // Cleanup orchestration on unmount
   useUnmount(() => {
+    // Clear the active orchestration token
+    if (props.orchestrationToken) {
+      setActiveOrchestrationToken(null)
+    }
+
     // Clear timers
     if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current)
     if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)

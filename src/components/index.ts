@@ -43,6 +43,7 @@ export {
 // Basic workflow components
 export { Each, type EachProps } from './Each.js'
 export { If, type IfProps } from './If.js'
+export { While, useWhileIteration, type WhileProps, type WhileIterationContextValue } from './While.js'
 export { Stop, type StopProps } from './Stop.js'
 export { End, type EndProps, type EndSummary } from './End.js'
 export { Subagent, type SubagentProps } from './Subagent.js'

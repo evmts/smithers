@@ -12,11 +12,13 @@ Use the Sqlite component to let Claude query databases.
 ```tsx
 #!/usr/bin/env bun
 
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Claude } from "smithers-orchestrator/components/Claude";
-import { Sqlite } from "smithers-orchestrator/components/MCP";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Claude,
+  Sqlite,
+} from "smithers-orchestrator";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/data-analysis" });

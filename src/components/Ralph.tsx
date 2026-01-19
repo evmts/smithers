@@ -41,6 +41,9 @@ export {
   createOrchestrationPromise,
   signalOrchestrationComplete,
   signalOrchestrationError,
+  signalOrchestrationCompleteByToken,
+  signalOrchestrationErrorByToken,
+  setActiveOrchestrationToken,
 } from './SmithersProvider.js'
 
 export interface RalphProps {

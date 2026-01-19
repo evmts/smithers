@@ -89,20 +89,23 @@ export function Phase(props: PhaseProps): ReactNode {
   // Handle skipped phases only when they become active (not on mount)
   useEffect(() => {
     if (!executionEnabled) return
-    if (registry?.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
-      hasSkippedRef.current = true
-      // Log skipped phase to database
-      const id = db.phases.start(props.name, ralphCount)
-      db.db.run(
-        `UPDATE phases SET status = 'skipped', completed_at = datetime('now') WHERE id = ?`,
-        [id]
-      )
-      console.log(`[Phase] Skipped: ${props.name}`)
+    // Critical: Only run when this phase IS CURRENTLY ACTIVE
+    if (!registry?.isPhaseActive(myIndex)) return
+    if (!isSkipped) return
+    if (hasSkippedRef.current) return
 
-      // Advance to next phase immediately
-      registry?.advancePhase()
-    }
-  }, [registry?.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry, executionEnabled])
+    hasSkippedRef.current = true
+    // Log skipped phase to database
+    const id = db.phases.start(props.name, ralphCount)
+    db.db.run(
+      `UPDATE phases SET status = 'skipped', completed_at = datetime('now') WHERE id = ?`,
+      [id]
+    )
+    console.log(`[Phase] Skipped: ${props.name}`)
+
+    // Advance to next phase immediately
+    registry?.advancePhase()
+  }, [registry?.currentPhaseIndex, myIndex, isSkipped, db, props.name, ralphCount, registry, executionEnabled])
 
   // Handle phase lifecycle transitions
   useEffect(() => {
@@ -146,11 +149,13 @@ export function Phase(props: PhaseProps): ReactNode {
   // Wrap in ExecutionBoundary so execution is controlled by isActive
   return (
     <phase name={props.name} status={status}>
-      <ExecutionBoundary enabled={isActive}>
-        <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
-          {props.children}
-        </StepRegistryProvider>
-      </ExecutionBoundary>
+      {isActive && (
+        <ExecutionBoundary enabled={isActive}>
+          <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
+            {props.children}
+          </StepRegistryProvider>
+        </ExecutionBoundary>
+      )}
     </phase>
   )
 }

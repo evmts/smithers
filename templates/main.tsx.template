@@ -203,9 +203,9 @@ async function App() {
 // ============================================================================
 
 async function main() {
-  try {
-    const root = createSmithersRoot()
+  const root = createSmithersRoot()
 
+  try {
     console.log('╔══════════════════════════════════════════════════════════╗')
     console.log('║            SMITHERS ORCHESTRATION PLAN                   ║')
     console.log('╚══════════════════════════════════════════════════════════╝')
@@ -226,6 +226,9 @@ async function main() {
 
     // Execute the orchestration
     await root.mount(App)
+
+    // Dispose root to trigger useUnmount hooks (onComplete, cleanup)
+    root.dispose()
 
     // Mark execution as complete
     const finalState = await db.state.getAll()
@@ -251,6 +254,9 @@ async function main() {
     console.error('')
     console.error('❌ Execution failed:', error)
     console.error('')
+
+    // Dispose root to ensure cleanup even on error
+    root.dispose()
 
     await db.execution.fail(
       executionId,

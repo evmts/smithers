@@ -51,6 +51,10 @@ function MyComponent() {
   Called when orchestration completes (all tasks finished or max iterations reached).
 </ParamField>
 
+<ParamField path="onMaxIterations" type="() => void">
+  Called when max iterations is reached without completion. Useful for handling timeout scenarios.
+</ParamField>
+
 ## Related
 
 <CardGroup cols={2}>

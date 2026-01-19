@@ -15,6 +15,7 @@ import {
   createOrchestrationPromise,
   signalOrchestrationComplete,
   signalOrchestrationError,
+  setActiveOrchestrationToken,
 } from './Ralph.js'
 import { SmithersProvider, useSmithers } from './SmithersProvider.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
@@ -51,13 +52,16 @@ describe('RalphContext', () => {
 
 describe('Orchestration promise functions', () => {
   test('createOrchestrationPromise returns a promise', () => {
-    const promise = createOrchestrationPromise()
+    const { promise, token } = createOrchestrationPromise()
     expect(promise).toBeInstanceOf(Promise)
+    expect(typeof token).toBe('string')
+    setActiveOrchestrationToken(token)
     signalOrchestrationComplete()
   })
 
   test('signalOrchestrationComplete resolves the promise', async () => {
-    const promise = createOrchestrationPromise()
+    const { promise, token } = createOrchestrationPromise()
+    setActiveOrchestrationToken(token)
     let resolved = false
 
     promise.then(() => {
@@ -70,7 +74,8 @@ describe('Orchestration promise functions', () => {
   })
 
   test('signalOrchestrationError rejects the promise', async () => {
-    const promise = createOrchestrationPromise()
+    const { promise, token } = createOrchestrationPromise()
+    setActiveOrchestrationToken(token)
     let rejected = false
     let errorMessage = ''
 
@@ -94,7 +99,8 @@ describe('Orchestration promise functions', () => {
   })
 
   test('calling complete twice is safe', async () => {
-    const promise = createOrchestrationPromise()
+    const { promise, token } = createOrchestrationPromise()
+    setActiveOrchestrationToken(token)
     let resolveCount = 0
 
     promise.then(() => {
@@ -108,7 +114,8 @@ describe('Orchestration promise functions', () => {
   })
 
   test('calling error after complete is no-op', async () => {
-    const promise = createOrchestrationPromise()
+    const { promise, token } = createOrchestrationPromise()
+    setActiveOrchestrationToken(token)
     let resolved = false
     let rejected = false
 

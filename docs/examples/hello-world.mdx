@@ -12,10 +12,12 @@ The simplest Smithers workflow.
 ```tsx
 #!/usr/bin/env bun
 
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Claude } from "smithers-orchestrator/components/Claude";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Claude,
+} from "smithers-orchestrator";
 
 async function main() {
   // Create database for state persistence

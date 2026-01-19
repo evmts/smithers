@@ -395,30 +395,32 @@ export function Claude(props: ClaudeProps): ReactNode {
           props.onFinished?.(agentResult)
         }
       } catch (err) {
+        const errorObj = err instanceof Error ? err : new Error(String(err))
+
+        // ALWAYS log to DB regardless of mount state - DB records should not be suppressed
+        if (props.reportingEnabled !== false && currentAgentId) {
+          await db.agents.fail(currentAgentId, errorObj.message)
+        }
+
+        if (props.reportingEnabled !== false) {
+          const errorData = {
+            type: 'error' as const,
+            title: `Claude ${props.model ?? 'sonnet'} failed`,
+            content: errorObj.message,
+            severity: 'warning' as const,
+          }
+          if (currentAgentId) {
+            await db.vcs.addReport({
+              ...errorData,
+              agent_id: currentAgentId,
+            })
+          } else {
+            await db.vcs.addReport(errorData)
+          }
+        }
+
+        // Only fire React callbacks if still mounted
         if (isMounted()) {
-          const errorObj = err instanceof Error ? err : new Error(String(err))
-
-          if (props.reportingEnabled !== false && currentAgentId) {
-            await db.agents.fail(currentAgentId, errorObj.message)
-          }
-
-          if (props.reportingEnabled !== false) {
-            const errorData = {
-              type: 'error' as const,
-              title: `Claude ${props.model ?? 'sonnet'} failed`,
-              content: errorObj.message,
-              severity: 'warning' as const,
-            }
-            if (currentAgentId) {
-              await db.vcs.addReport({
-                ...errorData,
-                agent_id: currentAgentId,
-              })
-            } else {
-              await db.vcs.addReport(errorData)
-            }
-          }
-
           props.onError?.(errorObj)
         }
       } finally {

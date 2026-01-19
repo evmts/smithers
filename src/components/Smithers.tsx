@@ -133,9 +133,17 @@ export function Smithers(props: SmithersProps): ReactNode {
   const isMounted = useMountedState()
 
   // Query reactive state from DB
-  const { data: agentRow } = useQueryOne<{status: string, result: string | null, result_structured: string | null, error: string | null}>(
+  const { data: agentRow } = useQueryOne<{
+    status: string
+    result: string | null
+    result_structured: string | null
+    error: string | null
+    tokens_input: number | null
+    tokens_output: number | null
+    duration_ms: number | null
+  }>(
     reactiveDb,
-    "SELECT status, result, result_structured, error FROM agents WHERE id = ?",
+    "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",
     [subagentIdRef.current]
   )
   
@@ -162,9 +170,41 @@ export function Smithers(props: SmithersProps): ReactNode {
   }
   
   const status = mapStatus()
-  const result: SmithersResult | null = agentRow?.result_structured 
-    ? (() => { try { return JSON.parse(agentRow.result_structured) } catch { return null } })()
+  // Result comes from:
+  // - output: stored in agents.result
+  // - structured (script, scriptPath, planningResult): stored in agents.result_structured
+  const structuredData = agentRow?.result_structured 
+    ? (() => { 
+        try { 
+          return JSON.parse(agentRow.result_structured) as { 
+            script?: string
+            scriptPath?: string
+            planningResult?: SmithersResult['planningResult']
+          } 
+        } catch { 
+          return null 
+        } 
+      })()
     : null
+  const result: SmithersResult | null = agentRow?.result ? {
+    output: agentRow.result,
+    script: structuredData?.script ?? '',
+    scriptPath: structuredData?.scriptPath ?? '',
+    planningResult: structuredData?.planningResult ?? {
+      output: '',
+      tokensUsed: { input: 0, output: 0 },
+      turnsUsed: 0,
+      durationMs: 0,
+      stopReason: 'completed' as const,
+    },
+    tokensUsed: {
+      input: agentRow.tokens_input ?? 0,
+      output: agentRow.tokens_output ?? 0,
+    },
+    turnsUsed: 0,
+    durationMs: agentRow.duration_ms ?? 0,
+    stopReason: 'completed',
+  } : null
   const error: Error | null = agentRow?.error ? new Error(agentRow.error) : null
 
   // Helper to set substatus in DB
@@ -232,11 +272,16 @@ export function Smithers(props: SmithersProps): ReactNode {
         }
 
         // Log completion to database (this also sets status to 'completed')
+        // Store full structured data including planningResult for reconstruction
         if (props.reportingEnabled !== false && subagentIdRef.current) {
           await db.agents.complete(
             subagentIdRef.current,
             smithersResult.output,
-            { script: smithersResult.script, scriptPath: smithersResult.scriptPath },
+            { 
+              script: smithersResult.script, 
+              scriptPath: smithersResult.scriptPath,
+              planningResult: smithersResult.planningResult,
+            },
             smithersResult.tokensUsed
           )
         }
@@ -263,30 +308,29 @@ export function Smithers(props: SmithersProps): ReactNode {
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err))
 
-        if (isMounted()) {
-          // Log failure to database (this also sets status to 'failed')
-          if (props.reportingEnabled !== false && subagentIdRef.current) {
-            await db.agents.fail(subagentIdRef.current, errorObj.message)
-          }
-
-          // Add error report
-          if (props.reportingEnabled !== false) {
-            await db.vcs.addReport({
-              type: 'error',
-              title: 'Smithers subagent failed',
-              content: errorObj.message,
-              severity: 'warning',
-              ...(subagentIdRef.current ? { agent_id: subagentIdRef.current } : {}),
-            })
-          }
+        // ALWAYS log to DB regardless of mount state - DB records should not be suppressed
+        if (props.reportingEnabled !== false && subagentIdRef.current) {
+          await db.agents.fail(subagentIdRef.current, errorObj.message)
         }
 
+        // Add error report
+        if (props.reportingEnabled !== false) {
+          await db.vcs.addReport({
+            type: 'error',
+            title: 'Smithers subagent failed',
+            content: errorObj.message,
+            severity: 'warning',
+            ...(subagentIdRef.current ? { agent_id: subagentIdRef.current } : {}),
+          })
+        }
+
+        // Only fire React callbacks if still mounted
         if (isMounted()) {
           props.onError?.(errorObj)
         }
       } finally {
-        // Complete task
-        if (taskIdRef.current && isMounted()) {
+        // Always complete task (DB operation, not React callback)
+        if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
         }
       }

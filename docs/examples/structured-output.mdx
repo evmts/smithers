@@ -13,10 +13,12 @@ Use Zod schemas to get typed, validated responses from Claude.
 #!/usr/bin/env bun
 
 import { z } from "zod";
-import { createSmithersRoot } from "smithers";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Claude } from "smithers-orchestrator/components/Claude";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Claude,
+} from "smithers-orchestrator";
 
 // Define the schema
 const AnalysisSchema = z.object({

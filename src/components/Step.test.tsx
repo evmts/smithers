@@ -385,11 +385,16 @@ describe('Step component', () => {
         </SmithersProvider>
       )
 
-      // Wait for completion detection (100ms delay + buffer)
-      await new Promise(r => setTimeout(r, 300))
+      // Wait for step to start
+      await new Promise(r => setTimeout(r, 150))
+
+      // Dispose root to trigger unmount - onComplete is called on unmount
+      root.dispose()
+      
+      // Wait for cleanup
+      await new Promise(r => setTimeout(r, 50))
 
       expect(completed).toBe(true)
-      root.dispose()
     })
   })
 

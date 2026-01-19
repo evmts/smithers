@@ -22,6 +22,7 @@ import { createVcsModule, type VcsModule } from './vcs.js'
 import { createQueryModule, type QueryFunction } from './query.js'
 import { createRenderFramesModule, type RenderFramesModule } from './render-frames.js'
 import { createBuildStateModule, type BuildStateModule } from './build-state.js'
+import { createVCSQueueModule, type VCSQueueModule } from './vcs-queue.js'
 
 export interface SmithersDB {
   /**
@@ -93,6 +94,11 @@ export interface SmithersDB {
    * Build state coordination for broken builds
    */
   buildState: BuildStateModule
+
+  /**
+   * VCS operation queue for serialized git/jj operations
+   */
+  vcsQueue: VCSQueueModule
 
   /**
    * Raw query access
@@ -258,6 +264,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   const vcs = createVcsModule({ rdb, getCurrentExecutionId })
   const renderFrames = createRenderFramesModule({ rdb, getCurrentExecutionId })
   const buildState = createBuildStateModule({ rdb })
+  const vcsQueue = createVCSQueueModule({ rdb, getCurrentExecutionId })
   const query = createQueryModule({ rdb })
 
   const db: SmithersDB = {
@@ -275,6 +282,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     vcs,
     renderFrames,
     buildState,
+    vcsQueue,
     query,
     close: () => {
       rdb.close()
@@ -304,4 +312,5 @@ export type { HumanModule } from './human.js'
 export type { VcsModule } from './vcs.js'
 export type { RenderFramesModule } from './render-frames.js'
 export type { BuildStateModule } from './build-state.js'
+export type { VCSQueueModule, VCSQueueItem } from './vcs-queue.js'
 export type { QueryFunction } from './query.js'

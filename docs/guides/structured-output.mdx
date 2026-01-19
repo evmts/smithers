@@ -37,6 +37,7 @@ Descriptions help Claude understand what each field should contain:
 const AnalysisSchema = z.object({
   summary: z.string().describe("A 1-2 sentence summary of the findings"),
   confidence: z.number().min(0).max(1).describe("Confidence level from 0 to 1"),
+  score: z.number().min(0).max(100).describe("Overall quality score from 0 to 100"),
   issues: z.array(z.object({
     severity: z.enum(["low", "medium", "high", "critical"])
       .describe("Impact level of this issue"),
@@ -103,7 +104,7 @@ Smithers automatically retries if validation fails:
 ```tsx
 <Claude
   schema={AnalysisSchema}
-  maxRetries={2}  // Retry up to 2 times on validation failure
+  schemaRetries={2}  // Retry up to 2 times on validation failure
   retryOnValidationFailure  // Default: true
   onFinished={(result) => {
     // Guaranteed to match schema
@@ -135,7 +136,7 @@ Add business logic validation:
     }
     return true;
   }}
-  maxRetries={2}
+  schemaRetries={2}
 >
   Find issues in the code.
 </Claude>
@@ -203,7 +204,7 @@ const CodeReviewSchema = z.object({
 <Claude
   model="opus"
   schema={CodeReviewSchema}
-  maxRetries={3}
+  schemaRetries={3}
   allowedTools={["Read", "Glob", "Grep"]}
   onFinished={(result) => {
     const review = result.structured!;

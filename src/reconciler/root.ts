@@ -4,8 +4,8 @@ import type { SmithersNode } from './types.js'
 import { serialize } from './serialize.js'
 import {
   createOrchestrationPromise,
-  signalOrchestrationError,
-} from '../components/Ralph.jsx'
+  signalOrchestrationErrorByToken,
+} from '../components/SmithersProvider.js'
 
 // Type for the fiber root container
 type FiberRoot = ReturnType<typeof SmithersReconciler.createContainer>
@@ -81,7 +81,8 @@ export function createSmithersRoot(): SmithersRoot {
       }
 
       // Create a promise that Ralph will resolve when orchestration completes
-      const completionPromise = createOrchestrationPromise()
+      // Token-based API ensures concurrency safety across multiple roots
+      const { promise: completionPromise, token: orchestrationToken } = createOrchestrationPromise()
       let fatalError: unknown | null = null
       let errorResolve: (() => void) | null = null
       const errorPromise = new Promise<void>((resolve) => {
@@ -91,7 +92,7 @@ export function createSmithersRoot(): SmithersRoot {
         fatalError = error
         if (errorResolve) errorResolve()
         const err = error instanceof Error ? error : new Error(String(error))
-        signalOrchestrationError(err)
+        signalOrchestrationErrorByToken(orchestrationToken, err)
       }
 
       // Check if App returns a Promise

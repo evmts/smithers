@@ -151,7 +151,7 @@ function JJWorkflow() {
         {phase === "snapshot" && (
           <Snapshot
             message="Before feature implementation"
-            onComplete={() => setPhase("implement")}
+            onFinished={() => setPhase("implement")}
           />
         )}
 
@@ -167,7 +167,7 @@ function JJWorkflow() {
           <Commit
             autoDescribe
             notes="Smithers automated commit"
-            onComplete={() => setPhase("done")}
+            onFinished={() => setPhase("done")}
           />
         )}
       </Ralph>
