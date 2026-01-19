@@ -2,11 +2,14 @@
  * Unit tests for registry.ts - Tool registry and specifications.
  */
 import { describe, test, expect } from 'bun:test'
+import { z } from 'zod'
 import {
   BUILTIN_TOOLS,
   isBuiltinTool,
   getToolInfo,
   isCustomTool,
+  isLegacyTool,
+  isSmithersTool,
   isMCPServer,
   isToolName,
   parseToolSpecs,
@@ -14,6 +17,7 @@ import {
   type Tool,
   type MCPServer,
 } from './registry.js'
+import { createSmithersTool } from './createSmithersTool.js'
 
 describe('BUILTIN_TOOLS', () => {
   test('contains Read tool', () => {
@@ -135,6 +139,7 @@ describe('isCustomTool', () => {
     }
 
     expect(isCustomTool(tool)).toBe(true)
+    expect(isLegacyTool(tool)).toBe(true)
   })
 
   test('returns false for strings', () => {
@@ -149,6 +154,31 @@ describe('isCustomTool', () => {
     }
 
     expect(isCustomTool(server)).toBe(false)
+    expect(isLegacyTool(server)).toBe(false)
+  })
+})
+
+describe('isSmithersTool', () => {
+  test('returns true for AI SDK tools', () => {
+    const tool = createSmithersTool({
+      name: 'smithers',
+      description: 'Test tool',
+      inputSchema: z.object({ value: z.string() }),
+      execute: async ({ value }) => ({ result: value }),
+    })
+
+    expect(isSmithersTool(tool)).toBe(true)
+  })
+
+  test('returns false for legacy tools', () => {
+    const tool: Tool = {
+      name: 'legacy',
+      description: 'Legacy tool',
+      inputSchema: { type: 'object' },
+      execute: async () => {},
+    }
+
+    expect(isSmithersTool(tool)).toBe(false)
   })
 
   test('returns false for null', () => {
@@ -311,6 +341,8 @@ describe('parseToolSpecs', () => {
 
     expect(result.builtinTools).toEqual(['Read', 'Edit', 'Bash'])
     expect(result.customTools).toHaveLength(0)
+    expect(result.smithersTools).toHaveLength(0)
+    expect(result.legacyTools).toHaveLength(0)
     expect(result.mcpServers).toHaveLength(0)
   })
 
@@ -326,6 +358,8 @@ describe('parseToolSpecs', () => {
 
     expect(result.customTools).toHaveLength(1)
     expect(result.customTools[0]).toBe(customTool)
+    expect(result.legacyTools).toHaveLength(1)
+    expect(result.smithersTools).toHaveLength(0)
   })
 
   test('separates MCP servers', () => {
@@ -341,6 +375,20 @@ describe('parseToolSpecs', () => {
     expect(result.mcpServers[0]).toBe(mcpServer)
   })
 
+  test('separates Smithers tools', () => {
+    const smithersTool = createSmithersTool({
+      name: 'greet',
+      description: 'Greet user',
+      inputSchema: z.object({ name: z.string() }),
+      execute: async ({ name }) => ({ greeting: `hi ${name}` }),
+    })
+    const result = parseToolSpecs([smithersTool])
+
+    expect(result.smithersTools).toHaveLength(1)
+    expect(result.smithersTools[0]).toBe(smithersTool)
+    expect(result.customTools).toHaveLength(0)
+  })
+
   test('handles mixed specs', () => {
     const customTool: Tool = {
       name: 'custom',
@@ -348,15 +396,22 @@ describe('parseToolSpecs', () => {
       inputSchema: { type: 'object' },
       execute: async () => {},
     }
+    const smithersTool = createSmithersTool({
+      name: 'smithers',
+      description: 'Smithers tool',
+      inputSchema: z.object({ name: z.string() }),
+      execute: async () => ({ ok: true }),
+    })
     const mcpServer: MCPServer = {
       name: 'sqlite',
       command: 'bunx',
     }
-    const specs = ['Read', customTool, mcpServer, 'Edit']
+    const specs = ['Read', customTool, smithersTool, mcpServer, 'Edit']
     const result = parseToolSpecs(specs)
 
     expect(result.builtinTools).toEqual(['Read', 'Edit'])
     expect(result.customTools).toHaveLength(1)
+    expect(result.smithersTools).toHaveLength(1)
     expect(result.mcpServers).toHaveLength(1)
   })
 
@@ -365,6 +420,8 @@ describe('parseToolSpecs', () => {
 
     expect(result.builtinTools).toHaveLength(0)
     expect(result.customTools).toHaveLength(0)
+    expect(result.smithersTools).toHaveLength(0)
+    expect(result.legacyTools).toHaveLength(0)
     expect(result.mcpServers).toHaveLength(0)
   })
 

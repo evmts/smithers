@@ -122,6 +122,34 @@ function runMigrations(rdb: ReactiveDatabase): void {
     rdb.exec('ALTER TABLE agents ADD COLUMN log_path TEXT')
   }
 
+  // Migration: Add stream_summary column to agents table if missing
+  const hasStreamSummary = agentsColumns.some((col) => col.name === 'stream_summary')
+  if (!hasStreamSummary) {
+    rdb.exec('ALTER TABLE agents ADD COLUMN stream_summary TEXT')
+  }
+
+  // Migration: Add agent_stream_events table if missing
+  const streamEventsTable = rdb.query<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_stream_events'"
+  )
+  if (streamEventsTable.length === 0) {
+    rdb.exec(`
+      CREATE TABLE IF NOT EXISTS agent_stream_events (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL,
+        event_id TEXT,
+        tool_name TEXT,
+        content TEXT,
+        timestamp INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    `)
+    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_agent ON agent_stream_events(agent_id)')
+    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_type ON agent_stream_events(event_type)')
+    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_created ON agent_stream_events(created_at DESC)')
+  }
+
   // Migration: Add interactive session columns to human_interactions table if missing
   const humanColumns = rdb.query<{ name: string }>('PRAGMA table_info(human_interactions)')
   const hasSessionConfig = humanColumns.some((col) => col.name === 'session_config')

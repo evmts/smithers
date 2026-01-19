@@ -30,9 +30,12 @@
     "./middleware": "./src/middleware/index.ts",
     "./db": "./src/db/index.ts",
     "./monitor": "./src/monitor/index.ts",
+    "./middleware": "./src/middleware/index.ts",
+    "./rate-limits": "./src/rate-limits/index.ts",
     "./tools": "./src/tools/index.ts",
     "./reactive-sqlite": "./src/reactive-sqlite/index.ts",
-    "./hooks": "./src/hooks/index.ts"
+    "./hooks": "./src/hooks/index.ts",
+    "./hooks/ai-sdk": "./src/hooks/ai-sdk.ts"
   },
   "files": [
     "src",
@@ -55,12 +58,15 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.41",
+    "ai": "^6.0.39",
     "@anthropic-ai/claude-agent-sdk": "^0.1.76",
     "@anthropic-ai/sdk": "^0.71.2",
     "@babel/core": "^7.28.6",
     "@babel/preset-typescript": "^7.28.5",
     "@opentui/core": "^0.1.74",
     "@opentui/react": "^0.1.74",
+    "ai": "^3.0.33",
     "commander": "^12.0.0",
     "react": "^19.0.0",
     "react-reconciler": "^0.32.0",

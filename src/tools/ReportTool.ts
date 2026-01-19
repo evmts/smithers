@@ -1,38 +1,27 @@
 // Report Tool - Allows agents to write structured reports to the database
 
-import type { Tool, ToolContext, JSONSchema } from './registry.jsx'
+import { z } from 'zod'
+import { createSmithersTool } from './createSmithersTool.js'
 
 /**
  * Report tool input schema
  */
-const reportInputSchema: JSONSchema = {
-  type: 'object',
-  properties: {
-    type: {
-      type: 'string',
-      enum: ['progress', 'finding', 'warning', 'error', 'metric', 'decision'],
-      description: 'Type of report',
-    },
-    title: {
-      type: 'string',
-      description: 'Brief title for the report',
-    },
-    content: {
-      type: 'string',
-      description: 'Detailed content of the report',
-    },
-    data: {
-      type: 'object',
-      description: 'Optional structured data to include',
-    },
-    severity: {
-      type: 'string',
-      enum: ['info', 'warning', 'critical'],
-      description: 'Severity level (default: info)',
-    },
-  },
-  required: ['type', 'title', 'content'],
-}
+const reportTypes = ['progress', 'finding', 'warning', 'error', 'metric', 'decision'] as const
+const severityLevels = ['info', 'warning', 'critical'] as const
+
+const reportInputSchema = z.object({
+  type: z.enum(reportTypes).describe('Type of report'),
+  title: z.string().describe('Brief title for the report'),
+  content: z.string().describe('Detailed content of the report'),
+  data: z.record(z.string(), z.unknown()).optional().describe('Optional structured data to include'),
+  severity: z.enum(severityLevels).optional().describe('Severity level (default: info)'),
+})
+
+const reportOutputSchema = z.object({
+  success: z.boolean(),
+  reportId: z.string(),
+  message: z.string(),
+})
 
 /**
  * Create a Report tool instance for an agent
@@ -52,8 +41,8 @@ const reportInputSchema: JSONSchema = {
  * - decision: Document a decision made
  * ```
  */
-export function createReportTool(context: ToolContext): Tool {
-  return {
+export function createReportTool() {
+  return createSmithersTool({
     name: 'Report',
     description: `Report progress, findings, or status to the orchestration system.
 Use this to communicate important information back to the orchestrator.
@@ -71,16 +60,9 @@ Severity levels:
 - info: Informational (default)
 - warning: Potential issue that needs attention
 - critical: Serious issue that may stop orchestration`,
-
     inputSchema: reportInputSchema,
-
-    execute: async (input: {
-      type: 'progress' | 'finding' | 'warning' | 'error' | 'metric' | 'decision'
-      title: string
-      content: string
-      data?: Record<string, any>
-      severity?: 'info' | 'warning' | 'critical'
-    }) => {
+    outputSchema: reportOutputSchema,
+    execute: async (input, context) => {
       // Default severity based on type
       let severity = input.severity
       if (!severity) {
@@ -117,7 +99,7 @@ Severity levels:
         message: `Report logged successfully: ${input.title}`,
       }
     },
-  }
+  })
 }
 
 /**

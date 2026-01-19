@@ -21,6 +21,7 @@ I use Smithers for both long-term (weeks) agentic work, as well as one-off scrip
 - [Installation](#installation)
 - [Dependencies](#dependencies)
 - [Usage](#usage)
+- [AI SDK React Hooks](#ai-sdk-react-hooks)
 - [Recipes](#recipes)
 - [Features](#features)
   - [Claude Component](#claude-component)
@@ -33,6 +34,7 @@ I use Smithers for both long-term (weeks) agentic work, as well as one-off scrip
   - [PhaseRegistry & Step](#phaseregistry--step)
   - [Parallel Execution](#parallel-execution)
   - [Database State Management](#database-state-management)
+  - [Rate Limit Monitoring](#rate-limit-monitoring)
 - [Contributing](#contributing)
 
 ---
@@ -156,6 +158,41 @@ Run it:
 
 ```bash
 bun my-workflow.tsx
+```
+
+---
+
+## AI SDK React Hooks
+
+Smithers re-exports the Vercel AI SDK React hooks so you can import everything
+from a single package:
+
+```tsx
+import { useChat, useCompletion, useSmithers } from "smithers-orchestrator";
+
+function ChatUI() {
+  const { messages, sendMessage, status } = useChat({ api: "/api/chat" });
+  const { db } = useSmithers();
+
+  return (
+    <div>
+      <p>Status: {status}</p>
+      {messages.map((message) => (
+        <div key={message.id}>{message.content}</div>
+      ))}
+      <button onClick={() => sendMessage({ role: "user", content: "Hi" })}>
+        Send
+      </button>
+    </div>
+  );
+}
+```
+
+You can also import directly from the hooks subpath:
+
+```tsx
+import { useChat } from "smithers-orchestrator/hooks";
+import { useChat as useAiChat } from "smithers-orchestrator/hooks/ai-sdk";
 ```
 
 ---
@@ -338,6 +375,37 @@ Give Claude access to external tools via Model Context Protocol:
 </Claude>
 ```
 
+### AI SDK Tool Format
+
+Define tools with Zod schemas and pass them to Claude:
+
+```tsx
+import { z } from "zod";
+import { createSmithersTool } from "smithers-orchestrator/tools";
+
+const reportTool = createSmithersTool({
+  name: "report",
+  description: "Report progress to the orchestrator",
+  inputSchema: z.object({
+    message: z.string(),
+    severity: z.enum(["info", "warning", "error"]).optional(),
+  }),
+  execute: async ({ message, severity }, { db }) => {
+    await db.vcs.addReport({
+      type: "progress",
+      title: "Agent Report",
+      content: message,
+      severity: severity ?? "info",
+    });
+    return { success: true };
+  },
+});
+
+<Claude tools={[reportTool]}>
+  Report progress as you go.
+</Claude>
+```
+
 ### Smithers Subagent
 
 Spawn a new Smithers instance to plan and execute complex subtasks:
@@ -439,6 +507,22 @@ const history = await db.state.getHistory("phase");
 
 // View all state
 const all = await db.state.getAll();
+```
+
+### Rate Limit Monitoring
+
+Track provider rate limit headroom and execution-scoped token usage:
+
+```typescript
+import { createRateLimitMonitor } from "smithers-orchestrator/rate-limits";
+
+const monitor = createRateLimitMonitor({
+  anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
+  db,
+});
+
+const status = await monitor.getStatus("anthropic", "claude-sonnet-4");
+const usage = await monitor.getUsage(executionId);
 ```
 
 ---

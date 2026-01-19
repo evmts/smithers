@@ -3,7 +3,7 @@
 
 export type { JSONSchema } from './schema.js'
 
-export type { ToolContext, Tool, MCPServer } from './tools.js'
+export type { ToolContext, Tool, MCPServer, SmithersTool, LegacyTool, ToolSpec } from './tools.js'
 
 export type {
   BaseAgentProps,

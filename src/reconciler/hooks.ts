@@ -174,6 +174,7 @@ export function useEffectOnValueChange<T>(
 ): void {
   const lastValueRef = useRef<T | typeof UNSET>(UNSET);
   const effectRef = useRef(effect);
+  const enabled = useExecutionGate();
   effectRef.current = effect;
   const enabled = useExecutionGate();
 
