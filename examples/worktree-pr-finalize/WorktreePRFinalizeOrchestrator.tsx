@@ -92,7 +92,7 @@ export function WorktreePRFinalizeOrchestrator({
   // Handle completion reports from subagents
   const handleComplete = (
     worktree: WorktreeContext,
-    result: { success: boolean; mergedSha?: string; error?: string }
+    result: { success: boolean; mergedSha?: string | undefined; error?: string | undefined }
   ) => {
     const report: WorktreeAgentReport = {
       worktree: worktree.name,
