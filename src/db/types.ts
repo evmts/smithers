@@ -114,6 +114,14 @@ export interface Transition {
   created_at: Date
 }
 
+export interface BuildState {
+  id: number
+  status: 'passing' | 'broken' | 'fixing'
+  fixer_agent_id: string | null | undefined
+  broken_since: Date | string | null | undefined
+  last_check: Date | string | null | undefined
+}
+
 export interface Artifact {
   id: string
   execution_id: string
