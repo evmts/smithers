@@ -25,13 +25,45 @@ import { Step } from "smithers-orchestrator";
 ## Props
 
 <ParamField path="name" type="string">
-  Name of the step for tracking.
+  Name of the step for tracking and logging.
+</ParamField>
 
-  ```tsx
-  <Step name="Initialize Database">
-    <Claude>Run the migration.</Claude>
-  </Step>
-  ```
+<ParamField path="children" type="ReactNode" required>
+  Content to execute within the step.
+</ParamField>
+
+### VCS Integration
+
+<ParamField path="snapshotBefore" type="boolean" default="false">
+  Create a JJ snapshot before step execution. Useful for rollback if step fails.
+  
+  <Info>Requires JJ to be configured in the repository. Logs a warning if JJ is unavailable.</Info>
+</ParamField>
+
+<ParamField path="snapshotAfter" type="boolean" default="false">
+  Create a JJ snapshot after step completes successfully.
+</ParamField>
+
+<ParamField path="commitAfter" type="boolean" default="false">
+  Create a JJ commit after step completes. The commit is logged to the database via `db.vcs.logCommit()`.
+</ParamField>
+
+<ParamField path="commitMessage" type="string">
+  Custom commit message when `commitAfter` is true. Defaults to `"Step: {step-name}"`.
+</ParamField>
+
+### Callbacks
+
+<ParamField path="onStart" type="() => void">
+  Called when the step starts executing.
+</ParamField>
+
+<ParamField path="onComplete" type="() => void">
+  Called when the step completes successfully.
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Called when the step encounters an error.
 </ParamField>
 
 ## Structured Workflow
