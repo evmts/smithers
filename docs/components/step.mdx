@@ -66,6 +66,28 @@ import { Step } from "smithers-orchestrator";
   Called when the step encounters an error.
 </ParamField>
 
+## VCS Integration
+
+Steps can automatically create JJ snapshots and commits:
+
+```tsx
+<Phase name="Implementation">
+  <Step 
+    name="Implement Feature"
+    snapshotBefore
+    commitAfter
+    commitMessage="feat: implement user authentication"
+    onComplete={() => console.log("Feature implemented")}
+  >
+    <Claude>Implement the authentication system.</Claude>
+  </Step>
+</Phase>
+```
+
+<Info>
+VCS operations fail gracefully - if JJ is not configured or an operation fails, a warning is logged but the step continues. This prevents VCS issues from blocking workflow execution.
+</Info>
+
 ## Structured Workflow
 
 ```tsx

@@ -7,6 +7,10 @@ description: Group and organize Claude executions with named execution boundarie
 
 The `<Subagent>` component wraps child components in a named execution boundary. This provides better organization, debugging visibility, and optional parallel execution.
 
+<Info>
+**Current Implementation:** Subagent provides named grouping for debugging and plan visualization. The `parallel` prop is currently a metadata hint only—it does not enforce parallel or sequential execution. For actual parallel execution, use the `<Parallel>` component which wraps children in a parallel StepRegistryProvider.
+</Info>
+
 ## Usage
 
 ```tsx
@@ -59,17 +63,27 @@ import { Subagent } from "smithers-orchestrator";
 
 ### Parallel Execution
 
-Use `parallel={true}` to run multiple Claude instances concurrently:
+The `parallel` prop is a metadata hint for debugging and visualization. For actual parallel execution, use the `<Parallel>` component:
 
 ```tsx
-<Subagent name="parallel-research" parallel={true}>
+import { Parallel } from "smithers-orchestrator";
+
+{/* Actual parallel execution */}
+<Parallel>
   <Claude>Research React performance patterns.</Claude>
   <Claude>Research database optimization techniques.</Claude>
   <Claude>Research caching strategies.</Claude>
+</Parallel>
+
+{/* Metadata-only (does not enforce parallel execution) */}
+<Subagent name="parallel-research" parallel={true}>
+  <Claude>Research React performance patterns.</Claude>
 </Subagent>
 ```
 
 ### Combining Sequential and Parallel
+
+Use `<Parallel>` for actual parallel execution within a workflow:
 
 ```tsx
 <SmithersProvider db={db} executionId={executionId}>
@@ -79,10 +93,12 @@ Use `parallel={true}` to run multiple Claude instances concurrently:
   </Subagent>
 
   {/* Parallel: research topics simultaneously */}
-  <Subagent name="research" parallel={true}>
-    <Claude>Research frontend optimization.</Claude>
-    <Claude>Research backend optimization.</Claude>
-    <Claude>Research infrastructure options.</Claude>
+  <Subagent name="research">
+    <Parallel>
+      <Claude>Research frontend optimization.</Claude>
+      <Claude>Research backend optimization.</Claude>
+      <Claude>Research infrastructure options.</Claude>
+    </Parallel>
   </Subagent>
 
   {/* Sequential: synthesize and implement */}
@@ -144,20 +160,22 @@ function ResearchWorkflow() {
     ```
   </Accordion>
 
-  <Accordion title="Use parallel for independent tasks">
-    Only use `parallel={true}` for tasks that don't depend on each other:
+  <Accordion title="Use Parallel for independent tasks">
+    Use `<Parallel>` (not `parallel={true}`) for actual parallel execution of independent tasks:
     ```tsx
-    // Good - independent research tasks
-    <Subagent name="research" parallel={true}>
-      <Claude>Research topic A</Claude>
-      <Claude>Research topic B</Claude>
+    // Good - independent research tasks with actual parallel execution
+    <Subagent name="research">
+      <Parallel>
+        <Claude>Research topic A</Claude>
+        <Claude>Research topic B</Claude>
+      </Parallel>
     </Subagent>
 
     // Bad - second task depends on first
-    <Subagent name="dependent" parallel={true}>
+    <Parallel>
       <Claude>Create the database schema</Claude>
       <Claude>Write queries for the schema</Claude>  {/* Needs schema first! */}
-    </Subagent>
+    </Parallel>
     ```
   </Accordion>
 
