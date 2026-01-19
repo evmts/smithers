@@ -320,7 +320,7 @@ Current working directory: ${worktreePath}
   const exitCode = await proc.exited
 
   // For Claude: check if subscription failed and retry with API key
-  if (!isCodex && exitCode !== 0 && process.env.ANTHROPIC_API_KEY) {
+  if (!isCodex && exitCode !== 0 && process.env['ANTHROPIC_API_KEY']) {
     const combined = `${output}\n${stderrText}`.toLowerCase()
     const isAuthFailure =
       combined.includes('subscription') ||
@@ -492,7 +492,7 @@ async function runWorktreeAgent(
   let exitCode = await proc.exited
 
   // For Claude: check if subscription failed and retry with API key
-  if (!isCodex && exitCode !== 0 && process.env.ANTHROPIC_API_KEY) {
+  if (!isCodex && exitCode !== 0 && process.env['ANTHROPIC_API_KEY']) {
     const combined = `${output}\n${stderrText}`.toLowerCase()
     const isAuthFailure =
       combined.includes('subscription') ||
