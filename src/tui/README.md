@@ -183,7 +183,7 @@ function MyView() {
 - `<box>` - Container with flexbox layout
 - `<text>` - Static text with color/styles
 - `<scrollbox>` - Scrollable container (vim navigation)
-- `<input>` - Text input (may not be typed yet)
+- `<input>` - Text input (typed in `opentui.d.ts` for common props)
 
 **Style properties:**
 - Colors: `fg`, `bg` (hex or named)
@@ -332,7 +332,7 @@ reports (id, type, title, content, severity)
 ### ⚠️ Known Issues
 - **Manual polling** instead of reactive queries (no useQueryValue in TUI yet)
 - **500ms lag** on fast executions
-- **Input element** may not be typed (opentui.d.ts incomplete)
+- **Input element** typing is partial (extend `OpenTUIInputProps` as needed)
 - **No tests** for TUI components
 - **Frames only captured on mount** (not every render)
 - **Limited scrolling** in some views (terminal height constraint)
