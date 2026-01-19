@@ -1,3 +1,6 @@
+/**
+ * Unit tests for tool-to-mcp.ts - MCP definition conversion
+ */
 import { describe, test, expect } from 'bun:test'
 import { z } from 'zod'
 import { toolToMCPDefinition, createSmithersToolServer } from './tool-to-mcp.js'
@@ -52,6 +55,56 @@ describe('toolToMCPDefinition', () => {
     const def = toolToMCPDefinition('status', tool)
 
     expect(def.inputSchema.required).toBeUndefined()
+  })
+
+  test('handles nested objects', () => {
+    const tool = createSmithersTool({
+      name: 'config',
+      description: 'Configure settings',
+      inputSchema: z.object({
+        settings: z.object({
+          enabled: z.boolean(),
+          level: z.number(),
+        }),
+      }),
+      execute: async () => ({}),
+    })
+
+    const def = toolToMCPDefinition('config', tool)
+
+    expect(def.inputSchema.properties.settings.type).toBe('object')
+    expect(def.inputSchema.properties.settings.properties.enabled).toEqual({ type: 'boolean' })
+  })
+
+  test('handles arrays', () => {
+    const tool = createSmithersTool({
+      name: 'batch',
+      description: 'Batch process',
+      inputSchema: z.object({
+        items: z.array(z.string()),
+      }),
+      execute: async () => [],
+    })
+
+    const def = toolToMCPDefinition('batch', tool)
+
+    expect(def.inputSchema.properties.items.type).toBe('array')
+    expect(def.inputSchema.properties.items.items).toEqual({ type: 'string' })
+  })
+
+  test('handles enums', () => {
+    const tool = createSmithersTool({
+      name: 'status',
+      description: 'Set status',
+      inputSchema: z.object({
+        status: z.enum(['active', 'inactive', 'pending']),
+      }),
+      execute: async () => ({}),
+    })
+
+    const def = toolToMCPDefinition('status', tool)
+
+    expect(def.inputSchema.properties.status.enum).toEqual(['active', 'inactive', 'pending'])
   })
 
   test('converts tool with complex nested schema', () => {

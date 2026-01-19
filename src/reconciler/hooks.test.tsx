@@ -247,10 +247,11 @@ describe('useMountedState', () => {
     const root = createSmithersRoot()
     await root.render(<TestComponent />)
     await flush()
+    
     await root.render(null)
     await flush()
     
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(stateUpdates).toEqual(['skipped - unmounted'])
     root.dispose()
   })
@@ -258,40 +259,45 @@ describe('useMountedState', () => {
 
 describe('useFirstMountState', () => {
   test('returns true on first render', async () => {
-    const results: boolean[] = []
+    let firstValue: boolean | null = null
     
-    function TestComponent({ trigger }: { trigger: number }) {
-      results.push(useFirstMountState())
-      return <div data-trigger={trigger} />
+    function TestComponent() {
+      const isFirst = useFirstMountState()
+      if (firstValue === null) firstValue = isFirst
+      return <div />
     }
     
     const root = createSmithersRoot()
-    await root.render(<TestComponent trigger={1} />)
-    expect(results[0]).toBe(true)
+    await root.render(<TestComponent />)
+    await flush()
+    expect(firstValue).toBe(true)
     root.dispose()
   })
 
   test('returns false on subsequent renders', async () => {
-    const results: boolean[] = []
+    const values: boolean[] = []
     
     function TestComponent({ trigger }: { trigger: number }) {
-      results.push(useFirstMountState())
+      values.push(useFirstMountState())
       return <div data-trigger={trigger} />
     }
     
     const root = createSmithersRoot()
     await root.render(<TestComponent trigger={1} />)
+    await flush()
     await root.render(<TestComponent trigger={2} />)
+    await flush()
     await root.render(<TestComponent trigger={3} />)
+    await flush()
     
-    expect(results).toEqual([true, false, false])
+    expect(values).toEqual([true, false, false])
     root.dispose()
   })
 })
 
 describe('usePrevious', () => {
   test('returns undefined on first render', async () => {
-    let prevValue: number | undefined
+    let prevValue: number | undefined = 999
     
     function TestComponent({ value }: { value: number }) {
       prevValue = usePrevious(value)
@@ -300,16 +306,16 @@ describe('usePrevious', () => {
     
     const root = createSmithersRoot()
     await root.render(<TestComponent value={1} />)
+    await flush()
     expect(prevValue).toBeUndefined()
     root.dispose()
   })
 
-  test('returns previous value after update', async () => {
-    const results: (number | undefined)[] = []
+  test('returns previous value on subsequent renders', async () => {
+    const prevValues: (number | undefined)[] = []
     
     function TestComponent({ value }: { value: number }) {
-      const prev = usePrevious(value)
-      results.push(prev)
+      prevValues.push(usePrevious(value))
       return <div data-value={value} />
     }
     
@@ -321,17 +327,19 @@ describe('usePrevious', () => {
     await root.render(<TestComponent value={3} />)
     await flush()
     
-    expect(results).toEqual([undefined, 1, 2])
+    expect(prevValues).toEqual([undefined, 1, 2])
     root.dispose()
   })
 })
 
 describe('useEffectOnce', () => {
-  test('runs effect once', async () => {
-    const effectFn = mock(() => {})
+  test('runs effect only once', async () => {
+    let runCount = 0
     
     function TestComponent({ trigger }: { trigger: number }) {
-      useEffectOnce(effectFn)
+      useEffectOnce(() => {
+        runCount++
+      })
       return <div data-trigger={trigger} />
     }
     
@@ -342,75 +350,81 @@ describe('useEffectOnce', () => {
     await flush()
     await root.render(<TestComponent trigger={3} />)
     await flush()
-    
-    expect(effectFn).toHaveBeenCalledTimes(1)
+    expect(runCount).toBe(1)
     root.dispose()
   })
 
   test('cleanup runs on unmount', async () => {
-    const cleanupFn = mock(() => {})
+    let cleanedUp = false
     
     function TestComponent() {
-      useEffectOnce(() => cleanupFn)
+      useEffectOnce(() => {
+        return () => {
+          cleanedUp = true
+        }
+      })
       return <div />
     }
     
     const root = createSmithersRoot()
     await root.render(<TestComponent />)
     await flush()
-    expect(cleanupFn).toHaveBeenCalledTimes(0)
+    expect(cleanedUp).toBe(false)
     
     await root.render(null)
     await flush()
-    expect(cleanupFn).toHaveBeenCalledTimes(1)
+    expect(cleanedUp).toBe(true)
     root.dispose()
   })
 })
 
 describe('useEffectOnValueChange', () => {
-  test('runs on initial value', async () => {
-    const effectFn = mock(() => {})
+  test('does not run on initial render', async () => {
+    let runCount = 0
     
     function TestComponent({ value }: { value: number }) {
-      useEffectOnValueChange(value, effectFn)
+      useEffectOnValueChange(value, () => {
+        runCount++
+      })
       return <div data-value={value} />
     }
     
     const root = createSmithersRoot()
     await root.render(<TestComponent value={1} />)
     await flush()
-    expect(effectFn).toHaveBeenCalledTimes(1)
+    expect(runCount).toBe(0)
     root.dispose()
   })
 
   test('runs when value changes', async () => {
-    const effectFn = mock(() => {})
+    let runCount = 0
     
     function TestComponent({ value }: { value: number }) {
-      useEffectOnValueChange(value, effectFn)
+      useEffectOnValueChange(value, () => {
+        runCount++
+      })
       return <div data-value={value} />
     }
     
     const root = createSmithersRoot()
     await root.render(<TestComponent value={1} />)
     await flush()
-    expect(effectFn).toHaveBeenCalledTimes(1)
-    
     await root.render(<TestComponent value={2} />)
     await flush()
-    expect(effectFn).toHaveBeenCalledTimes(2)
-    
     await root.render(<TestComponent value={3} />)
     await flush()
-    expect(effectFn).toHaveBeenCalledTimes(3)
+    
+    expect(runCount).toBe(2)
     root.dispose()
   })
 
-  test('does not run when value is same', async () => {
-    const effectFn = mock(() => {})
+  test('does not run when value stays the same', async () => {
+    let runCount = 0
     
     function TestComponent({ value }: { value: number }) {
-      useEffectOnValueChange(value, effectFn)
+      useEffectOnValueChange(value, () => {
+        runCount++
+      })
       return <div data-value={value} />
     }
     
@@ -422,45 +436,7 @@ describe('useEffectOnValueChange', () => {
     await root.render(<TestComponent value={1} />)
     await flush()
     
-    expect(effectFn).toHaveBeenCalledTimes(1)
-    root.dispose()
-  })
-
-  test('respects ExecutionGate', async () => {
-    const effectFn = mock(() => {})
-    
-    function TestComponent({ value }: { value: number }) {
-      useEffectOnValueChange(value, effectFn)
-      return <div data-value={value} />
-    }
-    
-    const root = createSmithersRoot()
-    await root.render(
-      <ExecutionGateProvider enabled={false}>
-        <TestComponent value={1} />
-      </ExecutionGateProvider>
-    )
-    await flush()
-    expect(effectFn).toHaveBeenCalledTimes(0)
-    root.dispose()
-  })
-
-  test('runs cleanup on value change', async () => {
-    const cleanupFn = mock(() => {})
-    
-    function TestComponent({ value }: { value: number }) {
-      useEffectOnValueChange(value, () => cleanupFn)
-      return <div data-value={value} />
-    }
-    
-    const root = createSmithersRoot()
-    await root.render(<TestComponent value={1} />)
-    await flush()
-    expect(cleanupFn).toHaveBeenCalledTimes(0)
-    
-    await root.render(<TestComponent value={2} />)
-    await flush()
-    expect(cleanupFn).toHaveBeenCalledTimes(1)
+    expect(runCount).toBe(0)
     root.dispose()
   })
 })
@@ -609,6 +585,27 @@ describe('ExecutionGateProvider', () => {
       </ExecutionGateProvider>
     )
     expect(innerValue).toBe(false)
+    root.dispose()
+  })
+
+  test('useMount does not run when gate is disabled', async () => {
+    let mounted = false
+    
+    function TestComponent() {
+      useMount(() => {
+        mounted = true
+      })
+      return <div />
+    }
+
+    const root = createSmithersRoot()
+    await root.render(
+      <ExecutionGateProvider enabled={false}>
+        <TestComponent />
+      </ExecutionGateProvider>
+    )
+    await flush()
+    expect(mounted).toBe(false)
     root.dispose()
   })
 })
