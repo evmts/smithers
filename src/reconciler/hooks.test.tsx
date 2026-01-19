@@ -379,33 +379,33 @@ describe('useEffectOnce', () => {
 })
 
 describe('useEffectOnValueChange', () => {
-  test('does not run on initial render', async () => {
+  test('runs on initial render (when value first becomes available)', async () => {
     let runCount = 0
-    
+
     function TestComponent({ value }: { value: number }) {
       useEffectOnValueChange(value, () => {
         runCount++
       })
       return <div data-value={value} />
     }
-    
+
     const root = createSmithersRoot()
     await root.render(<TestComponent value={1} />)
     await flush()
-    expect(runCount).toBe(0)
+    expect(runCount).toBe(1)
     root.dispose()
   })
 
   test('runs when value changes', async () => {
     let runCount = 0
-    
+
     function TestComponent({ value }: { value: number }) {
       useEffectOnValueChange(value, () => {
         runCount++
       })
       return <div data-value={value} />
     }
-    
+
     const root = createSmithersRoot()
     await root.render(<TestComponent value={1} />)
     await flush()
@@ -413,21 +413,22 @@ describe('useEffectOnValueChange', () => {
     await flush()
     await root.render(<TestComponent value={3} />)
     await flush()
-    
-    expect(runCount).toBe(2)
+
+    // 1 for initial + 2 for changes = 3
+    expect(runCount).toBe(3)
     root.dispose()
   })
 
-  test('does not run when value stays the same', async () => {
+  test('does not run when value stays the same after initial', async () => {
     let runCount = 0
-    
+
     function TestComponent({ value }: { value: number }) {
       useEffectOnValueChange(value, () => {
         runCount++
       })
       return <div data-value={value} />
     }
-    
+
     const root = createSmithersRoot()
     await root.render(<TestComponent value={1} />)
     await flush()
@@ -435,8 +436,9 @@ describe('useEffectOnValueChange', () => {
     await flush()
     await root.render(<TestComponent value={1} />)
     await flush()
-    
-    expect(runCount).toBe(0)
+
+    // Only runs on initial mount, not on re-renders with same value
+    expect(runCount).toBe(1)
     root.dispose()
   })
 })
