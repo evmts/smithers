@@ -3,6 +3,7 @@
  * Tests component rendering, lifecycle, props, and edge cases
  */
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
+import { useRef } from 'react'
 import { createSmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import {
@@ -13,10 +14,29 @@ import {
   type StepProps,
   type StepRegistryProviderProps,
 } from './Step.js'
-import { SmithersProvider } from './SmithersProvider.js'
+import { SmithersProvider, useSmithers } from './SmithersProvider.js'
+import { useExecutionEffect, useExecutionScope } from './ExecutionScope.js'
 import { Phase } from './Phase.js'
 import { Parallel } from './Parallel.js'
 import { PhaseRegistryProvider } from './PhaseRegistry.js'
+
+function StepTaskRunner(props: { name: string; delay?: number }) {
+  const { db } = useSmithers()
+  const executionScope = useExecutionScope()
+  const taskIdRef = useRef<string | null>(null)
+
+  useExecutionEffect(executionScope.enabled, () => {
+    taskIdRef.current = db.tasks.start('test-task', props.name)
+    const timeoutId = setTimeout(() => {
+      if (!db.db.isClosed && taskIdRef.current) {
+        db.tasks.complete(taskIdRef.current)
+      }
+    }, props.delay ?? 20)
+    return () => clearTimeout(timeoutId)
+  }, [db, executionScope.enabled, props.delay, props.name])
+
+  return <task name={props.name} />
+}
 
 describe('Step component', () => {
   let db: SmithersDB
@@ -117,6 +137,15 @@ describe('Step component', () => {
         onComplete,
       }
       expect(props.onComplete).toBe(onComplete)
+    })
+
+    test('accepts optional onError callback', () => {
+      const onError = () => {}
+      const props: StepProps = {
+        children: <div />,
+        onError,
+      }
+      expect(props.onError).toBe(onError)
     })
   })
 
@@ -578,6 +607,44 @@ describe('Step component', () => {
 
       expect(isActive0).toBe(true)
       expect(isActive1).toBe(true)
+      root.dispose()
+    })
+  })
+
+  describe('Step progression', () => {
+    test('advances step index when child tasks complete', async () => {
+      const root = createSmithersRoot()
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId}>
+          <StepRegistryProvider phaseId="progress">
+            <Step name="one"><StepTaskRunner name="one" delay={30} /></Step>
+            <Step name="two"><StepTaskRunner name="two" delay={30} /></Step>
+          </StepRegistryProvider>
+        </SmithersProvider>
+      )
+
+      await new Promise(r => setTimeout(r, 250))
+
+      const stepIndex = db.state.get<number>('stepIndex_progress')
+      expect(stepIndex).toBe(2)
+      root.dispose()
+    })
+
+    test('fires onAllStepsComplete after final step', async () => {
+      let allComplete = false
+      const root = createSmithersRoot()
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId}>
+          <StepRegistryProvider phaseId="complete" onAllStepsComplete={() => { allComplete = true }}>
+            <Step name="one"><StepTaskRunner name="one" delay={20} /></Step>
+            <Step name="two"><StepTaskRunner name="two" delay={20} /></Step>
+          </StepRegistryProvider>
+        </SmithersProvider>
+      )
+
+      await new Promise(r => setTimeout(r, 250))
+
+      expect(allComplete).toBe(true)
       root.dispose()
     })
   })

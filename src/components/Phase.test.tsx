@@ -2,9 +2,29 @@ import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
 import React from 'react'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
-import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
+import { SmithersProvider, signalOrchestrationComplete, useSmithers } from './SmithersProvider.js'
 import { Phase, type PhaseProps } from './Phase.js'
-import { usePhaseRegistry } from './PhaseRegistry.js'
+import { PhaseRegistryProvider, usePhaseRegistry } from './PhaseRegistry.js'
+import { Step } from './Step.js'
+import { useExecutionEffect, useExecutionScope } from './ExecutionScope.js'
+
+function PhaseTaskRunner(props: { name: string; delay?: number }) {
+  const { db } = useSmithers()
+  const executionScope = useExecutionScope()
+  const taskIdRef = React.useRef<string | null>(null)
+
+  useExecutionEffect(executionScope.enabled, () => {
+    taskIdRef.current = db.tasks.start('phase-test-task', props.name)
+    const timeoutId = setTimeout(() => {
+      if (!db.db.isClosed && taskIdRef.current) {
+        db.tasks.complete(taskIdRef.current)
+      }
+    }, props.delay ?? 20)
+    return () => clearTimeout(timeoutId)
+  }, [db, executionScope.enabled, props.delay, props.name])
+
+  return <task name={props.name} />
+}
 
 // ============================================================================
 // MODULE EXPORTS
@@ -474,6 +494,27 @@ describe('Phase with StepRegistry', () => {
 
     const xml = root.toXML()
     expect(xml).toContain('<step')
+  })
+
+  test('advances phase when all steps complete', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <PhaseRegistryProvider>
+          <Phase name="First">
+            <Step name="First-1"><PhaseTaskRunner name="first-1" delay={25} /></Step>
+            <Step name="First-2"><PhaseTaskRunner name="first-2" delay={25} /></Step>
+          </Phase>
+          <Phase name="Second">
+            <Step name="Second-1"><PhaseTaskRunner name="second-1" delay={10} /></Step>
+          </Phase>
+        </PhaseRegistryProvider>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 300))
+
+    const phaseIndex = db.state.get<number>('currentPhaseIndex')
+    expect(phaseIndex).toBe(1)
   })
 })
 

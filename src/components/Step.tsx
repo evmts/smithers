@@ -72,28 +72,44 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     }
     const index = stepsRef.current.length
     stepsRef.current.push(name)
-    
-    // Initialize step index in DB when first step registers
-    if (index === 0 && !props.isParallel && executionEnabled) {
-      const existing = db.state.get<number>(stateKey)
-      if (existing === null) {
-        db.state.set(stateKey, 0, 'step_registry_init')
-      }
-    }
-    
     return index
-  }, [db, executionEnabled, props.isParallel, stateKey])
+  }, [])
+
+  const registeredStepCount = stepsRef.current.length
+  const hasInitializedRef = useRef(false)
+  const hasNotifiedAllCompleteRef = useRef(false)
+  const initToken = executionEnabled ? (dbStepIndex ?? -1) : -2
+
+  useEffectOnValueChange(initToken, () => {
+    if (!executionEnabled || props.isParallel) return
+    if (hasInitializedRef.current) return
+    if (dbStepIndex !== null && dbStepIndex !== undefined) {
+      hasInitializedRef.current = true
+      return
+    }
+    db.state.set(stateKey, 0, 'step_registry_init')
+    hasInitializedRef.current = true
+  }, [db, dbStepIndex, executionEnabled, props.isParallel, stateKey])
+
+  useEffectOnValueChange(executionEnabled ? currentStepIndex : -1, () => {
+    if (!executionEnabled || props.isParallel || registeredStepCount === 0) return
+    if (hasNotifiedAllCompleteRef.current) return
+    if (currentStepIndex < registeredStepCount) return
+    hasNotifiedAllCompleteRef.current = true
+    props.onAllStepsComplete?.()
+  }, [currentStepIndex, executionEnabled, props.isParallel, props.onAllStepsComplete, registeredStepCount])
 
   const advanceStep = useCallback(() => {
     if (props.isParallel) return
     const nextIndex = currentStepIndex + 1
-    if (nextIndex < stepsRef.current.length) {
+    if (nextIndex <= stepsRef.current.length) {
       db.state.set(stateKey, nextIndex, 'step_advance')
     }
   }, [db, stateKey, currentStepIndex, props.isParallel])
 
   const isStepActive = useCallback((index: number): boolean => {
     if (props.isParallel) return true // All steps active in parallel mode
+    if (currentStepIndex >= stepsRef.current.length) return false
     return index === currentStepIndex
   }, [currentStepIndex, props.isParallel])
 
@@ -162,6 +178,11 @@ export interface StepProps {
    * Callback when step completes
    */
   onComplete?: () => void
+
+  /**
+   * Callback when step encounters an error
+   */
+  onError?: (error: Error) => void
 }
 
 /**
@@ -183,7 +204,7 @@ export interface StepProps {
  * ```
  */
 export function Step(props: StepProps): ReactNode {
-  const { db, reactiveDb, executionId } = useSmithers()
+  const { db, reactiveDb, executionId, ralphCount } = useSmithers()
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
   const executionScope = useExecutionScope()
@@ -192,7 +213,12 @@ export function Step(props: StepProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
   const hasCompletedRef = useRef(false)
-  const prevIsActiveRef = useRef(false)
+  const baselineTotalTaskCountRef = useRef<number | null>(null)
+  const hasSeenChildTasksRef = useRef(false)
+  const allowEmptyCompletionRef = useRef(false)
+  const allowEmptyCompletionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const runningTaskCountRef = useRef(0)
+  const totalTaskCountRef = useRef(0)
   const snapshotBeforeIdRef = useRef<string | undefined>(undefined)
   const snapshotAfterIdRef = useRef<string | undefined>(undefined)
   const commitHashRef = useRef<string | undefined>(undefined)
@@ -213,56 +239,24 @@ export function Step(props: StepProps): ReactNode {
   const status = hasError ? 'error' : canExecute ? 'active' : isCompleted ? 'completed' : 'pending'
   const isDbClosed = () => db.db.isClosed
 
-  // Monitor child tasks for this step (only when started)
-  // Uses the same pattern as SmithersProvider for reactive task counting
-  const { data: _childRunningTaskCount } = useQueryValue<number>(
+  const { data: runningTaskCount } = useQueryValue<number>(
     reactiveDb,
-    hasStartedRef.current && taskIdRef.current
-      ? `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND status = 'running' AND id != ?`
-      : `SELECT 0 as count`,
-    hasStartedRef.current && taskIdRef.current
-      ? [executionId, taskIdRef.current]
-      : []
+    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND iteration = ? AND status = 'running'`,
+    [executionId, ralphCount]
   )
 
-  // Helper: Start step with proper error handling and logging
-  const startStep = useCallback(async () => {
-    if (isDbClosed()) return
-    const endTiming = log.time('step_start')
-    taskIdRef.current = db.tasks.start('step', props.name)
+  const { data: totalTaskCount } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND iteration = ?`,
+    [executionId, ralphCount]
+  )
 
-    try {
-      // Snapshot before if requested
-      if (props.snapshotBefore) {
-        await withErrorLogging(log, 'snapshot_before', async () => {
-          const { changeId } = await jjSnapshot(`Before step: ${props.name ?? 'unnamed'}`)
-          snapshotBeforeIdRef.current = changeId
-          log.debug('Created snapshot before', { changeId })
-        })
-      }
-
-      // Start step in database
-      if (isDbClosed()) return
-      const id = db.steps.start(props.name)
-      stepIdRef.current = id
-      endTiming()
-
-      log.info('Started', { stepId: id })
-      props.onStart?.()
-    } catch (error) {
-      endTiming()
-      const errorObj = error instanceof Error ? error : new Error(String(error))
-      stepErrorRef.current = errorObj
-      log.error('Failed to start step', errorObj)
-
-      if (stepIdRef.current && !isDbClosed()) {
-        db.steps.fail(stepIdRef.current)
-      }
-      if (taskIdRef.current && !isDbClosed()) {
-        db.tasks.complete(taskIdRef.current)
-      }
+  const clearAllowEmptyCompletionTimeout = useCallback(() => {
+    if (allowEmptyCompletionTimeoutRef.current) {
+      clearTimeout(allowEmptyCompletionTimeoutRef.current)
+      allowEmptyCompletionTimeoutRef.current = null
     }
-  }, [db, log, props.name, props.onStart, props.snapshotBefore])
+  }, [])
 
   // Helper: Complete step with proper error handling and logging
   const completeStep = useCallback(async () => {
@@ -313,13 +307,84 @@ export function Step(props: StepProps): ReactNode {
       const errorObj = error instanceof Error ? error : new Error(String(error))
       stepErrorRef.current = errorObj
       log.error('Failed to complete step', errorObj)
+      props.onError?.(errorObj)
       db.steps.fail(id)
     } finally {
       if (taskIdRef.current) {
         db.tasks.complete(taskIdRef.current)
       }
     }
-  }, [db, log, props.commitAfter, props.commitMessage, props.name, props.onComplete, props.snapshotAfter, registry])
+  }, [db, log, props.commitAfter, props.commitMessage, props.name, props.onComplete, props.onError, props.snapshotAfter, registry])
+
+  const maybeCompleteStep = useCallback((runningCount: number, totalCount: number) => {
+    if (!hasStartedRef.current || hasCompletedRef.current) return
+    if (stepErrorRef.current) return
+    if (!executionScope.enabled || !isActive) return
+
+    const baselineTotal = baselineTotalTaskCountRef.current
+    if (baselineTotal !== null && totalCount > baselineTotal) {
+      hasSeenChildTasksRef.current = true
+    }
+
+    const childRunningCount = Math.max(0, runningCount - 1)
+    const canComplete = childRunningCount === 0 && (hasSeenChildTasksRef.current || allowEmptyCompletionRef.current)
+    if (!canComplete) return
+
+    hasCompletedRef.current = true
+    clearAllowEmptyCompletionTimeout()
+    completeStep()
+  }, [clearAllowEmptyCompletionTimeout, completeStep, executionScope.enabled, isActive])
+
+  // Helper: Start step with proper error handling and logging
+  const startStep = useCallback(async () => {
+    if (isDbClosed()) return
+    const endTiming = log.time('step_start')
+    taskIdRef.current = db.tasks.start('step', props.name)
+    baselineTotalTaskCountRef.current = db.db.queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND iteration = ?',
+      [executionId, ralphCount]
+    )?.count ?? 0
+    hasSeenChildTasksRef.current = false
+    allowEmptyCompletionRef.current = false
+    clearAllowEmptyCompletionTimeout()
+    allowEmptyCompletionTimeoutRef.current = setTimeout(() => {
+      allowEmptyCompletionRef.current = true
+      maybeCompleteStep(runningTaskCountRef.current, totalTaskCountRef.current)
+    }, 50)
+
+    try {
+      // Snapshot before if requested
+      if (props.snapshotBefore) {
+        await withErrorLogging(log, 'snapshot_before', async () => {
+          const { changeId } = await jjSnapshot(`Before step: ${props.name ?? 'unnamed'}`)
+          snapshotBeforeIdRef.current = changeId
+          log.debug('Created snapshot before', { changeId })
+        })
+      }
+
+      // Start step in database
+      if (isDbClosed()) return
+      const id = db.steps.start(props.name)
+      stepIdRef.current = id
+      endTiming()
+
+      log.info('Started', { stepId: id })
+      props.onStart?.()
+    } catch (error) {
+      endTiming()
+      const errorObj = error instanceof Error ? error : new Error(String(error))
+      stepErrorRef.current = errorObj
+      log.error('Failed to start step', errorObj)
+      props.onError?.(errorObj)
+
+      if (stepIdRef.current && !isDbClosed()) {
+        db.steps.fail(stepIdRef.current)
+      }
+      if (taskIdRef.current && !isDbClosed()) {
+        db.tasks.complete(taskIdRef.current)
+      }
+    }
+  }, [clearAllowEmptyCompletionTimeout, db, executionId, log, maybeCompleteStep, props.name, props.onError, props.onStart, props.snapshotBefore, ralphCount])
 
   // Reactive step activation - runs when canExecute becomes true
   useEffectOnValueChange(canExecute, () => {
@@ -329,19 +394,21 @@ export function Step(props: StepProps): ReactNode {
     startStep()
   }, [canExecute, startStep])
 
-  // Reactive completion detection - when step transitions from active to inactive
-  useEffectOnValueChange(isActive, () => {
-    // Handle completion: transition from active to inactive
-    if (prevIsActiveRef.current && !isActive && hasStartedRef.current && !hasCompletedRef.current) {
-      hasCompletedRef.current = true
-      completeStep()
-    }
+  useEffectOnValueChange(runningTaskCount ?? 0, () => {
+    const nextRunningCount = runningTaskCount ?? 0
+    runningTaskCountRef.current = nextRunningCount
+    maybeCompleteStep(nextRunningCount, totalTaskCountRef.current)
+  }, [maybeCompleteStep, runningTaskCount])
 
-    prevIsActiveRef.current = isActive
-  }, [isActive, completeStep])
+  useEffectOnValueChange(totalTaskCount ?? 0, () => {
+    const nextTotalCount = totalTaskCount ?? 0
+    totalTaskCountRef.current = nextTotalCount
+    maybeCompleteStep(runningTaskCountRef.current, nextTotalCount)
+  }, [maybeCompleteStep, totalTaskCount])
 
   // Cleanup on unmount - complete step if it was started but not completed
   useUnmount(() => {
+    clearAllowEmptyCompletionTimeout()
     if (hasStartedRef.current && !hasCompletedRef.current) {
       hasCompletedRef.current = true
       log.debug('Unmount cleanup - completing step')

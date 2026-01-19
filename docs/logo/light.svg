@@ -1,0 +1,12 @@
+<svg width="120" height="32" viewBox="0 0 120 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- S orchestration symbol -->
+  <g>
+    <circle cx="10" cy="10" r="4" fill="#0D9373"/>
+    <circle cx="22" cy="10" r="4" fill="#0D9373"/>
+    <circle cx="16" cy="22" r="4" fill="#0D9373"/>
+    <line x1="10" y1="14" x2="16" y2="18" stroke="#0D9373" stroke-width="2"/>
+    <line x1="22" y1="14" x2="16" y2="18" stroke="#0D9373" stroke-width="2"/>
+  </g>
+  <!-- Text -->
+  <text x="34" y="22" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600" fill="#111827">smithers</text>
+</svg>
