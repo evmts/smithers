@@ -45,7 +45,7 @@ describe('serialize', () => {
     const node = createNode('step', {}, ['Hello world'])
     const xml = serialize(node)
 
-    expect(xml).toBe('<step>\n  Hello world\n</step>')
+    expect(xml).toBe('<step>Hello world</step>')
   })
 
   test('serializes nested elements with indentation', () => {
@@ -53,7 +53,7 @@ describe('serialize', () => {
     const parent = createNode('phase', { name: 'main' }, [child])
     const xml = serialize(parent)
 
-    expect(xml).toBe('<phase name="main">\n  <step>\n    Do work\n  </step>\n</phase>')
+    expect(xml).toBe('<phase name="main">\n  <step>Do work</step>\n</phase>')
   })
 
   test('serializes ROOT node by serializing children only', () => {
@@ -72,7 +72,7 @@ describe('serialize', () => {
     const parent = createNode('phase', { name: 'multi' }, [child1, child2])
     const xml = serialize(parent)
 
-    expect(xml).toBe('<phase name="multi">\n  <step>\n    Step 1\n  </step>\n  <step>\n    Step 2\n  </step>\n</phase>')
+    expect(xml).toBe('<phase name="multi">\n  <step>Step 1</step>\n  <step>Step 2</step>\n</phase>')
   })
 
   test('serializes boolean props', () => {
@@ -203,7 +203,7 @@ describe('unknown parent warnings', () => {
     const node = createNode('loop', { iterations: '3' }, ['Do work'])
     const xml = serialize(node)
 
-    expect(xml).toBe('<loop iterations="3">\n  Do work\n</loop>')
+    expect(xml).toBe('<loop iterations="3">Do work</loop>')
   })
 
   test('adds warning when known type is inside unknown parent', () => {
@@ -261,7 +261,7 @@ describe('unknown parent warnings', () => {
     const loop = createNode('loop', { iterations: '3' }, [condition])
     const xml = serialize(loop)
 
-    expect(xml).toBe('<loop iterations="3">\n  <if condition="test-pass">\n    <mytask>\n      Do work\n    </mytask>\n  </if>\n</loop>')
+    expect(xml).toBe('<loop iterations="3">\n  <if condition="test-pass">\n    <mytask>Do work</mytask>\n  </if>\n</loop>')
   })
 
   test('serialize is idempotent - calling multiple times does not duplicate warnings', () => {

@@ -223,12 +223,13 @@ describe('StreamFormatter', () => {
   })
 
   describe('formatHeader edge cases', () => {
-    test('includes very long file names (may extend box width)', () => {
+    test('truncates very long file names to fit box width', () => {
       const formatter = new StreamFormatter()
       const longFileName = 'a'.repeat(100)
       const header = formatter.formatHeader(longFileName)
       
-      expect(header).toContain(longFileName)
+      expect(header).toContain('...')
+      expect(header).toContain(longFileName.substring(0, 38))
       expect(header).toContain('SMITHERS MONITOR')
     })
 
@@ -357,8 +358,8 @@ describe('StreamFormatter', () => {
     })
   })
 
-  describe('log deduplication', () => {
-    test('consecutive log events are deduplicated (only first shown)', () => {
+  describe('log handling', () => {
+    test('consecutive log events with different messages are shown', () => {
       const formatter = new StreamFormatter()
       const log1 = createEvent('log', { message: 'Log 1' })
       const log2 = createEvent('log', { message: 'Log 2' })
@@ -367,6 +368,18 @@ describe('StreamFormatter', () => {
       const output2 = formatter.formatEvent(log2)
       
       expect(output1).toContain('Log 1')
+      expect(output2).toContain('Log 2')
+    })
+
+    test('consecutive identical log events are deduplicated', () => {
+      const formatter = new StreamFormatter()
+      const log1 = createEvent('log', { message: 'Repeat' })
+      const log2 = createEvent('log', { message: 'Repeat' })
+      
+      const output1 = formatter.formatEvent(log1)
+      const output2 = formatter.formatEvent(log2)
+      
+      expect(output1).toContain('Repeat')
       expect(output2).toBe('')
     })
 
@@ -384,14 +397,14 @@ describe('StreamFormatter', () => {
       expect(output3).toContain('Log 2')
     })
 
-    test('lastEventType resets correctly between different event types', () => {
+    test('identical log after non-log event is shown', () => {
       const formatter = new StreamFormatter()
       
       formatter.formatEvent(createEvent('log', { message: 'Log' }))
       formatter.formatEvent(createEvent('tool', { name: 'Read' }))
-      const logOutput = formatter.formatEvent(createEvent('log', { message: 'New Log' }))
+      const logOutput = formatter.formatEvent(createEvent('log', { message: 'Log' }))
       
-      expect(logOutput).toContain('New Log')
+      expect(logOutput).toContain('Log')
     })
   })
 

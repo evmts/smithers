@@ -64,7 +64,11 @@ const KNOWN_TYPES = new Set([
  * This helps detect accidental nesting like <loop><Claude>...</Claude></loop>
  * where the user likely didn't want Claude to execute.
  */
-function addWarningsForUnknownParents(node: SmithersNode): void {
+function addWarningsForUnknownParents(node: SmithersNode | null | undefined): void {
+  if (!node || !node.type) {
+    return
+  }
+
   // Clear previous warnings to ensure idempotency when serialize() is called multiple times
   node.warnings = []
 
@@ -152,9 +156,17 @@ function serializeNode(node: SmithersNode): string {
     return escapeXml(String(node.props['value'] ?? ''))
   }
 
+  const childNodes = node.children.filter(c => c && c.type)
+  const hasTextChild = childNodes.some((child) => {
+    if (child.type !== 'TEXT') return false
+    const value = child.props?.['value']
+    return String(value ?? '').length > 0
+  })
+  const serializedChildren = childNodes.map(serializeNode).filter(s => s)
+
   // ROOT nodes: serialize children without wrapper tags
   if (node.type === 'ROOT') {
-    return node.children.filter(c => c && c.type).map(serializeNode).filter(s => s).join('\n')
+    return hasTextChild ? serializedChildren.join('') : serializedChildren.join('\n')
   }
 
   const tag = node.type.toLowerCase()
@@ -166,11 +178,15 @@ function serializeNode(node: SmithersNode): string {
   const attrs = serializeProps(node.props)
 
   // Serialize children recursively
-  const children = node.children.filter(c => c && c.type).map(serializeNode).filter(s => s).join('\n')
+  const children = hasTextChild ? serializedChildren.join('') : serializedChildren.join('\n')
 
   // Self-closing tag if no children
   if (!children) {
     return `<${tag}${keyAttr}${attrs} />`
+  }
+
+  if (hasTextChild) {
+    return `<${tag}${keyAttr}${attrs}>${children}</${tag}>`
   }
 
   // Otherwise wrap children with indentation
@@ -225,6 +241,7 @@ function serializeProps(props: Record<string, unknown>): string {
     'validate',      // Functions don't serialize
     'middleware',    // Middleware arrays contain functions
     'key',           // Stored on node.key, not props
+    '__smithersKey', // Internal key bridge; avoid duplicate serialization
     'ref',           // React refs should not serialize
   ])
 

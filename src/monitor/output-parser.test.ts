@@ -53,6 +53,15 @@ describe('OutputParser', () => {
       expect(events[0].data.iteration).toBe(5)
     })
 
+    test('parses ITERATION uppercase events', () => {
+      const parser = new OutputParser()
+      const events = parser.parseChunk('ITERATION 3 complete\n')
+
+      expect(events).toHaveLength(1)
+      expect(events[0].type).toBe('ralph')
+      expect(events[0].data.iteration).toBe(3)
+    })
+
     test('parses error events', () => {
       const parser = new OutputParser()
       const events = parser.parseChunk('Error: Something went wrong\n')
@@ -227,11 +236,12 @@ describe('OutputParser', () => {
       expect(events[0].type).toBe('log')
     })
 
-    test('PHASE: uppercase variant parses as log', () => {
+    test('PHASE: uppercase variant parses as phase', () => {
       const parser = new OutputParser()
       const events = parser.parseChunk('PHASE: Research - STARTING\n')
       
       expect(events).toHaveLength(1)
+      expect(events[0].type).toBe('phase')
     })
 
     test('Phase: with very long name', () => {
@@ -262,6 +272,16 @@ describe('OutputParser', () => {
       expect(events[0].type).toBe('log')
     })
 
+    test('AGENT: uppercase variant parses as agent', () => {
+      const parser = new OutputParser()
+      const events = parser.parseChunk('AGENT: Worker - COMPLETE\n')
+      
+      expect(events).toHaveLength(1)
+      expect(events[0].type).toBe('agent')
+      expect(events[0].data.name).toBe('Worker')
+      expect(events[0].data.status).toBe('COMPLETE')
+    })
+
     test('Agent: with very long name', () => {
       const parser = new OutputParser()
       const longName = 'Agent'.repeat(100)
@@ -281,11 +301,12 @@ describe('OutputParser', () => {
       expect(events[0].type).toBe('log')
     })
 
-    test('TOOL: uppercase variant parses as log', () => {
+    test('TOOL: uppercase variant parses as tool', () => {
       const parser = new OutputParser()
       const events = parser.parseChunk('TOOL: Read - /path\n')
       
       expect(events).toHaveLength(1)
+      expect(events[0].type).toBe('tool')
     })
 
     test('Tool: with very long name', () => {

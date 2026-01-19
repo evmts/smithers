@@ -15,6 +15,8 @@ interface CommitState {
 export interface CommitProps {
   /** Commit message (optional if autoGenerate is true) */
   message?: string
+  /** Repository path (defaults to process.cwd) */
+  cwd?: string
   /** Auto-generate commit message using Claude */
   autoGenerate?: boolean
   /** Metadata to store in git notes */
@@ -42,10 +44,10 @@ export interface CommitResult {
 /**
  * Generate commit message using Claude CLI
  */
-async function generateCommitMessage(): Promise<string> {
+async function generateCommitMessage(cwd?: string): Promise<string> {
   // Get the diff for context
-  const diffResult = await Bun.$`git diff --cached --stat`.text()
-  const diffContent = await Bun.$`git diff --cached`.text()
+  const diffResult = await (cwd ? Bun.$`git diff --cached --stat`.cwd(cwd) : Bun.$`git diff --cached --stat`).text()
+  const diffContent = await (cwd ? Bun.$`git diff --cached`.cwd(cwd) : Bun.$`git diff --cached`).text()
 
   const prompt = `Generate a concise git commit message for these changes. Return ONLY the commit message, nothing else.
 
@@ -103,11 +105,13 @@ export function Commit(props: CommitProps): ReactNode {
         if (props.files && props.files.length > 0) {
           // Stage specific files
           for (const file of props.files) {
-            await Bun.$`git add ${file}`.quiet()
+            const addCmd = Bun.$`git add ${file}`
+            await (props.cwd ? addCmd.cwd(props.cwd) : addCmd).quiet()
           }
         } else {
           // Stage all files with -A
-          await Bun.$`git add -A`.quiet()
+          const addCmd = Bun.$`git add -A`
+          await (props.cwd ? addCmd.cwd(props.cwd) : addCmd).quiet()
         }
 
         // Get or generate commit message
@@ -119,7 +123,7 @@ export function Commit(props: CommitProps): ReactNode {
         }
 
         if (!message && props.autoGenerate) {
-          message = await generateCommitMessage()
+          message = await generateCommitMessage(props.cwd)
         }
 
         if (!message) {
@@ -129,16 +133,18 @@ export function Commit(props: CommitProps): ReactNode {
         // Create commit
         const commitFlag = props.all ? '-a' : ''
         if (commitFlag) {
-          await Bun.$`git commit -a -m ${message}`.quiet()
+          const commitCmd = Bun.$`git commit -a -m ${message}`
+          await (props.cwd ? commitCmd.cwd(props.cwd) : commitCmd).quiet()
         } else {
-          await Bun.$`git commit -m ${message}`.quiet()
+          const commitCmd = Bun.$`git commit -m ${message}`
+          await (props.cwd ? commitCmd.cwd(props.cwd) : commitCmd).quiet()
         }
 
         if (!isMounted()) return
 
         // Get commit info
-        const commitHash = await getCommitHash('HEAD')
-        const diffStats = await getDiffStats('HEAD~1')
+        const commitHash = await getCommitHash('HEAD', props.cwd)
+        const diffStats = await getDiffStats('HEAD~1', props.cwd)
 
         // Add git notes with smithers metadata
         const notesData = {
@@ -148,7 +154,7 @@ export function Commit(props: CommitProps): ReactNode {
           ...props.notes,
         }
 
-        await addGitNotes(JSON.stringify(notesData, null, 2), 'HEAD', false)
+        await addGitNotes(JSON.stringify(notesData, null, 2), 'HEAD', false, props.cwd)
 
         // Log to database
         await smithers.db.vcs.logCommit({
@@ -186,7 +192,7 @@ export function Commit(props: CommitProps): ReactNode {
         }
       }
     })()
-  }, [props.all, props.autoGenerate, props.children, props.files, props.message, props.notes, props.onError, props.onFinished, smithers])
+  }, [props.all, props.autoGenerate, props.children, props.cwd, props.files, props.message, props.notes, props.onError, props.onFinished, smithers])
 
   return (
     <git-commit

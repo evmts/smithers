@@ -50,6 +50,13 @@ describe('LogWriter', () => {
     }
   })
 
+  it('should sanitize executionId to prevent traversal', () => {
+    const writer = new LogWriter(TEST_LOG_DIR, '../evil')
+    const logDir = writer.getLogDir()
+    const root = path.resolve('.smithers/executions')
+    expect(logDir.startsWith(root + path.sep)).toBe(true)
+  })
+
   it('should write log file with metadata', () => {
     const writer = new LogWriter(TEST_LOG_DIR)
     const content = 'test content'
@@ -77,6 +84,18 @@ describe('LogWriter', () => {
     expect(fs.existsSync(path1)).toBe(true)
     const content = fs.readFileSync(path1, 'utf-8')
     expect(content).toBe('chunk 1\nchunk 2\n')
+  })
+
+  it('should sanitize filenames to prevent traversal', async () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const path1 = writer.appendLog('../evil.log', 'data\n')
+
+    await writer.flushStream('../evil.log')
+
+    const relative = path.relative(TEST_LOG_DIR, path1)
+    expect(relative.startsWith('..')).toBe(false)
+    expect(path.isAbsolute(relative)).toBe(false)
+    expect(fs.readFileSync(path1, 'utf-8')).toContain('data')
   })
 
   it('should flush multiple streams', async () => {
@@ -108,6 +127,21 @@ describe('LogWriter', () => {
 
     expect(lines[0]).toMatchObject({ type: 'text-start', id: 't1' })
     expect(lines[1]).toMatchObject({ type: 'text-delta', id: 't1', delta: 'Hello' })
+  })
+
+  it('should reopen stream for appendStreamPart after flush', async () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filename = 'stream-reopen.ndjson'
+
+    writer.appendStreamPart(filename, { type: 'text-start', id: 't1' })
+    await writer.flushStream(filename)
+
+    writer.appendStreamPart(filename, { type: 'text-end', id: 't1' })
+    await writer.flushStream(filename)
+
+    const content = fs.readFileSync(path.join(TEST_LOG_DIR, filename), 'utf-8').trim()
+    const lines = content.split('\n').map((line) => JSON.parse(line))
+    expect(lines).toHaveLength(2)
   })
 
   it('should write stream summary from counts', () => {
@@ -164,6 +198,16 @@ describe('LogWriter', () => {
     expect(content).toContain('tool: Read')
     expect(content).toContain('/test')
     expect(content).toContain('file contents here')
+  })
+
+  it('should handle circular tool input', () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const input: any = { path: '/test' }
+    input.self = input
+    const filepath = writer.writeToolCall('Read', input, 'file contents here')
+
+    const content = fs.readFileSync(filepath, 'utf-8')
+    expect(content).toContain('Circular')
   })
 
   it('should write agent result log', () => {

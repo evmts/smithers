@@ -19,6 +19,25 @@ import * as path from 'path'
 import * as os from 'os'
 import { LogWriter } from '../monitor/log-writer.js'
 
+async function flushMicrotasks(): Promise<void> {
+  await new Promise<void>((resolve) => queueMicrotask(resolve))
+}
+
+async function waitForCondition(
+  condition: () => boolean,
+  timeoutMs = 2000,
+  intervalMs = 10,
+  label = 'condition'
+): Promise<void> {
+  const start = Date.now()
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`waitForCondition timeout: ${label}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+}
+
 // ============================================================================
 // Props Interface Tests (no reconciler needed)
 // ============================================================================
@@ -1129,7 +1148,7 @@ describe('Claude callbacks', () => {
   })
 
   afterEach(async () => {
-    await new Promise((r) => setTimeout(r, 10))
+    await flushMicrotasks()
     executeClaudeCLISpy?.mockRestore()
     db.close()
   })
@@ -1161,7 +1180,7 @@ describe('Claude callbacks', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 50))
+    await waitForCondition(() => progressChunks.length >= 3, 1000, 10, 'onProgress')
     
     expect(progressChunks.length).toBeGreaterThanOrEqual(1)
     
@@ -1197,7 +1216,7 @@ describe('Claude callbacks', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 50))
+    await waitForCondition(() => toolCalls.length >= 2, 1000, 10, 'onToolCall')
     
     expect(toolCalls).toHaveLength(2)
     expect(toolCalls[0]).toEqual({ tool: 'Read', input: { path: '/file.txt' } })
@@ -1228,7 +1247,7 @@ describe('Claude callbacks', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => finishedResult !== null, 1000, 10, 'onFinished')
     
     expect(finishedResult).not.toBeNull()
     expect(finishedResult!.output).toBe('Success output')
@@ -1258,7 +1277,7 @@ describe('Claude callbacks', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => errorReceived !== null, 1000, 10, 'onError')
     
     expect(errorReceived).not.toBeNull()
     expect(errorReceived!.message).toBe('Execution failed')
@@ -1296,12 +1315,12 @@ describe('Claude callbacks', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForCondition(() => executeClaudeCLISpy.mock.calls.length > 0, 1000, 10, 'executeClaudeCLI call')
     
     root.dispose()
     
     resolveExecution!()
-    await new Promise((r) => setTimeout(r, 50))
+    await flushMicrotasks()
     
     expect(callbackCalledAfterUnmount).toBe(false)
   })
@@ -1322,7 +1341,7 @@ describe('Claude validation', () => {
   })
 
   afterEach(async () => {
-    await new Promise((r) => setTimeout(r, 10))
+    await flushMicrotasks()
     executeClaudeCLISpy?.mockRestore()
     db.close()
   })
@@ -1362,7 +1381,7 @@ describe('Claude validation', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => validatedResult !== null, 1000, 10, 'validate result')
     
     expect(validatedResult).not.toBeNull()
     expect(validatedResult!.output).toBe('Validated output')
@@ -1404,8 +1423,7 @@ describe('Claude validation', () => {
       </SmithersProvider>
     )
     
-    // Wait for retries - exponential backoff: 250ms + 500ms + execution time
-    await new Promise((r) => setTimeout(r, 1000))
+    await waitForCondition(() => executionCount >= 2, 3000, 10, 'validation retries')
 
     expect(validateCallCount).toBeGreaterThan(1)
     expect(executionCount).toBeGreaterThan(1)
@@ -1441,7 +1459,7 @@ describe('Claude validation', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => errorReceived !== null, 1000, 10, 'validation error')
     
     expect(errorReceived).not.toBeNull()
     expect(errorReceived!.message).toContain('Validation failed')
@@ -1472,7 +1490,7 @@ describe('Claude database integration', () => {
   })
 
   afterEach(async () => {
-    await new Promise((r) => setTimeout(r, 10))
+    await flushMicrotasks()
     executeClaudeCLISpy.mockRestore()
     db.close()
   })
@@ -1492,7 +1510,12 @@ describe('Claude database integration', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 50))
+    await waitForCondition(() => {
+      const agents = db.db.query<{ prompt: string; model: string; status: string }>(
+        'SELECT prompt, model, status FROM agents'
+      )
+      return agents.length > 0
+    }, 2000, 10, 'agent start log')
     
     const agents = db.db.query<{ prompt: string; model: string; status: string }>(
       'SELECT prompt, model, status FROM agents'
@@ -1514,7 +1537,13 @@ describe('Claude database integration', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => {
+      const agents = db.db.query<{ status: string; result: string | null; tokens_input: number | null }>(
+        'SELECT status, result, tokens_input FROM agents WHERE status = ?',
+        ['completed']
+      )
+      return agents.length > 0
+    }, 2000, 10, 'agent completion log')
     
     const agents = db.db.query<{ status: string; result: string | null; tokens_input: number | null }>(
       'SELECT status, result, tokens_input FROM agents WHERE status = ?',
@@ -1540,7 +1569,13 @@ describe('Claude database integration', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => {
+      const agents = db.db.query<{ status: string; error: string | null }>(
+        'SELECT status, error FROM agents WHERE status = ?',
+        ['failed']
+      )
+      return agents.length > 0
+    }, 2000, 10, 'agent failure log')
     
     const agents = db.db.query<{ status: string; error: string | null }>(
       'SELECT status, error FROM agents WHERE status = ?',
@@ -1562,7 +1597,12 @@ describe('Claude database integration', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => {
+      const reports = db.db.query<{ type: string; title: string; content: string }>(
+        "SELECT type, title, content FROM reports WHERE type = 'progress'"
+      )
+      return reports.length > 0
+    }, 2000, 10, 'progress report log')
     
     const reports = db.db.query<{ type: string; title: string; content: string }>(
       "SELECT type, title, content FROM reports WHERE type = 'progress'"
@@ -1587,7 +1627,12 @@ describe('Claude database integration', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => {
+      const reports = db.db.query<{ type: string; title: string; content: string; severity: string }>(
+        "SELECT type, title, content, severity FROM reports WHERE type = 'error'"
+      )
+      return reports.length > 0
+    }, 2000, 10, 'error report log')
     
     const reports = db.db.query<{ type: string; title: string; content: string; severity: string }>(
       "SELECT type, title, content, severity FROM reports WHERE type = 'error'"
@@ -1610,7 +1655,7 @@ describe('Claude database integration', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 100))
+    await waitForCondition(() => executeClaudeCLISpy.mock.calls.length > 0, 1000, 10, 'execution')
     
     const agents = db.db.query<{ id: string }>('SELECT id FROM agents')
     const reports = db.db.query<{ id: string }>('SELECT id FROM reports')

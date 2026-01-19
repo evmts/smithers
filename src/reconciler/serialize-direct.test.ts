@@ -273,6 +273,22 @@ describe('XML Serialization (Direct Node Creation)', () => {
     expect(xml).not.toContain('<TEXT>')
   })
 
+  it('should preserve adjacent TEXT nodes without newlines', () => {
+    const node: SmithersNode = {
+      type: 'message',
+      props: {},
+      children: [
+        { type: 'TEXT', props: { value: 'Hello' }, children: [], parent: null },
+        { type: 'TEXT', props: { value: 'World' }, children: [], parent: null },
+      ],
+      parent: null,
+    }
+
+    const xml = serialize(node)
+
+    expect(xml).toBe('<message>HelloWorld</message>')
+  })
+
   it('should handle empty TEXT nodes', () => {
     const node: SmithersNode = {
       type: 'TEXT',

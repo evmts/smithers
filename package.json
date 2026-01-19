@@ -45,8 +45,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
     "lint:fix": "oxlint --fix src/",
-    "test": "cd src && bun test .",
-    "test:watch": "cd src && bun test --watch .",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
     "check": "bun run typecheck && bun run lint && bun run test",
     "prepare": "husky"
   },
@@ -55,6 +55,7 @@
     "@anthropic-ai/sdk": "^0.71.2",
     "@babel/core": "^7.28.6",
     "@babel/preset-typescript": "^7.28.5",
+    "@electric-sql/pglite": "^0.3.15",
     "@opentui/core": "^0.1.74",
     "@opentui/react": "^0.1.74",
     "commander": "^12.0.0",

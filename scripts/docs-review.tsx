@@ -10,6 +10,7 @@
  * - Only flags docs that are factually incorrect about current code
  */
 
+import * as fs from 'fs'
 import { SmithersProvider } from '../src/components/SmithersProvider.js'
 import { Claude } from '../src/components/Claude.js'
 import { Phase } from '../src/components/Phase.js'
@@ -20,6 +21,9 @@ import { createSmithersRoot } from '../src/reconciler/index.js'
 import { ProgressLogger } from '../src/utils/progress-logger.js'
 
 const BRANCH_NAME = `docs/auto-review-${new Date().toISOString().slice(0, 10)}`
+const OUTPUT_DIR = '.smithers'
+const RESULT_PATH = `${OUTPUT_DIR}/docs-review-result.json`
+const ALLOW_GITHUB_WRITE = process.env['ALLOW_GITHUB_WRITE'] === 'true'
 
 // Progress logger for visibility
 const progress = new ProgressLogger({
@@ -117,6 +121,13 @@ Skip internal design docs (tui-*.md, refactor-*.md) as they're for dev notes.`}
       {/* Phase 2: Create PR if changes were made */}
       <Phase
         name="create-pr"
+        skipIf={() => {
+          if (!ALLOW_GITHUB_WRITE) {
+            progress.phaseSkipped('create-pr', 'ALLOW_GITHUB_WRITE not set')
+            return true
+          }
+          return false
+        }}
         onStart={() => progress.phaseStart('create-pr')}
         onComplete={() => progress.phaseComplete('create-pr')}
       >
@@ -213,6 +224,12 @@ async function main() {
   console.log('FINAL RESULT')
   console.log('='.repeat(60))
   console.log(JSON.stringify(reviewResult, null, 2))
+
+  if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true })
+  }
+  await Bun.write(RESULT_PATH, JSON.stringify(reviewResult, null, 2))
+  console.log(`[Info] Wrote review result: ${RESULT_PATH}`)
 
   console.log('\n' + '='.repeat(60))
   console.log('ORCHESTRATION XML')

@@ -26,6 +26,15 @@ describe('summarizeWithHaiku', () => {
       expect(result.fullPath).toBe('/log/path')
     })
 
+    test('summarizes when above char threshold with single line', async () => {
+      const content = 'x'.repeat(10000)
+
+      const result = await summarizeWithHaiku(content, 'read', '/log/path')
+
+      expect(result.summary).toContain('truncated')
+      expect(result.fullPath).toBe('/log/path')
+    })
+
     test('returns original content when below custom threshold', async () => {
       const content = 'line\n'.repeat(80)
       
@@ -239,6 +248,14 @@ describe('summarizeWithHaiku', () => {
       const result = await summarizeWithHaiku(content, 'read', '/log/path', { threshold: 50 })
       
       expect(result.summary).toBe(content)
+    })
+
+    test('content above char threshold triggers summarization', async () => {
+      const content = 'x'.repeat(5000)
+      const result = await summarizeWithHaiku(content, 'read', '/log/path', { charThreshold: 1000 })
+
+      expect(result.summary).toContain('truncated')
+      expect(result.fullPath).toBe('/log/path')
     })
 
     test('content at or above threshold triggers summarization', async () => {

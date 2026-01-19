@@ -5,7 +5,7 @@
  * These tests verify the core architecture works without JSX syntax.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'bun:test'
 import { createSmithersRoot } from '../src/reconciler/root'
 import { rendererMethods } from '../src/reconciler/methods'
 import type { SmithersNode } from '../src/reconciler/types'

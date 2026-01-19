@@ -20,20 +20,44 @@ function truncate(str: string, maxLength: number): string {
   return str.substring(0, maxLength) + '...'
 }
 
+function clipForSummary(content: string, maxLength: number): string {
+  if (content.length <= maxLength) return content
+  if (maxLength <= 20) return truncate(content, maxLength)
+  const headLength = Math.floor(maxLength * 0.6)
+  const tailLength = maxLength - headLength
+  const head = content.substring(0, headLength)
+  const tail = content.substring(content.length - tailLength)
+  return `${head}\n...[content truncated for summarization]...\n${tail}`
+}
+
+function joinTextBlocks(content: Anthropic.Messages.Message['content']): string {
+  const textBlocks = content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .filter((text) => text.length > 0)
+  return textBlocks.length > 0 ? textBlocks.join('\n') : ''
+}
+
 export async function summarizeWithHaiku(
   content: string,
   type: SummaryType,
   logPath: string,
   options: {
     threshold?: number
+    charThreshold?: number
+    maxChars?: number
     apiKey?: string
+    model?: string
   } = {}
 ): Promise<SummaryResult> {
   const threshold = options.threshold || parseInt(process.env['SMITHERS_SUMMARY_THRESHOLD'] || '50', 10)
+  const charThreshold =
+    options.charThreshold || parseInt(process.env['SMITHERS_SUMMARY_CHAR_THRESHOLD'] || '4000', 10)
+  const maxChars = options.maxChars || parseInt(process.env['SMITHERS_SUMMARY_MAX_CHARS'] || '20000', 10)
   const lineCount = content.split('\n').length
 
   // Don't summarize if below threshold
-  if (lineCount < threshold) {
+  if (lineCount < threshold && content.length < charThreshold) {
     return {
       summary: content,
       fullPath: logPath,
@@ -52,20 +76,21 @@ export async function summarizeWithHaiku(
 
   try {
     const client = new Anthropic({ apiKey })
+    const model = options.model || process.env['SMITHERS_SUMMARY_MODEL'] || 'claude-3-haiku-20240307'
+    const clippedContent = clipForSummary(content, maxChars)
 
     const response = await client.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model,
       max_tokens: 150,
       messages: [
         {
           role: 'user',
-          content: `${PROMPTS[type]}\n\n---\n${content}`,
+          content: `${PROMPTS[type]}\n\n---\n${clippedContent}`,
         },
       ],
     })
 
-    const text = response.content[0]
-    const summary = text && text.type === 'text' && 'text' in text ? text.text : content
+    const summary = joinTextBlocks(response.content) || truncate(content, 500)
 
     return {
       summary,

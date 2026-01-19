@@ -10,7 +10,7 @@ export interface FormatterStats {
 
 export class StreamFormatter {
   private stats: FormatterStats
-  private lastEventType: string | null = null
+  private lastLogMessage: string | null = null
 
   constructor() {
     this.stats = {
@@ -23,10 +23,11 @@ export class StreamFormatter {
   }
 
   formatHeader(file: string): string {
+    const safeFile = this.truncateText(file.replace(/[\r\n]+/g, ' '), 41)
     const lines = [
       '╔══════════════════════════════════════════════════════════════════╗',
       '║                    SMITHERS MONITOR v1.0                         ║',
-      `║                    File: ${file.padEnd(41)} ║`,
+      `║                    File: ${safeFile.padEnd(41)} ║`,
       `║                    Started: ${this.stats.startTime.toISOString().replace('T', ' ').substring(0, 19).padEnd(37)} ║`,
       '╚══════════════════════════════════════════════════════════════════╝',
       '',
@@ -68,17 +69,19 @@ export class StreamFormatter {
         break
 
       case 'log':
-        // Only show logs if they're different from last event
-        if (this.lastEventType !== 'log') {
+        if (event.data['message'] !== this.lastLogMessage) {
           output = this.formatLog(event.data['message'])
         }
+        this.lastLogMessage = event.data['message'] ?? null
         break
 
       default:
         output = this.formatLog(event.raw)
     }
 
-    this.lastEventType = event.type
+    if (event.type !== 'log') {
+      this.lastLogMessage = null
+    }
     return output
   }
 
@@ -165,6 +168,12 @@ export class StreamFormatter {
     } else {
       return `${seconds}s`
     }
+  }
+
+  private truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text
+    if (maxLength <= 3) return text.substring(0, maxLength)
+    return text.substring(0, maxLength - 3) + '...'
   }
 
   getStats(): FormatterStats {

@@ -375,7 +375,7 @@ describe('SmithersChatTransport - Error Handling', () => {
     const dbPath = getTestDbPath('async-error')
     const transport = new SmithersChatTransport({
       orchestration: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10))
+        await new Promise<void>((resolve) => queueMicrotask(resolve))
         throw new Error('Async error')
       },
       dbPath,
@@ -395,9 +395,13 @@ describe('SmithersChatTransport - Error Handling', () => {
   test('handles abort signal', async () => {
     const dbPath = getTestDbPath('abort-signal')
     const controller = new AbortController()
+    let resolveOrchestration: (() => void) | null = null
+    const orchestrationBlock = new Promise<void>((resolve) => {
+      resolveOrchestration = resolve
+    })
     const transport = new SmithersChatTransport({
       orchestration: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 2000))
+        await orchestrationBlock
         return null
       },
       dbPath,
@@ -411,6 +415,7 @@ describe('SmithersChatTransport - Error Handling', () => {
     controller.abort()
 
     const chunks = await collectChunksWithTimeout(stream, 500)
+    resolveOrchestration?.()
 
     // Should have some chunks (status started + tables)
     expect(chunks.length).toBeGreaterThan(0)
@@ -502,10 +507,7 @@ describe('SmithersChatTransport - Reconnection', () => {
     })
 
     const chatId = 'chat-reconnect'
-    const mainStream = transport.sendMessages(createSendOptions(chatId, []))
-
-    // Give time for session to start
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    const mainStream = await transport.sendMessages(createSendOptions(chatId, []))
 
     // Reconnect while still running
     const reconnectStream = await transport.reconnectToStream({ chatId })
@@ -515,7 +517,7 @@ describe('SmithersChatTransport - Reconnection', () => {
     resolveOrchestration!()
 
     const [mainChunks, reconnectChunks] = await Promise.all([
-      collectChunks(await mainStream),
+      collectChunks(mainStream),
       collectChunks(reconnectStream!),
     ])
 

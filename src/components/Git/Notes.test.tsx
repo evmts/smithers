@@ -145,7 +145,6 @@ describe('Notes component integration', () => {
   let db: SmithersDB
   let executionId: string
   let tempDir: string
-  let originalCwd: string
 
   beforeAll(async () => {
     db = createSmithersDB({ reset: true })
@@ -159,13 +158,10 @@ describe('Notes component integration', () => {
   })
 
   beforeEach(async () => {
-    originalCwd = process.cwd()
     tempDir = await createTempGitRepo()
-    process.chdir(tempDir)
   })
 
   afterEach(() => {
-    process.chdir(originalCwd)
     cleanupTempDir(tempDir)
   })
 
@@ -177,6 +173,7 @@ describe('Notes component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Notes
           data={{ testKey: 'testValue' }}
+          cwd={tempDir}
           onFinished={(result) => { notesResult = result }}
         />
       </SmithersProvider>
@@ -213,6 +210,7 @@ describe('Notes component integration', () => {
         <Notes
           commitRef={firstHash}
           data={{ target: 'first-commit' }}
+          cwd={tempDir}
           onFinished={(result) => { notesResult = result }}
         />
       </SmithersProvider>
@@ -248,6 +246,7 @@ describe('Notes component integration', () => {
         <Notes
           data={{ replacement: true }}
           append={false}
+          cwd={tempDir}
           onFinished={(result) => { notesResult = result }}
         />
       </SmithersProvider>
@@ -281,6 +280,7 @@ describe('Notes component integration', () => {
         <Notes
           data={{ appended: true }}
           append={true}
+          cwd={tempDir}
           onFinished={(result) => { notesResult = result }}
         />
       </SmithersProvider>
@@ -309,6 +309,7 @@ describe('Notes component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Notes
           data={{ custom: 'value' }}
+          cwd={tempDir}
           onFinished={(result) => { notesResult = result }}
         />
       </SmithersProvider>
@@ -335,6 +336,7 @@ describe('Notes component integration', () => {
         <Notes
           commitRef="nonexistent-ref-12345"
           data={{ test: true }}
+          cwd={tempDir}
           onError={(err) => { errorReceived = err }}
         />
       </SmithersProvider>
@@ -352,7 +354,7 @@ describe('Notes component integration', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Notes data={{ render: 'test' }} />
+        <Notes data={{ render: 'test' }} cwd={tempDir} />
       </SmithersProvider>
     )
 
@@ -395,6 +397,7 @@ describe('Notes component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Notes
           data={complexData}
+          cwd={tempDir}
           onFinished={(result) => { notesResult = result }}
         />
       </SmithersProvider>
@@ -423,7 +426,7 @@ describe('Notes component integration', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Notes data={{ taskTracking: true }} />
+        <Notes data={{ taskTracking: true }} cwd={tempDir} />
       </SmithersProvider>
     )
 
@@ -459,6 +462,7 @@ describe('Notes component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Notes
           data={specialData}
+          cwd={tempDir}
           onFinished={(result) => { notesResult = result }}
         />
       </SmithersProvider>
@@ -493,6 +497,7 @@ describe('Notes component integration', () => {
         <Notes
           commitRef={hash1}
           data={{ commit: 1 }}
+          cwd={tempDir}
           onFinished={(r) => results.push(r)}
         />
       </SmithersProvider>
@@ -507,6 +512,7 @@ describe('Notes component integration', () => {
         <Notes
           commitRef={hash3}
           data={{ commit: 3 }}
+          cwd={tempDir}
           onFinished={(r) => results.push(r)}
         />
       </SmithersProvider>
@@ -538,6 +544,7 @@ describe('Notes component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Notes
           data={{}}
+          cwd={tempDir}
           onFinished={(result) => { notesResult = result }}
         />
       </SmithersProvider>

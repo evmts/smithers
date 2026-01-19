@@ -28,70 +28,62 @@ export class OutputParser {
     const timestamp = new Date()
 
     // Phase events
-    if (line.includes('Phase:') || line.includes('PHASE:')) {
-      const match = line.match(/Phase:\s*(.+?)(?:\s*-\s*(.+))?$/)
-      if (match) {
-        return {
-          type: 'phase',
-          timestamp,
-          data: {
-            name: match[1]!.trim(),
-            status: match[2]?.trim() || 'STARTING',
-          },
-          raw: line,
-        }
+    const phaseMatch = line.match(/^\s*phase:\s*(.+?)(?:\s*-\s*(.+))?$/i)
+    if (phaseMatch) {
+      return {
+        type: 'phase',
+        timestamp,
+        data: {
+          name: phaseMatch[1]!.trim(),
+          status: phaseMatch[2]?.trim() || 'STARTING',
+        },
+        raw: line,
       }
     }
 
     // Agent events
-    if (line.includes('Agent:') || line.includes('AGENT:') || line.includes('Claude')) {
-      const match = line.match(/(?:Agent:|Claude)\s*(.+?)(?:\s*-\s*(.+))?$/)
-      if (match) {
-        return {
-          type: 'agent',
-          timestamp,
-          data: {
-            name: match[1]!.trim(),
-            status: match[2]?.trim() || 'RUNNING',
-          },
-          raw: line,
-        }
+    const agentMatch = line.match(/^\s*(?:agent:|claude)\s*(.+?)(?:\s*-\s*(.+))?$/i)
+    if (agentMatch) {
+      return {
+        type: 'agent',
+        timestamp,
+        data: {
+          name: agentMatch[1]!.trim(),
+          status: agentMatch[2]?.trim() || 'RUNNING',
+        },
+        raw: line,
       }
     }
 
     // Tool call events
-    if (line.includes('Tool:') || line.includes('TOOL:')) {
-      const match = line.match(/Tool:\s*(.+?)(?:\s*-\s*(.+))?$/)
-      if (match) {
-        return {
-          type: 'tool',
-          timestamp,
-          data: {
-            name: match[1]!.trim(),
-            details: match[2]?.trim() || '',
-          },
-          raw: line,
-        }
+    const toolMatch = line.match(/^\s*tool:\s*(.+?)(?:\s*-\s*(.+))?$/i)
+    if (toolMatch) {
+      return {
+        type: 'tool',
+        timestamp,
+        data: {
+          name: toolMatch[1]!.trim(),
+          details: toolMatch[2]?.trim() || '',
+        },
+        raw: line,
       }
     }
 
     // Ralph iteration events
-    if (line.includes('Iteration') || line.includes('ITERATION')) {
-      const match = line.match(/Iteration\s*(\d+)/)
-      if (match) {
-        return {
-          type: 'ralph',
-          timestamp,
-          data: {
-            iteration: parseInt(match[1]!),
-          },
-          raw: line,
-        }
+    const iterationMatch = line.match(/^\s*iteration\s*(\d+)/i)
+    if (iterationMatch) {
+      return {
+        type: 'ralph',
+        timestamp,
+        data: {
+          iteration: parseInt(iterationMatch[1]!),
+        },
+        raw: line,
       }
     }
 
     // Error events
-    if (line.includes('Error:') || line.includes('ERROR:') || line.match(/^\s*at\s+/)) {
+    if (/^\s*error:/i.test(line) || line.match(/^\s*at\s+/)) {
       return {
         type: 'error',
         timestamp,

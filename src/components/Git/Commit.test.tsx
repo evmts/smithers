@@ -12,6 +12,25 @@ import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 
 const SMITHERS_NOTES_REF = 'refs/notes/smithers'
 
+async function flushMicrotasks(): Promise<void> {
+  await new Promise<void>((resolve) => queueMicrotask(resolve))
+}
+
+async function waitForCondition(
+  condition: () => boolean,
+  timeoutMs = 5000,
+  intervalMs = 25,
+  label = 'condition'
+): Promise<void> {
+  const start = Date.now()
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`waitForCondition timeout: ${label}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+}
+
 // Helper: Create a temp git repo
 async function createTempGitRepo(): Promise<string> {
   const tempDir = join(tmpdir(), `smithers-commit-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
@@ -157,7 +176,6 @@ describe('Commit component integration', () => {
   let db: SmithersDB
   let executionId: string
   let tempDir: string
-  let originalCwd: string
 
   beforeAll(async () => {
     db = createSmithersDB({ reset: true })
@@ -166,18 +184,15 @@ describe('Commit component integration', () => {
 
   afterAll(async () => {
     // Allow pending React effects to complete before closing db
-    await new Promise((r) => setTimeout(r, 50))
+    await flushMicrotasks()
     db.close()
   })
 
   beforeEach(async () => {
-    originalCwd = process.cwd()
     tempDir = await createTempGitRepo()
-    process.chdir(tempDir)
   })
 
   afterEach(() => {
-    process.chdir(originalCwd)
     cleanupTempDir(tempDir)
   })
 
@@ -192,13 +207,13 @@ describe('Commit component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Commit
           message="Add test file"
+          cwd={tempDir}
           onFinished={(result) => { commitResult = result }}
         />
       </SmithersProvider>
     )
 
-    // Wait for async operations
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
     expect(commitResult!.message).toBe('Add test file')
@@ -220,13 +235,13 @@ describe('Commit component integration', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Commit onFinished={(result) => { commitResult = result }}>
+        <Commit cwd={tempDir} onFinished={(result) => { commitResult = result }}>
           Commit via children
         </Commit>
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
     expect(commitResult!.message).toBe('Commit via children')
@@ -246,12 +261,13 @@ describe('Commit component integration', () => {
         <Commit
           message="Add file1 only"
           files={['file1.ts']}
+          cwd={tempDir}
           onFinished={(result) => { commitResult = result }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
     // file1.ts should be committed, file2.ts should remain unstaged
@@ -273,12 +289,13 @@ describe('Commit component integration', () => {
         <Commit
           message="Test notes"
           notes={{ customKey: 'customValue', taskId: 'task-123' }}
+          cwd={tempDir}
           onFinished={(result) => { commitResult = result }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
 
@@ -305,12 +322,13 @@ describe('Commit component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Commit
           message="DB log test"
+          cwd={tempDir}
           onFinished={(result) => { commitResult = result }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
 
@@ -334,12 +352,13 @@ describe('Commit component integration', () => {
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Commit
+          cwd={tempDir}
           onError={(err) => { errorReceived = err }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => errorReceived !== null, 5000, 25, 'commit error')
 
     expect(errorReceived).not.toBeNull()
     expect(errorReceived!.message).toContain('No commit message provided')
@@ -357,12 +376,13 @@ describe('Commit component integration', () => {
         <Commit
           message="Should fail"
           files={['nonexistent-file-12345.ts']}
+          cwd={tempDir}
           onError={(err) => { errorReceived = err }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => errorReceived !== null, 5000, 25, 'commit error')
 
     expect(errorReceived).not.toBeNull()
 
@@ -378,12 +398,13 @@ describe('Commit component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Commit
           message="Nothing to commit"
+          cwd={tempDir}
           onError={(err) => { errorReceived = err }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => errorReceived !== null, 5000, 25, 'commit error')
 
     // Git commit with nothing staged should fail
     expect(errorReceived).not.toBeNull()
@@ -402,12 +423,13 @@ describe('Commit component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Commit
           message={specialMessage}
+          cwd={tempDir}
           onFinished={(result) => { commitResult = result }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
     expect(commitResult!.message).toBe(specialMessage)
@@ -429,12 +451,13 @@ describe('Commit component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Commit
           message={multilineMessage}
+          cwd={tempDir}
           onFinished={(result) => { commitResult = result }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
 
@@ -452,7 +475,7 @@ describe('Commit component integration', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Commit message="Status test" />
+        <Commit message="Status test" cwd={tempDir} />
       </SmithersProvider>
     )
 
@@ -471,7 +494,10 @@ describe('Commit component integration', () => {
     expect(gitCommit).not.toBeNull()
     expect(gitCommit.type).toBe('git-commit')
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => {
+      const xml = root.toXML()
+      return xml.includes('status="complete"') || xml.includes('status="error"')
+    }, 5000, 25, 'commit status')
 
     root.dispose()
   })
@@ -492,12 +518,13 @@ describe('Commit component integration', () => {
         <Commit
           message="Update with -a flag"
           all={true}
+          cwd={tempDir}
           onFinished={(result) => { commitResult = result }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
     expect(commitResult!.message).toBe('Update with -a flag')
@@ -519,12 +546,13 @@ describe('Commit component integration', () => {
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
         <Commit
           message="Stats test"
+          cwd={tempDir}
           onFinished={(result) => { commitResult = result }}
         />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => commitResult !== null, 5000, 25, 'commit result')
 
     expect(commitResult).not.toBeNull()
     expect(commitResult!.filesChanged).toContain('stats.ts')
@@ -545,17 +573,30 @@ describe('Commit component integration', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Commit message="Task tracking test" />
+        <Commit message="Task tracking test" cwd={tempDir} />
       </SmithersProvider>
     )
 
-    await new Promise((r) => setTimeout(r, 500))
+    await waitForCondition(() => {
+      const count = db.db.queryOne<{ count: number }>(
+        "SELECT COUNT(*) as count FROM tasks WHERE component_type = 'git-commit'"
+      )?.count ?? 0
+      return count > initialTaskCount
+    }, 5000, 25, 'git task count')
 
     const finalTaskCount = db.db.queryOne<{ count: number }>(
       "SELECT COUNT(*) as count FROM tasks WHERE component_type = 'git-commit'"
     )?.count ?? 0
 
     expect(finalTaskCount).toBeGreaterThan(initialTaskCount)
+
+    // Wait for the task to complete
+    await waitForCondition(() => {
+      const task = db.db.queryOne<{ status: string }>(
+        "SELECT status FROM tasks WHERE component_type = 'git-commit' ORDER BY started_at DESC LIMIT 1"
+      )
+      return task?.status === 'completed'
+    }, 5000, 25, 'git task completion')
 
     // Check latest git-commit task is completed
     const latestTask = db.db.queryOne<{ status: string }>(

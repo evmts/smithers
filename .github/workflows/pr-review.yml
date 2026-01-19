@@ -10,14 +10,14 @@ jobs:
     if: github.event.pull_request.user.login == 'roninjin10'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
-      issues: write
     
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for git notes
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -32,11 +32,18 @@ jobs:
       - name: Run AI Review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: bun scripts/pr-review.tsx
+
+      - name: Post PR review comment
+        if: hashFiles('.smithers/pr-review.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file .smithers/pr-review.md
 
   ci-checks:
     if: github.event.pull_request.user.login == 'roninjin10'
@@ -91,13 +98,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -118,7 +125,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
           TYPECHECK_FAILED: ${{ needs.ci-checks.outputs.typecheck_failed }}
           LINT_FAILED: ${{ needs.ci-checks.outputs.lint_failed }}
           TEST_FAILED: ${{ needs.ci-checks.outputs.test_failed }}
@@ -130,4 +138,5 @@ jobs:
           git config --global user.email "smithers@example.com"
           git add -A
           git diff --cached --quiet || git commit -m "fix: auto-fix CI failures via Codex agent"
+          git remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
           git push

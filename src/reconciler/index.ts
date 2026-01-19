@@ -30,8 +30,6 @@ export type {
 
 // Re-export React hooks for convenience
 export {
-  useState,
-  useEffect,
   useContext,
   useMemo,
   useCallback,

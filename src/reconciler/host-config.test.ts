@@ -19,7 +19,7 @@ function diffProps(
 
   for (const key of Object.keys(newProps)) {
     if (key === 'children') continue
-    if (oldProps[key] !== newProps[key]) {
+    if (!Object.is(oldProps[key], newProps[key])) {
       updatePayload[key] = newProps[key]
       hasChanges = true
     }
@@ -45,6 +45,10 @@ describe('host-config', () => {
 
     test('returns null for same values different objects', () => {
       expect(diffProps({ a: 1 }, { a: 1 })).toBeNull()
+    })
+
+    test('treats NaN as unchanged', () => {
+      expect(diffProps({ a: Number.NaN }, { a: Number.NaN })).toBeNull()
     })
 
     test('detects added props', () => {
@@ -479,8 +483,11 @@ describe('host-config', () => {
       expect(false).toBe(false)
     })
 
-    test('isPrimaryRenderer is true', () => {
-      expect(true).toBe(true)
+    test('isPrimaryRenderer is opt-in', () => {
+      const resolveIsPrimaryRenderer = (value?: string) => value === 'true' || value === '1'
+      expect(resolveIsPrimaryRenderer(undefined)).toBe(false)
+      expect(resolveIsPrimaryRenderer('1')).toBe(true)
+      expect(resolveIsPrimaryRenderer('true')).toBe(true)
     })
   })
 

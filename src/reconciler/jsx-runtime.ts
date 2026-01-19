@@ -10,13 +10,17 @@ import {
   jsxs as reactJsxs,
 } from 'react/jsx-runtime'
 
-// In production mode, jsxDEV is undefined - fallback to jsx
+// In production mode, jsxDEV is undefined - fallback to jsx.
+// Avoid top-level await to reduce bundler/runtime fragility.
 let reactJsxDEV: typeof import('react/jsx-dev-runtime').jsxDEV | undefined
-try {
-  const devRuntime = await import('react/jsx-dev-runtime')
-  reactJsxDEV = devRuntime.jsxDEV
-} catch {
-  // Fallback handled below
+if (process.env.NODE_ENV !== 'production') {
+  void import('react/jsx-dev-runtime')
+    .then((devRuntime) => {
+      reactJsxDEV = devRuntime.jsxDEV
+    })
+    .catch(() => {
+      // Fallback handled below
+    })
 }
 
 type Props = Record<string, unknown> | null

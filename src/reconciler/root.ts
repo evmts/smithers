@@ -71,6 +71,20 @@ export function createSmithersRoot(): SmithersRoot {
   }
 
   let fiberRoot: FiberRoot | null = null
+  let renderState: { resolve: () => void; reject: (error: Error) => void; settled: boolean } | null = null
+
+  const rejectRender = (error: unknown) => {
+    if (!renderState || renderState.settled) return
+    renderState.settled = true
+    const err = error instanceof Error ? error : new Error(String(error))
+    renderState.reject(err)
+    renderState = null
+  }
+
+  const handleRenderError = (label: string) => (error: unknown) => {
+    console.error(label, error)
+    rejectRender(error)
+  }
 
   return {
     async mount(App: () => ReactNode | Promise<ReactNode>): Promise<void> {
@@ -123,8 +137,8 @@ export function createSmithersRoot(): SmithersRoot {
         null // transitionCallbacks
       )
 
-      // Render the app synchronously
-      // LegacyRoot mode (tag: 0) provides synchronous updates by default
+      // Render the app synchronously.
+      // LegacyRoot mode (tag: 0) keeps commit boundaries deterministic.
       SmithersReconciler.updateContainer(element, fiberRoot, null, () => {})
 
       // Wait for orchestration to complete or a fatal error to surface
@@ -143,7 +157,15 @@ export function createSmithersRoot(): SmithersRoot {
     },
 
     render(element: ReactNode): Promise<void> {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
+        renderState = { resolve, reject, settled: false }
+        const finalize = () => {
+          if (!renderState || renderState.settled) return
+          renderState.settled = true
+          renderState.resolve()
+          renderState = null
+        }
+
         // Create fiber root if needed
         if (!fiberRoot) {
           fiberRoot = (SmithersReconciler.createContainer as any)(
@@ -153,19 +175,23 @@ export function createSmithersRoot(): SmithersRoot {
             false, // isStrictMode
             null, // concurrentUpdatesByDefaultOverride
             '', // identifierPrefix
-            (error: unknown) => console.error('Smithers uncaught error:', error),
-            (error: unknown) => console.error('Smithers caught error:', error),
+            handleRenderError('Smithers uncaught error:'),
+            handleRenderError('Smithers caught error:'),
             (error: unknown) => console.error('Smithers recoverable error:', error),
             null // transitionCallbacks
           )
         }
 
-        // Update container with element (or null to unmount)
-        // The callback is invoked when React has finished committing the update
-        // LegacyRoot mode (tag: 0) provides synchronous updates by default
-        SmithersReconciler.updateContainer(element, fiberRoot, null, () => {
-          resolve()
-        })
+        // Update container with element (or null to unmount).
+        // The callback is invoked when React has finished committing the update.
+        // LegacyRoot mode (tag: 0) keeps commit boundaries deterministic.
+        try {
+          SmithersReconciler.updateContainer(element, fiberRoot, null, () => {
+            finalize()
+          })
+        } catch (error) {
+          handleRenderError('Smithers render error:')(error)
+        }
       })
     },
 

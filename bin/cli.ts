@@ -1,11 +1,6 @@
 #!/usr/bin/env bun
 
 import { Command } from "commander";
-import { init } from "../src/commands/init.ts";
-import { run } from "../src/commands/run.ts";
-import { monitor } from "../src/commands/monitor.ts";
-import { dbCommand } from "../src/commands/db.ts";
-import { launchTUI } from "../src/tui/index.tsx";
 import { DEFAULT_DB_DIR, DEFAULT_MAIN_FILE, resolveDbPaths } from "../src/commands/cli-utils.ts";
 import pkg from "../package.json";
 
@@ -26,12 +21,18 @@ program
     "Directory to create .smithers in",
     process.cwd(),
   )
-  .action(init);
+  .action(async (options) => {
+    const { init } = await import("../src/commands/init.ts");
+    return init(options);
+  });
 
 program
   .command("run [file]")
   .description("Run a Smithers orchestration file (default: .smithers/main.tsx)")
-  .action((file?: string) => run(file));
+  .action(async (file?: string) => {
+    const { run } = await import("../src/commands/run.ts");
+    return run(file);
+  });
 
 program
   .command("monitor [file]")
@@ -42,13 +43,19 @@ program
     DEFAULT_MAIN_FILE,
   )
   .option("--no-summary", "Disable Haiku summarization")
-  .action(monitor);
+  .action(async (options) => {
+    const { monitor } = await import("../src/commands/monitor.ts");
+    return monitor(options.file, options);
+  });
 
 program
   .command("db [subcommand]")
   .description("Inspect and manage the SQLite database")
   .option("--path <path>", "Database path", DEFAULT_DB_DIR)
-  .action(dbCommand);
+  .action(async (options, command) => {
+    const { dbCommand } = await import("../src/commands/db.ts");
+    return dbCommand(options, command);
+  });
 
 program
   .command("tui")
@@ -56,6 +63,7 @@ program
   .option("-p, --path <path>", "Database path", ".smithers/data")
   .action(async (options: { path: string }) => {
     try {
+      const { launchTUI } = await import("../src/tui/index.tsx");
       await launchTUI({ dbPath: options.path });
     } catch (error) {
       console.error('❌ Failed to launch TUI:', error instanceof Error ? error.message : error);
@@ -114,5 +122,15 @@ program
       process.exit(1);
     }
   });
+
+const hookTriggerHelp = process.argv.includes('hook-trigger') &&
+  (process.argv.includes('--help') || process.argv.includes('-h'))
+if (hookTriggerHelp) {
+  const hookCommand = program.commands.find((cmd) => cmd.name() === 'hook-trigger')
+  if (hookCommand) {
+    hookCommand.outputHelp()
+    process.exit(0)
+  }
+}
 
 program.parse(process.argv);

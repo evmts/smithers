@@ -23,7 +23,7 @@ function diffProps(oldProps: Props, newProps: Props): UpdatePayload | null {
 
   for (const key of Object.keys(newProps)) {
     if (key === 'children') continue
-    if (oldProps[key] !== newProps[key]) {
+    if (!Object.is(oldProps[key], newProps[key])) {
       updatePayload[key] = newProps[key]
       hasChanges = true
     }
@@ -52,8 +52,10 @@ const hostConfig = {
   supportsMutation: true,
   supportsPersistence: false,
   supportsHydration: false,
-  // Primary renderer in this process (no DOM renderer expected alongside).
-  isPrimaryRenderer: true,
+  // Primary renderer is opt-in; default false avoids conflicts with other renderers.
+  isPrimaryRenderer:
+    process.env['SMITHERS_PRIMARY_RENDERER'] === 'true' ||
+    process.env['SMITHERS_PRIMARY_RENDERER'] === '1',
 
   // Optional capability flags
   warnsIfNotActing: false,
@@ -315,7 +317,7 @@ const hostConfig = {
  */
 export const SmithersReconciler = Reconciler(hostConfig)
 
-// Enable concurrent features
+// Register renderer with React DevTools.
 SmithersReconciler.injectIntoDevTools({
   findFiberByHostInstance: () => null,
   bundleType: process.env.NODE_ENV === 'development' ? 1 : 0,

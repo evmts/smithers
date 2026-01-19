@@ -8,12 +8,10 @@
 process.env.SMITHERS_MOCK_MODE = 'true'
 process.env.NODE_ENV = 'test'
 
-// Configure global test utilities
-import { vi } from 'vitest'
-
 // Mock console.log for Ralph's verbose output during tests (optional)
-// Uncomment if tests are too noisy:
-// vi.spyOn(console, 'log').mockImplementation(() => {})
+// If tests are too noisy, use spyOn from bun:test:
+// import { spyOn } from 'bun:test'
+// spyOn(console, 'log').mockImplementation(() => {})
 
 // Ensure promises are properly handled in tests
 process.on('unhandledRejection', (reason, promise) => {

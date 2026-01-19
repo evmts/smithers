@@ -7,12 +7,31 @@ import type { CommandResult, VCSStatus, DiffStats, CommitInfo, WorktreeInfo } fr
 
 const SMITHERS_NOTES_REF = 'refs/notes/smithers'
 
+interface GitOptions {
+  cwd?: string
+}
+
+function isGitOptions(value: unknown): value is GitOptions {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && 'cwd' in value
+}
+
+function withCwd<T extends { cwd: (dir: string) => T }>(command: T, cwd?: string): T {
+  return cwd ? command.cwd(cwd) : command
+}
+
 /**
  * Execute a git command
  */
-export async function git(...args: string[]): Promise<CommandResult> {
+export async function git(...args: Array<string | GitOptions>): Promise<CommandResult> {
+  let options: GitOptions | undefined
+  const last = args[args.length - 1]
+  if (isGitOptions(last)) {
+    options = last
+    args = args.slice(0, -1)
+  }
+  const cmdArgs = args as string[]
   try {
-    const result = await Bun.$`git ${args}`.quiet()
+    const result = await withCwd(Bun.$`git ${cmdArgs}`, options?.cwd).quiet()
     return {
       stdout: result.stdout.toString(),
       stderr: result.stderr.toString(),
@@ -29,9 +48,9 @@ export async function git(...args: string[]): Promise<CommandResult> {
 /**
  * Get current commit hash
  */
-export async function getCommitHash(ref: string = 'HEAD'): Promise<string> {
+export async function getCommitHash(ref: string = 'HEAD', cwd?: string): Promise<string> {
   try {
-    const result = await Bun.$`git rev-parse ${ref}`.text()
+    const result = await withCwd(Bun.$`git rev-parse ${ref}`, cwd).text()
     return result.trim()
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
@@ -42,11 +61,11 @@ export async function getCommitHash(ref: string = 'HEAD'): Promise<string> {
 /**
  * Get commit information
  */
-export async function getCommitInfo(ref: string = 'HEAD'): Promise<CommitInfo> {
+export async function getCommitInfo(ref: string = 'HEAD', cwd?: string): Promise<CommitInfo> {
   try {
-    const hash = await Bun.$`git rev-parse ${ref}`.text()
-    const author = await Bun.$`git log -1 --format=%an ${ref}`.text()
-    const message = await Bun.$`git log -1 --format=%s ${ref}`.text()
+    const hash = await withCwd(Bun.$`git rev-parse ${ref}`, cwd).text()
+    const author = await withCwd(Bun.$`git log -1 --format=%an ${ref}`, cwd).text()
+    const message = await withCwd(Bun.$`git log -1 --format=%s ${ref}`, cwd).text()
     return {
       hash: hash.trim(),
       author: author.trim(),
@@ -61,11 +80,11 @@ export async function getCommitInfo(ref: string = 'HEAD'): Promise<CommitInfo> {
 /**
  * Get diff statistics
  */
-export async function getDiffStats(ref?: string): Promise<DiffStats> {
+export async function getDiffStats(ref?: string, cwd?: string): Promise<DiffStats> {
   const args = ref ? `${ref}...HEAD` : 'HEAD~1'
   let result: string
   try {
-    result = await Bun.$`git diff --numstat ${args}`.text()
+    result = await withCwd(Bun.$`git diff --numstat ${args}`, cwd).text()
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed to get diff stats for '${args}': ${msg}`)
@@ -92,8 +111,8 @@ export async function getDiffStats(ref?: string): Promise<DiffStats> {
 /**
  * Get git status
  */
-export async function getGitStatus(): Promise<VCSStatus> {
-  const result = await Bun.$`git status --porcelain`.text()
+export async function getGitStatus(cwd?: string): Promise<VCSStatus> {
+  const result = await withCwd(Bun.$`git status --porcelain`, cwd).text()
   return parseGitStatus(result)
 }
 
@@ -103,7 +122,8 @@ export async function getGitStatus(): Promise<VCSStatus> {
 export async function addGitNotes(
   content: string,
   ref: string = 'HEAD',
-  append: boolean = false
+  append: boolean = false,
+  cwd?: string
 ): Promise<void> {
   const args = ['notes', '--ref', SMITHERS_NOTES_REF]
   if (append) {
@@ -114,7 +134,7 @@ export async function addGitNotes(
   args.push('-m', content, ref)
 
   try {
-    await Bun.$`git ${args}`.quiet()
+    await withCwd(Bun.$`git ${args}`, cwd).quiet()
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed to ${append ? 'append' : 'add'} git notes: ${msg}`)
@@ -124,9 +144,9 @@ export async function addGitNotes(
 /**
  * Get git notes for a commit
  */
-export async function getGitNotes(ref: string = 'HEAD'): Promise<string | null> {
+export async function getGitNotes(ref: string = 'HEAD', cwd?: string): Promise<string | null> {
   try {
-    const result = await Bun.$`git notes --ref ${SMITHERS_NOTES_REF} show ${ref}`.text()
+    const result = await withCwd(Bun.$`git notes --ref ${SMITHERS_NOTES_REF} show ${ref}`, cwd).text()
     return result.trim()
   } catch {
     return null
@@ -136,17 +156,17 @@ export async function getGitNotes(ref: string = 'HEAD'): Promise<string | null> 
 /**
  * Check if git notes exist for a commit
  */
-export async function hasGitNotes(ref: string = 'HEAD'): Promise<boolean> {
-  const notes = await getGitNotes(ref)
+export async function hasGitNotes(ref: string = 'HEAD', cwd?: string): Promise<boolean> {
+  const notes = await getGitNotes(ref, cwd)
   return notes !== null
 }
 
 /**
  * Check if we're in a git repository
  */
-export async function isGitRepo(): Promise<boolean> {
+export async function isGitRepo(cwd?: string): Promise<boolean> {
   try {
-    await Bun.$`git rev-parse --git-dir`.quiet()
+    await withCwd(Bun.$`git rev-parse --git-dir`, cwd).quiet()
     return true
   } catch {
     return false
@@ -156,9 +176,9 @@ export async function isGitRepo(): Promise<boolean> {
 /**
  * Get current branch name (git)
  */
-export async function getCurrentBranch(): Promise<string | null> {
+export async function getCurrentBranch(cwd?: string): Promise<string | null> {
   try {
-    const result = await Bun.$`git branch --show-current`.text()
+    const result = await withCwd(Bun.$`git branch --show-current`, cwd).text()
     return result.trim() || null
   } catch {
     return null

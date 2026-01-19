@@ -10,7 +10,7 @@
  * This is the highest-priority test gap identified in the review.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import React, { useRef } from 'react'
 import { createSmithersDB, type SmithersDB } from '../src/db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../src/reconciler/root.js'

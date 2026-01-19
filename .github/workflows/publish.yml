@@ -1,9 +1,12 @@
 name: Publish to npm and GitHub Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (vX.Y.Z)'
+        required: true
+        type: string
 
 jobs:
   publish:
@@ -13,6 +16,10 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ inputs.tag }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -39,7 +46,13 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          TAG="${{ inputs.tag }}"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag not found: $TAG"
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Generate release notes
         id: notes
@@ -77,6 +90,6 @@ jobs:
 
             ${{ steps.notes.outputs.notes }}
           draft: false
-          prerelease: ${{ contains(github.ref, '-') }}
+          prerelease: ${{ contains(inputs.tag, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

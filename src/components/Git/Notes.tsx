@@ -14,6 +14,8 @@ interface NotesState {
 export interface NotesProps {
   /** Commit reference (default: HEAD) */
   commitRef?: string
+  /** Repository path (defaults to process.cwd) */
+  cwd?: string
   /** Data to store in notes */
   data: Record<string, any>
   /** Append to existing notes instead of replacing */
@@ -73,7 +75,7 @@ export function Notes(props: NotesProps): ReactNode {
         const commitRef = props.commitRef ?? 'HEAD'
 
         // Get existing notes if appending
-        const previousNotes = props.append ? await getGitNotes(commitRef) : null
+        const previousNotes = props.append ? await getGitNotes(commitRef, props.cwd) : null
 
         // Prepare notes content with smithers metadata
         const notesData = {
@@ -86,7 +88,7 @@ export function Notes(props: NotesProps): ReactNode {
         const notesContent = JSON.stringify(notesData, null, 2)
 
         // Add or append notes
-        await addGitNotes(notesContent, commitRef, props.append ?? false)
+        await addGitNotes(notesContent, commitRef, props.append ?? false, props.cwd)
 
         const notesResult: NotesResult = {
           commitRef,
@@ -112,7 +114,7 @@ export function Notes(props: NotesProps): ReactNode {
         }
       }
     })()
-  }, [props.append, props.commitRef, props.data, props.onError, props.onFinished, smithers])
+  }, [props.append, props.commitRef, props.cwd, props.data, props.onError, props.onFinished, smithers])
 
   return (
     <git-notes

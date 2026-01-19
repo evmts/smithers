@@ -210,38 +210,34 @@ describe('OnCIFailure lifecycle', () => {
     expect(['polling', 'error', 'idle']).toContain(state.ciStatus)
   })
 
-  test.skip('clears polling interval on unmount', async () => {
-    // SKIP: Flaky test - useUnmount timing with custom reconciler is inconsistent
-    const setIntervalSpy = spyOn(globalThis, 'setInterval')
-    const clearIntervalSpy = spyOn(globalThis, 'clearInterval')
-    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
-    
-    await renderOnCIFailure(ctx, { pollInterval: 100 })
-    
-    // Wait for async mount - the initial checkCI() must complete before setInterval is called
-    // This can take variable time due to the async API call (or error)
-    // Poll until setInterval has been called, max 500ms
-    const start = Date.now()
-    while (setIntervalSpy.mock.calls.length === 0 && Date.now() - start < 500) {
-      await new Promise(r => setTimeout(r, 20))
+  test('clears polling interval on unmount', async () => {
+    const intervalId = 1234 as unknown as ReturnType<typeof setInterval>
+    const setIntervalSpy = spyOn(globalThis, 'setInterval').mockImplementation(() => intervalId)
+    const clearIntervalSpy = spyOn(globalThis, 'clearInterval').mockImplementation(() => {})
+    const originalBunShell = Bun.$
+
+    ;(Bun as any).$ = mock(() => ({
+      json: async () => [],
+      text: async () => '',
+    }))
+
+    try {
+      await renderOnCIFailure(ctx, { pollInterval: 100 })
+      // Wait longer for the async IIFE inside useExecutionMount to call setInterval
+      await new Promise<void>((resolve) => setTimeout(resolve, 50))
+
+      expect(setIntervalSpy).toHaveBeenCalled()
+
+      // Unmount by rendering null (triggers React unmount effects)
+      await ctx.root.render(null)
+      await new Promise<void>((resolve) => setTimeout(resolve, 10))
+
+      expect(clearIntervalSpy).toHaveBeenCalledWith(intervalId)
+    } finally {
+      ;(Bun as any).$ = originalBunShell
+      setIntervalSpy.mockRestore()
+      clearIntervalSpy.mockRestore()
     }
-    
-    // Unmount by rendering null first (triggers React unmount effects)
-    await ctx.root.render(null)
-    await flush()
-    
-    // Then dispose
-    ctx.root.dispose()
-    
-    // If setInterval was called, clearInterval should have been called
-    if (setIntervalSpy.mock.calls.length > 0) {
-      expect(clearIntervalSpy).toHaveBeenCalled()
-    }
-    // If setInterval was never called (e.g., component unmounted before async completed),
-    // then clearInterval wouldn't be called either - that's valid behavior
-    
-    setIntervalSpy.mockRestore()
-    clearIntervalSpy.mockRestore()
   })
 
   test('renders ci-failure-hook element with correct attributes', async () => {

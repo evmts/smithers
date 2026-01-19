@@ -8,14 +8,16 @@ export class LogWriter {
   private counter: number = 0
   private sessionId: string
   private streams: Map<string, fs.WriteStream> = new Map()
+  private backpressure: Set<string> = new Set()
 
   constructor(logDir: string = '.smithers/logs', executionId?: string) {
     if (executionId) {
-      this.logDir = path.resolve('.smithers/executions', executionId, 'logs')
+      const safeExecutionId = this.sanitizeSegment(executionId, 'execution')
+      this.logDir = path.resolve('.smithers/executions', safeExecutionId, 'logs')
     } else {
       this.logDir = path.resolve(logDir)
     }
-    this.sessionId = new Date().toISOString().replace(/[:.]/g, '-')
+    this.sessionId = this.sanitizeSegment(new Date().toISOString().replace(/[:.]/g, '-'), 'session')
 
     // Create logs directory if it doesn't exist
     if (!fs.existsSync(this.logDir)) {
@@ -25,8 +27,9 @@ export class LogWriter {
 
   writeLog(type: string, content: string, metadata?: Record<string, any>): string {
     this.counter++
-    const filename = `${this.sessionId}-${String(this.counter).padStart(3, '0')}-${type}.txt`
-    const filepath = path.join(this.logDir, filename)
+    const safeType = this.sanitizeSegment(type, 'log')
+    const filename = `${this.sessionId}-${String(this.counter).padStart(3, '0')}-${safeType}.txt`
+    const { filepath } = this.resolveSafePath(filename, 'log.txt')
 
     // Add metadata header
     let output = ''
@@ -35,7 +38,7 @@ export class LogWriter {
       output += 'METADATA\n'
       output += '='.repeat(60) + '\n'
       for (const [key, value] of Object.entries(metadata)) {
-        output += `${key}: ${value}\n`
+        output += `${key}: ${this.formatMetadataValue(value)}\n`
       }
       output += '\n'
       output += '='.repeat(60) + '\n'
@@ -56,23 +59,20 @@ export class LogWriter {
    * Returns the full path to the log file.
    */
   appendLog(filename: string, content: string): string {
-    const filepath = path.join(this.logDir, filename)
+    const { filename: safeFilename, filepath } = this.resolveSafePath(filename, 'log.txt')
     
     // Get or create a WriteStream for this file
-    let stream = this.streams.get(filename)
+    let stream = this.streams.get(safeFilename)
     if (!stream || stream.destroyed || stream.writableEnded) {
       if (stream) {
-        this.streams.delete(filename)
+        this.streams.delete(safeFilename)
       }
       stream = fs.createWriteStream(filepath, { flags: 'a', encoding: 'utf-8' })
-      this.streams.set(filename, stream)
+      this.attachStreamHandlers(safeFilename, stream)
+      this.streams.set(safeFilename, stream)
     }
 
-    if (!stream.writable) {
-      fs.appendFileSync(filepath, content, 'utf-8')
-    } else if (!stream.writableEnded && !stream.destroyed) {
-      stream.write(content)
-    }
+    this.writeToStream(safeFilename, filepath, stream, content)
     return filepath
   }
 
@@ -80,16 +80,20 @@ export class LogWriter {
    * Append a typed stream part as NDJSON.
    */
   appendStreamPart(filename: string, part: SmithersStreamPart): string {
-    const filepath = path.join(this.logDir, filename)
+    const { filename: safeFilename, filepath } = this.resolveSafePath(filename, 'stream.ndjson')
 
-    let stream = this.streams.get(filename)
-    if (!stream) {
+    let stream = this.streams.get(safeFilename)
+    if (!stream || stream.destroyed || stream.writableEnded) {
+      if (stream) {
+        this.streams.delete(safeFilename)
+      }
       stream = fs.createWriteStream(filepath, { flags: 'a', encoding: 'utf-8' })
-      this.streams.set(filename, stream)
+      this.attachStreamHandlers(safeFilename, stream)
+      this.streams.set(safeFilename, stream)
     }
 
     const line = JSON.stringify({ timestamp: Date.now(), ...part }) + '\n'
-    stream.write(line)
+    this.writeToStream(safeFilename, filepath, stream, line)
     return filepath
   }
 
@@ -97,7 +101,7 @@ export class LogWriter {
    * Write a summary file for stream events.
    */
   writeStreamSummary(filename: string, parts: SmithersStreamPart[]): string {
-    const filepath = path.join(this.logDir, filename)
+    const { filepath } = this.resolveSafePath(filename, 'summary.ndjson')
     const summaryPath = filepath.replace(/\.log$|\.ndjson$/, '') + '.summary.json'
     const summary = {
       textBlocks: parts.filter((part) => part.type === 'text-end').length,
@@ -115,7 +119,7 @@ export class LogWriter {
    * Write a summary file from precomputed counts.
    */
   writeStreamSummaryFromCounts(filename: string, summary: StreamSummary): string {
-    const filepath = path.join(this.logDir, filename)
+    const { filepath } = this.resolveSafePath(filename, 'summary.ndjson')
     const summaryPath = filepath.replace(/\.log$|\.ndjson$/, '') + '.summary.json'
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2))
     return summaryPath
@@ -125,10 +129,12 @@ export class LogWriter {
    * Close a specific log stream. Call when done writing to a log file.
    */
   closeStream(filename: string): void {
-    const stream = this.streams.get(filename)
+    const { filename: safeFilename } = this.resolveSafePath(filename, 'log.txt')
+    const stream = this.streams.get(safeFilename)
     if (stream) {
       stream.end()
-      this.streams.delete(filename)
+      this.streams.delete(safeFilename)
+      this.backpressure.delete(safeFilename)
     }
   }
 
@@ -139,6 +145,7 @@ export class LogWriter {
     for (const [filename, stream] of this.streams) {
       stream.end()
       this.streams.delete(filename)
+      this.backpressure.delete(filename)
     }
   }
 
@@ -157,6 +164,7 @@ export class LogWriter {
         })
       )
       this.streams.delete(filename)
+      this.backpressure.delete(filename)
     }
     return Promise.all(promises).then(() => {})
   }
@@ -165,11 +173,13 @@ export class LogWriter {
    * Flush and close a specific stream, waiting for writes to complete.
    */
   flushStream(filename: string): Promise<void> {
-    const stream = this.streams.get(filename)
+    const { filename: safeFilename } = this.resolveSafePath(filename, 'log.txt')
+    const stream = this.streams.get(safeFilename)
     if (!stream) {
       return Promise.resolve()
     }
-    this.streams.delete(filename)
+    this.streams.delete(safeFilename)
+    this.backpressure.delete(safeFilename)
     return new Promise<void>((resolve, reject) => {
       stream.once('finish', resolve)
       stream.once('error', reject)
@@ -180,10 +190,11 @@ export class LogWriter {
   writeToolCall(toolName: string, input: any, output: string): string {
     const metadata = {
       tool: toolName,
-      input: JSON.stringify(input, null, 2),
+      input: this.safeJsonStringify(input),
       timestamp: new Date().toISOString(),
     }
-    return this.writeLog(`tool-${toolName.toLowerCase()}`, output, metadata)
+    const safeToolName = this.sanitizeSegment(toolName.toLowerCase(), 'tool')
+    return this.writeLog(`tool-${safeToolName}`, output, metadata)
   }
 
   writeAgentResult(agentName: string, result: string): string {
@@ -208,5 +219,94 @@ export class LogWriter {
 
   getSessionId(): string {
     return this.sessionId
+  }
+
+  private sanitizeSegment(value: string, fallback: string): string {
+    const cleaned = value.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.\.+/g, '_')
+    const trimmed = cleaned.replace(/^_+|_+$/g, '')
+    return trimmed.length > 0 ? trimmed : fallback
+  }
+
+  private sanitizeFilename(value: string, fallback: string): string {
+    const base = path.basename(value)
+    return this.sanitizeSegment(base, fallback)
+  }
+
+  private resolveSafePath(filename: string, fallback: string): { filename: string; filepath: string } {
+    const safeFilename = this.sanitizeFilename(filename, fallback)
+    const filepath = path.resolve(this.logDir, safeFilename)
+    const logRoot = this.logDir.endsWith(path.sep) ? this.logDir : this.logDir + path.sep
+    if (!filepath.startsWith(logRoot) && filepath !== this.logDir) {
+      const fallbackName = this.sanitizeFilename(fallback, 'log')
+      return { filename: fallbackName, filepath: path.resolve(this.logDir, fallbackName) }
+    }
+    return { filename: safeFilename, filepath }
+  }
+
+  private attachStreamHandlers(filename: string, stream: fs.WriteStream): void {
+    stream.on('error', (err) => {
+      if (this.streams.get(filename) === stream) {
+        this.streams.delete(filename)
+      }
+      this.backpressure.delete(filename)
+      console.warn(
+        `[log-writer] Stream error for ${filename}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    })
+    stream.on('close', () => {
+      if (this.streams.get(filename) === stream) {
+        this.streams.delete(filename)
+      }
+      this.backpressure.delete(filename)
+    })
+  }
+
+  private writeToStream(
+    filename: string,
+    filepath: string,
+    stream: fs.WriteStream,
+    content: string
+  ): void {
+    if (!stream.writable || stream.writableEnded || stream.destroyed || this.backpressure.has(filename)) {
+      fs.appendFileSync(filepath, content, 'utf-8')
+      return
+    }
+
+    const ok = stream.write(content)
+    if (!ok) {
+      this.backpressure.add(filename)
+      stream.once('drain', () => {
+        this.backpressure.delete(filename)
+      })
+    }
+  }
+
+  private formatMetadataValue(value: unknown): string {
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean' || value === null || value === undefined) {
+      return String(value)
+    }
+    return this.safeJsonStringify(value)
+  }
+
+  private safeJsonStringify(value: unknown): string {
+    try {
+      const seen = new WeakSet<object>()
+      return JSON.stringify(
+        value,
+        (key, val) => {
+          void key
+          if (typeof val === 'object' && val !== null) {
+            if (seen.has(val)) return '[Circular]'
+            seen.add(val)
+          }
+          if (typeof val === 'bigint') return val.toString()
+          return val
+        },
+        2
+      )
+    } catch (err) {
+      return `[Unserializable: ${err instanceof Error ? err.message : String(err)}]`
+    }
   }
 }

@@ -2,7 +2,7 @@
  * Tests for Claude mock utilities
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'bun:test'
 import { createClaudeMock, createStaticMock, createSequenceMock, type MockResponse } from './claude-mock'
 
 describe('Claude Mock Utilities', () => {
