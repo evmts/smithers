@@ -5,9 +5,11 @@ describe('smithers-mcp-server', () => {
   const serverPath = new URL('./smithers-mcp-server.ts', import.meta.url).pathname
 
   test('exits with error when no tools provided', async () => {
+    const env = { ...process.env }
+    delete env.SMITHERS_TOOLS
     const proc = spawn({
       cmd: ['bun', 'run', serverPath],
-      env: { ...process.env, SMITHERS_TOOLS: undefined },
+      env,
       stdout: 'pipe',
       stderr: 'pipe',
     })

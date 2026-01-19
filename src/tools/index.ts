@@ -4,6 +4,8 @@
 export type {
   SmithersTool,
   SmithersToolContext,
+  SmithersExecOptions,
+  ToolExecuteOptions,
   CreateSmithersToolOptions,
   LegacyTool,
   MCPServer,

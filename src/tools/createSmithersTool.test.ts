@@ -51,6 +51,33 @@ describe('createSmithersTool', () => {
     expect(result.agentId).toBe('agent-1')
     expect(result.hasAbort).toBe(true)
   })
+
+  test('validates input before execute', async () => {
+    const execute = mock(async () => ({ ok: true }))
+    const tool = createSmithersTool({
+      name: 'validate',
+      description: 'Validate input',
+      inputSchema: z.object({ value: z.string() }),
+      execute,
+    })
+
+    await expect(tool.execute({ value: 123 as any })).rejects.toThrow('Invalid tool input')
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  test('throws when Smithers context is required but missing', async () => {
+    const tool = createSmithersTool({
+      name: 'required-context',
+      description: 'Context required',
+      inputSchema: z.object({ value: z.string() }),
+      requiresSmithersContext: true,
+      execute: async () => ({ ok: true }),
+    })
+
+    await expect(tool.execute({ value: 'ok' })).rejects.toThrow(
+      'Tool required-context requires Smithers context.'
+    )
+  })
 })
 
 describe('toolToMCPDefinition', () => {

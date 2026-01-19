@@ -60,6 +60,7 @@ Severity levels:
 - info: Informational (default)
 - warning: Potential issue that needs attention
 - critical: Serious issue that may stop orchestration`,
+    requiresSmithersContext: true,
     inputSchema: reportInputSchema,
     outputSchema: reportOutputSchema,
     execute: async (input, context) => {

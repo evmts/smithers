@@ -19,8 +19,21 @@ export interface SmithersTool<
   description: string
   inputSchema: TInput
   outputSchema?: z.ZodType<TOutput>
-  execute: (input: z.infer<TInput>, options: { abortSignal?: AbortSignal }) => Promise<TOutput>
+  requiresSmithersContext?: boolean
+  needsApproval?: boolean | ((input: z.infer<TInput>) => boolean | Promise<boolean>)
+  execute: (input: z.infer<TInput>, options?: ToolExecuteOptions) => Promise<TOutput>
 }
+
+export interface ToolExecuteOptions {
+  abortSignal?: AbortSignal
+  smithers?: SmithersToolContext
+  experimental_context?: SmithersToolContext
+  toolCallId?: string
+  messages?: unknown[]
+  [key: string]: unknown
+}
+
+export type SmithersExecOptions = ToolExecuteOptions
 
 export interface CreateSmithersToolOptions<
   TInput extends z.ZodType,
@@ -30,6 +43,7 @@ export interface CreateSmithersToolOptions<
   description: string
   inputSchema: TInput
   outputSchema?: z.ZodType<TOutput>
+  requiresSmithersContext?: boolean
   execute: (
     input: z.infer<TInput>,
     context: SmithersToolContext & { abortSignal?: AbortSignal }

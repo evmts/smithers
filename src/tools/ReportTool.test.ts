@@ -136,14 +136,15 @@ describe('createReportTool', () => {
       }
     )
 
-    expect(addReport).toHaveBeenCalledWith({
-      type: 'progress',
-      title: 'Test Progress',
-      content: 'Progress update content',
-      data: undefined,
-      severity: 'info',
-      agent_id: 'agent-123',
-    })
+    expect(addReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'progress',
+        title: 'Test Progress',
+        content: 'Progress update content',
+        severity: 'info',
+        agent_id: 'agent-123',
+      })
+    )
   })
 
   test('execute returns success with reportId', async () => {

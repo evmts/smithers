@@ -14,9 +14,8 @@ import {
   isToolName,
   parseToolSpecs,
   buildToolFlags,
-  type Tool,
-  type MCPServer,
 } from './registry.js'
+import type { LegacyTool, MCPServer } from './types.js'
 import { createSmithersTool } from './createSmithersTool.js'
 
 describe('BUILTIN_TOOLS', () => {
@@ -131,7 +130,7 @@ describe('getToolInfo', () => {
 
 describe('isCustomTool', () => {
   test('returns true for tool objects with execute', () => {
-    const tool: Tool = {
+    const tool: LegacyTool = {
       name: 'custom',
       description: 'A custom tool',
       inputSchema: { type: 'object' },
@@ -171,7 +170,7 @@ describe('isSmithersTool', () => {
   })
 
   test('returns false for legacy tools', () => {
-    const tool: Tool = {
+    const tool: LegacyTool = {
       name: 'legacy',
       description: 'Legacy tool',
       inputSchema: { type: 'object' },
@@ -190,7 +189,7 @@ describe('isSmithersTool', () => {
   })
 
   test('returns false for non-zod inputSchema', () => {
-    const legacyLike: Tool = {
+    const legacyLike: LegacyTool = {
       name: 'legacyish',
       description: 'legacyish tool',
       inputSchema: { type: 'object' },
@@ -220,12 +219,12 @@ describe('isSmithersTool', () => {
   })
 
   test('handles tool with missing name/description/inputSchema', () => {
-    // Only needs 'execute' to pass the type guard
+    // Missing inputSchema should fail Smithers tool guard
     const minimalTool = { execute: async () => {} }
-    expect(isCustomTool(minimalTool as any)).toBe(true)
+    expect(isSmithersTool(minimalTool as any)).toBe(false)
 
-    const noExecute = { name: 'test', description: 'test' }
-    expect(isCustomTool(noExecute as any)).toBe(false)
+    const noExecute = { name: 'test', description: 'test', inputSchema: z.object({}) }
+    expect(isSmithersTool(noExecute as any)).toBe(false)
   })
 })
 
@@ -245,7 +244,7 @@ describe('isMCPServer', () => {
   })
 
   test('returns false for custom tools', () => {
-    const tool: Tool = {
+    const tool: LegacyTool = {
       name: 'custom',
       description: 'test',
       inputSchema: { type: 'object' },
@@ -347,7 +346,7 @@ describe('parseToolSpecs', () => {
   })
 
   test('separates custom tools', () => {
-    const customTool: Tool = {
+    const customTool: LegacyTool = {
       name: 'custom',
       description: 'test',
       inputSchema: { type: 'object' },
@@ -390,7 +389,7 @@ describe('parseToolSpecs', () => {
   })
 
   test('handles mixed specs', () => {
-    const customTool: Tool = {
+    const customTool: LegacyTool = {
       name: 'custom',
       description: 'test',
       inputSchema: { type: 'object' },
@@ -435,13 +434,13 @@ describe('parseToolSpecs', () => {
   })
 
   test('preserves order of tools', () => {
-    const customTool1: Tool = {
+    const customTool1: LegacyTool = {
       name: 'first',
       description: 'first',
       inputSchema: { type: 'object' },
       execute: async () => {},
     }
-    const customTool2: Tool = {
+    const customTool2: LegacyTool = {
       name: 'second',
       description: 'second',
       inputSchema: { type: 'object' },
@@ -506,7 +505,7 @@ describe('buildToolFlags', () => {
   })
 
   test('ignores custom tools and MCP servers', () => {
-    const customTool: Tool = {
+    const customTool: LegacyTool = {
       name: 'custom',
       description: 'test',
       inputSchema: { type: 'object' },

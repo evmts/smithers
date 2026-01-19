@@ -3,6 +3,7 @@ import type {
   CreateSmithersToolOptions,
   SmithersTool,
   SmithersToolContext,
+  ToolExecuteOptions,
 } from './types.js'
 
 /**
@@ -11,13 +12,14 @@ import type {
  * When used within the Smithers orchestrator, tools receive full context including
  * database access, agent/execution IDs, and proper logging. When used standalone
  * (e.g., MCP server, direct invocation, testing), a stub context is created with:
- * - Empty db object (tools should handle gracefully)
+ * - db proxy that throws on access (explicit error for missing orchestration context)
  * - 'stub' agentId/executionId
  * - process.cwd() and process.env
  * - console.log for logging
  * 
  * This intentional fallback enables tools to work in MCP/standalone contexts
- * where full Smithers orchestration isn't available.
+ * where full Smithers orchestration isn't available. Tools can opt out by
+ * setting requiresSmithersContext: true.
  * 
  * @param options - Tool configuration including name, schema, and execute function
  * @returns A SmithersTool compatible with both Smithers orchestration and standalone use
@@ -38,30 +40,51 @@ import type {
 export function createSmithersTool<TInput extends z.ZodType, TOutput>(
   options: CreateSmithersToolOptions<TInput, TOutput>
 ): SmithersTool<TInput, TOutput> {
-  const { name, inputSchema, outputSchema, execute, description } = options
+  const {
+    name,
+    inputSchema,
+    outputSchema,
+    execute,
+    description,
+    needsApproval,
+    requiresSmithersContext,
+  } = options
 
   return {
     name,
     description,
     inputSchema,
     ...(outputSchema ? { outputSchema } : {}),
-    execute: async (input: z.infer<TInput>, execOptions: Record<string, unknown>) => {
+    ...(needsApproval !== undefined ? { needsApproval } : {}),
+    ...(requiresSmithersContext ? { requiresSmithersContext } : {}),
+    execute: async (input: z.infer<TInput>, execOptions: ToolExecuteOptions = {}) => {
       const smithersContext =
-        (execOptions as { smithers?: SmithersToolContext }).smithers ??
-        (execOptions as { experimental_context?: SmithersToolContext }).experimental_context
+        execOptions.smithers ?? execOptions.experimental_context
       
-      const abortSignal = execOptions['abortSignal'] as AbortSignal | undefined
+      const abortSignal = execOptions.abortSignal
       
       // When no Smithers context provided (MCP/standalone usage), create stub context.
-      // This enables tools to work outside full orchestration - tools should handle
-      // empty db gracefully for standalone compatibility.
+      // db access throws a clear error; db-dependent tools should set requiresSmithersContext.
+      if (!smithersContext && requiresSmithersContext) {
+        throw new Error(
+          `Tool ${name} requires Smithers context. Provide execOptions.smithers or execOptions.experimental_context.`
+        )
+      }
+      const dbProxy = new Proxy({} as SmithersToolContext['db'], {
+        get(_target, prop) {
+          throw new Error(
+            `SmithersToolContext.db is not available in standalone mode (attempted access: ${String(prop)}). ` +
+              'Provide execOptions.smithers or execOptions.experimental_context with a real db.'
+          )
+        },
+      })
       const context: SmithersToolContext & { abortSignal?: AbortSignal } = smithersContext 
         ? {
             ...smithersContext,
             ...(abortSignal ? { abortSignal } : {}),
           }
         : {
-            db: {} as SmithersToolContext['db'],
+            db: dbProxy,
             agentId: 'stub',
             executionId: 'stub',
             cwd: process.cwd(),
@@ -70,7 +93,12 @@ export function createSmithersTool<TInput extends z.ZodType, TOutput>(
             ...(abortSignal ? { abortSignal } : {}),
           }
       
-      return execute(input, context)
+      const parsed = inputSchema.safeParse(input)
+      if (!parsed.success) {
+        throw new Error(`Invalid tool input for ${name}: ${parsed.error.message}`)
+      }
+
+      return execute(parsed.data, context)
     },
   }
 }

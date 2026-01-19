@@ -1,9 +1,6 @@
 // Tools registry - built-in and custom tool support
 
-import type { LegacyTool, MCPServer, ToolSpec } from './types.js'
-
-// Internal alias for backwards compatibility within this module
-type Tool = LegacyTool
+import type { LegacyTool, MCPServer, SmithersTool, ToolSpec } from './types.js'
 
 // ============================================================================
 // BUILT-IN TOOLS REGISTRY
@@ -35,7 +32,7 @@ export type BuiltinToolName = keyof typeof BUILTIN_TOOLS
  * Check if a tool name is a built-in tool
  */
 export function isBuiltinTool(name: string): name is BuiltinToolName {
-  return name in BUILTIN_TOOLS
+  return Object.prototype.hasOwnProperty.call(BUILTIN_TOOLS, name)
 }
 
 /**
@@ -55,7 +52,7 @@ export function getToolInfo(name: string): (typeof BUILTIN_TOOLS)[BuiltinToolNam
 /**
  * Check if a tool spec is a custom Tool object
  */
-export function isCustomTool(spec: ToolSpec): spec is Tool {
+export function isCustomTool(spec: ToolSpec): spec is LegacyTool {
   return (
     typeof spec === 'object' &&
     spec !== null &&
@@ -67,7 +64,7 @@ export function isCustomTool(spec: ToolSpec): spec is Tool {
 /**
  * Check if a tool spec is a legacy Tool (has inputSchema as plain object, not Zod)
  */
-export function isLegacyTool(spec: ToolSpec): spec is Tool {
+export function isLegacyTool(spec: ToolSpec): spec is LegacyTool {
   return (
     typeof spec === 'object' &&
     spec !== null &&
@@ -80,13 +77,13 @@ export function isLegacyTool(spec: ToolSpec): spec is Tool {
 /**
  * Check if a tool spec is a SmithersTool (Zod-based with AI SDK compatibility)
  */
-export function isSmithersTool(spec: ToolSpec): boolean {
+export function isSmithersTool(spec: ToolSpec): spec is SmithersTool {
   return (
     typeof spec === 'object' &&
     spec !== null &&
     'execute' in spec &&
     'inputSchema' in spec &&
-    typeof (spec as any).inputSchema?._def === 'object'
+    typeof (spec as any).inputSchema?.safeParse === 'function'
   )
 }
 
@@ -110,7 +107,7 @@ export function isToolName(spec: ToolSpec): spec is string {
  * Categorizes each spec based on its structure:
  * - String → builtinTools (tool names like 'Read', 'Bash')
  * - Object with 'command' but no 'execute' → mcpServers
- * - Object with Zod inputSchema (_def property) → smithersTools
+ * - Object with Zod inputSchema (safeParse) → smithersTools
  * - Object with JSON Schema inputSchema (type property) → legacyTools + customTools
  * - Other objects with execute → customTools
  * 
@@ -129,15 +126,15 @@ export function isToolName(spec: ToolSpec): spec is string {
  */
 export function parseToolSpecs(specs: ToolSpec[]): {
   builtinTools: string[]
-  customTools: Tool[]
-  smithersTools: Tool[]
-  legacyTools: Tool[]
+  customTools: LegacyTool[]
+  smithersTools: SmithersTool[]
+  legacyTools: LegacyTool[]
   mcpServers: MCPServer[]
 } {
   const builtinTools: string[] = []
-  const customTools: Tool[] = []
-  const smithersTools: Tool[] = []
-  const legacyTools: Tool[] = []
+  const customTools: LegacyTool[] = []
+  const smithersTools: SmithersTool[] = []
+  const legacyTools: LegacyTool[] = []
   const mcpServers: MCPServer[] = []
 
   for (const spec of specs) {
@@ -146,7 +143,7 @@ export function parseToolSpecs(specs: ToolSpec[]): {
     } else if (isMCPServer(spec)) {
       mcpServers.push(spec)
     } else if (isSmithersTool(spec)) {
-      smithersTools.push(spec as Tool)
+      smithersTools.push(spec)
     } else if (isLegacyTool(spec)) {
       customTools.push(spec)
       legacyTools.push(spec)
