@@ -230,7 +230,7 @@ describe('ReviewProps interface', () => {
 describe('buildReviewPrompt', () => {
   test('builds basic prompt without criteria', async () => {
     const mod = await import('./Review/Review.js')
-    const content = 'function foo() { return 1; }'
+    const _content = 'function foo() { return 1; }'
     
     const Review = mod.Review
     expect(Review).toBeDefined()

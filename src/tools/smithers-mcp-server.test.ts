@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 import { spawn } from 'bun'
 
 describe('smithers-mcp-server', () => {

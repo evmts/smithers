@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { RateLimitStore } from './store.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import type { RateLimitStatus } from './types.js'

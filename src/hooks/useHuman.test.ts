@@ -70,11 +70,11 @@ describe('useHuman', () => {
 
 describe('useHuman integration with db.human', () => {
   let db: SmithersDB
-  let executionId: string
+  let _executionId: string
 
   beforeAll(async () => {
     db = await createSmithersDB({ reset: true })
-    executionId = await db.execution.start('test-useHuman', 'useHuman.test.tsx')
+    _executionId = await db.execution.start('test-useHuman', 'useHuman.test.tsx')
   })
 
   afterAll(() => {

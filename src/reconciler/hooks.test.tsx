@@ -182,12 +182,12 @@ describe('useUnmount', () => {
 
 describe('useMountedState', () => {
   test('returns true when mounted', async () => {
-    let isMountedFn: (() => boolean) | null = null
+    let _isMountedFn: (() => boolean) | null = null
     let mountedValue: boolean | null = null
     
     function TestComponent() {
       const isMounted = useMountedState()
-      isMountedFn = isMounted
+      _isMountedFn = isMounted
       
       useEffect(() => {
         mountedValue = isMounted()
@@ -199,37 +199,37 @@ describe('useMountedState', () => {
     const root = createSmithersRoot()
     await root.render(<TestComponent />)
     await flush()
-    expect(isMountedFn!()).toBe(true)
+    expect(_isMountedFn!()).toBe(true)
     expect(mountedValue).toBe(true)
     root.dispose()
   })
 
   test('returns false after unmount', async () => {
-    let isMountedFn: (() => boolean) | null = null
+    let _isMountedFn: (() => boolean) | null = null
     
     function TestComponent() {
-      isMountedFn = useMountedState()
+      _isMountedFn = useMountedState()
       return <div />
     }
     
     const root = createSmithersRoot()
     await root.render(<TestComponent />)
     await flush()
-    expect(isMountedFn!()).toBe(true)
+    expect(_isMountedFn!()).toBe(true)
     
     await root.render(null)
     await flush()
-    expect(isMountedFn!()).toBe(false)
+    expect(_isMountedFn!()).toBe(false)
     root.dispose()
   })
 
   test('prevents async setState on unmounted component pattern', async () => {
-    let isMountedFn: (() => boolean) | null = null
+    let _isMountedFn: (() => boolean) | null = null
     const stateUpdates: string[] = []
     
     function TestComponent() {
       const isMounted = useMountedState()
-      isMountedFn = isMounted
+      _isMountedFn = isMounted
       
       useEffect(() => {
         setTimeout(() => {
