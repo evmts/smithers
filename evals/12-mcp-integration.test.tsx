@@ -253,4 +253,52 @@ describe('12-mcp-integration', () => {
       errors: [],
     })
   })
+
+  // ============================================================================
+  // MISSING TEST COVERAGE - test.todo()
+  // ============================================================================
+
+  // Sqlite MCP tool tests
+  test.todo('Sqlite with absolute path')
+  test.todo('Sqlite with relative path')
+  test.todo('Sqlite with in-memory database (:memory:)')
+  test.todo('Sqlite readOnly=true blocks writes')
+  test.todo('Sqlite readOnly=false allows writes')
+  test.todo('Sqlite with createIfMissing prop')
+  test.todo('Sqlite tool availability in Claude context')
+  test.todo('Sqlite query execution (non-mock)')
+  test.todo('Sqlite query result formatting')
+  test.todo('Sqlite error handling (invalid SQL)')
+  test.todo('Sqlite connection timeout')
+  test.todo('Sqlite large result set handling')
+
+  // MCP server lifecycle
+  test.todo('MCP server starts on first use')
+  test.todo('MCP server stops on component unmount')
+  test.todo('MCP server reuses existing connection')
+  test.todo('MCP server reconnection on failure')
+  test.todo('MCP server timeout handling')
+  test.todo('MCP server stdio transport')
+  test.todo('MCP server SSE transport')
+
+  // MCP tool integration
+  test.todo('Multiple MCP tools same Claude context')
+  test.todo('MCP tool invocation logged to DB')
+  test.todo('MCP tool result passed to Claude')
+  test.todo('MCP tool error handling')
+  test.todo('MCP tool with structured schema')
+  test.todo('MCP tool permissions/capabilities')
+
+  // Additional MCP tools
+  test.todo('Filesystem MCP tool')
+  test.todo('Fetch MCP tool')
+  test.todo('Memory MCP tool')
+  test.todo('Custom MCP server integration')
+  test.todo('MCP tool discovery/listing')
+
+  // Edge cases
+  test.todo('MCP inside Parallel (resource sharing)')
+  test.todo('MCP server crash recovery')
+  test.todo('MCP with very long query')
+  test.todo('MCP mock mode returns fake results')
 })

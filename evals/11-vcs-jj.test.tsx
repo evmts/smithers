@@ -257,4 +257,48 @@ describe('11-vcs-jj', () => {
       errors: [],
     })
   })
+
+  // ============================================================================
+  // MISSING TEST COVERAGE - test.todo()
+  // ============================================================================
+
+  // JJ.Snapshot tests
+  test.todo('Snapshot without message')
+  test.todo('Snapshot with onComplete callback')
+  test.todo('Snapshot status transitions')
+  test.todo('Snapshot in non-jj directory')
+  test.todo('Snapshot with no changes (noop)')
+
+  // JJ.Commit tests
+  test.todo('Commit with autoDescribe=false')
+  test.todo('Commit with specific revision')
+  test.todo('Commit onSuccess callback')
+  test.todo('Commit onError callback')
+  test.todo('Commit with empty change (noop)')
+  test.todo('Commit status transitions')
+
+  // JJ.Describe tests
+  test.todo('Describe without useAgent (manual)')
+  test.todo('Describe with custom template')
+  test.todo('Describe with revision prop')
+  test.todo('Describe useAgent="sonnet"')
+  test.todo('Describe useAgent="haiku"')
+  test.todo('Describe onComplete callback')
+  test.todo('Describe agent failure handling')
+  test.todo('Describe timeout handling')
+
+  // JJ error handling
+  test.todo('JJ operation in non-jj repository')
+  test.todo('JJ operation with conflicts')
+  test.todo('JJ operation during operation lock')
+  test.todo('JJ with colocated git repo')
+  test.todo('JJ timeout handling')
+
+  // Integration scenarios
+  test.todo('Snapshot then Commit workflow')
+  test.todo('Commit with autoDescribe agent flow')
+  test.todo('Multiple JJ operations parallel (should serialize)')
+  test.todo('JJ mock mode returns fake results')
+  test.todo('JJ real mode (non-mock) execution')
+  test.todo('JJ and Git mixed in same workflow')
 })

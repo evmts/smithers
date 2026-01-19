@@ -174,3 +174,130 @@ describe('Component composition', () => {
     expect(xml).toContain('</phase>')
   })
 })
+
+describe('If component', () => {
+  test.todo('renders children when condition=true')
+  test.todo('renders null when condition=false')
+  test.todo('children prop is required')
+  test.todo('condition prop is required boolean')
+  test.todo('handles empty children')
+  test.todo('handles multiple children')
+})
+
+describe('Stop component', () => {
+  test.todo('renders <smithers-stop> element')
+  test.todo('renders reason attribute when provided')
+  test.todo('renders without reason attribute when not provided')
+  test.todo('renders children inside element')
+  test.todo('renders without children')
+})
+
+describe('Constraints component', () => {
+  test.todo('renders <constraints> element')
+  test.todo('renders children inside element')
+  test.todo('accepts arbitrary props')
+})
+
+describe('Persona component', () => {
+  test.todo('renders <persona> element')
+  test.todo('renders role attribute when provided')
+  test.todo('renders without role attribute when not provided')
+  test.todo('renders children inside element')
+  test.todo('accepts arbitrary props')
+})
+
+describe('Human component', () => {
+  test.todo('renders <human> element')
+  test.todo('renders message attribute')
+  test.todo('renders children inside element')
+  test.todo('onApprove callback is available')
+  test.todo('onReject callback is available')
+  test.todo('accepts arbitrary props')
+})
+
+describe('Subagent component', () => {
+  test.todo('renders <subagent> element')
+  test.todo('renders name attribute when provided')
+  test.todo('renders parallel attribute when true')
+  test.todo('renders without parallel attribute when false/undefined')
+  test.todo('renders children inside element')
+  test.todo('accepts arbitrary props')
+})
+
+describe('Task component', () => {
+  test.todo('renders <task> element')
+  test.todo('renders done attribute as boolean')
+  test.todo('done=true renders correctly')
+  test.todo('done=false renders correctly')
+  test.todo('done=undefined renders correctly')
+  test.todo('renders children inside element')
+  test.todo('accepts arbitrary props')
+})
+
+describe('Phase component', () => {
+  describe('Props validation', () => {
+    test.todo('name prop is required')
+    test.todo('children prop is required')
+    test.todo('skipIf prop is optional function')
+    test.todo('onStart callback is optional')
+    test.todo('onComplete callback is optional')
+  })
+
+  describe('Execution lifecycle', () => {
+    test.todo('starts phase in db.phases.start when activated')
+    test.todo('completes phase in db.phases.complete on completion')
+    test.todo('calls onStart callback when activated')
+    test.todo('calls onComplete callback when completed')
+  })
+
+  describe('Skip behavior', () => {
+    test.todo('skips phase when skipIf returns true')
+    test.todo('logs skipped phase to database')
+    test.todo('advances to next phase when skipped')
+    test.todo('only processes skip once (hasSkippedRef)')
+  })
+
+  describe('Sequential execution', () => {
+    test.todo('only active phase renders children')
+    test.todo('pending phases do not render children')
+    test.todo('completed phases do not render children')
+  })
+
+  describe('StepRegistryProvider integration', () => {
+    test.todo('wraps children in StepRegistryProvider')
+    test.todo('passes phaseId to StepRegistryProvider')
+    test.todo('onAllStepsComplete advances to next phase')
+  })
+
+  describe('XML rendering', () => {
+    test.todo('renders <phase name="..."> element')
+    test.todo('renders status="pending" when pending')
+    test.todo('renders status="active" when active')
+    test.todo('renders status="completed" when completed')
+    test.todo('renders status="skipped" when skipped')
+  })
+
+  describe('Ralph iteration tracking', () => {
+    test.todo('uses ralphCount for phase iteration logging')
+  })
+})
+
+describe('Context providers', () => {
+  describe('PhaseContext', () => {
+    test.todo('PhaseContext.Provider provides value')
+    test.todo('usePhaseContext returns null outside provider')
+    test.todo('usePhaseContext returns context inside provider')
+  })
+
+  describe('StepContext', () => {
+    test.todo('StepContext.Provider provides value')
+    test.todo('useStepContext returns null outside provider')
+    test.todo('useStepContext returns context inside provider')
+  })
+
+  describe('WorktreeProvider', () => {
+    test.todo('WorktreeProvider provides value')
+    test.todo('useWorktree returns null outside provider')
+    test.todo('useWorktree returns context inside provider')
+  })
+})

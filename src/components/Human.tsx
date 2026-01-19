@@ -8,6 +8,7 @@ export interface HumanProps {
   [key: string]: unknown
 }
 
+// THIS IS WRONG! See docs for how this should be a useMutation like useHuman hook and async
 /**
  * Human component - pauses execution for human interaction.
  *

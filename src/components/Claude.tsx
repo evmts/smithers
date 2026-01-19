@@ -1,6 +1,3 @@
-// Enhanced Claude component for Smithers orchestrator
-// Uses SmithersProvider context for database logging and ClaudeCodeCLI for execution
-
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
@@ -16,38 +13,8 @@ import { uuid } from '../db/utils.js'
 import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
 import { useQuery } from '../reactive-sqlite/index.js'
 
-// ============================================================================
-// CLAUDE COMPONENT
-// ============================================================================
-
-/**
- * Enhanced Claude component with database logging and CLI execution.
- *
- * CRITICAL PATTERN: This component is BOTH declaration AND execution.
- * Instead of relying on remounting via key, it reacts to ralphCount
- * changes from Ralph and explicitly restarts execution.
- *
- * React pattern: Use useEffect with ralphCount dependency:
- *   useEffect(() => {
- *     (async () => { ... })()
- *   }, [ralphCount])
- *
- * Usage:
- * ```tsx
- * <Claude
- *   model="sonnet"
- *   maxTurns={5}
- *   reportingEnabled
- *   onFinished={(result) => console.log('Done:', result)}
- * >
- *   Implement a feature that does X
- * </Claude>
- * ```
- */
-// Default throttle interval for tail log updates (ms)
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
 
-// Type for agent row from DB
 type AgentRow = {
   status: string
   result: string | null
@@ -58,6 +25,7 @@ type AgentRow = {
   duration_ms: number | null
 }
 
+// TODO: add jsdoc
 export function Claude(props: ClaudeProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
   const worktree = useWorktree()
@@ -68,14 +36,10 @@ export function Claude(props: ClaudeProps): ReactNode {
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
 
-  // agentId stored in ref (set once, non-reactive until set)
+  // TODO abstract all the following block of lines into named hooks
   const agentIdRef = useRef<string | null>(null)
-
-  // tailLog stored in ref with forceUpdate for reactivity
   const tailLogRef = useRef<TailLogEntry[]>([])
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
-
-  // Query reactive state from DB
   const { data: agentRows } = useQuery<AgentRow>(
     reactiveDb,
     "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",

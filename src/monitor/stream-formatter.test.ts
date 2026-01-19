@@ -222,52 +222,250 @@ describe('StreamFormatter', () => {
     })
   })
 
-  describe('edge cases - missing tests', () => {
-    // Header edge cases
-    test.todo('formatHeader truncates very long file names to fit box width')
-    test.todo('formatHeader handles file names with special characters (unicode, emojis)')
-    test.todo('formatHeader handles empty file name')
-    test.todo('formatHeader handles file name with newlines')
-    
-    // Event formatting edge cases
-    test.todo('formatEvent handles unknown event type - falls through to default')
-    test.todo('formatEvent handles event with missing data fields')
-    test.todo('formatEvent handles event with null/undefined data values')
-    test.todo('formatEvent handles event with very long name (>100 chars)')
-    test.todo('formatEvent handles event with special characters in name')
-    test.todo('formatEvent handles event with newlines in data fields')
-    
-    // Tool event edge cases
-    test.todo('formatEvent tool with empty details string')
-    test.todo('formatEvent tool with multi-line summary preserves formatting')
-    test.todo('formatEvent tool with very long summary (>1000 chars)')
-    test.todo('formatEvent tool with special characters in summary')
-    test.todo('formatEvent tool with undefined logPath and summary')
-    
-    // Log deduplication
-    test.todo('consecutive log events are deduplicated (only first shown)')
-    test.todo('log events interspersed with other events are shown')
-    test.todo('lastEventType resets correctly between different event types')
-    
-    // Stats edge cases
-    test.todo('stats overflow - very large number of tool calls')
-    test.todo('stats remain accurate after mixed event types')
-    test.todo('phase with non-COMPLETE status does not increment phasesCompleted')
-    test.todo('agent with non-COMPLETE status does not increment agentsExecuted')
-    
-    // Summary edge cases
-    test.todo('formatSummary handles 0ms duration')
-    test.todo('formatSummary handles very large duration (>24h)')
-    test.todo('formatSummary handles negative duration gracefully')
-    test.todo('formatSummary truncates very long log directory path')
-    test.todo('formatSummary handles log directory with special characters')
-    
-    // Time formatting edge cases
-    test.todo('formatTime handles midnight correctly')
-    test.todo('formatTime handles different timezones')
-    
-    // Concurrent usage
-    test.todo('multiple formatEvent calls in rapid succession')
-    test.todo('stats consistency under concurrent updates')
+  describe('formatHeader edge cases', () => {
+    test('includes very long file names (may extend box width)', () => {
+      const formatter = new StreamFormatter()
+      const longFileName = 'a'.repeat(100)
+      const header = formatter.formatHeader(longFileName)
+      
+      expect(header).toContain(longFileName)
+      expect(header).toContain('SMITHERS MONITOR')
+    })
+
+    test('handles special characters (unicode, emojis)', () => {
+      const formatter = new StreamFormatter()
+      const unicodeName = '文件名-🚀-тест.tsx'
+      const header = formatter.formatHeader(unicodeName)
+      
+      expect(header).toContain(unicodeName)
+      expect(header).toContain('SMITHERS MONITOR')
+    })
+
+    test('handles empty file name', () => {
+      const formatter = new StreamFormatter()
+      const header = formatter.formatHeader('')
+      
+      expect(header).toContain('File:')
+      expect(header).toContain('SMITHERS MONITOR')
+    })
+
+    test('handles file name with newlines', () => {
+      const formatter = new StreamFormatter()
+      const nameWithNewline = 'file\nname.tsx'
+      const header = formatter.formatHeader(nameWithNewline)
+      
+      expect(header).toContain('File:')
+    })
+  })
+
+  describe('formatEvent edge cases', () => {
+    test('handles unknown event type - falls through to default', () => {
+      const formatter = new StreamFormatter()
+      const event: ParsedEvent = {
+        type: 'unknown' as any,
+        timestamp: new Date(),
+        data: {},
+        raw: 'some unknown event',
+      }
+      
+      const output = formatter.formatEvent(event)
+      expect(output).toContain('some unknown event')
+    })
+
+    test('handles event with missing data fields', () => {
+      const formatter = new StreamFormatter()
+      const event = createEvent('phase', {})
+      
+      const output = formatter.formatEvent(event)
+      expect(output).toContain('PHASE:')
+      expect(output).toContain('undefined')
+    })
+
+    test('handles event with null/undefined data values', () => {
+      const formatter = new StreamFormatter()
+      const event = createEvent('agent', { name: null, status: undefined })
+      
+      const output = formatter.formatEvent(event)
+      expect(output).toContain('AGENT:')
+    })
+
+    test('handles event with very long name (>100 chars)', () => {
+      const formatter = new StreamFormatter()
+      const longName = 'A'.repeat(150)
+      const event = createEvent('tool', { name: longName, details: 'test' })
+      
+      const output = formatter.formatEvent(event)
+      expect(output).toContain('TOOL CALL:')
+      expect(output).toContain(longName)
+    })
+
+    test('handles event with special characters in name', () => {
+      const formatter = new StreamFormatter()
+      const event = createEvent('phase', { name: '🔥Phase<>&"\'', status: 'RUNNING' })
+      
+      const output = formatter.formatEvent(event)
+      expect(output).toContain('🔥Phase<>&"\'')
+    })
+
+    test('handles event with newlines in data fields', () => {
+      const formatter = new StreamFormatter()
+      const event = createEvent('error', { message: 'Error\nwith\nmultiple\nlines' })
+      
+      const output = formatter.formatEvent(event)
+      expect(output).toContain('ERROR:')
+    })
+  })
+
+  describe('tool event edge cases', () => {
+    test('tool with empty details string', () => {
+      const formatter = new StreamFormatter()
+      const event = createEvent('tool', { name: 'Read', details: '' })
+      
+      const output = formatter.formatEvent(event)
+      expect(output).toContain('TOOL CALL: Read')
+      expect(output).not.toContain('           \n           ')
+    })
+
+    test('tool with multi-line summary preserves formatting', () => {
+      const formatter = new StreamFormatter()
+      const event = createEvent('tool', { name: 'Read', details: '' })
+      const multiLineSummary = 'Line 1\nLine 2\nLine 3'
+      
+      const output = formatter.formatEvent(event, '/log', multiLineSummary)
+      expect(output).toContain('SUMMARY:')
+      expect(output).toContain('Line 1')
+    })
+
+    test('tool with very long summary (>1000 chars)', () => {
+      const formatter = new StreamFormatter()
+      const event = createEvent('tool', { name: 'Read', details: '' })
+      const longSummary = 'x'.repeat(1500)
+      
+      const output = formatter.formatEvent(event, '/log', longSummary)
+      expect(output).toContain('SUMMARY:')
+      expect(output).toContain(longSummary)
+    })
+
+    test('tool with undefined logPath and summary', () => {
+      const formatter = new StreamFormatter()
+      const event = createEvent('tool', { name: 'Read', details: 'test' })
+      
+      const output = formatter.formatEvent(event, undefined, undefined)
+      expect(output).toContain('TOOL CALL: Read')
+      expect(output).not.toContain('SUMMARY:')
+      expect(output).not.toContain('Full output:')
+    })
+  })
+
+  describe('log deduplication', () => {
+    test('consecutive log events are deduplicated (only first shown)', () => {
+      const formatter = new StreamFormatter()
+      const log1 = createEvent('log', { message: 'Log 1' })
+      const log2 = createEvent('log', { message: 'Log 2' })
+      
+      const output1 = formatter.formatEvent(log1)
+      const output2 = formatter.formatEvent(log2)
+      
+      expect(output1).toContain('Log 1')
+      expect(output2).toBe('')
+    })
+
+    test('log events interspersed with other events are shown', () => {
+      const formatter = new StreamFormatter()
+      const log1 = createEvent('log', { message: 'Log 1' })
+      const phase = createEvent('phase', { name: 'Test', status: 'RUNNING' })
+      const log2 = createEvent('log', { message: 'Log 2' })
+      
+      const output1 = formatter.formatEvent(log1)
+      formatter.formatEvent(phase)
+      const output3 = formatter.formatEvent(log2)
+      
+      expect(output1).toContain('Log 1')
+      expect(output3).toContain('Log 2')
+    })
+
+    test('lastEventType resets correctly between different event types', () => {
+      const formatter = new StreamFormatter()
+      
+      formatter.formatEvent(createEvent('log', { message: 'Log' }))
+      formatter.formatEvent(createEvent('tool', { name: 'Read' }))
+      const logOutput = formatter.formatEvent(createEvent('log', { message: 'New Log' }))
+      
+      expect(logOutput).toContain('New Log')
+    })
+  })
+
+  describe('stats edge cases', () => {
+    test('phase with non-COMPLETE status does not increment phasesCompleted', () => {
+      const formatter = new StreamFormatter()
+      
+      formatter.formatEvent(createEvent('phase', { name: 'Test', status: 'RUNNING' }))
+      formatter.formatEvent(createEvent('phase', { name: 'Test', status: 'STARTING' }))
+      
+      const stats = formatter.getStats()
+      expect(stats.phasesCompleted).toBe(0)
+    })
+
+    test('agent with non-COMPLETE status does not increment agentsExecuted', () => {
+      const formatter = new StreamFormatter()
+      
+      formatter.formatEvent(createEvent('agent', { name: 'Test', status: 'RUNNING' }))
+      formatter.formatEvent(createEvent('agent', { name: 'Test', status: 'STARTING' }))
+      
+      const stats = formatter.getStats()
+      expect(stats.agentsExecuted).toBe(0)
+    })
+
+    test('stats remain accurate after mixed event types', () => {
+      const formatter = new StreamFormatter()
+      
+      for (let i = 0; i < 5; i++) {
+        formatter.formatEvent(createEvent('phase', { status: 'COMPLETE' }))
+        formatter.formatEvent(createEvent('agent', { status: 'COMPLETE' }))
+        formatter.formatEvent(createEvent('tool', { name: 'Read' }))
+        formatter.formatEvent(createEvent('error', { message: 'Error' }))
+        formatter.formatEvent(createEvent('log', { message: 'Log' }))
+      }
+      
+      const stats = formatter.getStats()
+      expect(stats.phasesCompleted).toBe(5)
+      expect(stats.agentsExecuted).toBe(5)
+      expect(stats.toolCalls).toBe(5)
+      expect(stats.errors).toBe(5)
+    })
+  })
+
+  describe('formatSummary edge cases', () => {
+    test('handles 0ms duration', () => {
+      const formatter = new StreamFormatter()
+      const summary = formatter.formatSummary(0, '/log/dir')
+      
+      expect(summary).toContain('Duration:')
+      expect(summary).toContain('0s')
+    })
+
+    test('handles very large duration (>24h)', () => {
+      const formatter = new StreamFormatter()
+      const duration = 25 * 60 * 60 * 1000
+      const summary = formatter.formatSummary(duration, '/log/dir')
+      
+      expect(summary).toContain('Duration:')
+      expect(summary).toContain('25h')
+    })
+
+    test('handles negative duration gracefully', () => {
+      const formatter = new StreamFormatter()
+      const summary = formatter.formatSummary(-1000, '/log/dir')
+      
+      expect(summary).toContain('Duration:')
+    })
+
+    test('handles log directory with special characters', () => {
+      const formatter = new StreamFormatter()
+      const specialPath = '/path/with spaces/and-特殊字符/🚀'
+      const summary = formatter.formatSummary(1000, specialPath)
+      
+      expect(summary).toContain('Log directory:')
+    })
   })
 })

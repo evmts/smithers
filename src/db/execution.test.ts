@@ -414,4 +414,378 @@ describe('ExecutionModule', () => {
       expect(row.status).toBe('cancelled')
     })
   })
+
+  describe('boundary conditions', () => {
+    test('start with empty config defaults to empty object', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      const row = db.queryOne<any>('SELECT config FROM executions WHERE id = ?', [id])
+      expect(JSON.parse(row.config)).toEqual({})
+    })
+
+    test('start with undefined config defaults to empty object', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path', undefined)
+
+      const row = db.queryOne<any>('SELECT config FROM executions WHERE id = ?', [id])
+      expect(JSON.parse(row.config)).toEqual({})
+    })
+
+    test('complete with no result stores null', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      execution.complete(id)
+
+      const row = db.queryOne<any>('SELECT result FROM executions WHERE id = ?', [id])
+      expect(row.result).toBeNull()
+    })
+
+    test('complete with undefined result stores null', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      execution.complete(id, undefined)
+
+      const row = db.queryOne<any>('SELECT result FROM executions WHERE id = ?', [id])
+      expect(row.result).toBeNull()
+    })
+
+    test('complete with empty object result stores empty object', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      execution.complete(id, {})
+
+      const row = db.queryOne<any>('SELECT result FROM executions WHERE id = ?', [id])
+      expect(JSON.parse(row.result)).toEqual({})
+    })
+
+    test('fail with empty error message', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      execution.fail(id, '')
+
+      const row = db.queryOne<any>('SELECT error FROM executions WHERE id = ?', [id])
+      expect(row.error).toBe('')
+    })
+
+    test('fail with very long error message', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+      const longError = 'x'.repeat(10000)
+
+      execution.fail(id, longError)
+
+      const row = db.queryOne<any>('SELECT error FROM executions WHERE id = ?', [id])
+      expect(row.error).toBe(longError)
+    })
+
+    test('start with very long name', () => {
+      const execution = createExecution()
+      const longName = 'execution-' + 'x'.repeat(1000)
+      const id = execution.start(longName, '/path')
+
+      const row = db.queryOne<any>('SELECT name FROM executions WHERE id = ?', [id])
+      expect(row.name).toBe(longName)
+    })
+
+    test('start with very long file path', () => {
+      const execution = createExecution()
+      const longPath = '/' + 'dir/'.repeat(500) + 'file.ts'
+      const id = execution.start('test', longPath)
+
+      const row = db.queryOne<any>('SELECT file_path FROM executions WHERE id = ?', [id])
+      expect(row.file_path).toBe(longPath)
+    })
+
+    test('start with complex nested config', () => {
+      const execution = createExecution()
+      const config = {
+        nested: { deep: { value: 42 } },
+        array: [1, 2, { x: 3 }],
+        unicode: '日本語',
+        special: 'line1\nline2\ttab',
+      }
+      const id = execution.start('test', '/path', config)
+
+      const found = execution.get(id)
+      expect(found!.config).toEqual(config)
+    })
+
+    test('complete with complex nested result', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+      const result = {
+        data: [{ nested: true }],
+        metadata: { version: '1.0' },
+      }
+
+      execution.complete(id, result)
+
+      const found = execution.get(id)
+      expect(found!.result).toEqual(result)
+    })
+
+    test('list with limit 0 returns empty', () => {
+      const execution = createExecution()
+      execution.start('test', '/path')
+
+      const list = execution.list(0)
+      expect(list).toHaveLength(0)
+    })
+
+    test('list with limit 1 returns single', () => {
+      const execution = createExecution()
+      execution.start('exec1', '/path1')
+      execution.start('exec2', '/path2')
+
+      const list = execution.list(1)
+      expect(list).toHaveLength(1)
+    })
+
+    test('get returns parsed config even for empty object', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      const found = execution.get(id)
+      expect(found!.config).toEqual({})
+      expect(typeof found!.config).toBe('object')
+    })
+
+    test('get returns undefined result when not completed', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      const found = execution.get(id)
+      expect(found!.result).toBeUndefined()
+    })
+  })
+
+  describe('timestamp format', () => {
+    test('started_at is ISO format string', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      const row = db.queryOne<any>('SELECT started_at FROM executions WHERE id = ?', [id])
+      expect(row.started_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+    })
+
+    test('created_at is ISO format string', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      const row = db.queryOne<any>('SELECT created_at FROM executions WHERE id = ?', [id])
+      expect(row.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+    })
+
+    test('completed_at is ISO format string after complete', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+      execution.complete(id)
+
+      const row = db.queryOne<any>('SELECT completed_at FROM executions WHERE id = ?', [id])
+      expect(row.completed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+    })
+
+    test('completed_at is ISO format string after fail', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+      execution.fail(id, 'error')
+
+      const row = db.queryOne<any>('SELECT completed_at FROM executions WHERE id = ?', [id])
+      expect(row.completed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+    })
+
+    test('completed_at is ISO format string after cancel', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+      execution.cancel(id)
+
+      const row = db.queryOne<any>('SELECT completed_at FROM executions WHERE id = ?', [id])
+      expect(row.completed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+    })
+  })
+
+  describe('concurrent executions', () => {
+    test('multiple running executions can exist', () => {
+      const execution = createExecution()
+
+      const id1 = execution.start('exec1', '/path1')
+      const id2 = execution.start('exec2', '/path2')
+      const id3 = execution.start('exec3', '/path3')
+
+      const rows = db.query<any>('SELECT id, status FROM executions WHERE status = ?', ['running'])
+      expect(rows).toHaveLength(3)
+    })
+
+    test('only latest started is current', () => {
+      const execution = createExecution()
+
+      execution.start('exec1', '/path1')
+      execution.start('exec2', '/path2')
+      const id3 = execution.start('exec3', '/path3')
+
+      expect(currentExecutionId).toBe(id3)
+      const current = execution.current()
+      expect(current!.id).toBe(id3)
+    })
+
+    test('completing non-current does not affect current', () => {
+      const execution = createExecution()
+
+      const id1 = execution.start('exec1', '/path1')
+      const id2 = execution.start('exec2', '/path2')
+
+      execution.complete(id1)
+
+      expect(currentExecutionId).toBe(id2)
+    })
+
+    test('findIncomplete returns most recent by created_at', () => {
+      const execution = createExecution()
+
+      db.run(
+        `INSERT INTO executions (id, file_path, status, created_at) VALUES (?, ?, ?, ?)`,
+        ['older', '/path1', 'running', '2024-01-01T00:00:00.000Z']
+      )
+      db.run(
+        `INSERT INTO executions (id, file_path, status, created_at) VALUES (?, ?, ?, ?)`,
+        ['newer', '/path2', 'running', '2024-01-02T00:00:00.000Z']
+      )
+
+      const incomplete = execution.findIncomplete()
+      expect(incomplete!.id).toBe('newer')
+    })
+  })
+
+  describe('duration calculation', () => {
+    test('completed_at is after started_at', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+      execution.complete(id)
+
+      const row = db.queryOne<any>('SELECT started_at, completed_at FROM executions WHERE id = ?', [id])
+      const started = new Date(row.started_at).getTime()
+      const completed = new Date(row.completed_at).getTime()
+
+      expect(completed).toBeGreaterThanOrEqual(started)
+    })
+
+    test('created_at is set on start', () => {
+      const execution = createExecution()
+      const before = new Date().toISOString()
+      const id = execution.start('test', '/path')
+      const after = new Date().toISOString()
+
+      const row = db.queryOne<any>('SELECT created_at FROM executions WHERE id = ?', [id])
+      expect(row.created_at >= before).toBe(true)
+      expect(row.created_at <= after).toBe(true)
+    })
+  })
+
+  describe('ID generation', () => {
+    test('start returns valid UUID format', () => {
+      const execution = createExecution()
+      const id = execution.start('test', '/path')
+
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    })
+
+    test('each start generates unique ID', () => {
+      const execution = createExecution()
+      const ids = new Set<string>()
+
+      for (let i = 0; i < 100; i++) {
+        ids.add(execution.start(`exec${i}`, `/path${i}`))
+      }
+
+      expect(ids.size).toBe(100)
+    })
+  })
+
+  describe('error cases', () => {
+    test('complete on non-existent execution does not throw', () => {
+      const execution = createExecution()
+
+      expect(() => execution.complete('non-existent')).not.toThrow()
+    })
+
+    test('fail on non-existent execution does not throw', () => {
+      const execution = createExecution()
+
+      expect(() => execution.fail('non-existent', 'error')).not.toThrow()
+    })
+
+    test('cancel on non-existent execution does not throw', () => {
+      const execution = createExecution()
+
+      expect(() => execution.cancel('non-existent')).not.toThrow()
+    })
+
+    test('list on empty database returns empty array', () => {
+      const execution = createExecution()
+
+      const list = execution.list()
+      expect(list).toEqual([])
+    })
+
+    test('findIncomplete on empty database returns null', () => {
+      const execution = createExecution()
+
+      expect(execution.findIncomplete()).toBeNull()
+    })
+  })
+
+  describe('mapExecution JSON parsing', () => {
+    test('handles malformed config JSON by returning empty object', () => {
+      const execution = createExecution()
+
+      db.run(
+        `INSERT INTO executions (id, file_path, status, config) VALUES (?, ?, ?, ?)`,
+        ['bad-config', '/path', 'running', 'not valid json']
+      )
+
+      const found = execution.get('bad-config')
+      expect(found!.config).toEqual({})
+    })
+
+    test('handles malformed result JSON by returning undefined', () => {
+      const execution = createExecution()
+
+      db.run(
+        `INSERT INTO executions (id, file_path, status, result) VALUES (?, ?, ?, ?)`,
+        ['bad-result', '/path', 'completed', 'not valid json']
+      )
+
+      const found = execution.get('bad-result')
+      expect(found!.result).toBeUndefined()
+    })
+
+    test('handles null config by returning empty object', () => {
+      const execution = createExecution()
+
+      db.run(
+        `INSERT INTO executions (id, file_path, status, config) VALUES (?, ?, ?, ?)`,
+        ['null-config', '/path', 'running', null]
+      )
+
+      const found = execution.get('null-config')
+      expect(found!.config).toEqual({})
+    })
+
+    test('handles null result by returning undefined', () => {
+      const execution = createExecution()
+
+      db.run(
+        `INSERT INTO executions (id, file_path, status) VALUES (?, ?, ?)`,
+        ['null-result', '/path', 'running']
+      )
+
+      const found = execution.get('null-result')
+      expect(found!.result).toBeUndefined()
+    })
+  })
 })

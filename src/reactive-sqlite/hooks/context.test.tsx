@@ -189,3 +189,224 @@ describe('useQuery/useMutation signatures', () => {
     expect(typeof useMutation).toBe('function')
   })
 })
+
+describe('nested providers', () => {
+  let outerDb: ReactiveDatabase
+  let innerDb: ReactiveDatabase
+
+  beforeEach(() => {
+    outerDb = new ReactiveDatabase(':memory:')
+    outerDb.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
+    outerDb.run('INSERT INTO users (name) VALUES (?)', ['OuterUser'])
+
+    innerDb = new ReactiveDatabase(':memory:')
+    innerDb.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
+    innerDb.run('INSERT INTO users (name) VALUES (?)', ['InnerUser'])
+  })
+
+  afterEach(() => {
+    outerDb.close()
+    innerDb.close()
+  })
+
+  test('inner provider overrides outer provider', async () => {
+    let innerResult: ReactiveDatabase | null = null
+    let outerResult: ReactiveDatabase | null = null
+
+    function InnerConsumer() {
+      innerResult = useDatabase()
+      return <status inner />
+    }
+
+    function OuterConsumer() {
+      outerResult = useDatabase()
+      return (
+        <DatabaseProvider db={innerDb}>
+          <InnerConsumer />
+        </DatabaseProvider>
+      )
+    }
+
+    const root = createSmithersRoot()
+    await root.render(
+      <DatabaseProvider db={outerDb}>
+        <OuterConsumer />
+      </DatabaseProvider>
+    )
+
+    expect(outerResult).toBe(outerDb)
+    expect(innerResult).toBe(innerDb)
+
+    root.dispose()
+  })
+
+  test('sibling providers are independent', async () => {
+    let result1: ReactiveDatabase | null = null
+    let result2: ReactiveDatabase | null = null
+
+    function Consumer1() {
+      result1 = useDatabase()
+      return <status consumer1 />
+    }
+
+    function Consumer2() {
+      result2 = useDatabase()
+      return <status consumer2 />
+    }
+
+    const root = createSmithersRoot()
+    await root.render(
+      <>
+        <DatabaseProvider db={outerDb}>
+          <Consumer1 />
+        </DatabaseProvider>
+        <DatabaseProvider db={innerDb}>
+          <Consumer2 />
+        </DatabaseProvider>
+      </>
+    )
+
+    expect(result1).toBe(outerDb)
+    expect(result2).toBe(innerDb)
+
+    root.dispose()
+  })
+})
+
+describe('provider unmount', () => {
+  let db: ReactiveDatabase
+
+  beforeEach(() => {
+    db = new ReactiveDatabase(':memory:')
+    db.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
+  })
+
+  afterEach(() => {
+    db.close()
+  })
+
+  test('unmounting provider does not throw', async () => {
+    let setShowProvider: ((show: boolean) => void) | null = null
+
+    function Consumer() {
+      const dbFromContext = useDatabase()
+      return <status connected={!!dbFromContext} />
+    }
+
+    function App() {
+      const [show, setShow] = React.useState(true)
+      setShowProvider = setShow
+      return show ? (
+        <DatabaseProvider db={db}>
+          <Consumer />
+        </DatabaseProvider>
+      ) : (
+        <status hidden />
+      )
+    }
+
+    const root = createSmithersRoot()
+    await root.render(<App />)
+
+    // Unmount provider
+    setShowProvider!(false)
+    await root.render(<App />)
+
+    // Should not throw
+    expect(true).toBe(true)
+
+    root.dispose()
+  })
+})
+
+describe('database prop change', () => {
+  let db1: ReactiveDatabase
+  let db2: ReactiveDatabase
+
+  beforeEach(() => {
+    db1 = new ReactiveDatabase(':memory:')
+    db1.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
+    db1.run('INSERT INTO users (name) VALUES (?)', ['DB1User'])
+
+    db2 = new ReactiveDatabase(':memory:')
+    db2.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)')
+    db2.run('INSERT INTO users (name) VALUES (?)', ['DB2User'])
+  })
+
+  afterEach(() => {
+    db1.close()
+    db2.close()
+  })
+
+  test('changing db prop updates context', async () => {
+    let capturedDb: ReactiveDatabase | null = null
+    let setCurrentDb: ((db: ReactiveDatabase) => void) | null = null
+
+    function Consumer() {
+      capturedDb = useDatabase()
+      return <status ready />
+    }
+
+    function App() {
+      const [currentDb, _setCurrentDb] = React.useState(db1)
+      setCurrentDb = _setCurrentDb
+      return (
+        <DatabaseProvider db={currentDb}>
+          <Consumer />
+        </DatabaseProvider>
+      )
+    }
+
+    const root = createSmithersRoot()
+    await root.render(<App />)
+
+    expect(capturedDb).toBe(db1)
+
+    // Change db prop
+    setCurrentDb!(db2)
+    await root.render(<App />)
+
+    expect(capturedDb).toBe(db2)
+
+    root.dispose()
+  })
+
+  test('queries update when db prop changes', async () => {
+    const { useQuery } = await import('./useQuery.js')
+
+    let queryResult: any = null
+    let setCurrentDb: ((db: ReactiveDatabase) => void) | null = null
+
+    function Consumer() {
+      queryResult = useQuery<{ name: string }>('SELECT * FROM users')
+      return <status ready />
+    }
+
+    function App() {
+      const [currentDb, _setCurrentDb] = React.useState(db1)
+      setCurrentDb = _setCurrentDb
+      return (
+        <DatabaseProvider db={currentDb}>
+          <Consumer />
+        </DatabaseProvider>
+      )
+    }
+
+    const root = createSmithersRoot()
+    await root.render(<App />)
+
+    expect(queryResult.data[0]?.name).toBe('DB1User')
+
+    // Change db prop
+    setCurrentDb!(db2)
+    await root.render(<App />)
+
+    // Refetch to pick up new db
+    queryResult.refetch()
+    await root.render(<App />)
+
+    expect(queryResult.data[0]?.name).toBe('DB2User')
+
+    root.dispose()
+  })
+})

@@ -466,4 +466,53 @@ describe('13-composition-advanced', () => {
       errors: [],
     })
   })
+
+  // ============================================================================
+  // MISSING TEST COVERAGE - test.todo()
+  // ============================================================================
+
+  // Nesting depth tests
+  test.todo('Nesting 10 levels deep')
+  test.todo('Nesting 20 levels deep')
+  test.todo('Nesting 50+ levels deep (stress test)')
+
+  // Wide tree tests
+  test.todo('Wide tree with 50 siblings')
+  test.todo('Wide tree with 100 siblings')
+  test.todo('Wide tree with 500+ siblings (stress test)')
+
+  // Conditional patterns
+  test.todo('Ternary conditional {cond ? A : B}')
+  test.todo('Nested conditionals')
+  test.todo('Conditional with side effects')
+  test.todo('Conditional that changes during render')
+
+  // Dynamic rendering
+  test.todo('Dynamic children with changing keys')
+  test.todo('Dynamic children with duplicate keys (should warn)')
+  test.todo('Dynamic children with undefined key')
+  test.todo('Dynamic children with object key')
+  test.todo('Dynamic children reordering')
+  test.todo('Dynamic children insertion mid-array')
+  test.todo('Dynamic children deletion')
+  test.todo('Dynamic children with filter')
+  test.todo('Dynamic children with reduce')
+  test.todo('Nested array.map (matrix)')
+
+  // Fragment patterns
+  test.todo('Nested Fragments')
+  test.todo('Fragment with key')
+  test.todo('Fragment as only child')
+  test.todo('Empty Fragment')
+
+  // Error boundary behavior
+  test.todo('Error in child component rendering')
+  test.todo('Error in deeply nested component')
+  test.todo('Error recovery and re-render')
+
+  // Performance edge cases
+  test.todo('1000+ total nodes render time')
+  test.todo('Memory usage with large tree')
+  test.todo('Re-render performance with minimal changes')
+  test.todo('Unmount and cleanup of large tree')
 })
