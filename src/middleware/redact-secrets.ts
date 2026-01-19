@@ -28,11 +28,10 @@ export function redactSecretsMiddleware(options: RedactSecretsOptions = {}): Smi
     transformChunk: redact,
     transformResult: (result) => {
       const output = redact(result.output)
-      const reasoning = result.reasoning ? redact(result.reasoning) : result.reasoning
       return {
         ...result,
         output,
-        reasoning,
+        ...(result.reasoning !== undefined ? { reasoning: redact(result.reasoning) } : {}),
       }
     },
   }

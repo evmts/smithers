@@ -470,18 +470,24 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
               switch (condition.type) {
                 case 'total_tokens':
-                  shouldStop = context.totalTokens >= (condition.value as number)
-                  message = message || `Token limit ${condition.value} exceeded`
+                  if (typeof condition.value === 'number') {
+                    shouldStop = context.totalTokens >= condition.value
+                    message = message || `Token limit ${condition.value} exceeded`
+                  }
                   break
 
                 case 'total_agents':
-                  shouldStop = context.totalAgents >= (condition.value as number)
-                  message = message || `Agent limit ${condition.value} exceeded`
+                  if (typeof condition.value === 'number') {
+                    shouldStop = context.totalAgents >= condition.value
+                    message = message || `Agent limit ${condition.value} exceeded`
+                  }
                   break
 
                 case 'total_time':
-                  shouldStop = context.elapsedTimeMs >= (condition.value as number)
-                  message = message || `Time limit ${condition.value}ms exceeded`
+                  if (typeof condition.value === 'number') {
+                    shouldStop = context.elapsedTimeMs >= condition.value
+                    message = message || `Time limit ${condition.value}ms exceeded`
+                  }
                   break
 
                 case 'report_severity':

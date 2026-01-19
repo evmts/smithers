@@ -1,14 +1,7 @@
 // Transitions view for database inspection
 
 import type { SmithersDB } from '../../db/index.js'
-
-interface Transition {
-  created_at: string
-  key: string
-  old_value: unknown
-  new_value: unknown
-  trigger?: string
-}
+import type { Transition } from '../../db/types.js'
 
 export async function showTransitions(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')

@@ -98,6 +98,32 @@ export function isCustomTool(spec: ToolSpec): spec is Tool {
 }
 
 /**
+ * Check if a tool spec is a legacy Tool (has inputSchema as plain object, not Zod)
+ */
+export function isLegacyTool(spec: ToolSpec): spec is Tool {
+  return (
+    typeof spec === 'object' &&
+    spec !== null &&
+    'execute' in spec &&
+    'inputSchema' in spec &&
+    typeof (spec as any).inputSchema?.type === 'string'
+  )
+}
+
+/**
+ * Check if a tool spec is a SmithersTool (Zod-based with AI SDK compatibility)
+ */
+export function isSmithersTool(spec: ToolSpec): boolean {
+  return (
+    typeof spec === 'object' &&
+    spec !== null &&
+    'execute' in spec &&
+    'inputSchema' in spec &&
+    typeof (spec as any).inputSchema?._def === 'object'
+  )
+}
+
+/**
  * Check if a tool spec is an MCP Server
  */
 export function isMCPServer(spec: ToolSpec): spec is MCPServer {
@@ -117,23 +143,32 @@ export function isToolName(spec: ToolSpec): spec is string {
 export function parseToolSpecs(specs: ToolSpec[]): {
   builtinTools: string[]
   customTools: Tool[]
+  smithersTools: Tool[]
+  legacyTools: Tool[]
   mcpServers: MCPServer[]
 } {
   const builtinTools: string[] = []
   const customTools: Tool[] = []
+  const smithersTools: Tool[] = []
+  const legacyTools: Tool[] = []
   const mcpServers: MCPServer[] = []
 
   for (const spec of specs) {
     if (isToolName(spec)) {
       builtinTools.push(spec)
-    } else if (isCustomTool(spec)) {
-      customTools.push(spec)
     } else if (isMCPServer(spec)) {
       mcpServers.push(spec)
+    } else if (isSmithersTool(spec)) {
+      smithersTools.push(spec as Tool)
+    } else if (isLegacyTool(spec)) {
+      customTools.push(spec)
+      legacyTools.push(spec)
+    } else if (isCustomTool(spec)) {
+      customTools.push(spec)
     }
   }
 
-  return { builtinTools, customTools, mcpServers }
+  return { builtinTools, customTools, smithersTools, legacyTools, mcpServers }
 }
 
 /**

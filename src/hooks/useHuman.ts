@@ -47,7 +47,7 @@ export function useHuman(): UseHumanResult {
   const [requestId, setRequestId] = useState<string | null>(null)
 
   // Track the promise resolver so we can call it when DB updates
-  const resolveRef = useRef<((value: any) => void) | null>(null)
+  const resolveRef = useRef<((value: unknown) => void) | null>(null)
 
   // Reactive subscription to the current request
   // This will re-render whenever the request row changes
@@ -78,7 +78,7 @@ export function useHuman(): UseHumanResult {
   const ask = useCallback(async <T = any>(prompt: string, options?: AskOptions) => {
     return new Promise<T>((resolve) => {
       // 1. Store resolver
-      resolveRef.current = resolve as (value: any) => void
+      resolveRef.current = resolve as (value: unknown) => void
 
       // 2. Create request in DB
       const id = db.human.request(

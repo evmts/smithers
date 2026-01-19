@@ -15,7 +15,7 @@ export function rateLimitingMiddleware(options: RateLimitMiddlewareOptions): Smi
 
   return {
     name: 'rate-limiting',
-    wrapExecute: async (doExecute, execOptions) => {
+    wrapExecute: async ({ doExecute, options: execOptions }) => {
       const model = execOptions.model ?? 'sonnet'
       const provider = getProvider(model)
       const delayMs = await controller.acquire(provider, model)

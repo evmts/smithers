@@ -1,7 +1,7 @@
 // VCS/commit/snapshot/review tracking module for Smithers DB
 
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
-import type { Commit, Snapshot, Review, Report } from './types.js'
+import type { Commit, Snapshot, Review, Report, ReviewIssue, ReviewApproval } from './types.js'
 import { uuid, now, parseJson } from './utils.js'
 
 export interface VcsModule {
@@ -34,8 +34,8 @@ export interface VcsModule {
     target_ref?: string
     approved: boolean
     summary: string
-    issues: any[]
-    approvals?: any[]
+    issues: ReviewIssue[]
+    approvals?: ReviewApproval[]
     reviewer_model?: string
     blocking?: boolean
     agent_id?: string
@@ -272,7 +272,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
     updateReview: (id: string, updates: { posted_to_github?: boolean; posted_to_git_notes?: boolean }) => {
       if (rdb.isClosed) return
       const sets: string[] = []
-      const params: any[] = []
+      const params: (string | number)[] = []
       if (updates.posted_to_github !== undefined) { sets.push('posted_to_github = ?'); params.push(updates.posted_to_github ? 1 : 0) }
       if (updates.posted_to_git_notes !== undefined) { sets.push('posted_to_git_notes = ?'); params.push(updates.posted_to_git_notes ? 1 : 0) }
       if (sets.length > 0) {
@@ -318,7 +318,7 @@ export function createVcsModule(ctx: VcsModuleContext): VcsModule {
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) return []
       let sql = 'SELECT * FROM reports WHERE execution_id = ?'
-      const params: any[] = [currentExecutionId]
+      const params: (string | number)[] = [currentExecutionId]
       if (type) { sql += ' AND type = ?'; params.push(type) }
       sql += ' ORDER BY created_at DESC LIMIT ?'
       params.push(limit)

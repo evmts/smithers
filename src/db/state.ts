@@ -1,15 +1,16 @@
 // State management module for Smithers DB
 
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
+import type { Transition } from './types.js'
 import { uuid, now, parseJson } from './utils.js'
 
 export interface StateModule {
   get: <T>(key: string) => T | null
   set: <T>(key: string, value: T, trigger?: string) => void
-  setMany: (updates: Record<string, any>, trigger?: string) => void
-  getAll: () => Record<string, any>
+  setMany: (updates: Record<string, unknown>, trigger?: string) => void
+  getAll: () => Record<string, unknown>
   reset: () => void
-  history: (key?: string, limit?: number) => any[]
+  history: (key?: string, limit?: number) => Transition[]
 }
 
 export interface StateModuleContext {
@@ -46,17 +47,17 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
       }
     },
 
-    setMany: (updates: Record<string, any>, trigger?: string) => {
+    setMany: (updates: Record<string, unknown>, trigger?: string) => {
       if (rdb.isClosed) return
       for (const [key, value] of Object.entries(updates)) {
         state.set(key, value, trigger)
       }
     },
 
-    getAll: (): Record<string, any> => {
+    getAll: (): Record<string, unknown> => {
       if (rdb.isClosed) return {}
       const rows = rdb.query<{ key: string; value: string }>('SELECT key, value FROM state')
-      const result: Record<string, any> = {}
+      const result: Record<string, unknown> = {}
       for (const row of rows) {
         result[row.key] = parseJson(row.value, null)
       }
@@ -69,15 +70,15 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
       rdb.run("INSERT INTO state (key, value) VALUES ('phase', '\"initial\"'), ('ralphCount', '0'), ('data', 'null')")
     },
 
-    history: (key?: string, limit: number = 100): any[] => {
+    history: (key?: string, limit: number = 100): Transition[] => {
       if (rdb.isClosed) return []
       if (key) {
-        return rdb.query(
+        return rdb.query<Transition>(
           'SELECT * FROM transitions WHERE key = ? ORDER BY created_at DESC LIMIT ?',
           [key, limit]
         )
       }
-      return rdb.query(
+      return rdb.query<Transition>(
         'SELECT * FROM transitions ORDER BY created_at DESC LIMIT ?',
         [limit]
       )

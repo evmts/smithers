@@ -122,7 +122,7 @@ export interface SmithersProps {
  * ```
  */
 export function Smithers(props: SmithersProps): ReactNode {
-  const { db, reactiveDb, executionId, isStopRequested, executionEnabled } = useSmithers()
+  const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
   const worktree = useWorktree()
   const executionScope = useExecutionScope()
   const ralphCount = useRalphCount()
@@ -296,7 +296,7 @@ export function Smithers(props: SmithersProps): ReactNode {
         props.onError?.(err instanceof Error ? err : new Error(String(err)))
       }
     })
-  }, [shouldExecute])
+  }, [executionScope.enabled, ralphCount])
 
   // Render custom element for XML serialization
   return (

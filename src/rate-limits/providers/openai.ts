@@ -24,7 +24,7 @@ function parseResetToDate(value: string | null): Date {
     h: 3_600_000,
     d: 86_400_000,
   }
-  const offsetMs = amount * (multipliers[unit] ?? 0)
+  const offsetMs = amount * (unit ? (multipliers[unit] ?? 1) : 1)
   return new Date(Date.now() + offsetMs)
 }
 
@@ -86,6 +86,7 @@ export function createOpenAIClient(config: { apiKey: string; organization?: stri
 
     estimateCost(model: string, tokens: { input: number; output: number }): { input: number; output: number; total: number } {
       const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['gpt-4o']
+      if (!pricing) return { input: 0, output: 0, total: 0 }
       const input = tokens.input * pricing.input
       const output = tokens.output * pricing.output
       return { input, output, total: input + output }

@@ -176,7 +176,6 @@ export function useEffectOnValueChange<T>(
   const effectRef = useRef(effect);
   const enabled = useExecutionGate();
   effectRef.current = effect;
-  const enabled = useExecutionGate();
 
   useEffect(() => {
     if (!enabled) {

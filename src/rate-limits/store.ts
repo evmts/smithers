@@ -4,12 +4,12 @@ import { uuid } from '../db/utils.js'
 
 export interface RateLimitStoreConfig {
   ttlMs: number
-  db?: SmithersDB
+  db?: SmithersDB | undefined
 }
 
 export class RateLimitStore {
   private ttlMs: number
-  private db?: SmithersDB
+  private db?: SmithersDB | undefined
   private cache: Map<string, RateLimitStatus>
 
   constructor(config: RateLimitStoreConfig) {

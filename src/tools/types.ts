@@ -1,5 +1,4 @@
 import type { z } from 'zod'
-import type { CoreTool } from 'ai'
 import type { SmithersDB } from '../db/index.js'
 import type { JSONSchema } from '../components/agents/types/schema.js'
 
@@ -12,14 +11,15 @@ export interface SmithersToolContext {
   log: (message: string) => void
 }
 
-export type SmithersTool<
+export interface SmithersTool<
   TInput extends z.ZodType = z.ZodType,
   TOutput = unknown
-> = CoreTool<TInput, TOutput> & {
+> {
   name: string
   description: string
   inputSchema: TInput
   outputSchema?: z.ZodType<TOutput>
+  execute: (input: z.infer<TInput>, options: { abortSignal?: AbortSignal }) => Promise<TOutput>
 }
 
 export interface CreateSmithersToolOptions<

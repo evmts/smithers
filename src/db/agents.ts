@@ -67,7 +67,6 @@ const mapAgent = (row: AgentRow | null): Agent | null => {
     tokens_input: row.tokens_input ?? undefined,
     tokens_output: row.tokens_output ?? undefined,
     tool_calls_count: row.tool_calls_count,
-    stream_summary: (row as any).stream_summary ? parseJson((row as any).stream_summary, undefined) : undefined,
   }
   if (row.stream_summary) {
     const parsed = parseJson<StreamSummary | null>(row.stream_summary, null)

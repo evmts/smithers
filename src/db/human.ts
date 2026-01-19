@@ -173,16 +173,6 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
       )
     },
 
-<<<<<<< HEAD
-    get: (id: string): HumanInteraction | null => {
-      if (rdb.isClosed) return null
-      const row = rdb.queryOne<any>('SELECT * FROM human_interactions WHERE id = ?', [id])
-      if (!row) return null
-      return {
-        ...row,
-        options: parseJson(row.options, null),
-          response: parseJson(row.response, null)
-=======
     completeInteractive: (
       id: string,
       outcome: 'completed' | 'cancelled' | 'timeout' | 'failed',
@@ -191,7 +181,6 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
         transcript?: string
         duration?: number
         error?: string
->>>>>>> 8a411e9 (test commit)
       }
     ) => {
       rdb.run(
@@ -211,21 +200,6 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
       )
     },
 
-<<<<<<< HEAD
-    listPending: (): HumanInteraction[] => {
-       if (rdb.isClosed) return []
-       const executionId = getCurrentExecutionId()
-       if (!executionId) return []
-       const rows = rdb.query<any>(
-         "SELECT * FROM human_interactions WHERE execution_id = ? AND status = 'pending'",
-         [executionId]
-       )
-       return rows.map(row => ({
-         ...row,
-          options: parseJson(row.options, null),
-          response: parseJson(row.response, null)
-       }))
-=======
     cancelInteractive: (id: string) => {
       rdb.run(
         `UPDATE human_interactions
@@ -236,12 +210,14 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
     },
 
     get: (id: string): HumanInteraction | null => {
+      if (rdb.isClosed) return null
       const row = rdb.queryOne<HumanInteractionRow>('SELECT * FROM human_interactions WHERE id = ?', [id])
       if (!row) return null
       return parseHumanInteraction(row)
     },
 
     listPending: (executionId?: string): HumanInteraction[] => {
+      if (rdb.isClosed) return []
       const scopedExecutionId = executionId ?? getCurrentExecutionId()
       if (!scopedExecutionId) return []
       const rows = scopedExecutionId === '*'
@@ -253,7 +229,6 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
           [scopedExecutionId]
         )
       return rows.map((row) => parseHumanInteraction(row))
->>>>>>> 8a411e9 (test commit)
     }
   }
 }
