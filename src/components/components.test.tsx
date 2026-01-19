@@ -6,8 +6,6 @@ import { describe, test, expect } from 'bun:test'
 import { serialize } from '../reconciler/serialize.js'
 import { jsx } from '../reconciler/jsx-runtime.js'
 import type { SmithersNode } from '../reconciler/types.js'
-import { SmithersProvider } from './SmithersProvider.js'
-import { createSmithersDB } from '../db/index.js'
 
 function createNode(
   type: string,

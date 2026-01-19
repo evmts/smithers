@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createSmithersDB, type SmithersDB } from '../../db/index.js'
 import { generateReport } from './report-generator.js'
 import * as fs from 'node:fs'

@@ -44,7 +44,7 @@ describe('getReportToolDescription', () => {
 describe('createReportTool', () => {
   // Create a mock context
   const mockAddReport = mock(async () => 'report-123')
-  const mockContext = {
+  const _mockContext = {
     db: {
       vcs: {
         addReport: mockAddReport,
