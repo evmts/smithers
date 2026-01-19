@@ -360,10 +360,10 @@ Use state to control when Claude runs:
 
 ```tsx
 function ConditionalClaude() {
-  const { db } = useSmithers();
+  const { db, reactiveDb } = useSmithers();
   
   const phase = useQueryValue<string>(
-    db.db,
+    reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
   ) ?? "research";
   
@@ -412,15 +412,15 @@ Compose prompts with child components:
 
 ```tsx
 function ResilientClaude() {
-  const { db } = useSmithers();
+  const { db, reactiveDb } = useSmithers();
   
   const attempts = useQueryValue<number>(
-    db.db,
+    reactiveDb,
     "SELECT value FROM state WHERE key = 'attempts'"
   ) ?? 0;
   
   const error = useQueryValue<string | null>(
-    db.db,
+    reactiveDb,
     "SELECT value FROM state WHERE key = 'error'"
   ) ?? null;
 

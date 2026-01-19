@@ -354,10 +354,10 @@ async function main() {
 }
 
 function WorkflowContent() {
-  const { db, requestStop, isStopRequested } = useSmithers();
+  const { db, reactiveDb, requestStop, isStopRequested } = useSmithers();
   
   const phase = useQueryValue<string>(
-    db.db,
+    reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
   ) ?? "start";
   
