@@ -218,16 +218,16 @@ describe('showTransitions', () => {
       expect(output).toContain('special')
     })
 
-    test('handles empty string values', async () => {
+    test('handles empty string values correctly', async () => {
       const db = createMockDb([
         { created_at: '2024-01-01T10:00:00Z', key: 'empty', old_value: '', new_value: 'filled', trigger: 'update' }
       ])
       await showTransitions(db)
       
-      // Empty string old_value is falsy, so it becomes "null" per the code logic
       const output = consoleOutput.join('\n')
       expect(output).toContain('empty')
       expect(output).toContain('filled')
+      expect(output).toContain('"" →')
     })
 
     test('handles undefined trigger', async () => {

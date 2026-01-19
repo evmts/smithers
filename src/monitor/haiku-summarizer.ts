@@ -29,7 +29,7 @@ export async function summarizeWithHaiku(
     apiKey?: string
   } = {}
 ): Promise<SummaryResult> {
-  const threshold = options.threshold || parseInt(process.env['SMITHERS_SUMMARY_THRESHOLD'] || '50')
+  const threshold = options.threshold || parseInt(process.env['SMITHERS_SUMMARY_THRESHOLD'] || '50', 10)
   const lineCount = content.split('\n').length
 
   // Don't summarize if below threshold

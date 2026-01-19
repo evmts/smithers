@@ -85,8 +85,7 @@ export function createOpenAIClient(config: { apiKey: string; organization?: stri
     },
 
     estimateCost(model: string, tokens: { input: number; output: number }): { input: number; output: number; total: number } {
-      const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['gpt-4o']
-      if (!pricing) return { input: 0, output: 0, total: 0 }
+      const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['gpt-4o']!
       const input = tokens.input * pricing.input
       const output = tokens.output * pricing.output
       return { input, output, total: input + output }

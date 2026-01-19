@@ -1,4 +1,4 @@
-import type { ParsedEvent } from './output-parser.jsx'
+import type { ParsedEvent } from './output-parser.js'
 
 export interface FormatterStats {
   phasesCompleted: number
@@ -70,12 +70,12 @@ export class StreamFormatter {
       case 'log':
         // Only show logs if they're different from last event
         if (this.lastEventType !== 'log') {
-          output = this.formatLog(time, event.data['message'])
+          output = this.formatLog(event.data['message'])
         }
         break
 
       default:
-        output = this.formatLog(time, event.raw)
+        output = this.formatLog(event.raw)
     }
 
     this.lastEventType = event.type
@@ -126,7 +126,7 @@ export class StreamFormatter {
     return output + '\n'
   }
 
-  private formatLog(_time: string, message: string): string {
+  private formatLog(message: string): string {
     // Don't show timestamp for regular logs to reduce noise
     return `           ${message}\n`
   }

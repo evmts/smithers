@@ -130,4 +130,128 @@ describe('LogWriter', () => {
       errors: 5,
     })
   })
+
+  it('should write stream summary from parts array', async () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filename = 'parts-summary.ndjson'
+    const parts = [
+      { type: 'text-end' as const, id: 't1' },
+      { type: 'text-end' as const, id: 't2' },
+      { type: 'reasoning-end' as const, id: 'r1' },
+      { type: 'tool-call' as const, id: 'tc1', name: 'Read', input: {} },
+      { type: 'tool-result' as const, id: 'tr1', result: 'ok' },
+      { type: 'error' as const, id: 'e1', message: 'err' },
+    ]
+
+    const summaryPath = writer.writeStreamSummary(filename, parts as any)
+
+    const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'))
+    expect(summary).toEqual({
+      textBlocks: 2,
+      reasoningBlocks: 1,
+      toolCalls: 1,
+      toolResults: 1,
+      errors: 1,
+    })
+  })
+
+  it('should write tool call log', () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filepath = writer.writeToolCall('Read', { path: '/test' }, 'file contents here')
+
+    expect(fs.existsSync(filepath)).toBe(true)
+    const content = fs.readFileSync(filepath, 'utf-8')
+    expect(content).toContain('tool: Read')
+    expect(content).toContain('/test')
+    expect(content).toContain('file contents here')
+  })
+
+  it('should write agent result log', () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filepath = writer.writeAgentResult('MainAgent', 'Task completed successfully')
+
+    expect(fs.existsSync(filepath)).toBe(true)
+    const content = fs.readFileSync(filepath, 'utf-8')
+    expect(content).toContain('agent: MainAgent')
+    expect(content).toContain('Task completed successfully')
+  })
+
+  it('should write error log from Error object', () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const error = new Error('Something went wrong')
+    const filepath = writer.writeError(error)
+
+    expect(fs.existsSync(filepath)).toBe(true)
+    const content = fs.readFileSync(filepath, 'utf-8')
+    expect(content).toContain('Something went wrong')
+  })
+
+  it('should write error log from string', () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filepath = writer.writeError('String error message')
+
+    expect(fs.existsSync(filepath)).toBe(true)
+    const content = fs.readFileSync(filepath, 'utf-8')
+    expect(content).toContain('String error message')
+  })
+
+  it('should close specific stream', async () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filename = 'close-test.log'
+
+    writer.appendLog(filename, 'content\n')
+    writer.closeStream(filename)
+
+    // Closing again should not throw
+    writer.closeStream(filename)
+
+    const filepath = path.join(TEST_LOG_DIR, filename)
+    // Wait for stream to finish
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(fs.existsSync(filepath)).toBe(true)
+  })
+
+  it('should return session id', () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const sessionId = writer.getSessionId()
+
+    expect(typeof sessionId).toBe('string')
+    expect(sessionId.length).toBeGreaterThan(0)
+    // Session ID format: ISO date with colons and dots replaced by dashes
+    expect(sessionId).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/)
+  })
+
+  it('should close all streams', async () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+
+    writer.appendLog('stream1.log', 'content1\n')
+    writer.appendLog('stream2.log', 'content2\n')
+
+    writer.closeAllStreams()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(fs.existsSync(path.join(TEST_LOG_DIR, 'stream1.log'))).toBe(true)
+    expect(fs.existsSync(path.join(TEST_LOG_DIR, 'stream2.log'))).toBe(true)
+  })
+
+  it('should handle appendLog when stream is not writable', async () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filename = 'append-fallback.log'
+
+    // Write first chunk
+    writer.appendLog(filename, 'chunk1\n')
+    
+    // Close the stream
+    await writer.flushStream(filename)
+
+    // Try to append again - should use sync fallback
+    writer.appendLog(filename, 'chunk2\n')
+    
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const content = fs.readFileSync(path.join(TEST_LOG_DIR, filename), 'utf-8')
+    expect(content).toContain('chunk1')
+    expect(content).toContain('chunk2')
+  })
 })
