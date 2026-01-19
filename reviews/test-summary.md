@@ -14,7 +14,7 @@
    3909 total tests across 152 files
 ```
 
-**Note**: Test count includes reference/ submodules. Project-only tests (src/evals/test): ~68 files with 17 skip statements.
+**Note**: Counts are stale and include `reference/` submodules. Re-run `bun test` after excluding `reference/` and after any eval test pruning to get current numbers.
 
 ## Progress Made ✅
 
@@ -50,6 +50,7 @@ See `reviews/skipped-tests-unacceptable.md` for detailed breakdown:
 - 2 skips in Ralph.test.tsx
 - 1 skip in SmithersCLI.test.ts
 - 15 skips in evals/ (JSX reconciler test environment needed)
+  - Some eval skips may be redundant because `evals/01-basic-rendering.test.tsx` already covers component rendering.
 
 ### 3. Reference Folder Contamination
 Tests from `reference/` submodules are running and failing:
@@ -92,9 +93,7 @@ Tests from `reference/` submodules are running and failing:
 ```
 
 ## Related Reviews
-- ✅ `reviews/zod-schema-converter-broken.md` - RESOLVED (deleted in c00fc94)
-- 🟡 `reviews/skipped-tests-unacceptable.md` - IN PROGRESS (reduced to 18 skips)
-- ✅ `reviews/react-hook-tests-need-dom.md` - RESOLVED (deleted, SmithersRoot works)
+- ✅ `reviews/skipped-tests-unacceptable.md` - IN PROGRESS (reduced to 18 skips; includes eval pruning option)
 
 ## Next Steps
 1. Configure test runner to exclude reference/ folder (highest ROI)

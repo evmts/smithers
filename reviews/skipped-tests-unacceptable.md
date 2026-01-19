@@ -5,7 +5,7 @@
 ## Status: MEDIUM PRIORITY
 
 ## Summary
-Progress made: 48 → 18 skipped tests (62% reduction). Most component test files now use interface/type testing instead of full JSX rendering tests. Remaining 18 skips are in eval tests and specific component edge cases requiring JSX reconciler test environment.
+Progress made: 48 → 18 skipped tests (62% reduction). Most component test files now use interface/type testing instead of full JSX rendering tests. Remaining skips are concentrated in eval suites and a few edge-case component tests. Some eval skips are likely redundant because `evals/01-basic-rendering.test.tsx` already exercises component rendering and XML output.
 
 ## Current State (Updated 2026-01-18)
 ```
@@ -13,6 +13,7 @@ Progress made: 48 → 18 skipped tests (62% reduction). Most component test file
 ⏭️  18 skip  (reduced from 48)
 ❌ Tests status to be verified
 ```
+Note: Counts are stale; re-run `bun test` after pruning eval suites or adding JSX test harness.
 
 ## Impact
 - Reduced test coverage and confidence
@@ -57,7 +58,13 @@ Progress made: 48 → 18 skipped tests (62% reduction). Most component test file
 
 Note: `evals/execute-helpers.test.ts` has NO skips (fully passing)
 
+**Redundancy check (from existing coverage):**
+- `evals/01-basic-rendering.test.tsx` already tests core component rendering and XML serialization.
+- `evals/components.test.tsx` and `evals/hello-world.test.tsx` appear largely duplicative of the 01-basic-rendering coverage.
+
 ## Remaining Work
+
+Decision point: either (A) prune redundant eval suites or (B) build a full JSX reconciler test harness. Both are valid; choose based on whether eval coverage is a shipping requirement.
 
 ### Approach 1: Ralph Component (Easy - 2 hours)
 Extract orchestration promise functions to separate utility file:
@@ -79,11 +86,17 @@ Debug Bun.spawn behavior in test environment:
 
 Codebase pattern: Other component tests use mocks from `bun:test`
 
-### Approach 3: Eval Tests (Major - 8-12 hours)
+### Approach 3A: Delete redundant eval suites (Low effort)
+If `evals/01-basic-rendering.test.tsx` is sufficient for component rendering coverage:
+1. Delete `evals/components.test.tsx` and `evals/hello-world.test.tsx`
+2. Audit `evals/renderer.test.tsx` for any unique cases; migrate or delete
+3. Re-run tests to confirm skip count drops
+
+### Approach 3B: Eval Tests (Major - 8-12 hours)
 Create JSX reconciler test environment for eval tests:
-1. Set up test helper that creates SmithersRoot and renders JSX
-2. Pattern already exists in `test/integration.test.ts` but uses manual createElement
-3. Need to bridge React JSX → SmithersRoot rendering in test context
+1. Set up a test helper that creates SmithersRoot and renders JSX
+2. Pattern already exists in `test/integration.test.ts` but uses manual `createElement`
+3. Bridge React JSX → SmithersRoot rendering in test context
 4. Enable all 15 skipped describe blocks in evals/
 
 Note: This is a larger refactor. Consider if eval tests are critical for MVP or can be deferred.
@@ -99,14 +112,14 @@ Note: This is a larger refactor. Consider if eval tests are critical for MVP or 
 
 ## Estimated Remaining Effort
 - **Easy fixes**: 3 hours (Ralph utils extraction + SmithersCLI debug)
-- **Eval tests**: 8-12 hours (JSX reconciler test environment setup)
-- **Total**: 11-15 hours
+- **Eval tests**: 1-2 hours (prune) OR 8-12 hours (JSX harness)
+- **Total**: 4-15 hours depending on chosen eval path
 
 ## Success Criteria (Revised)
 **Minimum (MVP):**
 ```
 ✅ 900+ pass
-⏭️  3 skip (only eval tests if deferred)
+⏭️  0-3 skip (only eval tests if deferred)
 ❌ 0 fail
 ```
 
