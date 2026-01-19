@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { findPackageRoot } from './cli-utils.js'
+import { $ } from 'bun'
 
 interface InitOptions {
   dir?: string
@@ -51,6 +52,23 @@ export async function init(options: InitOptions = {}) {
   fs.writeFileSync(mainFile, templateContent)
   fs.chmodSync(mainFile, '755')
 
+  // Install smithers-orchestrator as dev dependency
+  const packageJsonPath = path.join(targetDir, 'package.json')
+  if (fs.existsSync(packageJsonPath)) {
+    console.log('📦 Installing smithers-orchestrator...')
+    try {
+      await $`bun add -d smithers-orchestrator`.cwd(targetDir).quiet()
+      console.log('✅ Installed smithers-orchestrator as dev dependency')
+    } catch (error) {
+      console.warn('⚠️  Failed to install smithers-orchestrator automatically')
+      console.warn('   Run manually: bun add -d smithers-orchestrator')
+    }
+  } else {
+    console.warn('⚠️  No package.json found - skipping smithers-orchestrator install')
+    console.warn('   Run manually: bun add -d smithers-orchestrator')
+  }
+  console.log('')
+
   console.log('✅ Smithers orchestration initialized!')
   console.log('')
   console.log('Created:')
@@ -66,12 +84,10 @@ export async function init(options: InitOptions = {}) {
   console.log(`   ${mainFile}`)
   console.log('')
   console.log('2. Run with monitoring (recommended):')
-  console.log('   bunx smithers-orchestrator monitor')
+  console.log('   bun smithers-orchestrator monitor')
   console.log('')
   console.log('   Or run directly:')
-  console.log('   bunx smithers-orchestrator run')
-  console.log('')
-  console.log('   Dependencies are auto-installed on first run.')
+  console.log('   bun smithers-orchestrator run')
   console.log('')
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log('')

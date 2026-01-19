@@ -11,8 +11,10 @@ describe('init command', () => {
   let _exitCode: number | undefined
   let consoleOutput: string[]
   let consoleErrorOutput: string[]
+  let consoleWarnOutput: string[]
   let originalConsoleLog: typeof console.log
   let originalConsoleError: typeof console.error
+  let originalConsoleWarn: typeof console.warn
 
   beforeEach(() => {
     tempDir = createTempDir(import.meta.dir, '.test-tmp')
@@ -20,20 +22,25 @@ describe('init command', () => {
     _exitCode = undefined
     consoleOutput = []
     consoleErrorOutput = []
-    
+    consoleWarnOutput = []
+
     originalExit = process.exit
     process.exit = ((code?: number) => {
       _exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
-    
+
     originalConsoleLog = console.log
     originalConsoleError = console.error
+    originalConsoleWarn = console.warn
     console.log = (...args: unknown[]) => {
       consoleOutput.push(args.map(String).join(' '))
     }
     console.error = (...args: unknown[]) => {
       consoleErrorOutput.push(args.map(String).join(' '))
+    }
+    console.warn = (...args: unknown[]) => {
+      consoleWarnOutput.push(args.map(String).join(' '))
     }
   })
 
@@ -42,6 +49,7 @@ describe('init command', () => {
     process.exit = originalExit
     console.log = originalConsoleLog
     console.error = originalConsoleError
+    console.warn = originalConsoleWarn
   })
 
   describe('directory creation', () => {
@@ -160,19 +168,43 @@ describe('init command', () => {
     test('handles paths with spaces', async () => {
       const spacePath = path.join(tempDir, 'path with spaces')
       fs.mkdirSync(spacePath, { recursive: true })
-      
+
       await init({ dir: spacePath })
-      
+
       expect(fs.existsSync(path.join(spacePath, '.smithers'))).toBe(true)
     })
 
     test('handles nested directory paths', async () => {
       const nestedPath = path.join(tempDir, 'a', 'b', 'c')
       fs.mkdirSync(nestedPath, { recursive: true })
-      
+
       await init({ dir: nestedPath })
-      
+
       expect(fs.existsSync(path.join(nestedPath, '.smithers'))).toBe(true)
+    })
+  })
+
+  describe('package installation', () => {
+    test('warns when no package.json exists', async () => {
+      await init({ dir: tempDir })
+
+      expect(consoleWarnOutput.some(line => line.includes('No package.json found'))).toBe(true)
+      expect(consoleWarnOutput.some(line => line.includes('bun add -d smithers-orchestrator'))).toBe(true)
+    })
+
+    test('attempts install when package.json exists', async () => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name": "test"}')
+
+      await init({ dir: tempDir })
+
+      expect(consoleOutput.some(line => line.includes('Installing smithers-orchestrator'))).toBe(true)
+    })
+
+    test('next steps show bun command (not bunx) after init', async () => {
+      await init({ dir: tempDir })
+
+      expect(consoleOutput.some(line => line.includes('bun smithers-orchestrator monitor'))).toBe(true)
+      expect(consoleOutput.every(line => !line.includes('bunx smithers-orchestrator monitor'))).toBe(true)
     })
   })
 })
