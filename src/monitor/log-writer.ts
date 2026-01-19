@@ -1,5 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import type { SmithersStreamPart } from '../streaming/types.js'
+import type { StreamSummary } from '../db/types.js'
 
 export class LogWriter {
   private logDir: string
@@ -72,6 +74,51 @@ export class LogWriter {
       stream.write(content)
     }
     return filepath
+  }
+
+  /**
+   * Append a typed stream part as NDJSON.
+   */
+  appendStreamPart(filename: string, part: SmithersStreamPart): string {
+    const filepath = path.join(this.logDir, filename)
+
+    let stream = this.streams.get(filename)
+    if (!stream) {
+      stream = fs.createWriteStream(filepath, { flags: 'a', encoding: 'utf-8' })
+      this.streams.set(filename, stream)
+    }
+
+    const line = JSON.stringify({ timestamp: Date.now(), ...part }) + '\n'
+    stream.write(line)
+    return filepath
+  }
+
+  /**
+   * Write a summary file for stream events.
+   */
+  writeStreamSummary(filename: string, parts: SmithersStreamPart[]): string {
+    const filepath = path.join(this.logDir, filename)
+    const summaryPath = filepath.replace(/\.log$|\.ndjson$/, '') + '.summary.json'
+    const summary = {
+      textBlocks: parts.filter((part) => part.type === 'text-end').length,
+      reasoningBlocks: parts.filter((part) => part.type === 'reasoning-end').length,
+      toolCalls: parts.filter((part) => part.type === 'tool-call').length,
+      toolResults: parts.filter((part) => part.type === 'tool-result').length,
+      errors: parts.filter((part) => part.type === 'error').length,
+    }
+
+    fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2))
+    return summaryPath
+  }
+
+  /**
+   * Write a summary file from precomputed counts.
+   */
+  writeStreamSummaryFromCounts(filename: string, summary: StreamSummary): string {
+    const filepath = path.join(this.logDir, filename)
+    const summaryPath = filepath.replace(/\.log$|\.ndjson$/, '') + '.summary.json'
+    fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2))
+    return summaryPath
   }
 
   /**

@@ -2,14 +2,15 @@
  * Integration tests proving React hooks work with Smithers reconciler.
  *
  * These tests verify that after the jsx-runtime fix:
- * - useState, useContext, useEffect, useMemo work correctly
+ * - useContext, useMemo, useRef, useMount/useUnmount work correctly
  * - Components with hooks render without "Invalid hook call" errors
  *
  * Uses root.render() which returns a Promise that resolves after initial commit.
  */
 import { describe, test, expect } from 'bun:test'
 import { createSmithersRoot } from './root.js'
-import { useState, useContext, createContext, useMemo, useRef } from 'react'
+import { useContext, createContext, useMemo, useRef } from 'react'
+import { useMount, useUnmount } from './hooks.js'
 
 describe('SmithersRoot rendering', () => {
   test('renders string element to SmithersNode', async () => {
@@ -259,18 +260,32 @@ describe('SmithersRoot rendering', () => {
 })
 
 describe('Hooks Integration', () => {
-  test('useState works', async () => {
-    function Counter() {
-      const [count] = useState(99)
-      return <div>Count: {count}</div>
+  test('useMount/useUnmount work', async () => {
+    let mounted = false
+    let unmounted = false
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    function Lifecycle() {
+      useMount(() => {
+        mounted = true
+      })
+      useUnmount(() => {
+        unmounted = true
+      })
+      return <div>Lifecycle</div>
     }
 
     const root = createSmithersRoot()
-    await root.render(<Counter />)
+    await root.render(<Lifecycle />)
+    await flush()
 
-    const xml = root.toXML()
-    expect(xml).toContain('Count:')
-    expect(xml).toContain('99')
+    expect(mounted).toBe(true)
+    expect(unmounted).toBe(false)
+
+    await root.render(null)
+    await flush()
+    expect(unmounted).toBe(true)
+
     root.dispose()
   })
 
@@ -327,34 +342,31 @@ describe('Hooks Integration', () => {
     const ThemeCtx = createContext('light')
 
     function MultiHook() {
-      const [count] = useState(42)
       const theme = useContext(ThemeCtx)
-      const doubled = useMemo(() => count * 2, [count])
       const ref = useRef('refval')
-
-      return <multi count={count} theme={theme} doubled={doubled} refValue={ref.current} />
+      const doubled = useMemo(() => `${theme}-doubled`, [theme])
+      return <multi theme={theme} doubled={doubled} refValue={ref.current} />
     }
 
     const root = createSmithersRoot()
     await root.render(<MultiHook />)
 
     const xml = root.toXML()
-    expect(xml).toContain('count="42"')
     expect(xml).toContain('theme="light"')
-    expect(xml).toContain('doubled="84"')
+    expect(xml).toContain('doubled="light-doubled"')
     root.dispose()
   })
 
   test('nested function components with hooks', async () => {
     function Inner() {
-      const [value] = useState('inner-hook')
-      return <inner-result>{value}</inner-result>
+      const ref = useRef('inner-hook')
+      return <inner-result>{ref.current}</inner-result>
     }
 
     function Outer() {
-      const [value] = useState('outer-hook')
+      const ref = useRef('outer-hook')
       return (
-        <outer-result value={value}>
+        <outer-result value={ref.current}>
           <Inner />
         </outer-result>
       )

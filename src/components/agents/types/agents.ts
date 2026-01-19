@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import type { z } from 'zod'
 import type { Tool, MCPServer } from './tools.js'
+import type { SmithersStreamPart } from '../../../streaming/types.js'
 import type { AgentResult, StopConditionType } from './execution.js'
 import type { SmithersMiddleware } from '../../../middleware/types.js'
 
@@ -94,6 +95,11 @@ export interface BaseAgentProps {
    * Called for progress updates
    */
   onProgress?: (message: string) => void
+
+  /**
+   * Called for typed stream events (when enabled)
+   */
+  onStreamPart?: (part: SmithersStreamPart) => void
 
   /**
    * Enable database reporting for this agent
@@ -208,8 +214,7 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
   tailLogLines?: number
 
   /**
-   * Working directory for agent execution.
-   * If inside a <Worktree>, this defaults to the worktree cwd.
+   * Working directory for the agent.
    */
   cwd?: string
 
@@ -225,4 +230,22 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
    * Provider middleware are prepended automatically.
    */
   middleware?: SmithersMiddleware[]
+
+  /**
+   * Enable typed stream parts for Claude CLI output.
+   * @default false
+   */
+  experimentalTypedStreaming?: boolean
+
+  /**
+   * Write legacy raw text logs alongside NDJSON logs.
+   * @default false
+   */
+  legacyLogFormat?: boolean
+
+  /**
+   * Record stream events to the database.
+   * @default true when reportingEnabled is true
+   */
+  recordStreamEvents?: boolean
 }
