@@ -16,7 +16,7 @@ type Props = Record<string, unknown> | null
 function withSmithersKey(props: Props, key: React.Key | undefined): Props {
   if (key == null) return props
   const nextProps = props ? { ...props } : {}
-  nextProps.__smithersKey = key
+  nextProps['__smithersKey'] = key
   return nextProps
 }
 
@@ -25,7 +25,7 @@ export function jsx(
   props: Props,
   key?: React.Key
 ) {
-  return reactJsx(type, withSmithersKey(props, key), key)
+  return reactJsx(type as React.ElementType, withSmithersKey(props, key), key)
 }
 
 export function jsxs(
@@ -33,7 +33,7 @@ export function jsxs(
   props: Props,
   key?: React.Key
 ) {
-  return reactJsxs(type, withSmithersKey(props, key), key)
+  return reactJsxs(type as React.ElementType, withSmithersKey(props, key), key)
 }
 
 export function jsxDEV(
@@ -41,10 +41,10 @@ export function jsxDEV(
   props: Props,
   key: React.Key | undefined,
   isStaticChildren: boolean,
-  source: unknown,
+  source: { fileName: string; lineNumber: number; columnNumber: number } | undefined,
   self: unknown
 ) {
-  return reactJsxDEV(type, withSmithersKey(props, key), key, isStaticChildren, source, self)
+  return reactJsxDEV(type as React.ElementType, withSmithersKey(props, key), key, isStaticChildren, source, self)
 }
 
 export { Fragment }

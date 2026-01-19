@@ -38,8 +38,9 @@ describe('SmithersRoot rendering', () => {
   })
 
   test('exposes React key via SmithersNode.key', async () => {
+    const { jsx } = await import('./jsx-runtime.js')
     const root = createSmithersRoot()
-    await root.render(<phase key="alpha" name="test" />)
+    await root.render(jsx('phase', { name: 'test' }, 'alpha'))
 
     const tree = root.getTree()
     const phase = tree.children[0]!

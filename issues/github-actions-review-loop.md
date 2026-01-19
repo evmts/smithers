@@ -37,27 +37,30 @@ Automated PR review loop triggered by GitHub Actions. When roninjin10 opens a PR
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      GitHub Actions Trigger                         │
 │   on: pull_request (author: roninjin10)                             │
+│   → bun run smithers review --pr $PR_NUMBER                         │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        CI Check Phase                                │
-│   - bun run typecheck                                                │
-│   - bun run lint                                                     │
-│   - bun test                                                         │
-│   → outputs: logs/*.log                                              │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      Smithers Review Agent                           │
+│                      Smithers Orchestration                          │
+│                                                                      │
+│   <Phase name="CI Checks">                                           │
+│     <Parallel>                                                       │
+│       <CICheck name="typecheck" cmd="bun run typecheck" />           │
+│       <CICheck name="lint" cmd="bun run lint" />                     │
+│       <CICheck name="test" cmd="bun test" />                         │
+│     </Parallel>                                                      │
+│   </Phase>                                                           │
+│                                                                      │
 │   <While id="review-loop" condition={changesRequested}>              │
-│     <FallbackAgent>                                                  │
-│       <Codex />         ← primary                                   │
-│       <Claude />        ← fallback 1                                │
-│       <Gemini />        ← fallback 2                                │
-│     </FallbackAgent>                                                 │
+│     <Phase name="Review">                                            │
+│       <FallbackAgent>                                                │
+│         <Codex />  <Claude />  <Gemini />                            │
+│       </FallbackAgent>                                               │
+│     </Phase>                                                         │
+│     <Phase name="Fix">...</Phase>                                    │
 │   </While>                                                           │
+│                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
                       ┌──────────┴──────────┐
@@ -87,7 +90,141 @@ Automated PR review loop triggered by GitHub Actions. When roninjin10 opens a PR
 
 ## New Components
 
-### 1. `<FallbackAgent>` - Multi-provider Failover
+### 1. `<CICheck>` - Run CI Command and Store Results
+
+Runs a shell command, captures output/exit code, stores in SQLite for review agent to query.
+
+```tsx
+interface CICheckProps {
+  /** Unique name for this check */
+  name: string
+  /** Command to run */
+  cmd: string
+  /** Working directory (default: cwd) */
+  cwd?: string
+  /** Timeout in ms (default: 300000 = 5min) */
+  timeout?: number
+  /** Callback on completion */
+  onFinished?: (result: CICheckResult) => void
+}
+
+interface CICheckResult {
+  name: string
+  passed: boolean
+  exitCode: number
+  stdout: string
+  stderr: string
+  durationMs: number
+}
+```
+
+**Implementation:**
+
+```tsx
+export function CICheck(props: CICheckProps): ReactNode {
+  const { db } = useSmithers()
+  const taskIdRef = useRef<string | null>(null)
+  
+  // Query result from DB
+  const result = useQueryValue<CICheckResult>(
+    db.db,
+    "SELECT * FROM ci_checks WHERE name = ? AND execution_id = ?",
+    [props.name, db.executionId]
+  )
+  
+  useMount(() => {
+    ;(async () => {
+      taskIdRef.current = db.tasks.start('ci_check', props.name)
+      const start = Date.now()
+      
+      try {
+        const proc = Bun.spawn(['sh', '-c', props.cmd], {
+          cwd: props.cwd,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+        
+        const stdout = await new Response(proc.stdout).text()
+        const stderr = await new Response(proc.stderr).text()
+        const exitCode = await proc.exited
+        
+        const checkResult: CICheckResult = {
+          name: props.name,
+          passed: exitCode === 0,
+          exitCode,
+          stdout,
+          stderr,
+          durationMs: Date.now() - start,
+        }
+        
+        // Store in SQLite
+        db.db.run(`
+          INSERT INTO ci_checks (execution_id, name, passed, exit_code, stdout, stderr, duration_ms)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [db.executionId, props.name, checkResult.passed, exitCode, stdout, stderr, checkResult.durationMs])
+        
+        props.onFinished?.(checkResult)
+      } finally {
+        db.tasks.complete(taskIdRef.current!)
+      }
+    })()
+  })
+  
+  return (
+    <ci-check
+      name={props.name}
+      status={result ? 'complete' : 'running'}
+      passed={result?.passed}
+      exit-code={result?.exitCode}
+      duration-ms={result?.durationMs}
+    />
+  )
+}
+```
+
+**Database Schema:**
+
+```sql
+CREATE TABLE ci_checks (
+  id INTEGER PRIMARY KEY,
+  execution_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  passed INTEGER NOT NULL,
+  exit_code INTEGER NOT NULL,
+  stdout TEXT,
+  stderr TEXT,
+  duration_ms INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(execution_id, name)
+);
+```
+
+**Usage in Review Loop:**
+
+```tsx
+<Phase name="CI Checks">
+  <Parallel>
+    <CICheck name="typecheck" cmd="bun run typecheck" />
+    <CICheck name="lint" cmd="bun run lint" />
+    <CICheck name="test" cmd="bun test" />
+  </Parallel>
+</Phase>
+```
+
+Review agent queries results:
+
+```tsx
+const ciResults = db.db.query(`
+  SELECT name, passed, stdout, stderr 
+  FROM ci_checks 
+  WHERE execution_id = ?
+`).all(executionId)
+
+const failedChecks = ciResults.filter(c => !c.passed)
+// Pass to review agent prompt
+```
+
+### 2. `<FallbackAgent>` - Multi-provider Failover
 
 ```tsx
 interface FallbackAgentProps {
@@ -110,7 +247,7 @@ interface FallbackAgentProps {
 - Propagates first successful result
 - If all fail → aggregate error
 
-### 2. `<Codex>` - OpenAI Codex CLI Agent
+### 3. `<Codex>` - OpenAI Codex CLI Agent
 
 ```tsx
 interface CodexProps {
@@ -127,7 +264,7 @@ interface CodexProps {
 - Uses `OPENAI_API_KEY` from environment
 - Structured output via JSON schema
 
-### 3. `<Gemini>` - Google Gemini Agent
+### 4. `<Gemini>` - Google Gemini Agent
 
 ```tsx
 interface GeminiProps {
@@ -142,7 +279,7 @@ interface GeminiProps {
 - Uses Gemini API directly (Bun native fetch)
 - Or wraps a CLI tool if available
 
-### 4. Review-Fix Loop (uses `<While>`)
+### 5. Review-Fix Loop (uses `<While>`)
 
 Uses the generic `<While>` component from [while-component.md](./while-component.md):
 
@@ -270,6 +407,8 @@ Output JSON:
 
 ### `.github/workflows/smithers-review.yml`
 
+CI checks run **inside Smithers** via `<CICheck>` components. GitHub Actions just triggers and provides secrets.
+
 ```yaml
 name: Smithers Review
 
@@ -297,30 +436,8 @@ jobs:
           
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        
-      # Run checks and capture logs
-      - name: Typecheck
-        id: typecheck
-        continue-on-error: true
-        run: |
-          bun run typecheck 2>&1 | tee logs/typecheck.log
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
           
-      - name: Lint
-        id: lint
-        continue-on-error: true
-        run: |
-          bun run lint 2>&1 | tee logs/lint.log
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
-          
-      - name: Test
-        id: test
-        continue-on-error: true
-        run: |
-          bun test 2>&1 | tee logs/test.log
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
-          
-      # Run Smithers review
+      # Smithers runs CI checks internally via <CICheck> components
       - name: Smithers Review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -328,36 +445,96 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          bun run smithers review \
-            --pr $PR_NUMBER \
-            --logs logs/ \
-            --max-iterations 3
+        run: bun run smithers review --pr $PR_NUMBER --max-iterations 3
 ```
+
+**Why run CI inside Smithers?**
+- Results stored in SQLite → queryable by review agent
+- Parallel execution via `<Parallel>` component
+- Unified observability (all in one DB)
+- Easier to test Smithers itself
 
 ### CLI Entry Point
 
 ```typescript
 // bin/smithers-review.ts
 import { render } from '../src/reconciler'
-import { SmithersProvider, ReviewLoop, FallbackAgent, Codex, Claude, Gemini } from '../src'
+import { 
+  SmithersProvider, Phase, Parallel, While,
+  CICheck, FallbackAgent, Codex, Claude, Gemini,
+  Review
+} from '../src'
 
-const prNumber = process.env.PR_NUMBER
-const logsDir = process.argv.find(a => a.startsWith('--logs='))?.split('=')[1] ?? 'logs'
+const prNumber = process.env.PR_NUMBER!
+const maxIterations = parseInt(process.argv.find(a => a.startsWith('--max-iterations='))?.split('=')[1] ?? '3')
+
+function PRReviewOrchestration() {
+  const { db } = useSmithers()
+  
+  // Build review prompt from CI results + git notes
+  const buildReviewPrompt = async () => {
+    const ciResults = db.db.query(`
+      SELECT name, passed, stdout, stderr FROM ci_checks WHERE execution_id = ?
+    `).all(db.executionId)
+    
+    const gitNotes = await getCommitNotes(prNumber)
+    const diff = await Bun.$`gh pr diff ${prNumber}`.text()
+    
+    return `Review PR #${prNumber}
+    
+## CI Results
+${ciResults.map(c => `${c.name}: ${c.passed ? 'PASS' : 'FAIL'}\n${c.passed ? '' : c.stderr}`).join('\n')}
+
+## Git Notes (original prompts)
+${gitNotes}
+
+## Diff
+${diff}
+`
+  }
+  
+  return (
+    <>
+      {/* Phase 1: Run CI checks in parallel */}
+      <Phase name="CI Checks">
+        <Parallel>
+          <CICheck name="typecheck" cmd="bun run typecheck" />
+          <CICheck name="lint" cmd="bun run lint" />
+          <CICheck name="test" cmd="bun test" />
+        </Parallel>
+      </Phase>
+      
+      {/* Phase 2: Review loop */}
+      <While
+        id="review-loop"
+        condition={async () => {
+          const review = await db.state.get('lastReview')
+          return review?.decision === 'request_changes'
+        }}
+        maxIterations={maxIterations}
+      >
+        <Phase name="Review">
+          <FallbackAgent>
+            <Codex schema={reviewSchema}>{buildReviewPrompt}</Codex>
+            <Claude model="sonnet" schema={reviewSchema}>{buildReviewPrompt}</Claude>
+            <Gemini schema={reviewSchema}>{buildReviewPrompt}</Gemini>
+          </FallbackAgent>
+        </Phase>
+        
+        <Phase name="Fix">
+          <FallbackAgent>
+            <Codex>Fix issues from review</Codex>
+            <Claude model="sonnet">Fix issues from review</Claude>
+          </FallbackAgent>
+        </Phase>
+      </While>
+    </>
+  )
+}
 
 await render(
   <SmithersProvider>
-    <ReviewLoop 
-      maxIterations={3}
-      target={{ type: 'pr', ref: prNumber }}
-      logsDir={logsDir}
-    >
-      <FallbackAgent>
-        <Codex>{/* dynamic prompt */}</Codex>
-        <Claude model="sonnet">{/* dynamic prompt */}</Claude>
-        <Gemini model="2.5-pro">{/* dynamic prompt */}</Gemini>
-      </FallbackAgent>
-    </ReviewLoop>
+    <PRReviewOrchestration />
   </SmithersProvider>
 )
 ```
@@ -456,38 +633,43 @@ After fixing:
 
 ## Implementation Plan
 
-### Phase 1: FallbackAgent Component
+### Phase 1: CICheck Component + Schema
+- [ ] Add `ci_checks` table to DB schema
+- [ ] Create `src/components/CICheck.tsx`
+- [ ] Run shell command via `Bun.spawn`
+- [ ] Store stdout/stderr/exitCode in SQLite
+- [ ] Unit tests with mock commands
+
+### Phase 2: FallbackAgent Component
 - [ ] Create `src/components/FallbackAgent.tsx`
 - [ ] Implement child iteration with error handling
 - [ ] Add `onFallback` callback for observability
 - [ ] Unit tests with mocked agents
 
-### Phase 2: Codex Agent
+### Phase 3: Codex Agent
 - [ ] Create `src/components/Codex.tsx`
 - [ ] Implement codex CLI wrapper (similar to ClaudeCodeCLI.ts)
 - [ ] Add structured output support
 - [ ] Integration tests
 
-### Phase 3: Gemini Agent  
+### Phase 4: Gemini Agent  
 - [ ] Create `src/components/Gemini.tsx`
 - [ ] Implement Gemini API client (or CLI wrapper if available)
 - [ ] Add structured output support
 - [ ] Integration tests
 
-### Phase 4: ReviewLoop Component
-- [ ] Create `src/components/ReviewLoop.tsx`
-- [ ] Implement state machine (REVIEW → FIX → REVIEW)
-- [ ] Git notes reading utility
-- [ ] Logs parsing utility
-- [ ] Max iterations guard
+### Phase 5: Git Notes Utility
+- [ ] Create `src/utils/git-notes.ts`
+- [ ] `getCommitNotes(prNumber)` - fetch notes for all PR commits
+- [ ] Parse "User prompt: ..." format
 
-### Phase 5: GitHub Actions Integration
+### Phase 6: GitHub Actions Integration
 - [ ] Create `.github/workflows/smithers-review.yml`
 - [ ] Create `bin/smithers-review.ts` CLI entry
 - [ ] Test with actual PR from roninjin10
 - [ ] Document secrets required
 
-### Phase 6: Polish
+### Phase 7: Polish
 - [ ] Add GitHub PR comment posting
 - [ ] Add review summary as PR status check
 - [ ] Metrics/observability via db.vcs.addReport
@@ -502,12 +684,12 @@ After fixing:
 
 | File | Purpose |
 |------|---------|
+| `src/components/CICheck.tsx` | Run CI command, store results in SQLite |
 | `src/components/FallbackAgent.tsx` | Multi-provider failover |
 | `src/components/Codex.tsx` | OpenAI Codex CLI wrapper |
 | `src/components/Gemini.tsx` | Google Gemini API wrapper |
-| `src/components/ReviewLoop.tsx` | Review-fix cycle orchestration |
-| `src/utils/git-notes.ts` | Read/parse git notes |
-| `src/utils/ci-logs.ts` | Parse CI log files |
+| `src/utils/git-notes.ts` | Read/parse git notes from commits |
+| `src/db/schema.ts` | Add `ci_checks` table |
 | `.github/workflows/smithers-review.yml` | GH Actions workflow |
 | `bin/smithers-review.ts` | CLI entry point |
 
