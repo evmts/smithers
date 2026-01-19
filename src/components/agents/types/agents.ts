@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import type { z } from 'zod'
 import type { Tool, MCPServer } from './tools.js'
 import type { AgentResult, StopConditionType } from './execution.js'
+import type { SmithersMiddleware } from '../../../middleware/types.js'
 
 // ============================================================================
 // Stop Condition (defined here to avoid circular dependency)
@@ -218,4 +219,10 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
    * @default true
    */
   useSubscription?: boolean
+
+  /**
+   * Middleware applied to this Claude execution.
+   * Provider middleware are prepended automatically.
+   */
+  middleware?: SmithersMiddleware[]
 }

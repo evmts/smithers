@@ -11,6 +11,7 @@ import { PhaseRegistryProvider } from './PhaseRegistry.js'
 import { useMount, useUnmount } from '../reconciler/hooks.js'
 import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
 import { jjSnapshot } from '../utils/vcs.js'
+import type { SmithersMiddleware } from '../middleware/types.js'
 
 // ============================================================================
 // GLOBAL STORE (for universal renderer compatibility)
@@ -146,6 +147,11 @@ export interface SmithersContextValue {
   config: SmithersConfig
 
   /**
+   * Global middleware applied to all Claude executions.
+   */
+  middleware?: SmithersMiddleware[]
+
+  /**
    * Request orchestration stop
    */
   requestStop: (reason: string) => void
@@ -241,6 +247,11 @@ export interface SmithersProviderProps {
    * Prefer passing root.toXML() from createSmithersRoot().
    */
   getTreeXML?: () => string | null
+
+  /**
+   * Global middleware applied to all Claude executions.
+   */
+  middleware?: SmithersMiddleware[]
 
   /**
    * Maximum number of Ralph iterations (default: 100)
@@ -611,6 +622,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     db: props.db,
     executionId: props.executionId,
     config: props.config ?? {},
+    ...(props.middleware !== undefined ? { middleware: props.middleware } : {}),
 
     requestStop: (reason: string) => {
       props.db.state.set('stop_requested', {
@@ -638,7 +650,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     completeTask,
     ralphCount,
     reactiveDb,
-  }), [props.db, props.executionId, props.config, stopRequested, rebaseRequested, registerTask, completeTask, ralphCount, reactiveDb])
+  }), [props.db, props.executionId, props.config, props.middleware, stopRequested, rebaseRequested, registerTask, completeTask, ralphCount, reactiveDb])
 
   // Set global store BEFORE any children are evaluated
   // This is critical for universal renderer compatibility where
