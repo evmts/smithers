@@ -40,6 +40,7 @@ export {
 } from './Step.js'
 
 // Basic workflow components
+export { Each, type EachProps } from './Each.js'
 export { If, type IfProps } from './If.js'
 export { Stop, type StopProps } from './Stop.js'
 export { End, type EndProps, type EndSummary } from './End.js'
