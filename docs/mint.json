@@ -60,9 +60,7 @@
       "group": "Core Concepts",
       "pages": [
         "concepts/ralph-wiggum-loop",
-        "concepts/state-management",
-        "concepts/database-persistence",
-        "concepts/orchestration"
+        "concepts/database-persistence"
       ]
     },
     {
