@@ -212,7 +212,6 @@ export function Step(props: StepProps): ReactNode {
   const status = canExecute ? 'active' : isCompleted ? 'completed' : 'pending'
   const isDbClosed = () => db.db.isClosed
 
-<<<<<<< HEAD
   // Monitor child tasks for this step (only when started)
   // Uses the same pattern as SmithersProvider for reactive task counting
   const { data: childRunningTaskCount } = useQueryValue<number>(
@@ -225,14 +224,9 @@ export function Step(props: StepProps): ReactNode {
       : []
   )
 
-  // Reactive step activation - runs when isActive becomes true
-  // Pattern from Claude.tsx:110, Smithers.tsx:170
-  useEffectOnValueChange(isActive, () => {
-    if (!isActive || hasStartedRef.current) return
-=======
+  // Reactive step activation - runs when canExecute becomes true
   useEffectOnValueChange(canExecute, () => {
     if (!canExecute || hasStartedRef.current) return
->>>>>>> 4cfb61a (feat: add new feature)
     if (isDbClosed()) return
     hasStartedRef.current = true
 
