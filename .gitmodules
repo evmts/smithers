@@ -4,3 +4,6 @@
 [submodule "reference/opentui"]
 	path = reference/opentui
 	url = https://github.com/sst/opentui
+[submodule "reference/anthropic-sdk-typescript"]
+	path = reference/anthropic-sdk-typescript
+	url = https://github.com/anthropics/anthropic-sdk-typescript.git

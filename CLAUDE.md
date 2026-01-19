@@ -167,3 +167,55 @@ The `reference/` folder contains git submodules of external libraries. These are
 - Treat these as part of the project's codebase
 
 Anytime we add a new important dependency we should clone it as a submodule
+
+### Available Reference Libraries
+
+Local git submodules in `reference/` for AI context (grep patterns, tests, type definitions):
+
+**UI/Rendering:**
+- `opentui/` → [sst/opentui](https://github.com/sst/opentui) - React reconciler patterns for terminal UIs
+
+**AI/LLM:**
+- `anthropic-sdk-typescript/` → [anthropics/anthropic-sdk-typescript](https://github.com/anthropics/anthropic-sdk-typescript) - Anthropic API client, streaming, tools
+- `vercel-ai-sdk/` → [vercel/ai](https://github.com/vercel/ai) - AI streaming patterns, provider abstractions
+
+## External Dependencies
+
+### Runtime Dependencies
+
+**Framework & Core:**
+- [react](https://github.com/facebook/react) (^19.0.0) - UI framework
+- [react-reconciler](https://github.com/facebook/react/tree/main/packages/react-reconciler) (^0.32.0) - Custom rendering engine
+- [@babel/core](https://github.com/babel/babel) (^7.28.6) - JavaScript transpiler
+- [@babel/preset-typescript](https://github.com/babel/babel/tree/main/packages/babel-preset-typescript) (^7.28.5) - Babel TypeScript support
+
+**AI/LLM:**
+- [@anthropic-ai/sdk](https://github.com/anthropics/anthropic-sdk-typescript) (^0.71.2) - Anthropic Claude API client
+- [@anthropic-ai/claude-agent-sdk](https://github.com/anthropics/claude-agent-sdk-typescript) (^0.1.76) - Anthropic Agent framework
+
+**UI:**
+- [@opentui/core](https://github.com/sst/opentui) (^0.1.74) - OpenTUI terminal rendering
+- [@opentui/react](https://github.com/sst/opentui) (^0.1.74) - OpenTUI React bindings
+
+**Utilities:**
+- [zod](https://github.com/colinhacks/zod) (^4.3.5) - Schema validation & type inference
+- [commander](https://github.com/tj/commander.js) (^12.0.0) - CLI argument parsing
+
+### Dev Dependencies
+
+**TypeScript:**
+- [typescript](https://github.com/microsoft/TypeScript) (^5.7.2) - TypeScript compiler
+- [@types/react](https://github.com/DefinitelyTyped/DefinitelyTyped) (^19.0.0) - React type definitions
+- [@types/react-reconciler](https://github.com/DefinitelyTyped/DefinitelyTyped) (^0.28.9) - React reconciler types
+- [@types/bun](https://github.com/DefinitelyTyped/DefinitelyTyped) (latest) - Bun runtime types
+
+**Tooling:**
+- [oxlint](https://github.com/oxc-project/oxc) (^1.39.0) - Rust-based linter
+- [husky](https://github.com/typicode/husky) (^9.1.7) - Git hooks manager
+
+### Key External Documentation
+
+- [React 19 Docs](https://react.dev) - Hooks, concurrent features, reconciliation
+- [Bun APIs](https://bun.sh/docs) - Runtime, SQLite, file I/O, testing
+- [Anthropic API](https://docs.anthropic.com) - Claude models, message formats, streaming
+- [Zod Documentation](https://zod.dev) - Schema validation patterns
