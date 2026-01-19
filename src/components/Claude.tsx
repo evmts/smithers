@@ -25,7 +25,19 @@ type AgentRow = {
   duration_ms: number | null
 }
 
-// TODO: add jsdoc
+/**
+ * Claude Agent Component
+ *
+ * Executes Claude CLI as a React component with database tracking,
+ * progress reporting, and retry logic.
+ *
+ * @example
+ * ```tsx
+ * <Claude model="sonnet" onFinished={(result) => console.log(result.output)}>
+ *   Fix the bug in src/utils.ts
+ * </Claude>
+ * ```
+ */
 export function Claude(props: ClaudeProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
   const worktree = useWorktree()
@@ -55,7 +67,7 @@ export function Claude(props: ClaudeProps): ReactNode {
   
   const result: AgentResult | null = agentRow?.result ? {
     output: agentRow.result,
-    structured: agentRow.result_structured ? JSON.parse(agentRow.result_structured) : undefined,
+    structured: agentRow.result_structured ? (() => { try { return JSON.parse(agentRow.result_structured) } catch { return undefined } })() : undefined,
     tokensUsed: {
       input: agentRow.tokens_input ?? 0,
       output: agentRow.tokens_output ?? 0,
@@ -291,7 +303,10 @@ export function Claude(props: ClaudeProps): ReactNode {
           db.tasks.complete(taskIdRef.current)
         }
       }
-    })()
+    })().catch(err => {
+      console.error('Agent execution failed:', err)
+      props.onError?.(err instanceof Error ? err : new Error(String(err)))
+    })
   })
 
   const maxLines = props.tailLogLines ?? 10

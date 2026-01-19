@@ -3,19 +3,7 @@
  * Hook for connecting to Smithers database
  */
 
-import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test'
-import * as dbModule from '../../db/index.js'
-
-// Mock the createSmithersDB function
-const mockDb = {
-  execution: {
-    current: mock(() => null),
-    list: mock(() => [])
-  },
-  close: mock(() => {})
-}
-
-const originalCreateSmithersDB = dbModule.createSmithersDB
+import { describe, test, expect } from 'bun:test'
 
 describe('tui/hooks/useSmithersConnection', () => {
   describe('Execution type', () => {

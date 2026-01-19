@@ -54,6 +54,13 @@ const hostConfig = {
   createInstance(type: string, props: Props): Instance {
     const node = rendererMethods.createElement(type)
 
+    // Debug: check for weird props that look like spread type string
+    const propKeys = Object.keys(props)
+    if (propKeys.some(k => /^\d+$/.test(k))) {
+      console.error(`[DEBUG] createInstance("${type}") received numeric props:`, props)
+      console.trace()
+    }
+
     // Apply all props
     for (const [key, value] of Object.entries(props)) {
       if (key !== 'children') {

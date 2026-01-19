@@ -114,6 +114,13 @@ function serializeNode(node: SmithersNode): string {
 
   const tag = node.type.toLowerCase()
 
+  // Debug: check for weird props
+  const propKeys = Object.keys(node.props)
+  if (propKeys.some(k => /^\d+$/.test(k))) {
+    console.error(`[DEBUG] serializeNode("${tag}") has numeric props:`, node.props)
+    console.error(`[DEBUG] node:`, JSON.stringify(node, (k, v) => k === 'parent' ? '[parent]' : v, 2))
+  }
+
   // Key attribute goes FIRST (if present) for readability
   const keyAttr = node.key !== undefined ? ` key="${escapeXml(String(node.key))}"` : ''
 

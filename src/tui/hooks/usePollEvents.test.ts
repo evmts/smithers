@@ -24,7 +24,6 @@ describe('tui/hooks/usePollEvents', () => {
     test('clearInterval is called on unmount', () => {
       // The cleanup function returns () => clearInterval(interval)
       const mockClearInterval = mock(() => {})
-      const intervalId = 123
       
       // Simulate cleanup
       mockClearInterval()

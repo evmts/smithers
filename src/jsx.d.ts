@@ -272,6 +272,25 @@ declare module 'react' {
         [key: string]: unknown
       }
 
+      summary: {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'phase-content': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      audit: {
+        status?: string
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
       value: {
         children?: React.ReactNode
         key?: string | number

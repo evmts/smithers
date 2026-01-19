@@ -3,7 +3,7 @@
  * Hook for auto-generating 10-minute reports
  */
 
-import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, mock } from 'bun:test'
 import type { Report } from '../services/report-generator.js'
 
 describe('tui/hooks/useReportGenerator', () => {

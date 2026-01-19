@@ -365,9 +365,9 @@ describe('tui/hooks/useHumanRequests', () => {
         pendingRequests: [] as HumanInteraction[],
         selectedIndex: 0,
         selectedRequest: null as HumanInteraction | null,
-        selectRequest: (index: number) => {},
-        approveRequest: (response?: unknown) => {},
-        rejectRequest: (response?: unknown) => {},
+        selectRequest: (_index: number) => {},
+        approveRequest: (_response?: unknown) => {},
+        rejectRequest: (_response?: unknown) => {},
         refreshRequests: () => {}
       }
       

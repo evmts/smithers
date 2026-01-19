@@ -122,7 +122,7 @@ export interface SmithersProps {
  * ```
  */
 export function Smithers(props: SmithersProps): ReactNode {
-  const { db, executionId } = useSmithers()
+  const { db, executionId, isStopRequested } = useSmithers()
   const worktree = useWorktree()
   const phase = usePhaseContext()
   const phaseActive = phase?.isActive ?? true
@@ -166,7 +166,7 @@ export function Smithers(props: SmithersProps): ReactNode {
   
   const status = mapStatus()
   const result: SmithersResult | null = agentRow?.result_structured 
-    ? JSON.parse(agentRow.result_structured) 
+    ? (() => { try { return JSON.parse(agentRow.result_structured) } catch { return null } })()
     : null
   const error: Error | null = agentRow?.error ? new Error(agentRow.error) : null
 
@@ -185,6 +185,11 @@ export function Smithers(props: SmithersProps): ReactNode {
     ;(async () => {
       // Register task with database
       taskIdRef.current = db.tasks.start('smithers', props.plannerModel ?? 'sonnet')
+
+      if (isStopRequested()) {
+        db.tasks.complete(taskIdRef.current)
+        return
+      }
 
       try {
         // Extract task from children
@@ -281,7 +286,10 @@ export function Smithers(props: SmithersProps): ReactNode {
           db.tasks.complete(taskIdRef.current)
         }
       }
-    })()
+    })().catch(err => {
+      console.error('Agent execution failed:', err)
+      props.onError?.(err instanceof Error ? err : new Error(String(err)))
+    })
   })
 
   // Render custom element for XML serialization

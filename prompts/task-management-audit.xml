@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<audit_prompt>
+  <objective>Full audit of repository task management system - cleanup completed work, implement remaining items</objective>
+  
+  <context>
+    <repo_root>/Users/williamcory/smithers</repo_root>
+    <worktrees_dir>.worktrees/</worktrees_dir>
+    <issues_dir>issues/</issues_dir>
+    <scripts_dir>scripts/</scripts_dir>
+  </context>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- PHASE 1: WORKTREE CLEANUP                                               -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <phase name="worktree_audit" priority="1">
+    <description>Audit .worktrees/ for merged branches - delete if merged to main</description>
+    
+    <steps>
+      <step id="1.1">
+        <action>list_worktrees</action>
+        <command>ls -1 .worktrees/</command>
+      </step>
+      
+      <step id="1.2">
+        <action>check_merged</action>
+        <description>For each worktree, check if branch merged to main</description>
+        <command>git branch --merged main | grep "issue/${worktree_name}"</command>
+        <on_merged>
+          <action>delete_worktree</action>
+          <commands>
+            <cmd>git worktree remove .worktrees/${name} --force</cmd>
+            <cmd>git branch -d issue/${name}</cmd>
+          </commands>
+        </on_merged>
+      </step>
+    </steps>
+    
+    <worktrees count="22">
+      <worktree>broken-build-orchestration</worktree>
+      <worktree>chat-transport</worktree>
+      <worktree>component-wiring</worktree>
+      <worktree>control-flow-components</worktree>
+      <worktree>easy-fixes</worktree>
+      <worktree>fix-reconciler-p0-issues-mount-error-handling-even</worktree>
+      <worktree>github-actions-pr-review-loop</worktree>
+      <worktree>jsx-runtime-bypasses-react</worktree>
+      <worktree>middleware-integration</worktree>
+      <worktree>middleware-integration-revised</worktree>
+      <worktree>opentui-typescript-types</worktree>
+      <worktree>p0-control-flow</worktree>
+      <worktree>p0-reactive-db</worktree>
+      <worktree>rate-limit-module</worktree>
+      <worktree>reconciler-p0</worktree>
+      <worktree>reexport-react-hooks</worktree>
+      <worktree>streaming-protocol</worktree>
+      <worktree>test-suite</worktree>
+      <worktree>tool-standardization</worktree>
+      <worktree>uimessage-format</worktree>
+      <worktree>use-human-interactive</worktree>
+      <worktree>worktree-component</worktree>
+    </worktrees>
+  </phase>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- PHASE 2: ISSUES AUDIT                                                   -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <phase name="issues_audit" priority="2">
+    <description>Audit issues/*.md - delete implemented, create worktrees for unimplemented</description>
+    
+    <steps>
+      <step id="2.1">
+        <action>list_issues</action>
+        <command>ls -1 issues/*.md | grep -v TEMPLATE.md</command>
+      </step>
+      
+      <step id="2.2">
+        <action>check_implemented</action>
+        <description>For each issue, check if feature exists in codebase</description>
+        <criteria>
+          <criterion>PR merged for issue branch</criterion>
+          <criterion>Feature code exists in src/</criterion>
+          <criterion>Tests passing for feature</criterion>
+        </criteria>
+        <on_implemented>
+          <action>delete_issue</action>
+          <command>rm issues/${name}.md</command>
+        </on_implemented>
+      </step>
+      
+      <step id="2.3">
+        <action>create_missing_worktrees</action>
+        <description>For issues without worktrees, create worktree and spawn subagent</description>
+        <command>bun scripts/worktree.ts --create "${issue_title}"</command>
+        <spawn_subagent>true</spawn_subagent>
+      </step>
+    </steps>
+    
+    <issues count="23">
+      <issue has_worktree="true">broken-build-orchestration</issue>
+      <issue has_worktree="true">chat-transport</issue>
+      <issue has_worktree="true">control-flow-components</issue>
+      <issue has_worktree="false">end-component</issue>
+      <issue has_worktree="true">fix-reconciler-p0-issues-mount-error-handling-even</issue>
+      <issue has_worktree="true">github-actions-pr-review-loop</issue>
+      <issue has_worktree="false">github-actions-review-loop</issue>
+      <issue has_worktree="true">jsx-runtime-bypasses-react</issue>
+      <issue has_worktree="true">middleware-integration</issue>
+      <issue has_worktree="true">middleware-integration-revised</issue>
+      <issue has_worktree="true">opentui-typescript-types</issue>
+      <issue has_worktree="false">orchestration-completion-alignment</issue>
+      <issue has_worktree="false">phase-step-sequencing</issue>
+      <issue has_worktree="false">plan-markers-wiring</issue>
+      <issue has_worktree="true">rate-limit-module</issue>
+      <issue has_worktree="true">reexport-react-hooks</issue>
+      <issue has_worktree="true">streaming-protocol</issue>
+      <issue has_worktree="true">tool-standardization</issue>
+      <issue has_worktree="true">uimessage-format</issue>
+      <issue has_worktree="true">use-human-interactive</issue>
+      <issue has_worktree="false">vcs-operation-queue</issue>
+      <issue has_worktree="false">while-component</issue>
+      <issue has_worktree="true">worktree-component</issue>
+    </issues>
+  </phase>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- PHASE 3: TODO.md AUDIT                                                  -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <phase name="todo_audit" priority="3">
+    <description>Audit TODO.md items - delete completed, implement remaining on main</description>
+    
+    <constraints>
+      <constraint>Work directly on main branch</constraint>
+      <constraint>Skip PR merge tasks</constraint>
+      <constraint>Delete completed items inline</constraint>
+    </constraints>
+    
+    <categories>
+      <category name="branches_ready_to_merge" action="SKIP">
+        <reason>PR merges handled separately</reason>
+      </category>
+      
+      <category name="skipped_tests" action="IMPLEMENT">
+        <count>48</count>
+        <root_causes>
+          <cause>Wrong testing approach (DOM vs SmithersNode)</cause>
+          <cause>Solid JSX transform mismatch (now React)</cause>
+          <cause>Integration test import issues</cause>
+          <cause>SmithersCLI Bun execution</cause>
+        </root_causes>
+      </category>
+      
+      <category name="failing_tests" action="IMPLEMENT">
+        <count>37</count>
+        <root_causes>
+          <cause>Zod schema converter missing type property</cause>
+          <cause>React hooks need SmithersNode testing</cause>
+        </root_causes>
+      </category>
+      
+      <category name="sdk_integration" action="CHECK">
+        <file>src/components/Claude.tsx</file>
+        <function>executeWithClaudeSDK</function>
+      </category>
+      
+      <category name="solid_migration_cleanup" action="CHECK_AND_DELETE">
+        <files>
+          <file>vite.config.ts</file>
+          <file>vitest.config.ts</file>
+          <file>bunfig.toml</file>
+          <file>docs/**/*.mdx</file>
+          <file>plugins/**/*.md</file>
+          <file>README.md</file>
+          <file>CONTRIBUTING.md</file>
+        </files>
+      </category>
+    </categories>
+  </phase>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- PHASE 4: ROOT MD FILES                                                  -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <phase name="root_md_audit" priority="4">
+    <description>Audit root .md files for stale content</description>
+    
+    <files>
+      <file>TODO.md</file>
+      <file>State.md</file>
+      <file>PROMPT.md</file>
+      <file>CONTRIBUTING.md</file>
+    </files>
+    
+    <actions>
+      <action>Remove completed items</action>
+      <action>Delete empty sections</action>
+      <action>Delete empty files</action>
+    </actions>
+  </phase>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- EXECUTION CONFIG                                                        -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <execution>
+    <parallel_subagents>true</parallel_subagents>
+    <main_branch_work>TODO.md items, cleanup</main_branch_work>
+    <worktree_work>Unimplemented issues</worktree_work>
+    
+    <reporting>
+      <on_complete>
+        <report>Worktrees deleted (merged)</report>
+        <report>Issues deleted (implemented)</report>
+        <report>TODO items completed</report>
+        <report>Subagents spawned</report>
+      </on_complete>
+    </reporting>
+  </execution>
+</audit_prompt>

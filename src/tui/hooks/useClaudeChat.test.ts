@@ -3,7 +3,7 @@
  * Hook for Claude-powered chat interface
  */
 
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import type { ChatMessage } from '../services/claude-assistant.js'
 
 describe('tui/hooks/useClaudeChat', () => {
