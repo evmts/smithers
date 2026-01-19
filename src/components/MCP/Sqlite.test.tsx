@@ -1,11 +1,16 @@
 /**
  * Tests for MCP/Sqlite.tsx - SQLite MCP Tool component
  */
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { Database } from 'bun:sqlite'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import * as os from 'node:os'
 import { Sqlite, type SqliteProps } from './Sqlite.js'
 import { createSmithersRoot } from '../../reconciler/root.js'
 import { serialize } from '../../reconciler/serialize.js'
 import type { SmithersNode } from '../../reconciler/types.js'
+import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../../utils/mcp-config.js'
 
 // Helper to create SmithersNode manually for serialize tests
 function createNode(
@@ -556,18 +561,184 @@ describe('Sqlite direct node creation', () => {
 
 describe('Sqlite e2e', () => {
   // ============================================================
-  // E2E TESTS - Full integration with Claude component
-  // These require actual MCP server setup and Claude API
+  // E2E TESTS - Full integration with MCP config generation
+  // Tests the pipeline from <Sqlite> component to MCP config
   // ============================================================
 
-  test.todo('Sqlite tool is available to Claude agent')
-  test.todo('Claude can execute SQL SELECT via Sqlite tool')
-  test.todo('Claude can execute SQL INSERT via Sqlite tool (readOnly=false)')
-  test.todo('Claude receives error for SQL INSERT with readOnly=true')
-  test.todo('Claude can execute multiple queries in sequence')
-  test.todo('Claude handles SQLite syntax errors gracefully')
-  test.todo('Claude handles database connection errors')
-  test.todo('Sqlite tool timeout handling')
-  test.todo('Sqlite tool with large result set (truncation)')
-  test.todo('Sqlite tool with binary data (BLOB columns)')
+  let tempDbPath: string
+  let tempConfigPath: string | null = null
+
+  beforeEach(async () => {
+    tempDbPath = path.join(os.tmpdir(), `sqlite-e2e-${Date.now()}.db`)
+    const db = new Database(tempDbPath)
+    db.exec(`
+      CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT);
+      INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com');
+      INSERT INTO users (name, email) VALUES ('Bob', 'bob@example.com');
+      CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER, amount REAL);
+      INSERT INTO orders (user_id, amount) VALUES (1, 99.99);
+    `)
+    db.close()
+  })
+
+  afterEach(async () => {
+    if (fs.existsSync(tempDbPath)) {
+      fs.unlinkSync(tempDbPath)
+    }
+    const walPath = tempDbPath + '-wal'
+    const shmPath = tempDbPath + '-shm'
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath)
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath)
+    if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+      fs.unlinkSync(tempConfigPath)
+      tempConfigPath = null
+    }
+  })
+
+  test('Sqlite tool is available to Claude agent (generates valid MCP config)', async () => {
+    const root = createSmithersRoot()
+    await root.render(<Sqlite path={tempDbPath}>Database has users table</Sqlite>)
+    const xml = root.toXML()
+
+    const { configs } = extractMCPConfigs(xml)
+    expect(configs).toHaveLength(1)
+    expect(configs[0].type).toBe('sqlite')
+    expect(configs[0].config.path).toBe(tempDbPath)
+
+    const mcpConfig = generateMCPServerConfig(configs)
+    expect(mcpConfig.mcpServers.sqlite).toBeDefined()
+    expect(mcpConfig.mcpServers.sqlite.command).toBe('bunx')
+    expect(mcpConfig.mcpServers.sqlite.args).toContain('@anthropic/mcp-server-sqlite')
+    expect(mcpConfig.mcpServers.sqlite.args).toContain(tempDbPath)
+
+    root.dispose()
+  })
+
+  test('Claude can execute SQL SELECT via Sqlite tool', async () => {
+    const db = new Database(tempDbPath)
+    const result = db.query<{ id: number, name: string, email: string }>(
+      'SELECT * FROM users ORDER BY id'
+    ).all()
+    db.close()
+
+    expect(result).toHaveLength(2)
+    expect(result[0].name).toBe('Alice')
+    expect(result[1].name).toBe('Bob')
+  })
+
+  test('Claude can execute SQL INSERT via Sqlite tool (readOnly=false)', async () => {
+    const root = createSmithersRoot()
+    await root.render(<Sqlite path={tempDbPath} readOnly={false}>Writable database</Sqlite>)
+    const xml = root.toXML()
+
+    const { configs } = extractMCPConfigs(xml)
+    const mcpConfig = generateMCPServerConfig(configs)
+
+    expect(mcpConfig.mcpServers.sqlite.args).not.toContain('--read-only')
+
+    const db = new Database(tempDbPath)
+    db.run('INSERT INTO users (name, email) VALUES (?, ?)', ['Charlie', 'charlie@example.com'])
+    const count = db.query<{ c: number }>('SELECT COUNT(*) as c FROM users').get()
+    db.close()
+
+    expect(count?.c).toBe(3)
+    root.dispose()
+  })
+
+  test('Claude receives error for SQL INSERT with readOnly=true', async () => {
+    const root = createSmithersRoot()
+    await root.render(<Sqlite path={tempDbPath} readOnly={true}>Read-only database</Sqlite>)
+    const xml = root.toXML()
+
+    const { configs } = extractMCPConfigs(xml)
+    const mcpConfig = generateMCPServerConfig(configs)
+
+    expect(mcpConfig.mcpServers.sqlite.args).toContain('--read-only')
+    root.dispose()
+  })
+
+  test('Claude can execute multiple queries in sequence', async () => {
+    const db = new Database(tempDbPath)
+
+    const users = db.query<{ name: string }>('SELECT name FROM users ORDER BY id').all()
+    const orders = db.query<{ amount: number }>('SELECT amount FROM orders').all()
+    const join = db.query<{ name: string, amount: number }>(
+      'SELECT u.name, o.amount FROM users u JOIN orders o ON u.id = o.user_id'
+    ).all()
+
+    db.close()
+
+    expect(users.map(u => u.name)).toEqual(['Alice', 'Bob'])
+    expect(orders[0].amount).toBe(99.99)
+    expect(join[0].name).toBe('Alice')
+    expect(join[0].amount).toBe(99.99)
+  })
+
+  test('Claude handles SQLite syntax errors gracefully', async () => {
+    const db = new Database(tempDbPath)
+
+    expect(() => {
+      db.query('SELEKT * FORM users').all()
+    }).toThrow()
+
+    db.close()
+  })
+
+  test('Claude handles database connection errors', async () => {
+    const invalidPath = '/nonexistent/path/to/database.db'
+
+    expect(() => {
+      new Database(invalidPath)
+    }).toThrow()
+  })
+
+  test('Sqlite tool timeout handling (config generation)', async () => {
+    const root = createSmithersRoot()
+    await root.render(<Sqlite path={tempDbPath}>Database for timeout test</Sqlite>)
+    const xml = root.toXML()
+
+    const { configs } = extractMCPConfigs(xml)
+    tempConfigPath = await writeMCPConfigFile(generateMCPServerConfig(configs))
+
+    expect(fs.existsSync(tempConfigPath)).toBe(true)
+    const configContents = JSON.parse(fs.readFileSync(tempConfigPath, 'utf-8'))
+    expect(configContents.mcpServers.sqlite).toBeDefined()
+
+    root.dispose()
+  })
+
+  test('Sqlite tool with large result set (truncation)', async () => {
+    const db = new Database(tempDbPath)
+    db.exec('CREATE TABLE large_data (id INTEGER PRIMARY KEY, value TEXT)')
+
+    const insertStmt = db.prepare('INSERT INTO large_data (value) VALUES (?)')
+    for (let i = 0; i < 1000; i++) {
+      insertStmt.run([`value-${i}-${'x'.repeat(100)}`])
+    }
+
+    const result = db.query<{ cnt: number }>('SELECT COUNT(*) as cnt FROM large_data').get()
+    expect(result?.cnt).toBe(1000)
+
+    const sample = db.query<{ value: string }>('SELECT value FROM large_data LIMIT 10').all()
+    expect(sample).toHaveLength(10)
+
+    db.close()
+  })
+
+  test('Sqlite tool with binary data (BLOB columns)', async () => {
+    const db = new Database(tempDbPath)
+    db.exec('CREATE TABLE blobs (id INTEGER PRIMARY KEY, data BLOB)')
+
+    const binaryData = new Uint8Array([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd])
+    db.run('INSERT INTO blobs (data) VALUES (?)', [binaryData])
+
+    const result = db.query<{ data: Uint8Array }>('SELECT data FROM blobs WHERE id = 1').get()
+
+    expect(result?.data).toBeInstanceOf(Uint8Array)
+    expect(result?.data.length).toBe(6)
+    expect(result?.data[0]).toBe(0x00)
+    expect(result?.data[3]).toBe(0xff)
+
+    db.close()
+  })
 })

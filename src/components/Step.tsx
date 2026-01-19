@@ -7,6 +7,7 @@ import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
 import { useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
+import { createLogger, withErrorLogging, type Logger } from '../debug/index.js'
 
 // ============================================================================
 // STEP REGISTRY CONTEXT (for sequential execution within a phase)
