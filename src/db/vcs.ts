@@ -62,40 +62,44 @@ export interface VcsModuleContext {
 
 interface CommitRow {
   id: string
-  execution_id: string | null
+  execution_id: string
   agent_id: string | null
-  sha: string
+  vcs_type: string
+  commit_hash: string
+  change_id: string | null
   message: string
-  author: string
-  timestamp: string
+  author: string | null
   files_changed: string | null
+  insertions: number | null
+  deletions: number | null
   smithers_metadata: string | null
   created_at: string
 }
 
 interface SnapshotRow {
   id: string
-  execution_id: string | null
-  agent_id: string | null
-  commit_sha: string
+  execution_id: string
+  change_id: string
+  commit_hash: string | null
+  description: string | null
   files_modified: string | null
   files_added: string | null
   files_deleted: string | null
   has_conflicts: number
-  description: string | null
   created_at: string
 }
 
 interface ReviewRow {
   id: string
-  execution_id: string | null
+  execution_id: string
   agent_id: string | null
-  commit_sha: string
-  reviewer: string
+  target_type: string
+  target_ref: string | null
   approved: number
+  summary: string
   issues: string | null
-  summary: string | null
   approvals: string | null
+  reviewer_model: string | null
   blocking: number
   posted_to_github: number
   posted_to_git_notes: number
@@ -104,52 +108,83 @@ interface ReviewRow {
 
 interface ReportRow {
   id: string
-  execution_id: string | null
+  execution_id: string
   agent_id: string | null
   type: string
+  title: string
+  content: string
   data: string | null
-  summary: string | null
+  severity: string
   created_at: string
 }
 
 const mapCommit = (row: CommitRow | null): Commit | null => {
   if (!row) return null
   return {
-    ...row,
+    id: row.id,
+    execution_id: row.execution_id,
+    agent_id: row.agent_id ?? undefined,
+    vcs_type: row.vcs_type as Commit['vcs_type'],
+    commit_hash: row.commit_hash,
+    change_id: row.change_id ?? undefined,
+    message: row.message,
+    author: row.author ?? undefined,
     files_changed: parseJson(row.files_changed, undefined),
+    insertions: row.insertions ?? undefined,
+    deletions: row.deletions ?? undefined,
     smithers_metadata: parseJson(row.smithers_metadata, undefined),
+    created_at: new Date(row.created_at),
   }
 }
 
 const mapSnapshot = (row: SnapshotRow | null): Snapshot | null => {
   if (!row) return null
   return {
-    ...row,
+    id: row.id,
+    execution_id: row.execution_id,
+    change_id: row.change_id,
+    commit_hash: row.commit_hash ?? undefined,
+    description: row.description ?? undefined,
     files_modified: parseJson(row.files_modified, undefined),
     files_added: parseJson(row.files_added, undefined),
     files_deleted: parseJson(row.files_deleted, undefined),
     has_conflicts: row.has_conflicts === 1,
+    created_at: new Date(row.created_at),
   }
 }
 
 const mapReview = (row: ReviewRow | null): Review | null => {
   if (!row) return null
   return {
-    ...row,
+    id: row.id,
+    execution_id: row.execution_id,
+    agent_id: row.agent_id ?? undefined,
+    target_type: row.target_type as Review['target_type'],
+    target_ref: row.target_ref ?? undefined,
     approved: row.approved === 1,
+    summary: row.summary,
     issues: parseJson(row.issues, []),
     approvals: parseJson(row.approvals, undefined),
+    reviewer_model: row.reviewer_model ?? undefined,
     blocking: row.blocking === 1,
     posted_to_github: row.posted_to_github === 1,
     posted_to_git_notes: row.posted_to_git_notes === 1,
+    created_at: new Date(row.created_at),
   }
 }
 
 const mapReport = (row: ReportRow | null): Report | null => {
   if (!row) return null
   return {
-    ...row,
+    id: row.id,
+    execution_id: row.execution_id,
+    agent_id: row.agent_id ?? undefined,
+    type: row.type as Report['type'],
+    title: row.title,
+    content: row.content,
     data: parseJson(row.data, undefined),
+    severity: row.severity as Report['severity'],
+    created_at: new Date(row.created_at),
   }
 }
 

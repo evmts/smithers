@@ -65,6 +65,7 @@ export function createRenderFramesModule(ctx: RenderFramesModuleContext): Render
 
   return {
     store: (treeXml: string, ralphCount: number = 0): string => {
+      if (rdb.isClosed) return uuid()
       const executionId = getCurrentExecutionId()
       if (!executionId) throw new Error('No active execution')
 
@@ -83,10 +84,12 @@ export function createRenderFramesModule(ctx: RenderFramesModuleContext): Render
     },
 
     get: (id: string): RenderFrame | null => {
+      if (rdb.isClosed) return null
       return rdb.queryOne<RenderFrame>('SELECT * FROM render_frames WHERE id = ?', [id])
     },
 
     getBySequence: (sequenceNumber: number): RenderFrame | null => {
+      if (rdb.isClosed) return null
       const executionId = getCurrentExecutionId()
       if (!executionId) return null
       return rdb.queryOne<RenderFrame>(
@@ -96,6 +99,7 @@ export function createRenderFramesModule(ctx: RenderFramesModuleContext): Render
     },
 
     list: (): RenderFrame[] => {
+      if (rdb.isClosed) return []
       const executionId = getCurrentExecutionId()
       if (!executionId) return []
       return rdb.query<RenderFrame>(
@@ -105,6 +109,7 @@ export function createRenderFramesModule(ctx: RenderFramesModuleContext): Render
     },
 
     listForExecution: (executionId: string): RenderFrame[] => {
+      if (rdb.isClosed) return []
       return rdb.query<RenderFrame>(
         'SELECT * FROM render_frames WHERE execution_id = ? ORDER BY sequence_number ASC',
         [executionId]
@@ -112,6 +117,7 @@ export function createRenderFramesModule(ctx: RenderFramesModuleContext): Render
     },
 
     latest: (): RenderFrame | null => {
+      if (rdb.isClosed) return null
       const executionId = getCurrentExecutionId()
       if (!executionId) return null
       return rdb.queryOne<RenderFrame>(
@@ -121,6 +127,7 @@ export function createRenderFramesModule(ctx: RenderFramesModuleContext): Render
     },
 
     count: (): number => {
+      if (rdb.isClosed) return 0
       const executionId = getCurrentExecutionId()
       if (!executionId) return 0
       return rdb.queryOne<{ count: number }>(
@@ -130,6 +137,7 @@ export function createRenderFramesModule(ctx: RenderFramesModuleContext): Render
     },
 
     nextSequence: (): number => {
+      if (rdb.isClosed) return 0
       const executionId = getCurrentExecutionId()
       if (!executionId) return 0
       return rdb.queryOne<{ next: number }>(

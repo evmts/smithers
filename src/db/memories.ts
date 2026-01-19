@@ -63,8 +63,10 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     search: (query: string, category?: string, limit: number = 20): Memory[] => {
-      let sql = 'SELECT * FROM memories WHERE content LIKE ?'
-      const params: SqlParam[] = [`%${query}%`]
+      if (rdb.isClosed) return []
+      const escapeLike = (s: string) => s.replace(/[%_\\]/g, '\\$&')
+      let sql = "SELECT * FROM memories WHERE content LIKE ? ESCAPE '\\'"
+      const params: SqlParam[] = [`%${escapeLike(query)}%`]
       if (category) { sql += ' AND category = ?'; params.push(category) }
       sql += ' ORDER BY created_at DESC LIMIT ?'
       params.push(limit)
@@ -72,6 +74,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     update: (id: string, updates: Partial<Pick<Memory, 'content' | 'confidence' | 'expires_at'>>) => {
+      if (rdb.isClosed) return
       const sets: string[] = ['updated_at = ?']
       const params: SqlParam[] = [now()]
       if (updates.content !== undefined) { sets.push('content = ?'); params.push(updates.content) }
@@ -82,6 +85,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     delete: (id: string) => {
+      if (rdb.isClosed) return
       rdb.run('DELETE FROM memories WHERE id = ?', [id])
     },
 
