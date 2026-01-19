@@ -14,7 +14,7 @@ import { SmithersProvider } from '../src/components/SmithersProvider.js'
 import { Claude } from '../src/components/Claude.js'
 import { Phase } from '../src/components/Phase.js'
 import { Step } from '../src/components/Step.js'
-import { PhaseRegistry } from '../src/components/PhaseRegistry.js'
+import { PhaseRegistryProvider } from '../src/components/PhaseRegistry.js'
 import { createSmithersDB } from '../src/db/index.js'
 import { createSmithersRoot } from '../src/reconciler/index.js'
 
@@ -36,7 +36,7 @@ let reviewResult: ReviewResult = {
 
 function DocsReviewOrchestration() {
   return (
-    <PhaseRegistry>
+    <PhaseRegistryProvider>
       {/* Phase 1: Analyze docs for correctness */}
       <Phase name="analyze">
         <Step name="review-docs">
@@ -147,7 +147,7 @@ ${reviewResult.filesChanged.map(f => `- ${f}`).join('\n') || 'See diff for detai
           </Claude>
         </Step>
       </Phase>
-    </PhaseRegistry>
+    </PhaseRegistryProvider>
   )
 }
 

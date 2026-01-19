@@ -12,13 +12,13 @@ import { SmithersProvider } from '../src/components/SmithersProvider.js'
 import { Claude } from '../src/components/Claude.js'
 import { Phase } from '../src/components/Phase.js'
 import { Step } from '../src/components/Step.js'
-import { PhaseRegistry } from '../src/components/PhaseRegistry.js'
+import { PhaseRegistryProvider } from '../src/components/PhaseRegistry.js'
 import { createSmithersDB } from '../src/db/index.js'
 import { createSmithersRoot } from '../src/reconciler/index.js'
 
-const TYPECHECK_FAILED = process.env.TYPECHECK_FAILED === 'true'
-const LINT_FAILED = process.env.LINT_FAILED === 'true'
-const TEST_FAILED = process.env.TEST_FAILED === 'true'
+const TYPECHECK_FAILED = process.env['TYPECHECK_FAILED'] === 'true'
+const LINT_FAILED = process.env['LINT_FAILED'] === 'true'
+const TEST_FAILED = process.env['TEST_FAILED'] === 'true'
 
 async function readErrorOutput(filename: string): Promise<string> {
   try {
@@ -39,7 +39,7 @@ function FixCIOrchestration({ typecheckErrors, lintErrors, testErrors }: {
   if (TEST_FAILED) failures.push('test')
 
   return (
-    <PhaseRegistry>
+    <PhaseRegistryProvider>
       <Phase name="fix-failures">
         <Step name="codex-fix">
           <Claude
@@ -121,7 +121,7 @@ Output a brief summary of what was fixed.`}
           </Claude>
         </Step>
       </Phase>
-    </PhaseRegistry>
+    </PhaseRegistryProvider>
   )
 }
 
