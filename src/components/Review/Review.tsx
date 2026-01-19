@@ -194,7 +194,7 @@ export function Review(props: ReviewProps): ReactNode {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
-      taskIdRef.current = smithers.db.tasks.start('review', props.target.type)
+      taskIdRef.current = smithers.db.tasks.start('review')
 
       try {
         statusRef.current = 'running'

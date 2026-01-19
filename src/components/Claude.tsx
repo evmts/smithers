@@ -94,7 +94,7 @@ export function Claude(props: ClaudeProps): ReactNode {
   useEffectOnValueChange(executionKey, () => {
     if (!shouldExecute) return
     ;(async () => {
-      taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
+      taskIdRef.current = db.tasks.start('claude')
 
       if (isStopRequested()) {
         db.tasks.complete(taskIdRef.current)

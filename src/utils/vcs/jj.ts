@@ -94,3 +94,85 @@ export async function isJJRepo(): Promise<boolean> {
     return false
   }
 }
+
+/**
+ * JJ state snapshot for out-of-loop access
+ */
+export interface JJStateSnapshot {
+  changeId: string
+  description: string
+  status: VCSStatus
+  isJJRepo: boolean
+  timestamp: number
+}
+
+let cachedSnapshot: JJStateSnapshot | null = null
+let lastFetchTime = 0
+const CACHE_TTL_MS = 100
+
+/**
+ * Get a point-in-time snapshot of JJ state synchronously.
+ * Can be called outside of React component render cycles.
+ * 
+ * Uses a short-lived cache (100ms) to avoid repeated jj calls
+ * within the same synchronous execution context.
+ * 
+ * @returns Cached JJStateSnapshot or null if no snapshot available yet
+ */
+export function useSnapshot(): JJStateSnapshot | null {
+  const now = Date.now()
+  if (cachedSnapshot && (now - lastFetchTime) < CACHE_TTL_MS) {
+    return cachedSnapshot
+  }
+  return cachedSnapshot
+}
+
+/**
+ * Refresh the JJ state snapshot asynchronously.
+ * Call this to update the snapshot that useSnapshot() returns.
+ * 
+ * @returns Promise resolving to fresh JJStateSnapshot
+ */
+export async function refreshSnapshot(): Promise<JJStateSnapshot> {
+  const isRepo = await isJJRepo()
+  
+  if (!isRepo) {
+    const snapshot: JJStateSnapshot = {
+      changeId: '',
+      description: '',
+      status: { modified: [], added: [], deleted: [] },
+      isJJRepo: false,
+      timestamp: Date.now(),
+    }
+    cachedSnapshot = snapshot
+    lastFetchTime = Date.now()
+    return snapshot
+  }
+
+  const [changeId, description, status] = await Promise.all([
+    getJJChangeId('@'),
+    Bun.$`jj log -r @ --no-graph -T description`.text().then(s => s.trim()),
+    getJJStatus(),
+  ])
+
+  const snapshot: JJStateSnapshot = {
+    changeId,
+    description,
+    status,
+    isJJRepo: true,
+    timestamp: Date.now(),
+  }
+  
+  cachedSnapshot = snapshot
+  lastFetchTime = Date.now()
+  return snapshot
+}
+
+/**
+ * Clear the cached snapshot.
+ * Useful for testing or forcing a fresh fetch.
+ */
+export function clearSnapshotCache(): void {
+  cachedSnapshot = null
+  lastFetchTime = 0
+}

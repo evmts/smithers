@@ -123,17 +123,17 @@ const mapCommit = (row: CommitRow | null): Commit | null => {
   return {
     id: row.id,
     execution_id: row.execution_id,
+    agent_id: row.agent_id ?? undefined,
     vcs_type: row.vcs_type as Commit['vcs_type'],
     commit_hash: row.commit_hash,
+    change_id: row.change_id ?? undefined,
     message: row.message,
+    author: row.author ?? undefined,
+    files_changed: row.files_changed ? parseJson(row.files_changed, []) : undefined,
+    insertions: row.insertions ?? undefined,
+    deletions: row.deletions ?? undefined,
+    smithers_metadata: row.smithers_metadata ? parseJson(row.smithers_metadata, {}) : undefined,
     created_at: new Date(row.created_at),
-    ...(row.agent_id !== null && { agent_id: row.agent_id }),
-    ...(row.change_id !== null && { change_id: row.change_id }),
-    ...(row.author !== null && { author: row.author }),
-    ...(row.files_changed !== null && { files_changed: parseJson(row.files_changed, []) }),
-    ...(row.insertions !== null && { insertions: row.insertions }),
-    ...(row.deletions !== null && { deletions: row.deletions }),
-    ...(row.smithers_metadata !== null && { smithers_metadata: parseJson(row.smithers_metadata, {}) }),
   }
 }
 
@@ -143,13 +143,13 @@ const mapSnapshot = (row: SnapshotRow | null): Snapshot | null => {
     id: row.id,
     execution_id: row.execution_id,
     change_id: row.change_id,
+    commit_hash: row.commit_hash ?? undefined,
+    description: row.description ?? undefined,
+    files_modified: row.files_modified ? parseJson(row.files_modified, []) : undefined,
+    files_added: row.files_added ? parseJson(row.files_added, []) : undefined,
+    files_deleted: row.files_deleted ? parseJson(row.files_deleted, []) : undefined,
     has_conflicts: row.has_conflicts === 1,
     created_at: new Date(row.created_at),
-    ...(row.commit_hash !== null && { commit_hash: row.commit_hash }),
-    ...(row.description !== null && { description: row.description }),
-    ...(row.files_modified !== null && { files_modified: parseJson(row.files_modified, []) }),
-    ...(row.files_added !== null && { files_added: parseJson(row.files_added, []) }),
-    ...(row.files_deleted !== null && { files_deleted: parseJson(row.files_deleted, []) }),
   }
 }
 
@@ -158,18 +158,18 @@ const mapReview = (row: ReviewRow | null): Review | null => {
   return {
     id: row.id,
     execution_id: row.execution_id,
+    agent_id: row.agent_id ?? undefined,
     target_type: row.target_type as Review['target_type'],
+    target_ref: row.target_ref ?? undefined,
     approved: row.approved === 1,
     summary: row.summary,
     issues: parseJson(row.issues, []),
+    approvals: row.approvals ? parseJson(row.approvals, []) : undefined,
+    reviewer_model: row.reviewer_model ?? undefined,
     blocking: row.blocking === 1,
     posted_to_github: row.posted_to_github === 1,
     posted_to_git_notes: row.posted_to_git_notes === 1,
     created_at: new Date(row.created_at),
-    ...(row.agent_id !== null && { agent_id: row.agent_id }),
-    ...(row.target_ref !== null && { target_ref: row.target_ref }),
-    ...(row.approvals !== null && { approvals: parseJson(row.approvals, []) }),
-    ...(row.reviewer_model !== null && { reviewer_model: row.reviewer_model }),
   }
 }
 
@@ -178,13 +178,13 @@ const mapReport = (row: ReportRow | null): Report | null => {
   return {
     id: row.id,
     execution_id: row.execution_id,
+    agent_id: row.agent_id ?? undefined,
     type: row.type as Report['type'],
     title: row.title,
     content: row.content,
+    data: row.data ? parseJson(row.data, {}) : undefined,
     severity: row.severity as Report['severity'],
     created_at: new Date(row.created_at),
-    ...(row.agent_id !== null && { agent_id: row.agent_id }),
-    ...(row.data !== null && { data: parseJson(row.data, {}) }),
   }
 }
 

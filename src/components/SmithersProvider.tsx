@@ -423,7 +423,8 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
         // Set up stop condition checking
         if (props.stopConditions && props.stopConditions.length > 0) {
           checkIntervalIdRef.current = setInterval(async () => {
-            if (stopRequested) {
+            const currentStopRequested = props.db.state.get('stop_requested')
+            if (currentStopRequested) {
               if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
               return
             }

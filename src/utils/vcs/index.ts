@@ -44,4 +44,8 @@ export {
   getJJStatus,
   getJJDiffStats,
   isJJRepo,
+  useSnapshot,
+  refreshSnapshot,
+  clearSnapshotCache,
+  type JJStateSnapshot,
 } from './jj.js'

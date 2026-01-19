@@ -2,26 +2,13 @@
 
 import type { SmithersDB } from '../../db/index.js'
 
-interface IncompleteExecution {
-  id: string
-  name?: string
-  file_path: string
-  started_at?: Date
-}
-
-interface Transition {
-  created_at: string
-  key: string
-  new_value: unknown
-}
-
 export async function showRecovery(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('CRASH RECOVERY')
   console.log('═══════════════════════════════════════════════════════════')
   console.log('')
 
-  const incomplete: IncompleteExecution | null = await db.execution.findIncomplete()
+  const incomplete = await db.execution.findIncomplete()
 
   if (!incomplete) {
     console.log('  ✓ No incomplete executions found')
@@ -35,7 +22,7 @@ export async function showRecovery(db: SmithersDB) {
   console.log(`  Name: ${incomplete.name || 'Unnamed'}`)
   console.log(`  ID: ${incomplete.id}`)
   console.log(`  File: ${incomplete.file_path}`)
-  console.log(`  Started: ${incomplete.started_at?.toLocaleString() ?? 'Unknown'}`)
+  console.log(`  Started: ${incomplete.started_at ? incomplete.started_at.toLocaleString() : 'Unknown'}`)
   console.log('')
 
   // Get last known state
@@ -47,7 +34,7 @@ export async function showRecovery(db: SmithersDB) {
   console.log('')
 
   // Get transition history
-  const transitions: Transition[] = await db.state.history(undefined, 5)
+  const transitions = await db.state.history(undefined, 5)
   console.log(`  Last ${transitions.length} Transitions:`)
   for (const t of transitions) {
     console.log(`    ${new Date(t.created_at).toLocaleString()}: ${t.key} = ${JSON.stringify(t.new_value)}`)

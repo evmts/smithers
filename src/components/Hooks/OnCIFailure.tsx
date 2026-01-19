@@ -205,7 +205,7 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
             props.onFailure?.(failure)
 
             // Register task for tracking - children will handle completion
-            taskIdRef.current = db.tasks.start('ci-failure-hook', props.provider)
+            taskIdRef.current = db.tasks.start('ci-failure-hook')
             // Complete immediately as children handle their own task registration
             db.tasks.complete(taskIdRef.current)
 

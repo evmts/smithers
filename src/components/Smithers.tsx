@@ -123,7 +123,7 @@ export interface SmithersProps {
  * ```
  */
 export function Smithers(props: SmithersProps): ReactNode {
-  const { db, executionId, isStopRequested } = useSmithers()
+  const { db, reactiveDb, executionId, isStopRequested } = useSmithers()
   const worktree = useWorktree()
   const phase = usePhaseContext()
   const phaseActive = phase?.isActive ?? true
@@ -138,7 +138,7 @@ export function Smithers(props: SmithersProps): ReactNode {
 
   // Query reactive state from DB
   const { data: agentRow } = useQueryOne<{status: string, result: string | null, result_structured: string | null, error: string | null}>(
-    db.db,
+    reactiveDb,
     "SELECT status, result, result_structured, error FROM agents WHERE id = ?",
     [subagentIdRef.current]
   )
@@ -146,7 +146,7 @@ export function Smithers(props: SmithersProps): ReactNode {
   // Sub-status for planning/executing (stored in state table since agents table only has pending/running/completed/failed)
   const substatusKey = subagentIdRef.current ? `smithers:${subagentIdRef.current}:substatus` : null
   const { data: substatus } = useQueryValue<string>(
-    db.db,
+    reactiveDb,
     "SELECT value FROM state WHERE key = ?",
     [substatusKey]
   )
@@ -185,7 +185,7 @@ export function Smithers(props: SmithersProps): ReactNode {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
-      taskIdRef.current = db.tasks.start('smithers', props.plannerModel ?? 'sonnet')
+      taskIdRef.current = db.tasks.start('smithers')
 
       if (isStopRequested()) {
         db.tasks.complete(taskIdRef.current)
