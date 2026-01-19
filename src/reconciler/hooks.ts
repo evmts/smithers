@@ -4,13 +4,27 @@
  * License: MIT
  */
 
+import type { ReactNode } from "react";
 import {
-  DependencyList,
-  EffectCallback,
+  createElement,
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useRef,
+  type DependencyList,
+  type EffectCallback,
 } from "react";
+
+const ExecutionGateContext = createContext(true);
+
+export function ExecutionGateProvider(props: { enabled: boolean; children: ReactNode }): ReactNode {
+  return createElement(ExecutionGateContext.Provider, { value: props.enabled }, props.children);
+}
+
+export function useExecutionGate(): boolean {
+  return useContext(ExecutionGateContext);
+}
 
 /**
  * Runs an effect exactly once when the component mounts.
@@ -27,9 +41,19 @@ export const useEffectOnce = (effect: EffectCallback) => {
  * - Is easier to grep for mount behavior
  */
 export const useMount = (fn: () => void) => {
-  useEffectOnce(() => {
-    fn();
-  });
+  const enabled = useExecutionGate();
+  const fnRef = useRef(fn);
+  const hasRunRef = useRef(false);
+
+  fnRef.current = fn;
+
+  useEffect(() => {
+    if (!enabled || hasRunRef.current) {
+      return;
+    }
+    hasRunRef.current = true;
+    fnRef.current();
+  }, [enabled]);
 };
 
 /**
