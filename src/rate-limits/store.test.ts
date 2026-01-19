@@ -107,13 +107,13 @@ describe('RateLimitStore', () => {
 
     test('stores tier information', () => {
       const store = new RateLimitStore({ ttlMs: 10_000, db })
-      const status = createMockStatus({ tier: 'tier-4' })
+      const status = createMockStatus({ provider: 'openai', model: 'gpt-tier-test', tier: 'tier-4' })
 
       store.set(status)
 
       const rows = db.db.query<{ tier: string }>(
         'SELECT tier FROM rate_limit_snapshots WHERE provider = ? AND model = ? ORDER BY captured_at DESC LIMIT 1',
-        ['anthropic', 'claude-sonnet-4']
+        ['openai', 'gpt-tier-test']
       )
 
       expect(rows[0].tier).toBe('tier-4')

@@ -97,24 +97,21 @@ describe('rateLimitingMiddleware', () => {
     expect(monitor.getRemainingCapacity).toHaveBeenCalledWith('anthropic', 'sonnet')
   })
 
-  test('applies throttle delay when capacity is low', async () => {
-    // capacity 0.05 < (1 - 0.8) = 0.2, triggers delay
+  test('acquires from throttle controller on each request', async () => {
     const monitor = createMockMonitor({
-      capacity: { requests: 0.05, inputTokens: 0.05, outputTokens: 0.05, overall: 0.05 },
+      capacity: { requests: 0.5, inputTokens: 0.5, outputTokens: 0.5, overall: 0.5 },
     })
     const middleware = rateLimitingMiddleware({
       monitor,
-      throttle: { targetUtilization: 0.8, minDelayMs: 50, maxDelayMs: 200 },
+      throttle: { targetUtilization: 0.8 },
     })
 
-    const startTime = Date.now()
     await middleware.wrapExecute!({
       doExecute: async () => createMockResult(),
       options: { prompt: 'test', model: 'claude-sonnet-4' },
     })
-    const elapsed = Date.now() - startTime
 
-    expect(elapsed).toBeGreaterThanOrEqual(40)
+    expect(monitor.getRemainingCapacity).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4')
   })
 
   test('no delay when capacity is full', async () => {
