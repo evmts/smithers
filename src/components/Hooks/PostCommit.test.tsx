@@ -37,8 +37,13 @@ async function createTestContext(): Promise<TestContext> {
 }
 
 function cleanupTestContext(ctx: TestContext): void {
+  // Dispose root FIRST to trigger React cleanup while db is still open
   ctx.root.dispose()
-  ctx.db.close()
+  // Small delay to allow async cleanup to complete
+  // Then close DB
+  setTimeout(() => {
+    try { ctx.db.close() } catch {}
+  }, 10)
 }
 
 // Helper to render PostCommit within SmithersProvider

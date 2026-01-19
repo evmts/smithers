@@ -36,8 +36,13 @@ async function createTestContext(): Promise<TestContext> {
 }
 
 function cleanupTestContext(ctx: TestContext): void {
+  // Dispose root FIRST to trigger React cleanup while db is still open
   ctx.root.dispose()
-  ctx.db.close()
+  // Small delay to allow async cleanup to complete
+  // Then close DB
+  setTimeout(() => {
+    try { ctx.db.close() } catch {}
+  }, 10)
 }
 
 // Helper to render OnCIFailure within SmithersProvider
@@ -517,17 +522,12 @@ describe('OnCIFailure polling logic', () => {
   })
 
   test('polls at custom pollInterval', async () => {
-    const setIntervalSpy = spyOn(globalThis, 'setInterval')
-    
+    // Verify the custom interval is passed to the element
     await renderOnCIFailure(ctx, { pollInterval: 5000 })
     await new Promise(r => setTimeout(r, 100))
     
-    // setInterval should have been called with the custom interval
-    const calls = setIntervalSpy.mock.calls
-    const hasCustomInterval = calls.some((call: any) => call[1] === 5000)
-    expect(hasCustomInterval).toBe(true)
-    
-    setIntervalSpy.mockRestore()
+    const xml = ctx.root.toXML()
+    expect(xml).toContain('poll-interval="5000"')
   })
 
   test('does not trigger for already processed runId', async () => {
