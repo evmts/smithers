@@ -199,7 +199,7 @@ function parseArgs(): string | null {
 }
 
 async function exportSection(sectionName: string): Promise<void> {
-  const config = SECTIONS[sectionName];
+  const config = SECTIONS[sectionName]!;
   console.log(`🔍 Exporting section: ${sectionName} (${config.description})...`);
 
   let markdown = `# Smithers Codebase Export: ${sectionName}\n\n`;

@@ -17,11 +17,11 @@ export interface ClassificationResult {
 
 export interface CaptureContext {
   content: string
-  commitHash?: string
-  commitMessage?: string
-  priority?: 'high' | 'medium' | 'low'
-  title?: string
-  cwd?: string
+  commitHash?: string | undefined
+  commitMessage?: string | undefined
+  priority?: 'high' | 'medium' | 'low' | undefined
+  title?: string | undefined
+  cwd?: string | undefined
 }
 
 export interface GeneratedCapture {
