@@ -11,6 +11,15 @@ import { useMount } from '../../../src/reconciler/hooks.js'
 import { useQueryValue } from '../../../src/reactive-sqlite/index.js'
 import type { WorktreeInfo } from '../types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 const STATE_KEYS = {
   worktrees: 'worktree-status:worktrees',
   loading: 'worktree-status:loading',
@@ -42,7 +51,7 @@ export function useWorktreeStatus(options: UseWorktreeStatusOptions): {
     "SELECT value FROM state WHERE key = ?",
     [`${prefix}:worktrees`]
   )
-  const worktrees: WorktreeInfo[] = worktreesJson ? JSON.parse(worktreesJson) : []
+  const worktrees: WorktreeInfo[] = parseState(worktreesJson, [])
 
   const { data: loadingStr } = useQueryValue<string>(
     reactiveDb,

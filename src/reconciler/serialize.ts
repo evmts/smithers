@@ -7,6 +7,7 @@ import type { SmithersNode } from './types.js'
 const KNOWN_TYPES = new Set([
   // Core orchestration
   'claude',
+  'amp',
   'ralph',
   'phase',
   'step',

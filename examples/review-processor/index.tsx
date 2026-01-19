@@ -12,7 +12,7 @@
  * - Parallel subagent execution with concurrency limit
  * - Retry handling for failed agents
  * - Deferred processing for difficult reviews
- * - Git commit with --no-verify for chaotic commits
+ * - Git commit without bypassing precommit hooks
  */
 
 import { SmithersProvider } from '../../src/components/SmithersProvider.js'

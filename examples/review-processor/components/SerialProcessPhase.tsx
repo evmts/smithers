@@ -44,7 +44,7 @@ This review is marked as difficult. Take extra care:
    - Plan the approach first
    - Make incremental commits
    - Run tests after each significant change
-   - Use \`git commit --no-verify\` to bypass precommit hooks
+   - Do not bypass precommit hooks
 
 4. If you cannot complete it, document what you tried and why it failed
 

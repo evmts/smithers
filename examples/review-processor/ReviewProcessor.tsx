@@ -20,6 +20,15 @@ import { SerialProcessPhase } from './components/SerialProcessPhase.js'
 import { ReportPhase } from './components/ReportPhase.js'
 import type { ProcessorState, ReviewInfo } from './types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 export interface ReviewProcessorProps {
   maxParallel: number
   reviewsDir: string
@@ -35,9 +44,13 @@ export function ReviewProcessor({ maxParallel, reviewsDir }: ReviewProcessorProp
     [stateKey]
   )
 
-  const state: ProcessorState = storedState
-    ? JSON.parse(storedState)
-    : { reviews: [], scanned: false, activeAgents: 0, completed: [], failed: [] }
+  const state: ProcessorState = parseState(storedState, {
+    reviews: [],
+    scanned: false,
+    activeAgents: 0,
+    completed: [],
+    failed: [],
+  })
 
   const hasScannedRef = useRef(false)
 
@@ -46,42 +59,46 @@ export function ReviewProcessor({ maxParallel, reviewsDir }: ReviewProcessorProp
     hasScannedRef.current = true
 
     ;(async () => {
-      console.log('[ReviewProcessor] Scanning reviews directory...')
+      try {
+        console.log('[ReviewProcessor] Scanning reviews directory...')
 
-      const files = await Bun.$`ls -1 ${reviewsDir}/*.md 2>/dev/null`.text()
-      const filenames = files.trim().split('\n').filter(Boolean)
+        const files = await Bun.$`ls -1 ${reviewsDir}/*.md 2>/dev/null`.text()
+        const filenames = files.trim().split('\n').filter(Boolean)
 
-      const reviews: ReviewInfo[] = []
-      for (const filepath of filenames) {
-        const content = await Bun.file(filepath).text()
-        const name = filepath.split('/').pop()?.replace('.md', '') ?? ''
-        
-        // Check for difficulty markers
-        const isDifficult = 
-          content.includes('DIFFICULT') ||
-          content.includes('complexity:') && content.includes('high') ||
-          content.includes('## Priority') && content.includes('difficult')
+        const reviews: ReviewInfo[] = []
+        for (const filepath of filenames) {
+          const content = await Bun.file(filepath).text()
+          const name = filepath.split('/').pop()?.replace('.md', '') ?? ''
+          
+          // Check for difficulty markers
+          const isDifficult = 
+            content.includes('DIFFICULT') ||
+            content.includes('complexity:') && content.includes('high') ||
+            content.includes('## Priority') && content.includes('difficult')
 
-        reviews.push({
-          name,
-          path: filepath,
-          content,
-          isDifficult,
-          status: 'pending',
-          retries: 0,
-        })
+          reviews.push({
+            name,
+            path: filepath,
+            content,
+            isDifficult,
+            status: 'pending',
+            retries: 0,
+          })
+        }
+
+        const newState: ProcessorState = {
+          reviews,
+          scanned: true,
+          activeAgents: 0,
+          completed: [],
+          failed: [],
+        }
+
+        db.state.set(stateKey, newState, 'scan-complete')
+        console.log(`[ReviewProcessor] Found ${reviews.length} reviews (${reviews.filter(r => r.isDifficult).length} difficult)`)
+      } catch (err) {
+        console.error('[ReviewProcessor] Scan failed:', err)
       }
-
-      const newState: ProcessorState = {
-        reviews,
-        scanned: true,
-        activeAgents: 0,
-        completed: [],
-        failed: [],
-      }
-
-      db.state.set(stateKey, newState, 'scan-complete')
-      console.log(`[ReviewProcessor] Found ${reviews.length} reviews (${reviews.filter(r => r.isDifficult).length} difficult)`)
     })()
   })
 

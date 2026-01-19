@@ -1,7 +1,8 @@
-import { useRef, useReducer, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
+import { useVersionTracking } from '../../reactive-sqlite/index.js'
 
 export interface RebaseProps {
   destination?: string
@@ -43,7 +44,7 @@ function parseConflicts(output: string): string[] {
 export function Rebase(props: RebaseProps): ReactNode {
   const smithers = useSmithers()
   const execution = useExecutionContext()
-  const [, forceUpdate] = useReducer((x) => x + 1, 0)
+  const { invalidateAndUpdate } = useVersionTracking()
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'conflict' | 'error'>('pending')
   const conflictsRef = useRef<string[]>([])
@@ -58,7 +59,7 @@ export function Rebase(props: RebaseProps): ReactNode {
 
       try {
         statusRef.current = 'running'
-        forceUpdate()
+        invalidateAndUpdate()
 
         const args: string[] = ['rebase']
 
@@ -94,7 +95,7 @@ export function Rebase(props: RebaseProps): ReactNode {
         if (allConflicts.length > 0 || hasConflicts) {
           if (isMounted()) {
             statusRef.current = 'conflict'
-            forceUpdate()
+            invalidateAndUpdate()
             props.onConflict?.(allConflicts)
           }
 
@@ -112,7 +113,7 @@ export function Rebase(props: RebaseProps): ReactNode {
         } else {
           if (isMounted()) {
             statusRef.current = 'complete'
-            forceUpdate()
+            invalidateAndUpdate()
           }
 
           await smithers.db.vcs.addReport({
@@ -129,7 +130,7 @@ export function Rebase(props: RebaseProps): ReactNode {
         if (isMounted()) {
           errorRef.current = err instanceof Error ? err : new Error(String(err))
           statusRef.current = 'error'
-          forceUpdate()
+          invalidateAndUpdate()
         }
 
         const errorObj = err instanceof Error ? err : new Error(String(err))

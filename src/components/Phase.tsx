@@ -1,11 +1,12 @@
 // Phase component with automatic SQLite-backed state management
 // Phases are always rendered in output, but only active phase renders children
 
-import { useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers, ExecutionBoundary } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
 import { createLogger, type Logger } from '../debug/index.js'
+import { useEffectOnValueChange } from '../reconciler/hooks.js'
 
 type PhaseStatus = 'pending' | 'active' | 'completed' | 'skipped' | 'error'
 
@@ -97,6 +98,7 @@ export function Phase(props: PhaseProps): ReactNode {
   const hasError = skipIfErrorRef.current !== null
   const isActive = !isSkipped && !hasError && (registry ? registry.isPhaseActive(myIndex) : true)
   const isCompleted = !isSkipped && !hasError && (registry ? registry.isPhaseCompleted(myIndex) : false)
+  const currentPhaseIndex = registry?.currentPhaseIndex ?? null
 
   // Compute status string for output
   const status = getPhaseStatus(isSkipped, isActive, isCompleted, hasError)
@@ -104,8 +106,13 @@ export function Phase(props: PhaseProps): ReactNode {
   // Track if we've already processed the skip for this phase
   const hasSkippedRef = useRef(false)
 
+  const skipKey = useMemo(
+    () => ({ currentPhaseIndex, isSkipped }),
+    [currentPhaseIndex, isSkipped]
+  )
+
   // Handle skipped phases only when they become active (not on mount)
-  useEffect(() => {
+  useEffectOnValueChange(skipKey, () => {
     if (!executionEnabled) return
     if (registry?.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
       hasSkippedRef.current = true
@@ -120,10 +127,15 @@ export function Phase(props: PhaseProps): ReactNode {
 
       registry?.advancePhase()
     }
-  }, [registry?.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry, executionEnabled, log])
+  }, [currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry, executionEnabled, log])
 
   // Handle phase lifecycle transitions
-  useEffect(() => {
+  const lifecycleKey = useMemo(
+    () => ({ isActive, isSkipped, hasError, executionEnabled }),
+    [isActive, isSkipped, hasError, executionEnabled]
+  )
+
+  useEffectOnValueChange(lifecycleKey, () => {
     if (isSkipped || hasError || !executionEnabled) return
 
     // Activation: transition from inactive to active

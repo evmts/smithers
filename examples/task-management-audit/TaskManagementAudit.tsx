@@ -14,6 +14,15 @@ import { TodoAudit } from './TodoAudit.js'
 import { RootMdCleanup } from './RootMdCleanup.js'
 import type { AuditState, WorktreeInfo, IssueInfo, RootMdFile } from './types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 export function TaskManagementAudit(): ReactNode {
   const { db, reactiveDb } = useSmithers()
   const stateKey = 'audit:state'
@@ -25,9 +34,13 @@ export function TaskManagementAudit(): ReactNode {
     [stateKey]
   )
 
-  const state: AuditState = storedState
-    ? JSON.parse(storedState)
-    : { worktrees: [], issues: [], todoItems: [], rootMdFiles: [], scanned: false }
+  const state: AuditState = parseState(storedState, {
+    worktrees: [],
+    issues: [],
+    todoItems: [],
+    rootMdFiles: [],
+    scanned: false,
+  })
 
   const hasScannedRef = useRef(false)
 
@@ -37,57 +50,61 @@ export function TaskManagementAudit(): ReactNode {
     hasScannedRef.current = true
 
     ;(async () => {
-      console.log('[Audit] Scanning repository...')
+      try {
+        console.log('[Audit] Scanning repository...')
 
-      // Scan worktrees
-      const worktreeList = await Bun.$`ls -1 .worktrees/ 2>/dev/null || echo ""`.text()
-      const worktreeNames = worktreeList.trim().split('\n').filter(Boolean)
-      
-      const worktrees: WorktreeInfo[] = []
-      for (const name of worktreeNames) {
-        const mergedCheck = await Bun.$`git branch --merged main | grep "issue/${name}" || true`.text()
-        worktrees.push({
-          name,
-          branch: `issue/${name}`,
-          merged: mergedCheck.trim().length > 0,
+        // Scan worktrees
+        const worktreeList = await Bun.$`ls -1 .worktrees/ 2>/dev/null || echo ""`.text()
+        const worktreeNames = worktreeList.trim().split('\n').filter(Boolean)
+        
+        const worktrees: WorktreeInfo[] = []
+        for (const name of worktreeNames) {
+          const mergedCheck = await Bun.$`git branch --merged main | grep "issue/${name}" || true`.text()
+          worktrees.push({
+            name,
+            branch: `issue/${name}`,
+            merged: mergedCheck.trim().length > 0,
+          })
+        }
+
+        // Scan issues
+        const issueList = await Bun.$`ls -1 issues/*.md 2>/dev/null | grep -v TEMPLATE || echo ""`.text()
+        const issueFiles = issueList.trim().split('\n').filter(Boolean)
+        
+        const issues: IssueInfo[] = issueFiles.map(f => {
+          const name = f.replace('issues/', '').replace('.md', '')
+          return {
+            name,
+            hasWorktree: worktreeNames.includes(name),
+            implemented: false,
+          }
         })
-      }
 
-      // Scan issues
-      const issueList = await Bun.$`ls -1 issues/*.md 2>/dev/null | grep -v TEMPLATE || echo ""`.text()
-      const issueFiles = issueList.trim().split('\n').filter(Boolean)
-      
-      const issues: IssueInfo[] = issueFiles.map(f => {
-        const name = f.replace('issues/', '').replace('.md', '')
-        return {
-          name,
-          hasWorktree: worktreeNames.includes(name),
-          implemented: false,
+        // Scan root .md files
+        const mdFiles = ['TODO.md', 'State.md', 'PROMPT.md', 'CONTRIBUTING.md']
+        const rootMdFiles: RootMdFile[] = []
+        for (const path of mdFiles) {
+          try {
+            const content = await Bun.file(path).text()
+            rootMdFiles.push({ path, hasContent: content.trim().length > 50 })
+          } catch {
+            // File doesn't exist
+          }
         }
-      })
 
-      // Scan root .md files
-      const mdFiles = ['TODO.md', 'State.md', 'PROMPT.md', 'CONTRIBUTING.md']
-      const rootMdFiles: RootMdFile[] = []
-      for (const path of mdFiles) {
-        try {
-          const content = await Bun.file(path).text()
-          rootMdFiles.push({ path, hasContent: content.trim().length > 50 })
-        } catch {
-          // File doesn't exist
-        }
+        // Save state
+        db.state.set(stateKey, {
+          worktrees,
+          issues,
+          todoItems: [],
+          rootMdFiles,
+          scanned: true,
+        } as AuditState, 'audit-scan')
+
+        console.log(`[Audit] Found ${worktrees.length} worktrees, ${issues.length} issues`)
+      } catch (err) {
+        console.error('[Audit] Scan failed:', err)
       }
-
-      // Save state
-      db.state.set(stateKey, {
-        worktrees,
-        issues,
-        todoItems: [],
-        rootMdFiles,
-        scanned: true,
-      } as AuditState, 'audit-scan')
-
-      console.log(`[Audit] Found ${worktrees.length} worktrees, ${issues.length} issues`)
     })()
   })
 

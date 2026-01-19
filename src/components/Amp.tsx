@@ -1,23 +1,20 @@
-import { useRef, useMemo, type ReactNode } from 'react'
+import { useRef, useReducer, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
 import { useExecutionScope } from './ExecutionScope.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
-import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
-import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
-import type { ClaudeProps, AgentResult, CLIExecutionOptions } from './agents/types.js'
+import { executeAmpCLI } from './agents/amp-cli/executor.js'
+import type { AmpProps, AmpCLIExecutionOptions } from './agents/types/amp.js'
+import type { AgentResult } from './agents/types/execution.js'
 import { useMountedState, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { LogWriter } from '../monitor/log-writer.js'
 import { uuid } from '../db/utils.js'
 import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
-import { useQuery, useVersionTracking } from '../reactive-sqlite/index.js'
+import { useQuery } from '../reactive-sqlite/index.js'
 import { extractText } from '../utils/extract-text.js'
 import { composeMiddleware } from '../middleware/compose.js'
 import { retryMiddleware } from '../middleware/retry.js'
 import { validationMiddleware, ValidationError } from '../middleware/validation.js'
-import { ClaudeStreamParser } from '../streaming/claude-parser.js'
-import type { SmithersStreamPart } from '../streaming/types.js'
-import type { StreamSummary } from '../db/types.js'
 import { createLogger, type Logger } from '../debug/index.js'
 
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
@@ -33,37 +30,33 @@ type AgentRow = {
 }
 
 /**
- * Claude Agent Component
+ * Amp Agent Component
  *
- * Executes Claude CLI as a React component with database tracking,
+ * Executes Amp CLI as a React component with database tracking,
  * progress reporting, and retry logic.
  *
  * @example
  * ```tsx
- * <Claude model="sonnet" onFinished={(result) => console.log(result.output)}>
+ * <Amp mode="smart" onFinished={(result) => console.log(result.output)}>
  *   Fix the bug in src/utils.ts
- * </Claude>
+ * </Amp>
  * ```
  */
-export function Claude(props: ClaudeProps): ReactNode {
+export function Amp(props: AmpProps): ReactNode {
   const { db, reactiveDb, executionId, isStopRequested, middleware: providerMiddleware, executionEnabled } = useSmithers()
   const worktree = useWorktree()
-  // Use ExecutionScope for consistent gating with Step/Phase
-  // ExecutionScope is set by Step's ExecutionScopeProvider based on whether the step is active
   const executionScope = useExecutionScope()
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
 
-  // Create logger with agent context
   const log: Logger = useMemo(
-    () => createLogger('Claude', { model: props.model ?? 'sonnet' }),
-    [props.model]
+    () => createLogger('Amp', { mode: props.mode ?? 'smart' }),
+    [props.mode]
   )
 
-  // TODO abstract all the following block of lines into named hooks
   const agentIdRef = useRef<string | null>(null)
   const tailLogRef = useRef<TailLogEntry[]>([])
-  const { invalidateAndUpdate } = useVersionTracking()
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
   const { data: agentRows } = useQuery<AgentRow>(
     reactiveDb,
     "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",
@@ -84,7 +77,7 @@ export function Claude(props: ClaudeProps): ReactNode {
       input: agentRow.tokens_input ?? 0,
       output: agentRow.tokens_output ?? 0,
     },
-    turnsUsed: 0, // Not stored in DB (we ralph), default to 0
+    turnsUsed: 0,
     durationMs: agentRow.duration_ms ?? 0,
     stopReason: 'completed',
   } : null
@@ -98,7 +91,6 @@ export function Claude(props: ClaudeProps): ReactNode {
   const lastTailLogUpdateRef = useRef<number>(0)
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Unified execution gating: global executionEnabled AND scope-local enabled (from Step/Phase)
   const shouldExecute = executionEnabled && executionScope.enabled
   const executionKey = shouldExecute ? ralphCount : null
 
@@ -113,7 +105,7 @@ export function Claude(props: ClaudeProps): ReactNode {
     if (!shouldExecute) return
     ;(async () => {
       const endTotalTiming = log.time('agent_execution')
-      taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
+      taskIdRef.current = db.tasks.start('amp', props.mode ?? 'smart')
 
       if (isStopRequested()) {
         log.info('Execution stopped by request')
@@ -125,39 +117,14 @@ export function Claude(props: ClaudeProps): ReactNode {
 
       const logWriter = new LogWriter(undefined, executionId ?? undefined)
       const logId = uuid()
-      const typedStreamingEnabled = props.experimentalTypedStreaming ?? false
-      const useLegacyLogFormat = typedStreamingEnabled && (props.legacyLogFormat ?? false)
-      const recordStreamEvents = props.recordStreamEvents ?? props.reportingEnabled !== false
-      const streamLogFilename = typedStreamingEnabled ? `agent-${logId}.ndjson` : `agent-${logId}.log`
-      const legacyLogFilename = useLegacyLogFormat ? `agent-${logId}.log.legacy.txt` : null
-      const streamParser = typedStreamingEnabled ? new ClaudeStreamParser() : null
-      const streamSummary: StreamSummary = {
-        textBlocks: 0,
-        reasoningBlocks: 0,
-        toolCalls: 0,
-        toolResults: 0,
-        errors: 0,
-      }
-      const logFilename = streamLogFilename
+      const logFilename = `agent-${logId}.log`
       let logPath: string | undefined
 
-      log.debug('Starting execution', { logId, typedStreaming: typedStreamingEnabled })
+      log.debug('Starting execution', { logId })
 
       try {
         const childrenString = extractText(props.children)
-
-        const { configs: mcpConfigs, cleanPrompt, toolInstructions } = extractMCPConfigs(childrenString)
-
-        let prompt = cleanPrompt
-        if (toolInstructions) {
-          prompt = `${toolInstructions}\n\n---\n\n${cleanPrompt}`
-        }
-
-        let mcpConfigPath = props.mcpConfig
-        if (mcpConfigs.length > 0) {
-          const mcpConfig = generateMCPServerConfig(mcpConfigs)
-          mcpConfigPath = await writeMCPConfigFile(mcpConfig)
-        }
+        const prompt = childrenString
 
         const retryOnValidationFailure = props.retryOnValidationFailure === true
         const middlewareStack = [
@@ -198,42 +165,31 @@ export function Claude(props: ClaudeProps): ReactNode {
         const middlewares = [...middlewareStack, ...internalMiddlewares]
         const composed = composeMiddleware(...middlewares)
 
-        const baseOptions: CLIExecutionOptions = {
+        const baseOptions: AmpCLIExecutionOptions = {
           prompt,
         }
-        if (props.model !== undefined) baseOptions.model = props.model
+        if (props.mode !== undefined) baseOptions.mode = props.mode
         if (props.permissionMode !== undefined) baseOptions.permissionMode = props.permissionMode
         if (props.maxTurns !== undefined) baseOptions.maxTurns = props.maxTurns
         if (props.systemPrompt !== undefined) baseOptions.systemPrompt = props.systemPrompt
-        if (props.outputFormat !== undefined) baseOptions.outputFormat = props.outputFormat
-        if (mcpConfigPath !== undefined) baseOptions.mcpConfig = mcpConfigPath
-        if (props.allowedTools !== undefined) baseOptions.allowedTools = props.allowedTools
-        if (props.disallowedTools !== undefined) baseOptions.disallowedTools = props.disallowedTools
         if (cwd !== undefined) baseOptions.cwd = cwd
         if (props.timeout !== undefined) baseOptions.timeout = props.timeout
         if (props.stopConditions !== undefined) baseOptions.stopConditions = props.stopConditions
-        if (props.continueConversation !== undefined) baseOptions.continue = props.continueConversation
-        if (props.resumeSession !== undefined) baseOptions.resume = props.resumeSession
+        if (props.continueThread !== undefined) baseOptions.continue = props.continueThread
+        if (props.resumeThread !== undefined) baseOptions.resume = props.resumeThread
+        if (props.labels !== undefined) baseOptions.labels = props.labels
         if (props.onToolCall !== undefined) baseOptions.onToolCall = props.onToolCall
-        if (props.schema !== undefined) baseOptions.schema = props.schema
-        if (props.schemaRetries !== undefined) baseOptions.schemaRetries = props.schemaRetries
-        if (props.useSubscription !== undefined) baseOptions.useSubscription = props.useSubscription
-        if (typedStreamingEnabled && props.outputFormat === undefined) baseOptions.outputFormat = 'stream-json'
 
-        const executionOptions = composed.transformOptions
-          ? await composed.transformOptions(baseOptions)
+        const executionOptions: AmpCLIExecutionOptions = composed.transformOptions
+          ? await composed.transformOptions(baseOptions) as AmpCLIExecutionOptions
           : baseOptions
 
-        // Log agent start to database if reporting is enabled
         if (props.reportingEnabled !== false) {
           logPath = logWriter.appendLog(logFilename, '')
-          if (legacyLogFilename) {
-            logWriter.appendLog(legacyLogFilename, '')
-          }
 
           currentAgentId = await db.agents.start(
             executionOptions.prompt,
-            executionOptions.model ?? 'sonnet',
+            `amp-${executionOptions.mode ?? 'smart'}`,
             executionOptions.systemPrompt,
             logPath
           )
@@ -241,34 +197,9 @@ export function Claude(props: ClaudeProps): ReactNode {
           log.info('Agent started', { agentId: currentAgentId, logPath })
         }
 
-        // Report progress
-        log.debug('Executing CLI', { model: executionOptions.model ?? 'sonnet' })
-        props.onProgress?.(`Starting Claude agent with model: ${executionOptions.model ?? 'sonnet'}`)
+        log.debug('Executing CLI', { mode: executionOptions.mode ?? 'smart' })
+        props.onProgress?.(`Starting Amp agent with mode: ${executionOptions.mode ?? 'smart'}`)
 
-        // Stream part handler for typed streaming
-        const handleStreamPart = (part: SmithersStreamPart) => {
-          logWriter.appendStreamPart(logFilename, part)
-
-          if (recordStreamEvents && currentAgentId) {
-            db.agents.recordStreamEvent(currentAgentId, part)
-          }
-
-          if (part.type === 'text-end') {
-            streamSummary.textBlocks += 1
-          } else if (part.type === 'reasoning-end') {
-            streamSummary.reasoningBlocks += 1
-          } else if (part.type === 'tool-call') {
-            streamSummary.toolCalls += 1
-          } else if (part.type === 'tool-result') {
-            streamSummary.toolResults += 1
-          } else if (part.type === 'error') {
-            streamSummary.errors += 1
-          }
-
-          props.onStreamPart?.(part)
-        }
-
-        // Tail log update handler
         const handleTailLogUpdate = () => {
           const now = Date.now()
           const timeSinceLastUpdate = now - lastTailLogUpdateRef.current
@@ -277,7 +208,7 @@ export function Claude(props: ClaudeProps): ReactNode {
             lastTailLogUpdateRef.current = now
             if (isMounted()) {
               tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-              invalidateAndUpdate()
+              forceUpdate()
             }
           } else if (!pendingTailLogUpdateRef.current) {
             pendingTailLogUpdateRef.current = setTimeout(() => {
@@ -285,7 +216,7 @@ export function Claude(props: ClaudeProps): ReactNode {
               lastTailLogUpdateRef.current = Date.now()
               if (isMounted()) {
                 tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-                invalidateAndUpdate()
+                forceUpdate()
               }
             }, DEFAULT_TAIL_LOG_THROTTLE_MS - timeSinceLastUpdate)
           }
@@ -293,42 +224,14 @@ export function Claude(props: ClaudeProps): ReactNode {
 
         const upstreamOnProgress = executionOptions.onProgress
         const onProgress = (chunk: string) => {
-          // Handle typed streaming
-          if (typedStreamingEnabled && streamParser) {
-            const parts = streamParser.parse(chunk)
-            if (useLegacyLogFormat && legacyLogFilename) {
-              logWriter.appendLog(legacyLogFilename, chunk)
-            }
-            for (const part of parts) {
-              handleStreamPart(part)
-              if (part.type === 'text-delta') {
-                messageParserRef.current.parseChunk(part.delta)
-                handleTailLogUpdate()
-              } else if (part.type === 'tool-call') {
-                messageParserRef.current.parseChunk(`Tool: ${part.toolName}\n${part.input}\n\n`)
-                handleTailLogUpdate()
-                if (props.onToolCall) {
-                  try {
-                    props.onToolCall(part.toolName, JSON.parse(part.input))
-                  } catch {
-                    props.onToolCall(part.toolName, part.input)
-                  }
-                }
-              }
-            }
-            return
-          }
-
           const transformedChunk = composed.transformChunk
             ? composed.transformChunk(chunk)
             : chunk
 
-          // Stream to log file
           if (logFilename) {
             logWriter.appendLog(logFilename, transformedChunk)
           }
 
-          // Parse for tail log
           messageParserRef.current.parseChunk(transformedChunk)
           handleTailLogUpdate()
 
@@ -337,13 +240,13 @@ export function Claude(props: ClaudeProps): ReactNode {
         }
 
         const execute = async () => {
-          const result = await executeClaudeCLI({
+          const result = await executeAmpCLI({
             ...executionOptions,
             onProgress,
           })
 
           if (result.stopReason === 'error') {
-            throw new Error(result.output || 'Claude CLI execution failed')
+            throw new Error(result.output || 'Amp CLI execution failed')
           }
 
           return result
@@ -359,33 +262,13 @@ export function Claude(props: ClaudeProps): ReactNode {
           agentResult = await composed.transformResult(agentResult)
         }
 
-        // Finalize typed streaming
-        if (typedStreamingEnabled && streamParser) {
-          const remainingParts = streamParser.flush()
-          for (const part of remainingParts) {
-            handleStreamPart(part)
-          }
-          if (agentResult.sessionId) {
-            handleStreamPart({
-              type: 'session-info',
-              sessionId: agentResult.sessionId,
-              model: props.model ?? 'sonnet',
-            })
-          }
-          if (props.reportingEnabled !== false && currentAgentId) {
-            db.agents.setStreamSummary(currentAgentId, streamSummary)
-          }
-          logWriter.writeStreamSummaryFromCounts(logFilename, streamSummary)
-        }
-
-        // Flush message parser to capture any remaining content
         messageParserRef.current.flush()
         if (pendingTailLogUpdateRef.current) {
           clearTimeout(pendingTailLogUpdateRef.current)
           pendingTailLogUpdateRef.current = null
         }
         tailLogRef.current = messageParserRef.current.getLatestEntries(maxEntries)
-        invalidateAndUpdate()
+        forceUpdate()
 
         if (props.reportingEnabled !== false && currentAgentId) {
           await db.agents.complete(
@@ -408,8 +291,8 @@ export function Claude(props: ClaudeProps): ReactNode {
         if (props.reportingEnabled !== false && agentResult.output) {
           const reportData = {
             type: 'progress' as const,
-            title: `Claude ${props.model ?? 'sonnet'} completed`,
-            content: agentResult.output.slice(0, 500), // First 500 chars
+            title: `Amp ${props.mode ?? 'smart'} completed`,
+            content: agentResult.output.slice(0, 500),
             data: {
               tokensUsed: agentResult.tokensUsed,
               turnsUsed: agentResult.turnsUsed,
@@ -441,7 +324,7 @@ export function Claude(props: ClaudeProps): ReactNode {
         if (props.reportingEnabled !== false) {
           const errorData = {
             type: 'error' as const,
-            title: `Claude ${props.model ?? 'sonnet'} failed`,
+            title: `Amp ${props.mode ?? 'smart'} failed`,
             content: errorObj.message,
             severity: 'warning' as const,
           }
@@ -459,12 +342,7 @@ export function Claude(props: ClaudeProps): ReactNode {
           props.onError?.(errorObj)
         }
       } finally {
-        // Flush log stream to ensure all writes complete before exit
         await logWriter.flushStream(logFilename)
-        if (legacyLogFilename) {
-          await logWriter.flushStream(legacyLogFilename)
-        }
-        // Always complete task
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
         }
@@ -483,11 +361,11 @@ export function Claude(props: ClaudeProps): ReactNode {
     : tailLog.slice(-maxEntries)
 
   return (
-    <claude
+    <amp
       status={status}
       agentId={agentIdRef.current}
       executionId={executionId}
-      model={props.model ?? 'sonnet'}
+      mode={props.mode ?? 'smart'}
       {...(error?.message ? { error: error.message } : {})}
       {...(result?.tokensUsed?.input !== undefined ? { tokensInput: result.tokensUsed.input } : {})}
       {...(result?.tokensUsed?.output !== undefined ? { tokensOutput: result.tokensUsed.output } : {})}
@@ -510,9 +388,9 @@ export function Claude(props: ClaudeProps): ReactNode {
         </messages>
       )}
       {props.children}
-    </claude>
+    </amp>
   )
 }
 
-export type { ClaudeProps, AgentResult }
-export { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
+export type { AmpProps }
+export { executeAmpCLI } from './agents/amp-cli/executor.js'

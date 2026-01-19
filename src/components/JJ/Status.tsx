@@ -1,8 +1,9 @@
-import { useRef, useReducer, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { getJJStatus } from '../../utils/vcs.js'
 import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
+import { useVersionTracking } from '../../reactive-sqlite/index.js'
 
 export interface StatusProps {
   onDirty?: (status: { modified: string[]; added: string[]; deleted: string[] }) => void
@@ -19,7 +20,7 @@ export interface StatusProps {
 export function Status(props: StatusProps): ReactNode {
   const smithers = useSmithers()
   const execution = useExecutionContext()
-  const [, forceUpdate] = useReducer((x) => x + 1, 0)
+  const { invalidateAndUpdate } = useVersionTracking()
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const isDirtyRef = useRef<boolean | null>(null)
@@ -39,7 +40,7 @@ export function Status(props: StatusProps): ReactNode {
 
       try {
         statusRef.current = 'running'
-        forceUpdate()
+        invalidateAndUpdate()
 
         const jjStatus = await getJJStatus()
 
@@ -62,7 +63,7 @@ export function Status(props: StatusProps): ReactNode {
 
         if (isMounted()) {
           statusRef.current = 'complete'
-          forceUpdate()
+          invalidateAndUpdate()
         }
 
         await smithers.db.vcs.addReport({
@@ -80,7 +81,7 @@ export function Status(props: StatusProps): ReactNode {
         if (isMounted()) {
           errorRef.current = err instanceof Error ? err : new Error(String(err))
           statusRef.current = 'error'
-          forceUpdate()
+          invalidateAndUpdate()
         }
       } finally {
         if (taskIdRef.current) {

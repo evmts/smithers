@@ -62,9 +62,9 @@ ${review.content}
 4. If NEEDS IMPLEMENTATION: Implement the fix, then delete the review file
 
 IMPORTANT:
-- Use \`git commit --no-verify\` to bypass precommit hooks
 - Keep commits atomic and focused
 - If implementation fails, report the error clearly
+ - Do not bypass precommit hooks
 
 Report your action: implemented | closed | failed
 </instructions>`}

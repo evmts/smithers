@@ -1,8 +1,9 @@
-import { useRef, useReducer, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { jjSnapshot, getJJStatus } from '../../utils/vcs.js'
 import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
+import { useVersionTracking } from '../../reactive-sqlite/index.js'
 
 export interface SnapshotProps {
   message?: string
@@ -18,7 +19,7 @@ export interface SnapshotProps {
 export function Snapshot(props: SnapshotProps): ReactNode {
   const smithers = useSmithers()
   const execution = useExecutionContext()
-  const [, forceUpdate] = useReducer((x) => x + 1, 0)
+  const { invalidateAndUpdate } = useVersionTracking()
 
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const changeIdRef = useRef<string | null>(null)
@@ -33,7 +34,7 @@ export function Snapshot(props: SnapshotProps): ReactNode {
 
       try {
         statusRef.current = 'running'
-        forceUpdate()
+        invalidateAndUpdate()
 
         const result = await jjSnapshot(props.message)
 
@@ -53,13 +54,13 @@ export function Snapshot(props: SnapshotProps): ReactNode {
 
         if (isMounted()) {
           statusRef.current = 'complete'
-          forceUpdate()
+          invalidateAndUpdate()
         }
       } catch (err) {
         if (isMounted()) {
           errorRef.current = err instanceof Error ? err : new Error(String(err))
           statusRef.current = 'error'
-          forceUpdate()
+          invalidateAndUpdate()
         }
       } finally {
         if (taskIdRef.current) {

@@ -36,7 +36,14 @@
 export { ReactiveDatabase, createReactiveDatabase } from './database.js'
 
 // Hooks
-export { useQuery, useQueryOne, useQueryValue, useMutation } from './hooks.js'
+export {
+  useQuery,
+  useQueryOne,
+  useQueryValue,
+  useMutation,
+  useVersionTracking,
+  useQueryCache,
+} from './hooks.js'
 
 // Parser utilities
 export { extractReadTables, extractWriteTables, isWriteOperation, extractAllTables } from './parser.js'

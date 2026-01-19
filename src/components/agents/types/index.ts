@@ -20,3 +20,10 @@ export type {
   StopConditionType,
   StopReason,
 } from './execution.js'
+
+export type {
+  AmpProps,
+  AmpMode,
+  AmpPermissionMode,
+  AmpCLIExecutionOptions,
+} from './amp.js'

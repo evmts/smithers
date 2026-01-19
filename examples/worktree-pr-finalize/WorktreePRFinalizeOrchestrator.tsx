@@ -13,6 +13,15 @@ import { useQueryValue } from '../../src/reactive-sqlite/index.js'
 import { WorktreePRFinalize } from './WorktreePRFinalize.js'
 import type { WorktreeContext, WorktreeAgentReport } from './types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 const STATE_KEYS = {
   worktrees: 'finalize-orchestrator:worktrees',
   reports: 'finalize-orchestrator:reports',
@@ -41,14 +50,14 @@ export function WorktreePRFinalizeOrchestrator({
     'SELECT value FROM state WHERE key = ?',
     [STATE_KEYS.worktrees]
   )
-  const worktrees: WorktreeContext[] = worktreesJson ? JSON.parse(worktreesJson) : []
+  const worktrees: WorktreeContext[] = parseState(worktreesJson, [])
 
   const { data: reportsJson } = useQueryValue<string>(
     reactiveDb,
     'SELECT value FROM state WHERE key = ?',
     [STATE_KEYS.reports]
   )
-  const reports: WorktreeAgentReport[] = reportsJson ? JSON.parse(reportsJson) : []
+  const reports: WorktreeAgentReport[] = parseState(reportsJson, [])
 
   // Discover worktrees on mount
   useMount(() => {

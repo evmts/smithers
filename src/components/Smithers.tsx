@@ -99,6 +99,15 @@ export interface SmithersProps {
 // Component
 // ============================================================================
 
+function parseStateValue<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 /**
  * Smithers Subagent Component
  *
@@ -135,11 +144,23 @@ export function Smithers(props: SmithersProps): ReactNode {
     [props.plannerModel]
   )
 
-  const subagentIdRef = useRef<string | null>(null)
+  const subagentInstanceRef = useRef(crypto.randomUUID())
+  const subagentKey = `smithers:subagent:${subagentInstanceRef.current}:id`
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
+  const { data: subagentIdRaw } = useQueryValue<string>(
+    reactiveDb,
+    'SELECT value FROM state WHERE key = ?',
+    [subagentKey]
+  )
+  const subagentId = parseStateValue<string | null>(subagentIdRaw, null)
+
   // Query reactive state from DB
+  const agentQuery = subagentId
+    ? "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?"
+    : 'SELECT 1 WHERE 0'
+  const agentParams = subagentId ? [subagentId] : []
   const { data: agentRow } = useQueryOne<{
     status: string
     result: string | null
@@ -150,17 +171,18 @@ export function Smithers(props: SmithersProps): ReactNode {
     duration_ms: number | null
   }>(
     reactiveDb,
-    "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",
-    [subagentIdRef.current]
+    agentQuery,
+    agentParams
   )
   
   // Sub-status for planning/executing (stored in state table since agents table only has pending/running/completed/failed)
-  const substatusKey = subagentIdRef.current ? `smithers:${subagentIdRef.current}:substatus` : null
-  const { data: substatus } = useQueryValue<string>(
+  const substatusKey = subagentId ? `smithers:${subagentId}:substatus` : null
+  const { data: substatusRaw } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = ?",
     [substatusKey]
   )
+  const substatus = parseStateValue<string | null>(substatusRaw, null)
   
   // Map DB status to component status
   const mapStatus = (): 'pending' | 'planning' | 'executing' | 'complete' | 'error' => {
@@ -230,6 +252,8 @@ export function Smithers(props: SmithersProps): ReactNode {
       // Register task with database
       taskIdRef.current = db.tasks.start('smithers')
 
+      let activeAgentId: string | null = subagentId
+
       if (isStopRequested()) {
         log.info('Execution stopped by request')
         db.tasks.complete(taskIdRef.current)
@@ -248,7 +272,8 @@ export function Smithers(props: SmithersProps): ReactNode {
             props.plannerModel ?? 'sonnet',
             'Smithers subagent planning and execution'
           )
-          subagentIdRef.current = agentId
+          activeAgentId = agentId
+          db.state.set(subagentKey, agentId, 'smithers-subagent')
           setSubstatus(agentId, 'planning')
           log.info('Subagent started', { agentId })
         }
@@ -256,8 +281,8 @@ export function Smithers(props: SmithersProps): ReactNode {
         props.onProgress?.('Starting Smithers subagent...')
 
         // Execute the subagent
-        if (subagentIdRef.current) {
-          setSubstatus(subagentIdRef.current, 'executing')
+        if (activeAgentId) {
+          setSubstatus(activeAgentId, 'executing')
         }
         const endExecuteTiming = log.time('smithers_cli_execute')
         const smithersResult = await executeSmithers({
@@ -286,9 +311,9 @@ export function Smithers(props: SmithersProps): ReactNode {
 
         // Log completion to database (this also sets status to 'completed')
         // Store full structured data including planningResult for reconstruction
-        if (props.reportingEnabled !== false && subagentIdRef.current) {
+        if (props.reportingEnabled !== false && activeAgentId) {
           await db.agents.complete(
-            subagentIdRef.current,
+            activeAgentId,
             smithersResult.output,
             { 
               script: smithersResult.script, 
@@ -301,7 +326,7 @@ export function Smithers(props: SmithersProps): ReactNode {
 
         const totalDurationMs = endTotalTiming()
         log.info('Subagent completed', { 
-          agentId: subagentIdRef.current,
+          agentId: activeAgentId,
           tokensInput: smithersResult.tokensUsed?.input,
           tokensOutput: smithersResult.tokensUsed?.output,
           durationMs: totalDurationMs,
@@ -319,7 +344,7 @@ export function Smithers(props: SmithersProps): ReactNode {
               scriptPath: smithersResult.scriptPath,
               durationMs: smithersResult.durationMs,
             },
-            ...(subagentIdRef.current ? { agent_id: subagentIdRef.current } : {}),
+            ...(activeAgentId ? { agent_id: activeAgentId } : {}),
           })
         }
 
@@ -330,11 +355,11 @@ export function Smithers(props: SmithersProps): ReactNode {
       } catch (err) {
         endTotalTiming()
         const errorObj = err instanceof Error ? err : new Error(String(err))
-        log.error('Subagent execution failed', errorObj, { agentId: subagentIdRef.current })
+        log.error('Subagent execution failed', errorObj, { agentId: activeAgentId })
 
         // ALWAYS log to DB regardless of mount state - DB records should not be suppressed
-        if (props.reportingEnabled !== false && subagentIdRef.current) {
-          await db.agents.fail(subagentIdRef.current, errorObj.message)
+        if (props.reportingEnabled !== false && activeAgentId) {
+          await db.agents.fail(activeAgentId, errorObj.message)
         }
 
         // Add error report
@@ -344,7 +369,7 @@ export function Smithers(props: SmithersProps): ReactNode {
             title: 'Smithers subagent failed',
             content: errorObj.message,
             severity: 'warning',
-            ...(subagentIdRef.current ? { agent_id: subagentIdRef.current } : {}),
+            ...(activeAgentId ? { agent_id: activeAgentId } : {}),
           })
         }
 
@@ -371,7 +396,7 @@ export function Smithers(props: SmithersProps): ReactNode {
   return (
     <smithers-subagent
       status={status}
-      {...(subagentIdRef.current ? { 'subagent-id': subagentIdRef.current } : {})}
+      {...(subagentId ? { 'subagent-id': subagentId } : {})}
       {...(executionId ? { 'execution-id': executionId } : {})}
       planner-model={props.plannerModel ?? 'sonnet'}
       execution-model={props.executionModel ?? 'sonnet'}

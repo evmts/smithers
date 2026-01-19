@@ -105,10 +105,29 @@ export function End(props: EndProps): ReactNode {
 
         db.tasks.complete(taskIdRef.current!)
       } catch (error) {
+        const errorObj = error instanceof Error ? error : new Error(String(error))
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
         }
-        throw error
+        const fallbackSummary: EndSummary = {
+          status: 'failure',
+          message: `End failed: ${errorObj.message}`,
+          data: { error: errorObj.message },
+        }
+        db.db.run(
+          `
+          UPDATE executions 
+          SET end_summary = ?, end_reason = ?, exit_code = ?, status = 'failed'
+          WHERE id = ?
+        `,
+          [
+            JSON.stringify(fallbackSummary),
+            props.reason ?? 'failure',
+            props.exitCode ?? 1,
+            executionId,
+          ]
+        )
+        requestStop(`End failed: ${errorObj.message}`)
       }
     })()
   })

@@ -11,6 +11,15 @@ import { useMount } from '../../../src/reconciler/hooks.js'
 import { useQueryValue } from '../../../src/reactive-sqlite/index.js'
 import type { WorktreeInfo, MergeCandidate, PRInfo } from '../types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 export interface UseMergeOrderOptions {
   candidates: WorktreeInfo[]
   cwd: string
@@ -40,7 +49,7 @@ export function useMergeOrder(options: UseMergeOrderOptions): {
     "SELECT value FROM state WHERE key = ?",
     [`${prefix}:order`]
   )
-  const mergeOrder: MergeCandidate[] = orderJson ? JSON.parse(orderJson) : []
+  const mergeOrder: MergeCandidate[] = parseState(orderJson, [])
 
   const { data: loadingStr } = useQueryValue<string>(
     reactiveDb,

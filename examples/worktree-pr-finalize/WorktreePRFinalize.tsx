@@ -36,6 +36,15 @@ import type {
   WorktreeFinalizeState,
 } from './types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 function stateKey(worktree: string, key: string): string {
   return `worktree-finalize:${worktree}:${key}`
 }
@@ -62,21 +71,21 @@ export function WorktreePRFinalize({
     'SELECT value FROM state WHERE key = ?',
     [stateKey(worktree.name, 'pr')]
   )
-  const pr: PRInfo | null = prJson ? JSON.parse(prJson) : null
+  const pr: PRInfo | null = parseState(prJson, null)
 
   const { data: stackedJson } = useQueryValue<string>(
     reactiveDb,
     'SELECT value FROM state WHERE key = ?',
     [stateKey(worktree.name, 'stacked')]
   )
-  const stacked: StackedPRInfo | null = stackedJson ? JSON.parse(stackedJson) : null
+  const stacked: StackedPRInfo | null = parseState(stackedJson, null)
 
   const { data: rebaseJson } = useQueryValue<string>(
     reactiveDb,
     'SELECT value FROM state WHERE key = ?',
     [stateKey(worktree.name, 'rebase')]
   )
-  const rebaseResult: RebaseResult | null = rebaseJson ? JSON.parse(rebaseJson) : null
+  const rebaseResult: RebaseResult | null = parseState(rebaseJson, null)
 
   const { data: reviewsHandledStr } = useQueryValue<string>(
     reactiveDb,
@@ -90,14 +99,14 @@ export function WorktreePRFinalize({
     'SELECT value FROM state WHERE key = ?',
     [stateKey(worktree.name, 'push')]
   )
-  const pushResult: PushResult | null = pushJson ? JSON.parse(pushJson) : null
+  const pushResult: PushResult | null = parseState(pushJson, null)
 
   const { data: mergeJson } = useQueryValue<string>(
     reactiveDb,
     'SELECT value FROM state WHERE key = ?',
     [stateKey(worktree.name, 'merge')]
   )
-  const mergeResult: MergeResult | null = mergeJson ? JSON.parse(mergeJson) : null
+  const mergeResult: MergeResult | null = parseState(mergeJson, null)
 
   // Initialize: fetch PR info
   useMount(() => {

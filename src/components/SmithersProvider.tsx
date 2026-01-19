@@ -773,7 +773,8 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     ;(async () => {
       try {
         const execution = await props.db.execution.current()
-        if (execution) {
+        if (execution && !hasCompletedRef.current) {
+          hasCompletedRef.current = true
           props.onComplete?.()
         }
 

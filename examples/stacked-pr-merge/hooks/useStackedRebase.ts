@@ -11,6 +11,15 @@ import { useMount } from '../../../src/reconciler/hooks.js'
 import { useQueryValue } from '../../../src/reactive-sqlite/index.js'
 import type { MergeCandidate, MergeResult } from '../types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 export interface UseStackedRebaseOptions {
   mergeOrder: MergeCandidate[]
   targetBranch: string
@@ -40,7 +49,7 @@ export function useStackedRebase(options: UseStackedRebaseOptions): {
     "SELECT value FROM state WHERE key = ?",
     [`${prefix}:results`]
   )
-  const results: MergeResult[] = resultsJson ? JSON.parse(resultsJson) : []
+  const results: MergeResult[] = parseState(resultsJson, [])
 
   const { data: current } = useQueryValue<string>(
     reactiveDb,

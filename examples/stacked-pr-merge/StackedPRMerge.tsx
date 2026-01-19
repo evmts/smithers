@@ -25,6 +25,15 @@ import { MergePhase } from './components/MergePhase.js'
 
 import type { WorktreeInfo, MergeCandidate, MergeResult, StackedMergeState } from './types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 // State keys for SQLite storage
 const STATE_KEYS = {
   worktrees: 'stacked-merge:worktrees',
@@ -57,28 +66,28 @@ export function StackedPRMerge({
     "SELECT value FROM state WHERE key = ?",
     [STATE_KEYS.worktrees]
   )
-  const worktrees: WorktreeInfo[] = worktreesJson ? JSON.parse(worktreesJson) : []
+  const worktrees: WorktreeInfo[] = parseState(worktreesJson, [])
 
   const { data: candidatesJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = ?",
     [STATE_KEYS.candidates]
   )
-  const candidates: MergeCandidate[] = candidatesJson ? JSON.parse(candidatesJson) : []
+  const candidates: MergeCandidate[] = parseState(candidatesJson, [])
 
   const { data: rebaseResultsJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = ?",
     [STATE_KEYS.rebaseResults]
   )
-  const rebaseResults: MergeResult[] = rebaseResultsJson ? JSON.parse(rebaseResultsJson) : []
+  const rebaseResults: MergeResult[] = parseState(rebaseResultsJson, [])
 
   const { data: mergeResultsJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = ?",
     [STATE_KEYS.mergeResults]
   )
-  const mergeResults: MergeResult[] = mergeResultsJson ? JSON.parse(mergeResultsJson) : []
+  const mergeResults: MergeResult[] = parseState(mergeResultsJson, [])
 
   const { data: currentOp } = useQueryValue<string>(
     reactiveDb,

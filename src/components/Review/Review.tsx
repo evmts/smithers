@@ -1,8 +1,9 @@
-import { useRef, useReducer, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes } from '../../utils/vcs.js'
 import type { ReviewTarget, ReviewResult, ReviewProps } from './types.js'
 import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
+import { useVersionTracking } from '../../reactive-sqlite/index.js'
 import { useExecutionContext } from '../ExecutionContext.js'
 
 /**
@@ -187,7 +188,7 @@ export function Review(props: ReviewProps): ReactNode {
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const resultRef = useRef<ReviewResult | null>(null)
   const errorRef = useRef<Error | null>(null)
-  const [, forceUpdate] = useReducer(x => x + 1, 0)
+  const { invalidateAndUpdate } = useVersionTracking()
 
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
@@ -201,7 +202,7 @@ export function Review(props: ReviewProps): ReactNode {
 
       try {
         statusRef.current = 'running'
-        forceUpdate()
+        invalidateAndUpdate()
 
         // Fetch content to review
         const content = await fetchTargetContent(props.target)
@@ -247,7 +248,7 @@ export function Review(props: ReviewProps): ReactNode {
         if (isMounted()) {
           resultRef.current = reviewResult
           statusRef.current = 'complete'
-          forceUpdate()
+          invalidateAndUpdate()
           props.onFinished?.(reviewResult)
 
           // If blocking and not approved, request stop
@@ -265,7 +266,7 @@ export function Review(props: ReviewProps): ReactNode {
           const errorObj = err instanceof Error ? err : new Error(String(err))
           errorRef.current = errorObj
           statusRef.current = 'error'
-          forceUpdate()
+          invalidateAndUpdate()
           props.onError?.(errorObj)
         }
       } finally {

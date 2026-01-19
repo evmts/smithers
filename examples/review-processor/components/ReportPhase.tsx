@@ -9,6 +9,15 @@ import { Step } from '../../../src/components/Step.js'
 import { Claude } from '../../../src/components/Claude.js'
 import type { ProcessorState } from '../types.js'
 
+function parseState<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
 export interface ReportPhaseProps {
   stateKey: string
 }
@@ -22,9 +31,13 @@ export function ReportPhase({ stateKey }: ReportPhaseProps): ReactNode {
     [stateKey]
   )
 
-  const state: ProcessorState = storedState
-    ? JSON.parse(storedState)
-    : { reviews: [], scanned: false, activeAgents: 0, completed: [], failed: [] }
+  const state: ProcessorState = parseState(storedState, {
+    reviews: [],
+    scanned: false,
+    activeAgents: 0,
+    completed: [],
+    failed: [],
+  })
 
   const implemented = state.reviews.filter(r => r.status === 'implemented')
   const closed = state.reviews.filter(r => r.status === 'closed')
