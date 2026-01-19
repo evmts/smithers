@@ -1,7 +1,7 @@
 // Smithers Subagent Component
 // Launches a new Smithers instance to plan and execute a task
 
-import { useRef, type ReactNode } from 'react'
+import { useRef, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
 import { useRalphCount } from '../hooks/useRalphCount.js'
@@ -11,6 +11,7 @@ import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
 import { extractText } from '../utils/extract-text.js'
 import { useExecutionScope } from './ExecutionScope.js'
+import { createLogger, type Logger } from '../debug/index.js'
 
 // ============================================================================
 // Types
@@ -128,6 +129,12 @@ export function Smithers(props: SmithersProps): ReactNode {
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
 
+  // Create logger with subagent context
+  const log: Logger = useMemo(
+    () => createLogger('Smithers', { plannerModel: props.plannerModel ?? 'sonnet' }),
+    [props.plannerModel]
+  )
+
   const subagentIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
@@ -179,10 +186,12 @@ export function Smithers(props: SmithersProps): ReactNode {
     if (!executionScope.enabled) return
     // Fire-and-forget async IIFE
     ;(async () => {
+      const endTotalTiming = log.time('subagent_execution')
       // Register task with database
       taskIdRef.current = db.tasks.start('smithers')
 
       if (isStopRequested()) {
+        log.info('Execution stopped by request')
         db.tasks.complete(taskIdRef.current)
         return
       }
@@ -190,6 +199,7 @@ export function Smithers(props: SmithersProps): ReactNode {
       try {
         // Extract task from children
         const task = extractText(props.children)
+        log.debug('Starting subagent', { taskPreview: task.slice(0, 100) })
 
         // Log subagent start to database
         if (props.reportingEnabled !== false) {
@@ -200,6 +210,7 @@ export function Smithers(props: SmithersProps): ReactNode {
           )
           subagentIdRef.current = agentId
           setSubstatus(agentId, 'planning')
+          log.info('Subagent started', { agentId })
         }
 
         props.onProgress?.('Starting Smithers subagent...')
@@ -208,6 +219,7 @@ export function Smithers(props: SmithersProps): ReactNode {
         if (subagentIdRef.current) {
           setSubstatus(subagentIdRef.current, 'executing')
         }
+        const endExecuteTiming = log.time('smithers_cli_execute')
         const smithersResult = await executeSmithers({
           task,
           ...(props.plannerModel !== undefined ? { plannerModel: props.plannerModel } : {}),
@@ -221,6 +233,7 @@ export function Smithers(props: SmithersProps): ReactNode {
           ...(props.onProgress !== undefined ? { onProgress: props.onProgress } : {}),
           ...(props.onScriptGenerated !== undefined ? { onScriptGenerated: props.onScriptGenerated } : {}),
         })
+        endExecuteTiming()
 
         // Check for errors
         if (smithersResult.stopReason === 'error') {
@@ -240,6 +253,15 @@ export function Smithers(props: SmithersProps): ReactNode {
             smithersResult.tokensUsed
           )
         }
+
+        const totalDurationMs = endTotalTiming()
+        log.info('Subagent completed', { 
+          agentId: subagentIdRef.current,
+          tokensInput: smithersResult.tokensUsed?.input,
+          tokensOutput: smithersResult.tokensUsed?.output,
+          durationMs: totalDurationMs,
+          scriptPath: smithersResult.scriptPath
+        })
 
         // Add report
         if (props.reportingEnabled !== false) {
@@ -261,7 +283,9 @@ export function Smithers(props: SmithersProps): ReactNode {
         }
 
       } catch (err) {
+        endTotalTiming()
         const errorObj = err instanceof Error ? err : new Error(String(err))
+        log.error('Subagent execution failed', errorObj, { agentId: subagentIdRef.current })
 
         if (isMounted()) {
           // Log failure to database (this also sets status to 'failed')
@@ -291,12 +315,13 @@ export function Smithers(props: SmithersProps): ReactNode {
         }
       }
     })().catch(err => {
-      console.error('Agent execution failed:', err)
+      const errorObj = err instanceof Error ? err : new Error(String(err))
+      log.error('Unhandled subagent execution error', errorObj)
       if (isMounted()) {
-        props.onError?.(err instanceof Error ? err : new Error(String(err)))
+        props.onError?.(errorObj)
       }
     })
-  }, [executionScope.enabled, ralphCount])
+  }, [executionScope.enabled, ralphCount, log])
 
   // Render custom element for XML serialization
   return (
