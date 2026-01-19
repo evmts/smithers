@@ -42,20 +42,33 @@ Smithers uses a reactive render loop powered by React state:
 | Hard to visualize flow | Components describe the flow |
 | State scattered in closures | Centralized in React state |
 
-## The Ralph Component
+## Controlling the Ralph Loop
 
-The `<Ralph>` component wraps iterative workflows:
+You can control the Ralph loop using the `stopped` prop. This is the idiomatic way to stop iteration:
 
 ```tsx
-import { useState } from "react";
+import { useSmithers, useQueryValue } from "smithers";
 
 function IterativeWorkflow() {
-  const [attempts, setAttempts] = useState(0);
-  const [testsPassing, setTestsPassing] = useState(false);
+  const { db } = useSmithers();
+
+  // State in SQLite, not useState (see State Management docs)
+  const attempts = useQueryValue<number>(
+    db.db,
+    "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'attempts'"
+  ) ?? 0;
+
+  const testsPassing = useQueryValue<boolean>(
+    db.db,
+    "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'tests_passing'"
+  ) ?? false;
 
   return (
-    <Ralph
+    <SmithersProvider
+      db={db}
+      executionId={db.execution.current()?.id ?? ''}
       maxIterations={5}
+      stopped={testsPassing}
       onIteration={(i) => console.log(`Iteration ${i}`)}
       onComplete={() => console.log("Workflow complete")}
     >
@@ -63,30 +76,59 @@ function IterativeWorkflow() {
         <Claude
           model="sonnet"
           onFinished={(result) => {
-            setAttempts(a => a + 1);
+            db.db.run(
+              "INSERT OR REPLACE INTO state (key, value) VALUES ('attempts', ?)",
+              [attempts + 1]
+            );
             if (result.output.includes("All tests pass")) {
-              setTestsPassing(true);
+              db.db.run(
+                "INSERT OR REPLACE INTO state (key, value) VALUES ('tests_passing', 1)"
+              );
             }
           }}
         >
           Fix the failing tests. Current attempt: {attempts}
         </Claude>
       )}
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```
+
+### Implicit Stopping
+
+Ralph also stops implicitly when nothing renders for an iteration. If no components mount and register tasks, the loop completes after 500ms. However, using the `stopped` prop is more explicit and recommended.
 
 ## Reactive Updates
 
 The power of the Ralph Loop comes from React reactivity:
 
 ```tsx
+import { useSmithers, useQueryValue } from "smithers";
+
 function PhaseWorkflow() {
-  const [phase, setPhase] = useState("research");
+  const { db } = useSmithers();
+
+  // State in SQLite, not useState
+  const phase = useQueryValue<string>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "research";
+
+  const setPhase = (newPhase: string) => {
+    db.db.run(
+      "INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)",
+      [newPhase]
+    );
+  };
 
   return (
-    <Ralph maxIterations={10}>
+    <SmithersProvider
+      db={db}
+      executionId={db.execution.current()?.id ?? ''}
+      maxIterations={10}
+      stopped={phase === "done"}
+    >
       {/* This block re-renders when phase changes */}
 
       {phase === "research" && (
@@ -112,14 +154,14 @@ function PhaseWorkflow() {
           Run and verify tests.
         </Claude>
       )}
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```
 
 When `setPhase("implement")` is called:
-1. The state updates
-2. React detects the change
+1. The database state updates
+2. `useQueryValue` detects the change and triggers a re-render
 3. Only the affected branch re-renders
 4. The new `<Claude>` component mounts and executes
 
@@ -191,11 +233,14 @@ The Ralph context tracks:
     ```
   </Accordion>
 
-  <Accordion title="Use state for phase transitions">
-    Let reactivity drive the flow instead of imperative logic:
+  <Accordion title="Use SQLite state for phase transitions">
+    Let reactivity drive the flow instead of imperative logic. Store state in SQLite, not useState:
     ```tsx
-    // Good - reactive
-    const [phase, setPhase] = useState("start");
+    // Good - reactive with SQLite
+    const phase = useQueryValue<string>(db.db,
+      "SELECT value FROM state WHERE key = 'phase'") ?? "start";
+    const setPhase = (p: string) =>
+      db.db.run("INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)", [p]);
     {phase === "start" && <Claude onFinished={() => setPhase("next")} />}
 
     // Avoid - imperative

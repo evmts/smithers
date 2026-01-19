@@ -47,6 +47,13 @@ export interface RalphProps {
   maxIterations?: number
   onIteration?: (iteration: number) => void
   onComplete?: () => void
+  /**
+   * Explicitly stop the Ralph loop when true.
+   * Note: This prop is ignored in the deprecated Ralph component.
+   * Use SmithersProvider's stopped prop instead.
+   * @deprecated Use SmithersProvider with stopped prop
+   */
+  stopped?: boolean
   children?: ReactNode
   /**
    * @deprecated Database is now provided via SmithersProvider

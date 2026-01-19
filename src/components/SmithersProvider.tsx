@@ -288,6 +288,12 @@ export interface SmithersProviderProps {
   cleanupOnComplete?: boolean
 
   /**
+   * Explicitly stop the Ralph loop when true.
+   * Use this to control orchestration flow declaratively.
+   */
+  stopped?: boolean
+
+  /**
    * Children components
    */
   children: ReactNode
@@ -512,7 +518,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   // Ralph iteration monitoring effect - now uses DB-backed state
   useEffect(() => {
-    console.log('[SmithersProvider] Ralph effect fired! ralphCount:', ralphCount, 'pendingTasks:', pendingTasks, 'hasStartedTasks:', hasStartedTasks)
+    console.log('[SmithersProvider] Ralph effect fired! ralphCount:', ralphCount, 'pendingTasks:', pendingTasks, 'hasStartedTasks:', hasStartedTasks, 'stopped:', props.stopped)
 
     let checkInterval: NodeJS.Timeout | null = null
     let stableCount = 0 // Count consecutive stable checks (no tasks running)
@@ -521,6 +527,15 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       // Re-check values from database (reactive queries will have updated)
       const currentPendingTasks = pendingTasks
       const currentHasStartedTasks = hasStartedTasks
+
+      // Check if explicitly stopped via prop
+      if (props.stopped && !hasCompletedRef.current) {
+        hasCompletedRef.current = true
+        if (checkInterval) clearInterval(checkInterval)
+        signalOrchestrationComplete()
+        props.onComplete?.()
+        return
+      }
 
       // If tasks are running, reset stable counter
       if (currentPendingTasks > 0) {
