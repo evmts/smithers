@@ -1,5 +1,7 @@
 // Executions view for database inspection
 
+import type { SmithersDB } from '../../db/index.js'
+
 interface Execution {
   id: string
   name?: string
@@ -13,7 +15,7 @@ interface Execution {
   error?: string
 }
 
-export async function showExecutions(db: any) {
+export async function showExecutions(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('RECENT EXECUTIONS (last 10)')
   console.log('═══════════════════════════════════════════════════════════')

@@ -1,5 +1,7 @@
 // Current execution view for database inspection
 
+import type { SmithersDB } from '../../db/index.js'
+
 interface Execution {
   id: string
   name?: string
@@ -25,7 +27,7 @@ interface ToolCall {
   status: string
 }
 
-export async function showCurrent(db: any) {
+export async function showCurrent(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('CURRENT EXECUTION')
   console.log('═══════════════════════════════════════════════════════════')

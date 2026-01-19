@@ -1,0 +1,118 @@
+---
+title: Parallel
+description: Execute children concurrently within a Phase
+---
+
+# Parallel Component
+
+The `<Parallel>` component enables concurrent execution of child components. By default, Steps within a Phase execute sequentially—wrap them in Parallel to execute simultaneously.
+
+## Basic Usage
+
+```tsx
+import { Phase, Parallel, Step, Claude } from "smithers-orchestrator";
+
+<Phase name="Build">
+  <Parallel>
+    <Step name="Frontend">
+      <Claude>Build the frontend application.</Claude>
+    </Step>
+    <Step name="Backend">
+      <Claude>Build the backend services.</Claude>
+    </Step>
+  </Parallel>
+</Phase>
+```
+
+## Props
+
+<ParamField path="children" type="ReactNode">
+  Child components to execute in parallel.
+</ParamField>
+
+## Examples
+
+### Parallel Build Tasks
+
+```tsx
+<Phase name="Build">
+  <Parallel>
+    <Step name="lint">
+      <Claude allowedTools={["Bash"]}>
+        Run the linter.
+      </Claude>
+    </Step>
+    <Step name="typecheck">
+      <Claude allowedTools={["Bash"]}>
+        Run TypeScript type checking.
+      </Claude>
+    </Step>
+    <Step name="test">
+      <Claude allowedTools={["Bash"]}>
+        Run the test suite.
+      </Claude>
+    </Step>
+  </Parallel>
+</Phase>
+```
+
+### Mixed Sequential and Parallel
+
+```tsx
+<Phase name="CI">
+  <Step name="setup">
+    <Claude>Install dependencies.</Claude>
+  </Step>
+  
+  <Parallel>
+    <Step name="lint"><Claude>Run linting.</Claude></Step>
+    <Step name="test"><Claude>Run tests.</Claude></Step>
+  </Parallel>
+  
+  <Step name="deploy">
+    <Claude>Deploy to production.</Claude>
+  </Step>
+</Phase>
+```
+
+### With Worktree Isolation
+
+```tsx
+<Parallel>
+  <Worktree branch="feature-a">
+    <Claude>Implement feature A.</Claude>
+  </Worktree>
+  <Worktree branch="feature-b">
+    <Claude>Implement feature B.</Claude>
+  </Worktree>
+</Parallel>
+```
+
+## How It Works
+
+The Parallel component wraps children in a `StepRegistryProvider` with `isParallel` enabled. This signals to the orchestrator that child Steps should execute concurrently rather than waiting for each to complete before starting the next.
+
+## Rendering
+
+The Parallel component renders as a `<parallel>` element containing its children:
+
+```xml
+<parallel>
+  <step name="Frontend">...</step>
+  <step name="Backend">...</step>
+</parallel>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Phase" icon="layer-group" href="/components/phase">
+    Group related workflow phases
+  </Card>
+  <Card title="Step" icon="shoe-prints" href="/components/step">
+    Sequential workflow steps
+  </Card>
+  <Card title="Worktree" icon="code-branch" href="/components/worktree">
+    Git worktree isolation
+  </Card>
+</CardGroup>

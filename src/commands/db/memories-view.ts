@@ -1,5 +1,7 @@
 // Memories view for database inspection
 
+import type { SmithersDB } from '../../db/index.js'
+
 interface MemoryStats {
   total: number
   byCategory: Record<string, number>
@@ -14,7 +16,7 @@ interface Memory {
   source?: string
 }
 
-export async function showMemories(db: any) {
+export async function showMemories(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('MEMORIES')
   console.log('═══════════════════════════════════════════════════════════')

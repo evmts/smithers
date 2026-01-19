@@ -1,6 +1,8 @@
 // State view for database inspection
 
-export async function showState(db: any) {
+import type { SmithersDB } from '../../db/index.js'
+
+export async function showState(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('CURRENT STATE')
   console.log('═══════════════════════════════════════════════════════════')

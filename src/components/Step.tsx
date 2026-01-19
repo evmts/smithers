@@ -164,6 +164,11 @@ export interface StepProps {
    * Callback when step completes
    */
   onComplete?: () => void
+
+  /**
+   * Callback when step encounters an error
+   */
+  onError?: (error: Error) => void
 }
 
 /**
@@ -245,7 +250,8 @@ export function Step(props: StepProps): ReactNode {
 
         props.onStart?.()
       } catch (error) {
-        console.error(`[Step] Error starting step:`, error)
+        const errorObj = error instanceof Error ? error : new Error(String(error))
+        console.error(`[Step] Error starting step:`, errorObj)
 
         if (stepIdRef.current) {
           db.steps.fail(stepIdRef.current)
@@ -254,6 +260,8 @@ export function Step(props: StepProps): ReactNode {
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
         }
+
+        props.onError?.(errorObj)
       }
     })()
   })

@@ -141,7 +141,18 @@ import { Claude } from "smithers-orchestrator/components/Claude";
 </ParamField>
 
 <ParamField path="maxRetries" type="number" default="2">
-  Maximum validation retries.
+  Maximum retries for the outer error retry loop.
+</ParamField>
+
+<ParamField path="schemaRetries" type="number" default="2">
+  Maximum retries for structured output schema validation. When Claude returns
+  output that fails Zod schema validation, it will retry up to this many times.
+
+  ```tsx
+  <Claude schema={UserSchema} schemaRetries={3}>
+    Return user data in the expected format.
+  </Claude>
+  ```
 </ParamField>
 
 ### Callbacks

@@ -29,14 +29,14 @@ export interface MemoryInput {
 
 export interface Execution {
   id: string
-  name?: string
+  name: string | undefined
   file_path: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   config: Record<string, any>
-  result?: Record<string, any>
-  error?: string
-  started_at?: Date
-  completed_at?: Date
+  result: Record<string, any> | undefined
+  error: string | undefined
+  started_at: Date | undefined
+  completed_at: Date | undefined
   created_at: Date
   total_iterations: number
   total_agents: number
@@ -60,21 +60,21 @@ export interface Phase {
 export interface Agent {
   id: string
   execution_id: string
-  phase_id?: string
+  phase_id: string | undefined
   model: string
-  system_prompt?: string
+  system_prompt: string | undefined
   prompt: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-  result?: string
-  result_structured?: Record<string, any>
-  log_path?: string
-  error?: string
-  started_at?: Date
-  completed_at?: Date
+  result: string | undefined
+  result_structured: Record<string, any> | undefined
+  log_path: string | undefined
+  error: string | undefined
+  started_at: Date | undefined
+  completed_at: Date | undefined
   created_at: Date
-  duration_ms?: number
-  tokens_input?: number
-  tokens_output?: number
+  duration_ms: number | undefined
+  tokens_input: number | undefined
+  tokens_output: number | undefined
   tool_calls_count: number
 }
 
@@ -117,15 +117,15 @@ export interface Transition {
 export interface Artifact {
   id: string
   execution_id: string
-  agent_id?: string
+  agent_id: string | undefined
   name: string
   type: 'file' | 'code' | 'document' | 'image' | 'data'
   file_path: string
-  git_hash?: string
-  git_commit?: string
-  summary?: string
-  line_count?: number
-  byte_size?: number
+  git_hash: string | undefined
+  git_commit: string | undefined
+  summary: string | undefined
+  line_count: number | undefined
+  byte_size: number | undefined
   metadata: Record<string, any>
   created_at: Date
 }
@@ -137,11 +137,11 @@ export interface Artifact {
 export interface Report {
   id: string
   execution_id: string
-  agent_id?: string
+  agent_id: string | undefined
   type: 'progress' | 'finding' | 'warning' | 'error' | 'metric' | 'decision'
   title: string
   content: string
-  data?: Record<string, any>
+  data: Record<string, any> | undefined
   severity: 'info' | 'warning' | 'critical'
   created_at: Date
 }
@@ -149,16 +149,16 @@ export interface Report {
 export interface Commit {
   id: string
   execution_id: string
-  agent_id?: string
+  agent_id: string | undefined
   vcs_type: 'git' | 'jj'
   commit_hash: string
-  change_id?: string
+  change_id: string | undefined
   message: string
-  author?: string
-  files_changed?: string[]
-  insertions?: number
-  deletions?: number
-  smithers_metadata?: Record<string, any>
+  author: string | undefined
+  files_changed: string[] | undefined
+  insertions: number | undefined
+  deletions: number | undefined
+  smithers_metadata: Record<string, any> | undefined
   created_at: Date
 }
 
@@ -166,11 +166,11 @@ export interface Snapshot {
   id: string
   execution_id: string
   change_id: string
-  commit_hash?: string
-  description?: string
-  files_modified?: string[]
-  files_added?: string[]
-  files_deleted?: string[]
+  commit_hash: string | undefined
+  description: string | undefined
+  files_modified: string[] | undefined
+  files_added: string[] | undefined
+  files_deleted: string[] | undefined
   has_conflicts: boolean
   created_at: Date
 }
@@ -178,14 +178,14 @@ export interface Snapshot {
 export interface Review {
   id: string
   execution_id: string
-  agent_id?: string
+  agent_id: string | undefined
   target_type: 'commit' | 'diff' | 'pr' | 'files'
-  target_ref?: string
+  target_ref: string | undefined
   approved: boolean
   summary: string
   issues: ReviewIssue[]
-  approvals?: ReviewApproval[]
-  reviewer_model?: string
+  approvals: ReviewApproval[] | undefined
+  reviewer_model: string | undefined
   blocking: boolean
   posted_to_github: boolean
   posted_to_git_notes: boolean
