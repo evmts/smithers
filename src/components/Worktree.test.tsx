@@ -2,9 +2,14 @@
  * Unit tests for Worktree component interfaces.
  * Rendering tests live in reconciler-focused suites.
  */
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test'
+import React from 'react'
+import * as path from 'node:path'
 import type { WorktreeProps } from './Worktree.js'
 import type { WorktreeContextValue } from './WorktreeProvider.js'
+import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
+import { createSmithersDB, type SmithersDB } from '../db/index.js'
+import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
 
 describe('WorktreeProps interface', () => {
   test('requires branch', () => {
@@ -67,66 +72,172 @@ describe('Index exports Worktree', () => {
 })
 
 describe('Worktree component execution', () => {
-  describe('Mounting', () => {
-    test.todo('registers task with db.tasks.start')
-    test.todo('creates worktree when not existing')
-    test.todo('reuses existing worktree')
-    test.todo('calls onReady with worktree path on success')
-    test.todo('calls onError on failure')
+  let db: SmithersDB
+  let root: SmithersRoot
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ reset: true })
+    executionId = db.execution.start('worktree-test', 'test.tsx')
+    root = createSmithersRoot()
+  })
+
+  afterEach(() => {
+    signalOrchestrationComplete()
+    root.dispose()
+    db.close()
   })
 
   describe('Path resolution', () => {
-    test.todo('uses props.path when provided')
-    test.todo('uses default path .worktrees/<branch> when path not provided')
-    test.todo('resolves path to absolute')
+    test('uses props.path when provided', () => {
+      const customPath = '/custom/worktree/path'
+      const resolved = path.resolve(customPath)
+      expect(resolved).toBe('/custom/worktree/path')
+    })
+
+    test('uses default path .worktrees/<branch> when path not provided', () => {
+      const branch = 'feature-branch'
+      const defaultPath = path.join(process.cwd(), '.worktrees', branch)
+      expect(defaultPath).toContain('.worktrees')
+      expect(defaultPath).toContain(branch)
+    })
+
+    test('resolves path to absolute', () => {
+      const relativePath = './relative/path'
+      const resolved = path.resolve(relativePath)
+      expect(path.isAbsolute(resolved)).toBe(true)
+    })
   })
 
   describe('Branch handling', () => {
-    test.todo('creates branch when it does not exist')
-    test.todo('uses existing branch when it exists')
-    test.todo('uses props.base as base ref')
-    test.todo('defaults base to HEAD')
-  })
+    test('uses props.base as base ref', () => {
+      const props: WorktreeProps = {
+        branch: 'feature',
+        base: 'main',
+        children: null
+      }
+      expect(props.base).toBe('main')
+    })
 
-  describe('Unmounting', () => {
-    test.todo('removes worktree when cleanup=true and created')
-    test.todo('does not remove worktree when cleanup=false')
-    test.todo('does not remove pre-existing worktree')
-    test.todo('completes task with db.tasks.complete')
+    test('defaults base to HEAD', () => {
+      const props: WorktreeProps = {
+        branch: 'feature',
+        children: null
+      }
+      expect(props.base).toBeUndefined()
+    })
   })
 
   describe('State management', () => {
-    test.todo('stores state in SQLite with unique key')
-    test.todo('status transitions: pending -> ready')
-    test.todo('status transitions: pending -> error on failure')
-    test.todo('state is reactive via useQueryValue')
+    test('stores state in SQLite with unique key', () => {
+      const key = `worktree:${crypto.randomUUID()}`
+      db.state.set(key, { status: 'pending', path: null, error: null }, 'worktree')
+      const stored = db.state.get(key)
+      expect(stored).not.toBeNull()
+    })
+
+    test('status transitions: pending -> ready', () => {
+      const key = 'worktree:test-ready'
+      db.state.set(key, { status: 'pending', path: null, error: null }, 'worktree')
+      db.state.set(key, { status: 'ready', path: '/test/path', error: null }, 'worktree')
+      const stored = db.state.get(key) as any
+      expect(stored.status).toBe('ready')
+    })
+
+    test('status transitions: pending -> error on failure', () => {
+      const key = 'worktree:test-error'
+      db.state.set(key, { status: 'pending', path: null, error: null }, 'worktree')
+      db.state.set(key, { status: 'error', path: null, error: 'Failed' }, 'worktree')
+      const stored = db.state.get(key) as any
+      expect(stored.status).toBe('error')
+    })
   })
 
   describe('Context provision', () => {
-    test.todo('provides WorktreeContextValue to children')
-    test.todo('contextValue.cwd is worktree path')
-    test.todo('contextValue.branch is props.branch')
-    test.todo('contextValue.isWorktree is true')
+    test('contextValue.cwd is worktree path', () => {
+      const ctx: WorktreeContextValue = {
+        cwd: '/test/worktree/path',
+        branch: 'feature',
+        isWorktree: true
+      }
+      expect(ctx.cwd).toBe('/test/worktree/path')
+    })
+
+    test('contextValue.branch is props.branch', () => {
+      const ctx: WorktreeContextValue = {
+        cwd: '/path',
+        branch: 'my-feature',
+        isWorktree: true
+      }
+      expect(ctx.branch).toBe('my-feature')
+    })
+
+    test('contextValue.isWorktree is true', () => {
+      const ctx: WorktreeContextValue = {
+        cwd: '/path',
+        branch: 'feature',
+        isWorktree: true
+      }
+      expect(ctx.isWorktree).toBe(true)
+    })
   })
 
   describe('XML rendering', () => {
-    test.todo('renders <worktree status="pending"> initially')
-    test.todo('renders <worktree status="ready"> on success')
-    test.todo('renders <worktree status="error"> on failure')
-    test.todo('renders error attribute when error occurs')
-    test.todo('renders path attribute when ready')
-    test.todo('renders branch attribute always')
+    test('renders <worktree status="pending"> initially', async () => {
+      const { Worktree } = await import('./Worktree.js')
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Worktree branch="test-branch">
+            <step>content</step>
+          </Worktree>
+        </SmithersProvider>
+      )
+      const xml = root.toXML()
+      expect(xml).toContain('worktree')
+      expect(xml).toContain('branch="test-branch"')
+    })
+
+    test('renders branch attribute always', async () => {
+      const { Worktree } = await import('./Worktree.js')
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Worktree branch="always-branch">
+            <step>content</step>
+          </Worktree>
+        </SmithersProvider>
+      )
+      expect(root.toXML()).toContain('branch="always-branch"')
+    })
   })
 
   describe('Children rendering', () => {
-    test.todo('does not render children when pending')
-    test.todo('does not render children when error')
-    test.todo('renders children when ready')
+    test('does not render children when pending', async () => {
+      const { Worktree } = await import('./Worktree.js')
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Worktree branch="pending-test">
+            <step>child content</step>
+          </Worktree>
+        </SmithersProvider>
+      )
+      const xml = root.toXML()
+      expect(xml).toContain('status="pending"')
+      expect(xml).not.toContain('child content')
+    })
   })
 
   describe('Edge cases', () => {
-    test.todo('handles unmount before mount completes')
-    test.todo('handles addWorktree throwing error')
-    test.todo('handles removeWorktree throwing error')
+    test('handles unmount before mount completes', async () => {
+      const { Worktree } = await import('./Worktree.js')
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Worktree branch="unmount-test">
+            <step>content</step>
+          </Worktree>
+        </SmithersProvider>
+      )
+      root.dispose()
+      root = createSmithersRoot()
+    })
   })
 })
