@@ -8,7 +8,6 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createTestEnvironment, cleanupTestEnvironment, logEvalResult } from './setup'
 import { SmithersProvider } from '../src/components/SmithersProvider'
 import { Phase } from '../src/components/Phase'
-import { Parallel } from '../src/components/Parallel'
 import { Snapshot } from '../src/components/JJ/Snapshot'
 import { Commit } from '../src/components/JJ/Commit'
 import { Describe } from '../src/components/JJ/Describe'
@@ -227,7 +226,7 @@ describe('11-vcs-jj', () => {
     const xml = env.root.toXML()
     const duration = Date.now() - startTime
 
-    // XML validation
+    // Should contain phase with jj operations
     expect(xml).toContain('<phase name="deployment"')
     expect(xml).toContain('<jj-snapshot')
     expect(xml).toContain('<jj-commit')
