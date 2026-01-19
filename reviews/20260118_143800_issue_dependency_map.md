@@ -279,4 +279,24 @@ Implementation is complete when:
 - [x] Resume execution test passes (load state from previous run)
 - [x] Performance unchanged or improved
 - [x] Code review approved by architecture owner
+
+---
+
+## Status: PARTIALLY RESOLVED
+
+**Date Reviewed:** 2026-01-18
+
+### Evidence of Fixes Implemented:
+1. **useQuery invalidation** ✅ - Properly uses `useSyncExternalStore` with subscribe/getSnapshot pattern
+2. **REPLACE INTO parser** ✅ - parser.ts lines 71-75 handle standalone REPLACE INTO
+3. **Row-level invalidation** ✅ - `subscribeWithRowFilter`, `invalidateRows`, `invalidateWithRowFilter` all implemented
+4. **Comprehensive tests** ✅ - database.test.ts, parser.test.ts, row-tracking.test.ts exist
+
+### Still Outstanding:
+1. **Transaction invalidation batching** ❌ - `transaction()` in database.ts (line 304-306) does NOT defer/batch invalidations. Each `run()` inside a transaction still triggers immediate callbacks.
+2. **AsyncLocalStorage context** ❌ - No grep hits for AsyncLocalStorage in src/
+
+### Recommendation:
+- This planning doc can be archived
+- Create new issue for transaction batching if needed
 - [x] All documentation updated

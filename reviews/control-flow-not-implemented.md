@@ -140,3 +140,56 @@ const { data: dbValue } = useQueryValue<T>(reactiveDb, 'SELECT...', [key])
 - Complex nested scenarios (While in If in While) need thorough testing
 - Resumability after crashes requires careful state persistence
 - Design doc explicitly requires **human review and approval** before implementation
+
+## Debugging Plan
+
+### Current Status Assessment
+- `If.tsx` exists but is a **simple ternary wrapper** (line 25-26: `return condition ? children : null`), NOT the scoped version required for stateful workflows
+- `While`, `Switch`, `ScopeProvider` do **NOT exist**
+- `scopeId` pattern is **NOT implemented** anywhere in codebase
+
+### Files to Investigate
+1. `/Users/williamcory/smithers/src/components/SmithersProvider.tsx` - Check context shape, add scopeId
+2. `/Users/williamcory/smithers/src/components/PhaseRegistry.tsx` - State key patterns to understand scoping needs
+3. `/Users/williamcory/smithers/src/components/Step.tsx` - StepRegistry scoping patterns
+4. `/Users/williamcory/smithers/issues/control-flow-components.md` - Original design doc
+
+### Grep Patterns for Root Cause
+```bash
+# Find state key patterns that need scoping
+grep -r "currentPhaseIndex" src/
+grep -r "stepIndex_" src/
+grep -r "db\.state" src/components/
+
+# Find existing context patterns to extend
+grep -r "SmithersContext" src/
+grep -r "useSmithers" src/
+```
+
+### Test Commands to Reproduce
+```bash
+# Verify While doesn't exist
+bun run -e "import { While } from './src/components'; console.log(While)"
+# Should error or undefined
+
+# Check If is just render helper
+bun test src/components/If.test.tsx  # if exists
+```
+
+### Proposed Fix Approach
+
+**Phase 1: Foundation (scopeId system)**
+1. Add `scopeId: string` to `SmithersContextValue` in SmithersProvider.tsx
+2. Create `ScopeProvider.tsx` that wraps children with new scope context
+3. Update PhaseRegistry to key state by `scopeId`
+4. Update StepRegistry to key state by `scopeId`
+
+**Phase 2: Control Flow Components**
+1. Upgrade `If.tsx` to use ScopeProvider for `then`/`else` branches
+2. Create `While.tsx` with iteration-scoped children
+3. Create `Switch.tsx` + `Case.tsx` + `Default.tsx`
+
+**Phase 3: Testing**
+1. Test nested While loops with Phase/Step inside
+2. Test crash recovery mid-iteration
+3. Test If/While/Switch combinations

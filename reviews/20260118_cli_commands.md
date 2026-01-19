@@ -36,3 +36,57 @@
 4) Only append ellipsis when truncating: `prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt`.
 5) Serialize `monitor` output by buffering event formatting in a queue or `for await` loop.
 6) Replace `process.exit()` with `throw` + top-level CLI handler (improves tests and reuse).
+
+## Debugging Plan
+
+### Files to Investigate
+- `src/commands/run.ts` - shell:true, process.exit()
+- `src/commands/monitor.ts` - shell:true, async stdout handler, process.exit()
+- `src/commands/init.ts` - process.exit()
+- `src/commands/db/state-view.ts` - unsafe JSON.stringify
+- `src/commands/db/current-view.ts` - unconditional ellipsis
+- `src/commands/db/recovery-view.ts` - started_at! assertion
+- `src/commands/db/stats-view.ts` - assumes tables exist
+
+### Grep Patterns
+```bash
+grep -n "shell: true" src/commands/*.ts
+grep -n "process.exit" src/commands/**/*.ts
+grep -n "async.*on\('data'" src/commands/*.ts
+grep -n "started_at!" src/commands/**/*.ts
+grep -n "substring.*\.\.\." src/commands/**/*.ts
+```
+
+### Test Commands
+```bash
+# Reproduce reordering - run monitor with chatty agent
+bunx smithers-orchestrator monitor
+
+# Reproduce stats crash - run on fresh DB missing tables
+rm .smithers/db.sqlite && bunx smithers-orchestrator db stats
+```
+
+### Proposed Fix Approach
+
+1. **Remove `shell: true`** in run.ts:58 and monitor.ts:65 - already passing array args
+2. **Serialize async output** in monitor.ts - queue events and process sequentially:
+   ```ts
+   const queue: Promise<void>[] = []
+   child.stdout?.on('data', (data) => {
+     queue.push((async () => { /* existing logic */ })())
+   })
+   ```
+3. **Safe stringify helper**:
+   ```ts
+   const safeStringify = (v: unknown) => JSON.stringify(v) ?? String(v)
+   ```
+4. **Conditional ellipsis** in current-view.ts:61:
+   ```ts
+   `Prompt: ${agent.prompt.length > 100 ? agent.prompt.substring(0,100) + '...' : agent.prompt}`
+   ```
+5. **Guard started_at** in recovery-view.ts:36:
+   ```ts
+   `Started: ${incomplete.started_at ? new Date(incomplete.started_at).toLocaleString() : '(unknown)'}`
+   ```
+6. **Wrap table counts in try/catch** in stats-view.ts or check table existence first
+7. **Replace process.exit()** with thrown errors caught at CLI entry point

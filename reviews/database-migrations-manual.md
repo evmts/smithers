@@ -71,3 +71,37 @@ Since this project uses Bun and `bun:sqlite` directly (no external DB libraries)
 
 ## Priority
 **P4** - Technical debt (low priority but would prevent future schema debt)
+
+## Debugging Plan
+
+### Files to Investigate
+- `/Users/williamcory/smithers/src/db/index.ts` - `runMigrations()` at lines 111-118
+- `/Users/williamcory/smithers/src/db/schema.sql` - current schema definition
+
+### Grep Patterns
+```bash
+# Find all manual migration patterns
+grep -r "PRAGMA table_info" src/db/
+grep -r "ALTER TABLE" src/db/
+grep -r "runMigrations" src/db/
+```
+
+### Test Commands
+```bash
+# Verify current migration behavior
+bun test src/db/agents.test.ts
+# Check schema loading
+bun run -e "import {createSmithersDB} from './src/db'; const db = createSmithersDB(); console.log(db)"
+```
+
+### Proposed Fix Approach
+1. Add `schema_migrations` table to `schema.sql`
+2. Create `src/db/migrations/` directory
+3. Create `src/db/migrations/001_add_log_path_to_agents.ts` with version/name/up exports
+4. Refactor `runMigrations()` to:
+   - Read all migration files from `migrations/`
+   - Query `schema_migrations` for applied versions
+   - Execute pending migrations in version order
+   - Insert record into `schema_migrations` after each
+5. Add migration helper: `createMigration(version: number, name: string, up: (db) => void)`
+6. Write tests in `src/db/migrations.test.ts`

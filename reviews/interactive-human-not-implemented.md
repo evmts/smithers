@@ -129,3 +129,61 @@ db.tasks.complete(tid)
 
 ## Estimated Effort
 **3.5-4 days** (per detailed implementation plan in design doc)
+
+## Debugging Plan
+
+### Files to Investigate
+1. `/Users/williamcory/smithers/src/db/human.ts` - extend with interactive methods
+2. `/Users/williamcory/smithers/src/hooks/useHuman.ts` - reference for hook pattern
+3. `/Users/williamcory/smithers/src/db/schema.sql` - DB schema (line ~452 for human_interactions)
+4. `/Users/williamcory/smithers/issues/use-human-interactive.md` - full design doc (1391 lines)
+5. `/Users/williamcory/smithers/src/hooks/index.ts` - export new hook
+
+### Grep Patterns for Context
+```bash
+# Existing hook patterns
+grep -r "useQueryOne" src/hooks/
+grep -r "resolveRef" src/hooks/
+grep -r "db.tasks.start" src/
+
+# DB module patterns (for mappers)
+grep -r "mapAgent\|mapCommit" src/db/
+
+# Schema location
+grep -n "human_interactions" src/db/schema.sql
+```
+
+### Test Commands to Reproduce
+```bash
+# Verify hook doesn't exist
+ls src/hooks/ | grep -i interactive
+
+# Check DB schema for missing columns
+grep -E "session_config|session_transcript|session_duration" src/db/schema.sql
+```
+
+### Proposed Fix Approach
+
+**Phase 1: DB Schema Migration**
+1. Add columns to `human_interactions` table in `schema.sql`
+2. Create migration script for existing DBs
+3. Add `HumanInteractionRow` raw type and `parseHumanInteraction()` mapper
+
+**Phase 2: Extend HumanModule**
+1. Add `requestInteractive(prompt, config)` method
+2. Add `completeInteractive(id, outcome, response, options)` method
+3. Add `cancelInteractive(id)` method
+4. Extend `listPending(executionId?)` to accept optional execution scope
+
+**Phase 3: Create useHumanInteractive Hook**
+1. Create `/src/hooks/useHumanInteractive.ts`
+2. Implement mutation API: `request`, `requestAsync`, `cancel`, `reset`
+3. Use `useQueryOne<HumanInteractionRow>` for reactivity
+4. Task creation for orchestration gating
+5. Single-session enforcement
+6. Export from `hooks/index.ts`
+
+**Phase 4: Tests**
+1. Unit tests for DB module extensions
+2. Integration tests for hook with mock harness
+3. Test single-session enforcement throws

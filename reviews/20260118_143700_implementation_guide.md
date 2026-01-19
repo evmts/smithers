@@ -609,3 +609,91 @@ After implementing fixes, verify:
 3. **Phase 3**: Implement AsyncLocalStorage context + execution-scoped state
 4. **Phase 4**: Add transaction batching, tool output persistence, indexes
 5. **Phase 5**: Add migration table and long-term schema versioning
+
+---
+
+## Status: PARTIALLY RESOLVED
+
+**Reviewed:** 2026-01-18
+
+### Resolved Issues
+- **Fix 1 (useQuery Invalidation)**: ✅ Fixed - `invalidateCache()` called in subscribe handler at [useQuery.ts#L111](file:///Users/williamcory/smithers/src/reactive-sqlite/hooks/useQuery.ts#L111)
+- **Fix 3 (REPLACE INTO Parser)**: ✅ Fixed - `replaceRegex` pattern exists at [parser.ts#L72-75](file:///Users/williamcory/smithers/src/reactive-sqlite/parser.ts#L72-L75)
+
+### Still Relevant Issues
+
+#### Fix 2: Iteration Key Naming (Low Priority)
+- Schema uses `ralphCount`, code is consistent
+- Consider renaming to `iteration` for semantics but not critical
+
+#### Fix 5: Transaction-Aware Invalidation (P0)
+**Problem**: Invalidations fire mid-transaction, can cause UI flicker during rollback
+
+**Files to investigate:**
+- [src/reactive-sqlite/database.ts](file:///Users/williamcory/smithers/src/reactive-sqlite/database.ts)
+
+**Grep patterns:**
+```bash
+grep -n "transaction\|invalidate" src/reactive-sqlite/database.ts
+```
+
+**Implementation approach:**
+1. Add `inTransaction` counter + `pendingInvalidations` set to ReactiveDatabase
+2. Queue invalidations in `run()` when `inTransaction > 0`
+3. Flush on successful commit, discard on rollback
+
+#### Fix 6: State Table Scoped by Execution (P1)
+**Problem**: Global state key means parallel executions can conflict
+
+**Files to investigate:**
+- [src/db/schema.sql](file:///Users/williamcory/smithers/src/db/schema.sql) - State table definition (L197)
+- [src/db/state.ts](file:///Users/williamcory/smithers/src/db/state.ts)
+
+**Schema change needed:**
+```sql
+-- Current: PRIMARY KEY (key)
+-- Needed:  PRIMARY KEY (execution_id, key)
+```
+
+---
+
+## Debugging Plan
+
+### Priority Order
+1. Fix 5 (Transaction Invalidation) - P0, causes UI bugs
+2. Fix 6 (Execution-Scoped State) - P1, needed for parallel execution
+
+### Test Commands
+```bash
+bun test src/reactive-sqlite/database.test.ts
+bun test src/db/state.test.ts
+```
+
+### Proposed Implementation Steps
+
+**Fix 5:**
+```typescript
+// database.ts additions
+private inTransaction = 0
+private pendingInvalidations = new Set<string>()
+
+transaction<T>(fn: () => T): T {
+  this.inTransaction++
+  try {
+    const result = this.db.transaction(fn)()
+    // Commit succeeded - flush invalidations
+    if (this.pendingInvalidations.size > 0) {
+      this.invalidate(Array.from(this.pendingInvalidations))
+      this.pendingInvalidations.clear()
+    }
+    return result
+  } catch (e) {
+    this.pendingInvalidations.clear() // Rollback - discard
+    throw e
+  } finally {
+    this.inTransaction--
+  }
+}
+```
+
+**Fix 6:** Requires schema migration - add `execution_id` column to state table with compound PK

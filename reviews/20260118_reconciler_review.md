@@ -521,3 +521,109 @@ All other issues are maintainability improvements that make the code more cohere
 - Steps:
   1) Add explicit warning or runtime guard against StrictMode.
   2) Consider idempotency via execution IDs/content hashes where side effects occur.
+
+---
+
+## Status: MOSTLY RESOLVED
+
+**Review Date:** 2026-01-18
+
+### Resolved Issues
+
+| Issue | Evidence |
+|-------|----------|
+| **P0: mount hangs** | `root.ts:79-89` wires fatal errors to reject + `Promise.race` at L125 |
+| **P0: event priority** | `host-config.ts:204-238` returns `currentUpdatePriority` in all three methods |
+| **P0: key model** | `jsx-runtime.ts:16-21` copies key to `__smithersKey`, `methods.ts:36-40` handles it |
+| **P0: global singleton** | `root.ts:39-54` makes it opt-in with `setGlobalFrameCaptureRoot` + explicit docs |
+| **P1: license header** | `hooks.ts:5` now says "License: MIT" only (no "public domain") |
+| **P1: LegacyRoot comment** | `root.ts:109` comment says "LegacyRoot" explicitly |
+| **P1: types.ts key doc** | `types.ts:21-24` accurately describes jsx-runtime behavior |
+
+### Still Relevant Issues
+
+#### P1: removeNode subtree invariants
+- **Current behavior:** `methods.ts:70-87` clears descendant parent pointers but leaves `node.children` arrays intact
+- **Problem:** Inconsistent invariant - detached node still has children, but children have `parent = null`
+
+#### P1: clearContainer incomplete cleanup
+- **Current behavior:** `host-config.ts:185-191` only clears immediate children's parent pointers
+- **Problem:** Does not use `removeNode` pattern; descendants keep their parent pointers
+
+---
+
+## Debugging Plan
+
+### Files to Investigate
+1. `src/reconciler/methods.ts` - `removeNode` function (L70-87)
+2. `src/reconciler/host-config.ts` - `clearContainer` function (L185-191)
+
+### Grep Patterns
+```bash
+# Find all removeNode calls
+grep -n "removeNode" src/reconciler/
+
+# Find clearContainer usages
+grep -n "clearContainer" src/reconciler/
+
+# Check for parent pointer assignments
+grep -n "\.parent\s*=" src/reconciler/
+```
+
+### Test Commands
+```bash
+# Run existing reconciler tests
+bun test src/reconciler/
+
+# Manual verification: create test that checks invariants after removal
+bun test src/reconciler/methods.test.ts
+```
+
+### Proposed Fix Approach
+
+**Option 1 (Recommended): Model 1 - Detached subtree remains internally consistent**
+
+For `removeNode`:
+```ts
+removeNode(parent: SmithersNode, node: SmithersNode): void {
+  const idx = parent.children.indexOf(node)
+  if (idx !== -1) parent.children.splice(idx, 1)
+  if (node.parent === parent) node.parent = null
+  // Do NOT clear descendant parent pointers - subtree stays internally consistent
+}
+```
+
+For `clearContainer`:
+```ts
+clearContainer(container: Container): void {
+  const children = [...container.children]
+  for (const child of children) {
+    rendererMethods.removeNode(container, child)
+  }
+}
+```
+
+**Option 2: Model 2 - Fully sever subtree**
+
+Keep current `removeNode` behavior but also clear `node.children`:
+```ts
+removeNode(parent: SmithersNode, node: SmithersNode): void {
+  const idx = parent.children.indexOf(node)
+  if (idx !== -1) parent.children.splice(idx, 1)
+  if (node.parent === parent) node.parent = null
+  
+  function clearDescendants(n: SmithersNode) {
+    for (const child of n.children) {
+      child.parent = null
+      clearDescendants(child)
+    }
+    n.children.length = 0  // <-- Add this
+  }
+  clearDescendants(node)
+}
+```
+
+### Acceptance Criteria
+1. After `removeNode(parent, node)`: either descendants have consistent parent pointers OR both parent pointers AND children arrays are cleared
+2. After `clearContainer(container)`: same invariant applies to all detached subtrees
+3. Add unit tests verifying the chosen invariant model

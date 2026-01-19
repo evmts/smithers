@@ -66,3 +66,38 @@ Output formatting is clean and readable.
 - [ ] Add `--execution-id` flag to state/transitions/stats OR remove from docs
 - [ ] Implement `db phases` OR remove from docs
 - [ ] Fix CLI help default path (shows .smithers/data/smithers.db but should be .smithers/data)
+
+## Debugging Plan
+
+### Files to Investigate
+- `src/commands/db/index.ts` - Main dispatcher, add `query` and `phases` cases
+- `src/commands/db/help.ts` - Update help text
+- `docs/concepts/database-persistence.mdx` (lines 279-289) - Fix binary name
+- `docs/quickstart.mdx` (lines 191-197) - Fix binary name
+- `docs/examples/multi-phase-review.mdx` (lines 160-163) - Fix binary name
+- All 108+ occurrences of `smithers-orchestrator db` in docs/
+
+### Grep Patterns
+```bash
+# Find all CLI command references in docs
+grep -rn "smithers-orchestrator db" docs/
+
+# Find db subcommand implementations
+grep -rn "case '" src/commands/db/
+
+# Check for execution-id handling
+grep -rn "execution.id\|executionId" src/commands/db/
+```
+
+### Test Commands to Reproduce
+```bash
+smithers db query "SELECT 1"           # Should fail - not implemented
+smithers db phases --execution-id abc  # Should fail - not implemented
+smithers db state --execution-id abc   # Flag ignored - not implemented
+```
+
+### Proposed Fix Approach
+1. **Binary name (P0)**: Global find/replace `smithers-orchestrator db` → `smithers db` in all .mdx files
+2. **Query subcommand (P1)**: Add `src/commands/db/query-view.ts` that executes arbitrary SQL and formats results
+3. **Phases subcommand (P2)**: Add `src/commands/db/phases-view.ts` querying phase-related tables
+4. **Execution-id filter (P2)**: Add `--execution-id` option to DbOptions, pass to view functions, add WHERE clauses
