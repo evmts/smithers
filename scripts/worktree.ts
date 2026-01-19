@@ -16,8 +16,8 @@ import { Glob } from 'bun'
 // ============================================================================
 
 interface WorktreeConfig {
-  name?: string
-  create?: string
+  name?: string | undefined
+  create?: string | undefined
   all: boolean
   agent: string
   thinking: string

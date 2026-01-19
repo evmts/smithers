@@ -35,30 +35,36 @@ import { Task } from "smithers-orchestrator/components";
 ### Basic Task List
 
 ```tsx
-<Orchestration>
+<SmithersProvider db={db} executionId={executionId}>
   <Phase name="setup">
     <Task done={true}>Initialize project</Task>
     <Task done={true}>Configure TypeScript</Task>
     <Task done={false}>Set up testing framework</Task>
   </Phase>
-</Orchestration>
+</SmithersProvider>
 ```
 
 ### Dynamic Task Tracking
 
 ```tsx
 function TaskTracker() {
-  const [tasks, setTasks] = useState([
+  const { db } = useSmithers();
+  
+  const tasks = useQueryValue<Array<{id: number, name: string, done: boolean}>>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'tasks'"
+  ) ?? [
     { id: 1, name: "Research", done: false },
     { id: 2, name: "Design", done: false },
     { id: 3, name: "Implement", done: false },
     { id: 4, name: "Test", done: false },
-  ]);
+  ];
 
   const markDone = (id: number) => {
-    setTasks(tasks.map(t =>
+    const updated = tasks.map(t =>
       t.id === id ? { ...t, done: true } : t
-    ));
+    );
+    db.state.set('tasks', updated);
   };
 
   return (

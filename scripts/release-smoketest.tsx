@@ -15,12 +15,12 @@ import { SmithersProvider } from '../src/components/SmithersProvider.js'
 import { Claude } from '../src/components/Claude.js'
 import { Phase } from '../src/components/Phase.js'
 import { Step } from '../src/components/Step.js'
-import { PhaseRegistry } from '../src/components/PhaseRegistry.js'
+import { PhaseRegistryProvider } from '../src/components/PhaseRegistry.js'
 import { createSmithersDB } from '../src/db/index.js'
 import { createSmithersRoot } from '../src/reconciler/index.js'
 
-const VERSION = process.env.SMITHERS_VERSION ?? 'latest'
-const GIT_HISTORY = process.env.GIT_HISTORY ?? '[]'
+const VERSION = process.env['SMITHERS_VERSION'] ?? 'latest'
+const GIT_HISTORY = process.env['GIT_HISTORY'] ?? '[]'
 
 // Structured output schemas for phase data passing
 const FeatureAnalysisSchema = z.object({
@@ -283,12 +283,12 @@ Keep it brief and actionable.`}
 
 function ReleaseSmoketestOrchestration() {
   return (
-    <PhaseRegistry>
+    <PhaseRegistryProvider>
       <AnalyzeHistoryPhase />
       <SetupProjectPhase />
       <RunSmoketestsPhase />
       <ReportPhase />
-    </PhaseRegistry>
+    </PhaseRegistryProvider>
   )
 }
 

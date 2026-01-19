@@ -9,7 +9,6 @@
 import type { ReactNode } from 'react'
 import { Step } from '../../../src/components/Step.js'
 import { If } from '../../../src/components/If.js'
-import { Each } from '../../../src/components/Each.js'
 import { Claude } from '../../../src/components/Claude.js'
 import type { PRInfo, PRReview, WorktreeContext } from '../types.js'
 
@@ -61,17 +60,15 @@ export function ReviewPhase({
       {/* Step 2: Handle GH reviews */}
       <If condition={pendingReviews.length > 0 && !reviewsHandled}>
         <pending-reviews>
-          <Each items={pendingReviews}>
-            {(review: PRReview) => (
-              <review
-                key={`${review.author}-${review.submittedAt}`}
-                author={review.author}
-                state={review.state}
-              >
-                {review.body}
-              </review>
-            )}
-          </Each>
+          {pendingReviews.map((review: PRReview) => (
+            <review
+              key={`${review.author}-${review.submittedAt}`}
+              author={review.author}
+              state={review.state}
+            >
+              {review.body}
+            </review>
+          ))}
         </pending-reviews>
 
         <Step name="address-reviews">

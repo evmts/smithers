@@ -31,11 +31,11 @@ import {
 
 interface CaptureConfig {
   content: string
-  type?: CaptureType
-  commitHash?: string
-  commitMessage?: string
-  priority?: 'high' | 'medium' | 'low'
-  title?: string
+  type?: CaptureType | undefined
+  commitHash?: string | undefined
+  commitMessage?: string | undefined
+  priority?: 'high' | 'medium' | 'low' | undefined
+  title?: string | undefined
   stdin: boolean
   dryRun: boolean
   cwd: string
