@@ -231,6 +231,40 @@ Because you want:
 
 Ralphing is the outer loop (iterate until verification passes). Smithers gives it structure, persistence, and inspectability.
 
+### Do I have to use Bun?
+
+Yes. Smithers uses Bun-specific features (`bun:sqlite`, `Bun.spawn`). Node.js support is not currently available.
+
+### What do I need for Claude to work?
+
+1. [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) installed globally
+2. Active Claude subscription (Smithers uses Claude Code's subscription, no separate API key)
+3. `claude` command available in PATH
+
+### Is Ralph deprecated?
+
+The `<Ralph>` component is deprecated. Use `<SmithersProvider>` instead - it includes the Ralph loop internally. Pass `maxIterations`, `onIteration`, and `onComplete` props to SmithersProvider.
+
+### How do I resume a crashed run?
+
+```tsx
+const incomplete = await db.execution.findIncomplete();
+if (incomplete) {
+  executionId = incomplete.id; // Resume from here
+} else {
+  executionId = await db.execution.start("My Workflow", "workflow.tsx");
+}
+```
+
+State in SQLite survives restarts. State in `useState` does not.
+
+### What's the difference between Task component and db.tasks?
+
+- `<Task>` is a **presentational** component (renders a checkbox-like display)
+- `db.tasks` is the **orchestration API** for tracking async work
+
+Use `db.tasks.start/complete` to coordinate async work with the Ralph loop.
+
 ## Next Steps
 
 <CardGroup cols={2}>

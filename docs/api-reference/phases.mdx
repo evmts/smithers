@@ -126,14 +126,14 @@ import { Phase, Step } from "smithers-orchestrator";
 Phases track their iteration number for workflows that loop:
 
 ```tsx
-<Ralph maxIterations={5}>
+<SmithersProvider db={db} executionId={executionId} maxIterations={5}>
   <Phase name="implement">
     {/* This phase will be tracked with iteration 0, 1, 2, etc. */}
     <Step name="implement">
       <Claude>Implement the feature.</Claude>
     </Step>
   </Phase>
-</Ralph>
+</SmithersProvider>
 ```
 
 Query phases by iteration:
@@ -166,34 +166,32 @@ function StateDrivenWorkflow() {
   }, []);
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Ralph maxIterations={10}>
-        <If condition={phase === "implement"}>
-          <Phase name="Implementation">
-            <Step name="implement">
-              <Claude onFinished={() => db.state.set("currentPhase", "review")}>
-                Implement the feature.
-              </Claude>
-            </Step>
-          </Phase>
-        </If>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+      <If condition={phase === "implement"}>
+        <Phase name="Implementation">
+          <Step name="implement">
+            <Claude onFinished={() => db.state.set("currentPhase", "review")}>
+              Implement the feature.
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
 
-        <If condition={phase === "review"}>
-          <Phase name="Review">
-            <Step name="review">
-              <Review
-                onFinished={(r) => {
-                  if (r.approved) {
-                    db.state.set("currentPhase", "complete");
-                  } else {
-                    db.state.set("currentPhase", "implement");
-                  }
-                }}
-              />
-            </Step>
-          </Phase>
-        </If>
-      </Ralph>
+      <If condition={phase === "review"}>
+        <Phase name="Review">
+          <Step name="review">
+            <Review
+              onFinished={(r) => {
+                if (r.approved) {
+                  db.state.set("currentPhase", "complete");
+                } else {
+                  db.state.set("currentPhase", "implement");
+                }
+              }}
+            />
+          </Step>
+        </Phase>
+      </If>
     </SmithersProvider>
   );
 }

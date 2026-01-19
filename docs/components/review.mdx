@@ -123,7 +123,7 @@ function ReviewWorkflow() {
   const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
-    <Ralph maxIterations={5}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
       <If condition={phase === "implement"}>
         <Claude
           allowedTools={["Edit", "Write"]}
@@ -152,7 +152,7 @@ function ReviewWorkflow() {
           }}
         />
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```

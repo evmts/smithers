@@ -151,26 +151,24 @@ function TaskDrivenWorkflow() {
   ];
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Ralph maxIterations={tasks.length}>
-        <Phase name="tasks">
-          <Step name="tasks">
-            {tasks.map((task, i) => (
-              <Task key={i} done={i < currentTaskIndex}>
-                {task}
-              </Task>
-            ))}
-          </Step>
-        </Phase>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={tasks.length}>
+      <Phase name="tasks">
+        <Step name="tasks">
+          {tasks.map((task, i) => (
+            <Task key={i} done={i < currentTaskIndex}>
+              {task}
+            </Task>
+          ))}
+        </Step>
+      </Phase>
 
-        <If condition={currentTaskIndex < tasks.length}>
-          <Claude
-            onFinished={() => db.state.set('currentTaskIndex', currentTaskIndex + 1)}
-          >
-            Complete this task: {tasks[currentTaskIndex]}
-          </Claude>
-        </If>
-      </Ralph>
+      <If condition={currentTaskIndex < tasks.length}>
+        <Claude
+          onFinished={() => db.state.set('currentTaskIndex', currentTaskIndex + 1)}
+        >
+          Complete this task: {tasks[currentTaskIndex]}
+        </Claude>
+      </If>
     </SmithersProvider>
   );
 }

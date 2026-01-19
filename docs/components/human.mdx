@@ -53,7 +53,7 @@ function ApprovalWorkflow() {
   const [phase, setPhase] = useState("implement");
 
   return (
-    <Ralph maxIterations={10}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
       <If condition={phase === "implement"}>
         <Claude onFinished={() => setPhase("review")}>
           Implement the feature.
@@ -83,7 +83,7 @@ function ApprovalWorkflow() {
       <If condition={phase === "cancelled"}>
         <Stop reason="Human rejected changes" />
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```
@@ -97,7 +97,7 @@ function StrictWorkflow() {
   const [phase, setPhase] = useState("prompt-input");
 
   return (
-    <Ralph maxIterations={20}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={20}>
       <If condition={phase === "prompt-input"}>
         <Human
           message="Confirm Feature Request"
@@ -144,7 +144,7 @@ function StrictWorkflow() {
       <If condition={phase === "cancelled"}>
         <Stop reason="Workflow cancelled by human" />
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```

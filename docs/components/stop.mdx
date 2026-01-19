@@ -34,7 +34,7 @@ function ConditionalWorkflow() {
   const [status, setStatus] = useState("running");
 
   return (
-    <Ralph maxIterations={10}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
       <If condition={status === "running"}>
         <Claude
           onFinished={(result) => {
@@ -56,7 +56,7 @@ function ConditionalWorkflow() {
       <If condition={status === "complete"}>
         <Stop reason="Task completed" />
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```

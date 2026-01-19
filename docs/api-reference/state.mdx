@@ -158,13 +158,13 @@ async function Workflow() {
   };
 
   return (
-    <Ralph maxIterations={10}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
       <If condition={phase === "start"}>
         <Claude onFinished={() => updatePhase("done")}>
           Complete the task.
         </Claude>
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```

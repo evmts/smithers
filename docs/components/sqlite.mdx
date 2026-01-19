@@ -105,7 +105,7 @@ function DataWorkflow() {
   const [phase, setPhase] = useState("analyze");
 
   return (
-    <Ralph maxIterations={5}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
       <If condition={phase === "analyze"}>
         <Claude
           model="sonnet"
@@ -129,7 +129,7 @@ function DataWorkflow() {
           Save to reports/q4-analysis.md
         </Claude>
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```

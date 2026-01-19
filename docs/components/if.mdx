@@ -40,12 +40,10 @@ import { If, Phase, Step, Claude } from "smithers-orchestrator";
 ## Multi-Phase Workflow
 
 ```tsx
-import { If, Ralph, Phase, Step, Claude, useSmithers } from "smithers-orchestrator";
+import { If, SmithersProvider, Phase, Step, Claude, useSmithers } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function Workflow() {
-  const { db } = useSmithers();
-  
+function Workflow({ db, executionId }) {
   const phase = useQueryValue<string>(
     db.db,
     "SELECT value FROM state WHERE key = 'phase'"
@@ -54,7 +52,7 @@ function Workflow() {
   const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
-    <Ralph maxIterations={10}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
       <If condition={phase === "research"}>
         <Phase name="Research">
           <Step name="research">
@@ -84,7 +82,7 @@ function Workflow() {
           </Step>
         </Phase>
       </If>
-    </Ralph>
+    </SmithersProvider>
   );
 }
 ```

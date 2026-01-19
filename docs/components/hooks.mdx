@@ -119,8 +119,7 @@ bunx smithers hook-trigger post-commit "$COMMIT_HASH"
 ```tsx
 function CIRecoveryWorkflow() {
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-        <Ralph maxIterations={3}>
+        <SmithersProvider db={db} executionId={executionId} maxIterations={3}>
           <OnCIFailure
             provider="github-actions"
             pollInterval={30000}
@@ -167,8 +166,7 @@ function CIRecoveryWorkflow() {
               </>
             )}
           </OnCIFailure>
-        </Ralph>
-    </SmithersProvider>
+        </SmithersProvider>
   );
 }
 ```
