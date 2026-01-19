@@ -211,7 +211,10 @@ describe('built-in middleware', () => {
     let caught: Error | null = null
 
     try {
-      await middleware.transformResult?.(makeResult())
+      await middleware.wrapExecute?.({
+        doExecute: async () => makeResult(),
+        options: { prompt: 'test' },
+      })
     } catch (error) {
       caught = error as Error
     }
