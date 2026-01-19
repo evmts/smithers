@@ -89,21 +89,7 @@ function Workflow() {
 }
 ```
 
-## Comparison
-
-### Before (Inline Conditional)
-
-```tsx
-{phase === "implement" && (
-  <Phase name="Implementation">
-    <Step name="implement">
-      <Claude>Implement the feature.</Claude>
-    </Step>
-  </Phase>
-)}
-```
-
-### After (If Component)
+## Example
 
 ```tsx
 <If condition={phase === "implement"}>

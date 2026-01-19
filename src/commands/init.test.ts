@@ -73,7 +73,6 @@ describe('init command', () => {
       
       const mainFile = path.join(tempDir, '.smithers', 'main.tsx')
       const stats = fs.statSync(mainFile)
-      // Check executable bit for owner
       expect((stats.mode & 0o100) !== 0).toBe(true)
     })
   })
@@ -117,7 +116,6 @@ describe('init command', () => {
       const mainFile = path.join(tempDir, '.smithers', 'main.tsx')
       const content = fs.readFileSync(mainFile, 'utf-8')
       
-      // Template should contain smithers imports
       expect(content).toContain('smithers-orchestrator')
     })
 
