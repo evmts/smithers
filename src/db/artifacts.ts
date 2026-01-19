@@ -39,6 +39,7 @@ export function createArtifactsModule(ctx: ArtifactsModuleContext): ArtifactsMod
 
   const artifacts: ArtifactsModule = {
     add: (name: string, type: Artifact['type'], filePath: string, agentId?: string, metadata?: Record<string, any>): string => {
+      if (rdb.isClosed) return uuid()
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
@@ -51,6 +52,7 @@ export function createArtifactsModule(ctx: ArtifactsModuleContext): ArtifactsMod
     },
 
     list: (executionId: string): Artifact[] => {
+      if (rdb.isClosed) return []
       return rdb.query<any>('SELECT * FROM artifacts WHERE execution_id = ? ORDER BY created_at', [executionId])
         .map(mapArtifact)
         .filter((a): a is Artifact => a !== null)

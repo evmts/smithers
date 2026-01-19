@@ -10,6 +10,12 @@ import {
 // Type for the fiber root container
 type FiberRoot = ReturnType<typeof SmithersReconciler.createContainer>
 
+function isThenable(value: unknown): value is Promise<ReactNode> {
+  return value !== null &&
+         typeof value === 'object' &&
+         typeof (value as { then?: unknown }).then === 'function'
+}
+
 /**
  * Smithers root for mounting React components.
  */
@@ -93,11 +99,9 @@ export function createSmithersRoot(): SmithersRoot {
 
       let element: ReactNode
 
-      if (result && typeof (result as any).then === 'function') {
-        // App is async - we need to await the JSX first
-        element = await (result as Promise<ReactNode>)
+      if (isThenable(result)) {
+        element = await result
       } else {
-        // App is sync
         element = result as ReactNode
       }
 

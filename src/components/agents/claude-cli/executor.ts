@@ -176,8 +176,13 @@ export async function executeClaudeCLIOnce(
     // Check if we should retry with API key (subscription failure)
     const shouldRetry = !useApiKey && shouldFallbackToApiKey(stdout, stderr, exitCode)
 
+    // When exitCode !== 0, enhance output with command and stderr context
+    const output = exitCode !== 0
+      ? `Claude CLI failed (exit ${exitCode})\nCommand: claude ${args.join(' ')}\n\nSTDOUT:\n${parsed.output}\n\nSTDERR:\n${stderr}`
+      : parsed.output
+
     return {
-      output: parsed.output,
+      output,
       structured: parsed.structured,
       tokensUsed: parsed.tokensUsed,
       turnsUsed: parsed.turnsUsed,
@@ -192,7 +197,7 @@ export async function executeClaudeCLIOnce(
     const errorMessage = error instanceof Error ? error.message : String(error)
 
     return {
-      output: errorMessage,
+      output: `Claude CLI execution error\nCommand: claude ${args.join(' ')}\nError: ${errorMessage}`,
       tokensUsed: { input: 0, output: 0 },
       turnsUsed: 0,
       stopReason: 'error',
@@ -324,7 +329,7 @@ export async function executeClaudeShell(
   } catch (error: unknown) {
     const durationMs = Date.now() - startTime
 
-    const getErrorOutput = (): string => {
+    const getErrorMessage = (): string => {
       if (error && typeof error === 'object') {
         if ('stderr' in error && typeof error.stderr === 'string') return error.stderr
         if ('message' in error && typeof error.message === 'string') return error.message
@@ -340,7 +345,7 @@ export async function executeClaudeShell(
     }
 
     return {
-      output: getErrorOutput(),
+      output: `Claude CLI failed\nCommand: claude ${argsString}\n\n${getErrorMessage()}`,
       tokensUsed: { input: 0, output: 0 },
       turnsUsed: 0,
       stopReason: 'error',
