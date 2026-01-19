@@ -3,6 +3,7 @@ import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes, getGitNotes } from '../../utils/vcs.js'
 import { useMount, useMountedState } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
+import { useExecutionContext } from '../ExecutionContext.js'
 
 interface NotesState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -36,6 +37,7 @@ export interface NotesResult {
  */
 export function Notes(props: NotesProps): ReactNode {
   const smithers = useSmithers()
+  const execution = useExecutionContext()
   const opIdRef = useRef(crypto.randomUUID())
   const stateKey = `git-notes:${opIdRef.current}`
 
@@ -59,6 +61,7 @@ export function Notes(props: NotesProps): ReactNode {
   }
 
   useMount(() => {
+    if (!execution.isActive) return
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
