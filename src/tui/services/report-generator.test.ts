@@ -1,14 +1,16 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import { createSmithersDB, type SmithersDB } from '../../db/index.js'
+import { generateReport } from './report-generator.js'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import * as os from 'node:os'
 
 describe('report-generator', () => {
   let db: SmithersDB
   let testDir: string
 
   beforeEach(() => {
-    testDir = path.join('/tmp', `report-test-${Date.now()}`)
+    testDir = path.join(os.tmpdir(), `report-test-${Date.now()}`)
     fs.mkdirSync(testDir, { recursive: true })
     const dbPath = path.join(testDir, 'test.db')
     db = createSmithersDB(dbPath)
@@ -20,14 +22,12 @@ describe('report-generator', () => {
 
   describe('generateReport', () => {
     test('returns null when no execution exists', async () => {
-      const { generateReport } = await import('./report-generator.js')
       const result = await generateReport(db)
       expect(result).toBe(null)
     })
 
     test('generates report when execution exists', async () => {
       db.execution.start('test-execution', 'test.tsx')
-      const { generateReport } = await import('./report-generator.js')
       const result = await generateReport(db)
       expect(result).not.toBe(null)
       expect(result?.type).toBe('auto_summary')
@@ -38,7 +38,6 @@ describe('report-generator', () => {
       db.execution.start('test-execution', 'test.tsx')
       db.phases.start('phase1')
       
-      const { generateReport } = await import('./report-generator.js')
       const result = await generateReport(db)
       expect(result?.content).toContain('Phases')
       expect(result?.content).toContain('Total: 1')
@@ -50,7 +49,6 @@ describe('report-generator', () => {
       const agentId = await db.agents.start('Test agent', 'sonnet', 'test')
       await db.agents.complete(agentId, 'done', {}, { input: 100, output: 50 })
       
-      const { generateReport } = await import('./report-generator.js')
       const result = await generateReport(db)
       expect(result?.content).toContain('Agents')
       expect(result?.content).toContain('Completed: 1')
@@ -61,7 +59,6 @@ describe('report-generator', () => {
       const agentId = await db.agents.start('Test agent', 'sonnet', 'test')
       await db.agents.fail(agentId, 'Something went wrong')
       
-      const { generateReport } = await import('./report-generator.js')
       const result = await generateReport(db)
       expect(result?.severity).toBe('warning')
     })
@@ -69,7 +66,6 @@ describe('report-generator', () => {
     test('sets severity to info when no failures', async () => {
       db.execution.start('test-execution', 'test.tsx')
       
-      const { generateReport } = await import('./report-generator.js')
       const result = await generateReport(db)
       expect(result?.severity).toBe('info')
     })

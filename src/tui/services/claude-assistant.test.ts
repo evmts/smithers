@@ -3,13 +3,14 @@ import { createSmithersDB, type SmithersDB } from '../../db/index.js'
 import { createClaudeAssistant } from './claude-assistant.js'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import * as os from 'node:os'
 
 describe('claude-assistant', () => {
   let db: SmithersDB
   let testDir: string
 
   beforeEach(() => {
-    testDir = path.join('/tmp', `assistant-test-${Date.now()}`)
+    testDir = path.join(os.tmpdir(), `assistant-test-${Date.now()}`)
     fs.mkdirSync(testDir, { recursive: true })
     const dbPath = path.join(testDir, 'test.db')
     db = createSmithersDB(dbPath)

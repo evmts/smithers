@@ -18,42 +18,173 @@ Smithers uses Claude Code's subscription for API access - no separate API key ne
 
 ## Installation
 
-<CodeGroup>
-
-```bash bun (recommended)
-bun add smithers
+```bash
+bun add smithers-orchestrator
 ```
 
-```bash npm
-npm install smithers
-```
+## Canonical Workflow
 
-</CodeGroup>
-
-## Your First Workflow
-
-Create a file called `my-workflow.tsx`:
+Create `my-workflow.tsx`:
 
 ```tsx
 #!/usr/bin/env bun
 
-import { createSmithersRoot } from "smithers-orchestrator";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Claude } from "smithers-orchestrator/components/Claude";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Phase,
+  Step,
+  Claude,
+} from "smithers-orchestrator";
 
-// Create a database for state persistence
-const db = await createSmithersDB({ path: ".smithers/my-task" });
-const executionId = await db.execution.start("My Task", "scripts/my-task.tsx");
+// 1. Create database for state persistence
+const db = await createSmithersDB({ path: ".smithers/my-workflow" });
 
-async function MyWorkflow() {
+// 2. Start or resume execution
+let executionId: string;
+const incomplete = await db.execution.findIncomplete();
+if (incomplete) {
+  executionId = incomplete.id;
+  console.log("Resuming:", executionId);
+} else {
+  executionId = await db.execution.start("My Workflow", "my-workflow.tsx");
+}
+
+// 3. Define workflow with Phase/Step/Claude composition
+function Workflow() {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+      <Phase name="Research">
+        <Step name="Analyze codebase">
+          <Claude model="sonnet">
+            Analyze this codebase structure and identify patterns.
+          </Claude>
+        </Step>
+        <Step name="Document findings">
+          <Claude model="sonnet">
+            Document the key patterns found in the previous analysis.
+          </Claude>
+        </Step>
+      </Phase>
+
+      <Phase name="Implementation">
+        <Step name="Write code">
+          <Claude model="sonnet">
+            Implement improvements based on the research phase.
+          </Claude>
+        </Step>
+        <Step name="Write tests">
+          <Claude model="sonnet">
+            Write tests for the new implementation.
+          </Claude>
+        </Step>
+      </Phase>
+
+      <Phase name="Review">
+        <Claude model="sonnet">
+          Review all changes and ensure quality standards are met.
+        </Claude>
+      </Phase>
+    </SmithersProvider>
+  );
+}
+
+// 4. Mount and run orchestrator
+const root = createSmithersRoot();
+await root.mount(Workflow);
+
+// 5. Complete and close
+await db.execution.complete(executionId);
+await db.close();
+```
+
+## Run
+
+```bash
+bun my-workflow.tsx
+```
+
+## Understanding the Code
+
+<Steps>
+  <Step title="Create Database">
+    ```tsx
+    const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+    ```
+    SQLite database persists all state, enabling resume on crash/restart.
+  </Step>
+
+  <Step title="Start/Resume Execution">
+    ```tsx
+    const incomplete = await db.execution.findIncomplete();
+    if (incomplete) {
+      executionId = incomplete.id;
+    } else {
+      executionId = await db.execution.start("My Workflow", "my-workflow.tsx");
+    }
+    ```
+    Automatically resumes incomplete executions.
+  </Step>
+
+  <Step title="SmithersProvider">
+    ```tsx
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+    ```
+    Provides database and orchestration context to all children.
+  </Step>
+
+  <Step title="Phase/Step/Claude Composition">
+    ```tsx
+    <Phase name="Research">
+      <Step name="Analyze">
+        <Claude model="sonnet">Prompt here</Claude>
+      </Step>
+    </Phase>
+    ```
+    - **Phase**: Sequential workflow stages (only active phase executes)
+    - **Step**: Sequential tasks within a phase
+    - **Claude**: AI agent execution
+  </Step>
+
+  <Step title="Mount with createSmithersRoot">
+    ```tsx
+    const root = createSmithersRoot();
+    await root.mount(Workflow);
+    ```
+    React reconciler mounts and executes the component tree.
+  </Step>
+
+  <Step title="Close Database">
+    ```tsx
+    await db.execution.complete(executionId);
+    await db.close();
+    ```
+    Mark complete and flush writes.
+  </Step>
+</Steps>
+
+## Minimal Example
+
+For simple single-agent tasks:
+
+```tsx
+#!/usr/bin/env bun
+
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Claude,
+} from "smithers-orchestrator";
+
+const db = await createSmithersDB({ path: ".smithers/simple" });
+const executionId = await db.execution.start("Simple", "simple.tsx");
+
+function Workflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Claude
-        model="sonnet"
-        maxTurns={10}
-        onFinished={(result) => console.log("Done:", result.output)}
-      >
+      <Claude model="sonnet" onFinished={(r) => console.log(r.output)}>
         Analyze this codebase and suggest three improvements.
       </Claude>
     </SmithersProvider>
@@ -61,108 +192,9 @@ async function MyWorkflow() {
 }
 
 const root = createSmithersRoot();
-await root.mount(MyWorkflow);
+await root.mount(Workflow);
 await db.close();
 ```
-
-## Run the Workflow
-
-```bash
-bun my-workflow.tsx
-```
-
-You'll see Claude analyze your codebase and output suggestions.
-
-## Understanding the Code
-
-<Steps>
-  <Step title="Create Database">
-    ```tsx
-    const db = await createSmithersDB({ path: ".smithers/my-task" });
-    ```
-    The SQLite database persists all state, letting you resume workflows.
-  </Step>
-
-  <Step title="Start Execution">
-    ```tsx
-    const executionId = await db.execution.start("My Task", "scripts/my-task.tsx");
-    ```
-    Each execution is tracked with a unique ID for observability.
-  </Step>
-
-  <Step title="Wrap in Provider">
-    ```tsx
-    <SmithersProvider db={db} executionId={executionId}>
-      {/* components */}
-    </SmithersProvider>
-    ```
-    The provider gives all child components access to database and execution context.
-  </Step>
-
-  <Step title="Define Agent">
-    ```tsx
-    <Claude model="sonnet" onFinished={(result) => console.log(result)}>
-      Your prompt here
-    </Claude>
-    ```
-    The Claude component executes your prompt with the specified model.
-  </Step>
-
-  <Step title="Mount and Run">
-    ```tsx
-    const root = createSmithersRoot();
-    await root.mount(MyWorkflow);
-    ```
-    The React renderer mounts your component tree and executes it.
-  </Step>
-</Steps>
-
-## Multi-Phase Workflow
-
-Here's a more complex example with phases and state:
-
-```tsx
-async function ReviewWorkflow() {
-  const phase = (await db.state.get("phase")) ?? "implement";
-
-  return (
-    <SmithersProvider db={db} executionId={executionId}>
-      {phase === "implement" && (
-        <Claude
-          model="sonnet"
-          onFinished={() => db.state.set("phase", "review")}
-        >
-          Implement the user authentication feature.
-        </Claude>
-      )}
-
-      {phase === "review" && (
-        <Review
-          target={{ type: "diff", ref: "main" }}
-          criteria={[
-            "No security vulnerabilities",
-            "Tests cover edge cases",
-          ]}
-          onFinished={(review) => {
-            if (review.approved) {
-              db.state.set("phase", "complete");
-            } else {
-              db.state.set("phase", "implement");
-            }
-          }}
-        />
-      )}
-    </SmithersProvider>
-  );
-}
-```
-
-This workflow:
-1. Starts in the "implement" phase
-2. Claude implements the feature
-3. Transitions to "review" phase
-4. Reviews the changes against criteria
-5. Loops back to "implement" if not approved
 
 ## Let Claude Write It
 

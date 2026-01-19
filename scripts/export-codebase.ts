@@ -32,20 +32,61 @@ interface SectionConfig {
   description: string;
 }
 
-const SECTIONS: Record<string, SectionConfig> = {
-  'reconciler': { pattern: 'src/reconciler/**/*', description: 'Core React renderer' },
-  'database': { pattern: 'src/db/**/*', description: 'SQLite state management' },
-  'reactive-sqlite': { pattern: 'src/reactive-sqlite/**/*', description: 'Reactive DB wrapper' },
-  'components-core': { pattern: ['src/components/*.tsx', 'src/components/MCP/**/*'], description: 'Main components' },
-  'components-agents': { pattern: 'src/components/agents/**/*', description: 'CLI execution engines' },
-  'components-vcs': { pattern: ['src/components/Git/**/*', 'src/components/JJ/**/*'], description: 'Git + Jujutsu operations' },
-  'components-hooks': { pattern: 'src/components/Hooks/**/*', description: 'Lifecycle hooks' },
-  'components-review': { pattern: 'src/components/Review/**/*', description: 'Code review' },
-  'utils': { pattern: 'src/utils/**/*', description: 'Utilities' },
-  'monitor': { pattern: 'src/monitor/**/*', description: 'Output parsing/logging' },
-  'commands': { pattern: 'src/commands/**/*', description: 'CLI commands' },
-  'all': { pattern: 'src/**/*', description: 'Full codebase' },
-};
+interface SectionCategory {
+  name: string;
+  sections: Record<string, SectionConfig>;
+}
+
+const SECTION_CATEGORIES: SectionCategory[] = [
+  {
+    name: 'Source Code',
+    sections: {
+      'reconciler': { pattern: 'src/reconciler/**/*', description: 'Core React renderer' },
+      'database': { pattern: 'src/db/**/*', description: 'SQLite state management' },
+      'reactive-sqlite': { pattern: 'src/reactive-sqlite/**/*', description: 'Reactive DB wrapper' },
+      'components-core': { pattern: ['src/components/*.tsx', 'src/components/MCP/**/*'], description: 'Main components' },
+      'components-agents': { pattern: 'src/components/agents/**/*', description: 'CLI execution engines' },
+      'components-vcs': { pattern: ['src/components/Git/**/*', 'src/components/JJ/**/*'], description: 'Git + Jujutsu operations' },
+      'components-hooks': { pattern: 'src/components/Hooks/**/*', description: 'Lifecycle hooks' },
+      'components-review': { pattern: 'src/components/Review/**/*', description: 'Code review' },
+      'utils': { pattern: 'src/utils/**/*', description: 'Utilities' },
+      'monitor': { pattern: 'src/monitor/**/*', description: 'Output parsing/logging' },
+      'commands': { pattern: 'src/commands/**/*', description: 'CLI commands' },
+      'tui': { pattern: 'src/tui/**/*', description: 'Terminal UI components' },
+      'tools': { pattern: 'src/tools/**/*', description: 'Tool definitions' },
+      'core': { pattern: 'src/core/**/*', description: 'Core modules' },
+      'all': { pattern: 'src/**/*', description: 'Full codebase' },
+    },
+  },
+  {
+    name: 'Documentation',
+    sections: {
+      'docs': { pattern: 'docs/**/*.{md,mdx}', description: 'All documentation' },
+      'docs-guides': { pattern: 'docs/guides/**/*', description: 'How-to guides' },
+      'docs-concepts': { pattern: 'docs/concepts/**/*', description: 'Core concepts' },
+      'docs-components': { pattern: 'docs/components/**/*', description: 'Component docs' },
+      'docs-api': { pattern: 'docs/api-reference/**/*', description: 'API reference' },
+      'docs-examples': { pattern: 'docs/examples/**/*', description: 'Example code' },
+    },
+  },
+  {
+    name: 'Tests',
+    sections: {
+      'tests-all': { pattern: 'src/**/*.test.{ts,tsx}', description: 'All test files' },
+      'tests-reconciler': { pattern: 'src/reconciler/**/*.test.{ts,tsx}', description: 'Reconciler tests' },
+      'tests-reactive-sqlite': { pattern: 'src/reactive-sqlite/**/*.test.{ts,tsx}', description: 'Reactive SQLite tests' },
+      'tests-monitor': { pattern: 'src/monitor/**/*.test.{ts,tsx}', description: 'Monitor tests' },
+      'tests-tools': { pattern: 'src/tools/**/*.test.{ts,tsx}', description: 'Tools tests' },
+      'tests-tui': { pattern: 'src/tui/**/*.test.{ts,tsx}', description: 'TUI tests' },
+      'tests-core': { pattern: 'src/core/**/*.test.{ts,tsx}', description: 'Core tests' },
+      'tests-integration': { pattern: 'test/**/*.test.ts', description: 'Integration tests' },
+    },
+  },
+];
+
+const SECTIONS: Record<string, SectionConfig> = Object.fromEntries(
+  SECTION_CATEGORIES.flatMap(cat => Object.entries(cat.sections))
+);
 
 const TEXT_EXTENSIONS = ['ts', 'tsx', 'js', 'jsx', 'json', 'sql', 'md', 'txt', 'yml', 'yaml', 'css', 'html'];
 
@@ -58,7 +99,11 @@ function isTestFile(filePath: string): boolean {
   return filePath.includes('.test.');
 }
 
-async function getFiles(patterns: string | string[]): Promise<string[]> {
+function isTestSection(sectionName: string): boolean {
+  return sectionName.startsWith('tests-');
+}
+
+async function getFiles(patterns: string | string[], includeTests = false): Promise<string[]> {
   const patternArray = Array.isArray(patterns) ? patterns : [patterns];
   const fileSet = new Set<string>();
 
@@ -66,7 +111,7 @@ async function getFiles(patterns: string | string[]): Promise<string[]> {
     const glob = new Bun.Glob(pattern);
     for await (const file of glob.scan({ cwd: ROOT_DIR, onlyFiles: true })) {
       const fullPath = join(ROOT_DIR, file);
-      if (isTextFile(fullPath) && !isTestFile(fullPath)) {
+      if (isTextFile(fullPath) && (includeTests || !isTestFile(fullPath))) {
         fileSet.add(fullPath);
       }
     }
