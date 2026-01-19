@@ -39,15 +39,22 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ```
 smithers/
-├── src/                    # Core library
-│   ├── components/         # JSX components (Claude, Ralph, etc.)
-│   ├── reconciler/         # React reconciler
-│   └── utils/              # Utilities
-├── smithers-orchestrator/  # CLI and database
-│   ├── src/
-│   │   ├── components/     # Enhanced components with DB integration
-│   │   ├── db/             # SQLite database layer (bun:sqlite)
-│   │   └── utils/          # CLI utilities
-│   └── bin/                # CLI entry point
-└── evals/                  # Integration tests and examples
+├── src/                    # Core library (all-in-one)
+│   ├── commands/           # CLI commands (init, run, monitor, db)
+│   ├── components/         # JSX components (Claude, Ralph, Phase, Step, etc.)
+│   ├── db/                 # SQLite database layer (bun:sqlite)
+│   ├── hooks/              # React hooks (useHuman, useRalphCount, etc.)
+│   ├── monitor/            # Stream monitoring and logging
+│   ├── rate-limits/        # API rate limit tracking
+│   ├── reactive-sqlite/    # Reactive SQLite with useQuery/useQueryValue
+│   ├── reconciler/         # React reconciler for terminal rendering
+│   ├── tools/              # Tool registry and definitions
+│   ├── tui/                # Terminal UI components
+│   └── utils/              # VCS, capture, structured-output utilities
+├── bin/                    # CLI entry point
+├── evals/                  # Integration tests and examples
+├── reference/              # Git submodules for AI context (NOT dependencies)
+├── plugins/                # Claude Code plugins
+├── templates/              # Script templates
+└── docs/                   # Additional documentation
 ```

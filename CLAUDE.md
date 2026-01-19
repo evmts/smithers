@@ -176,6 +176,9 @@ Local git submodules in `reference/` for AI context (grep patterns, tests, type 
 **UI/Rendering:**
 - `opentui/` → [sst/opentui](https://github.com/sst/opentui) - React reconciler patterns for terminal UIs
 
+**Core Framework:**
+- `react/` → [facebook/react](https://github.com/facebook/react) - React core, reconciler internals, hooks implementation
+
 **AI/LLM:**
 - `anthropic-sdk-typescript/` → [anthropics/anthropic-sdk-typescript](https://github.com/anthropics/anthropic-sdk-typescript) - Anthropic API client, streaming, tools
 - `vercel-ai-sdk/` → [vercel/ai](https://github.com/vercel/ai) - AI streaming patterns, provider abstractions
