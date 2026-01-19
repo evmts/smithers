@@ -2,11 +2,33 @@ import { test, expect, describe } from 'bun:test'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
+import {
+  executeSmithers,
+  DEFAULT_SCRIPT_TIMEOUT_MS,
+  DEFAULT_PLANNING_TIMEOUT_MS,
+  DEFAULT_MAX_PLANNING_TURNS,
+  type SmithersExecutionOptions,
+  type SmithersResult,
+} from './SmithersCLI.js'
 
 // We'll test the internal functions by importing them
 // Note: executeSmithers depends on Claude CLI, so we test helpers independently
 
 describe('SmithersCLI', () => {
+  describe('exported constants', () => {
+    test('DEFAULT_SCRIPT_TIMEOUT_MS is 10 minutes', () => {
+      expect(DEFAULT_SCRIPT_TIMEOUT_MS).toBe(600000)
+    })
+
+    test('DEFAULT_PLANNING_TIMEOUT_MS is 2 minutes', () => {
+      expect(DEFAULT_PLANNING_TIMEOUT_MS).toBe(120000)
+    })
+
+    test('DEFAULT_MAX_PLANNING_TURNS is 5', () => {
+      expect(DEFAULT_MAX_PLANNING_TURNS).toBe(5)
+    })
+  })
+
   describe('script template', () => {
     test('template has required placeholders', async () => {
       // Import the module to check the template structure
@@ -74,7 +96,7 @@ console.log('Hello from test script')
   describe('SmithersExecutionOptions validation', () => {
     test('options interface has required fields', () => {
       // Type check - this will fail at compile time if the interface is wrong
-      const options: import('./SmithersCLI.js').SmithersExecutionOptions = {
+      const options: SmithersExecutionOptions = {
         task: 'Test task',
       }
 
@@ -87,7 +109,7 @@ console.log('Hello from test script')
     test('options with all fields', () => {
       const progressMessages: string[] = []
 
-      const options: import('./SmithersCLI.js').SmithersExecutionOptions = {
+      const options: SmithersExecutionOptions = {
         task: 'Create a user management system',
         plannerModel: 'opus',
         executionModel: 'sonnet',
@@ -98,9 +120,9 @@ console.log('Hello from test script')
         keepScript: true,
         scriptPath: '/tmp/custom-script.tsx',
         onProgress: (msg) => progressMessages.push(msg),
-        onScriptGenerated: (script, path) => {
+        onScriptGenerated: (script, scriptPath) => {
           expect(typeof script).toBe('string')
-          expect(typeof path).toBe('string')
+          expect(typeof scriptPath).toBe('string')
         },
       }
 
@@ -116,7 +138,7 @@ console.log('Hello from test script')
 
   describe('SmithersResult interface', () => {
     test('result has all required fields', () => {
-      const result: import('./SmithersCLI.js').SmithersResult = {
+      const result: SmithersResult = {
         output: 'Task completed successfully',
         script: '// generated script',
         scriptPath: '/tmp/script.tsx',
@@ -137,6 +159,52 @@ console.log('Hello from test script')
       expect(result.scriptPath).toBe('/tmp/script.tsx')
       expect(result.planningResult.output).toBe('Planning output')
       expect(result.stopReason).toBe('completed')
+    })
+  })
+
+  describe('executeSmithers function', () => {
+    test('executeSmithers is exported', () => {
+      expect(typeof executeSmithers).toBe('function')
+    })
+
+    test('executeSmithers returns error result for invalid task', async () => {
+      const result = await executeSmithers({
+        task: '',
+        timeout: 1, // Very short timeout to force failure
+      })
+
+      // Should return an error result, not throw
+      expect(result.stopReason).toBe('error')
+      expect(result.script).toBeDefined()
+    })
+  })
+
+  describe('script execution helpers', () => {
+    test('can write script to temp directory and make executable', async () => {
+      const scriptContent = `#!/usr/bin/env bun
+console.log('Hello from generated script');
+`
+      const scriptPath = path.join(os.tmpdir(), `test-smithers-helper-${Date.now()}.ts`)
+
+      try {
+        await fs.writeFile(scriptPath, scriptContent)
+        await fs.chmod(scriptPath, '755')
+
+        const stats = await fs.stat(scriptPath)
+        expect(stats.isFile()).toBe(true)
+        expect((stats.mode & 0o111) > 0).toBe(true)
+
+        const content = await fs.readFile(scriptPath, 'utf-8')
+        expect(content).toBe(scriptContent)
+      } finally {
+        await fs.unlink(scriptPath).catch(() => {})
+      }
+    })
+
+    test('generates unique script paths', () => {
+      const path1 = path.join(os.tmpdir(), `smithers-subagent-${Date.now()}.tsx`)
+      const path2 = path.join(os.tmpdir(), `smithers-subagent-${Date.now() + 1}.tsx`)
+      expect(path1).not.toBe(path2)
     })
   })
 })

@@ -8,9 +8,63 @@ import type { ClaudeOutputFormat } from '../types.js'
  */
 export interface ParsedOutput {
   output: string
-  structured?: any
+  structured?: unknown
   tokensUsed: { input: number; output: number }
   turnsUsed: number
+}
+
+interface StreamEvent {
+  type?: string
+  delta?: { text?: string }
+  usage?: { input_tokens?: number; output_tokens?: number }
+  turns?: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function toStreamEvent(value: unknown): StreamEvent | null {
+  if (!isRecord(value)) return null
+
+  const event: StreamEvent = {}
+
+  if (typeof value['type'] === 'string') {
+    event.type = value['type']
+  }
+
+  if (typeof value['turns'] === 'number') {
+    event.turns = value['turns']
+  }
+
+  const delta = value['delta']
+  if (isRecord(delta)) {
+    const text = typeof delta['text'] === 'string' ? delta['text'] : undefined
+    if (text !== undefined) {
+      event.delta = { text }
+    }
+  }
+
+  const usage = value['usage']
+  if (isRecord(usage)) {
+    const inputTokens = typeof usage['input_tokens'] === 'number'
+      ? usage['input_tokens']
+      : undefined
+    const outputTokens = typeof usage['output_tokens'] === 'number'
+      ? usage['output_tokens']
+      : undefined
+    if (inputTokens !== undefined || outputTokens !== undefined) {
+      event.usage = {}
+      if (inputTokens !== undefined) event.usage.input_tokens = inputTokens
+      if (outputTokens !== undefined) event.usage.output_tokens = outputTokens
+    }
+  }
+
+  if (!event.type && !event.delta && !event.usage && event.turns === undefined) {
+    return null
+  }
+
+  return event
 }
 
 /**
@@ -29,21 +83,24 @@ export function parseClaudeOutput(
   // Try to parse JSON output
   if (outputFormat === 'json' || outputFormat === 'stream-json') {
     try {
-      const parsed = JSON.parse(stdout)
+      const parsed: unknown = JSON.parse(stdout)
       result.structured = parsed
       result.output = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)
 
       // Extract token usage if present
-      if (parsed.usage) {
-        result.tokensUsed = {
-          input: parsed.usage.input_tokens ?? 0,
-          output: parsed.usage.output_tokens ?? 0,
+      if (isRecord(parsed)) {
+        const usage = parsed['usage']
+        if (isRecord(usage)) {
+          result.tokensUsed = {
+            input: typeof usage['input_tokens'] === 'number' ? usage['input_tokens'] : 0,
+            output: typeof usage['output_tokens'] === 'number' ? usage['output_tokens'] : 0,
+          }
         }
-      }
 
-      // Extract turn count if present
-      if (parsed.turns !== undefined) {
-        result.turnsUsed = parsed.turns
+        // Extract turn count if present
+        if (typeof parsed['turns'] === 'number') {
+          result.turnsUsed = parsed['turns']
+        }
       }
       return result
     } catch {
@@ -90,12 +147,13 @@ function parseStreamJson(stdout: string): ParsedOutput | null {
   let parsedAny = false
 
   for (const line of lines) {
-    let event: any
+    let event: StreamEvent | null
     try {
-      event = JSON.parse(line)
+      event = toStreamEvent(JSON.parse(line))
     } catch {
       continue
     }
+    if (!event) continue
     parsedAny = true
 
     if (event.type === 'content_block_delta' && event.delta?.text !== undefined) {
