@@ -1,11 +1,15 @@
 // PostCommit hook component - triggers children when a git commit is made
 // Installs a git post-commit hook and polls db.state for triggers
 
+import * as path from 'node:path'
+import { mkdir } from 'node:fs/promises'
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
-import { useUnmount, useExecutionMount } from '../../reconciler/hooks.js'
+import { useUnmount, useExecutionMount, useEffectOnValueChange } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { useExecutionContext } from '../ExecutionContext.js'
+import { useExecutionScope } from '../ExecutionScope.js'
+import { makeStateKey } from '../../utils/scope.js'
+import { SMITHERS_NOTES_REF } from '../../utils/vcs.js'
 
 export interface PostCommitProps {
   children: ReactNode
@@ -32,13 +36,45 @@ interface HookTrigger {
  * Install the git post-commit hook
  */
 async function installPostCommitHook(): Promise<void> {
-  const hookPath = '.git/hooks/post-commit'
+  const hookPath = (await Bun.$`git rev-parse --git-path hooks/post-commit`.text()).trim()
+  if (!hookPath) {
+    throw new Error('Failed to resolve git hook path')
+  }
+  const localHookPath = (await Bun.$`git rev-parse --git-path hooks/post-commit.local`.text()).trim()
+  if (!localHookPath) {
+    throw new Error('Failed to resolve git local hook path')
+  }
+  const marker = '# smithers:post-commit'
   const hookContent = `#!/bin/bash
+set -euo pipefail
+${marker}
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOCAL_HOOK="$HOOK_DIR/post-commit.local"
+if [ -x "$LOCAL_HOOK" ]; then
+  "$LOCAL_HOOK" "$@"
+fi
 COMMIT_HASH=$(git rev-parse HEAD)
 bunx smithers hook-trigger post-commit "$COMMIT_HASH"
 `
+
+  await mkdir(path.dirname(hookPath), { recursive: true })
+
+  const existingHook = await Bun.file(hookPath).text().catch(() => null)
+  if (existingHook && existingHook.includes(marker)) {
+    return
+  }
+
+  if (existingHook) {
+    let backupPath = localHookPath
+    if (await Bun.file(localHookPath).exists()) {
+      backupPath = `${localHookPath}.${Date.now()}`
+    }
+    await Bun.write(backupPath, existingHook)
+    await Bun.$`chmod +x ${backupPath}`.quiet()
+  }
+
   await Bun.write(hookPath, hookContent)
-  await Bun.$`chmod +x ${hookPath}`
+  await Bun.$`chmod +x ${hookPath}`.quiet()
 }
 
 /**
@@ -46,7 +82,7 @@ bunx smithers hook-trigger post-commit "$COMMIT_HASH"
  */
 async function hasSmithersMetadata(commitHash: string): Promise<boolean> {
   try {
-    const result = await Bun.$`git notes show ${commitHash} 2>/dev/null`.text()
+    const result = await Bun.$`git notes --ref ${SMITHERS_NOTES_REF} show ${commitHash} 2>/dev/null`.text()
     return result.toLowerCase().includes('smithers') || result.toLowerCase().includes('user prompt:')
   } catch {
     return false
@@ -86,16 +122,21 @@ const DEFAULT_STATE: PostCommitState = {
 }
 
 export function PostCommit(props: PostCommitProps): ReactNode {
-  const { db, reactiveDb, executionEnabled } = useSmithers()
-  const execution = useExecutionContext()
+  const { db, reactiveDb, executionEnabled, executionId } = useSmithers()
+  const executionScope = useExecutionScope()
+  const stateKey = makeStateKey(executionId, 'hook', 'postCommit')
+  const lastTriggerKey = makeStateKey(executionId, 'hook', 'lastHookTrigger')
 
   // Query state from db.state reactively
   const { data: stateJson } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'hook:postCommit'"
+    'SELECT value FROM state WHERE key = ?',
+    [stateKey]
   )
   const state: PostCommitState = (() => {
-    if (!stateJson) return DEFAULT_STATE
+    if (!stateJson) {
+      return db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
+    }
     try { return JSON.parse(stateJson) }
     catch { return DEFAULT_STATE }
   })()
@@ -103,15 +144,20 @@ export function PostCommit(props: PostCommitProps): ReactNode {
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const taskIdRef = useRef<string | null>(null)
+  const inFlightRef = useRef(false)
 
-  const shouldExecute = executionEnabled && execution.isActive
+  const shouldExecute = executionEnabled && executionScope.enabled
   useExecutionMount(shouldExecute, () => {
     if (!db || !reactiveDb) return
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
 
     // Initialize state if not present
-    const currentState = db.state.get<PostCommitState>('hook:postCommit')
+    const currentState = db.state.get<PostCommitState>(stateKey)
     if (!currentState) {
-      db.state.set('hook:postCommit', DEFAULT_STATE, 'post-commit-init')
+      db.state.set(stateKey, DEFAULT_STATE, 'post-commit-init')
     }
 
     // Fire-and-forget async IIFE pattern
@@ -119,14 +165,16 @@ export function PostCommit(props: PostCommitProps): ReactNode {
       try {
         // Install the git hook
         await installPostCommitHook()
-        const s = db.state.get<PostCommitState>('hook:postCommit') ?? DEFAULT_STATE
-        db.state.set('hook:postCommit', { ...s, hookInstalled: true }, 'post-commit-hook-installed')
+        const s = db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
+        db.state.set(stateKey, { ...s, hookInstalled: true }, 'post-commit-hook-installed')
 
         // Start polling for triggers
         pollIntervalRef.current = setInterval(async () => {
+          if (inFlightRef.current) return
+          inFlightRef.current = true
           try {
-            const trigger = db.state.get<HookTrigger>('last_hook_trigger')
-            const currentS = db.state.get<PostCommitState>('hook:postCommit') ?? DEFAULT_STATE
+            const trigger = db.state.get<HookTrigger>(lastTriggerKey)
+            const currentS = db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
 
             if (trigger && trigger.type === 'post-commit' && trigger.timestamp > currentS.lastProcessedTimestamp) {
               // Check filter conditions
@@ -137,7 +185,7 @@ export function PostCommit(props: PostCommitProps): ReactNode {
               }
 
               if (shouldTrigger) {
-                db.state.set('hook:postCommit', {
+                db.state.set(stateKey, {
                   ...currentS,
                   triggered: true,
                   currentTrigger: trigger,
@@ -145,14 +193,14 @@ export function PostCommit(props: PostCommitProps): ReactNode {
                 }, 'post-commit-triggered')
 
                 // Mark as processed in db
-                db.state.set('last_hook_trigger', {
+                db.state.set(lastTriggerKey, {
                   ...trigger,
                   processed: true,
                 }, 'post-commit-hook')
 
                 // If running in background (async), register task
                 if (props.async) {
-                  taskIdRef.current = db.tasks.start('post-commit-hook')
+                  taskIdRef.current = db.tasks.start('post-commit-hook', undefined, { scopeId: executionScope.scopeId })
                   // Task will be completed when children finish
                   // For now, we complete immediately as children handle their own task registration
                   db.tasks.complete(taskIdRef.current)
@@ -161,13 +209,15 @@ export function PostCommit(props: PostCommitProps): ReactNode {
             }
           } catch (pollError) {
             console.error('[PostCommit] Polling error:', pollError)
+          } finally {
+            inFlightRef.current = false
           }
         }, 1000) // Poll every 1 second
 
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
-        const s = db.state.get<PostCommitState>('hook:postCommit') ?? DEFAULT_STATE
-        db.state.set('hook:postCommit', { ...s, error: errorMsg }, 'post-commit-error')
+        const s = db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
+        db.state.set(stateKey, { ...s, error: errorMsg }, 'post-commit-error')
         console.error('[PostCommit] Failed to install hook:', errorMsg)
       }
     })()
@@ -176,6 +226,14 @@ export function PostCommit(props: PostCommitProps): ReactNode {
   useUnmount(() => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current)
+    }
+  })
+
+  useEffectOnValueChange(shouldExecute, () => {
+    if (shouldExecute) return
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
     }
   })
 
@@ -188,7 +246,9 @@ export function PostCommit(props: PostCommitProps): ReactNode {
       async={props.async || false}
       error={error}
     >
-      {triggered ? props.children : null}
+      {triggered && currentTrigger
+        ? <post-commit-run key={`${currentTrigger.commitHash}-${currentTrigger.timestamp}`}>{props.children}</post-commit-run>
+        : null}
     </post-commit-hook>
   )
 }

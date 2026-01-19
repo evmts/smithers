@@ -1,5 +1,7 @@
 // Status bar showing connection state and help hints
 
+import { colors } from '../../utils/colors.js'
+
 export interface StatusBarProps {
   isConnected: boolean
   error: string | null
@@ -8,13 +10,14 @@ export interface StatusBarProps {
 
 export function StatusBar({ isConnected, error, dbPath }: StatusBarProps) {
   const connectionStatus = isConnected ? 'Connected' : 'Disconnected'
-  const connectionColor = isConnected ? '#9ece6a' : '#f7768e'
+  const connectionColor = isConnected ? colors.green : colors.red
+  const errorLabel = error?.startsWith('Error: ') ? error : (error ? `Error: ${error}` : null)
 
   return (
     <box style={{
       height: 2,
       width: '100%',
-      backgroundColor: '#16161e',
+      backgroundColor: colors.bgDark,
       flexDirection: 'row',
       justifyContent: 'space-between',
       paddingLeft: 1,
@@ -27,18 +30,18 @@ export function StatusBar({ isConnected, error, dbPath }: StatusBarProps) {
         />
         <text
           content={dbPath}
-          style={{ fg: '#565f89' }}
+          style={{ fg: colors.comment }}
         />
-        {error && (
+        {errorLabel && (
           <text
-            content={`Error: ${error}`}
-            style={{ fg: '#f7768e' }}
+            content={errorLabel}
+            style={{ fg: colors.red }}
           />
         )}
       </box>
       <text
-        content="q:quit  Tab:next  j/k:nav  Enter:select"
-        style={{ fg: '#565f89' }}
+        content="Ctrl+C/Ctrl+Q:quit  F1-F6:tabs  j/k:nav  Enter:select"
+        style={{ fg: colors.comment }}
       />
     </box>
   )

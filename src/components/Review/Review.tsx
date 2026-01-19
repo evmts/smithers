@@ -1,10 +1,63 @@
 import { useRef, type ReactNode } from 'react'
+import { z } from 'zod'
 import { useSmithers } from '../SmithersProvider.js'
+import { useExecutionScope } from '../ExecutionScope.js'
 import { addGitNotes } from '../../utils/vcs.js'
-import type { ReviewTarget, ReviewResult, ReviewProps } from './types.js'
+import type { ReviewTarget, ReviewResult, ReviewProps, ReviewIssue } from './types.js'
 import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useVersionTracking } from '../../reactive-sqlite/index.js'
-import { useExecutionContext } from '../ExecutionContext.js'
+import { executeClaudeCLI } from '../agents/ClaudeCodeCLI.js'
+
+const ReviewIssueSchema = z.object({
+  severity: z.enum(['critical', 'major', 'minor']),
+  file: z.string().optional(),
+  line: z.preprocess((value) => {
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) return parsed
+    }
+    return value
+  }, z.number().int().positive()).optional(),
+  message: z.string(),
+  suggestion: z.string().optional(),
+})
+
+const ReviewResultSchema = z.object({
+  approved: z.boolean(),
+  summary: z.string().default(''),
+  issues: z.array(ReviewIssueSchema).default([]),
+})
+
+function normalizeReviewResult(result: z.infer<typeof ReviewResultSchema>): ReviewResult {
+  const issues: ReviewIssue[] = result.issues.map((issue) => {
+    const normalized: ReviewIssue = {
+      severity: issue.severity,
+      message: issue.message,
+    }
+    if (issue.file) normalized.file = issue.file
+    if (issue.line !== undefined) normalized.line = issue.line
+    if (issue.suggestion) normalized.suggestion = issue.suggestion
+    return normalized
+  })
+
+  return {
+    approved: result.approved,
+    summary: result.summary,
+    issues,
+  }
+}
+
+const MAX_REVIEW_CHARS = 120_000
+
+function truncateReviewContent(content: string, maxChars = MAX_REVIEW_CHARS): string {
+  if (content.length <= maxChars) return content
+  const headSize = Math.max(1000, Math.floor(maxChars * 0.6))
+  const tailSize = Math.max(1000, Math.floor(maxChars * 0.35))
+  const omitted = content.length - headSize - tailSize
+  const head = content.slice(0, headSize)
+  const tail = content.slice(-tailSize)
+  return `${head}\n\n... [truncated ${omitted} chars] ...\n\n${tail}`
+}
 
 /**
  * Fetch content to review based on target type
@@ -14,17 +67,17 @@ async function fetchTargetContent(target: ReviewTarget): Promise<string> {
     case 'commit': {
       const ref = target.ref ?? 'HEAD'
       const result = await Bun.$`git show ${ref}`.text()
-      return result
+      return truncateReviewContent(result)
     }
 
     case 'diff': {
       const ref = target.ref
       if (ref) {
         const result = await Bun.$`git diff ${ref}`.text()
-        return result
+        return truncateReviewContent(result)
       } else {
         const result = await Bun.$`git diff`.text()
-        return result
+        return truncateReviewContent(result)
       }
     }
 
@@ -32,13 +85,16 @@ async function fetchTargetContent(target: ReviewTarget): Promise<string> {
       if (!target.ref) {
         throw new Error('PR number required for pr target type')
       }
+      if (!/^\d+$/.test(target.ref)) {
+        throw new Error('PR ref must be a numeric ID')
+      }
       const result = await Bun.$`gh pr view ${target.ref} --json body,title,files,additions,deletions,commits`.text()
       const prData = JSON.parse(result)
 
       // Also get the diff
       const diffResult = await Bun.$`gh pr diff ${target.ref}`.text()
 
-      return `PR #${target.ref}: ${prData.title}
+      return truncateReviewContent(`PR #${target.ref}: ${prData.title}
 
 ${prData.body}
 
@@ -47,7 +103,7 @@ Additions: ${prData.additions}
 Deletions: ${prData.deletions}
 
 Diff:
-${diffResult}`
+${diffResult}`)
     }
 
     case 'files': {
@@ -64,7 +120,7 @@ ${diffResult}`
           contents.push(`=== ${file} === (file not found)`)
         }
       }
-      return contents.join('\n\n')
+      return truncateReviewContent(contents.join('\n\n'))
     }
 
     default:
@@ -76,6 +132,7 @@ ${diffResult}`
  * Build the review prompt
  */
 function buildReviewPrompt(content: string, criteria?: string[]): string {
+  const clippedContent = truncateReviewContent(content)
   const criteriaText = criteria && criteria.length > 0
     ? `\nReview Criteria:\n${criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
     : ''
@@ -84,68 +141,44 @@ function buildReviewPrompt(content: string, criteria?: string[]): string {
 
 ${criteriaText}
 
-Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
-{
-  "approved": true/false,
-  "summary": "Brief summary of the review",
-  "issues": [
-    {
-      "severity": "critical|major|minor",
-      "file": "path/to/file (optional)",
-      "line": 123 (optional),
-      "message": "Description of the issue",
-      "suggestion": "Suggested fix (optional)"
-    }
-  ]
-}
-
 Rules:
 - Set approved to false if there are any critical issues
 - Set approved to false if there are more than 2 major issues
 - Be constructive and specific in your feedback
 - Focus on correctness, security, performance, and maintainability
 
-Content to review:
-${content}`
+Return ONLY valid JSON that matches the review schema.
+
+Content to review (may be truncated):
+${clippedContent}`
 }
 
 /**
  * Execute review using Claude CLI
  */
 async function executeReview(prompt: string, model?: string): Promise<ReviewResult> {
-  // Use claude CLI with --print to get the response
-  const result = model
-    ? await Bun.$`claude --print --model ${model} --prompt ${prompt}`.text()
-    : await Bun.$`claude --print --prompt ${prompt}`.text()
+  const result = await executeClaudeCLI({
+    prompt,
+    model,
+    outputFormat: 'text',
+    schema: ReviewResultSchema,
+  })
 
-  // Parse the JSON response
-  const trimmed = result.trim()
-
-  // Handle potential markdown code blocks
-  let jsonStr = trimmed
-  if (trimmed.startsWith('```')) {
-    const lines = trimmed.split('\n')
-    jsonStr = lines.slice(1, -1).join('\n')
-  }
-
-  try {
-    const parsed = JSON.parse(jsonStr)
-    return {
-      approved: Boolean(parsed.approved),
-      summary: String(parsed.summary ?? ''),
-      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-    }
-  } catch (parseError) {
-    // If parsing fails, create a default failed review
+  if (result.stopReason === 'error' || !result.structured) {
+    const reason = result.stopReason === 'error'
+      ? result.output
+      : `Stopped: ${result.stopReason}. ${result.output}`
     return {
       approved: false,
-      summary: 'Failed to parse review response',
+      summary: 'Review execution failed',
       issues: [{
         severity: 'critical',
-        message: `Review parsing failed: ${parseError}. Raw response: ${trimmed.slice(0, 500)}`,
+        message: reason.slice(0, 500),
       }],
     }
   }
+
+  return normalizeReviewResult(result.structured as z.infer<typeof ReviewResultSchema>)
 }
 
 /**
@@ -184,7 +217,7 @@ ${issuesText}
  */
 export function Review(props: ReviewProps): ReactNode {
   const smithers = useSmithers()
-  const execution = useExecutionContext()
+  const executionScope = useExecutionScope()
   const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
   const resultRef = useRef<ReviewResult | null>(null)
   const errorRef = useRef<Error | null>(null)
@@ -193,12 +226,12 @@ export function Review(props: ReviewProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
-  const shouldExecute = smithers.executionEnabled && execution.isActive
+  const shouldExecute = smithers.executionEnabled && executionScope.enabled
   useExecutionMount(shouldExecute, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database
-      taskIdRef.current = smithers.db.tasks.start('review')
+      taskIdRef.current = smithers.db.tasks.start('review', undefined, { scopeId: executionScope.scopeId })
 
       try {
         statusRef.current = 'running'
@@ -212,8 +245,6 @@ export function Review(props: ReviewProps): ReactNode {
 
         // Execute review
         const reviewResult = await executeReview(prompt, props.model)
-
-        if (!isMounted()) return
 
         // Log to database
         const reviewId = await smithers.db.vcs.logReview({

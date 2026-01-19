@@ -1,10 +1,10 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs.js'
-import { useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { extractText } from '../../utils/extract-text.js'
-import { useExecutionEffect, useExecutionScope } from '../ExecutionScope.js'
+import { useExecutionScope } from '../ExecutionScope.js'
 
 interface CommitState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -92,9 +92,11 @@ export function Commit(props: CommitProps): ReactNode {
     smithers.db.state.set(stateKey, newState, 'git-commit')
   }
 
-  useExecutionEffect(executionScope.enabled, () => {
+  useExecutionMount(executionScope.enabled, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
+      if (status !== 'pending') return
+
       // Register task with database
       taskIdRef.current = smithers.db.tasks.start('git-commit')
 
@@ -112,6 +114,11 @@ export function Commit(props: CommitProps): ReactNode {
           // Stage all files with -A
           const addCmd = Bun.$`git add -A`
           await (props.cwd ? addCmd.cwd(props.cwd) : addCmd).quiet()
+        }
+
+        const diffStat = await (props.cwd ? Bun.$`git diff --cached --stat`.cwd(props.cwd) : Bun.$`git diff --cached --stat`).text()
+        if (!diffStat.trim()) {
+          throw new Error('No staged changes to commit')
         }
 
         // Get or generate commit message
@@ -192,7 +199,7 @@ export function Commit(props: CommitProps): ReactNode {
         }
       }
     })()
-  }, [props.all, props.autoGenerate, props.children, props.cwd, props.files, props.message, props.notes, props.onError, props.onFinished, smithers])
+  }, [executionScope.enabled, status, props.all, props.autoGenerate, props.children, props.cwd, props.files, props.message, props.notes, props.onError, props.onFinished, smithers])
 
   return (
     <git-commit

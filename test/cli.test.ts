@@ -14,6 +14,34 @@ describe('CLI E2E execution', () => {
   let tempDir: string
   let cliPath: string
   let expectedVersion: string
+  const timeoutMs = 5000
+
+  const buildEnv = () => ({
+    ...Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined)),
+    HOME: tempDir,
+    XDG_CONFIG_HOME: tempDir,
+    XDG_DATA_HOME: tempDir,
+    XDG_STATE_HOME: tempDir,
+    CI: '1',
+  })
+
+  const runCli = async (args: string[]) => {
+    const proc = Bun.spawn(['bun', cliPath, ...args], {
+      cwd: tempDir,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: buildEnv(),
+    })
+
+    const timeoutId = setTimeout(() => proc.kill(), timeoutMs)
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    clearTimeout(timeoutId)
+    return { stdout, stderr, exitCode }
+  }
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'smithers-cli-test-'))
@@ -27,15 +55,10 @@ describe('CLI E2E execution', () => {
   })
 
   it('should show help with --help flag', async () => {
-    const proc = Bun.spawn(['bun', cliPath, '--help'], {
-      cwd: tempDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { stdout, stderr, exitCode } = await runCli(['--help'])
 
-    const stdout = await new Response(proc.stdout).text()
-    await proc.exited
-
+    expect(exitCode).toBe(0)
+    expect(stderr.trim()).toBe('')
     expect(stdout).toContain('smithers')
     expect(stdout).toContain('init')
     expect(stdout).toContain('run')
@@ -43,55 +66,33 @@ describe('CLI E2E execution', () => {
   })
 
   it('should show version with --version flag', async () => {
-    const proc = Bun.spawn(['bun', cliPath, '--version'], {
-      cwd: tempDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { stdout, stderr, exitCode } = await runCli(['--version'])
 
-    const stdout = await new Response(proc.stdout).text()
-    await proc.exited
-
+    expect(exitCode).toBe(0)
+    expect(stderr.trim()).toBe('')
     expect(stdout.trim()).toBe(expectedVersion)
   })
 
   it('should show init command help', async () => {
-    const proc = Bun.spawn(['bun', cliPath, 'init', '--help'], {
-      cwd: tempDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { stdout, stderr, exitCode } = await runCli(['init', '--help'])
 
-    const stdout = await new Response(proc.stdout).text()
-    await proc.exited
-
+    expect(exitCode).toBe(0)
+    expect(stderr.trim()).toBe('')
     expect(stdout).toContain('Create a new Smithers orchestration')
     expect(stdout).toContain('-d, --dir')
   })
 
   it('should show hook-trigger command help', async () => {
-    const proc = Bun.spawn(['bun', cliPath, 'hook-trigger', '--help'], {
-      cwd: tempDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { stdout, stderr, exitCode } = await runCli(['hook-trigger', '--help'])
 
-    const stdout = await new Response(proc.stdout).text()
-    await proc.exited
-
+    expect(exitCode).toBe(0)
+    expect(stderr.trim()).toBe('')
     expect(stdout).toContain('Trigger a hook event')
     expect(stdout).toContain('--path')
   })
 
   it('should error on invalid hook type', async () => {
-    const proc = Bun.spawn(['bun', cliPath, 'hook-trigger', 'invalid-type', '{}'], {
-      cwd: tempDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-
-    const stderr = await new Response(proc.stderr).text()
-    const exitCode = await proc.exited
+    const { stderr, exitCode } = await runCli(['hook-trigger', 'invalid-type', '{}'])
 
     expect(exitCode).toBe(1)
     expect(stderr).toContain('Invalid hook type')
@@ -99,28 +100,20 @@ describe('CLI E2E execution', () => {
   })
 
   it('should error on invalid JSON data', async () => {
-    const proc = Bun.spawn(['bun', cliPath, 'hook-trigger', 'post-commit', '{invalid}'], {
-      cwd: tempDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-
-    const stderr = await new Response(proc.stderr).text()
-    const exitCode = await proc.exited
+    const { stderr, exitCode } = await runCli(['hook-trigger', 'post-commit', '{invalid}'])
 
     expect(exitCode).toBe(1)
     expect(stderr).toContain('Invalid JSON data')
   })
 
   it('should run init command in temp directory', async () => {
-    const proc = Bun.spawn(['bun', cliPath, 'init', '--dir', tempDir], {
-      cwd: tempDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const { stderr, exitCode } = await runCli(['init', '--dir', tempDir])
 
-    await proc.exited
-
+    expect(exitCode).toBe(0)
+    if (stderr.trim() !== '') {
+      expect(stderr).toContain('No package.json found')
+      expect(stderr).toContain('smithers-orchestrator install')
+    }
     const smithersDir = join(tempDir, '.smithers')
     const exists = await Bun.file(join(smithersDir, 'main.tsx')).exists()
     expect(exists).toBe(true)

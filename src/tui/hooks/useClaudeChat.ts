@@ -15,20 +15,26 @@ export interface UseClaudeChatResult {
   clearHistory: () => void
 }
 
+export interface UseClaudeChatOptions {
+  createAssistant?: typeof createClaudeAssistant
+  isAvailable?: boolean
+}
+
 const MESSAGES_KEY = 'tui:chat:messages'
 const LOADING_KEY = 'tui:chat:loading'
 const ERROR_KEY = 'tui:chat:error'
 const EMPTY_MESSAGES: ChatMessage[] = []
 
-export function useClaudeChat(db: SmithersDB): UseClaudeChatResult {
+export function useClaudeChat(db: SmithersDB, options: UseClaudeChatOptions = {}): UseClaudeChatResult {
   const [messages, setMessages] = useTuiState<ChatMessage[]>(MESSAGES_KEY, EMPTY_MESSAGES)
   const [isLoading, setIsLoading] = useTuiState<boolean>(LOADING_KEY, false)
   const [error, setError] = useTuiState<string | null>(ERROR_KEY, null)
 
   // Check if API key is available
-  const isAvailable = !!process.env['ANTHROPIC_API_KEY']
+  const isAvailable = options.isAvailable ?? !!process.env['ANTHROPIC_API_KEY']
 
-  const assistant = useMemo(() => createClaudeAssistant(db), [db])
+  const assistantFactory = options.createAssistant ?? createClaudeAssistant
+  const assistant = useMemo(() => assistantFactory(db), [assistantFactory, db])
 
   const sendMessage = useCallback(async (content: string) => {
     if (!isAvailable) {

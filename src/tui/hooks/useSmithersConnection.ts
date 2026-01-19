@@ -26,9 +26,18 @@ export interface UseSmithersConnectionResult {
   executions: Execution[]
 }
 
+export interface UseSmithersConnectionOptions {
+  createDb?: typeof createSmithersDB
+  resolveDbPath?: (dbPath: string) => string
+  pollIntervalMs?: number
+}
+
 const EMPTY_EXECUTIONS: Execution[] = []
 
-export function useSmithersConnection(dbPath: string): UseSmithersConnectionResult {
+export function useSmithersConnection(
+  dbPath: string,
+  options: UseSmithersConnectionOptions = {}
+): UseSmithersConnectionResult {
   const dbRef = useRef<SmithersDB | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const keyBase = `tui:connection:${dbPath}`
@@ -39,6 +48,12 @@ export function useSmithersConnection(dbPath: string): UseSmithersConnectionResu
   const [executions, setExecutions] = useTuiState<Execution[]>(`${keyBase}:executions`, EMPTY_EXECUTIONS)
 
   useEffectOnValueChange(dbPath, () => {
+    const createDb = options.createDb ?? createSmithersDB
+    const resolveDbPath = options.resolveDbPath ?? ((path: string) => (
+      path.endsWith('.db') ? path : `${path}/smithers.db`
+    ))
+    const pollIntervalMs = options.pollIntervalMs ?? 500
+
     const cleanup = () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
@@ -53,11 +68,8 @@ export function useSmithersConnection(dbPath: string): UseSmithersConnectionResu
     cleanup()
 
     try {
-      const fullPath = dbPath.endsWith('.db')
-        ? dbPath
-        : `${dbPath}/smithers.db`
-
-      const smithersDb = createSmithersDB({ path: fullPath })
+      const fullPath = resolveDbPath(dbPath)
+      const smithersDb = createDb({ path: fullPath })
       dbRef.current = smithersDb
       setIsConnected(true)
       setError(null)
@@ -87,7 +99,7 @@ export function useSmithersConnection(dbPath: string): UseSmithersConnectionResu
       }
 
       pollData()
-      pollIntervalRef.current = setInterval(pollData, 500)
+      pollIntervalRef.current = setInterval(pollData, pollIntervalMs)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Connection failed')
       setIsConnected(false)

@@ -1,5 +1,7 @@
 // XML syntax highlighting viewer
 
+import { colors } from '../../utils/colors.js'
+
 export interface XMLViewerProps {
   xml: string
   maxLines?: number
@@ -20,31 +22,31 @@ export function XMLViewer({ xml, maxLines = 100 }: XMLViewerProps) {
       {xml.split('\n').length > maxLines && (
         <text
           content={`... ${xml.split('\n').length - maxLines} more lines`}
-          style={{ fg: '#565f89' }}
+          style={{ fg: colors.comment }}
         />
       )}
     </scrollbox>
   )
 }
 
-function getLineColor(line: string): string {
+export function getLineColor(line: string): string {
   const trimmed = line.trim()
 
   // Comments
-  if (trimmed.startsWith('<!--')) return '#565f89'
+  if (trimmed.startsWith('<!--')) return colors.comment
 
   // Self-closing tags
-  if (trimmed.match(/^<[^>]+\/>$/)) return '#7dcfff'
+  if (trimmed.match(/^<[^>]+\/>$/)) return colors.cyan
 
   // Opening tags
-  if (trimmed.match(/^<[^/][^>]*>$/)) return '#7aa2f7'
+  if (trimmed.match(/^<[^/][^>]*>$/)) return colors.blue
 
   // Closing tags
-  if (trimmed.match(/^<\/[^>]+>$/)) return '#bb9af7'
+  if (trimmed.match(/^<\/[^>]+>$/)) return colors.purple
 
   // Tag with attributes
-  if (trimmed.startsWith('<')) return '#7aa2f7'
+  if (trimmed.startsWith('<')) return colors.blue
 
   // Text content
-  return '#c0caf5'
+  return colors.fg
 }

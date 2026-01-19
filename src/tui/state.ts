@@ -19,6 +19,10 @@ export function readTuiState<T>(key: string, fallback: T): T {
   return row ? parseValue<T>(row.value, fallback) : fallback
 }
 
+export function resetTuiState(): void {
+  tuiDb.run('DELETE FROM tui_state')
+}
+
 function writeTuiState<T>(key: string, value: T): void {
   const jsonValue = JSON.stringify(value)
   tuiDb.run(

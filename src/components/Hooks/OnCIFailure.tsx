@@ -3,9 +3,10 @@
 
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
-import { useUnmount, useExecutionMount } from '../../reconciler/hooks.js'
+import { useUnmount, useExecutionMount, useEffectOnValueChange } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { useExecutionContext } from '../ExecutionContext.js'
+import { useExecutionScope } from '../ExecutionScope.js'
+import { makeStateKey } from '../../utils/scope.js'
 
 export interface CIFailure {
   failed: boolean
@@ -21,6 +22,10 @@ export interface OnCIFailureProps {
    * CI provider (currently only github-actions supported)
    */
   provider: 'github-actions'
+  /**
+   * Branch to monitor (defaults to repo default branch when available)
+   */
+  branch?: string
   /**
    * Polling interval in milliseconds (default: 30000ms / 30s)
    */
@@ -39,20 +44,35 @@ interface GitHubActionsRun {
 }
 
 /**
- * Fetch the latest GitHub Actions run for the main branch
+ * Fetch the latest GitHub Actions run for a branch
  */
-async function fetchLatestGitHubActionsRun(): Promise<GitHubActionsRun | null> {
-  try {
-    const result = await Bun.$`gh run list --branch main --limit 1 --json status,conclusion,databaseId,name`.json()
+async function fetchLatestGitHubActionsRun(branch: string): Promise<GitHubActionsRun | null> {
+  const result = await Bun.$`gh run list --branch ${branch} --limit 1 --json status,conclusion,databaseId,name`.json()
 
-    if (Array.isArray(result) && result.length > 0) {
-      return result[0] as GitHubActionsRun
-    }
-    return null
-  } catch (err) {
-    console.error('[OnCIFailure] Failed to fetch GitHub Actions status:', err)
-    return null
+  if (Array.isArray(result) && result.length > 0) {
+    return result[0] as GitHubActionsRun
   }
+  return null
+}
+
+async function resolveDefaultBranch(): Promise<string | null> {
+  try {
+    const remoteHead = await Bun.$`git symbolic-ref --quiet --short refs/remotes/origin/HEAD`.text()
+    const trimmed = remoteHead.trim()
+    if (trimmed) {
+      return trimmed.replace(/^origin\//, '')
+    }
+  } catch {}
+
+  try {
+    const current = await Bun.$`git rev-parse --abbrev-ref HEAD`.text()
+    const trimmed = current.trim()
+    if (trimmed && trimmed !== 'HEAD') {
+      return trimmed
+    }
+  } catch {}
+
+  return null
 }
 
 /**
@@ -122,59 +142,81 @@ const DEFAULT_CI_STATE: CIFailureState = {
   processedRunIds: [],
 }
 
+const MAX_PROCESSED_RUNS = 50
+
 export function OnCIFailure(props: OnCIFailureProps): ReactNode {
-  const { db, reactiveDb, executionEnabled } = useSmithers()
-  const execution = useExecutionContext()
+  const { db, reactiveDb, executionEnabled, executionId } = useSmithers()
+  const executionScope = useExecutionScope()
+  const stateKey = makeStateKey(executionId, 'hook', 'ciFailure')
+  const lastFailureKey = makeStateKey(executionId, 'hook', 'lastCIFailure')
 
   // Query state from db.state reactively
   const { data: stateJson } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'hook:ciFailure'"
+    'SELECT value FROM state WHERE key = ?',
+    [stateKey]
   )
   const state: CIFailureState = (() => {
-    if (!stateJson) return DEFAULT_CI_STATE
+    if (!stateJson) {
+      return db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
+    }
     try { return JSON.parse(stateJson) }
     catch { return DEFAULT_CI_STATE }
   })()
   const { ciStatus, currentFailure, triggered, error } = state
 
   const taskIdRef = useRef<string | null>(null)
+  const inFlightRef = useRef(false)
+  const branchRef = useRef<string | null>(props.branch ?? null)
 
   const intervalMs = props.pollInterval ?? 30000
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const shouldExecute = executionEnabled && execution.isActive
+  const shouldExecute = executionEnabled && executionScope.enabled
   useExecutionMount(shouldExecute, () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
+
     // Initialize state if not present
-    const currentState = db.state.get<CIFailureState>('hook:ciFailure')
+    const currentState = db.state.get<CIFailureState>(stateKey)
     if (!currentState) {
-      db.state.set('hook:ciFailure', DEFAULT_CI_STATE, 'ci-failure-init')
+      db.state.set(stateKey, DEFAULT_CI_STATE, 'ci-failure-init')
     }
 
     // Fire-and-forget async IIFE pattern
     ;(async () => {
-      const s = db.state.get<CIFailureState>('hook:ciFailure') ?? DEFAULT_CI_STATE
-      db.state.set('hook:ciFailure', { ...s, ciStatus: 'polling' }, 'ci-failure-polling')
+      const resolvedBranch = props.branch ?? await resolveDefaultBranch()
+      branchRef.current = resolvedBranch ?? 'main'
+
+      const s = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
+      db.state.set(stateKey, { ...s, ciStatus: 'polling' }, 'ci-failure-polling')
 
       // Define the polling function
       const checkCI = async () => {
+        if (inFlightRef.current) return
+        inFlightRef.current = true
+
         try {
           if (props.provider !== 'github-actions') {
-            const currentS = db.state.get<CIFailureState>('hook:ciFailure') ?? DEFAULT_CI_STATE
-            db.state.set('hook:ciFailure', { 
-              ...currentS, 
-              error: `Unsupported CI provider: ${props.provider}` 
+            const currentS = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
+            db.state.set(stateKey, {
+              ...currentS,
+              error: `Unsupported CI provider: ${props.provider}`,
+              ciStatus: 'error',
             }, 'ci-failure-error')
             return
           }
 
-          const run = await fetchLatestGitHubActionsRun()
+          const branch = branchRef.current ?? 'main'
+          const run = await fetchLatestGitHubActionsRun(branch)
 
           if (!run) {
             return
           }
 
-          const currentS = db.state.get<CIFailureState>('hook:ciFailure') ?? DEFAULT_CI_STATE
+          const currentS = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
           const processedSet = new Set(currentS.processedRunIds)
 
           // Check if this is a new failure
@@ -195,35 +237,39 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
               logs,
             }
 
+            const nextRunIds = [...currentS.processedRunIds, run.databaseId].slice(-MAX_PROCESSED_RUNS)
+
             // Update state with new failure and processed ID
-            db.state.set('hook:ciFailure', {
+            db.state.set(stateKey, {
               ...currentS,
               ciStatus: 'failed',
               currentFailure: failure,
               triggered: true,
-              processedRunIds: [...currentS.processedRunIds, run.databaseId],
+              processedRunIds: nextRunIds,
             }, 'ci-failure-triggered')
 
             // Call onFailure callback
             props.onFailure?.(failure)
 
             // Register task for tracking - children will handle completion
-            taskIdRef.current = db.tasks.start('ci-failure-hook')
+            taskIdRef.current = db.tasks.start('ci-failure-hook', undefined, { scopeId: executionScope.scopeId })
             // Complete immediately as children handle their own task registration
             db.tasks.complete(taskIdRef.current)
 
             // Log to db state
-            db.state.set('last_ci_failure', failure, 'ci-failure-hook')
+            db.state.set(lastFailureKey, failure, 'ci-failure-hook')
           }
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err)
-          const currentS = db.state.get<CIFailureState>('hook:ciFailure') ?? DEFAULT_CI_STATE
-          db.state.set('hook:ciFailure', { 
-            ...currentS, 
-            error: errorMsg, 
-            ciStatus: 'error' 
+          const currentS = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
+          db.state.set(stateKey, {
+            ...currentS,
+            error: errorMsg,
+            ciStatus: 'error',
           }, 'ci-failure-error')
           console.error('[OnCIFailure] Polling error:', errorMsg)
+        } finally {
+          inFlightRef.current = false
         }
       }
 
@@ -233,11 +279,19 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
       // Start polling
       pollIntervalRef.current = setInterval(checkCI, intervalMs)
     })()
-  }, [db, executionEnabled, intervalMs, props.onFailure, props.provider])
+  }, [db, executionEnabled, intervalMs, props.branch, props.onFailure, props.provider])
 
   useUnmount(() => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current)
+    }
+  })
+
+  useEffectOnValueChange(shouldExecute, () => {
+    if (shouldExecute) return
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
     }
   })
 
@@ -252,7 +306,9 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
       poll-interval={intervalMs}
       error={error}
     >
-      {triggered ? props.children : null}
+      {triggered && currentFailure?.runId
+        ? <ci-failure-run key={currentFailure.runId}>{props.children}</ci-failure-run>
+        : null}
     </ci-failure-hook>
   )
 }

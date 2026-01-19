@@ -83,8 +83,8 @@ The component maps to `amp` CLI commands:
 | `mode` | `--mode` / `-m` |
 | `permissionMode: 'bypassPermissions'` | `--dangerously-allow-all` |
 | `labels` | `--label` / `-l` (can be repeated) |
-| `continueThread` | `threads continue` subcommand |
-| `resumeThread` | `threads continue --thread-id` |
+| `continueThread` | `threads continue --last` |
+| `resumeThread` | `threads continue <threadId>` |
 
 ## Differences from Claude Component
 

@@ -1,7 +1,8 @@
 // Tab bar for navigation between views
 
-import type { TabKey, TabInfo } from '../../App.js'
+import type { TabKey, TabInfo } from '../../appNavigation.js'
 import { TextAttributes } from '@opentui/core'
+import { colors } from '../../utils/colors.js'
 
 export interface TabBarProps {
   tabs: TabInfo[]
@@ -14,7 +15,7 @@ export function TabBar({ tabs, activeTab }: TabBarProps) {
     <box style={{
       height: 1,
       width: '100%',
-      backgroundColor: '#16161e',
+      backgroundColor: colors.bgDark,
       flexDirection: 'row',
       paddingLeft: 1
     }}>
@@ -28,14 +29,14 @@ export function TabBar({ tabs, activeTab }: TabBarProps) {
             <text
               content={`${tab.shortcut}:`}
               style={{
-                fg: '#565f89',
+                fg: colors.comment,
               }}
             />
             <text
               content={tab.label}
               style={{
-                fg: isActive ? '#7aa2f7' : '#a9b1d6',
-                backgroundColor: isActive ? '#24283b' : undefined,
+                fg: isActive ? colors.blue : colors.fgDark,
+                backgroundColor: isActive ? colors.bgHighlight : undefined,
                 attributes: isActive ? TextAttributes.BOLD : undefined,
                 paddingLeft: 1,
                 paddingRight: 1

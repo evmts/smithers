@@ -68,8 +68,7 @@ bun src/tui/index.tsx /path/to/smithers.db
 | F4 | Chat | Claude-powered Q&A about execution state |
 | F5 | Human | Pending human interactions (approvals) |
 | F6 | Reports | Agent-generated reports |
-| Tab/Shift+Tab | - | Cycle through views |
-| q / Ctrl+C | - | Quit |
+| Ctrl+Q / Ctrl+C | - | Quit |
 
 **Per-view navigation:**
 - Timeline (F1): `j`/`k` or `↑`/`↓` to scroll, `g`/`G` for first/last
@@ -327,7 +326,7 @@ reports (id, type, title, content, severity)
 - Render frame time-travel (F2)
 - Claude chat integration (F4)
 - Vim-style navigation
-- Tab switching (F1-F6)
+- View switching (F1-F6)
 
 ### ⚠️ Known Issues
 - **Manual polling** instead of reactive queries (no useQueryValue in TUI yet)

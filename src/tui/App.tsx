@@ -1,106 +1,98 @@
 // Main TUI Application with tab navigation
 // F1-F6 for view switching, vim-style navigation
 
-import { useCallback } from 'react'
-import { useKeyboard, useTerminalDimensions } from '@opentui/react'
+import { useCallback, type ReactNode } from 'react'
+import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react'
 import { Header } from './components/layout/Header.js'
 import { TabBar } from './components/layout/TabBar.js'
 import { StatusBar } from './components/layout/StatusBar.js'
-import { ExecutionTimeline } from './components/views/ExecutionTimeline.js'
-import { RenderFrameInspector } from './components/views/RenderFrameInspector.js'
-import { DatabaseExplorer } from './components/views/DatabaseExplorer.js'
-import { ChatInterface } from './components/views/ChatInterface.js'
-import { HumanInteractionHandler } from './components/views/HumanInteractionHandler.js'
 import { ReportViewer } from './components/views/ReportViewer.js'
 import { useSmithersConnection } from './hooks/useSmithersConnection.js'
+import { useReportGenerator, type UseReportGeneratorResult } from './hooks/useReportGenerator.js'
 import type { KeyEvent } from '@opentui/core'
-import { useTuiState } from './state.js'
+import { readTuiState, useTuiState } from './state.js'
+import { colors } from './utils/colors.js'
+import type { SmithersDB } from '../db/index.js'
+import {
+  TABS,
+  type TabKey,
+  getContentHeight,
+  mapKeyToTab,
+  nextTab,
+  shouldQuit,
+  viewForTab
+} from './appNavigation.js'
 
-export type TabKey = 'timeline' | 'frames' | 'database' | 'chat' | 'human' | 'reports'
-
-export interface TabInfo {
-  key: TabKey
-  label: string
-  shortcut: string
+export interface AppHooks {
+  useKeyboard?: typeof useKeyboard
+  useRenderer?: typeof useRenderer
+  useTerminalDimensions?: typeof useTerminalDimensions
+  useSmithersConnection?: typeof useSmithersConnection
+  useReportGenerator?: typeof useReportGenerator
 }
-
-export const TABS: TabInfo[] = [
-  { key: 'timeline', label: 'Timeline', shortcut: 'F1' },
-  { key: 'frames', label: 'Frames', shortcut: 'F2' },
-  { key: 'database', label: 'Database', shortcut: 'F3' },
-  { key: 'chat', label: 'Chat', shortcut: 'F4' },
-  { key: 'human', label: 'Human', shortcut: 'F5' },
-  { key: 'reports', label: 'Reports', shortcut: 'F6' },
-]
 
 export interface AppProps {
   dbPath: string
+  hooks?: AppHooks
 }
 
-export function App({ dbPath }: AppProps) {
+export function App({ dbPath, hooks }: AppProps) {
+  const keyboardHook = hooks?.useKeyboard ?? useKeyboard
+  const rendererHook = hooks?.useRenderer ?? useRenderer
+  const terminalHook = hooks?.useTerminalDimensions ?? useTerminalDimensions
+  const connectionHook = hooks?.useSmithersConnection ?? useSmithersConnection
+  const reportHook = hooks?.useReportGenerator ?? useReportGenerator
+
   const [activeTab, setActiveTab] = useTuiState<TabKey>('tui:app:activeTab', 'timeline')
-  const { height } = useTerminalDimensions()
-  const { db, isConnected, error, currentExecution } = useSmithersConnection(dbPath)
+  const renderer = rendererHook()
+  const { height } = terminalHook()
+  const { db, isConnected, error, currentExecution } = connectionHook(dbPath)
+
+  const handleQuit = useCallback(() => {
+    renderer?.destroy()
+    process.exit(0)
+  }, [renderer])
 
   // Handle keyboard navigation
-  useKeyboard((key: KeyEvent) => {
-    // Function key navigation
-    if (key.name === 'f1') setActiveTab('timeline')
-    else if (key.name === 'f2') setActiveTab('frames')
-    else if (key.name === 'f3') setActiveTab('database')
-    else if (key.name === 'f4') setActiveTab('chat')
-    else if (key.name === 'f5') setActiveTab('human')
-    else if (key.name === 'f6') setActiveTab('reports')
-
-    // Tab key cycles through tabs
-    else if (key.name === 'tab' && !key.shift) {
-      const currentIndex = TABS.findIndex(t => t.key === activeTab)
-      const nextIndex = (currentIndex + 1) % TABS.length
-      setActiveTab(TABS[nextIndex]!.key)
-    } else if (key.name === 'tab' && key.shift) {
-      const currentIndex = TABS.findIndex(t => t.key === activeTab)
-      const prevIndex = (currentIndex - 1 + TABS.length) % TABS.length
-      setActiveTab(TABS[prevIndex]!.key)
+  keyboardHook((key: KeyEvent) => {
+    // Quit on Ctrl+C or Ctrl+Q
+    if (shouldQuit(key)) {
+      handleQuit()
+      return
     }
 
-    // Quit on 'q' or Ctrl+C
-    else if (key.name === 'q' || (key.ctrl && key.name === 'c')) {
-      process.exit(0)
+    const currentTab = readTuiState('tui:app:activeTab', activeTab)
+    const isTabCaptured = currentTab === 'chat' || currentTab === 'database'
+    if (!isTabCaptured && key.name === 'tab') {
+      setActiveTab(nextTab(TABS, currentTab, key.shift ? -1 : 1))
+      return
+    }
+
+    const nextActiveTab = mapKeyToTab(key, TABS)
+    if (nextActiveTab) {
+      setActiveTab(nextActiveTab)
     }
   })
 
   // Calculate content area height (total - header - tabbar - statusbar)
-  const contentHeight = Math.max(height - 6, 10)
+  const contentHeight = getContentHeight(height)
 
-  const renderView = useCallback(() => {
-    if (!db) {
-      return <text content="Connecting to database..." style={{ fg: '#888888' }} />
+  const renderView = useCallback((reportState: UseReportGeneratorResult) => {
+    if (activeTab === 'reports') {
+      return <ReportViewer height={contentHeight} reportState={reportState} />
     }
 
-    switch (activeTab) {
-      case 'timeline':
-        return <ExecutionTimeline db={db} height={contentHeight} />
-      case 'frames':
-        return <RenderFrameInspector db={db} height={contentHeight} />
-      case 'database':
-        return <DatabaseExplorer db={db} height={contentHeight} />
-      case 'chat':
-        return <ChatInterface db={db} height={contentHeight} />
-      case 'human':
-        return <HumanInteractionHandler db={db} height={contentHeight} />
-      case 'reports':
-        return <ReportViewer db={db} height={contentHeight} />
-      default:
-        return <text content="Unknown view" />
-    }
-  }, [activeTab, db, contentHeight])
+    const viewSpec = viewForTab(activeTab)
+    if (!viewSpec || !db) return <text content="Unknown view" />
+    return viewSpec.render(db, contentHeight)
+  }, [activeTab, contentHeight, db])
 
   return (
     <box style={{
       flexDirection: 'column',
       width: '100%',
       height: '100%',
-      backgroundColor: '#1a1b26'
+      backgroundColor: colors.bg
     }}>
       <Header
         executionName={currentExecution?.name ?? 'No execution'}
@@ -116,7 +108,13 @@ export function App({ dbPath }: AppProps) {
         padding: 1,
         overflow: 'hidden'
       }}>
-        {renderView()}
+        {db ? (
+          <ReportGeneratorRunner db={db} useReportGeneratorHook={reportHook}>
+            {(reportState) => renderView(reportState)}
+          </ReportGeneratorRunner>
+        ) : (
+          <text content="Connecting to database..." style={{ fg: colors.comment }} />
+        )}
       </box>
       <StatusBar
         isConnected={isConnected}
@@ -125,4 +123,17 @@ export function App({ dbPath }: AppProps) {
       />
     </box>
   )
+}
+
+function ReportGeneratorRunner({
+  db,
+  children,
+  useReportGeneratorHook
+}: {
+  db: SmithersDB
+  children: (state: UseReportGeneratorResult) => ReactNode
+  useReportGeneratorHook?: typeof useReportGenerator
+}) {
+  const reportState = (useReportGeneratorHook ?? useReportGenerator)(db)
+  return <>{children(reportState)}</>
 }

@@ -191,12 +191,14 @@ describe('buildAmpArgs', () => {
     const args = buildAmpArgs({ prompt: 'test', continue: true })
     expect(args).toContain('threads')
     expect(args).toContain('continue')
+    expect(args).toContain('--last')
   })
 
   test('resumes specific thread', () => {
     const args = buildAmpArgs({ prompt: 'test', resume: 'T-abc123' })
     expect(args).toContain('threads')
     expect(args).toContain('continue')
+    expect(args).toContain('T-abc123')
   })
 })
 

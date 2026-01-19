@@ -3,6 +3,9 @@
  * for /capture command
  */
 
+import * as path from 'node:path'
+import { mkdir } from 'node:fs/promises'
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -39,7 +42,7 @@ export interface GeneratedCapture {
 const PATTERNS = {
   review: {
     commitHash: /\b[0-9a-f]{7,40}\b/i,
-    fileRefs: /[\w/.-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|rb|c|cpp|h):\d+/g,
+    fileRefs: /[\w/.-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|rb|c|cpp|h):\d+/i,
     negativeWords: /\b(broken|bug|issue|error|problem|wrong|fail|incorrect)\b/i,
     reviewWords: /\b(review|commit|change|diff|patch)\b/i,
   },
@@ -160,7 +163,7 @@ export function classifyContent(ctx: CaptureContext): ClassificationResult {
     if (PATTERNS.todo.urgentWords.test(content)) reasoning.push('Urgent language present')
     if (PATTERNS.todo.imperative.test(content)) reasoning.push('Imperative mood detected')
   } else if (maxType === 'prompt') {
-    reasoning.push('Explicit Prompt.md request detected')
+    reasoning.push('Explicit PROMPT.md request detected')
   }
 
   return {
@@ -355,25 +358,25 @@ export async function generateFilePath(
     case 'review': {
       const hash = ctx.commitHash ?? extractCommitHash(ctx.content) ?? 'manual'
       const timestamp = formatTimestamp()
-      return `${cwd}/reviews/${timestamp}_${hash.slice(0, 7)}.md`
+      return path.join(cwd, 'reviews', `${timestamp}_${hash.slice(0, 7)}.md`)
     }
     case 'issue': {
       const title = ctx.title ?? extractTitle(ctx.content)
       const kebab = toKebabCase(title)
-      let path = `${cwd}/issues/${kebab}.md`
+      let filePath = path.join(cwd, 'issues', `${kebab}.md`)
 
       // Handle conflicts with counter
       let counter = 1
-      while (await Bun.file(path).exists()) {
-        path = `${cwd}/issues/${kebab}-${counter}.md`
+      while (await Bun.file(filePath).exists()) {
+        filePath = path.join(cwd, 'issues', `${kebab}-${counter}.md`)
         counter++
       }
-      return path
+      return filePath
     }
     case 'todo':
-      return `${cwd}/TODO.md`
+      return path.join(cwd, 'TODO.md')
     case 'prompt':
-      return `${cwd}/Prompt.md`
+      return path.join(cwd, 'PROMPT.md')
   }
 }
 
@@ -382,12 +385,16 @@ export async function generateFilePath(
 // ============================================================================
 
 export async function writeCapture(generated: GeneratedCapture): Promise<void> {
+  await mkdir(path.dirname(generated.filePath), { recursive: true })
   if (generated.isAppend) {
     // Read existing content and append
-    const existing = await Bun.file(generated.filePath)
-      .text()
-      .catch(() => '')
-    const newContent = existing.trimEnd() + '\n' + generated.content
+    const file = Bun.file(generated.filePath)
+    const existing = await file.exists()
+      ? await file.text()
+      : ''
+    const trimmedExisting = existing.trimEnd()
+    const separator = trimmedExisting.length > 0 ? '\n' : ''
+    const newContent = trimmedExisting + separator + generated.content
     await Bun.write(generated.filePath, newContent)
   } else {
     await Bun.write(generated.filePath, generated.content)
@@ -418,8 +425,8 @@ export async function capture(ctx: CaptureContext): Promise<GeneratedCapture> {
       break
     case 'prompt':
       content = generatePromptMd(ctx)
-      // Check if Prompt.md exists to determine append vs create
-      isAppend = await Bun.file(`${cwd}/Prompt.md`).exists()
+      // Check if PROMPT.md exists to determine append vs create
+      isAppend = await Bun.file(`${cwd}/PROMPT.md`).exists()
       break
   }
 

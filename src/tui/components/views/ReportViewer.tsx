@@ -3,7 +3,7 @@
 
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
-import { useReportGenerator } from '../../hooks/useReportGenerator.js'
+import { useReportGenerator, type UseReportGeneratorResult } from '../../hooks/useReportGenerator.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { truncate, formatTimestamp } from '../../utils/format.js'
 import { getSeverityColor, colors } from '../../utils/colors.js'
@@ -11,12 +11,38 @@ import { useEffectOnValueChange } from '../../../reconciler/hooks.js'
 import { useTuiState } from '../../state.js'
 
 export interface ReportViewerProps {
-  db: SmithersDB
+  db?: SmithersDB
   height: number
+  reportState?: UseReportGeneratorResult
 }
 
-export function ReportViewer({ db }: ReportViewerProps) {
-  const { reports, isGenerating, generateNow } = useReportGenerator(db)
+export function ReportViewer({ db, height: _height, reportState }: ReportViewerProps) {
+  if (reportState) {
+    return <ReportViewerContent reportState={reportState} />
+  }
+
+  if (!db) {
+    return (
+      <box style={{ flexDirection: 'column' }}>
+        <text content="Connecting to database..." style={{ fg: '#888888' }} />
+      </box>
+    )
+  }
+
+  return <ReportViewerWithData db={db} />
+}
+
+function ReportViewerWithData({ db }: { db: SmithersDB }) {
+  const reportState = useReportGenerator(db)
+  return <ReportViewerContent reportState={reportState} />
+}
+
+function ReportViewerContent({
+  reportState
+}: {
+  reportState: UseReportGeneratorResult
+}) {
+  const { reports, isGenerating, generateNow } = reportState
   const [selectedIndex, setSelectedIndex] = useTuiState<number>('tui:reports:selectedIndex', 0)
 
   useEffectOnValueChange(reports.length, () => {

@@ -12,7 +12,7 @@ export interface RenderFrameInspectorProps {
   height: number
 }
 
-export function RenderFrameInspector({ db, height }: RenderFrameInspectorProps) {
+export function RenderFrameInspector({ db, height: _height }: RenderFrameInspectorProps) {
   const {
     currentFrame,
     currentIndex,
@@ -52,7 +52,6 @@ export function RenderFrameInspector({ db, height }: RenderFrameInspectorProps) 
   }
 
   const xmlLines = currentFrame?.tree_xml.split('\n') ?? []
-  const visibleLines = xmlLines.slice(0, height - 6)
 
   return (
     <box style={{ flexDirection: 'column', width: '100%' }}>
@@ -85,19 +84,13 @@ export function RenderFrameInspector({ db, height }: RenderFrameInspectorProps) 
         backgroundColor: '#16161e'
       }}>
         <scrollbox focused style={{ flexGrow: 1 }}>
-          {visibleLines.map((line, index) => (
+          {xmlLines.map((line, index) => (
             <text
               key={index}
               content={line}
               style={{ fg: '#c0caf5' }}
             />
           ))}
-          {xmlLines.length > visibleLines.length && (
-            <text
-              content={`... ${xmlLines.length - visibleLines.length} more lines`}
-              style={{ fg: '#565f89' }}
-            />
-          )}
         </scrollbox>
       </box>
 

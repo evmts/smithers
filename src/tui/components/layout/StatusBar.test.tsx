@@ -5,6 +5,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { StatusBar, type StatusBarProps } from './StatusBar.js'
+import { colors } from '../../utils/colors.js'
 
 // Helper to create status bar props
 function createProps(overrides: Partial<StatusBarProps> = {}): StatusBarProps {
@@ -21,7 +22,7 @@ describe('tui/components/layout/StatusBar', () => {
     test('shows "[Connected]" when isConnected is true', () => {
       const props = createProps({ isConnected: true })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const connectionText = leftBox.props.children[0]
       expect(connectionText.props.content).toBe('[Connected]')
@@ -30,28 +31,28 @@ describe('tui/components/layout/StatusBar', () => {
     test('shows "[Disconnected]" when isConnected is false', () => {
       const props = createProps({ isConnected: false })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const connectionText = leftBox.props.children[0]
       expect(connectionText.props.content).toBe('[Disconnected]')
     })
 
-    test('uses green (#9ece6a) for connected', () => {
+    test('uses green for connected', () => {
       const props = createProps({ isConnected: true })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const connectionText = leftBox.props.children[0]
-      expect(connectionText.props.style.fg).toBe('#9ece6a')
+      expect(connectionText.props.style.fg).toBe(colors.green)
     })
 
-    test('uses red (#f7768e) for disconnected', () => {
+    test('uses red for disconnected', () => {
       const props = createProps({ isConnected: false })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const connectionText = leftBox.props.children[0]
-      expect(connectionText.props.style.fg).toBe('#f7768e')
+      expect(connectionText.props.style.fg).toBe(colors.red)
     })
   })
 
@@ -59,19 +60,19 @@ describe('tui/components/layout/StatusBar', () => {
     test('displays dbPath prop', () => {
       const props = createProps({ dbPath: '/custom/path/db.sqlite' })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const pathText = leftBox.props.children[1]
       expect(pathText.props.content).toBe('/custom/path/db.sqlite')
     })
 
-    test('uses gray (#565f89) color', () => {
+    test('uses comment color', () => {
       const props = createProps()
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const pathText = leftBox.props.children[1]
-      expect(pathText.props.style.fg).toBe('#565f89')
+      expect(pathText.props.style.fg).toBe(colors.comment)
     })
   })
 
@@ -79,7 +80,7 @@ describe('tui/components/layout/StatusBar', () => {
     test('shows error message when error prop is set', () => {
       const props = createProps({ error: 'Connection failed' })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       // Error is third child in the left box when present
       const errorText = leftBox.props.children[2]
@@ -90,25 +91,25 @@ describe('tui/components/layout/StatusBar', () => {
     test('prefixes error with "Error: "', () => {
       const props = createProps({ error: 'timeout' })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const errorText = leftBox.props.children[2]
       expect(errorText.props.content).toBe('Error: timeout')
     })
 
-    test('uses red (#f7768e) for error', () => {
+    test('uses red for error', () => {
       const props = createProps({ error: 'Something went wrong' })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const errorText = leftBox.props.children[2]
-      expect(errorText.props.style.fg).toBe('#f7768e')
+      expect(errorText.props.style.fg).toBe(colors.red)
     })
 
     test('does not render error when error is null', () => {
       const props = createProps({ error: null })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       // With null error, there should only be connection status and dbPath
       // The third child should be falsy or undefined
@@ -118,21 +119,21 @@ describe('tui/components/layout/StatusBar', () => {
   })
 
   describe('help hints', () => {
-    test('displays "q:quit  Tab:next  j/k:nav  Enter:select"', () => {
+    test('displays "Ctrl+C/Ctrl+Q:quit  F1-F6:tabs  j/k:nav  Enter:select"', () => {
       const props = createProps()
       const element = StatusBar(props)
-      
+
       // Help hints are the second child of the main box
       const helpText = element.props.children[1]
-      expect(helpText.props.content).toBe('q:quit  Tab:next  j/k:nav  Enter:select')
+      expect(helpText.props.content).toBe('Ctrl+C/Ctrl+Q:quit  F1-F6:tabs  j/k:nav  Enter:select')
     })
 
-    test('uses gray (#565f89) color', () => {
+    test('uses comment color', () => {
       const props = createProps()
       const element = StatusBar(props)
-      
+
       const helpText = element.props.children[1]
-      expect(helpText.props.style.fg).toBe('#565f89')
+      expect(helpText.props.style.fg).toBe(colors.comment)
     })
   })
 
@@ -174,7 +175,7 @@ describe('tui/components/layout/StatusBar', () => {
       const longPath = '/very/long/path/' + 'a'.repeat(200) + '/smithers.db'
       const props = createProps({ dbPath: longPath })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const pathText = leftBox.props.children[1]
       expect(pathText.props.content).toBe(longPath)
@@ -184,16 +185,16 @@ describe('tui/components/layout/StatusBar', () => {
       const longError = 'Error: ' + 'a'.repeat(200)
       const props = createProps({ error: longError })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const errorText = leftBox.props.children[2]
-      expect(errorText.props.content).toBe(`Error: ${longError}`)
+      expect(errorText.props.content).toBe(longError)
     })
 
     test('handles empty dbPath', () => {
       const props = createProps({ dbPath: '' })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const pathText = leftBox.props.children[1]
       expect(pathText.props.content).toBe('')
@@ -202,7 +203,7 @@ describe('tui/components/layout/StatusBar', () => {
     test('handles special characters in error', () => {
       const props = createProps({ error: '<script>alert("xss")</script>' })
       const element = StatusBar(props)
-      
+
       const leftBox = element.props.children[0]
       const errorText = leftBox.props.children[2]
       expect(errorText.props.content).toBe('Error: <script>alert("xss")</script>')

@@ -38,6 +38,60 @@ function shouldFallbackToApiKey(stdout: string, stderr: string, exitCode: number
   )
 }
 
+type StreamUsage = {
+  tokensUsed: { input: number; output: number }
+  turnsUsed: number
+}
+
+function createClaudeStreamUsageTracker(): {
+  push: (chunk: string) => void
+  flush: () => void
+  getUsage: () => StreamUsage
+} {
+  let buffer = ''
+  let tokensUsed = { input: 0, output: 0 }
+  let turnsUsed = 0
+
+  const applyLine = (line: string) => {
+    const trimmed = line.trim()
+    if (!trimmed) return
+    try {
+      const event = JSON.parse(trimmed) as Record<string, unknown>
+      if (event['type'] === 'message_stop') {
+        const usage = event['usage'] as Record<string, unknown> | undefined
+        if (usage) {
+          const inputTokens = typeof usage['input_tokens'] === 'number' ? usage['input_tokens'] : 0
+          const outputTokens = typeof usage['output_tokens'] === 'number' ? usage['output_tokens'] : 0
+          tokensUsed = { input: inputTokens, output: outputTokens }
+        }
+      }
+      if (typeof event['turns'] === 'number') {
+        turnsUsed = event['turns'] as number
+      }
+    } catch {
+      // Ignore malformed lines
+    }
+  }
+
+  return {
+    push: (chunk: string) => {
+      buffer += chunk
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        applyLine(line)
+      }
+    },
+    flush: () => {
+      if (buffer.trim()) {
+        applyLine(buffer)
+      }
+      buffer = ''
+    },
+    getUsage: () => ({ tokensUsed, turnsUsed }),
+  }
+}
+
 /**
  * Execute a single Claude CLI invocation (internal helper)
  */
@@ -89,6 +143,9 @@ export async function executeClaudeCLIOnce(
     }
     const stdoutReader = proc.stdout.getReader()
     const decoder = new TextDecoder()
+    const usageTracker = options.outputFormat === 'stream-json'
+      ? createClaudeStreamUsageTracker()
+      : null
 
     const readStream = async () => {
       while (true) {
@@ -97,14 +154,18 @@ export async function executeClaudeCLIOnce(
 
         const chunk = decoder.decode(value)
         stdout += chunk
+        usageTracker?.push(chunk)
 
         // Report progress
         options.onProgress?.(chunk)
 
         // Check stop conditions periodically
         const elapsed = Date.now() - startTime
+        const usage = usageTracker?.getUsage()
         const partialResult: Partial<AgentResult> = {
           output: stdout,
+          tokensUsed: usage?.tokensUsed,
+          turnsUsed: usage?.turnsUsed,
           durationMs: elapsed,
         }
 
@@ -120,8 +181,8 @@ export async function executeClaudeCLIOnce(
 
           return {
             output: stdout,
-            tokensUsed: { input: 0, output: 0 },
-            turnsUsed: 0,
+            tokensUsed: usage?.tokensUsed ?? { input: 0, output: 0 },
+            turnsUsed: usage?.turnsUsed ?? 0,
             stopReason: 'stop_condition' as const,
             durationMs: elapsed,
           }
@@ -151,6 +212,7 @@ export async function executeClaudeCLIOnce(
     }
 
     await stderrPromise
+    usageTracker?.flush()
     const exitCode = await proc.exited
 
     clearTimeout(timeoutId)
@@ -176,9 +238,14 @@ export async function executeClaudeCLIOnce(
     const sessionMatch = stderr.match(/session[_-]?id[:\s]+([a-f0-9-]+)/i)
     const sessionId = sessionMatch?.[1]
 
+    const shouldRetry = !useApiKey && shouldFallbackToApiKey(stdout, stderr, exitCode)
+    const output = exitCode !== 0
+      ? `Claude CLI failed (exit ${exitCode})\nCommand: claude ${args.join(' ')}\n\nSTDOUT:\n${parsed.output}\n\nSTDERR:\n${stderr}`
+      : parsed.output
+
     if (exitCode !== 0) {
       return {
-        output: `Claude CLI failed with exit code ${exitCode}\n\nCommand: claude ${args.join(' ')}\n\nSTDOUT:\n${parsed.output}\n\nSTDERR:\n${stderr}`,
+        output,
         structured: parsed.structured,
         tokensUsed: parsed.tokensUsed,
         turnsUsed: parsed.turnsUsed,
@@ -186,16 +253,9 @@ export async function executeClaudeCLIOnce(
         durationMs,
         exitCode,
         ...(sessionId ? { sessionId } : {}),
+        ...(shouldRetry ? { shouldRetryWithApiKey: true } : {}),
       }
     }
-
-    // Check if we should retry with API key (subscription failure)
-    const shouldRetry = !useApiKey && shouldFallbackToApiKey(stdout, stderr, exitCode)
-
-    // When exitCode !== 0, enhance output with command and stderr context
-    const output = exitCode !== 0
-      ? `Claude CLI failed (exit ${exitCode})\nCommand: claude ${args.join(' ')}\n\nSTDOUT:\n${parsed.output}\n\nSTDERR:\n${stderr}`
-      : parsed.output
 
     return {
       output,
@@ -243,11 +303,13 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
   // Execute the initial request - try subscription first (no API key)
   const useSubscription = options.useSubscription ?? true
   let result = await executeClaudeCLIOnce(effectiveOptions, startTime, !useSubscription)
+  let activeSessionId = result.sessionId ?? effectiveOptions.resume
 
   // If subscription failed and API key is available, retry with API key
   if (result.shouldRetryWithApiKey && process.env['ANTHROPIC_API_KEY']) {
     options.onProgress?.('Subscription auth failed, retrying with API key...')
     result = await executeClaudeCLIOnce(effectiveOptions, startTime, true)
+    activeSessionId = result.sessionId ?? activeSessionId
   }
 
   // If no schema, just return the result
@@ -287,10 +349,16 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
     const retryOptions: CLIExecutionOptions = {
       ...effectiveOptions,
       prompt: retryPrompt,
-      continue: true, // Use --continue to maintain context
+    }
+    if (activeSessionId) {
+      retryOptions.resume = activeSessionId
+      retryOptions.continue = undefined
+    } else {
+      retryOptions.continue = true
     }
 
     result = await executeClaudeCLIOnce(retryOptions, startTime)
+    activeSessionId = result.sessionId ?? activeSessionId
   }
 
   // Final validation attempt after all retries
@@ -322,51 +390,6 @@ export async function executeClaudeShell(
   prompt: string,
   options: Partial<CLIExecutionOptions> = {}
 ): Promise<AgentResult> {
-  const startTime = Date.now()
-
-  const args = buildClaudeArgs({ ...options, prompt })
-  const argsString = args.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ')
-
-  try {
-    const result = await Bun.$`claude ${argsString}`.text()
-
-    const durationMs = Date.now() - startTime
-    const parsed = parseClaudeOutput(result, options.outputFormat)
-
-    return {
-      output: parsed.output,
-      structured: parsed.structured,
-      tokensUsed: parsed.tokensUsed,
-      turnsUsed: parsed.turnsUsed,
-      stopReason: 'completed',
-      durationMs,
-      exitCode: 0,
-    }
-  } catch (error: unknown) {
-    const durationMs = Date.now() - startTime
-
-    const getErrorMessage = (): string => {
-      if (error && typeof error === 'object') {
-        if ('stderr' in error && typeof error.stderr === 'string') return error.stderr
-        if ('message' in error && typeof error.message === 'string') return error.message
-      }
-      return String(error)
-    }
-
-    const getExitCode = (): number => {
-      if (error && typeof error === 'object' && 'exitCode' in error && typeof error.exitCode === 'number') {
-        return error.exitCode
-      }
-      return -1
-    }
-
-    return {
-      output: `Claude CLI failed\nCommand: claude ${argsString}\n\n${getErrorMessage()}`,
-      tokensUsed: { input: 0, output: 0 },
-      turnsUsed: 0,
-      stopReason: 'error',
-      durationMs,
-      exitCode: getExitCode(),
-    }
-  }
+  const executionOptions: CLIExecutionOptions = { prompt, ...options }
+  return executeClaudeCLI(executionOptions)
 }

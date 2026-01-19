@@ -7,6 +7,67 @@ import type { ParseResult } from './types.js'
 /**
  * Extract JSON from text that may contain markdown code blocks or other content
  */
+function extractBalancedFrom(text: string, startIndex: number): string | null {
+  const startChar = text[startIndex]
+  if (startChar !== '{' && startChar !== '[') return null
+
+  const stack: string[] = [startChar]
+  let inString = false
+  let escaped = false
+
+  for (let i = startIndex + 1; i < text.length; i++) {
+    const ch = text[i]
+
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        escaped = true
+        continue
+      }
+      if (ch === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+
+    if (ch === '{' || ch === '[') {
+      stack.push(ch)
+      continue
+    }
+
+    if (ch === '}' || ch === ']') {
+      const open = stack.pop()
+      if (!open) return null
+      if ((open === '{' && ch !== '}') || (open === '[' && ch !== ']')) {
+        return null
+      }
+      if (stack.length === 0) {
+        return text.slice(startIndex, i + 1)
+      }
+    }
+  }
+
+  return null
+}
+
+function extractBalancedJson(text: string): string | null {
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch !== '{' && ch !== '[') continue
+    const candidate = extractBalancedFrom(text, i)
+    if (candidate) return candidate
+  }
+  return null
+}
+
 export function extractJson(text: string): string | null {
   // Try to find JSON in code blocks first
   const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
@@ -14,13 +75,11 @@ export function extractJson(text: string): string | null {
     return codeBlockMatch[1].trim()
   }
 
-  // Try to find raw JSON (object or array)
-  const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
-  if (jsonMatch && jsonMatch[1]) {
-    return jsonMatch[1].trim()
+  const balanced = extractBalancedJson(text)
+  if (balanced) {
+    return balanced.trim()
   }
 
-  // If the entire text looks like JSON, return it
   const trimmed = text.trim()
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     return trimmed

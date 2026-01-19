@@ -21,7 +21,11 @@ export function buildAmpArgs(options: AmpCLIExecutionOptions): string[] {
   if (options.continue || options.resume) {
     args.push('threads', 'continue')
     if (options.resume) {
-      // Resume specific thread - thread ID is passed via stdin with the prompt
+      // Resume specific thread by ID (positional)
+      args.push(options.resume)
+    } else {
+      // Continue last thread without interactive picker
+      args.push('--last')
     }
     args.push('--execute')
   } else {

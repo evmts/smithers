@@ -96,20 +96,20 @@ export function Notes(props: NotesProps): ReactNode {
           previousNotes,
         }
 
+        setState({ status: 'complete', result: notesResult, error: null })
         if (isMounted()) {
-          setState({ status: 'complete', result: notesResult, error: null })
           props.onFinished?.(notesResult)
         }
 
       } catch (err) {
+        const errorObj = err instanceof Error ? err : new Error(String(err))
+        setState({ status: 'error', result: null, error: errorObj.message })
         if (isMounted()) {
-          const errorObj = err instanceof Error ? err : new Error(String(err))
-          setState({ status: 'error', result: null, error: errorObj.message })
           props.onError?.(errorObj)
         }
       } finally {
         // Complete task
-        if (taskIdRef.current && isMounted()) {
+        if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
       }
