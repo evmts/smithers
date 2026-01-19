@@ -67,6 +67,7 @@ export class ReactiveDatabase {
    * Execute raw SQL (for schema, pragmas, etc.)
    */
   exec(sql: string): void {
+    if (this.closed) return;
     this.db.exec(sql);
 
     // Check if this affects any tables
@@ -82,6 +83,7 @@ export class ReactiveDatabase {
    * Prepare a statement for repeated execution
    */
   prepare<T = unknown>(sql: string) {
+    if (this.closed) throw new Error('Cannot prepare statement on closed database');
     return this.db.prepare<T, any[]>(sql);
   }
 
@@ -93,6 +95,7 @@ export class ReactiveDatabase {
     sql: string,
     params: any[] = [],
   ): Database["run"] extends (...args: any[]) => infer R ? R : never {
+    if (this.closed) return undefined as any;
     const stmt = this.db.prepare(sql);
     const result = stmt.run(...params);
 
@@ -118,6 +121,7 @@ export class ReactiveDatabase {
    * Execute a query and return all rows
    */
   query<T = Record<string, unknown>>(sql: string, params: any[] = []): T[] {
+    if (this.closed) return [];
     const stmt = this.db.prepare<T, any[]>(sql);
     return stmt.all(...params);
   }
@@ -129,6 +133,7 @@ export class ReactiveDatabase {
     sql: string,
     params: any[] = [],
   ): T | null {
+    if (this.closed) return null;
     const stmt = this.db.prepare<T, any[]>(sql);
     return stmt.get(...params) ?? null;
   }
@@ -137,6 +142,7 @@ export class ReactiveDatabase {
    * Execute a query and return a single value
    */
   queryValue<T = unknown>(sql: string, params: any[] = []): T | null {
+    if (this.closed) return null;
     const row = this.queryOne<Record<string, T>>(sql, params);
     if (!row) return null;
     const values = Object.values(row);

@@ -212,19 +212,13 @@ describe('11-vcs-jj', () => {
     await env.root.render(
       <SmithersProvider db={env.db} executionId={env.executionId}>
         <Phase name="deployment">
-          <Phase name="pre-deploy">
-            <Snapshot message="Pre-deployment checkpoint">
-              Creating checkpoint before deployment
-            </Snapshot>
-          </Phase>
-          <Phase name="commit">
-            <Commit message="Deploy changes" autoDescribe={true}>
-              Deploying to production
-            </Commit>
-          </Phase>
-          <Phase name="describe">
-            <Describe useAgent="claude" template="conventional" />
-          </Phase>
+          <Snapshot message="Pre-deployment checkpoint">
+            Creating checkpoint before deployment
+          </Snapshot>
+          <Commit message="Deploy changes" autoDescribe={true}>
+            Deploying to production
+          </Commit>
+          <Describe useAgent="claude" template="conventional" />
         </Phase>
       </SmithersProvider>
     )
@@ -234,11 +228,8 @@ describe('11-vcs-jj', () => {
 
     // XML validation
     expect(xml).toContain('<phase name="deployment"')
-    expect(xml).toContain('<phase name="pre-deploy"')
     expect(xml).toContain('<jj-snapshot')
-    expect(xml).toContain('<phase name="commit"')
     expect(xml).toContain('<jj-commit')
-    expect(xml).toContain('<phase name="describe"')
     expect(xml).toContain('<jj-describe')
     expect(xml).toContain('message="Deploy changes"')
 

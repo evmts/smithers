@@ -13,7 +13,7 @@ function getPhaseStatus(isSkipped: boolean, isActive: boolean, isCompleted: bool
 }
 
 import { useSmithers } from './SmithersProvider.js'
-import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
+import { usePhaseRegistry, usePhaseIndex, PhaseRegistryProvider } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
 
 
@@ -145,12 +145,15 @@ export function Phase(props: PhaseProps): ReactNode {
   // Always render the phase element (visible in plan output)
   // Only render children when active (executes work)
   // Wrap children in StepRegistryProvider to enforce sequential step execution
+  // Wrap in PhaseRegistryProvider so nested phases get their own scope
   return (
     <phase name={props.name} status={status}>
       {isActive && (
-        <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
-          {props.children}
-        </StepRegistryProvider>
+        <PhaseRegistryProvider>
+          <StepRegistryProvider phaseId={props.name} onAllStepsComplete={handleAllStepsComplete}>
+            {props.children}
+          </StepRegistryProvider>
+        </PhaseRegistryProvider>
       )}
     </phase>
   )

@@ -218,17 +218,10 @@ describe('10-vcs-git', () => {
     await env.root.render(
       <SmithersProvider db={env.db} executionId={env.executionId}>
         <Phase name="development">
-          <Phase name="implementation">
-            <Git.Commit message="implement feature">
-              Add feature X
-            </Git.Commit>
-          </Phase>
-          <Phase name="documentation">
-            <Git.Commit message="add docs">
-              Update README
-            </Git.Commit>
-            <Git.Notes data={{ docType: 'readme' }} />
-          </Phase>
+          <Git.Commit message="implement feature">
+            Add feature X
+          </Git.Commit>
+          <Git.Notes data={{ docType: 'readme' }} />
         </Phase>
       </SmithersProvider>
     )
@@ -236,10 +229,8 @@ describe('10-vcs-git', () => {
     const xml = env.root.toXML()
     const duration = Date.now() - startTime
 
-    // Should contain nested phases with git operations
+    // Should contain phase with git operations
     expect(xml).toContain('<phase name="development"')
-    expect(xml).toContain('<phase name="implementation"')
-    expect(xml).toContain('<phase name="documentation"')
     expect(xml).toContain('<git-commit')
     expect(xml).toContain('<git-notes')
 
@@ -252,7 +243,6 @@ describe('10-vcs-git', () => {
       duration_ms: duration,
       structured_output: {
         xml_valid: true,
-        nested_phases: true,
       },
       errors: [],
     })

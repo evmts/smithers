@@ -92,11 +92,16 @@ describe('ReactiveDatabase', () => {
       expect(db.isClosed).toBe(true)
     })
 
-    test('operations after close() throw', () => {
+    test('operations after close() return safely', () => {
       db.close()
-      expect(() => {
-        db.query('SELECT * FROM users')
-      }).toThrow()
+      // query returns empty array when closed
+      expect(db.query('SELECT * FROM users')).toEqual([])
+      // queryOne returns null when closed
+      expect(db.queryOne('SELECT * FROM users WHERE id = 1')).toBeNull()
+      // queryValue returns null when closed
+      expect(db.queryValue('SELECT 1')).toBeNull()
+      // run returns undefined when closed
+      expect(db.run('INSERT INTO users (name) VALUES (?)', ['test'])).toBeUndefined()
     })
   })
 

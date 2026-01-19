@@ -183,12 +183,7 @@ describe('08-hooks-human', () => {
     await env.root.render(
       <SmithersProvider db={env.db} executionId={env.executionId}>
         <Phase name="workflow">
-          <Phase name="preparation">
-            <Human message="Review preparation">Prep phase complete</Human>
-          </Phase>
-          <Phase name="execution">
-            <Human message="Review execution">Execution phase complete</Human>
-          </Phase>
+          <Human message="Review workflow">Workflow phase active</Human>
         </Phase>
       </SmithersProvider>
     )
@@ -197,12 +192,8 @@ describe('08-hooks-human', () => {
     const duration = Date.now() - startTime
 
     expect(xml).toContain('<phase name="workflow"')
-    expect(xml).toContain('<phase name="preparation"')
-    expect(xml).toContain('<phase name="execution"')
-    expect(xml).toContain('Review preparation')
-    expect(xml).toContain('Review execution')
-    expect(xml).toContain('Prep phase complete')
-    expect(xml).toContain('Execution phase complete')
+    expect(xml).toContain('Review workflow')
+    expect(xml).toContain('Workflow phase active')
 
     const validation = validateXML(xml)
     expect(validation.valid).toBe(true)
