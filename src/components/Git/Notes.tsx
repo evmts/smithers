@@ -44,9 +44,12 @@ export function Notes(props: NotesProps): ReactNode {
     "SELECT value FROM state WHERE key = ?",
     [stateKey]
   )
-  const { status, result, error }: NotesState = opState
-    ? JSON.parse(opState)
-    : { status: 'pending', result: null, error: null }
+  const defaultState = { status: 'pending' as const, result: null, error: null }
+  const { status, result, error }: NotesState = (() => {
+    if (!opState) return defaultState
+    try { return JSON.parse(opState) }
+    catch { return defaultState }
+  })()
 
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
