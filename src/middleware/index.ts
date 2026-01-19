@@ -15,3 +15,6 @@ export type { RetryBackoff, RetryMiddlewareOptions } from './retry.js'
 
 export { cachingMiddleware } from './caching.js'
 export type { CacheStore, CachingMiddlewareOptions } from './caching.js'
+
+export { validationMiddleware, ValidationError } from './validation.js'
+export type { ValidationMiddlewareOptions } from './validation.js'

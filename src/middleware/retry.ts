@@ -8,6 +8,7 @@ export interface RetryMiddlewareOptions {
   retryOn?: (error: Error) => boolean
   backoff?: RetryBackoff
   baseDelayMs?: number
+  onRetry?: (attempt: number, error: Error, delayMs: number) => void | Promise<void>
 }
 
 function calculateBackoff(attempt: number, backoff: RetryBackoff, baseDelayMs: number): number {
@@ -36,6 +37,8 @@ export function retryMiddleware(options: RetryMiddlewareOptions = {}): SmithersM
             throw lastError
           }
           const delay = calculateBackoff(attempt, backoff, baseDelayMs)
+          const retryAttempt = attempt + 1
+          await options.onRetry?.(retryAttempt, lastError, delay)
           await new Promise((resolve) => setTimeout(resolve, delay))
         }
       }

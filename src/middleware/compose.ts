@@ -113,19 +113,22 @@ export async function applyMiddleware(
     nextOptions = { ...nextOptions, onProgress }
   }
 
-  let wrappedExecute = () => execute(nextOptions)
+  const executeWithTransforms = async () => {
+    let result = await execute(nextOptions)
+    for (const mw of active) {
+      if (mw.transformResult) {
+        result = await mw.transformResult(result)
+      }
+    }
+    return result
+  }
+
+  let wrappedExecute = executeWithTransforms
   for (const mw of [...active].reverse()) {
     if (!mw.wrapExecute) continue
     const previous = wrappedExecute
     wrappedExecute = () => mw.wrapExecute!({ doExecute: previous, options: nextOptions })
   }
 
-  let result = await wrappedExecute()
-  for (const mw of active) {
-    if (mw.transformResult) {
-      result = await mw.transformResult(result)
-    }
-  }
-
-  return result
+  return wrappedExecute()
 }
