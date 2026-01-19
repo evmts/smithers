@@ -2,70 +2,509 @@
  * Component Behavior Tests
  *
  * Tests individual component behaviors in isolation.
- *
- * NOTE: These tests are skipped - requires React reconciler test environment setup.
- *
- * Unit tests for component interfaces exist in src/components/*.test.tsx
  */
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { createSmithersRoot, type SmithersRoot } from '../src/reconciler/root'
+import { createSmithersDB, type SmithersDB } from '../src/db/index'
+import { SmithersProvider } from '../src/components/SmithersProvider'
+import { Phase } from '../src/components/Phase'
+import { Step } from '../src/components/Step'
+import { Claude } from '../src/components/Claude'
+import { Stop } from '../src/components/Stop'
+import { Human } from '../src/components/Human'
+import { Task } from '../src/components/Task'
+import { Persona } from '../src/components/Persona'
+import { Constraints } from '../src/components/Constraints'
+import { Subagent } from '../src/components/Subagent'
 
-// Setup import removed - causes JSX runtime loading errors
-// import './setup'
+describe('Claude component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
 
-// All tests skipped due to JSX transform mismatch
-// See src/components/*.test.tsx for unit tests
-describe.skip('Claude component', () => {
-  test('renders children as prompt content', async () => {})
-  test('system prop is rendered', async () => {})
-  test('model prop is rendered', async () => {})
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'claude-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('renders children as prompt content', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Claude model="sonnet">Write a function</Claude>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('Write a function')
+  })
+
+  test('system prop is passed to agent (not rendered in XML)', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Claude model="sonnet" system="You are helpful">Hello</Claude>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<claude')
+    expect(xml).toContain('Hello')
+  })
+
+  test('model prop is rendered', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Claude model="opus">Prompt</Claude>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('model="opus"')
+  })
 })
 
-describe.skip('ClaudeApi component', () => {
-  test('renders as claude-api type', async () => {})
+describe('ClaudeApi component', () => {
+  let root: SmithersRoot
+
+  beforeEach(() => {
+    root = createSmithersRoot()
+  })
+
+  afterEach(() => {
+    root.dispose()
+  })
+
+  test('renders as claude-api type', async () => {
+    await root.render(<claude-api model="sonnet">API call</claude-api>)
+    const xml = root.toXML()
+    expect(xml).toContain('<claude-api')
+    expect(xml).toContain('API call')
+  })
 })
 
-describe.skip('Subagent component', () => {
-  test('name prop appears in XML', async () => {})
-  test('parallel prop is rendered', async () => {})
-  test('nested subagents work correctly', async () => {})
+describe('Subagent component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'subagent-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('name prop appears in XML', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Subagent name="researcher" parallel={false}>Research topic</Subagent>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('name="researcher"')
+  })
+
+  test('parallel prop is rendered', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Subagent name="worker" parallel={true}>Work</Subagent>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('parallel="true"')
+  })
+
+  test('nested subagents work correctly', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Subagent name="outer" parallel={false}>
+            <Subagent name="inner" parallel={false}>Nested</Subagent>
+          </Subagent>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('name="outer"')
+    expect(xml).toContain('name="inner"')
+  })
 })
 
-describe.skip('Phase component', () => {
-  test('name prop appears in XML', async () => {})
-  test('children rendered inside phase tag', async () => {})
-  test('works without name prop', async () => {})
+describe('Phase component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'phase-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('name prop appears in XML', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="research">
+          <Step name="s1">Content</Step>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('name="research"')
+  })
+
+  test('children rendered inside phase tag', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Step name="step1">Step content</Step>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<phase')
+    expect(xml).toContain('Step content')
+  })
+
+  test('works without name prop', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="">
+          <Step name="s1">Unnamed phase</Step>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<phase')
+  })
 })
 
-describe.skip('Step component', () => {
-  test('renders children as step content', async () => {})
-  test('multiple steps render correctly', async () => {})
+describe('Step component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'step-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('renders children as step content', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Step name="s1">Step text here</Step>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('Step text here')
+  })
+
+  test('multiple steps render correctly', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Step name="s1">First step</Step>
+          <Step name="s2">Second step</Step>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('First step')
+    expect(xml).toContain('Second step')
+  })
 })
 
-describe.skip('Persona component', () => {
-  test('role prop rendered correctly', async () => {})
-  test('persona without role prop', async () => {})
+describe('Persona component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'persona-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('role prop rendered correctly', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Persona role="expert engineer">Description</Persona>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('role="expert engineer"')
+  })
+
+  test('persona without role prop', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Persona>Just description</Persona>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<persona')
+  })
 })
 
-describe.skip('Constraints component', () => {
-  test('children rendered as constraints', async () => {})
-  test('constraints inside Claude component', async () => {})
+describe('Constraints component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'constraints-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('children rendered as constraints', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Constraints>- Rule 1\n- Rule 2</Constraints>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('Rule 1')
+    expect(xml).toContain('Rule 2')
+  })
+
+  test('constraints inside Claude component', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Claude model="sonnet">
+            <Constraints>Be helpful</Constraints>
+            Do the task
+          </Claude>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<constraints')
+    expect(xml).toContain('Be helpful')
+  })
 })
 
-describe.skip('Task component', () => {
-  test('renders with done prop', async () => {})
+describe('Task component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'task-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('renders with done prop', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Task done={false}>Pending task</Task>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<task')
+    expect(xml).toContain('Pending task')
+  })
 })
 
-describe.skip('Stop component', () => {
-  test('reason prop appears in output', async () => {})
-  test('stop without reason prop', async () => {})
+describe('Stop component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'stop-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('reason prop appears in output', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Stop reason="All done" />
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('reason="All done"')
+  })
+
+  test('stop without reason prop', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Stop />
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<smithers-stop')
+  })
 })
 
-describe.skip('Human component', () => {
-  test('message prop is rendered', async () => {})
+describe('Human component', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'human-component')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('message prop is rendered', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="test">
+          <Human message="Please approve" />
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('Please approve')
+  })
 })
 
-describe.skip('Component composition', () => {
-  test('all components work together', async () => {})
-  test('nested components maintain structure', async () => {})
-  test('conditional components render correctly', async () => {})
+describe('Component composition', () => {
+  let root: SmithersRoot
+  let db: SmithersDB
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('eval-test', 'composition')
+    root = createSmithersRoot()
+  })
+
+  afterEach(async () => {
+    await new Promise(r => setTimeout(r, 50))
+    root.dispose()
+    db.close()
+  })
+
+  test('all components work together', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="main">
+          <Persona role="developer">Expert coder</Persona>
+          <Constraints>Follow best practices</Constraints>
+          <Step name="research">Research the topic</Step>
+          <Claude model="sonnet">Write the code</Claude>
+          <Task done={false}>Review changes</Task>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<phase')
+    expect(xml).toContain('<persona')
+    expect(xml).toContain('<constraints')
+    expect(xml).toContain('<step')
+    expect(xml).toContain('<claude')
+    expect(xml).toContain('<task')
+  })
+
+  test('nested components maintain structure', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="outer">
+          <Step name="inner">
+            Content here
+          </Step>
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('<phase')
+    expect(xml).toContain('<step')
+    expect(xml).toContain('Content here')
+  })
+
+  test('conditional components render correctly', async () => {
+    const show = true
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Phase name="conditional">
+          {show && <Step name="shown">Visible</Step>}
+          {!show && <Step name="hidden">Hidden</Step>}
+        </Phase>
+      </SmithersProvider>
+    )
+    const xml = root.toXML()
+    expect(xml).toContain('Visible')
+    expect(xml).not.toContain('Hidden')
+  })
 })
