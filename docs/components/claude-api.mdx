@@ -39,8 +39,8 @@ import { ClaudeApi } from "smithers-orchestrator";
   System prompt to use.
 </ParamField>
 
-<ParamField path="onFinished" type="(result: unknown) => void">
-  Callback when execution completes.
+<ParamField path="onFinished" type="(result: ClaudeApiResult) => void">
+  Callback when execution completes. See [ClaudeApiResult](#claudeapiresult) for the result shape.
 </ParamField>
 
 <ParamField path="onError" type="(error: Error) => void">
@@ -50,6 +50,37 @@ import { ClaudeApi } from "smithers-orchestrator";
 <ParamField path="children" type="ReactNode">
   The prompt to send to Claude.
 </ParamField>
+
+## ClaudeApiResult
+
+The `onFinished` callback receives a result object with the following shape:
+
+```typescript
+interface ClaudeApiResult<T = unknown> {
+  /** Raw text output from the agent */
+  output: string
+
+  /** Structured output (if JSON output was requested or schema was provided) */
+  structured?: T
+
+  /** Token usage */
+  tokensUsed: {
+    input: number
+    output: number
+  }
+
+  /** Number of turns used */
+  turnsUsed: number
+
+  /** Reason the agent stopped */
+  stopReason: 'completed' | 'stop_condition' | 'error' | 'cancelled'
+
+  /** Execution duration in milliseconds */
+  durationMs: number
+}
+```
+
+This is the same as the `AgentResult` type exported from `smithers-orchestrator`.
 
 ## When to Use ClaudeApi vs Claude
 
