@@ -150,7 +150,7 @@ const hostConfig = {
     updatePayloadOrType: UpdatePayload | string,
     typeOrOldProps: string | Props,
     oldPropsOrNewProps: Props,
-    newPropsOrHandle: Props | unknown
+    _newPropsOrHandle: Props | unknown
   ): void {
     let updatePayload: UpdatePayload | null
 

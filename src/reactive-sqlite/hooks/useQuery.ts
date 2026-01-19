@@ -2,12 +2,13 @@
  * useQuery hook for reactive SQLite queries
  */
 
-import { useSyncExternalStore, useCallback, useMemo, useEffect } from 'react'
+import { useSyncExternalStore, useCallback, useMemo } from 'react'
 import type { ReactiveDatabase } from '../database.js'
 import { extractReadTables } from '../parser.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
 import { useQueryCache, useStoreSignal } from './shared.js'
 import { useDatabaseOptional } from './context.js'
+import { useEffectOnValueChange } from '../../reconciler/hooks.js'
 
 /**
  * Hook to execute a reactive query
@@ -139,13 +140,16 @@ export function useQuery<T = Record<string, unknown>>(
     getSnapshot // Server snapshot (same as client for SQLite)
   )
 
+  const depsSignature = useMemo(() => deps, deps)
+
   // Re-fetch when deps change
-  useEffect(() => {
-    if (deps.length > 0) {
-      invalidateCache()
-      notify()
+  useEffectOnValueChange(depsSignature, () => {
+    if (deps.length === 0) {
+      return
     }
-  }, deps)
+    invalidateCache()
+    notify()
+  })
 
   // Refetch function
   const refetch = useCallback(() => {
