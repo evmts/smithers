@@ -26,8 +26,8 @@ export function useReportGenerator(db: SmithersDB): UseReportGeneratorResult {
           "SELECT * FROM reports WHERE type = 'auto_summary' ORDER BY created_at DESC LIMIT 50"
         )
         setReports(dbReports)
-      } catch {
-        // Ignore errors
+      } catch (err) {
+        console.debug('[useReportGenerator] Load error:', err)
       }
     }
 
@@ -44,8 +44,8 @@ export function useReportGenerator(db: SmithersDB): UseReportGeneratorResult {
         setReports(prev => [report, ...prev])
         setLastGeneratedAt(new Date().toISOString())
       }
-    } catch {
-      // Ignore errors
+    } catch (err) {
+      console.debug('[useReportGenerator] Generate error:', err)
     } finally {
       setIsGenerating(false)
     }

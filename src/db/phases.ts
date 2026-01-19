@@ -24,6 +24,7 @@ export function createPhasesModule(ctx: PhasesModuleContext): PhasesModule {
 
   const phases: PhasesModule = {
     start: (name: string, iteration: number = 0): string => {
+      if (rdb.isClosed) return uuid()
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
@@ -37,6 +38,7 @@ export function createPhasesModule(ctx: PhasesModuleContext): PhasesModule {
     },
 
     complete: (id: string) => {
+      if (rdb.isClosed) return
       const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM phases WHERE id = ?', [id])
       const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
       rdb.run(

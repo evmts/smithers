@@ -11,6 +11,7 @@ import { executeSmithers, type SmithersResult } from './agents/SmithersCLI.js'
 import type { ClaudeModel } from './agents/types.js'
 import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
+import { extractText } from '../utils/extract-text.js'
 
 // ============================================================================
 // Types
@@ -193,7 +194,7 @@ export function Smithers(props: SmithersProps): ReactNode {
 
       try {
         // Extract task from children
-        const task = String(props.children)
+        const task = extractText(props.children)
 
         // Log subagent start to database
         if (props.reportingEnabled !== false) {

@@ -12,6 +12,7 @@ import { LogWriter } from '../monitor/log-writer.js'
 import { uuid } from '../db/utils.js'
 import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
 import { useQuery } from '../reactive-sqlite/index.js'
+import { extractText } from '../utils/extract-text.js'
 
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
 
@@ -109,7 +110,7 @@ export function Claude(props: ClaudeProps): ReactNode {
       let logPath: string | undefined
 
       try {
-        const childrenString = String(props.children)
+        const childrenString = extractText(props.children)
 
         const { configs: mcpConfigs, cleanPrompt, toolInstructions } = extractMCPConfigs(childrenString)
 

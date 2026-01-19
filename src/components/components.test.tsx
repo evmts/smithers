@@ -216,22 +216,83 @@ describe('Human component', () => {
 })
 
 describe('Subagent component', () => {
-  test.todo('renders <subagent> element')
-  test.todo('renders name attribute when provided')
-  test.todo('renders parallel attribute when true')
-  test.todo('renders without parallel attribute when false/undefined')
-  test.todo('renders children inside element')
-  test.todo('accepts arbitrary props')
+  test('renders <subagent> element', async () => {
+    const { Subagent } = await import('./Subagent.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Subagent name="researcher" />)
+    expect(root.toXML()).toContain('<subagent')
+    root.dispose()
+  })
+
+  test('renders name attribute when provided', async () => {
+    const { Subagent } = await import('./Subagent.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Subagent name="analyzer" />)
+    expect(root.toXML()).toContain('name="analyzer"')
+    root.dispose()
+  })
+
+  test('renders parallel attribute when true', async () => {
+    const { Subagent } = await import('./Subagent.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Subagent name="worker" parallel={true} />)
+    expect(root.toXML()).toContain('parallel="true"')
+    root.dispose()
+  })
+
+  test('renders children inside element', async () => {
+    const { Subagent } = await import('./Subagent.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(
+      <Subagent name="outer">
+        <step>Inner step</step>
+      </Subagent>
+    )
+    expect(root.toXML()).toContain('Inner step')
+    root.dispose()
+  })
 })
 
 describe('Task component', () => {
-  test.todo('renders <task> element')
-  test.todo('renders done attribute as boolean')
-  test.todo('done=true renders correctly')
-  test.todo('done=false renders correctly')
-  test.todo('done=undefined renders correctly')
-  test.todo('renders children inside element')
-  test.todo('accepts arbitrary props')
+  test('renders <task> element', async () => {
+    const { Task } = await import('./Task.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Task>Do work</Task>)
+    expect(root.toXML()).toContain('<task')
+    root.dispose()
+  })
+
+  test('done=true renders correctly', async () => {
+    const { Task } = await import('./Task.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Task done={true}>Completed</Task>)
+    expect(root.toXML()).toContain('done="true"')
+    root.dispose()
+  })
+
+  test('done=false renders correctly', async () => {
+    const { Task } = await import('./Task.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Task done={false}>Pending</Task>)
+    expect(root.toXML()).toContain('done="false"')
+    root.dispose()
+  })
+
+  test('renders children inside element', async () => {
+    const { Task } = await import('./Task.js')
+    const { createSmithersRoot } = await import('../reconciler/root.js')
+    const root = createSmithersRoot()
+    await root.render(<Task>Research topic</Task>)
+    expect(root.toXML()).toContain('Research topic')
+    root.dispose()
+  })
 })
 
 describe('Phase component', () => {

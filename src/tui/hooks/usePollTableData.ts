@@ -18,7 +18,8 @@ export function usePollTableData(db: SmithersDB, tableName: string): TableData {
 
         const tableData = db.query<Record<string, unknown>>(`SELECT * FROM ${tableName} ORDER BY rowid DESC LIMIT 100`)
         setData(tableData)
-      } catch {
+      } catch (err) {
+        console.debug('[usePollTableData] Polling error:', err)
         setColumns([])
         setData([])
       }

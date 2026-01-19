@@ -61,7 +61,8 @@ ${toolCalls.map((t) => `  - ${t.tool_name}: ${t.status}`).join('\n')}
 
 Render Frames: ${recentFrames.length} recent frames available
 `
-    } catch {
+    } catch (err) {
+      console.debug('[claude-assistant] Context fetch error:', err)
       return 'Unable to fetch context data.'
     }
   }

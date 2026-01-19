@@ -65,8 +65,8 @@ export function usePollEvents(db: SmithersDB): TimelineEvent[] {
 
         allEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
         setEvents(allEvents)
-      } catch {
-        // Ignore errors
+      } catch (err) {
+        console.debug('[usePollEvents] Polling error:', err)
       }
     }
 

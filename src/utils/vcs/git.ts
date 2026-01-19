@@ -103,14 +103,19 @@ export async function addGitNotes(
   ref: string = 'HEAD',
   append: boolean = false
 ): Promise<void> {
-  const flag = append ? 'append' : 'add'
-  const forceFlag = append ? '' : '-f'
+  const args = ['notes', '--ref', SMITHERS_NOTES_REF]
+  if (append) {
+    args.push('append')
+  } else {
+    args.push('add', '-f')
+  }
+  args.push('-m', content, ref)
 
   try {
-    await Bun.$`git notes --ref ${SMITHERS_NOTES_REF} ${flag} ${forceFlag} -m ${content} ${ref}`.quiet()
+    await Bun.$`git ${args}`.quiet()
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to ${flag} git notes: ${msg}`)
+    throw new Error(`Failed to ${append ? 'append' : 'add'} git notes: ${msg}`)
   }
 }
 

@@ -28,8 +28,8 @@ export function useRenderFrames(db: SmithersDB, executionId?: string): UseRender
           ? db.renderFrames.listForExecution(executionId)
           : db.renderFrames.list()
         setFrames(allFrames)
-      } catch {
-        // Ignore errors
+      } catch (err) {
+        console.debug('[useRenderFrames] Polling error:', err)
       }
     }
 

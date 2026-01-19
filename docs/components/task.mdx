@@ -83,20 +83,17 @@ function TaskTracker() {
 
 ```tsx
 function PersistentTasks() {
-  const [tasks, setTasks] = useState<Array<{name: string, done: boolean}>>([]);
+  const { db } = useSmithers();
+  
+  const tasks = useQueryValue<Array<{name: string, done: boolean}>>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'tasks'"
+  ) ?? [];
 
-  useEffect(() => {
-    // Load tasks from database
-    db.state.get("tasks").then(savedTasks => {
-      if (savedTasks) setTasks(savedTasks);
-    });
-  }, []);
-
-  const completeTask = async (index: number) => {
+  const completeTask = (index: number) => {
     const newTasks = [...tasks];
     newTasks[index].done = true;
-    setTasks(newTasks);
-    await db.state.set("tasks", newTasks, "task-tracker");
+    db.state.set("tasks", newTasks, "task-tracker");
   };
 
   return (
@@ -115,7 +112,12 @@ function PersistentTasks() {
 
 ```tsx
 function TaskDrivenWorkflow() {
-  const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
+  const { db } = useSmithers();
+  
+  const currentTaskIndex = useQueryValue<number>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'currentTaskIndex'"
+  ) ?? 0;
 
   const tasks = [
     "Analyze the current implementation",
@@ -138,7 +140,7 @@ function TaskDrivenWorkflow() {
 
         {currentTaskIndex < tasks.length && (
           <Claude
-            onFinished={() => setCurrentTaskIndex(i => i + 1)}
+            onFinished={() => db.state.set('currentTaskIndex', currentTaskIndex + 1)}
           >
             Complete this task: {tasks[currentTaskIndex]}
           </Claude>
