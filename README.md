@@ -77,7 +77,7 @@ This gives Claude Code the `smithers-orchestrator` skill for creating multi-agen
 If you want to use Smithers components directly in your own scripts:
 
 ```bash
-bun add smithers
+bun add smithers-orchestrator
 ```
 
 ---
@@ -116,10 +116,10 @@ All Smithers state is saved in a **SQLite database** on your system that can be 
 
 ```bash
 # View execution history
-smithers-orchestrator db executions
+smithers db executions
 
 # View state for a specific execution
-smithers-orchestrator db state --execution-id abc123
+smithers db state --execution-id abc123
 ```
 
 ### Basic Example
@@ -206,40 +206,38 @@ async function ReviewWorkflow() {
   const phase = (await db.state.get("phase")) ?? "implement";
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
       <Orchestration globalTimeout={3600000}>
-        <Ralph maxIterations={10}>
-          {phase === "implement" && (
-            <Phase name="Implementation">
-              <Claude
-                model="sonnet"
-                onFinished={() => db.state.set("phase", "review")}
-              >
-                Implement the user authentication feature.
-              </Claude>
-            </Phase>
-          )}
+        {phase === "implement" && (
+          <Phase name="Implementation">
+            <Claude
+              model="sonnet"
+              onFinished={() => db.state.set("phase", "review")}
+            >
+              Implement the user authentication feature.
+            </Claude>
+          </Phase>
+        )}
 
-          {phase === "review" && (
-            <Phase name="Code Review">
-              <Review
-                target={{ type: "diff", ref: "main" }}
-                criteria={[
-                  "No security vulnerabilities",
-                  "Tests cover edge cases",
-                  "Types are properly defined",
-                ]}
-                onFinished={(review) => {
-                  if (review.approved) {
-                    db.state.set("phase", "complete");
-                  } else {
-                    db.state.set("phase", "implement");
-                  }
-                }}
-              />
-            </Phase>
-          )}
-        </Ralph>
+        {phase === "review" && (
+          <Phase name="Code Review">
+            <Review
+              target={{ type: "diff", ref: "main" }}
+              criteria={[
+                "No security vulnerabilities",
+                "Tests cover edge cases",
+                "Types are properly defined",
+              ]}
+              onFinished={(review) => {
+                if (review.approved) {
+                  db.state.set("phase", "complete");
+                } else {
+                  db.state.set("phase", "implement");
+                }
+              }}
+            />
+          </Phase>
+        )}
       </Orchestration>
     </SmithersProvider>
   );
@@ -331,10 +329,12 @@ The core agent component that executes Claude with full tool access:
 
 ### Ralph Loop Controller
 
+> **Prefer SmithersProvider.** The loop functionality is built into `<SmithersProvider>` with `maxIterations`. Use `<Ralph>` only for nested loops within a workflow.
+
 Named after Ralph Wiggum's "I'm in danger" catchphrase - controls iterative loops that could run away:
 
 ```tsx
-<Ralph maxIterations={10} onMaxIterations={() => console.log("I'm in danger!")}>
+<SmithersProvider db={db} executionId={executionId} maxIterations={10}>
   {/* Children re-render on each iteration */}
   <Claude
     onFinished={() => {
@@ -343,7 +343,7 @@ Named after Ralph Wiggum's "I'm in danger" catchphrase - controls iterative loop
   >
     Keep improving until tests pass.
   </Claude>
-</Ralph>
+</SmithersProvider>
 ```
 
 ### Structured Output with Zod
