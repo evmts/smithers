@@ -1,13 +1,14 @@
 // Report Viewer View (F6)
 // Auto-generated 10-minute summaries
 
-import { useState } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { useReportGenerator } from '../../hooks/useReportGenerator.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { truncate, formatTimestamp } from '../../utils/format.js'
 import { getSeverityColor, colors } from '../../utils/colors.js'
+import { useEffectOnValueChange } from '../../../reconciler/hooks.js'
+import { useTuiState } from '../../state.js'
 
 export interface ReportViewerProps {
   db: SmithersDB
@@ -16,12 +17,19 @@ export interface ReportViewerProps {
 
 export function ReportViewer({ db }: ReportViewerProps) {
   const { reports, isGenerating, generateNow } = useReportGenerator(db)
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [selectedIndex, setSelectedIndex] = useTuiState<number>('tui:reports:selectedIndex', 0)
+
+  useEffectOnValueChange(reports.length, () => {
+    const maxIndex = Math.max(0, reports.length - 1)
+    if (selectedIndex > maxIndex) {
+      setSelectedIndex(maxIndex)
+    }
+  }, [reports.length, selectedIndex, setSelectedIndex])
 
   // Handle keyboard navigation
   useKeyboard((key: KeyEvent) => {
     if (key.name === 'j' || key.name === 'down') {
-      setSelectedIndex(prev => Math.min(prev + 1, reports.length - 1))
+      setSelectedIndex(prev => Math.min(prev + 1, Math.max(0, reports.length - 1)))
     } else if (key.name === 'k' || key.name === 'up') {
       setSelectedIndex(prev => Math.max(prev - 1, 0))
     } else if (key.name === 'r') {

@@ -1,8 +1,10 @@
 // Hook for accessing render frames with time-travel navigation
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { SmithersDB } from '../../db/index.js'
 import type { RenderFrame } from '../../db/render-frames.js'
+import { useEffectOnValueChange } from '../../reconciler/hooks.js'
+import { useTuiState } from '../state.js'
 
 export interface UseRenderFramesResult {
   frames: RenderFrame[]
@@ -16,12 +18,22 @@ export interface UseRenderFramesResult {
   goToFirst: () => void
 }
 
-export function useRenderFrames(db: SmithersDB, executionId?: string): UseRenderFramesResult {
-  const [frames, setFrames] = useState<RenderFrame[]>([])
-  const [currentIndex, setCurrentIndex] = useState(0)
+const EMPTY_FRAMES: RenderFrame[] = []
 
-  // Poll for frame updates
-  useEffect(() => {
+export function useRenderFrames(db: SmithersDB, executionId?: string): UseRenderFramesResult {
+  const framesKey = executionId
+    ? `tui:renderFrames:${executionId}:frames`
+    : 'tui:renderFrames:frames'
+  const indexKey = executionId
+    ? `tui:renderFrames:${executionId}:index`
+    : 'tui:renderFrames:index'
+
+  const [frames, setFrames] = useTuiState<RenderFrame[]>(framesKey, EMPTY_FRAMES)
+  const [currentIndex, setCurrentIndex] = useTuiState<number>(indexKey, 0)
+
+  const pollKey = useMemo(() => ({ db, executionId }), [db, executionId])
+
+  useEffectOnValueChange(pollKey, () => {
     const pollFrames = () => {
       try {
         const allFrames = executionId
@@ -36,12 +48,19 @@ export function useRenderFrames(db: SmithersDB, executionId?: string): UseRender
     pollFrames()
     const interval = setInterval(pollFrames, 500)
     return () => clearInterval(interval)
-  }, [db, executionId])
+  }, [db, executionId, setFrames])
+
+  useEffectOnValueChange(frames.length, () => {
+    const maxIndex = Math.max(0, frames.length - 1)
+    if (currentIndex > maxIndex) {
+      setCurrentIndex(maxIndex)
+    }
+  }, [frames.length, currentIndex, setCurrentIndex])
 
   const goToFrame = useCallback((index: number) => {
     const clampedIndex = Math.max(0, Math.min(index, frames.length - 1))
     setCurrentIndex(clampedIndex)
-  }, [frames.length])
+  }, [frames.length, setCurrentIndex])
 
   const nextFrame = useCallback(() => {
     goToFrame(currentIndex + 1)

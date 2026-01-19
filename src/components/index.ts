@@ -83,8 +83,14 @@ export type { SmithersProps, SmithersResult } from './Smithers.js'
 // Agent types
 export * from './agents/types.js'
 
-// Git VCS components
-export * from './Git/index.js'
+// Git VCS components - available via smithers-orchestrator/components/Git
+// Note: Not re-exported here due to naming conflicts with JJ components
+
+// JJ VCS components - available via smithers-orchestrator/components/JJ
+// Note: Not re-exported here due to naming conflicts with Git components
+
+// Lifecycle Hooks components - available via smithers-orchestrator/components/Hooks
+// Note: Not re-exported here to keep hooks as separate import
 
 // MCP Tool components
 export * from './MCP/index.js'

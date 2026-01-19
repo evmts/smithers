@@ -9,12 +9,21 @@ description: Let your agent write agents - React-style orchestration for durable
 
 Smithers is React-style orchestration your coding agent can generate, then run safely as durable Ralph loops. Built for long-running "night shift" sessions with persistence, history, and restart-safe execution.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  React tree  ──▶  Smithers executor  ──▶  Tools + Claude  ──▶  SQLite DB   │
-│                                                                             │
-│  "React syntax, non-UI renderer"                                            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```tsx
+<SmithersProvider db={db}>
+  <Phase name="Plan">
+    <Claude model="sonnet">Analyze the codebase and create a plan</Claude>
+  </Phase>
+  <Phase name="Execute">
+    <Parallel>
+      <Claude>Implement feature A</Claude>
+      <Claude>Implement feature B</Claude>
+    </Parallel>
+  </Phase>
+  <Phase name="Verify">
+    <Claude>Run tests and fix any failures</Claude>
+  </Phase>
+</SmithersProvider>
 ```
 
 ## Why Smithers?

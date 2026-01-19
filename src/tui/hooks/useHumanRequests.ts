@@ -1,8 +1,10 @@
 // Hook for managing pending human interaction requests
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback } from 'react'
 import type { SmithersDB } from '../../db/index.js'
 import type { HumanInteraction } from '../../db/human.js'
+import { useEffectOnValueChange } from '../../reconciler/hooks.js'
+import { useTuiState } from '../state.js'
 
 export interface UseHumanRequestsResult {
   pendingRequests: HumanInteraction[]
@@ -15,33 +17,41 @@ export interface UseHumanRequestsResult {
 }
 
 export function useHumanRequests(db: SmithersDB): UseHumanRequestsResult {
-  const [pendingRequests, setPendingRequests] = useState<HumanInteraction[]>([])
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [pendingRequests, setPendingRequests] = useTuiState<HumanInteraction[]>(
+    'tui:human:pendingRequests',
+    []
+  )
+  const [selectedIndex, setSelectedIndex] = useTuiState<number>(
+    'tui:human:selectedIndex',
+    0
+  )
 
   const refreshRequests = useCallback(() => {
     try {
       const pending = db.human.listPending()
       setPendingRequests(pending)
-      // Ensure selectedIndex is valid
-      if (selectedIndex >= pending.length && pending.length > 0) {
-        setSelectedIndex(pending.length - 1)
-      }
     } catch {
       // Ignore errors
     }
-  }, [db, selectedIndex])
+  }, [db, setPendingRequests])
 
-  // Poll for updates
-  useEffect(() => {
+  useEffectOnValueChange(db, () => {
     refreshRequests()
     const interval = setInterval(refreshRequests, 500)
     return () => clearInterval(interval)
   }, [refreshRequests])
 
+  useEffectOnValueChange(pendingRequests.length, () => {
+    const maxIndex = Math.max(0, pendingRequests.length - 1)
+    if (selectedIndex > maxIndex) {
+      setSelectedIndex(maxIndex)
+    }
+  }, [pendingRequests.length, selectedIndex, setSelectedIndex])
+
   const selectRequest = useCallback((index: number) => {
     const clampedIndex = Math.max(0, Math.min(index, pendingRequests.length - 1))
     setSelectedIndex(clampedIndex)
-  }, [pendingRequests.length])
+  }, [pendingRequests.length, setSelectedIndex])
 
   const approveRequest = useCallback((response?: unknown) => {
     const request = pendingRequests[selectedIndex]

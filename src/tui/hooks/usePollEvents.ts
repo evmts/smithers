@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useEffectOnValueChange } from '../../reconciler/hooks.js'
 import type { SmithersDB } from '../../db/index.js'
+import { useTuiState } from '../state.js'
 
 export interface TimelineEvent {
   id: string
@@ -10,15 +11,18 @@ export interface TimelineEvent {
   details?: string | undefined
 }
 
-export function usePollEvents(db: SmithersDB): TimelineEvent[] {
-  const [events, setEvents] = useState<TimelineEvent[]>([])
+const EVENTS_KEY = 'tui:timeline:events'
+const EMPTY_EVENTS: TimelineEvent[] = []
 
-  useEffect(() => {
+export function usePollEvents(db: SmithersDB): TimelineEvent[] {
+  const [events, setEvents] = useTuiState<TimelineEvent[]>(EVENTS_KEY, EMPTY_EVENTS)
+
+  useEffectOnValueChange(db, () => {
     const pollEvents = () => {
       try {
         const execution = db.execution.current()
         if (!execution) {
-          setEvents([])
+          setEvents(EMPTY_EVENTS)
           return
         }
 
@@ -73,7 +77,7 @@ export function usePollEvents(db: SmithersDB): TimelineEvent[] {
     pollEvents()
     const interval = setInterval(pollEvents, 500)
     return () => clearInterval(interval)
-  }, [db])
+  }, [setEvents])
 
   return events
 }

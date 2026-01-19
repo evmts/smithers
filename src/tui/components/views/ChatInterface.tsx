@@ -1,11 +1,12 @@
 // Chat Interface View (F4)
 // Claude-powered Q&A about execution state
 
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { useClaudeChat } from '../../hooks/useClaudeChat.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
+import { useTuiState } from '../../state.js'
 
 export interface ChatInterfaceProps {
   db: SmithersDB
@@ -14,8 +15,8 @@ export interface ChatInterfaceProps {
 
 export function ChatInterface({ db }: ChatInterfaceProps) {
   const { messages, isLoading, error, isAvailable, sendMessage, clearHistory } = useClaudeChat(db)
-  const [inputValue, setInputValue] = useState('')
-  const [isInputFocused, setIsInputFocused] = useState(true)
+  const [inputValue, setInputValue] = useTuiState<string>('tui:chat:input', '')
+  const [isInputFocused, setIsInputFocused] = useTuiState<boolean>('tui:chat:focus', true)
 
   const handleSubmit = useCallback(async () => {
     if (!inputValue.trim()) return
@@ -30,7 +31,7 @@ export function ChatInterface({ db }: ChatInterfaceProps) {
       clearHistory()
     }
     if (key.name === 'tab') {
-      setIsInputFocused(!isInputFocused)
+      setIsInputFocused(prev => !prev)
     }
   })
 

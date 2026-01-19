@@ -1,8 +1,10 @@
 // Hook for connecting to Smithers database
 // Provides reactive access to execution data
 
-import { useState, useEffect } from 'react'
+import { useRef } from 'react'
 import { createSmithersDB, type SmithersDB } from '../../db/index.js'
+import { useEffectOnValueChange } from '../../reconciler/hooks.js'
+import { useTuiState } from '../state.js'
 
 export interface Execution {
   id: string
@@ -24,76 +26,80 @@ export interface UseSmithersConnectionResult {
   executions: Execution[]
 }
 
+const EMPTY_EXECUTIONS: Execution[] = []
+
 export function useSmithersConnection(dbPath: string): UseSmithersConnectionResult {
-  const [db, setDb] = useState<SmithersDB | null>(null)
-  const [isConnected, setIsConnected] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [currentExecution, setCurrentExecution] = useState<Execution | null>(null)
-  const [executions, setExecutions] = useState<Execution[]>([])
+  const dbRef = useRef<SmithersDB | null>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const keyBase = `tui:connection:${dbPath}`
 
-  useEffect(() => {
-    let smithersDb: SmithersDB | null = null
-    let pollInterval: ReturnType<typeof setInterval> | null = null
+  const [isConnected, setIsConnected] = useTuiState<boolean>(`${keyBase}:connected`, false)
+  const [error, setError] = useTuiState<string | null>(`${keyBase}:error`, null)
+  const [currentExecution, setCurrentExecution] = useTuiState<Execution | null>(`${keyBase}:currentExecution`, null)
+  const [executions, setExecutions] = useTuiState<Execution[]>(`${keyBase}:executions`, EMPTY_EXECUTIONS)
 
-    const connect = () => {
-      try {
-        const fullPath = dbPath.endsWith('.db')
-          ? dbPath
-          : `${dbPath}/smithers.db`
-
-        smithersDb = createSmithersDB({ path: fullPath })
-        setDb(smithersDb)
-        setIsConnected(true)
-        setError(null)
-
-        // Poll for updates (since we're in a different process)
-        const pollData = () => {
-          try {
-            // Get current execution - convert to our Execution type
-            const current = smithersDb?.execution.current()
-            if (current) {
-              setCurrentExecution({
-                ...current,
-                started_at: current.started_at?.toISOString() ?? null,
-                completed_at: current.completed_at?.toISOString() ?? null
-              } as Execution)
-            } else {
-              setCurrentExecution(null)
-            }
-
-            // Get all executions - convert to our Execution type
-            const allExecs = smithersDb?.execution.list() ?? []
-            setExecutions(allExecs.map(e => ({
-              ...e,
-              started_at: e.started_at?.toISOString() ?? null,
-              completed_at: e.completed_at?.toISOString() ?? null
-            })) as Execution[])
-          } catch {
-            // Ignore polling errors
-          }
-        }
-
-        // Initial poll
-        pollData()
-
-        // Poll every 500ms for updates
-        pollInterval = setInterval(pollData, 500)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Connection failed')
-        setIsConnected(false)
+  useEffectOnValueChange(dbPath, () => {
+    const cleanup = () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+      if (dbRef.current) {
+        dbRef.current.close()
+        dbRef.current = null
       }
     }
 
-    connect()
+    cleanup()
 
-    return () => {
-      if (pollInterval) clearInterval(pollInterval)
-      if (smithersDb) smithersDb.close()
+    try {
+      const fullPath = dbPath.endsWith('.db')
+        ? dbPath
+        : `${dbPath}/smithers.db`
+
+      const smithersDb = createSmithersDB({ path: fullPath })
+      dbRef.current = smithersDb
+      setIsConnected(true)
+      setError(null)
+
+      const pollData = () => {
+        try {
+          const current = smithersDb.execution.current()
+          if (current) {
+            setCurrentExecution({
+              ...current,
+              started_at: current.started_at?.toISOString() ?? null,
+              completed_at: current.completed_at?.toISOString() ?? null
+            } as Execution)
+          } else {
+            setCurrentExecution(null)
+          }
+
+          const allExecs = smithersDb.execution.list()
+          setExecutions(allExecs.map(e => ({
+            ...e,
+            started_at: e.started_at?.toISOString() ?? null,
+            completed_at: e.completed_at?.toISOString() ?? null
+          })) as Execution[])
+        } catch {
+          // Ignore polling errors
+        }
+      }
+
+      pollData()
+      pollIntervalRef.current = setInterval(pollData, 500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Connection failed')
+      setIsConnected(false)
+      setCurrentExecution(null)
+      setExecutions(EMPTY_EXECUTIONS)
     }
-  }, [dbPath])
+
+    return cleanup
+  }, [dbPath, setCurrentExecution, setError, setExecutions, setIsConnected])
 
   return {
-    db,
+    db: dbRef.current,
     isConnected,
     error,
     currentExecution,

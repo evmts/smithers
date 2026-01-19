@@ -1,6 +1,6 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Build AI agents with React - Declarative JSX for Claude orchestration",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -40,7 +40,7 @@
   "scripts": {
     "build": "bun build:lib && bun build:bin && bun build:assets",
     "build:assets": "cp src/db/schema.sql dist/src/db/",
-    "build:lib": "NODE_ENV=production bun build ./src/index.ts ./src/reconciler/jsx-runtime.ts ./src/core/index.ts ./src/reconciler/index.ts ./src/components/index.ts ./src/db/index.ts ./src/middleware/index.ts ./src/monitor/index.ts ./src/rate-limits/index.ts ./src/tools/index.ts ./src/reactive-sqlite/index.ts ./src/hooks/index.ts ./src/hooks/ai-sdk.ts ./src/components/JJ/index.ts ./src/components/Git/index.ts ./src/components/Hooks/index.ts ./src/components/MCP/index.ts --outdir dist --target bun --format esm --external react --external react-reconciler --external react/jsx-runtime --external react/jsx-dev-runtime",
+    "build:lib": "bun scripts/build-lib.ts",
     "build:bin": "bun build ./bin/cli.ts --outdir dist/bin --target bun",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",

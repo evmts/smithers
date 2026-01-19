@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import type { SmithersDB } from '../../db/index.js'
+import { useEffectOnValueChange } from '../../reconciler/hooks.js'
+import { useTuiState } from '../state.js'
 
 export interface TableData {
   columns: string[]
@@ -12,14 +14,22 @@ const ALLOWED_TABLES = [
   'state', 'transitions', 'artifacts', 'commits', 'snapshots', 'reviews'
 ]
 
-export function usePollTableData(db: SmithersDB, tableName: string): TableData {
-  const [columns, setColumns] = useState<string[]>([])
-  const [data, setData] = useState<Record<string, unknown>[]>([])
+const EMPTY_COLUMNS: string[] = []
+const EMPTY_DATA: Record<string, unknown>[] = []
 
-  useEffect(() => {
+export function usePollTableData(db: SmithersDB, tableName: string): TableData {
+  const columnsKey = `tui:table:${tableName}:columns`
+  const dataKey = `tui:table:${tableName}:rows`
+
+  const [columns, setColumns] = useTuiState<string[]>(columnsKey, EMPTY_COLUMNS)
+  const [data, setData] = useTuiState<Record<string, unknown>[]>(dataKey, EMPTY_DATA)
+
+  const pollKey = useMemo(() => ({ db, tableName }), [db, tableName])
+
+  useEffectOnValueChange(pollKey, () => {
     if (!ALLOWED_TABLES.includes(tableName)) {
-      setColumns([])
-      setData([])
+      setColumns(EMPTY_COLUMNS)
+      setData(EMPTY_DATA)
       return
     }
 
@@ -32,15 +42,15 @@ export function usePollTableData(db: SmithersDB, tableName: string): TableData {
         setData(tableData)
       } catch (err) {
         console.debug('[usePollTableData] Polling error:', err)
-        setColumns([])
-        setData([])
+        setColumns(EMPTY_COLUMNS)
+        setData(EMPTY_DATA)
       }
     }
 
     poll()
     const interval = setInterval(poll, 500)
     return () => clearInterval(interval)
-  }, [db, tableName])
+  }, [setColumns, setData, tableName, db])
 
   return { columns, data }
 }

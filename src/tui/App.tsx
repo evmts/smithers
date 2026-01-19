@@ -1,7 +1,7 @@
 // Main TUI Application with tab navigation
 // F1-F6 for view switching, vim-style navigation
 
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { Header } from './components/layout/Header.js'
 import { TabBar } from './components/layout/TabBar.js'
@@ -14,6 +14,7 @@ import { HumanInteractionHandler } from './components/views/HumanInteractionHand
 import { ReportViewer } from './components/views/ReportViewer.js'
 import { useSmithersConnection } from './hooks/useSmithersConnection.js'
 import type { KeyEvent } from '@opentui/core'
+import { useTuiState } from './state.js'
 
 export type TabKey = 'timeline' | 'frames' | 'database' | 'chat' | 'human' | 'reports'
 
@@ -37,7 +38,7 @@ export interface AppProps {
 }
 
 export function App({ dbPath }: AppProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>('timeline')
+  const [activeTab, setActiveTab] = useTuiState<TabKey>('tui:app:activeTab', 'timeline')
   const { height } = useTerminalDimensions()
   const { db, isConnected, error, currentExecution } = useSmithersConnection(dbPath)
 

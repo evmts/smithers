@@ -1,12 +1,14 @@
 // Human Interaction Handler View (F5)
 // Respond to pending useHuman requests
 
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { useHumanRequests } from '../../hooks/useHumanRequests.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { truncate } from '../../utils/format.js'
+import { useEffectOnValueChange } from '../../../reconciler/hooks.js'
+import { useTuiState } from '../../state.js'
 
 export interface HumanInteractionHandlerProps {
   db: SmithersDB
@@ -23,8 +25,15 @@ export function HumanInteractionHandler({ db }: HumanInteractionHandlerProps) {
     rejectRequest
   } = useHumanRequests(db)
 
-  const [responseText, setResponseText] = useState('')
-  const [selectedOption, setSelectedOption] = useState(0)
+  const [responseText, setResponseText] = useTuiState<string>('tui:human:responseText', '')
+  const [selectedOption, setSelectedOption] = useTuiState<number>('tui:human:selectedOption', 0)
+
+  useEffectOnValueChange(selectedRequest?.options?.length ?? 0, () => {
+    const maxIndex = Math.max(0, (selectedRequest?.options?.length ?? 0) - 1)
+    if (selectedOption > maxIndex) {
+      setSelectedOption(maxIndex)
+    }
+  }, [selectedOption, selectedRequest?.options?.length, setSelectedOption])
 
   const handleApprove = useCallback(() => {
     if (selectedRequest?.options && selectedRequest.options.length > 0) {
@@ -41,7 +50,7 @@ export function HumanInteractionHandler({ db }: HumanInteractionHandlerProps) {
   useKeyboard((key: KeyEvent) => {
     if (key.name === 'j' || key.name === 'down') {
       if (selectedRequest?.options && selectedRequest.options.length > 0) {
-        setSelectedOption(prev => Math.min(prev + 1, selectedRequest.options!.length - 1))
+        setSelectedOption(prev => Math.min(prev + 1, Math.max(0, selectedRequest.options!.length - 1)))
       } else {
         selectRequest(selectedIndex + 1)
       }

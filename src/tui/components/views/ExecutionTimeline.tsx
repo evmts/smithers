@@ -1,13 +1,14 @@
 // Execution Timeline View (F1)
 // Real-time view of phases, agents, and tool calls
 
-import { useState } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { usePollEvents } from '../../hooks/usePollEvents.js'
 import { getStatusColor, colors } from '../../utils/colors.js'
 import { formatTime } from '../../utils/format.js'
+import { useEffectOnValueChange } from '../../../reconciler/hooks.js'
+import { useTuiState } from '../../state.js'
 
 export interface ExecutionTimelineProps {
   db: SmithersDB
@@ -16,14 +17,26 @@ export interface ExecutionTimelineProps {
 
 export function ExecutionTimeline({ db, height }: ExecutionTimelineProps) {
   const events = usePollEvents(db)
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const [scrollOffset, setScrollOffset] = useState(0)
+  const [selectedIndex, setSelectedIndex] = useTuiState<number>('tui:timeline:selectedIndex', 0)
+  const [scrollOffset, setScrollOffset] = useTuiState<number>('tui:timeline:scrollOffset', 0)
 
   const visibleHeight = height - 4
+  const clampKey = `${events.length}:${visibleHeight}`
+
+  useEffectOnValueChange(clampKey, () => {
+    const maxIndex = Math.max(0, events.length - 1)
+    if (selectedIndex > maxIndex) {
+      setSelectedIndex(maxIndex)
+    }
+    const maxOffset = Math.max(0, events.length - visibleHeight)
+    if (scrollOffset > maxOffset) {
+      setScrollOffset(maxOffset)
+    }
+  }, [events.length, visibleHeight, selectedIndex, scrollOffset, setSelectedIndex, setScrollOffset])
 
   useKeyboard((key: KeyEvent) => {
     if (key.name === 'j' || key.name === 'down') {
-      const newIndex = Math.min(selectedIndex + 1, events.length - 1)
+      const newIndex = Math.min(selectedIndex + 1, Math.max(0, events.length - 1))
       setSelectedIndex(newIndex)
       if (newIndex >= scrollOffset + visibleHeight) {
         setScrollOffset(newIndex - visibleHeight + 1)
@@ -38,7 +51,7 @@ export function ExecutionTimeline({ db, height }: ExecutionTimelineProps) {
       setSelectedIndex(0)
       setScrollOffset(0)
     } else if (key.name === 'G' || (key.shift && key.name === 'g')) {
-      setSelectedIndex(events.length - 1)
+      setSelectedIndex(Math.max(0, events.length - 1))
       setScrollOffset(Math.max(0, events.length - visibleHeight))
     }
   })

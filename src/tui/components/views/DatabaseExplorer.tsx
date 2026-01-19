@@ -1,12 +1,13 @@
 // Database Explorer View (F3)
 // Browse SQLite tables and query data
 
-import { useState } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { usePollTableData } from '../../hooks/usePollTableData.js'
 import { truncateTilde, formatValue } from '../../utils/format.js'
+import { useEffectOnValueChange } from '../../../reconciler/hooks.js'
+import { useTuiState } from '../../state.js'
 
 const TABLES = [
   'executions',
@@ -33,12 +34,20 @@ export interface DatabaseExplorerProps {
 }
 
 export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
-  const [selectedTable, setSelectedTable] = useState(0)
-  const [rowOffset, setRowOffset] = useState(0)
-  const [isTableListFocused, setIsTableListFocused] = useState(true)
+  const [selectedTable, setSelectedTable] = useTuiState<number>('tui:db:selectedTable', 0)
+  const [rowOffset, setRowOffset] = useTuiState<number>('tui:db:rowOffset', 0)
+  const [isTableListFocused, setIsTableListFocused] = useTuiState<boolean>('tui:db:isTableListFocused', true)
 
   const tableName = TABLES[selectedTable] ?? 'executions'
   const { columns, data: tableData } = usePollTableData(db, tableName)
+  const visibleRowsCount = height - 8
+
+  useEffectOnValueChange(`${tableData.length}:${visibleRowsCount}`, () => {
+    const maxOffset = Math.max(0, tableData.length - visibleRowsCount)
+    if (rowOffset > maxOffset) {
+      setRowOffset(maxOffset)
+    }
+  }, [rowOffset, setRowOffset, tableData.length, visibleRowsCount])
 
   const handleSelectTable = (index: number) => {
     setSelectedTable(index)
@@ -56,14 +65,15 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
       }
     } else {
       if (key.name === 'j' || key.name === 'down') {
-        setRowOffset(prev => Math.min(prev + 1, Math.max(0, tableData.length - 5)))
+        const maxOffset = Math.max(0, tableData.length - visibleRowsCount)
+        setRowOffset(prev => Math.min(prev + 1, maxOffset))
       } else if (key.name === 'k' || key.name === 'up') {
         setRowOffset(prev => Math.max(prev - 1, 0))
       }
     }
   })
 
-  const visibleRows = tableData.slice(rowOffset, rowOffset + height - 8)
+  const visibleRows = tableData.slice(rowOffset, rowOffset + visibleRowsCount)
 
   return (
     <box style={{ flexDirection: 'row', width: '100%', height: '100%' }}>

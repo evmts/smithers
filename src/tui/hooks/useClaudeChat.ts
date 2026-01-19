@@ -1,9 +1,10 @@
 // Hook for Claude-powered chat interface
 // Gracefully degrades when ANTHROPIC_API_KEY is not set
 
-import { useState, useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { SmithersDB } from '../../db/index.js'
 import { createClaudeAssistant, type ChatMessage } from '../services/claude-assistant.js'
+import { readTuiState, useTuiState } from '../state.js'
 
 export interface UseClaudeChatResult {
   messages: ChatMessage[]
@@ -14,15 +15,20 @@ export interface UseClaudeChatResult {
   clearHistory: () => void
 }
 
+const MESSAGES_KEY = 'tui:chat:messages'
+const LOADING_KEY = 'tui:chat:loading'
+const ERROR_KEY = 'tui:chat:error'
+const EMPTY_MESSAGES: ChatMessage[] = []
+
 export function useClaudeChat(db: SmithersDB): UseClaudeChatResult {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [messages, setMessages] = useTuiState<ChatMessage[]>(MESSAGES_KEY, EMPTY_MESSAGES)
+  const [isLoading, setIsLoading] = useTuiState<boolean>(LOADING_KEY, false)
+  const [error, setError] = useTuiState<string | null>(ERROR_KEY, null)
 
   // Check if API key is available
   const isAvailable = !!process.env['ANTHROPIC_API_KEY']
 
-  const assistant = createClaudeAssistant(db)
+  const assistant = useMemo(() => createClaudeAssistant(db), [db])
 
   const sendMessage = useCallback(async (content: string) => {
     if (!isAvailable) {
@@ -36,12 +42,14 @@ export function useClaudeChat(db: SmithersDB): UseClaudeChatResult {
       timestamp: new Date().toISOString()
     }
 
-    setMessages(prev => [...prev, userMessage])
+    const history = readTuiState(MESSAGES_KEY, EMPTY_MESSAGES)
+    const nextMessages = [...history, userMessage]
+    setMessages(nextMessages)
     setIsLoading(true)
     setError(null)
 
     try {
-      const response = await assistant.chat([...messages, userMessage])
+      const response = await assistant.chat(nextMessages)
       const assistantMessage: ChatMessage = {
         role: 'assistant',
         content: response,
@@ -53,12 +61,12 @@ export function useClaudeChat(db: SmithersDB): UseClaudeChatResult {
     } finally {
       setIsLoading(false)
     }
-  }, [messages, isAvailable, assistant])
+  }, [assistant, isAvailable, setError, setIsLoading, setMessages])
 
   const clearHistory = useCallback(() => {
     setMessages([])
     setError(null)
-  }, [])
+  }, [setMessages, setError])
 
   return {
     messages,
