@@ -3,6 +3,8 @@
 
 import { createContext, useContext, useRef, useCallback, useMemo, useEffect, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
+import { usePhaseContext } from './PhaseContext.js'
+import { StepContext } from './StepContext.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useMount, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
@@ -206,7 +208,7 @@ export function Step(props: StepProps): ReactNode {
 
   // Determine if this step should be active
   // If no registry (not inside a Phase), always active
-  const isActive = registry ? registry.isStepActive(myIndex) : true
+  const isActive = phaseActive && (registry ? registry.isStepActive(myIndex) : true)
   const isCompleted = registry ? registry.isStepCompleted(myIndex) : false
   const canExecute = executionScope.enabled && isActive
   const status = canExecute ? 'active' : isCompleted ? 'completed' : 'pending'

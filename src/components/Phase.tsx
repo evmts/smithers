@@ -75,7 +75,6 @@ export function Phase(props: PhaseProps): ReactNode {
   const myIndex = usePhaseIndex(props.name)
   const parentPhase = usePhaseContext()
   const parentActive = parentPhase?.isActive ?? true
-  const isNested = parentPhase !== null
 
   const phaseIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
@@ -84,9 +83,9 @@ export function Phase(props: PhaseProps): ReactNode {
 
   // Determine phase status
   const isSkipped = Boolean(props.skipIf?.())
-  const isActive = !isSkipped && (registry ? registry.isPhaseActive(myIndex) : true)
+  const isActive = !isSkipped && parentActive && (registry ? registry.isPhaseActive(myIndex) : true)
   const isCompleted = !isSkipped && (registry ? registry.isPhaseCompleted(myIndex) : false)
-  const executionEnabled = !isSkipped && (isNested ? parentActive : isActive)
+  const executionEnabled = isActive
 
   // Compute status string for output
   const status = getPhaseStatus(isSkipped, isActive, isCompleted)
