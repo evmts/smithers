@@ -31,7 +31,10 @@ function shouldFallbackToApiKey(stdout: string, stderr: string, exitCode: number
     combined.includes('unauthorized') ||
     combined.includes('authentication') ||
     combined.includes('not logged in') ||
-    combined.includes('login required')
+    combined.includes('login required') ||
+    combined.includes('invalid api key') ||
+    combined.includes('please run /login') ||
+    combined.includes('api key')
   )
 }
 
