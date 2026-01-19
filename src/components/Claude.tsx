@@ -1,4 +1,4 @@
-import { useRef, useReducer, type ReactNode } from 'react'
+import { useRef, useReducer, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useWorktree } from './WorktreeProvider.js'
 import { usePhaseContext } from './PhaseContext.js'
@@ -19,6 +19,7 @@ import { validationMiddleware, ValidationError } from '../middleware/validation.
 import { ClaudeStreamParser } from '../streaming/claude-parser.js'
 import type { SmithersStreamPart } from '../streaming/types.js'
 import type { StreamSummary } from '../db/types.js'
+import { createLogger, type Logger } from '../debug/index.js'
 
 const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
 
@@ -54,6 +55,12 @@ export function Claude(props: ClaudeProps): ReactNode {
   const stepActive = step?.isActive ?? true
   const ralphCount = useRalphCount()
   const cwd = props.cwd ?? worktree?.cwd
+
+  // Create logger with agent context
+  const log: Logger = useMemo(
+    () => createLogger('Claude', { model: props.model ?? 'sonnet' }),
+    [props.model]
+  )
 
   // TODO abstract all the following block of lines into named hooks
   const agentIdRef = useRef<string | null>(null)
@@ -99,9 +106,11 @@ export function Claude(props: ClaudeProps): ReactNode {
   useEffectOnValueChange(executionKey, () => {
     if (!shouldExecute) return
     ;(async () => {
+      const endTotalTiming = log.time('agent_execution')
       taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
 
       if (isStopRequested()) {
+        log.info('Execution stopped by request')
         db.tasks.complete(taskIdRef.current)
         return
       }
@@ -125,6 +134,8 @@ export function Claude(props: ClaudeProps): ReactNode {
       }
       const logFilename = streamLogFilename
       let logPath: string | undefined
+
+      log.debug('Starting execution', { logId, typedStreaming: typedStreamingEnabled })
 
       try {
         const childrenString = extractText(props.children)
@@ -158,7 +169,14 @@ export function Claude(props: ClaudeProps): ReactNode {
             },
             onRetry: (attempt, error) => {
               const maxRetries = props.maxRetries ?? 3
-              if (error instanceof ValidationError) {
+              const isValidationError = error instanceof ValidationError
+              log.warn('Retrying execution', { 
+                attempt, 
+                maxRetries, 
+                isValidationError,
+                error: error instanceof Error ? error.message : String(error)
+              })
+              if (isValidationError) {
                 props.onProgress?.(`Validation failed, retrying (${attempt}/${maxRetries})...`)
                 return
               }
@@ -214,9 +232,11 @@ export function Claude(props: ClaudeProps): ReactNode {
             logPath
           )
           agentIdRef.current = currentAgentId
+          log.info('Agent started', { agentId: currentAgentId, logPath })
         }
 
         // Report progress
+        log.debug('Executing CLI', { model: executionOptions.model ?? 'sonnet' })
         props.onProgress?.(`Starting Claude agent with model: ${executionOptions.model ?? 'sonnet'}`)
 
         // Stream part handler for typed streaming
@@ -370,6 +390,15 @@ export function Claude(props: ClaudeProps): ReactNode {
           )
         }
 
+        const totalDurationMs = endTotalTiming()
+        log.info('Agent completed', { 
+          agentId: currentAgentId, 
+          tokensInput: agentResult.tokensUsed?.input,
+          tokensOutput: agentResult.tokensUsed?.output,
+          durationMs: totalDurationMs,
+          stopReason: agentResult.stopReason
+        })
+
         if (props.reportingEnabled !== false && agentResult.output) {
           const reportData = {
             type: 'progress' as const,
@@ -395,9 +424,10 @@ export function Claude(props: ClaudeProps): ReactNode {
           props.onFinished?.(agentResult)
         }
       } catch (err) {
+        endTotalTiming()
         const errorObj = err instanceof Error ? err : new Error(String(err))
+        log.error('Agent execution failed', errorObj, { agentId: currentAgentId })
 
-        // ALWAYS log to DB regardless of mount state - DB records should not be suppressed
         if (props.reportingEnabled !== false && currentAgentId) {
           await db.agents.fail(currentAgentId, errorObj.message)
         }
@@ -419,7 +449,6 @@ export function Claude(props: ClaudeProps): ReactNode {
           }
         }
 
-        // Only fire React callbacks if still mounted
         if (isMounted()) {
           props.onError?.(errorObj)
         }
@@ -435,10 +464,11 @@ export function Claude(props: ClaudeProps): ReactNode {
         }
       }
     })().catch(err => {
-      console.error('Agent execution failed:', err)
-      props.onError?.(err instanceof Error ? err : new Error(String(err)))
+      const errorObj = err instanceof Error ? err : new Error(String(err))
+      log.error('Unhandled agent execution error', errorObj)
+      props.onError?.(errorObj)
     })
-  }, [shouldExecute])
+  }, [shouldExecute, log])
 
   const maxLines = props.tailLogLines ?? 10
   const tailLog = tailLogRef.current

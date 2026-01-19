@@ -4,7 +4,7 @@
 
 import type { DebugEvent } from '../reconciler/types.js'
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+export type DebugLogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 export interface DebugCollector {
   emit(event: DebugEvent): void
@@ -77,7 +77,7 @@ export function createDebugCollector(): DebugCollector {
   return {
     emit(event: DebugEvent): void {
       const redacted = redactSecrets(event)
-      const level = (event.level as LogLevel) || 'debug'
+      const level = (event['level'] as DebugLogLevel) || 'debug'
 
       switch (level) {
         case 'error':
@@ -102,14 +102,14 @@ export { safeStringify, redactSecrets }
 // STRUCTURED LOGGING
 // ============================================================================
 
-export interface LogEntry {
-  level: LogLevel
+export interface DebugLogEntry {
+  level: DebugLogLevel
   component: string
   message: string
   timestamp: number
   durationMs?: number
   data?: Record<string, unknown>
-  error?: Error
+  error?: Error | undefined
 }
 
 export interface Logger {
@@ -123,23 +123,23 @@ export interface Logger {
   child(context: Record<string, unknown>): Logger
 }
 
-let globalMinLevel: LogLevel = 'info'
-const levelPriority: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 }
+let globalMinLevel: DebugLogLevel = 'info'
+const levelPriority: Record<DebugLogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 }
 
-export function setLogLevel(level: LogLevel): void {
+export function setLogLevel(level: DebugLogLevel): void {
   globalMinLevel = level
 }
 
-export function getLogLevel(): LogLevel {
+export function getLogLevel(): DebugLogLevel {
   return globalMinLevel
 }
 
 export function createLogger(component: string, context: Record<string, unknown> = {}): Logger {
-  const shouldLog = (level: LogLevel): boolean => {
+  const shouldLog = (level: DebugLogLevel): boolean => {
     return levelPriority[level] >= levelPriority[globalMinLevel]
   }
 
-  const formatEntry = (entry: LogEntry): string => {
+  const formatEntry = (entry: DebugLogEntry): string => {
     const prefix = `[${entry.component}]`
     const suffix = entry.durationMs !== undefined ? ` (${entry.durationMs}ms)` : ''
     const dataStr = entry.data && Object.keys(entry.data).length > 0 
@@ -148,10 +148,10 @@ export function createLogger(component: string, context: Record<string, unknown>
     return `${prefix} ${entry.message}${suffix}${dataStr}`
   }
 
-  const emit = (level: LogLevel, message: string, data?: Record<string, unknown>, error?: Error): void => {
+  const emit = (level: DebugLogLevel, message: string, data?: Record<string, unknown>, error?: Error): void => {
     if (!shouldLog(level)) return
     
-    const entry: LogEntry = {
+    const entry: DebugLogEntry = {
       level,
       component,
       message,
