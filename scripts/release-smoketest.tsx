@@ -101,22 +101,22 @@ function AnalyzeHistoryPhase() {
             console.error('Feature analysis failed:', err.message)
           }}
         >
-          {`Analyze the git history with notes to understand what new features were added since the last release.
+          {`Analyze the git history to understand what new features were added since the last release.
 
-## Git History (with notes containing original user prompts)
+## Git History (commits since last release)
 \`\`\`json
 ${GIT_HISTORY}
 \`\`\`
 
 ## Instructions
 
-1. Parse each commit and its associated git notes
-2. The notes often contain "User prompt:" which is the original request that led to the change
-3. Identify:
-   - New features and capabilities
+1. Parse each commit hash and subject
+2. Identify from commit messages:
+   - New features and capabilities (feat: commits)
+   - Bug fixes (fix: commits)
    - Breaking changes
    - Core components that were modified
-4. For each new feature, determine a test strategy
+3. For each new feature, determine a test strategy
 
 Focus on user-facing changes that should be smoke tested.
 Return structured data about what to test.`}

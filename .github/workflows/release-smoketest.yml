@@ -62,13 +62,24 @@ jobs:
         run: |
           PREV_TAG="${{ steps.release.outputs.prev_tag }}"
           TAG="${{ steps.release.outputs.tag }}"
-          
+
+          # Build JSON array of commits with proper escaping
+          COMMITS=()
           if [ -n "$PREV_TAG" ]; then
-            HISTORY=$(git log --notes --pretty=format:'{"hash":"%H","subject":"%s","body":"%b","notes":"%N"}' $PREV_TAG..$TAG | jq -s '.')
+            RANGE="$PREV_TAG..$TAG"
           else
-            HISTORY=$(git log --notes --pretty=format:'{"hash":"%H","subject":"%s","body":"%b","notes":"%N"}' -20 | jq -s '.')
+            RANGE="-20"
           fi
-          
+
+          while IFS= read -r line; do
+            HASH=$(echo "$line" | cut -d'|' -f1)
+            SUBJECT=$(echo "$line" | cut -d'|' -f2 | jq -Rs '.' | sed 's/^"\(.*\)"$/\1/')
+            COMMITS+=("{\"hash\":\"$HASH\",\"subject\":\"$SUBJECT\"}")
+          done < <(git log --pretty=format:'%H|%s' $RANGE)
+
+          # Join array into JSON
+          HISTORY="[$(IFS=,; echo "${COMMITS[*]}")]"
+
           echo "history<<EOF" >> $GITHUB_OUTPUT
           echo "$HISTORY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
