@@ -115,6 +115,25 @@ function runMigrations(rdb: ReactiveDatabase): void {
   if (!hasLogPath) {
     rdb.exec('ALTER TABLE agents ADD COLUMN log_path TEXT')
   }
+
+  // Migration: Add interactive session columns to human_interactions table if missing
+  const humanColumns = rdb.query<{ name: string }>('PRAGMA table_info(human_interactions)')
+  const hasSessionConfig = humanColumns.some((col) => col.name === 'session_config')
+  if (!hasSessionConfig) {
+    rdb.exec('ALTER TABLE human_interactions ADD COLUMN session_config TEXT')
+  }
+  const hasSessionTranscript = humanColumns.some((col) => col.name === 'session_transcript')
+  if (!hasSessionTranscript) {
+    rdb.exec('ALTER TABLE human_interactions ADD COLUMN session_transcript TEXT')
+  }
+  const hasSessionDuration = humanColumns.some((col) => col.name === 'session_duration')
+  if (!hasSessionDuration) {
+    rdb.exec('ALTER TABLE human_interactions ADD COLUMN session_duration INTEGER')
+  }
+  const hasHumanError = humanColumns.some((col) => col.name === 'error')
+  if (!hasHumanError) {
+    rdb.exec('ALTER TABLE human_interactions ADD COLUMN error TEXT')
+  }
 }
 
 /**

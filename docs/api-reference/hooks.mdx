@@ -67,6 +67,49 @@ const environment = await ask<string>("Select deployment target:", {
 console.log(`Deploying to ${environment}`);
 ```
 
+## useHumanInteractive
+
+Interactive human sessions for multi-turn collaboration.
+
+```tsx
+import { useHumanInteractive } from "smithers-orchestrator/hooks";
+
+function ReviewWorkflow() {
+  const { requestAsync, status } = useHumanInteractive();
+
+  const review = async () => {
+    const result = await requestAsync(
+      "Review the refactor and decide whether to proceed.",
+      { captureTranscript: true }
+    );
+    if (result.outcome === "completed") {
+      console.log("Decision:", result.response);
+    }
+  };
+
+  return (
+    <button onClick={review} disabled={status === "pending"}>
+      {status === "pending" ? "Waiting for review..." : "Request review"}
+    </button>
+  );
+}
+```
+
+### API
+
+```tsx
+interface UseHumanInteractiveResult<T = InteractiveSessionResult> {
+  request: (prompt: string, options?: AskInteractiveOptions) => void;
+  requestAsync: (prompt: string, options?: AskInteractiveOptions) => Promise<T>;
+  status: "idle" | "pending" | "success" | "error";
+  data: T | null;
+  error: Error | null;
+  sessionId: string | null;
+  cancel: () => void;
+  reset: () => void;
+}
+```
+
 ## useRalphCount
 
 Hook to get the current Ralph iteration count reactively.

@@ -58,12 +58,19 @@ export class LogWriter {
     
     // Get or create a WriteStream for this file
     let stream = this.streams.get(filename)
-    if (!stream) {
+    if (!stream || stream.destroyed || stream.writableEnded) {
+      if (stream) {
+        this.streams.delete(filename)
+      }
       stream = fs.createWriteStream(filepath, { flags: 'a', encoding: 'utf-8' })
       this.streams.set(filename, stream)
     }
-    
-    stream.write(content)
+
+    if (!stream.writable) {
+      fs.appendFileSync(filepath, content, 'utf-8')
+    } else if (!stream.writableEnded && !stream.destroyed) {
+      stream.write(content)
+    }
     return filepath
   }
 
