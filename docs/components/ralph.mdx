@@ -5,7 +5,11 @@ description: Loop controller component for iteration-based workflows
 
 # Ralph Component
 
-The `<Ralph>` component is a loop controller in Smithers workflows. It manages iteration count and task tracking for workflows that need to loop until completion.
+<Note>
+**Most users should use [`<SmithersProvider>`](/components/smithers-provider) instead.** SmithersProvider is the canonical orchestrator that handles Ralph internally along with database, state management, and lifecycle concerns. Use Ralph directly only if you need fine-grained control over the iteration loop.
+</Note>
+
+The `<Ralph>` component is the internal loop controller that powers Smithers workflows. It manages iteration count and task tracking for workflows that need to loop until completion. SmithersProvider wraps Ralph automatically—this page documents Ralph for advanced users who need direct access.
 
 ## Basic Usage
 
@@ -51,9 +55,9 @@ function MyComponent() {
 
 <CardGroup cols={2}>
   <Card title="SmithersProvider" icon="cube" href="/components/smithers-provider">
-    The unified provider (use this instead)
+    **Start here** — the canonical orchestrator for most workflows
   </Card>
   <Card title="Ralph Wiggum Loop" icon="sitemap" href="/concepts/ralph-wiggum-loop">
-    How the execution loop works
+    Deep dive into how the execution loop works internally
   </Card>
 </CardGroup>

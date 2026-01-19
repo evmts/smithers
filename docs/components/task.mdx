@@ -5,6 +5,15 @@ description: Track individual tasks within workflows
 
 # Task Component
 
+<Note>
+**Not to be confused with `db.tasks.*`**
+
+- `<Task>` component = Declarative UI element for displaying task progress in workflows (this page)
+- `db.tasks.*` = Internal API for tracking async component lifecycle (start/complete/fail)
+
+Components like `<Claude>`, `<Step>`, and `<Worktree>` use `db.tasks.start()` and `db.tasks.complete()` internally to signal when they're running. The `<Task>` component is purely presentational—it renders a checkbox-style task item.
+</Note>
+
 The `<Task>` component represents a trackable task within a workflow. Tasks can be marked as done/not done to track progress through complex workflows.
 
 ## Usage
