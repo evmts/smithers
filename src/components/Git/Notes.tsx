@@ -107,7 +107,7 @@ export function Notes(props: NotesProps): ReactNode {
         }
       } finally {
         // Complete task
-        if (taskIdRef.current) {
+        if (taskIdRef.current && isMounted()) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
       }

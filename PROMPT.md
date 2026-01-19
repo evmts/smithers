@@ -1,6 +1,6 @@
-# Issue: Middleware Integration Revised
+# Issue: UIMessage Format
 
-See: `../../../issues/middleware-integration-revised.md`
+See: `../../../issues/uimessage-format.md`
 
 ## Task
 
@@ -11,6 +11,6 @@ Implement the solution described in the issue.
 1. Make commits as you implement
 2. When ready, push and create PR:
    ```bash
-   git push -u origin issue/middleware-integration-revised
-   gh pr create --title "Feat: Middleware Integration Revised" --body "Implements middleware-integration-revised. See issues/middleware-integration-revised.md"
+   git push -u origin issue/uimessage-format
+   gh pr create --title "Feat: UIMessage Format" --body "Implements uimessage-format. See issues/uimessage-format.md"
    ```

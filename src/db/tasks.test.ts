@@ -7,7 +7,7 @@ describe('Tasks module', () => {
 
   beforeEach(async () => {
     db = await createSmithersDB({ reset: true })
-    executionId = await db.execution.start('test-execution', 'test.tsx')
+    executionId = db.execution.start('test-execution', 'test.tsx')
   })
 
   afterEach(() => {

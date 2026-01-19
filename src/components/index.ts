@@ -14,6 +14,7 @@ export { Phase, type PhaseProps } from './Phase.js'
 export { Step, type StepProps } from './Step.js'
 export { PhaseContext, usePhaseContext, type PhaseContextValue } from './PhaseContext.js'
 export { StepContext, useStepContext, type StepContextValue } from './StepContext.js'
+export { ExecutionScopeProvider, useExecutionScope, useExecutionEffect } from './ExecutionScope.js'
 
 // Parallel execution wrapper
 export { Parallel, type ParallelProps } from './Parallel.js'

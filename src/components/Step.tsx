@@ -6,6 +6,7 @@ import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useMount, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
+import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
 
 // ============================================================================
 // STEP REGISTRY CONTEXT (for sequential execution within a phase)
@@ -193,6 +194,7 @@ export function Step(props: StepProps): ReactNode {
   const { db, reactiveDb, executionId } = useSmithers()
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
+  const executionScope = useExecutionScope()
 
   const stepIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
@@ -206,7 +208,9 @@ export function Step(props: StepProps): ReactNode {
   // If no registry (not inside a Phase), always active
   const isActive = registry ? registry.isStepActive(myIndex) : true
   const isCompleted = registry ? registry.isStepCompleted(myIndex) : false
-  const status = isActive ? 'active' : isCompleted ? 'completed' : 'pending'
+  const canExecute = executionScope.enabled && isActive
+  const status = canExecute ? 'active' : isCompleted ? 'completed' : 'pending'
+  const isDbClosed = () => db.db.isClosed
 
   // Monitor child tasks for this step (only when started)
   // Uses the same pattern as SmithersProvider for reactive task counting
@@ -220,14 +224,15 @@ export function Step(props: StepProps): ReactNode {
       : []
   )
 
-  // Reactive step activation - runs when isActive becomes true
-  // Pattern from Claude.tsx:110, Smithers.tsx:170
-  useEffectOnValueChange(isActive, () => {
-    if (!isActive || hasStartedRef.current) return
+  // Reactive step activation - runs when canExecute becomes true
+  useEffectOnValueChange(canExecute, () => {
+    if (!canExecute || hasStartedRef.current) return
+    if (isDbClosed()) return
     hasStartedRef.current = true
 
     ;(async () => {
       // Register task with database
+      if (isDbClosed()) return
       taskIdRef.current = db.tasks.start('step', props.name)
 
       try {
@@ -243,6 +248,7 @@ export function Step(props: StepProps): ReactNode {
         }
 
         // Start step in database
+        if (isDbClosed()) return
         const id = db.steps.start(props.name)
         stepIdRef.current = id
 
@@ -254,21 +260,26 @@ export function Step(props: StepProps): ReactNode {
         console.error(`[Step] Error starting step:`, errorObj)
 
         if (stepIdRef.current) {
-          db.steps.fail(stepIdRef.current)
+          if (!isDbClosed()) {
+            db.steps.fail(stepIdRef.current)
+          }
         }
 
         if (taskIdRef.current) {
-          db.tasks.complete(taskIdRef.current)
+          if (!isDbClosed()) {
+            db.tasks.complete(taskIdRef.current)
+          }
         }
 
         props.onError?.(errorObj)
       }
     })()
-  })
+  }, [canExecute, db, props.name, props.onStart, props.snapshotBefore])
 
   // Helper to complete the step
   const completeStep = useCallback(async () => {
     if (!hasStartedRef.current || hasCompletedRef.current) return
+    if (isDbClosed()) return
     hasCompletedRef.current = true
 
     if (db.db.isClosed) return
@@ -352,10 +363,11 @@ export function Step(props: StepProps): ReactNode {
     }
   })
 
-  // Always render the step element, only render children when active
   return (
     <step {...(props.name ? { name: props.name } : {})} status={status}>
-      {isActive && props.children}
+      <ExecutionScopeProvider enabled={canExecute}>
+        {props.children}
+      </ExecutionScopeProvider>
     </step>
   )
 }
