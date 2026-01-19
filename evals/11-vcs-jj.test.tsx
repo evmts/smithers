@@ -226,7 +226,7 @@ describe('11-vcs-jj', () => {
     const xml = env.root.toXML()
     const duration = Date.now() - startTime
 
-    // XML validation
+    // Should contain phase with jj operations
     expect(xml).toContain('<phase name="deployment"')
     expect(xml).toContain('<jj-snapshot')
     expect(xml).toContain('<jj-commit')

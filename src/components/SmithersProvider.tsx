@@ -515,6 +515,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   // Increment ralphCount in DB
   const incrementRalphCount = useMemo(() => () => {
+    if (reactiveDb.isClosed) return ralphCount  // Guard against closed DB
     const nextCount = ralphCount + 1
     reactiveDb.run(
       "UPDATE state SET value = ?, updated_at = datetime('now') WHERE key = 'ralphCount'",
