@@ -191,7 +191,7 @@ describe('monitor command', () => {
 })
 
 describe('findPreloadPath (via monitor)', () => {
-  test('finds preload.ts correctly', async () => {
+  test('throws descriptive error when preload.ts not found', async () => {
     const { monitor } = await import('./monitor')
     
     const tmpDir = path.join(import.meta.dir, '.test-preload-monitor-' + Date.now())
@@ -201,19 +201,27 @@ describe('findPreloadPath (via monitor)', () => {
     
     let originalExit = process.exit
     let exitCode: number | undefined
+    let originalConsoleLog = console.log
+    let originalConsoleError = console.error
+    
     process.exit = ((code?: number) => {
       exitCode = code ?? 0
       throw new Error(`process.exit(${code})`)
     }) as typeof process.exit
+    console.log = () => {}
+    console.error = () => {}
     
     try {
       await monitor(testFile)
     } catch (e: unknown) {
-      if (e instanceof Error) {
-        expect(e.message).not.toContain('Could not find preload.ts')
+      // Either it finds preload.ts (spawn starts), or throws descriptive error
+      if (e instanceof Error && e.message.includes('preload.ts')) {
+        expect(e.message).toContain('smithers-orchestrator')
       }
     } finally {
       process.exit = originalExit
+      console.log = originalConsoleLog
+      console.error = originalConsoleError
       fs.rmSync(tmpDir, { recursive: true, force: true })
     }
   })

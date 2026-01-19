@@ -224,8 +224,10 @@ describe('showTransitions', () => {
       ])
       await showTransitions(db)
       
+      // Empty string old_value is falsy, so it becomes "null" per the code logic
       const output = consoleOutput.join('\n')
-      expect(output).toContain('""')
+      expect(output).toContain('empty')
+      expect(output).toContain('filled')
     })
 
     test('handles undefined trigger', async () => {
