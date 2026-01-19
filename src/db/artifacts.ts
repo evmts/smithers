@@ -21,6 +21,11 @@ interface ArtifactRow {
   name: string
   type: string
   file_path: string
+  git_hash: string | null
+  git_commit: string | null
+  summary: string | null
+  line_count: number | null
+  byte_size: number | null
   metadata: string | null
   created_at: string
 }
@@ -28,9 +33,19 @@ interface ArtifactRow {
 const mapArtifact = (row: ArtifactRow | null): Artifact | null => {
   if (!row) return null
   return {
-    ...row,
+    id: row.id,
+    execution_id: row.execution_id,
+    agent_id: row.agent_id ?? undefined,
+    name: row.name,
     type: row.type as Artifact['type'],
+    file_path: row.file_path,
+    git_hash: row.git_hash ?? undefined,
+    git_commit: row.git_commit ?? undefined,
+    summary: row.summary ?? undefined,
+    line_count: row.line_count ?? undefined,
+    byte_size: row.byte_size ?? undefined,
     metadata: parseJson(row.metadata, {}),
+    created_at: new Date(row.created_at),
   }
 }
 
@@ -39,6 +54,7 @@ export function createArtifactsModule(ctx: ArtifactsModuleContext): ArtifactsMod
 
   const artifacts: ArtifactsModule = {
     add: (name: string, type: Artifact['type'], filePath: string, agentId?: string, metadata?: Record<string, any>): string => {
+      if (rdb.isClosed) return uuid()
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
@@ -51,6 +67,7 @@ export function createArtifactsModule(ctx: ArtifactsModuleContext): ArtifactsMod
     },
 
     list: (executionId: string): Artifact[] => {
+      if (rdb.isClosed) return []
       return rdb.query<any>('SELECT * FROM artifacts WHERE execution_id = ? ORDER BY created_at', [executionId])
         .map(mapArtifact)
         .filter((a): a is Artifact => a !== null)

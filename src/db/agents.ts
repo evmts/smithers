@@ -38,13 +38,30 @@ interface AgentRow {
   created_at: string
   duration_ms: number | null
   log_path: string | null
+  tool_calls_count: number
 }
 
 const mapAgent = (row: AgentRow | null): Agent | null => {
   if (!row) return null
   return {
-    ...row,
-    result_structured: parseJson(row.result_structured, undefined),
+    id: row.id,
+    execution_id: row.execution_id,
+    phase_id: row.phase_id ?? undefined,
+    model: row.model,
+    system_prompt: row.system_prompt ?? undefined,
+    prompt: row.prompt,
+    status: row.status as Agent['status'],
+    result: row.result ?? undefined,
+    result_structured: row.result_structured ? parseJson(row.result_structured, undefined) : undefined,
+    log_path: row.log_path ?? undefined,
+    error: row.error ?? undefined,
+    started_at: row.started_at ? new Date(row.started_at) : undefined,
+    completed_at: row.completed_at ? new Date(row.completed_at) : undefined,
+    created_at: new Date(row.created_at),
+    duration_ms: row.duration_ms ?? undefined,
+    tokens_input: row.tokens_input ?? undefined,
+    tokens_output: row.tokens_output ?? undefined,
+    tool_calls_count: row.tool_calls_count,
   }
 }
 

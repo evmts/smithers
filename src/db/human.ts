@@ -48,6 +48,7 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
 
   return {
     request: (type: string, prompt: string, options: string[] = []): string => {
+      if (rdb.isClosed) return uuid()
       const executionId = getCurrentExecutionId()
       if (!executionId) throw new Error('No active execution')
 
@@ -61,6 +62,7 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
     },
 
     resolve: (id: string, status: 'approved' | 'rejected', response: unknown = null) => {
+      if (rdb.isClosed) return
       rdb.run(
         `UPDATE human_interactions
          SET status = ?, response = ?, resolved_at = ?
@@ -70,6 +72,7 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
     },
 
     get: (id: string): HumanInteraction | null => {
+      if (rdb.isClosed) return null
       const row = rdb.queryOne<any>('SELECT * FROM human_interactions WHERE id = ?', [id])
       if (!row) return null
       return {
@@ -80,6 +83,7 @@ export function createHumanModule(ctx: HumanModuleContext): HumanModule {
     },
 
     listPending: (): HumanInteraction[] => {
+       if (rdb.isClosed) return []
        const executionId = getCurrentExecutionId()
        if (!executionId) return []
        const rows = rdb.query<any>(

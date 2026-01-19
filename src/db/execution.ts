@@ -41,9 +41,20 @@ interface ExecutionRow {
 const mapExecution = (row: ExecutionRow | null): Execution | null => {
   if (!row) return null
   return {
-    ...row,
+    id: row.id,
+    name: row.name ?? undefined,
+    file_path: row.file_path,
+    status: row.status as Execution['status'],
     config: parseJson(row.config, {}),
-    result: parseJson(row.result, undefined),
+    result: row.result ? parseJson(row.result, undefined) : undefined,
+    error: row.error ?? undefined,
+    started_at: row.started_at ? new Date(row.started_at) : undefined,
+    completed_at: row.completed_at ? new Date(row.completed_at) : undefined,
+    created_at: new Date(row.created_at),
+    total_iterations: row.total_iterations,
+    total_agents: row.total_agents,
+    total_tool_calls: row.total_tool_calls,
+    total_tokens_used: row.total_tokens_used,
   }
 }
 

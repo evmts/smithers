@@ -1,5 +1,7 @@
 // Transitions view for database inspection
 
+import type { SmithersDB } from '../../db/index.js'
+
 interface Transition {
   created_at: string
   key: string
@@ -8,7 +10,7 @@ interface Transition {
   trigger?: string
 }
 
-export async function showTransitions(db: any) {
+export async function showTransitions(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('STATE TRANSITIONS (last 20)')
   console.log('═══════════════════════════════════════════════════════════')

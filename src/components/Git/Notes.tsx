@@ -1,7 +1,8 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
+import { useExecuteOnActive } from '../ExecutionContext.js'
 import { addGitNotes, getGitNotes } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 
 interface NotesState {
@@ -58,7 +59,7 @@ export function Notes(props: NotesProps): ReactNode {
     smithers.db.state.set(stateKey, newState, 'git-notes')
   }
 
-  useMount(() => {
+  useExecuteOnActive(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database

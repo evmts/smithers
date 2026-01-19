@@ -6,6 +6,7 @@ import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useMount, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
+import { ExecutionProvider, useExecutionEnabled } from './ExecutionContext.js'
 
 // ============================================================================
 // STEP REGISTRY CONTEXT (for sequential execution within a phase)
@@ -188,6 +189,7 @@ export function Step(props: StepProps): ReactNode {
   const { db, reactiveDb, executionId } = useSmithers()
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
+  const parentExecutionEnabled = useExecutionEnabled()
 
   const stepIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
@@ -199,8 +201,8 @@ export function Step(props: StepProps): ReactNode {
 
   // Determine if this step should be active
   // If no registry (not inside a Phase), always active
-  const isActive = registry ? registry.isStepActive(myIndex) : true
-  const isCompleted = registry ? registry.isStepCompleted(myIndex) : false
+  const isActive = parentExecutionEnabled && (registry ? registry.isStepActive(myIndex) : true)
+  const isCompleted = parentExecutionEnabled && (registry ? registry.isStepCompleted(myIndex) : false)
   const status = isActive ? 'active' : isCompleted ? 'completed' : 'pending'
 
   // Monitor child tasks for this step (only when started)
@@ -344,9 +346,13 @@ export function Step(props: StepProps): ReactNode {
   })
 
   // Always render the step element, only render children when active
+  const childExecutionEnabled = parentExecutionEnabled && isActive
+
   return (
     <step {...(props.name ? { name: props.name } : {})} status={status}>
-      {isActive && props.children}
+      <ExecutionProvider enabled={childExecutionEnabled}>
+        {props.children}
+      </ExecutionProvider>
     </step>
   )
 }

@@ -3,7 +3,7 @@
  * React handles component calls + hook dispatcher setup.
  * Our hostConfig transforms React elements → SmithersNode trees.
  */
-import type { JSX as ReactJSX } from 'react'
+import type { Key } from 'react'
 import {
   Fragment,
   jsx as reactJsx,
@@ -12,34 +12,35 @@ import {
 import { jsxDEV as reactJsxDEV } from 'react/jsx-dev-runtime'
 
 type Props = Record<string, unknown> | null
+type ReactElementType = Parameters<typeof reactJsx>[0]
 
-function withSmithersKey(props: Props, key: React.Key | undefined): Props {
+function withSmithersKey(props: Props, key: Key | undefined): Props {
   if (key == null) return props
-  const nextProps = props ? { ...props } : {}
+  const nextProps: Record<string, unknown> = props ? { ...props } : {}
   nextProps['__smithersKey'] = key
   return nextProps
 }
 
 export function jsx(
-  type: ReactJSX.ElementType,
+  type: ReactElementType,
   props: Props,
-  key?: React.Key
+  key?: Key
 ) {
   return reactJsx(type as React.ElementType, withSmithersKey(props, key), key)
 }
 
 export function jsxs(
-  type: ReactJSX.ElementType,
+  type: ReactElementType,
   props: Props,
-  key?: React.Key
+  key?: Key
 ) {
   return reactJsxs(type as React.ElementType, withSmithersKey(props, key), key)
 }
 
 export function jsxDEV(
-  type: ReactJSX.ElementType,
+  type: ReactElementType,
   props: Props,
-  key: React.Key | undefined,
+  key: Key | undefined,
   isStaticChildren: boolean,
   source: { fileName: string; lineNumber: number; columnNumber: number } | undefined,
   self: unknown

@@ -1,7 +1,8 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
+import { useExecuteOnActive } from '../ExecutionContext.js'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { extractText } from '../../utils/extract-text.js'
 
@@ -88,7 +89,7 @@ export function Commit(props: CommitProps): ReactNode {
     smithers.db.state.set(stateKey, newState, 'git-commit')
   }
 
-  useMount(() => {
+  useExecuteOnActive(() => {
     // Fire-and-forget async IIFE
     ;(async () => {
       // Register task with database

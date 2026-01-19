@@ -1,7 +1,8 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
+import { useExecuteOnActive } from '../ExecutionContext.js'
 import { jjSnapshot, getJJStatus } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState } from '../../reconciler/hooks.js'
 
 export interface SnapshotProps {
   message?: string
@@ -24,7 +25,7 @@ export function Snapshot(props: SnapshotProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
-  useMount(() => {
+  useExecuteOnActive(() => {
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-snapshot')
 

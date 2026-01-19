@@ -27,6 +27,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
 
   const memories: MemoriesModule = {
     add: (memory: MemoryInput): string => {
+      if (rdb.isClosed) return uuid()
       const id = uuid()
       rdb.run(
         `INSERT INTO memories (id, category, scope, key, content, confidence, source, source_execution_id, created_at, updated_at, accessed_at, expires_at)
@@ -39,6 +40,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     get: (category: string, key: string, scope?: string): Memory | null => {
+      if (rdb.isClosed) return null
       const row = rdb.queryOne<Memory>(
         `SELECT * FROM memories WHERE category = ? AND key = ? AND (scope = ? OR ? IS NULL)`,
         [category, key, scope ?? null, scope ?? null]
@@ -50,6 +52,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     list: (category?: string, scope?: string, limit: number = 100): Memory[] => {
+      if (rdb.isClosed) return []
       let sql = 'SELECT * FROM memories WHERE 1=1'
       const params: SqlParam[] = []
       if (category) { sql += ' AND category = ?'; params.push(category) }
@@ -60,8 +63,10 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     search: (query: string, category?: string, limit: number = 20): Memory[] => {
-      let sql = 'SELECT * FROM memories WHERE content LIKE ?'
-      const params: SqlParam[] = [`%${query}%`]
+      if (rdb.isClosed) return []
+      const escapeLike = (s: string) => s.replace(/[%_\\]/g, '\\$&')
+      let sql = "SELECT * FROM memories WHERE content LIKE ? ESCAPE '\\'"
+      const params: SqlParam[] = [`%${escapeLike(query)}%`]
       if (category) { sql += ' AND category = ?'; params.push(category) }
       sql += ' ORDER BY created_at DESC LIMIT ?'
       params.push(limit)
@@ -69,6 +74,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     update: (id: string, updates: Partial<Pick<Memory, 'content' | 'confidence' | 'expires_at'>>) => {
+      if (rdb.isClosed) return
       const sets: string[] = ['updated_at = ?']
       const params: SqlParam[] = [now()]
       if (updates.content !== undefined) { sets.push('content = ?'); params.push(updates.content) }
@@ -79,6 +85,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
     },
 
     delete: (id: string) => {
+      if (rdb.isClosed) return
       rdb.run('DELETE FROM memories WHERE id = ?', [id])
     },
 

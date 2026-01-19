@@ -1,25 +1,14 @@
 // Executions view for database inspection
 
-interface Execution {
-  id: string
-  name?: string
-  status: string
-  file_path: string
-  started_at?: string
-  completed_at?: string
-  total_agents: number
-  total_tool_calls: number
-  total_tokens_used: number
-  error?: string
-}
+import type { SmithersDB } from '../../db/index.js'
 
-export async function showExecutions(db: any) {
+export async function showExecutions(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('RECENT EXECUTIONS (last 10)')
   console.log('═══════════════════════════════════════════════════════════')
   console.log('')
 
-  const executions: Execution[] = await db.execution.list(10)
+  const executions = await db.execution.list(10)
 
   if (executions.length === 0) {
     console.log('  (no executions)')
@@ -34,12 +23,13 @@ export async function showExecutions(db: any) {
       console.log(`    File: ${exec.file_path}`)
 
       if (exec.started_at) {
-        console.log(`    Started: ${new Date(exec.started_at).toLocaleString()}`)
+        console.log(`    Started: ${exec.started_at.toLocaleString()}`)
       }
 
-      if (exec.completed_at) {
-        const duration =
-          new Date(exec.completed_at).getTime() - new Date(exec.started_at!).getTime()
+      if (exec.completed_at && exec.started_at) {
+        const startTime = exec.started_at instanceof Date ? exec.started_at.getTime() : new Date(exec.started_at).getTime()
+        const endTime = exec.completed_at instanceof Date ? exec.completed_at.getTime() : new Date(exec.completed_at).getTime()
+        const duration = endTime - startTime
         console.log(`    Duration: ${duration}ms`)
       }
 
