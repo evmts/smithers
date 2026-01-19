@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 /**
  * Docs Review Script
- * 
+ *
  * Daily cron job that reviews all documentation for correctness.
  * Creates a PR if docs are found to be out of sync with the codebase.
- * 
+ *
  * Notes:
  * - Allows for unimplemented features to exist in docs
  * - Only flags docs that are factually incorrect about current code
@@ -17,8 +17,15 @@ import { Step } from '../src/components/Step.js'
 import { PhaseRegistryProvider } from '../src/components/PhaseRegistry.js'
 import { createSmithersDB } from '../src/db/index.js'
 import { createSmithersRoot } from '../src/reconciler/index.js'
+import { ProgressLogger } from '../src/utils/progress-logger.js'
 
 const BRANCH_NAME = `docs/auto-review-${new Date().toISOString().slice(0, 10)}`
+
+// Progress logger for visibility
+const progress = new ProgressLogger({
+  prefix: '[DocsReview]',
+  heartbeatInterval: 30000, // Log every 30s
+})
 
 interface ReviewResult {
   needsChanges: boolean
@@ -26,38 +33,50 @@ interface ReviewResult {
   summary: string
 }
 
-// TODO: Stress in both CLAUDE.md and in docs that SQLLite is the preferred state solution for most th ings
-// TODO: store this in sqllite
 let reviewResult: ReviewResult = {
   needsChanges: false,
   filesChanged: [],
-  summary: 'No changes needed'
+  summary: 'No changes needed',
 }
 
 function DocsReviewOrchestration() {
   return (
     <PhaseRegistryProvider>
       {/* Phase 1: Analyze docs for correctness */}
-      <Phase name="analyze">
-        <Step name="review-docs">
+      <Phase
+        name="analyze"
+        onStart={() => progress.phaseStart('analyze')}
+        onComplete={() => progress.phaseComplete('analyze')}
+      >
+        <Step
+          name="review-docs"
+          onStart={() => progress.stepStart('review-docs')}
+          onComplete={() => progress.stepComplete('review-docs')}
+        >
           <Claude
             model="opus"
             permissionMode="bypassPermissions"
             maxTurns={50}
             timeout={1800000}
+            onProgress={(msg) => progress.agentProgress(msg)}
             onFinished={(result) => {
               try {
                 const parsed = JSON.parse(result.output)
                 reviewResult = parsed
-                // TODO: Update CLAUDE.md always log error
-                // TODO: Update review postcommit hook to review for this log a warning that codex is rate limited and not able to review
+                progress.agentComplete('opus', reviewResult.summary)
+                console.log('[Result] Needs changes:', reviewResult.needsChanges)
+                console.log('[Result] Files changed:', reviewResult.filesChanged.length)
               } catch {
                 reviewResult = {
                   needsChanges: false,
                   filesChanged: [],
-                  summary: result.output.slice(0, 500)
+                  summary: result.output.slice(0, 500),
                 }
+                progress.agentComplete('opus', 'Completed (non-JSON output)')
               }
+            }}
+            onError={(err) => {
+              progress.error('Docs review failed', err)
             }}
           >
             {`## Task
@@ -96,14 +115,24 @@ Skip internal design docs (tui-*.md, refactor-*.md) as they're for dev notes.`}
       </Phase>
 
       {/* Phase 2: Create PR if changes were made */}
-      <Phase name="create-pr">
-        <Step name="git-pr">
+      <Phase
+        name="create-pr"
+        onStart={() => progress.phaseStart('create-pr')}
+        onComplete={() => progress.phaseComplete('create-pr')}
+      >
+        <Step
+          name="git-pr"
+          onStart={() => progress.stepStart('git-pr')}
+          onComplete={() => progress.stepComplete('git-pr')}
+        >
           <Claude
             model="sonnet"
             permissionMode="bypassPermissions"
             maxTurns={10}
-            onFinished={async () => {
-              console.log('PR creation complete')
+            onProgress={(msg) => progress.agentProgress(msg)}
+            onFinished={async (result) => {
+              progress.agentComplete('sonnet', 'PR step complete')
+              console.log('[PR] Result:', result.output.slice(0, 200))
             }}
           >
             {`Check if any documentation files were changed.
@@ -114,7 +143,7 @@ Skip internal design docs (tui-*.md, refactor-*.md) as they're for dev notes.`}
 2. If there are changes:
    a. Create a new branch:
       git checkout -b ${BRANCH_NAME}
-   
+
    b. Stage and commit the changes:
       git add docs/
       git commit -m "docs: auto-fix documentation errors
@@ -152,24 +181,42 @@ ${reviewResult.filesChanged.map(f => `- ${f}`).join('\n') || 'See diff for detai
 }
 
 async function main() {
+  console.log('='.repeat(60))
+  console.log('SMITHERS DOCUMENTATION REVIEW')
+  console.log('='.repeat(60))
+  console.log(`[Info] Date: ${new Date().toISOString()}`)
+  console.log(`[Info] Branch: ${BRANCH_NAME}`)
+  console.log('')
+
   const db = createSmithersDB({ path: ':memory:' })
   const executionId = db.execution.start('docs-review', 'scripts/docs-review.tsx')
 
-  console.log('Starting Documentation Review...')
-  console.log(`Date: ${new Date().toISOString()}`)
+  // Start heartbeat for visibility
+  progress.startHeartbeat()
 
   const root = createSmithersRoot()
 
-  await root.mount(() => (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-      <orchestration name="docs-review">
-        <DocsReviewOrchestration />
-      </orchestration>
-    </SmithersProvider>
-  ))
+  try {
+    await root.mount(() => (
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <orchestration name="docs-review">
+          <DocsReviewOrchestration />
+        </orchestration>
+      </SmithersProvider>
+    ))
+  } finally {
+    // Always show summary and stop heartbeat
+    progress.summary()
+  }
 
-  console.log('\nReview complete!')
-  console.log('Result:', JSON.stringify(reviewResult, null, 2))
+  console.log('\n' + '='.repeat(60))
+  console.log('FINAL RESULT')
+  console.log('='.repeat(60))
+  console.log(JSON.stringify(reviewResult, null, 2))
+
+  console.log('\n' + '='.repeat(60))
+  console.log('ORCHESTRATION XML')
+  console.log('='.repeat(60) + '\n')
   console.log(root.toXML())
 
   db.execution.complete(executionId)
@@ -177,6 +224,7 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Docs review failed:', err)
+  progress.error('Docs review failed', err)
+  progress.summary()
   process.exit(1)
 })

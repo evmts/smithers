@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /**
  * Release Smoketest Script
- * 
+ *
  * Multi-phase orchestration that:
  * 1. Analyzes git history + notes to understand new features
  * 2. Creates a fresh project from npm
  * 3. Runs smoke tests on basic + new features
- * 
+ *
  * Each phase returns structured data for the next phase.
  */
 
@@ -20,9 +20,16 @@ import { Step } from '../src/components/Step.js'
 import { PhaseRegistryProvider } from '../src/components/PhaseRegistry.js'
 import { createSmithersDB } from '../src/db/index.js'
 import { createSmithersRoot } from '../src/reconciler/index.js'
+import { ProgressLogger } from '../src/utils/progress-logger.js'
 
 const VERSION = process.env['SMITHERS_VERSION'] ?? 'latest'
 const GIT_HISTORY = process.env['GIT_HISTORY'] ?? '[]'
+
+// Progress logger for visibility
+const progress = new ProgressLogger({
+  prefix: '[Smoketest]',
+  heartbeatInterval: 30000, // Log every 30s
+})
 
 // Structured output schemas for phase data passing
 const FeatureAnalysisSchema = z.object({
@@ -83,22 +90,32 @@ const phaseData: {
 
 function AnalyzeHistoryPhase() {
   return (
-    <Phase name="analyze-history">
-      <Step name="parse-git-history">
+    <Phase
+      name="analyze-history"
+      onStart={() => progress.phaseStart('analyze-history')}
+      onComplete={() => progress.phaseComplete('analyze-history')}
+    >
+      <Step
+        name="parse-git-history"
+        onStart={() => progress.stepStart('parse-git-history')}
+        onComplete={() => progress.stepComplete('parse-git-history')}
+      >
         <Claude
           model="opus"
           permissionMode="default"
           maxTurns={10}
           schema={FeatureAnalysisSchema}
           schemaRetries={3}
+          onProgress={(msg) => progress.agentProgress(msg)}
           onFinished={(result) => {
             if (result.structured) {
               phaseData.featureAnalysis = result.structured as FeatureAnalysis
-              console.log('Feature analysis complete:', phaseData.featureAnalysis.summary)
+              progress.agentComplete('opus', phaseData.featureAnalysis.summary)
+              console.log('[Result] Features found:', phaseData.featureAnalysis.newFeatures.length)
             }
           }}
           onError={(err) => {
-            console.error('Feature analysis failed:', err.message)
+            progress.error('Feature analysis failed', err)
           }}
         >
           {`Analyze the git history to understand what new features were added since the last release.
@@ -128,22 +145,32 @@ Return structured data about what to test.`}
 
 function SetupProjectPhase() {
   return (
-    <Phase name="setup-project">
-      <Step name="create-test-project">
+    <Phase
+      name="setup-project"
+      onStart={() => progress.phaseStart('setup-project')}
+      onComplete={() => progress.phaseComplete('setup-project')}
+    >
+      <Step
+        name="create-test-project"
+        onStart={() => progress.stepStart('create-test-project')}
+        onComplete={() => progress.stepComplete('create-test-project')}
+      >
         <Claude
           model="opus"
           permissionMode="bypassPermissions"
           maxTurns={15}
           schema={ProjectSetupSchema}
           schemaRetries={3}
+          onProgress={(msg) => progress.agentProgress(msg)}
           onFinished={(result) => {
             if (result.structured) {
               phaseData.projectSetup = result.structured as ProjectSetup
-              console.log('Project setup:', phaseData.projectSetup.projectPath)
+              progress.agentComplete('opus', `Project at ${phaseData.projectSetup.projectPath}`)
+              console.log('[Result] Dependencies installed:', phaseData.projectSetup.dependenciesInstalled)
             }
           }}
           onError={(err) => {
-            console.error('Project setup failed:', err.message)
+            progress.error('Project setup failed', err)
           }}
         >
           {`Create a fresh test project that installs smithers from npm.
@@ -171,11 +198,23 @@ function RunSmoketestsPhase() {
   const setup = phaseData.projectSetup
 
   return (
-    <Phase 
+    <Phase
       name="run-smoketests"
-      skipIf={() => !setup?.dependenciesInstalled}
+      skipIf={() => {
+        if (!setup?.dependenciesInstalled) {
+          progress.phaseSkipped('run-smoketests', 'dependencies not installed')
+          return true
+        }
+        return false
+      }}
+      onStart={() => progress.phaseStart('run-smoketests')}
+      onComplete={() => progress.phaseComplete('run-smoketests')}
     >
-      <Step name="execute-tests">
+      <Step
+        name="execute-tests"
+        onStart={() => progress.stepStart('execute-tests')}
+        onComplete={() => progress.stepComplete('execute-tests')}
+      >
         <Claude
           model="opus"
           permissionMode="bypassPermissions"
@@ -183,19 +222,23 @@ function RunSmoketestsPhase() {
           timeout={600000}
           schema={SmoketestResultSchema}
           schemaRetries={3}
+          onProgress={(msg) => progress.agentProgress(msg)}
           onFinished={(result) => {
             if (result.structured) {
               phaseData.smoketestResult = result.structured as SmoketestResult
-              console.log('Smoketest result:', phaseData.smoketestResult.summary)
-              
+              const passed = phaseData.smoketestResult.basicTests.filter(t => t.passed).length
+              const total = phaseData.smoketestResult.basicTests.length
+              progress.agentComplete('opus', `${passed}/${total} tests passed`)
+              console.log('[Result] Overall success:', phaseData.smoketestResult.overallSuccess)
+
               if (!phaseData.smoketestResult.overallSuccess) {
-                console.error('SMOKETEST FAILED')
+                progress.error('SMOKETEST FAILED')
                 process.exitCode = 1
               }
             }
           }}
           onError={(err) => {
-            console.error('Smoketest execution failed:', err.message)
+            progress.error('Smoketest execution failed', err)
             process.exitCode = 1
           }}
         >
@@ -248,14 +291,26 @@ Report comprehensive results.`}
 
 function ReportPhase() {
   return (
-    <Phase name="report">
-      <Step name="generate-report">
+    <Phase
+      name="report"
+      onStart={() => progress.phaseStart('report')}
+      onComplete={() => progress.phaseComplete('report')}
+    >
+      <Step
+        name="generate-report"
+        onStart={() => progress.stepStart('generate-report')}
+        onComplete={() => progress.stepComplete('generate-report')}
+      >
         <Claude
           model="sonnet"
           permissionMode="default"
           maxTurns={5}
+          onProgress={(msg) => progress.agentProgress(msg)}
           onFinished={(result) => {
-            console.log('\n=== SMOKETEST REPORT ===\n')
+            progress.agentComplete('sonnet', 'Report generated')
+            console.log('\n' + '='.repeat(60))
+            console.log('SMOKETEST REPORT')
+            console.log('='.repeat(60) + '\n')
             console.log(result.output)
           }}
         >
@@ -295,14 +350,19 @@ function ReleaseSmoketestOrchestration() {
 }
 
 async function main() {
-  console.log(`Starting release smoketest for smithers-orchestrator@${VERSION}`)
+  console.log('='.repeat(60))
+  console.log(`SMITHERS RELEASE SMOKETEST v${VERSION}`)
+  console.log('='.repeat(60))
+
   let historyEntries = 0
   try {
     historyEntries = JSON.parse(GIT_HISTORY).length
   } catch {
-    console.warn('Warning: Could not parse GIT_HISTORY, using empty array')
+    console.warn('[Warning] Could not parse GIT_HISTORY, using empty array')
   }
-  console.log('Git history entries:', historyEntries)
+  console.log(`[Info] Git history entries: ${historyEntries}`)
+  console.log(`[Info] Target version: smithers-orchestrator@${VERSION}`)
+  console.log('')
 
   // Ensure .smithers directory exists
   const dbDir = '.smithers'
@@ -313,17 +373,27 @@ async function main() {
   const db = createSmithersDB({ path: path.join(dbDir, 'smoketest.db') })
   const executionId = db.execution.start('release-smoketest', 'scripts/release-smoketest.tsx')
 
+  // Start heartbeat for visibility
+  progress.startHeartbeat()
+
   const root = createSmithersRoot()
 
-  await root.mount(() => (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-      <orchestration name="release-smoketest" version={VERSION}>
-        <ReleaseSmoketestOrchestration />
-      </orchestration>
-    </SmithersProvider>
-  ))
+  try {
+    await root.mount(() => (
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <orchestration name="release-smoketest" version={VERSION}>
+          <ReleaseSmoketestOrchestration />
+        </orchestration>
+      </SmithersProvider>
+    ))
+  } finally {
+    // Always show summary and stop heartbeat
+    progress.summary()
+  }
 
-  console.log('\n=== ORCHESTRATION OUTPUT ===\n')
+  console.log('\n' + '='.repeat(60))
+  console.log('ORCHESTRATION XML OUTPUT')
+  console.log('='.repeat(60) + '\n')
   console.log(root.toXML())
 
   db.execution.complete(executionId)
@@ -334,6 +404,7 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Release smoketest failed:', err)
+  progress.error('Release smoketest failed', err)
+  progress.summary()
   process.exit(1)
 })
