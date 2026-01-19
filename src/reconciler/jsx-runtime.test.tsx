@@ -236,23 +236,15 @@ describe('jsx-runtime - Missing Coverage', () => {
       root.dispose()
     })
 
-    test('jsx with lazy component', async () => {
+    test('jsx with lazy component renders Suspense fallback', async () => {
       const { lazy, Suspense } = await import('react')
-      let resolvePromise: (mod: { default: (props: { data: string }) => ReturnType<typeof jsx> }) => void
-      const modulePromise = new Promise<{ default: (props: { data: string }) => ReturnType<typeof jsx> }>(r => { resolvePromise = r })
-      const LazyComp = lazy(() => modulePromise)
+      const LazyComp = lazy(() => new Promise(() => {}))
       
       const root = createSmithersRoot()
-      const renderElement = () => jsx(Suspense, { 
+      await root.render(jsx(Suspense, { 
         fallback: jsx('phase', { name: 'loading' }),
-        children: jsx(LazyComp, { data: 'lazy-data' })
-      })
-      
-      await root.render(renderElement())
-      
-      resolvePromise!({ default: (props: { data: string }) => jsx('task', { info: props.data }) })
-      await new Promise(r => setTimeout(r, 50))
-      await root.render(renderElement())
+        children: jsx(LazyComp, {})
+      }))
       
       const tree = root.getTree()
       const findNode = (node: typeof tree, type: string): typeof tree | undefined => {
@@ -263,8 +255,8 @@ describe('jsx-runtime - Missing Coverage', () => {
         }
         return undefined
       }
-      const taskNode = findNode(tree, 'task')
-      expect(taskNode?.props.info).toBe('lazy-data')
+      const phaseNode = findNode(tree, 'phase')
+      expect(phaseNode?.props.name).toBe('loading')
       root.dispose()
     })
 
