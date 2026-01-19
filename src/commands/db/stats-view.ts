@@ -1,23 +1,24 @@
 // Stats view for database inspection
 
+// Whitelist of allowed table names for SQL injection prevention
+const ALLOWED_TABLES = new Set([
+  'executions',
+  'phases',
+  'agents',
+  'tool_calls',
+  'memories',
+  'state',
+  'transitions',
+  'artifacts',
+])
+
 export async function showStats(db: any) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('DATABASE STATISTICS')
   console.log('═══════════════════════════════════════════════════════════')
   console.log('')
 
-  const tables = [
-    'executions',
-    'phases',
-    'agents',
-    'tool_calls',
-    'memories',
-    'state',
-    'transitions',
-    'artifacts',
-  ]
-
-  for (const table of tables) {
+  for (const table of ALLOWED_TABLES) {
     const result = await db.query(
       `SELECT COUNT(*) as count FROM ${table}`
     ) as Array<{ count: number }>

@@ -1,5 +1,7 @@
 // Database inspection command - main dispatcher
 
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { createSmithersDB } from '../../db/index.js'
 import { showState } from './state-view.js'
 import { showTransitions } from './transitions-view.js'
@@ -21,6 +23,14 @@ export async function dbCommand(subcommand: string | undefined, options: DbOptio
   }
 
   const dbPath = options.path || '.smithers/data'
+  const dbFile = join(dbPath, 'smithers.db')
+
+  if (!existsSync(dbFile)) {
+    console.error(`❌ Database not found: ${dbFile}`)
+    console.error('')
+    console.error('Did you run `smithers init` and `smithers run` first?')
+    process.exit(1)
+  }
 
   console.log(`📊 Smithers Database Inspector`)
   console.log(`   Database: ${dbPath}`)
@@ -59,7 +69,10 @@ export async function dbCommand(subcommand: string | undefined, options: DbOptio
         break
 
       default:
+        console.error(`❌ Unknown subcommand: ${subcommand}`)
+        console.error('')
         showHelp()
+        process.exit(1)
     }
   } finally {
     await db.close()

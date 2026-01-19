@@ -7,6 +7,7 @@ export interface VCSStatus {
   modified: string[]
   added: string[]
   deleted: string[]
+  untracked?: string[]
 }
 
 /**

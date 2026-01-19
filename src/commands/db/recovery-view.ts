@@ -1,5 +1,7 @@
 // Recovery view for database inspection
 
+import type { SmithersDB } from '../../db/index.js'
+
 interface IncompleteExecution {
   id: string
   name?: string
@@ -13,7 +15,7 @@ interface Transition {
   new_value: unknown
 }
 
-export async function showRecovery(db: any) {
+export async function showRecovery(db: SmithersDB) {
   console.log('═══════════════════════════════════════════════════════════')
   console.log('CRASH RECOVERY')
   console.log('═══════════════════════════════════════════════════════════')
@@ -52,9 +54,7 @@ export async function showRecovery(db: any) {
   }
   console.log('')
 
-  console.log('  Recovery Options:')
-  console.log('    1. Resume from last state (if possible)')
-  console.log('    2. Restart from beginning')
-  console.log('    3. Mark as failed and start new execution')
+  console.log('  To recover, run: smithers run')
+  console.log('  The orchestration will detect the incomplete state.')
   console.log('')
 }

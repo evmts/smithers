@@ -9,6 +9,7 @@ export function parseGitStatus(output: string): VCSStatus {
   const modified: string[] = []
   const added: string[] = []
   const deleted: string[] = []
+  const untracked: string[] = []
 
   for (const line of output.split(/\r?\n/)) {
     if (!line.trim()) continue
@@ -16,12 +17,14 @@ export function parseGitStatus(output: string): VCSStatus {
     const status = line.substring(0, 2)
     const file = line.substring(3).trim()
 
-    if (status.includes('M')) modified.push(file)
+    if (status === '??') untracked.push(file)
+    else if (status.includes('M')) modified.push(file)
     else if (status.includes('A')) added.push(file)
     else if (status.includes('D')) deleted.push(file)
+    else if (status.includes('R')) modified.push(file)
   }
 
-  return { modified, added, deleted }
+  return { modified, added, deleted, untracked }
 }
 
 /**
