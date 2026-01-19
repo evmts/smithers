@@ -7,3 +7,4 @@ bun.lockb
 .worktrees/
 PROMPT.md
 src/.smithers/
+.smithers/
