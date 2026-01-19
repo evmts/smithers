@@ -7,6 +7,8 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'claude-haiku-3-5': { input: 0.8 / 1_000_000, output: 4 / 1_000_000 },
 }
 
+const DEFAULT_PRICING = MODEL_PRICING['claude-sonnet-4'] ?? { input: 0, output: 0 }
+
 const FALLBACK_MODEL = 'claude-haiku-3-5'
 
 export function createAnthropicClient(config: { apiKey: string; baseUrl?: string }): ProviderClient {
@@ -58,7 +60,7 @@ export function createAnthropicClient(config: { apiKey: string; baseUrl?: string
     },
 
     estimateCost(model: string, tokens: { input: number; output: number }): { input: number; output: number; total: number } {
-      const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['claude-sonnet-4']
+      const pricing = MODEL_PRICING[model] ?? DEFAULT_PRICING
       const input = tokens.input * pricing.input
       const output = tokens.output * pricing.output
       return { input, output, total: input + output }

@@ -32,7 +32,7 @@ export class RateLimitMonitor {
 
     this.store = new RateLimitStore({
       ttlMs: this.config.cacheTtlMs,
-      db: this.config.db,
+      ...(this.config.db ? { db: this.config.db } : {}),
     })
   }
 

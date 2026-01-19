@@ -77,6 +77,11 @@ export interface BaseAgentProps {
   timeout?: number
 
   /**
+   * Working directory for CLI execution
+   */
+  cwd?: string
+
+  /**
    * Called when agent finishes successfully
    */
   onFinished?: (result: AgentResult) => void

@@ -74,7 +74,13 @@ const hostConfig = {
   },
 
   // Instance creation
-  createInstance(type: string, props: Props): Instance {
+  createInstance(
+    type: string,
+    props: Props,
+    _rootContainer: Container,
+    _hostContext: HostContext,
+    internalHandle: unknown
+  ): Instance {
     const node = rendererMethods.createElement(type)
 
     // Debug: check for weird props that look like spread type string
@@ -89,6 +95,11 @@ const hostConfig = {
       if (key !== 'children') {
         rendererMethods.setProperty(node, key, value)
       }
+    }
+
+    const smithersKey = (internalHandle as { key?: string | number | null } | null)?.key
+    if (smithersKey !== null && smithersKey !== undefined && node.key === undefined) {
+      node.key = smithersKey
     }
 
     return node

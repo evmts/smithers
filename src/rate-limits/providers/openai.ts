@@ -5,6 +5,8 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'gpt-4o-mini': { input: 0.15 / 1_000_000, output: 0.6 / 1_000_000 },
 }
 
+const DEFAULT_PRICING = MODEL_PRICING['gpt-4o'] ?? { input: 0, output: 0 }
+
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 
 function parseResetToDate(value: string | null): Date {
@@ -16,7 +18,7 @@ function parseResetToDate(value: string | null): Date {
   const match = trimmed.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/)
   if (!match) return new Date()
   const amount = Number(match[1])
-  const unit = match[2]
+  const unit = match[2] ?? 'ms'
   const multipliers: Record<string, number> = {
     ms: 1,
     s: 1000,
@@ -85,7 +87,7 @@ export function createOpenAIClient(config: { apiKey: string; organization?: stri
     },
 
     estimateCost(model: string, tokens: { input: number; output: number }): { input: number; output: number; total: number } {
-      const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['gpt-4o']
+      const pricing = MODEL_PRICING[model] ?? DEFAULT_PRICING
       const input = tokens.input * pricing.input
       const output = tokens.output * pricing.output
       return { input, output, total: input + output }
