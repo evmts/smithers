@@ -71,4 +71,41 @@ describe('LogWriter', () => {
     const content = fs.readFileSync(path1, 'utf-8')
     expect(content).toBe('chunk 1\nchunk 2\n')
   })
+
+  it('should append stream parts as ndjson', async () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filename = 'stream-test.ndjson'
+
+    writer.appendStreamPart(filename, { type: 'text-start', id: 't1' })
+    writer.appendStreamPart(filename, { type: 'text-delta', id: 't1', delta: 'Hello' })
+
+    await writer.flushStream(filename)
+
+    const content = fs.readFileSync(path.join(TEST_LOG_DIR, filename), 'utf-8').trim()
+    const lines = content.split('\n').map((line) => JSON.parse(line))
+
+    expect(lines[0]).toMatchObject({ type: 'text-start', id: 't1' })
+    expect(lines[1]).toMatchObject({ type: 'text-delta', id: 't1', delta: 'Hello' })
+  })
+
+  it('should write stream summary from counts', () => {
+    const writer = new LogWriter(TEST_LOG_DIR)
+    const filename = 'summary-test.ndjson'
+    const summaryPath = writer.writeStreamSummaryFromCounts(filename, {
+      textBlocks: 1,
+      reasoningBlocks: 2,
+      toolCalls: 3,
+      toolResults: 4,
+      errors: 5,
+    })
+
+    const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'))
+    expect(summary).toEqual({
+      textBlocks: 1,
+      reasoningBlocks: 2,
+      toolCalls: 3,
+      toolResults: 4,
+      errors: 5,
+    })
+  })
 })

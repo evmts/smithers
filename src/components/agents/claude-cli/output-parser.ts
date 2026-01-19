@@ -45,8 +45,18 @@ export function parseClaudeOutput(
       if (parsed.turns !== undefined) {
         result.turnsUsed = parsed.turns
       }
+      return result
     } catch {
-      // Not valid JSON, use as-is
+      // Not valid JSON, fall through to stream parsing for stream-json.
+    }
+  }
+
+  if (outputFormat === 'stream-json') {
+    const streamResult = parseStreamJson(stdout)
+    if (streamResult) {
+      result.output = streamResult.output
+      result.tokensUsed = streamResult.tokensUsed
+      result.turnsUsed = streamResult.turnsUsed
     }
   }
 
@@ -66,4 +76,51 @@ export function parseClaudeOutput(
   }
 
   return result
+}
+
+function parseStreamJson(stdout: string): ParsedOutput | null {
+  const lines = stdout.split('\n').map((line) => line.trim()).filter(Boolean)
+  if (lines.length === 0) {
+    return null
+  }
+
+  let output = ''
+  let tokensUsed = { input: 0, output: 0 }
+  let turnsUsed = 1
+  let parsedAny = false
+
+  for (const line of lines) {
+    let event: any
+    try {
+      event = JSON.parse(line)
+    } catch {
+      continue
+    }
+    parsedAny = true
+
+    if (event.type === 'content_block_delta' && event.delta?.text !== undefined) {
+      output += String(event.delta.text)
+    }
+
+    if (event.type === 'message_stop' && event.usage) {
+      tokensUsed = {
+        input: event.usage.input_tokens ?? 0,
+        output: event.usage.output_tokens ?? 0,
+      }
+    }
+
+    if (event.turns !== undefined) {
+      turnsUsed = event.turns
+    }
+  }
+
+  if (!parsedAny) {
+    return null
+  }
+
+  return {
+    output: output || stdout,
+    tokensUsed,
+    turnsUsed,
+  }
 }

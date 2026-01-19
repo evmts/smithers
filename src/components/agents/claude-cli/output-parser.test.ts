@@ -131,6 +131,19 @@ describe('parseClaudeOutput', () => {
       expect(result.tokensUsed.input).toBe(200)
       expect(result.tokensUsed.output).toBe(100)
     })
+
+    test('parses ndjson stream output for text and usage', () => {
+      const stream = [
+        JSON.stringify({ type: 'content_block_delta', delta: { text: 'Hello ' } }),
+        JSON.stringify({ type: 'content_block_delta', delta: { text: 'world' } }),
+        JSON.stringify({ type: 'message_stop', usage: { input_tokens: 10, output_tokens: 5 } }),
+      ].join('\n')
+      const result = parseClaudeOutput(stream, 'stream-json')
+
+      expect(result.output).toBe('Hello world')
+      expect(result.tokensUsed.input).toBe(10)
+      expect(result.tokensUsed.output).toBe(5)
+    })
   })
 
   describe('default output format', () => {
