@@ -6,3 +6,4 @@ dist/
 bun.lockb
 .worktrees/
 PROMPT.md
+src/.smithers/
