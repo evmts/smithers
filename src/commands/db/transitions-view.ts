@@ -13,7 +13,7 @@ export async function showTransitions(db: SmithersDB) {
   } else {
     for (const t of transitions) {
       const time = new Date(t.created_at).toLocaleString()
-      const oldVal = t.old_value ? JSON.stringify(t.old_value) : 'null'
+      const oldVal = t.old_value !== null && t.old_value !== undefined ? JSON.stringify(t.old_value) : 'null'
       const newVal = JSON.stringify(t.new_value)
       const trigger = t.trigger || 'unknown'
 

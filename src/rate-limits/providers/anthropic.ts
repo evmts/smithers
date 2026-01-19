@@ -58,8 +58,7 @@ export function createAnthropicClient(config: { apiKey: string; baseUrl?: string
     },
 
     estimateCost(model: string, tokens: { input: number; output: number }): { input: number; output: number; total: number } {
-      const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['claude-sonnet-4']
-      if (!pricing) return { input: 0, output: 0, total: 0 }
+      const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['claude-sonnet-4']!
       const input = tokens.input * pricing.input
       const output = tokens.output * pricing.output
       return { input, output, total: input + output }

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
 import { RateLimitStore } from './store.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import type { RateLimitStatus } from './types.js'
@@ -20,13 +20,17 @@ function createMockStatus(overrides: Partial<RateLimitStatus> = {}): RateLimitSt
 
 describe('RateLimitStore', () => {
   describe('in-memory cache', () => {
+    let store: RateLimitStore
+
+    beforeEach(() => {
+      store = new RateLimitStore({ ttlMs: 10_000 })
+    })
+
     test('get returns null for unknown key', () => {
-      const store = new RateLimitStore({ ttlMs: 10_000 })
       expect(store.get('anthropic', 'unknown-model')).toBeNull()
     })
 
     test('set and get round-trip', () => {
-      const store = new RateLimitStore({ ttlMs: 10_000 })
       const status = createMockStatus()
 
       store.set(status)
@@ -40,8 +44,6 @@ describe('RateLimitStore', () => {
     })
 
     test('different provider/model combinations are isolated', () => {
-      const store = new RateLimitStore({ ttlMs: 10_000 })
-
       store.set(createMockStatus({ provider: 'anthropic', model: 'claude-sonnet-4' }))
       store.set(createMockStatus({ provider: 'anthropic', model: 'claude-haiku-3-5', requests: { limit: 200, remaining: 150, resetsAt: new Date() } }))
       store.set(createMockStatus({ provider: 'openai', model: 'gpt-4', requests: { limit: 50, remaining: 40, resetsAt: new Date() } }))
@@ -52,25 +54,25 @@ describe('RateLimitStore', () => {
     })
 
     test('stale flag is set when entry exceeds ttl', async () => {
-      const store = new RateLimitStore({ ttlMs: 50 })
+      const shortTtlStore = new RateLimitStore({ ttlMs: 50 })
       const status = createMockStatus()
 
-      store.set(status)
-      expect(store.get('anthropic', 'claude-sonnet-4')!.stale).toBe(false)
+      shortTtlStore.set(status)
+      expect(shortTtlStore.get('anthropic', 'claude-sonnet-4')!.stale).toBe(false)
 
       await Bun.sleep(60)
-      expect(store.get('anthropic', 'claude-sonnet-4')!.stale).toBe(true)
+      expect(shortTtlStore.get('anthropic', 'claude-sonnet-4')!.stale).toBe(true)
     })
 
     test('updating existing entry resets stale flag', async () => {
-      const store = new RateLimitStore({ ttlMs: 50 })
+      const shortTtlStore = new RateLimitStore({ ttlMs: 50 })
 
-      store.set(createMockStatus())
+      shortTtlStore.set(createMockStatus())
       await Bun.sleep(60)
-      expect(store.get('anthropic', 'claude-sonnet-4')!.stale).toBe(true)
+      expect(shortTtlStore.get('anthropic', 'claude-sonnet-4')!.stale).toBe(true)
 
-      store.set(createMockStatus({ requests: { limit: 100, remaining: 70, resetsAt: new Date() } }))
-      const updated = store.get('anthropic', 'claude-sonnet-4')
+      shortTtlStore.set(createMockStatus({ requests: { limit: 100, remaining: 70, resetsAt: new Date() } }))
+      const updated = shortTtlStore.get('anthropic', 'claude-sonnet-4')
       expect(updated!.stale).toBe(false)
       expect(updated!.requests.remaining).toBe(70)
     })

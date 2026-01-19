@@ -19,7 +19,10 @@ export async function showRecovery(db: SmithersDB) {
   console.log(`  Name: ${incomplete.name || 'Unnamed'}`)
   console.log(`  ID: ${incomplete.id}`)
   console.log(`  File: ${incomplete.file_path}`)
-  console.log(`  Started: ${incomplete.started_at ? incomplete.started_at.toLocaleString() : 'Unknown'}`)
+  const startedAt = incomplete.started_at 
+    ? (incomplete.started_at instanceof Date ? incomplete.started_at : new Date(incomplete.started_at)).toLocaleString()
+    : 'Unknown'
+  console.log(`  Started: ${startedAt}`)
   console.log('')
 
   const state = await db.state.getAll()

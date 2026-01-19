@@ -58,6 +58,7 @@ export class RateLimitMonitor {
     }
 
     const agents = this.config.db.agents.list(executionId)
+    // TODO: Populate byIteration once iteration tracking is added to agent records
     const byIteration = new Map<number, { input: number; output: number }>()
     const byModel = new Map<string, { input: number; output: number; requests: number }>()
 

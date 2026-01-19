@@ -6,17 +6,19 @@ import type { RateLimitStatus } from './types.js'
 function createMockMonitor(overrides: {
   capacity?: { requests: number; inputTokens: number; outputTokens: number; overall: number }
   status?: Partial<RateLimitStatus>
+  resetMs?: number
 } = {}): RateLimitMonitor {
   const defaultCapacity = { requests: 1, inputTokens: 1, outputTokens: 1, overall: 1 }
   const capacity = overrides.capacity ?? defaultCapacity
 
   const now = new Date()
+  const resetTime = new Date(now.getTime() + (overrides.resetMs ?? 1000))
   const defaultStatus: RateLimitStatus = {
     provider: 'anthropic',
     model: 'claude-sonnet-4',
-    requests: { limit: 100, remaining: 80, resetsAt: new Date(now.getTime() + 1000) },
-    inputTokens: { limit: 1_000_000, remaining: 800_000, resetsAt: new Date(now.getTime() + 1000) },
-    outputTokens: { limit: 100_000, remaining: 90_000, resetsAt: new Date(now.getTime() + 1000) },
+    requests: { limit: 100, remaining: 80, resetsAt: resetTime },
+    inputTokens: { limit: 1_000_000, remaining: 800_000, resetsAt: resetTime },
+    outputTokens: { limit: 100_000, remaining: 90_000, resetsAt: resetTime },
     lastQueried: now,
     stale: false,
     ...overrides.status,
@@ -45,6 +47,14 @@ describe('ThrottleController', () => {
       const delay = await controller.acquire('anthropic', 'claude-sonnet-4')
       expect(delay).toBe(0)
     })
+
+    test('returns 0 delay when capacity is high', async () => {
+      const monitor = createMockMonitor({ capacity: { requests: 0.9, inputTokens: 0.9, outputTokens: 0.9, overall: 0.9 } })
+      const controller = new ThrottleController(monitor)
+
+      const delay = await controller.acquire('anthropic', 'claude-sonnet-4')
+      expect(delay).toBe(0)
+    })
   })
 
   describe('acquire with low capacity', () => {
@@ -64,10 +74,22 @@ describe('ThrottleController', () => {
       expect(delay).toBeGreaterThanOrEqual(0)
     })
 
+    test('delays on consecutive calls when capacity is low', async () => {
+      const monitor = createMockMonitor({ capacity: { requests: 0.1, inputTokens: 0.1, outputTokens: 0.1, overall: 0.1 } })
+      const controller = new ThrottleController(monitor, {
+        targetUtilization: 0.8,
+        minDelayMs: 10,
+        maxDelayMs: 30,
+      })
+
+      await controller.acquire('anthropic', 'claude-sonnet-4')
+      const start = Date.now()
+      await controller.acquire('anthropic', 'claude-sonnet-4')
+      const elapsed = Date.now() - start
+      expect(elapsed).toBeGreaterThanOrEqual(10)
+    })
+
     test('different backoff strategies produce different calculations', async () => {
-      // Linear: factor = utilizationRatio / targetRatio
-      // Exponential: factor = (utilizationRatio / targetRatio)^2
-      // For capacity=0.05, utilization=0.95, target=0.2: factor differs
       const monitor = createMockMonitor({ capacity: { requests: 0.05, inputTokens: 0.05, outputTokens: 0.05, overall: 0.05 } })
 
       const linearController = new ThrottleController(monitor, {
@@ -79,12 +101,32 @@ describe('ThrottleController', () => {
         targetUtilization: 0.8,
       })
 
-      // Both should acquire without error and use different strategies
       await linearController.acquire('anthropic', 'claude-sonnet-4')
       await exponentialController.acquire('anthropic', 'claude-sonnet-4')
 
       expect(linearController['config'].backoffStrategy).toBe('linear')
       expect(exponentialController['config'].backoffStrategy).toBe('exponential')
+    })
+
+    test('linear backoff produces lower delays than exponential', async () => {
+      const monitor = createMockMonitor({ capacity: { requests: 0.1, inputTokens: 0.1, outputTokens: 0.1, overall: 0.1 } })
+      
+      const linearController = new ThrottleController(monitor, {
+        backoffStrategy: 'linear',
+        minDelayMs: 0,
+        maxDelayMs: 1000,
+      })
+      
+      const expController = new ThrottleController(monitor, {
+        backoffStrategy: 'exponential',
+        minDelayMs: 0,
+        maxDelayMs: 1000,
+      })
+
+      const linearDelay = await linearController.acquire('anthropic', 'claude-sonnet-4')
+      const expDelay = await expController.acquire('anthropic', 'claude-sonnet-4')
+
+      expect(linearDelay).toBeLessThanOrEqual(expDelay)
     })
   })
 
