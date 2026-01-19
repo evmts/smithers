@@ -1,104 +1,13 @@
 ---
-title: Ralph (Deprecated)
-description: Legacy loop controller component - use SmithersProvider instead
+title: Ralph
+description: Loop controller component for iteration-based workflows
 ---
 
 # Ralph Component
 
-<Warning>
-**Deprecated**: The Ralph component is deprecated. Its functionality has been consolidated into SmithersProvider.
+The `<Ralph>` component is a loop controller in Smithers workflows. It manages iteration count and task tracking for workflows that need to loop until completion.
 
-Use `<SmithersProvider maxIterations={...} onComplete={...}>` instead of wrapping with `<Ralph>`.
-</Warning>
-
-The `<Ralph>` component was the original loop controller in Smithers workflows. It's now a thin backwards-compatibility wrapper that delegates to SmithersProvider.
-
-## Migration Guide
-
-<CodeGroup>
-```tsx Before (with Ralph)
-<SmithersProvider db={db} executionId={executionId}>
-  <Orchestration>
-    <Ralph maxIterations={10} onComplete={() => console.log("Done")}>
-      <Claude>Do work</Claude>
-    </Ralph>
-  </Orchestration>
-</SmithersProvider>
-```
-
-```tsx After (unified provider)
-<SmithersProvider
-  db={db}
-  executionId={executionId}
-  maxIterations={10}
-  onComplete={() => console.log("Done")}
->
-  <Orchestration>
-    <Claude>Do work</Claude>
-  </Orchestration>
-</SmithersProvider>
-```
-</CodeGroup>
-
-### Task Registration Migration
-
-<CodeGroup>
-```tsx Before (Ralph context)
-import { useContext } from 'react';
-import { RalphContext } from 'smithers-orchestrator/components';
-
-function CustomStep() {
-  const ralph = useContext(RalphContext);
-
-  useMount(() => {
-    ralph?.registerTask();
-    fetchData().then(() => {
-      ralph?.completeTask();
-    });
-  });
-}
-```
-
-```tsx After (db.tasks)
-import { useSmithers } from 'smithers-orchestrator/components';
-import { useRef } from 'react';
-
-function CustomStep() {
-  const { db } = useSmithers();
-  const taskIdRef = useRef<string | null>(null);
-
-  useMount(() => {
-    taskIdRef.current = db.tasks.start('custom-step');
-    fetchData().then(() => {
-      if (taskIdRef.current) {
-        db.tasks.complete(taskIdRef.current);
-      }
-    });
-  });
-}
-```
-</CodeGroup>
-
-### Accessing Iteration Count
-
-<CodeGroup>
-```tsx Before (Ralph context)
-const ralph = useContext(RalphContext);
-const iteration = ralph?.ralphCount ?? 0;
-```
-
-```tsx After (useRalphCount hook)
-import { useRalphCount } from 'smithers-orchestrator/hooks';
-const ralphCount = useRalphCount();
-
-// Or via useSmithers
-const { ralphCount } = useSmithers();
-```
-</CodeGroup>
-
-## Legacy Usage (Still Supported)
-
-The Ralph component still works for backwards compatibility:
+## Basic Usage
 
 ```tsx
 import { Ralph } from "smithers-orchestrator/components";
@@ -110,36 +19,33 @@ import { Ralph } from "smithers-orchestrator/components";
 </Ralph>
 ```
 
-## Props (Deprecated)
+## Accessing Iteration Count
+
+You can access the current iteration count via context:
+
+```tsx
+import { useSmithers } from 'smithers-orchestrator/components';
+
+function MyComponent() {
+  const { ralphCount } = useSmithers();
+
+  return <div>Iteration: {ralphCount}</div>;
+}
+```
+
+## Props
 
 <ParamField path="maxIterations" type="number" default="100">
-  **Deprecated**: Use `SmithersProvider.maxIterations` instead.
+  Maximum number of iteration loops before stopping.
 </ParamField>
 
 <ParamField path="onIteration" type="(iteration: number) => void">
-  **Deprecated**: Use `SmithersProvider.onIteration` instead.
+  Called at the start of each iteration. Useful for logging or progress tracking.
 </ParamField>
 
 <ParamField path="onComplete" type="() => void">
-  **Deprecated**: Use `SmithersProvider.onComplete` instead.
+  Called when orchestration completes (all tasks finished or max iterations reached).
 </ParamField>
-
-<ParamField path="db" type="ReactiveDatabase">
-  **Deprecated**: Database is now provided via SmithersProvider.
-</ParamField>
-
-## Why Ralph Was Deprecated
-
-The original architecture required three separate providers:
-1. `SmithersProvider` - database and execution context
-2. `Ralph` - iteration loop and task tracking
-3. `DatabaseProvider` - reactive query support
-
-This led to deep nesting and split concerns. The consolidated `SmithersProvider`:
-- Provides a single source of truth
-- Simplifies the component tree
-- Uses database-backed task tracking for better reliability
-- Enables reactive monitoring of task state
 
 ## Related
 

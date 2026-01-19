@@ -5,11 +5,7 @@ description: Unified context provider for database, execution state, and task or
 
 # SmithersProvider
 
-The `<SmithersProvider>` component provides unified context to all child components, including database access, execution state, and task orchestration (previously handled by Ralph). It's required at the root of every Smithers workflow.
-
-<Note>
-As of the latest version, SmithersProvider consolidates SmithersProvider, RalphContext, and DatabaseProvider into a single provider. You no longer need to wrap your components in `<Ralph>` - SmithersProvider handles iteration and task tracking automatically.
-</Note>
+The `<SmithersProvider>` component provides unified context to all child components, including database access, execution state, and task orchestration. It's required at the root of every Smithers workflow.
 
 ## Basic Usage
 
@@ -69,7 +65,7 @@ function Workflow() {
 </ParamField>
 
 <ParamField path="maxIterations" type="number" default="100">
-  Maximum number of iteration loops before stopping. This replaces the `maxIterations` prop from Ralph.
+  Maximum number of iteration loops before stopping.
 
   ```tsx
   <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
@@ -328,56 +324,6 @@ function WorkflowContent() {
 main();
 ```
 
-## Migration from Ralph
-
-If you're migrating from the old Ralph-based pattern:
-
-<CodeGroup>
-```tsx Before (with Ralph)
-<SmithersProvider db={db} executionId={executionId}>
-  <Orchestration>
-    <Ralph maxIterations={10} onComplete={() => console.log("Done")}>
-      <Claude>Do work</Claude>
-    </Ralph>
-  </Orchestration>
-</SmithersProvider>
-```
-
-```tsx After (unified provider)
-<SmithersProvider
-  db={db}
-  executionId={executionId}
-  maxIterations={10}
-  onComplete={() => console.log("Done")}
->
-  <Orchestration>
-    <Claude>Do work</Claude>
-  </Orchestration>
-</SmithersProvider>
-```
-</CodeGroup>
-
-For task tracking in custom components:
-
-<CodeGroup>
-```tsx Before (Ralph context)
-const ralph = useContext(RalphContext);
-ralph?.registerTask();
-// ... work ...
-ralph?.completeTask();
-```
-
-```tsx After (db.tasks)
-const { db } = useSmithers();
-const taskId = db.tasks.start('component-type', 'description');
-try {
-  // ... work ...
-} finally {
-  db.tasks.complete(taskId);
-}
-```
-</CodeGroup>
-
 ## Best Practices
 
 <AccordionGroup>
@@ -436,7 +382,7 @@ try {
   <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
     Top-level workflow control
   </Card>
-  <Card title="Ralph (Legacy)" icon="rotate" href="/components/ralph">
-    Legacy loop controller (deprecated)
+  <Card title="Ralph" icon="rotate" href="/components/ralph">
+    Loop controller component
   </Card>
 </CardGroup>
