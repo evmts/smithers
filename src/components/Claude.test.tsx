@@ -1404,11 +1404,12 @@ describe('Claude validation', () => {
       </SmithersProvider>
     )
     
-    await new Promise((r) => setTimeout(r, 200))
-    
+    // Wait for retries - exponential backoff: 250ms + 500ms + execution time
+    await new Promise((r) => setTimeout(r, 1000))
+
     expect(validateCallCount).toBeGreaterThan(1)
     expect(executionCount).toBeGreaterThan(1)
-    
+
     root.dispose()
   })
 
