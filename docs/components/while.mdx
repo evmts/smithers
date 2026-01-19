@@ -383,33 +383,38 @@ Always shows current iteration number and status for observability.
 ### Use Case 1: Convergence Loop
 
 ```tsx
-<While
-  id="refine-implementation"
-  condition={async () => {
-    const { db } = useSmithers()
-    const quality = await db.state.get('codeQuality')
-    return quality && quality.score < 0.9
-  }}
-  maxIterations={10}
->
-  <Phase name="Refine">
-    <Step name="refine">
-      <Claude>Analyze code quality metrics and apply improvements</Claude>
-    </Step>
-  </Phase>
-  <Phase name="Measure">
-    <Step name="measure">
-      <Claude
-        onFinished={async (result) => {
-          const score = extractQualityScore(result)
-          await db.state.set('codeQuality', { score })
-        }}
-      >
-        Run static analysis and compute quality score
-      </Claude>
-    </Step>
-  </Phase>
-</While>
+function RefineImplementationLoop() {
+  const { db } = useSmithers()
+
+  return (
+    <While
+      id="refine-implementation"
+      condition={async () => {
+        const quality = db.state.get<{ score: number }>('codeQuality')
+        return !!quality && quality.score < 0.9
+      }}
+      maxIterations={10}
+    >
+      <Phase name="Refine">
+        <Step name="refine">
+          <Claude>Analyze code quality metrics and apply improvements</Claude>
+        </Step>
+      </Phase>
+      <Phase name="Measure">
+        <Step name="measure">
+          <Claude
+            onFinished={(result) => {
+              const score = extractQualityScore(result)
+              db.state.set('codeQuality', { score })
+            }}
+          >
+            Run static analysis and compute quality score
+          </Claude>
+        </Step>
+      </Phase>
+    </While>
+  )
+}
 ```
 
 ### Use Case 2: Nested While Loops
@@ -446,7 +451,7 @@ Scoping handles nesting: `root.while.outer.N.while.inner.M`
 <While
   id="wait-deployment"
   condition={async () => {
-    const start = await db.state.get('deploymentStartTime')
+    const start = db.state.get('deploymentStartTime')
     const elapsed = Date.now() - start
     if (elapsed > 600000) return false  // 10min timeout
 

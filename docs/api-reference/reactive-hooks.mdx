@@ -58,9 +58,34 @@ interface UseQueryOptions {
 ```tsx
 interface UseQueryResult<T> {
   data: T[];           // Query results
-  isLoading: boolean;  // Always false for SQLite (sync)
+  isLoading: boolean;  // false for current sync SQLite implementation
   error: Error | null; // Query error if any
   refetch: () => void; // Manual refetch function
+}
+```
+
+### Return Types
+
+```tsx
+interface UseQueryResultMany<T> {
+  data: T[];
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => void;
+}
+
+interface UseQueryResultOne<T> {
+  data: T | null;
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => void;
+}
+
+interface UseQueryResultValue<T> {
+  data: T | null;
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => void;
 }
 ```
 
@@ -92,7 +117,7 @@ function useQueryOne<T>(
   sql: string,
   params?: any[],
   options?: UseQueryOptions
-): UseQueryResult<T> & { data: T | null }
+): UseQueryResultOne<T>
 ```
 
 ## useQueryValue
@@ -120,7 +145,7 @@ function useQueryValue<T>(
   sql: string,
   params?: any[],
   options?: UseQueryOptions
-): UseQueryResult<T> & { data: T | null }
+): UseQueryResultValue<T>
 ```
 
 ## useMutation
@@ -174,8 +199,8 @@ interface UseMutationOptions {
 ```tsx
 interface UseMutationResult<TParams> {
   mutate: (...params: TParams) => void;      // Sync mutation
-  mutateAsync: (...params: TParams) => Promise<void>; // Async mutation
-  isLoading: boolean;
+  mutateAsync: (...params: TParams) => Promise<void>; // Promise wrapper around sync mutation
+  isLoading: boolean; // false for current sync implementation
   error: Error | null;
 }
 ```

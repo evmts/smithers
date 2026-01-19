@@ -7,6 +7,12 @@ description: Track Claude agent invocations
 
 The agents API tracks Claude invocations within executions.
 
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Return shape:** snake_case fields with `Date` timestamps.
+- **Status:** `pending | running | completed | failed | cancelled`.
+
 ## Methods
 
 ### start
@@ -14,7 +20,7 @@ The agents API tracks Claude invocations within executions.
 Log the start of an agent.
 
 ```tsx
-const agentId = await db.agents.start(
+const agentId = db.agents.start(
   "Implement the feature",      // prompt
   "sonnet",                      // model
   "You are a senior engineer"    // system prompt
@@ -26,7 +32,7 @@ const agentId = await db.agents.start(
 Mark agent as complete.
 
 ```tsx
-await db.agents.complete(
+db.agents.complete(
   agentId,
   "Feature implemented",         // output
   { success: true, files: 3 },   // structured result
@@ -34,12 +40,14 @@ await db.agents.complete(
 );
 ```
 
+`structuredResult` is stored as `result_structured` in the database.
+
 ### fail
 
 Mark agent as failed.
 
 ```tsx
-await db.agents.fail(agentId, new Error("Timeout exceeded"));
+db.agents.fail(agentId, "Timeout exceeded");
 ```
 
 ### current
@@ -47,7 +55,7 @@ await db.agents.fail(agentId, new Error("Timeout exceeded"));
 Get the currently running agent.
 
 ```tsx
-const agent = await db.agents.current();
+const agent = db.agents.current();
 if (agent) {
   console.log(`Running: ${agent.prompt.substring(0, 50)}...`);
 }
@@ -58,11 +66,11 @@ if (agent) {
 List agents for an execution.
 
 ```tsx
-const agents = await db.agents.list(executionId);
+const agents = db.agents.list(executionId);
 
 for (const agent of agents) {
   console.log(`${agent.model}: ${agent.status}`);
-  console.log(`  Tokens: ${agent.tokensUsed?.input} in, ${agent.tokensUsed?.output} out`);
+  console.log(`  Tokens: ${agent.tokens_input ?? 0} in, ${agent.tokens_output ?? 0} out`);
 }
 ```
 
@@ -72,21 +80,21 @@ Track tools used by agents:
 
 ```tsx
 // Start a tool call
-const toolId = await db.tools.start(
+const toolId = db.tools.start(
   agentId,
   "Edit",
   { file: "src/main.ts", changes: "..." }
 );
 
 // Complete the tool call
-await db.tools.complete(
+db.tools.complete(
   toolId,
   "File edited successfully",
   "Edited src/main.ts: added 15 lines"
 );
 
 // List tool calls for an agent
-const tools = await db.tools.list(agentId);
+const tools = db.tools.list(agentId);
 ```
 
 ## Types
@@ -94,29 +102,51 @@ const tools = await db.tools.list(agentId);
 ```tsx
 interface Agent {
   id: string;
-  executionId: string;
-  phaseId?: string;
+  execution_id: string;
+  phase_id?: string;
   prompt: string;
   model: string;
-  systemPrompt?: string;
-  status: "pending" | "running" | "complete" | "failed";
-  output?: string;
-  structuredResult?: Record<string, any>;
-  tokensUsed?: { input: number; output: number };
-  startedAt: Date;
-  completedAt?: Date;
+  system_prompt?: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  result?: string;
+  result_structured?: Record<string, any>;
+  error?: string;
+  tokens_input?: number;
+  tokens_output?: number;
+  tool_calls_count: number;
+  started_at?: Date;
+  completed_at?: Date;
+  created_at: Date;
+  duration_ms?: number;
+  log_path?: string;
+  stream_summary?: StreamSummary;
 }
 
 interface ToolCall {
   id: string;
-  agentId: string;
-  toolName: string;
+  agent_id: string;
+  execution_id: string;
+  tool_name: string;
   input: Record<string, any>;
-  output?: string;
-  summary?: string;
-  status: "pending" | "running" | "complete" | "failed";
-  startedAt: Date;
-  completedAt?: Date;
+  output_inline?: string;
+  output_summary?: string;
+  output_size_bytes?: number;
+  output_path?: string;
+  output_git_hash?: string;
+  error?: string;
+  status: "pending" | "running" | "completed" | "failed";
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  duration_ms?: number;
+}
+
+interface StreamSummary {
+  textBlocks: number;
+  reasoningBlocks: number;
+  toolCalls: number;
+  toolResults: number;
+  errors: number;
 }
 ```
 

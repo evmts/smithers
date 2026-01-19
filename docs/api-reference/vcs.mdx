@@ -5,66 +5,74 @@ description: Version control operations tracking
 
 # VCS API
 
-The VCS API tracks version control operations including commits, snapshots, reviews, and reports.
+The VCS API tracks commits, snapshots, reviews, and reports for the current execution.
+
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Return shape:** snake_case fields with `Date` timestamps.
+- **Scope:** Lists are scoped to the current execution.
 
 ## Commits
 
 ### logCommit
 
-Log a git commit.
+Log a git/jj commit.
 
 ```tsx
-await db.vcs.logCommit({
-  hash: "abc123def",
+const commitId = db.vcs.logCommit({
+  vcs_type: "git",
+  commit_hash: "abc123def",
+  change_id: "CABC123",
   message: "feat: Add user authentication",
   author: "claude",
-  timestamp: new Date(),
-  filesChanged: 5,
+  files_changed: ["src/auth.ts"],
   insertions: 150,
   deletions: 20,
-  vcsType: "git",
+  smithers_metadata: { phase: "implementation" },
 });
 ```
 
 ### getCommits
 
-List recent commits.
+List recent commits (current execution).
 
 ```tsx
-const commits = await db.vcs.getCommits(10);
+const commits = db.vcs.getCommits(10);
 ```
 
 ### getCommit
 
-Get a specific commit.
+Get a specific commit by hash.
 
 ```tsx
-const commit = await db.vcs.getCommit("abc123def", "git");
+const commit = db.vcs.getCommit("abc123def", "git");
 ```
 
 ## Snapshots
 
-For jj (Jujutsu) VCS:
-
 ### logSnapshot
 
-Log a snapshot.
+Log a jj snapshot.
 
 ```tsx
-await db.vcs.logSnapshot({
-  snapshotId: "xyz789",
+const snapshotId = db.vcs.logSnapshot({
+  change_id: "CXYZ789",
   description: "Before refactoring auth module",
-  timestamp: new Date(),
-  commitRef: "abc123",
+  commit_hash: "abc123def",
+  files_modified: ["src/auth.ts"],
+  files_added: ["src/auth.test.ts"],
+  files_deleted: [],
+  has_conflicts: false,
 });
 ```
 
 ### getSnapshots
 
-List snapshots.
+List snapshots for the current execution.
 
 ```tsx
-const snapshots = await db.vcs.getSnapshots(10);
+const snapshots = db.vcs.getSnapshots(10);
 ```
 
 ## Reviews
@@ -74,33 +82,33 @@ const snapshots = await db.vcs.getSnapshots(10);
 Log a code review.
 
 ```tsx
-await db.vcs.logReview({
-  reviewId: "r1",
-  target: "abc123",
-  targetType: "commit",
+const reviewId = db.vcs.logReview({
+  target_type: "commit",
+  target_ref: "abc123def",
   approved: false,
   summary: "Security issues found",
   issues: [
     {
-      severity: "high",
+      severity: "critical",
       file: "src/auth.ts",
       line: 42,
-      description: "SQL injection vulnerability",
+      message: "SQL injection vulnerability",
       suggestion: "Use parameterized queries",
     },
   ],
-  reviewerModel: "sonnet",
+  reviewer_model: "sonnet",
+  blocking: true,
 });
 ```
 
 ### updateReview
 
-Update a review.
+Update review publish flags.
 
 ```tsx
-await db.vcs.updateReview(reviewId, {
-  approved: true,
-  summary: "Issues resolved",
+db.vcs.updateReview(reviewId, {
+  posted_to_github: true,
+  posted_to_git_notes: true,
 });
 ```
 
@@ -109,15 +117,15 @@ await db.vcs.updateReview(reviewId, {
 List reviews.
 
 ```tsx
-const reviews = await db.vcs.getReviews(10);
+const reviews = db.vcs.getReviews(10);
 ```
 
 ### getBlockingReviews
 
-Get unapproved blocking reviews.
+Get blocking reviews.
 
 ```tsx
-const blocking = await db.vcs.getBlockingReviews();
+const blocking = db.vcs.getBlockingReviews();
 if (blocking.length > 0) {
   console.log("Cannot proceed - blocking reviews exist");
 }
@@ -130,23 +138,23 @@ if (blocking.length > 0) {
 Add a workflow report.
 
 ```tsx
-await db.vcs.addReport({
+db.vcs.addReport({
   type: "progress",
   severity: "info",
   title: "Phase Complete",
   content: "Research phase completed successfully",
-  metadata: { phase: "research", duration: 5000 },
+  data: { phase: "research", duration_ms: 5000 },
 });
 
-await db.vcs.addReport({
+db.vcs.addReport({
   type: "finding",
   severity: "warning",
   title: "Potential Issue",
   content: "Found deprecated API usage",
-  agentId: agentId,
+  agent_id: agentId,
 });
 
-await db.vcs.addReport({
+db.vcs.addReport({
   type: "error",
   severity: "critical",
   title: "Build Failed",
@@ -160,10 +168,10 @@ List reports.
 
 ```tsx
 // All reports
-const reports = await db.vcs.getReports();
+const reports = db.vcs.getReports();
 
 // By type
-const errors = await db.vcs.getReports("error", 10);
+const errors = db.vcs.getReports("error", 10);
 ```
 
 ### getCriticalReports
@@ -171,7 +179,7 @@ const errors = await db.vcs.getReports("error", 10);
 Get critical severity reports.
 
 ```tsx
-const critical = await db.vcs.getCriticalReports();
+const critical = db.vcs.getCriticalReports();
 if (critical.length > 0) {
   console.error("Critical issues detected!");
 }
@@ -182,58 +190,73 @@ if (critical.length > 0) {
 ```tsx
 interface Commit {
   id: string;
-  hash: string;
+  execution_id: string;
+  agent_id?: string;
+  vcs_type: "git" | "jj";
+  commit_hash: string;
+  change_id?: string;
   message: string;
-  author: string;
-  timestamp: Date;
-  filesChanged: number;
-  insertions: number;
-  deletions: number;
-  vcsType: "git" | "jj";
-  executionId?: string;
-  stepId?: string;
+  author?: string;
+  files_changed?: string[];
+  insertions?: number;
+  deletions?: number;
+  smithers_metadata?: Record<string, any>;
+  created_at: Date;
 }
 
 interface Snapshot {
   id: string;
-  snapshotId: string;
+  execution_id: string;
+  change_id: string;
+  commit_hash?: string;
   description?: string;
-  timestamp: Date;
-  commitRef?: string;
-  executionId?: string;
+  files_modified?: string[];
+  files_added?: string[];
+  files_deleted?: string[];
+  has_conflicts: boolean;
+  created_at: Date;
 }
 
 interface Review {
   id: string;
-  reviewId: string;
-  target: string;
-  targetType: "commit" | "diff" | "pr" | "files";
+  execution_id: string;
+  agent_id?: string;
+  target_type: "commit" | "diff" | "pr" | "files";
+  target_ref?: string;
   approved: boolean;
-  blocking?: boolean;
   summary: string;
   issues: ReviewIssue[];
-  reviewerModel?: string;
-  executionId?: string;
+  approvals?: ReviewApproval[];
+  reviewer_model?: string;
+  blocking: boolean;
+  posted_to_github: boolean;
+  posted_to_git_notes: boolean;
+  created_at: Date;
 }
 
 interface ReviewIssue {
-  severity: "low" | "medium" | "high" | "critical";
-  file: string;
+  severity: "critical" | "major" | "minor" | "suggestion";
+  file?: string;
   line?: number;
-  description: string;
+  message: string;
   suggestion?: string;
+}
+
+interface ReviewApproval {
+  aspect: string;
+  reason: string;
 }
 
 interface Report {
   id: string;
+  execution_id: string;
+  agent_id?: string;
   type: "progress" | "finding" | "warning" | "error" | "metric" | "decision";
-  severity: "info" | "warning" | "critical";
   title: string;
   content: string;
-  metadata?: Record<string, any>;
-  agentId?: string;
-  executionId?: string;
-  createdAt: Date;
+  data?: Record<string, any>;
+  severity: "info" | "warning" | "critical";
+  created_at: Date;
 }
 ```
 

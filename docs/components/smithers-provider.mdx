@@ -266,10 +266,10 @@ function DatabaseAccessExample() {
 
   useMount(async () => {
     // Read state
-    const phase = await db.state.get("phase");
+    const phase = db.state.get("phase");
 
     // Write state
-    await db.state.set("lastAccess", Date.now());
+    db.state.set("lastAccess", Date.now());
 
     // Log an agent
     await db.agents.start("Custom agent", "sonnet");

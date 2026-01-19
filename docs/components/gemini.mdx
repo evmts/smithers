@@ -80,7 +80,7 @@ interface GeminiProps<TSchema extends z.ZodType = z.ZodType> {
 
 interface AgentResult<TSchema extends z.ZodType = z.ZodType> {
   output: string
-  parsedOutput?: z.infer<TSchema>
+  structured?: z.infer<TSchema>
   durationMs: number
 }
 
@@ -130,7 +130,7 @@ const architectureSchema = z.object({
   model="gemini-2.5-pro"
   schema={architectureSchema}
   onFinished={(result) => {
-    const analysis = result.parsedOutput
+    const analysis = result.structured
     console.log(`Architecture score: ${analysis.overallScore}/10`)
     console.log(`Critical issues: ${analysis.issues.filter(i => i.severity === 'critical').length}`)
   }}
@@ -284,7 +284,7 @@ import { FallbackAgent, Claude, Codex, Gemini } from 'smithers-orchestrator'
   </Gemini>
   ```
 
-  **Type safety:** `result.parsedOutput` typed as `z.infer<typeof issueSchema>`
+  **Type safety:** `result.structured` typed as `z.infer<typeof issueSchema>`
 </ParamField>
 
 <ParamField path="media" type="Array<{ type: 'image' | 'file', path: string }>">
@@ -333,9 +333,9 @@ import { FallbackAgent, Claude, Codex, Gemini } from 'smithers-orchestrator'
   ```tsx
   onFinished={(result) => {
     console.log(`Gemini completed in ${result.durationMs}ms`)
-    if (result.parsedOutput) {
+    if (result.structured) {
       // Type-safe structured output
-      processData(result.parsedOutput)
+      processData(result.structured)
     }
   }}
   ```

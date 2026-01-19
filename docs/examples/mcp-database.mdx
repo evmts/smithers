@@ -30,7 +30,6 @@ async function main() {
         <Claude
           model="sonnet"
           maxTurns={10}
-          allowedTools={["Write"]}
           onFinished={(result) => {
             console.log("Analysis complete!");
             console.log(result.output);
@@ -68,15 +67,28 @@ async function main() {
     );
   }
 
-  const root = createSmithersRoot();
-  await root.mount(DataAnalysis);
+  try {
+    const root = createSmithersRoot();
+    await root.mount(DataAnalysis);
 
-  await db.execution.complete(executionId);
-  await db.close();
+    await db.execution.complete(executionId, {
+      summary: "Data analysis complete",
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    await db.execution.fail(executionId, error.message);
+    throw error;
+  } finally {
+    await db.close();
+  }
 }
 
 main();
 ```
+
+<Note>
+If you restrict `allowedTools`, include any MCP tools you need (for Sqlite, allow `sqlite`), or omit `allowedTools` to avoid blocking DB access.
+</Note>
 
 ## Multiple Databases
 
@@ -108,24 +120,28 @@ main();
 
 ## Workflow with Database
 
+_Excerpt: render `DataWorkflow` inside a `SmithersProvider` that supplies `db` and `executionId`._
+
 ```tsx
+import { Claude, If, Sqlite, useSmithers } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function DataWorkflow() {
   const { db, reactiveDb } = useSmithers();
 
-  const phase = useQueryValue<string>(
+  const { data: phase } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "analyze";
+  );
+  const currentPhase = phase ?? "analyze";
 
   const setPhase = (newPhase: string) => {
     db.state.set("phase", newPhase);
   };
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-      <If condition={phase === "analyze"}>
+    <>
+      <If condition={currentPhase === "analyze"}>
         <Claude
           model="sonnet"
           onFinished={(result) => {
@@ -140,7 +156,7 @@ function DataWorkflow() {
         </Claude>
       </If>
 
-      <If condition={phase === "report"}>
+      <If condition={currentPhase === "report"}>
         <Claude
           allowedTools={["Write"]}
           onFinished={() => setPhase("done")}
@@ -151,7 +167,7 @@ function DataWorkflow() {
           Save to reports/q4-analysis.md
         </Claude>
       </If>
-    </SmithersProvider>
+    </>
   );
 }
 ```

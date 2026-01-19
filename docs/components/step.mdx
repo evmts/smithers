@@ -138,7 +138,7 @@ VCS operations fail gracefully - if JJ is not configured or an operation fails, 
 Steps are tracked in the database:
 
 ```tsx
-const steps = await db.steps.list({ executionId });
+const steps = db.steps.getByExecution(executionId);
 // [
 //   { id: "s1", name: "Check Environment", status: "complete", ... },
 //   { id: "s2", name: "Create Branch", status: "complete", ... },

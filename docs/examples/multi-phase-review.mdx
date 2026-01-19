@@ -42,10 +42,11 @@ async function main() {
     const { db, reactiveDb } = useSmithers();
 
     // State in SQLite, reactive via useQueryValue
-    const phase = useQueryValue<string>(
+    const { data: phase } = useQueryValue<string>(
       reactiveDb,
       "SELECT value FROM state WHERE key = 'phase'"
-    ) ?? "implement";
+    );
+    const currentPhase = phase ?? "implement";
 
     const setPhase = (newPhase: string) => {
       db.state.set("phase", newPhase, `transition_to_${newPhase}`);
@@ -53,7 +54,7 @@ async function main() {
 
     return (
       <>
-        <If condition={phase === "implement"}>
+        <If condition={currentPhase === "implement"}>
           <Phase name="Implementation">
             <Step name="implement">
               <Claude
@@ -72,7 +73,7 @@ async function main() {
           </Phase>
         </If>
 
-        <If condition={phase === "review"}>
+        <If condition={currentPhase === "review"}>
           <Phase name="Code Review">
             <Step name="review">
               <Review
@@ -121,11 +122,21 @@ async function main() {
     );
   }
 
-  const root = createSmithersRoot();
-  await root.mount(App);
+  try {
+    const root = createSmithersRoot();
+    await root.mount(App);
 
-  await db.execution.complete(executionId);
-  await db.close();
+    await db.execution.complete(executionId, {
+      summary: "Review workflow completed",
+      output: { finalPhase: db.state.get("phase") },
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    await db.execution.fail(executionId, error.message);
+    throw error;
+  } finally {
+    await db.close();
+  }
 }
 
 main();
@@ -164,10 +175,11 @@ The workflow state is persisted to the database using SQLite:
 db.state.set("phase", "review", "transition_to_review");
 
 // State is read reactively via useQueryValue
-const phase = useQueryValue<string>(
+const { data: phase } = useQueryValue<string>(
   reactiveDb,
   "SELECT value FROM state WHERE key = 'phase'"
-) ?? "implement";
+);
+const currentPhase = phase ?? "implement";
 ```
 
 This approach ensures:
@@ -206,11 +218,11 @@ smithers db transitions
 Add human approval before review:
 
 ```tsx
-<If condition={phase === "pre-review"}>
+<If condition={currentPhase === "pre-review"}>
   <Human
     message="Review implementation before AI review?"
-    onApprove={() => updatePhase("review")}
-    onReject={() => updatePhase("implement")}
+    onApprove={() => setPhase("review")}
+    onReject={() => setPhase("implement")}
   >
     Implementation complete. Ready for AI review?
   </Human>

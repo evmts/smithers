@@ -122,18 +122,19 @@ Understanding how phases execute is critical for building correct workflows:
 import { useSmithers, If } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function FeatureWorkflow() {
+function FeatureWorkflowBody() {
   const { db } = useSmithers();
   
-  const phase = useQueryValue<string>(
+  const { data: phaseJson } = useQueryValue<string>(
     db.db,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : "research";
   
   const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+    <>
       <If condition={phase === "research"}>
         <Phase name="Research">
           <Step name="find-files">
@@ -178,6 +179,14 @@ function FeatureWorkflow() {
           </Step>
         </Phase>
       </If>
+    </>
+  );
+}
+
+export function FeatureWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+      <FeatureWorkflowBody />
     </SmithersProvider>
   );
 }
@@ -189,7 +198,7 @@ Phases are tracked in the database:
 
 ```tsx
 // Phases are automatically tracked when using SmithersProvider
-const phases = await db.phases.list({ executionId });
+const phases = db.phases.list(executionId);
 // [
 //   { id: "p1", name: "Research", status: "complete", ... },
 //   { id: "p2", name: "Implementation", status: "running", ... },

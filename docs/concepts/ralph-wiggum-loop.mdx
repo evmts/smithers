@@ -69,9 +69,32 @@ You can control the Ralph loop using the `stopped` prop. This is the idiomatic w
 import { SmithersProvider, useSmithers, Claude, If } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function IterativeWorkflow() {
+function IterativeWorkflowBody({ attempts, testsPassing }) {
   const { db } = useSmithers();
 
+  return (
+    <If condition={!testsPassing}>
+      <Claude
+        model="sonnet"
+        onFinished={(result) => {
+          db.db.run(
+            "INSERT OR REPLACE INTO state (key, value) VALUES ('attempts', ?)",
+            [attempts + 1]
+          );
+          if (result.output.includes("All tests pass")) {
+            db.db.run(
+              "INSERT OR REPLACE INTO state (key, value) VALUES ('tests_passing', 1)"
+            );
+          }
+        }}
+      >
+        Fix the failing tests. Current attempt: {attempts}
+      </Claude>
+    </If>
+  );
+}
+
+export function IterativeWorkflow({ db, executionId }) {
   // State in SQLite, not useState (see State Management docs)
   const attempts = useQueryValue<number>(
     db.db,
@@ -86,30 +109,13 @@ function IterativeWorkflow() {
   return (
     <SmithersProvider
       db={db}
-      executionId={db.execution.current()?.id ?? ''}
+      executionId={executionId}
       maxIterations={5}
       stopped={testsPassing}
       onIteration={(i) => console.log(`Iteration ${i}`)}
       onComplete={() => console.log("Workflow complete")}
     >
-      <If condition={!testsPassing}>
-        <Claude
-          model="sonnet"
-          onFinished={(result) => {
-            db.db.run(
-              "INSERT OR REPLACE INTO state (key, value) VALUES ('attempts', ?)",
-              [attempts + 1]
-            );
-            if (result.output.includes("All tests pass")) {
-              db.db.run(
-                "INSERT OR REPLACE INTO state (key, value) VALUES ('tests_passing', 1)"
-              );
-            }
-          }}
-        >
-          Fix the failing tests. Current attempt: {attempts}
-        </Claude>
-      </If>
+      <IterativeWorkflowBody attempts={attempts} testsPassing={testsPassing} />
     </SmithersProvider>
   );
 }
@@ -124,34 +130,12 @@ Ralph also stops implicitly when nothing renders for an iteration. If no compone
 The power of the Ralph Loop comes from React reactivity:
 
 ```tsx
-import { SmithersProvider, useSmithers, Claude } from "smithers-orchestrator";
+import { SmithersProvider, Claude, If } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function PhaseWorkflow() {
-  const { db } = useSmithers();
-
-  // State in SQLite, not useState
-  const phase = useQueryValue<string>(
-    db.db,
-    "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
-
-  const setPhase = (newPhase: string) => {
-    db.db.run(
-      "INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)",
-      [newPhase]
-    );
-  };
-
+function PhaseWorkflowBody({ phase, setPhase }) {
   return (
-    <SmithersProvider
-      db={db}
-      executionId={db.execution.current()?.id ?? ''}
-      maxIterations={10}
-      stopped={phase === "done"}
-    >
-      {/* This block re-renders when phase changes */}
-
+    <>
       <If condition={phase === "research"}>
         <Claude onFinished={() => setPhase("implement")}>
           Research the problem space.
@@ -175,6 +159,33 @@ function PhaseWorkflow() {
           Run and verify tests.
         </Claude>
       </If>
+    </>
+  );
+}
+
+export function PhaseWorkflow({ db, executionId }) {
+  // State in SQLite, not useState
+  const phase = useQueryValue<string>(
+    db.db,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "research";
+
+  const setPhase = (newPhase: string) => {
+    db.db.run(
+      "INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)",
+      [newPhase]
+    );
+  };
+
+  return (
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      maxIterations={10}
+      stopped={phase === "done"}
+    >
+      {/* This block re-renders when phase changes */}
+      <PhaseWorkflowBody phase={phase} setPhase={setPhase} />
     </SmithersProvider>
   );
 }

@@ -27,7 +27,7 @@ Implement retry logic with signals:
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function RetryWorkflow() {
+function RetryWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
 
   const attempts = useQueryValue<number>(
@@ -35,13 +35,14 @@ function RetryWorkflow() {
     "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
   ) ?? 0;
 
-  const lastError = useQueryValue<string>(
+  const { data: lastErrorJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'lastError'"
   );
+  const lastError = lastErrorJson ? JSON.parse(lastErrorJson) : null;
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+    <>
       <If condition={attempts < 3}>
         <Claude
           onFinished={() => db.state.set("lastError", null)}
@@ -60,6 +61,14 @@ function RetryWorkflow() {
       <If condition={attempts >= 3}>
         <Stop reason={`Failed after 3 attempts: ${lastError}`} />
       </If>
+    </>
+  );
+}
+
+export function RetryWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+      <RetryWorkflowBody />
     </SmithersProvider>
   );
 }
@@ -151,20 +160,21 @@ Fall back to simpler approaches:
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function ResilientWorkflow() {
+function ResilientWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
 
-  const approach = useQueryValue<string>(
+  const { data: approachJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'approach'"
-  ) ?? "full";
+  );
+  const approach = approachJson ? JSON.parse(approachJson) : "full";
 
   const setApproach = (newApproach: string) => {
     db.state.set("approach", newApproach);
   };
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+    <>
       <If condition={approach === "full"}>
         <Claude
           model="opus"
@@ -197,6 +207,14 @@ function ResilientWorkflow() {
           Please review manually.
         </Human>
       </If>
+    </>
+  );
+}
+
+export function ResilientWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+      <ResilientWorkflowBody />
     </SmithersProvider>
   );
 }
@@ -247,7 +265,7 @@ Handle timeouts explicitly:
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function RobustWorkflow() {
+function RobustWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
 
   const phase = useQueryValue<string>(
@@ -267,26 +285,7 @@ function RobustWorkflow() {
   const errors: string[] = errorsJson ? JSON.parse(errorsJson) : [];
 
   return (
-    <SmithersProvider
-      db={db}
-      executionId={executionId}
-      globalTimeout={3600000}
-      maxIterations={10}
-      stopConditions={[
-        { type: "total_tokens", value: 100000 },
-      ]}
-      onError={async (error) => {
-        await db.vcs.addReport({
-          type: "error",
-          severity: "critical",
-          title: "Workflow Error",
-          content: error.message,
-        });
-      }}
-      onMaxIterations={() => {
-        console.error("Max iterations reached");
-      }}
-    >
+    <>
       <If condition={phase === "start" && attempts < 3}>
         <Claude
           onFinished={() => db.state.set("phase", "done")}
@@ -320,6 +319,33 @@ function RobustWorkflow() {
       <If condition={phase === "cancelled"}>
         <Stop reason="Cancelled after failures" />
       </If>
+    </>
+  );
+}
+
+export function RobustWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      globalTimeout={3600000}
+      maxIterations={10}
+      stopConditions={[
+        { type: "total_tokens", value: 100000 },
+      ]}
+      onError={async (error) => {
+        await db.vcs.addReport({
+          type: "error",
+          severity: "critical",
+          title: "Workflow Error",
+          content: error.message,
+        });
+      }}
+      onMaxIterations={() => {
+        console.error("Max iterations reached");
+      }}
+    >
+      <RobustWorkflowBody />
     </SmithersProvider>
   );
 }

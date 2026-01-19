@@ -7,17 +7,24 @@ description: SQLite database API for workflow persistence
 
 The Smithers database provides persistent storage using SQLite (via reactive-sqlite).
 
+## Contract
+
+- **Sync:** All database APIs are synchronous (no Promises).
+- **Casing:** Method params are camelCase; return values are snake_case (DB column names).
+- **Time:** Timestamps are ISO strings unless a module explicitly maps them to `Date`.
+- **Conventions:** See [API Conventions](/api-reference/conventions) for details.
+
 ## Creating a Database
 
 ```tsx
 import { createSmithersDB } from "smithers-orchestrator";
 
-const db = await createSmithersDB({
+const db = createSmithersDB({
   path: ".smithers/my-workflow"
 });
 
 // Always close when done
-await db.close();
+db.close();
 ```
 
 ## Database Structure
@@ -32,15 +39,20 @@ await db.close();
 | `db.agents` | Agent invocation tracking |
 | `db.tools` | Tool call tracking |
 | `db.artifacts` | Artifact tracking |
+| `db.human` | Human interaction tracking |
 | `db.vcs` | VCS operations (commits, reviews) |
+| `db.renderFrames` | Render frame snapshots |
+| `db.buildState` | Build status coordination |
+| `db.vcsQueue` | Serialized VCS operations |
+| `db.query` | Raw query access |
 
 ## Raw Queries
 
 For advanced use cases:
 
 ```tsx
-const results = await db.query<{ count: number }>(
-  "SELECT COUNT(*) as count FROM agents WHERE model = $1",
+const results = db.query<{ count: number }>(
+  "SELECT COUNT(*) as count FROM agents WHERE model = ?",
   ["sonnet"]
 );
 ```
@@ -50,7 +62,7 @@ const results = await db.query<{ count: number }>(
 Always close the database to ensure writes are flushed:
 
 ```tsx
-await db.close();
+db.close();
 ```
 
 ## Related

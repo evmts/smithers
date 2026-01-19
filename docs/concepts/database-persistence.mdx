@@ -65,7 +65,7 @@ await db.execution.complete(executionId, {
 });
 
 // Or mark as failed
-await db.execution.fail(executionId, new Error("Tests failed"));
+await db.execution.fail(executionId, "Tests failed");
 
 // Find incomplete executions (for resume)
 const incomplete = await db.execution.findIncomplete();
@@ -80,20 +80,20 @@ The state API provides key-value storage with history:
 
 ```tsx
 // Set a value
-await db.state.set("phase", "review");
+db.state.set("phase", "review");
 
 // Set with trigger (for tracking what caused the change)
-await db.state.set("phase", "review", "tests_passed");
+db.state.set("phase", "review", "tests_passed");
 
 // Get a value
-const phase = await db.state.get("phase");
+const phase = db.state.get("phase");
 
 // Get all state
-const all = await db.state.getAll();
+const all = db.state.getAll();
 // { phase: "review", lastAgent: "abc123", ... }
 
 // Set multiple values atomically
-await db.state.setMany({
+db.state.setMany({
   phase: "complete",
   completedAt: Date.now(),
 });
@@ -105,7 +105,7 @@ Every state change is recorded:
 
 ```tsx
 // Get history for a key
-const history = await db.state.history("phase", 10);
+const history = db.state.history("phase", 10);
 // [
 //   { id: "t1", key: "phase", value: "start", trigger: "init", timestamp: ... },
 //   { id: "t2", key: "phase", value: "review", trigger: "tests_passed", ... },
@@ -311,7 +311,7 @@ smithers db current
   <Accordion title="Use triggers for debugging">
     Set triggers when updating state to track causality:
     ```tsx
-    await db.state.set("phase", "review", "tests_passed");
+    db.state.set("phase", "review", "tests_passed");
     // Later, history shows why the change happened
     ```
   </Accordion>
@@ -322,7 +322,7 @@ smithers db current
     const incomplete = await db.execution.findIncomplete();
     if (incomplete) {
       // Resume the workflow
-      const state = await db.state.getAll();
+      const state = db.state.getAll();
       // ... continue from saved state
     }
     ```

@@ -134,7 +134,15 @@ function PersistentTasks() {
 ### Task-Driven Workflow
 
 ```tsx
-function TaskDrivenWorkflow() {
+const tasks = [
+  "Analyze the current implementation",
+  "Identify areas for improvement",
+  "Refactor the component",
+  "Update tests",
+  "Document changes",
+];
+
+function TaskDrivenWorkflowBody() {
   const { db } = useSmithers();
   
   const currentTaskIndex = useQueryValue<number>(
@@ -142,16 +150,8 @@ function TaskDrivenWorkflow() {
     "SELECT value FROM state WHERE key = 'currentTaskIndex'"
   ) ?? 0;
 
-  const tasks = [
-    "Analyze the current implementation",
-    "Identify areas for improvement",
-    "Refactor the component",
-    "Update tests",
-    "Document changes",
-  ];
-
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={tasks.length}>
+    <>
       <Phase name="tasks">
         <Step name="tasks">
           {tasks.map((task, i) => (
@@ -169,6 +169,14 @@ function TaskDrivenWorkflow() {
           Complete this task: {tasks[currentTaskIndex]}
         </Claude>
       </If>
+    </>
+  );
+}
+
+export function TaskDrivenWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={tasks.length}>
+      <TaskDrivenWorkflowBody />
     </SmithersProvider>
   );
 }

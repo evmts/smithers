@@ -7,12 +7,17 @@ description: Task tracking for Ralph iteration management
 
 The `db.tasks` module provides task tracking for Ralph iteration management. It tracks component-level tasks within the execution lifecycle.
 
+## Contract
+
+- **Sync:** All methods are synchronous except `withTask`, which returns a Promise.
+- **Scope:** Methods operate on the current execution.
+
 ## Overview
 
 ```tsx
 import { createSmithersDB } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
 // Start a task
 const taskId = db.tasks.start("claude", "code-analyzer");
@@ -68,6 +73,8 @@ function fail(id: string): void
   The task ID to mark as failed.
 </ParamField>
 
+`fail()` marks task status only; it does not stop orchestration.
+
 ### getRunningCount
 
 Gets the count of running tasks for a specific iteration.
@@ -102,6 +109,18 @@ Gets the current Ralph iteration from the state table.
 
 ```tsx
 function getCurrentIteration(): number
+```
+
+### withTask
+
+Executes a function within a task lifecycle (start → complete/fail).
+
+```tsx
+function withTask<T>(
+  componentType: string,
+  componentName: string | undefined,
+  fn: () => T | Promise<T>
+): Promise<T>
 ```
 
 ## Task Type

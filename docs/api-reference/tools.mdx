@@ -7,12 +7,18 @@ description: Tool call tracking for agent observability
 
 The `db.tools` module tracks tool calls made by agents. This provides observability into what tools agents are using and their results.
 
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Return shape:** snake_case fields; `input` is parsed JSON.
+- **Time:** Timestamps are ISO strings (not `Date`).
+
 ## Overview
 
 ```tsx
 import { createSmithersDB } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
 // Start tracking a tool call
 const toolId = db.tools.start(agentId, "Edit", { file: "src/app.ts" });
@@ -95,7 +101,6 @@ Lists all tool calls for an agent.
 
 ```tsx
 const toolCalls = db.tools.list(agentId: string): ToolCall[]
-// For filtering, use options: db.tools.list(agentId, { toolName, status })
 ```
 
 ### getOutput
@@ -116,11 +121,13 @@ interface ToolCall {
   tool_name: string;
   input: Record<string, any>;
   output_inline: string | null;
+  output_path: string | null;
+  output_git_hash: string | null;
   output_summary: string | null;
   output_size_bytes: number | null;
   error: string | null;
-  status: 'running' | 'completed' | 'failed';
-  started_at: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  started_at: string | null;
   completed_at: string | null;
   duration_ms: number | null;
   created_at: string;
@@ -174,6 +181,9 @@ Tool outputs are stored based on size:
 - **< 1KB**: Stored inline in `output_inline`
 - **>= 1KB**: Summary stored in `output_summary`, full output not stored inline
 
+If you want to persist full output for large payloads, store it yourself and set
+`output_path` or `output_git_hash` via a custom update.
+
 ```tsx
 // Get output (handles both cases)
 const output = db.tools.getOutput(toolId);
@@ -195,8 +205,8 @@ const execution = db.execution.get(executionId);
 console.log(`Total tool calls: ${execution.total_tool_calls}`);
 
 // Agent stats
-const agent = db.agents.get(agentId);
-console.log(`Agent tool calls: ${agent.tool_calls_count}`);
+const agent = db.agents.list(executionId).find((a) => a.id === agentId);
+console.log(`Agent tool calls: ${agent?.tool_calls_count ?? 0}`);
 ```
 
 ## Related

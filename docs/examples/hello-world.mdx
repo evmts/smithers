@@ -44,11 +44,20 @@ async function main() {
     );
   }
 
-  const root = createSmithersRoot();
-  await root.mount(HelloWorld);
+  try {
+    const root = createSmithersRoot();
+    await root.mount(HelloWorld);
 
-  await db.execution.complete(executionId);
-  await db.close();
+    await db.execution.complete(executionId, {
+      summary: "Hello World workflow completed",
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    await db.execution.fail(executionId, error.message);
+    throw error;
+  } finally {
+    await db.close();
+  }
 }
 
 main();
@@ -60,7 +69,7 @@ main();
 bun hello-world.tsx
 ```
 
-## Output
+## Output (Example, Will Vary)
 
 ```
 Claude says: 🎭 *adjusts monocle* Greetings, distinguished user!

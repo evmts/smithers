@@ -7,6 +7,12 @@ description: Long-term knowledge storage across workflows
 
 The memories API stores long-term knowledge that persists across workflow sessions.
 
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Return shape:** snake_case fields; timestamps are ISO strings.
+- **Uniqueness:** `key` is unique per `(category, scope, key)`.
+
 ## Categories
 
 | Category | Purpose |
@@ -32,7 +38,7 @@ The memories API stores long-term knowledge that persists across workflow sessio
 Store a discovered fact.
 
 ```tsx
-await db.memories.addFact(
+db.memories.addFact(
   "api-endpoint",                    // key
   "The API is at /api/v2/users",     // content
   "discovered in auth.ts"            // source
@@ -44,7 +50,7 @@ await db.memories.addFact(
 Store a lesson learned.
 
 ```tsx
-await db.memories.addLearning(
+db.memories.addLearning(
   "test-pattern",
   "Use vitest for unit tests in this project",
   "package.json analysis"
@@ -56,7 +62,7 @@ await db.memories.addLearning(
 Store a user preference.
 
 ```tsx
-await db.memories.addPreference(
+db.memories.addPreference(
   "commit-style",
   "Use conventional commits with scope",
   "project"  // scope
@@ -68,7 +74,7 @@ await db.memories.addPreference(
 Generic memory addition.
 
 ```tsx
-await db.memories.add({
+db.memories.add({
   category: "skill",
   key: "deploy-process",
   content: "1. Run tests\n2. Build\n3. Push to main\n4. Deploy triggers automatically",
@@ -82,7 +88,7 @@ await db.memories.add({
 Retrieve a specific memory.
 
 ```tsx
-const memory = await db.memories.get("fact", "api-endpoint");
+const memory = db.memories.get("fact", "api-endpoint");
 // { id, category, key, content, source, scope, ... }
 ```
 
@@ -92,13 +98,13 @@ List memories by category and/or scope.
 
 ```tsx
 // All facts
-const facts = await db.memories.list({ category: "fact" });
+const facts = db.memories.list("fact");
 
 // Project-scoped preferences
-const prefs = await db.memories.list({ category: "preference", scope: "project" });
+const prefs = db.memories.list("preference", "project");
 
 // All memories, limited
-const all = await db.memories.list({ limit: 100 });
+const all = db.memories.list(undefined, undefined, 100);
 ```
 
 ### search
@@ -106,7 +112,7 @@ const all = await db.memories.list({ limit: 100 });
 Search memories by content.
 
 ```tsx
-const relevant = await db.memories.search("API endpoint", "fact", 5);
+const relevant = db.memories.search("API endpoint", "fact", 5);
 // Returns memories matching the search query
 ```
 
@@ -115,7 +121,7 @@ const relevant = await db.memories.search("API endpoint", "fact", 5);
 Update an existing memory.
 
 ```tsx
-await db.memories.update(memoryId, {
+db.memories.update(memoryId, {
   content: "Updated content",
 });
 ```
@@ -125,7 +131,7 @@ await db.memories.update(memoryId, {
 Remove a memory.
 
 ```tsx
-await db.memories.delete(memoryId);
+db.memories.delete(memoryId);
 ```
 
 ### stats
@@ -133,7 +139,7 @@ await db.memories.delete(memoryId);
 Get memory statistics.
 
 ```tsx
-const stats = await db.memories.stats();
+const stats = db.memories.stats();
 // {
 //   total: 42,
 //   byCategory: { fact: 20, learning: 15, preference: 7 },
@@ -147,10 +153,10 @@ const stats = await db.memories.stats();
 
 ```tsx
 <Claude
-  onFinished={async (result) => {
+  onFinished={(result) => {
     // Extract and store discoveries
     if (result.output.includes("found endpoint")) {
-      await db.memories.addFact(
+      db.memories.addFact(
         "discovered-endpoint",
         result.output,
         "codebase exploration"
@@ -166,8 +172,8 @@ const stats = await db.memories.stats();
 
 ```tsx
 <Claude
-  onError={async (error) => {
-    await db.memories.addLearning(
+  onError={(error) => {
+    db.memories.addLearning(
       `error-${Date.now()}`,
       `Encountered error: ${error.message}. Solution: ...`,
       "error handler"
@@ -181,10 +187,10 @@ const stats = await db.memories.stats();
 ### Retrieve Context
 
 ```tsx
-async function InformedWorkflow() {
+function InformedWorkflow() {
   // Load relevant memories
-  const facts = await db.memories.list("fact", "project");
-  const prefs = await db.memories.list("preference", "project");
+  const facts = db.memories.list("fact", "project");
+  const prefs = db.memories.list("preference", "project");
 
   const context = [
     "Known facts:",
@@ -209,18 +215,24 @@ interface Memory {
   category: "fact" | "learning" | "preference" | "context" | "skill";
   key: string;
   content: string;
+  confidence: number;
   source?: string;
+  source_execution_id?: string;
   scope: "global" | "project" | "session";
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: string;
+  updated_at: string;
+  accessed_at: string;
+  expires_at?: string;
 }
 
 interface MemoryInput {
   category: Memory["category"];
   key: string;
   content: string;
+  confidence?: number;
   source?: string;
   scope?: Memory["scope"];
+  expires_at?: string;
 }
 ```
 

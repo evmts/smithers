@@ -107,11 +107,20 @@ function Workflow() {
 
 // 4. Mount and run orchestrator
 const root = createSmithersRoot();
-await root.mount(Workflow);
+try {
+  await root.mount(Workflow);
 
-// 5. Complete and close
-await db.execution.complete(executionId);
-await db.close();
+  // 5. Complete and close
+  await db.execution.complete(executionId, {
+    summary: "My Workflow completed",
+  });
+} catch (err) {
+  const error = err instanceof Error ? err : new Error(String(err));
+  await db.execution.fail(executionId, error.message);
+  throw error;
+} finally {
+  await db.close();
+}
 ```
 
 ## Run
@@ -172,8 +181,15 @@ bun my-workflow.tsx
 
   <Step title="Close Database">
     ```tsx
-    await db.execution.complete(executionId);
-    await db.close();
+    try {
+      await db.execution.complete(executionId);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      await db.execution.fail(executionId, error.message);
+      throw error;
+    } finally {
+      await db.close();
+    }
     ```
     Mark complete and flush writes.
   </Step>
@@ -207,8 +223,18 @@ function Workflow() {
 }
 
 const root = createSmithersRoot();
-await root.mount(Workflow);
-await db.close();
+try {
+  await root.mount(Workflow);
+  await db.execution.complete(executionId, {
+    summary: "Simple workflow completed",
+  });
+} catch (err) {
+  const error = err instanceof Error ? err : new Error(String(err));
+  await db.execution.fail(executionId, error.message);
+  throw error;
+} finally {
+  await db.close();
+}
 ```
 
 ## Let Claude Write It

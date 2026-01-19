@@ -112,18 +112,19 @@ interface ReviewIssue {
 ## Review Workflow Example
 
 ```tsx
-function ReviewWorkflow() {
+function ReviewWorkflowBody() {
   const { db } = useSmithers();
   
-  const phase = useQueryValue<string>(
+  const { data: phaseJson } = useQueryValue<string>(
     db.db,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "implement";
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : "implement";
   
   const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+    <>
       <If condition={phase === "implement"}>
         <Claude
           allowedTools={["Edit", "Write"]}
@@ -152,6 +153,14 @@ function ReviewWorkflow() {
           }}
         />
       </If>
+    </>
+  );
+}
+
+export function ReviewWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+      <ReviewWorkflowBody />
     </SmithersProvider>
   );
 }

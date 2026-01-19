@@ -7,17 +7,23 @@ description: Track generated files and outputs
 
 The `db.artifacts` module tracks files and outputs generated during workflow execution.
 
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Execution scope:** `add()` uses the current execution (set by `db.execution.start()`).
+- **Return shape:** snake_case fields with `Date` timestamps; `metadata` defaults to `{}`.
+
 ## Overview
 
 ```tsx
 import { createSmithersDB } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
 // Add an artifact
 const artifactId = db.artifacts.add(
   "analysis-report",
-  "report",
+  "document",
   "./reports/analysis.md",
   agentId,
   { format: "markdown", wordCount: 1500 }
@@ -33,7 +39,7 @@ Adds a new artifact.
 ```tsx
 const artifactId = db.artifacts.add(
   name: string,
-  type: 'code' | 'report' | 'log' | 'data' | 'other',
+  type: 'file' | 'code' | 'document' | 'image' | 'data',
   filePath: string,
   agentId?: string,
   metadata?: Record<string, any>
@@ -44,12 +50,12 @@ const artifactId = db.artifacts.add(
   Human-readable name for the artifact.
 </ParamField>
 
-<ParamField path="type" type="'code' | 'report' | 'log' | 'data' | 'other'" required>
+<ParamField path="type" type="'file' | 'code' | 'document' | 'image' | 'data'" required>
   The type of artifact.
 </ParamField>
 
 <ParamField path="filePath" type="string" required>
-  Path to the artifact file.
+  Path to the artifact file (stored as provided).
 </ParamField>
 
 <ParamField path="agentId" type="string">
@@ -57,7 +63,7 @@ const artifactId = db.artifacts.add(
 </ParamField>
 
 <ParamField path="metadata" type="Record<string, any>">
-  Optional metadata about the artifact.
+  Optional metadata about the artifact. Defaults to `{}`.
 </ParamField>
 
 **Returns:** The artifact ID.
@@ -76,12 +82,17 @@ const artifacts = db.artifacts.list(executionId: string): Artifact[]
 interface Artifact {
   id: string;
   execution_id: string;
-  agent_id: string | null;
+  agent_id?: string;
   name: string;
-  type: 'code' | 'report' | 'log' | 'data' | 'other';
+  type: 'file' | 'code' | 'document' | 'image' | 'data';
   file_path: string;
   metadata: Record<string, any>;
-  created_at: string;
+  git_hash?: string;
+  git_commit?: string;
+  summary?: string;
+  line_count?: number;
+  byte_size?: number;
+  created_at: Date;
 }
 ```
 
@@ -89,11 +100,17 @@ interface Artifact {
 
 | Type | Description | Examples |
 |------|-------------|----------|
+| `file` | Generic file artifact | Any file path |
 | `code` | Generated source code | `.ts`, `.tsx`, `.py` files |
-| `report` | Analysis or review reports | `.md`, `.html` reports |
-| `log` | Execution logs | Agent output, debug logs |
+| `document` | Reports and docs | `.md`, `.html`, `.txt` |
+| `image` | Images | `.png`, `.jpg`, `.svg` |
 | `data` | Data files | `.json`, `.csv` exports |
-| `other` | Other artifacts | Screenshots, diagrams |
+
+## Path Conventions
+
+- Paths are stored exactly as provided (no normalization).
+- Smithers does **not** validate file existence on `add()`.
+- Recommended: store repo-relative paths for portability.
 
 ## Examples
 
@@ -132,7 +149,7 @@ interface Artifact {
 
     db.artifacts.add(
       "code-review",
-      "report",
+      "document",
       reportPath,
       undefined,
       {
@@ -151,7 +168,7 @@ const logPath = `./logs/agent-${agentId}.log`;
 
 db.artifacts.add(
   "agent-output",
-  "log",
+  "file",
   logPath,
   agentId,
   {

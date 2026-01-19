@@ -377,18 +377,18 @@ Control what Claude can do:
 Use state to control when Claude runs:
 
 ```tsx
-function ConditionalClaude() {
+function ConditionalClaudeBody() {
   const { db, reactiveDb } = useSmithers();
-  
-  const phase = useQueryValue<string>(
+
+  const { data: phaseJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
-  
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : "research";
   const setPhase = (p: string) => db.state.set('phase', p);
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+    <>
       <If condition={phase === "research"}>
         <Claude
           allowedTools={["Read", "Glob"]}
@@ -406,6 +406,14 @@ function ConditionalClaude() {
           Implement the solution.
         </Claude>
       </If>
+    </>
+  );
+}
+
+function ConditionalClaude({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+      <ConditionalClaudeBody />
     </SmithersProvider>
   );
 }
@@ -429,21 +437,23 @@ Compose prompts with child components:
 ## Error Handling
 
 ```tsx
-function ResilientClaude() {
+function ResilientClaudeBody() {
   const { db, reactiveDb } = useSmithers();
-  
-  const attempts = useQueryValue<number>(
+
+  const { data: attemptsJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'attempts'"
-  ) ?? 0;
-  
-  const error = useQueryValue<string | null>(
+  );
+  const attempts = attemptsJson ? JSON.parse(attemptsJson) : 0;
+
+  const { data: errorJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'error'"
-  ) ?? null;
+  );
+  const error = errorJson ? JSON.parse(errorJson) : null;
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={3}>
+    <>
       <If condition={error !== null && attempts < 3}>
         <Claude
           onFinished={() => db.state.set('error', null)}
@@ -465,6 +475,14 @@ function ResilientClaude() {
           Complete the task.
         </Claude>
       </If>
+    </>
+  );
+}
+
+function ResilientClaude({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={3}>
+      <ResilientClaudeBody />
     </SmithersProvider>
   );
 }

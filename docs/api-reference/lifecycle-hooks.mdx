@@ -29,7 +29,7 @@ function MyComponent() {
 More robust than `useEffect(() => fn(), [])` because it:
 - Clearly communicates mount-only intent
 - Is easier to grep for mount behavior
-- Handles strict mode double-invocation correctly
+- Uses an idempotency guard to avoid strict mode replay double-runs
 
 ### API
 
@@ -90,18 +90,26 @@ Returns a function that tells you if the component is currently mounted. Essenti
 
 ```tsx
 import { useMountedState } from "smithers-orchestrator";
+import { useSmithers } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function AsyncComponent() {
+  const { db, reactiveDb } = useSmithers();
   const isMounted = useMountedState();
-  const [data, setData] = useState<Data | null>(null);
 
   useMount(() => {
     fetchData().then(result => {
       if (isMounted()) {
-        setData(result);
+        db.state.set("asyncData", result, "async_fetch");
       }
     });
   });
+
+  const { data: dataJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'asyncData'"
+  );
+  const data = dataJson ? JSON.parse(dataJson) : null;
 
   return <div>{data ? data.name : "Loading..."}</div>;
 }

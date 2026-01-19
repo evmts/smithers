@@ -72,20 +72,21 @@ Review changes before committing:
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function ReviewAndCommit() {
+function ReviewAndCommitBody() {
   const { db, reactiveDb } = useSmithers();
 
-  const phase = useQueryValue<string>(
+  const { data: phaseJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "implement";
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : "implement";
 
   const setPhase = (newPhase: string) => {
     db.state.set("phase", newPhase);
   };
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+    <>
       <If condition={phase === "implement"}>
         <Claude
           allowedTools={["Edit", "Write"]}
@@ -119,6 +120,14 @@ function ReviewAndCommit() {
           onFinished={() => setPhase("done")}
         />
       </If>
+    </>
+  );
+}
+
+export function ReviewAndCommit({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+      <ReviewAndCommitBody />
     </SmithersProvider>
   );
 }
@@ -187,20 +196,21 @@ const blocking = await db.vcs.getBlockingReviews();
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function FeatureWorkflow() {
+function FeatureWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
 
-  const phase = useQueryValue<string>(
+  const { data: phaseJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "implement";
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : "implement";
 
   const setPhase = (newPhase: string) => {
     db.state.set("phase", newPhase);
   };
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10} snapshotBeforeStart>
+    <>
       <If condition={phase === "implement"}>
         <Phase name="Implementation">
           <Step name="implement">
@@ -263,6 +273,14 @@ function FeatureWorkflow() {
           </Step>
         </Phase>
       </If>
+    </>
+  );
+}
+
+function FeatureWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10} snapshotBeforeStart>
+      <FeatureWorkflowBody />
     </SmithersProvider>
   );
 }

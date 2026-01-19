@@ -18,11 +18,11 @@ function DeployWorkflow() {
   const { ask, status, requestId } = useHuman();
 
   const handleDeploy = async () => {
-    const approved = await ask<boolean>("Deploy to production?", {
+    const choice = await ask<string>("Deploy to production?", {
       options: ["Yes", "No"],
     });
 
-    if (approved) {
+    if (choice === "Yes") {
       // Proceed with deployment
     }
   };
@@ -48,6 +48,8 @@ interface AskOptions {
   options?: string[];
 }
 ```
+
+`ask()` resolves to the stored response (typically the selected option string).
 
 ### How it Works
 
@@ -223,23 +225,28 @@ The `useSmithers` hook provides access to:
 Create custom hooks for your workflow patterns:
 
 ```tsx
-import { useSmithers, useRalphCount } from "smithers-orchestrator";
+import { useSmithers } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function useWorkflowProgress() {
-  const { db, executionId } = useSmithers();
-  const iteration = useRalphCount();
+  const { reactiveDb, executionId } = useSmithers();
 
-  const [progress, setProgress] = useState(0);
+  const { data: total } = useQueryValue<number>(
+    reactiveDb,
+    "SELECT COUNT(*) as count FROM phases WHERE execution_id = ?",
+    [executionId ?? ""],
+    { skip: !executionId }
+  );
 
-  useEffect(() => {
-    if (!executionId) return;
+  const { data: completed } = useQueryValue<number>(
+    reactiveDb,
+    "SELECT COUNT(*) as count FROM phases WHERE execution_id = ? AND status = 'completed'",
+    [executionId ?? ""],
+    { skip: !executionId }
+  );
 
-    const phases = db.phases.list(executionId);
-    const completed = phases.filter((p) => p.status === "completed").length;
-    setProgress(phases.length > 0 ? completed / phases.length : 0);
-  }, [executionId, iteration]);
-
-  return { progress, iteration };
+  const progress = total ? (completed ?? 0) / total : 0;
+  return { progress, total: total ?? 0, completed: completed ?? 0 };
 }
 ```
 

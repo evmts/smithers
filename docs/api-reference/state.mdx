@@ -1,11 +1,17 @@
 ---
 title: State API
-description: Key-value state storage with history and time-travel
+description: Key-value state storage with history tracking
 ---
 
 # State API
 
-The state API provides key-value storage with full history tracking and time-travel capabilities.
+The state API provides key-value storage with full history tracking.
+
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Storage:** Values are JSON-serialized on write and parsed on read (`get`, `getAll`).
+- **History:** `old_value` and `new_value` are stored as JSON strings; timestamps are ISO strings.
 
 ## Methods
 
@@ -106,64 +112,41 @@ db.state.delete("tempData");
 db.state.delete("cache", "cleanup");
 ```
 
-### replayTo
-
-Time-travel: restore state to a previous transition.
-
-```tsx
-// Get history
-const history = db.state.history("phase");
-
-// Replay to an earlier state
-await db.state.replayTo(history[0].id);
-// State is now what it was at that transition
-```
-
-### snapshot
-
-Take a complete state snapshot.
-
-```tsx
-const snapshot = await db.state.snapshot();
-// { phase: "review", attempts: 3, data: {...} }
-```
-
-### restore
-
-Restore from a snapshot.
-
-```tsx
-const snapshot = await db.state.snapshot();
-
-// ... do some work ...
-
-// Restore to the snapshot
-await db.state.restore(snapshot, "rollback");
-```
-
 ## Usage Patterns
 
 ### Initialize from Database
 
 ```tsx
-async function Workflow() {
-  // Load persisted state
-  const savedPhase = await db.state.get("phase");
-  const [phase, setPhase] = useState(savedPhase ?? "start");
+import { useSmithers } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-  // Sync updates to database
-  const updatePhase = async (newPhase: string) => {
-    setPhase(newPhase);
-    await db.state.set("phase", newPhase);
+function WorkflowBody() {
+  const { db, reactiveDb } = useSmithers();
+  const { data: phaseJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'phase'"
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : "start";
+
+  const updatePhase = (newPhase: string) => {
+    db.state.set("phase", newPhase, "phase_change");
   };
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+    <>
       <If condition={phase === "start"}>
         <Claude onFinished={() => updatePhase("done")}>
           Complete the task.
         </Claude>
       </If>
+    </>
+  );
+}
+
+export function Workflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+      <WorkflowBody />
     </SmithersProvider>
   );
 }
@@ -173,11 +156,11 @@ async function Workflow() {
 
 ```tsx
 <Claude
-  onFinished={async (result) => {
+  onFinished={(result) => {
     if (result.output.includes("PASS")) {
-      await db.state.set("phase", "complete", "tests_passed");
+      db.state.set("phase", "complete", "tests_passed");
     } else {
-      await db.state.set("phase", "retry", "tests_failed");
+      db.state.set("phase", "retry", "tests_failed");
     }
   }}
 >
@@ -185,19 +168,20 @@ async function Workflow() {
 </Claude>
 ```
 
-### Checkpoint and Rollback
+### Manual Checkpoint and Rollback
 
 ```tsx
 // Save checkpoint
-const checkpoint = await db.state.snapshot();
+const checkpoint = db.state.getAll();
 
 // Try risky operation
 try {
-  await riskyOperation();
-  await db.state.set("status", "success");
+  riskyOperation();
+  db.state.set("status", "success");
 } catch (error) {
-  // Rollback on failure
-  await db.state.restore(checkpoint, "error_rollback");
+  // Roll back by resetting and restoring keys
+  db.state.reset();
+  db.state.setMany(checkpoint, "error_rollback");
 }
 ```
 
@@ -219,11 +203,11 @@ interface Transition {
   id: string;
   execution_id?: string;
   key: string;
-  old_value: any;
-  new_value: any;
+  old_value: string | null;
+  new_value: string;
   trigger?: string;
   trigger_agent_id?: string;
-  created_at: Date;
+  created_at: string;
 }
 ```
 

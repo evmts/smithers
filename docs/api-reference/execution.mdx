@@ -7,6 +7,12 @@ description: Track workflow executions
 
 The execution API tracks workflow runs, enabling resume and observability.
 
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Return shape:** snake_case fields with `Date` objects for timestamps.
+- **Status:** `pending | running | completed | failed | cancelled`.
+
 ## Methods
 
 ### start
@@ -14,7 +20,7 @@ The execution API tracks workflow runs, enabling resume and observability.
 Start a new execution.
 
 ```tsx
-const executionId = await db.execution.start(
+const executionId = db.execution.start(
   "Feature Implementation",  // name
   "scripts/feature.tsx",     // file path
   { timeout: 3600000 }       // optional config
@@ -26,18 +32,20 @@ const executionId = await db.execution.start(
 Mark execution as complete.
 
 ```tsx
-await db.execution.complete(executionId, {
-  summary: "Feature implemented successfully",
-  output: result,
-});
+db.execution.complete(executionId);
+
+// Optional result payload (stored as JSON)
+db.execution.complete(executionId, { summary: "Feature implemented successfully" });
 ```
+
+Result payload is optional. If omitted, `executions.result` is stored as `null`.
 
 ### fail
 
 Mark execution as failed.
 
 ```tsx
-await db.execution.fail(executionId, new Error("Tests failed"));
+db.execution.fail(executionId, "Tests failed");
 ```
 
 ### cancel
@@ -45,7 +53,7 @@ await db.execution.fail(executionId, new Error("Tests failed"));
 Cancel an execution.
 
 ```tsx
-await db.execution.cancel(executionId);
+db.execution.cancel(executionId);
 ```
 
 ### current
@@ -53,7 +61,7 @@ await db.execution.cancel(executionId);
 Get the current execution.
 
 ```tsx
-const current = await db.execution.current();
+const current = db.execution.current();
 if (current) {
   console.log(`Running: ${current.name}`);
 }
@@ -64,7 +72,7 @@ if (current) {
 Get a specific execution.
 
 ```tsx
-const execution = await db.execution.get(executionId);
+const execution = db.execution.get(executionId);
 ```
 
 ### list
@@ -72,7 +80,7 @@ const execution = await db.execution.get(executionId);
 List recent executions.
 
 ```tsx
-const recent = await db.execution.list(10);
+const recent = db.execution.list(10);
 ```
 
 ### findIncomplete
@@ -80,10 +88,24 @@ const recent = await db.execution.list(10);
 Find an incomplete execution (for resume).
 
 ```tsx
-const incomplete = await db.execution.findIncomplete();
+const incomplete = db.execution.findIncomplete();
 if (incomplete) {
   console.log("Resuming:", incomplete.id);
 }
+```
+
+## Completion and `<End>`
+
+- `db.execution.complete()` updates `status`, `result`, and `completed_at`.
+- `<End>` writes `end_summary`, `end_reason`, and `exit_code` to the `executions` table.
+
+```tsx
+// Read End summary via raw query
+const row = db.db.queryOne<{ end_summary: string | null }>(
+  "SELECT end_summary FROM executions WHERE id = ?",
+  [executionId]
+);
+const endSummary = row?.end_summary ? JSON.parse(row.end_summary) : null;
 ```
 
 ## Usage Patterns
@@ -91,24 +113,31 @@ if (incomplete) {
 ### Resume on Startup
 
 ```tsx
-async function main() {
-  const db = await createSmithersDB({ path: ".smithers/data" });
+function main() {
+  const db = createSmithersDB({ path: ".smithers/data" });
 
   // Check for interrupted execution
   let executionId: string;
-  const incomplete = await db.execution.findIncomplete();
+  const incomplete = db.execution.findIncomplete();
 
   if (incomplete) {
     executionId = incomplete.id;
     console.log(`Resuming execution: ${executionId}`);
   } else {
-    executionId = await db.execution.start("New Task", "task.tsx");
+    executionId = db.execution.start("New Task", "task.tsx");
   }
 
-  // ... run workflow ...
+  try {
+    // ... run workflow ...
 
-  await db.execution.complete(executionId);
-  await db.close();
+    db.execution.complete(executionId);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    db.execution.fail(executionId, error.message);
+    throw error;
+  } finally {
+    db.close();
+  }
 }
 ```
 
@@ -116,13 +145,13 @@ async function main() {
 
 ```tsx
 // List recent executions
-const executions = await db.execution.list(10);
+const executions = db.execution.list(10);
 
 for (const exec of executions) {
   console.log(`${exec.name}: ${exec.status}`);
-  console.log(`  Started: ${exec.startedAt}`);
-  if (exec.completedAt) {
-    console.log(`  Completed: ${exec.completedAt}`);
+  console.log(`  Started: ${exec.started_at}`);
+  if (exec.completed_at) {
+    console.log(`  Completed: ${exec.completed_at}`);
   }
 }
 ```
@@ -132,14 +161,19 @@ for (const exec of executions) {
 ```tsx
 interface Execution {
   id: string;
-  name: string;
-  filePath: string;
-  status: "pending" | "running" | "complete" | "failed" | "cancelled";
-  config?: Record<string, any>;
+  name?: string;
+  file_path: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  config: Record<string, any>;
   result?: Record<string, any>;
   error?: string;
-  startedAt: Date;
-  completedAt?: Date;
+  started_at?: Date;
+  completed_at?: Date;
+  created_at: Date;
+  total_iterations: number;
+  total_agents: number;
+  total_tool_calls: number;
+  total_tokens_used: number;
 }
 ```
 

@@ -39,6 +39,7 @@ type Analysis = z.infer<typeof AnalysisSchema>;
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/analysis" });
   const executionId = await db.execution.start("Code Analysis", "analysis.tsx");
+  let analysisResult: Analysis | null = null;
 
   function AnalysisWorkflow() {
     return (
@@ -49,7 +50,12 @@ async function main() {
           maxRetries={2}
           allowedTools={["Read", "Glob", "Grep"]}
           onFinished={(result) => {
-            const analysis: Analysis = result.structured!;
+            const analysis = result.structured;
+            if (!analysis) {
+              console.error("Structured output missing; schema validation failed.");
+              return;
+            }
+            analysisResult = analysis;
 
             console.log("\n📊 Code Analysis Results\n");
             console.log(`Summary: ${analysis.summary}`);
@@ -92,11 +98,25 @@ async function main() {
     );
   }
 
-  const root = createSmithersRoot();
-  await root.mount(AnalysisWorkflow);
+  try {
+    const root = createSmithersRoot();
+    await root.mount(AnalysisWorkflow);
 
-  await db.execution.complete(executionId);
-  await db.close();
+    if (!analysisResult) {
+      throw new Error("Structured output missing; execution incomplete.");
+    }
+
+    await db.execution.complete(executionId, {
+      summary: "Code analysis complete",
+      output: analysisResult,
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    await db.execution.fail(executionId, error.message);
+    throw error;
+  } finally {
+    await db.close();
+  }
 }
 
 main();

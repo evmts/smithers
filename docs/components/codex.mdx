@@ -72,7 +72,7 @@ interface CodexProps<TSchema extends z.ZodType = z.ZodType> {
 
 interface AgentResult<TSchema extends z.ZodType = z.ZodType> {
   output: string
-  parsedOutput?: z.infer<TSchema>
+  structured?: z.infer<TSchema>
   toolCalls?: ToolCall[]
   durationMs: number
 }
@@ -122,7 +122,7 @@ const reviewSchema = z.object({
   model="gpt-4"
   schema={reviewSchema}
   onFinished={(result) => {
-    const review = result.parsedOutput
+    const review = result.structured
     console.log(`Decision: ${review.decision}`)
     console.log(`Issues: ${review.issues.length}`)
   }}
@@ -281,9 +281,9 @@ import { FallbackAgent, Codex, Claude } from 'smithers-orchestrator'
   ```tsx
   onFinished={(result) => {
     console.log(`Agent completed in ${result.durationMs}ms`)
-    if (result.parsedOutput) {
+    if (result.structured) {
       // Type-safe access
-      processResults(result.parsedOutput)
+      processResults(result.structured)
     }
   }}
   ```
@@ -412,7 +412,7 @@ const reviewSchema = z.object({
   schema={reviewSchema}
   systemPrompt="You are a senior code reviewer. Focus on correctness, security, and maintainability."
   onFinished={async (result) => {
-    const review = result.parsedOutput
+    const review = result.structured
     await db.state.set('lastReview', review)
 
     if (review.decision === 'request_changes') {

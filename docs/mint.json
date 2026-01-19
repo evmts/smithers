@@ -118,6 +118,7 @@
       "group": "Database API",
       "pages": [
         "api-reference/database",
+        "api-reference/conventions",
         "api-reference/state",
         "api-reference/memories",
         "api-reference/execution",

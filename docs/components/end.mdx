@@ -31,8 +31,8 @@ import { End } from "smithers-orchestrator";
   <End summary={{ status: "success", message: "Done" }} />
 
   // Dynamic summary
-  <End summary={async () => {
-    const result = await db.state.get("result");
+  <End summary={() => {
+    const result = db.state.get("result");
     return {
       status: result.success ? "success" : "failure",
       message: result.message,
@@ -107,9 +107,9 @@ function CompletionHandler() {
 
   return (
     <End
-      summary={async () => {
-        const review = await db.state.get("lastReview");
-        const iterations = await db.state.get("iterations");
+      summary={() => {
+        const review = db.state.get("lastReview");
+        const iterations = db.state.get("iterations");
 
         return {
           status: review?.approved ? "success" : "failure",
@@ -133,16 +133,17 @@ function CompletionHandler() {
 ### Conditional End
 
 ```tsx
-function WorkflowWithEnd() {
+function WorkflowWithEndBody() {
   const { db, reactiveDb } = useSmithers();
   
-  const phase = useQueryValue<string>(
+  const { data: phaseJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "working";
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : "working";
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
+    <>
       <If condition={phase === "working"}>
         <Claude onFinished={(r) => {
           if (r.output.includes("COMPLETE")) {
@@ -161,6 +162,14 @@ function WorkflowWithEnd() {
           }}
         />
       </If>
+    </>
+  );
+}
+
+export function WorkflowWithEnd({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <WorkflowWithEndBody />
     </SmithersProvider>
   );
 }
@@ -181,10 +190,16 @@ The summary is stored in the executions table:
 
 ```tsx
 // Query the end summary
-const execution = await db.execution.get(executionId);
-console.log(execution.end_summary);  // The EndSummary object
-console.log(execution.end_reason);   // "success", "failure", etc.
-console.log(execution.exit_code);    // 0, 1, etc.
+const row = db.db.queryOne<{
+  end_summary: string | null;
+  end_reason: string | null;
+  exit_code: number;
+}>("SELECT end_summary, end_reason, exit_code FROM executions WHERE id = ?", [executionId]);
+
+const endSummary = row?.end_summary ? JSON.parse(row.end_summary) : null;
+console.log(endSummary);        // The EndSummary object
+console.log(row?.end_reason);   // "success", "failure", etc.
+console.log(row?.exit_code);    // 0, 1, etc.
 ```
 
 ## Related

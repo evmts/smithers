@@ -52,20 +52,18 @@ async function main() {
             </Claude>
           </Step>
 
-          <Step name="analyze">
-            <Parallel>
-              <Step name="analyze-frontend">
-                <Claude model="haiku">
-                  Analyze frontend architecture
-                </Claude>
-              </Step>
-              <Step name="analyze-backend">
-                <Claude model="haiku">
-                  Analyze backend services
-                </Claude>
-              </Step>
-            </Parallel>
-          </Step>
+          <Parallel>
+            <Step name="analyze-frontend">
+              <Claude model="haiku">
+                Analyze frontend architecture
+              </Claude>
+            </Step>
+            <Step name="analyze-backend">
+              <Claude model="haiku">
+                Analyze backend services
+              </Claude>
+            </Step>
+          </Parallel>
         </Phase>
 
         {/* ============================================================
@@ -98,26 +96,33 @@ async function main() {
             </Claude>
           </Step>
 
-          <Step name="parallel-tasks">
-            <Parallel>
-              <Step name="write-tests">
-                <Claude model="sonnet">Write comprehensive test suite</Claude>
-              </Step>
-              <Step name="update-docs">
-                <Claude model="haiku">Update documentation</Claude>
-              </Step>
-            </Parallel>
-          </Step>
+          <Parallel>
+            <Step name="write-tests">
+              <Claude model="sonnet">Write comprehensive test suite</Claude>
+            </Step>
+            <Step name="update-docs">
+              <Claude model="haiku">Update documentation</Claude>
+            </Step>
+          </Parallel>
         </Phase>
       </SmithersProvider>
     );
   }
 
-  const root = createSmithersRoot();
-  await root.mount(KitchenSinkWorkflow);
+  try {
+    const root = createSmithersRoot();
+    await root.mount(KitchenSinkWorkflow);
 
-  await db.execution.complete(executionId);
-  await db.close();
+    await db.execution.complete(executionId, {
+      summary: "Kitchen sink workflow completed",
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    await db.execution.fail(executionId, error.message);
+    throw error;
+  } finally {
+    await db.close();
+  }
 }
 
 main();
@@ -210,6 +215,8 @@ main();
 </Phase>
 ```
 
+Phases are declared as siblings, but only the active phase executes. The Phase registry advances them sequentially.
+
 ### 2. Sequential and Parallel Execution
 
 ```tsx
@@ -262,17 +269,19 @@ Pauses workflow for human approval before proceeding.
 
 Track work items within phases.
 
+<Note>
+`<Task>` is a presentational checklist item and does not populate `db.tasks` (runtime component lifecycle).
+</Note>
+
 ### 6. Complex Nesting
 
 ```tsx
 <Phase>
-  <Step>
-    <Parallel>
-      <Step>
-        <Claude>...</Claude>
-      </Step>
-    </Parallel>
-  </Step>
+  <Parallel>
+    <Step>
+      <Claude>...</Claude>
+    </Step>
+  </Parallel>
 </Phase>
 ```
 

@@ -7,12 +7,18 @@ description: Human-in-the-loop interaction management
 
 The `db.human` module handles requests for human input, confirmation, or approval within workflows.
 
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Return shape:** snake_case fields; `options`, `response`, and `session_config` are parsed JSON.
+- **Status:** `pending | approved | rejected | timeout | cancelled | completed | failed`.
+
 ## Overview
 
 ```tsx
 import { createSmithersDB } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
 // Create a human interaction request
 const requestId = db.human.request("confirmation", "Deploy to production?");
@@ -73,6 +79,41 @@ db.human.resolve(
   Optional response data from the human.
 </ParamField>
 
+`resolve()` is for non-interactive requests. Use `completeInteractive()` for
+interactive sessions.
+
+### requestInteractive
+
+Starts an interactive human session (multi-turn).
+
+```tsx
+const sessionId = db.human.requestInteractive(
+  prompt: string,
+  config: InteractiveSessionConfig
+): string
+```
+
+### completeInteractive
+
+Completes an interactive session with a lifecycle outcome.
+
+```tsx
+db.human.completeInteractive(
+  id: string,
+  outcome: 'completed' | 'cancelled' | 'timeout' | 'failed',
+  response: unknown,
+  options?: { transcript?: string; duration?: number; error?: string }
+): void
+```
+
+### cancelInteractive
+
+Cancels a pending interactive session.
+
+```tsx
+db.human.cancelInteractive(id: string): void
+```
+
 ### get
 
 Gets a request by ID.
@@ -83,11 +124,14 @@ const request = db.human.get(id: string): HumanInteraction | null
 
 ### listPending
 
-Lists all pending requests for the current execution.
+Lists all pending requests.
 
 ```tsx
-const pending = db.human.listPending(): HumanInteraction[]
+const pending = db.human.listPending(executionId?: string): HumanInteraction[]
 ```
+
+If `executionId` is omitted, the current execution is used. Pass `"*"` to list
+pending requests across all executions.
 
 ## HumanInteraction Type
 
@@ -127,11 +171,11 @@ function DeploymentWorkflow() {
   const { ask, status } = useHuman();
 
   const handleDeploy = async () => {
-    const approved = await ask<boolean>("Deploy to production?", {
+    const choice = await ask<string>("Deploy to production?", {
       options: ["Yes", "No"],
     });
 
-    if (approved) {
+    if (choice === "Yes") {
       // Proceed with deployment
     }
   };
@@ -158,6 +202,9 @@ interface AskOptions {
 }
 ```
 
+**Return semantics:** `ask()` resolves to the stored response. For `options`,
+this is typically the selected option string.
+
 ## useHumanInteractive Hook
 
 Interactive human sessions for complex decisions:
@@ -174,7 +221,7 @@ function ReviewWorkflow() {
       { captureTranscript: true }
     );
 
-    if (result.outcome === "completed" && result.response === "approved") {
+    if (result.outcome === "completed") {
       // Proceed
     }
   };
@@ -212,6 +259,9 @@ Human interaction typically follows this pattern:
 4. **UI resolves request** - `db.human.resolve()`
 5. **Workflow continues** - Promise resolves with response
 
+For interactive sessions, use `requestInteractive()` and resolve via
+`completeInteractive()` or `cancelInteractive()`.
+
 ## Example: Approval Workflow
 
 ```tsx
@@ -223,15 +273,15 @@ function ApprovalWorkflow() {
       <Claude
         onFinished={async (result) => {
           // Ask for human approval before committing
-          const approved = await ask<boolean>(
+          const choice = await ask<string>(
             `Ready to commit these changes?\n\n${result.output}`,
             { options: ["Approve", "Reject"] }
           );
 
-          if (approved) {
-            await db.state.set("phase", "commit");
+          if (choice === "Approve") {
+            db.state.set("phase", "commit");
           } else {
-            await db.state.set("phase", "revise");
+            db.state.set("phase", "revise");
           }
         }}
       >

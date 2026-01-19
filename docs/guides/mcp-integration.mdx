@@ -85,7 +85,7 @@ For advanced MCP setups, configure tools directly:
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function DataPipeline() {
+function DataPipelineBody() {
   const { db, reactiveDb } = useSmithers();
 
   const phase = useQueryValue<string>(
@@ -103,7 +103,7 @@ function DataPipeline() {
   };
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+    <>
       <If condition={phase === "query"}>
         <Claude
           model="sonnet"
@@ -132,6 +132,14 @@ function DataPipeline() {
           Save to reports/sales-analysis.md
         </Claude>
       </If>
+    </>
+  );
+}
+
+export function DataPipeline({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+      <DataPipelineBody />
     </SmithersProvider>
   );
 }

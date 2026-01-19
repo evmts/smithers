@@ -12,143 +12,173 @@ Use the Smithers component to spawn subagents that plan and execute complex task
 ```tsx
 #!/usr/bin/env bun
 
-import { useState } from "react";
 import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
-  Ralph,
   Phase,
   Step,
   Claude,
   Smithers,
   If,
+  useSmithers,
 } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/feature-dev" });
   const executionId = await db.execution.start("Feature Development", "feature-dev.tsx");
+  if (db.state.get("phase") === null) {
+    db.state.set("phase", "plan", "init_phase");
+  }
 
   function FeatureWorkflow() {
-    const [phase, setPhase] = useState("plan");
-    const [plan, setPlan] = useState<string | null>(null);
+    const { db, reactiveDb } = useSmithers();
+    const { data: phase } = useQueryValue<string>(
+      reactiveDb,
+      "SELECT value FROM state WHERE key = 'phase'"
+    );
+    const { data: plan } = useQueryValue<string>(
+      reactiveDb,
+      "SELECT value FROM state WHERE key = 'plan'"
+    );
+    const currentPhase = phase ?? "plan";
+    const planText = plan ?? "No plan available yet.";
 
     return (
-        <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-          {/* Phase 1: High-level planning */}
-          <If condition={phase === "plan"}>
-            <Phase name="Planning">
-              <Step name="plan">
-                <Claude
-                  model="opus"
-                  allowedTools={["Read", "Glob", "Grep"]}
-                  onFinished={(result) => {
-                    setPlan(result.output);
-                    setPhase("implement");
-                  }}
-                >
-                  Analyze the codebase and create a high-level implementation plan for:
+      <>
+        {/* Phase 1: High-level planning */}
+        <If condition={currentPhase === "plan"}>
+          <Phase name="Planning">
+            <Step name="plan">
+              <Claude
+                model="opus"
+                allowedTools={["Read", "Glob", "Grep"]}
+                onFinished={(result) => {
+                  db.state.set("plan", result.output, "plan_generated");
+                  db.state.set("phase", "implement", "transition_to_implement");
+                }}
+              >
+                Analyze the codebase and create a high-level implementation plan for:
 
-                  "Add a notification system with:
-                   - Database schema for notifications
-                   - REST API endpoints
-                   - Real-time WebSocket updates
-                   - React UI components"
+                "Add a notification system with:
+                 - Database schema for notifications
+                 - REST API endpoints
+                 - Real-time WebSocket updates
+                 - React UI components"
 
-                  Identify the key files, patterns, and technologies used.
-                  Output a structured plan with phases.
-                </Claude>
-              </Step>
-            </Phase>
-          </If>
+                Identify the key files, patterns, and technologies used.
+                Output a structured plan with phases.
+              </Claude>
+            </Step>
+          </Phase>
+        </If>
 
-          {/* Phase 2: Subagent implements the feature */}
-          <If condition={phase === "implement"}>
-            <Phase name="Implementation">
-              <Step name="execute-subagent">
-                <Smithers
-                  plannerModel="opus"
-                  executionModel="sonnet"
-                  timeout={3600000}
-                  keepScript
-                  context={`
-                    Previous analysis:
-                    ${plan}
+        {/* Phase 2: Subagent implements the feature */}
+        <If condition={currentPhase === "implement"}>
+          <Phase name="Implementation">
+            <Step name="execute-subagent">
+              <Smithers
+                plannerModel="opus"
+                executionModel="sonnet"
+                timeout={3600000}
+                keepScript
+                context={`
+                  Previous analysis:
+                  ${planText}
 
-                    This is a TypeScript project using:
-                    - Bun runtime
-                    - React frontend
-                    - PostgreSQL database
-                    - WebSocket for real-time updates
-                  `}
-                  onScriptGenerated={(script, path) => {
-                    console.log(`Generated implementation script: ${path}`);
-                    db.vcs.addReport({
-                      type: "progress",
-                      severity: "info",
-                      title: "Script Generated",
-                      content: script.substring(0, 500) + "...",
-                    });
-                  }}
-                  onProgress={(msg) => console.log(`[Subagent] ${msg}`)}
-                  onFinished={(result) => {
-                    console.log("Subagent completed!");
-                    console.log(`Duration: ${result.durationMs}ms`);
-                    console.log(`Tokens: ${result.tokensUsed.input + result.tokensUsed.output}`);
-                    setPhase("test");
-                  }}
-                  onError={(err) => {
-                    console.error("Subagent failed:", err);
-                    setPhase("plan");  // Go back to planning
-                  }}
-                >
-                  Implement the notification system based on the plan.
+                  This is a TypeScript project using:
+                  - Bun runtime
+                  - React frontend
+                  - PostgreSQL database
+                  - WebSocket for real-time updates
+                `}
+                onScriptGenerated={(script, path) => {
+                  console.log(`Generated implementation script: ${path}`);
+                  db.vcs.addReport({
+                    type: "progress",
+                    severity: "info",
+                    title: "Script Generated",
+                    content: script.substring(0, 500) + "...",
+                  });
+                }}
+                onProgress={(msg) => console.log(`[Subagent] ${msg}`)}
+                onFinished={(result) => {
+                  console.log("Subagent completed!");
+                  console.log(`Duration: ${result.durationMs}ms`);
+                  console.log(`Tokens: ${result.tokensUsed.input + result.tokensUsed.output}`);
+                  db.state.set("phase", "test", "transition_to_test");
+                }}
+                onError={(err) => {
+                  console.error("Subagent failed:", err);
+                  db.state.set("phase", "plan", "transition_to_plan");  // Go back to planning
+                }}
+              >
+                Implement the notification system based on the plan.
 
-                  Requirements:
-                  1. Create database migration for notifications table
-                  2. Implement CRUD API endpoints
-                  3. Add WebSocket handler for real-time updates
-                  4. Create React components for notification UI
-                  5. Write tests for each layer
+                Requirements:
+                1. Create database migration for notifications table
+                2. Implement CRUD API endpoints
+                3. Add WebSocket handler for real-time updates
+                4. Create React components for notification UI
+                5. Write tests for each layer
 
-                  Follow existing patterns and conventions.
-                </Smithers>
-              </Step>
-            </Phase>
-          </If>
+                Follow existing patterns and conventions.
+              </Smithers>
+            </Step>
+          </Phase>
+        </If>
 
-          {/* Phase 3: Verify implementation */}
-          <If condition={phase === "test"}>
-            <Phase name="Verification">
-              <Step name="verify">
-                <Claude
-                  model="sonnet"
-                  allowedTools={["Bash", "Read"]}
-                  onFinished={(result) => {
-                    if (result.output.includes("All tests pass")) {
-                      setPhase("done");
-                    } else {
-                      setPhase("implement");
-                    }
-                  }}
-                >
-                  Run the test suite and verify the notification system works:
-                  1. Run unit tests: bun test
-                  2. Check TypeScript compilation: bun run typecheck
-                  3. Verify the API endpoints exist
-                </Claude>
-              </Step>
-            </Phase>
-          </If>
-        </SmithersProvider>
+        {/* Phase 3: Verify implementation */}
+        <If condition={currentPhase === "test"}>
+          <Phase name="Verification">
+            <Step name="verify">
+              <Claude
+                model="sonnet"
+                allowedTools={["Bash", "Read"]}
+                onFinished={(result) => {
+                  if (result.output.includes("All tests pass")) {
+                    db.state.set("phase", "done", "transition_to_done");
+                  } else {
+                    db.state.set("phase", "implement", "transition_to_implement");
+                  }
+                }}
+              >
+                Run the test suite and verify the notification system works:
+                1. Run unit tests: bun test
+                2. Check TypeScript compilation: bun run typecheck
+                3. Verify the API endpoints exist
+              </Claude>
+            </Step>
+          </Phase>
+        </If>
+      </>
     );
   }
 
-  const root = createSmithersRoot();
-  await root.mount(FeatureWorkflow);
+  function App() {
+    return (
+      <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+        <FeatureWorkflow />
+      </SmithersProvider>
+    );
+  }
 
-  await db.execution.complete(executionId);
-  await db.close();
+  try {
+    const root = createSmithersRoot();
+    await root.mount(App);
+
+    await db.execution.complete(executionId, {
+      summary: "Feature development workflow completed",
+      output: { finalPhase: db.state.get("phase") },
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    await db.execution.fail(executionId, error.message);
+    throw error;
+  } finally {
+    await db.close();
+  }
 }
 
 main();

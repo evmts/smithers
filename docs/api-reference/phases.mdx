@@ -7,12 +7,18 @@ description: Phase tracking for workflow organization
 
 The `db.phases` module tracks workflow phases. Phases group related steps and provide high-level progress tracking.
 
+## Contract
+
+- **Sync:** All methods are synchronous.
+- **Return shape:** raw rows with snake_case fields.
+- **Time:** Timestamps are ISO strings (not `Date`).
+
 ## Overview
 
 ```tsx
 import { createSmithersDB } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
 // Start a phase
 const phaseId = db.phases.start("implementation", 0);
@@ -74,7 +80,7 @@ function current(): Phase | null
 Lists all phases for an execution.
 
 ```tsx
-function list(options: { executionId: string }): Phase[]
+function list(executionId: string): Phase[]
 ```
 
 ## Phase Type
@@ -85,10 +91,11 @@ interface Phase {
   execution_id: string;
   name: string;
   iteration: number;
-  status: 'running' | 'completed' | 'failed';
-  started_at: string;
+  status: 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
+  started_at: string | null;
   completed_at: string | null;
   duration_ms: number | null;
+  agents_count: number;
   created_at: string;
 }
 ```
@@ -139,7 +146,7 @@ Phases track their iteration number for workflows that loop:
 Query phases by iteration:
 
 ```tsx
-const phases = db.phases.list({ executionId });
+const phases = db.phases.list(executionId);
 
 // Group by iteration
 const byIteration = phases.reduce((acc, phase) => {
@@ -158,15 +165,19 @@ const completed = iteration2.filter((p) => p.status === "completed");
 Common pattern with database state:
 
 ```tsx
-function StateDrivenWorkflow() {
-  const [phase, setPhase] = useState<string | null>(null);
+import { useSmithers } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-  useEffect(() => {
-    db.state.get("currentPhase").then(setPhase);
-  }, []);
+function StateDrivenWorkflowBody() {
+  const { db, reactiveDb } = useSmithers();
+  const { data: phaseJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'currentPhase'"
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : null;
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+    <>
       <If condition={phase === "implement"}>
         <Phase name="Implementation">
           <Step name="implement">
@@ -192,6 +203,14 @@ function StateDrivenWorkflow() {
           </Step>
         </Phase>
       </If>
+    </>
+  );
+}
+
+export function StateDrivenWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+      <StateDrivenWorkflowBody />
     </SmithersProvider>
   );
 }
@@ -207,7 +226,7 @@ if (currentPhase) {
 }
 
 // List all phases
-const allPhases = db.phases.list({ executionId });
+const allPhases = db.phases.list(executionId);
 
 // Calculate total duration
 const totalDuration = allPhases
