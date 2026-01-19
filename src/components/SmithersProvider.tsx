@@ -2,13 +2,13 @@
 // Consolidates SmithersProvider, RalphContext, and DatabaseProvider into one
 // Gives all child components access to database, executionId, Ralph loop, and global controls
 
-import { createContext, useContext, useMemo, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react'
 import type { SmithersDB } from '../db/index.js'
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { DatabaseProvider } from '../reactive-sqlite/hooks/context.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { PhaseRegistryProvider } from './PhaseRegistry.js'
-import { useMount, useUnmount } from '../reconciler/hooks.js'
+import { useMount, useUnmount, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
 import { jjSnapshot } from '../utils/vcs.js'
 import type { SmithersMiddleware } from '../middleware/types.js'
@@ -449,6 +449,10 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   // Track if we've already completed to avoid double-completion
   const hasCompletedRef = useRef(false)
+  
+  // Track stable state for debouncing completion checks
+  const stableCountRef = useRef(0)
+  const completionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Initialize ralphCount in DB if needed and set orchestration token
   useMount(() => {
@@ -611,93 +615,78 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   // Capture render frame on each Ralph iteration
   useCaptureRenderFrame(props.db, ralphCount, props.getTreeXML)
 
-  // Ralph iteration monitoring effect - now uses DB-backed state
-  useEffect(() => {
-    console.log('[SmithersProvider] Ralph effect fired! ralphCount:', ralphCount, 'pendingTasks:', pendingTasks, 'hasStartedTasks:', hasStartedTasks, 'stopped:', props.stopped)
+  // React to task count changes instead of polling
+  useEffectOnValueChange(pendingTasks, () => {
+    // Clear any pending completion check
+    if (completionCheckTimeoutRef.current) {
+      clearTimeout(completionCheckTimeoutRef.current)
+      completionCheckTimeoutRef.current = null
+    }
 
-    let checkInterval: NodeJS.Timeout | null = null
-    let stableCount = 0 // Count consecutive stable checks (no tasks running)
+    // Check if explicitly stopped via prop
+    if (props.stopped && !hasCompletedRef.current) {
+      hasCompletedRef.current = true
+      signalOrchestrationComplete()
+      props.onComplete?.()
+      return
+    }
 
-    checkInterval = setInterval(() => {
-      if (reactiveDb.isClosed) {
-        if (checkInterval) clearInterval(checkInterval)
-        return
-      }
-      // Re-check values from database (reactive queries will have updated)
-      const currentPendingTasks = pendingTasks
-      const currentHasStartedTasks = hasStartedTasks
+    // If tasks are running, reset stable counter
+    if (pendingTasks > 0) {
+      stableCountRef.current = 0
+      return
+    }
 
-      // Check if explicitly stopped via prop
-      if (props.stopped && !hasCompletedRef.current) {
-        hasCompletedRef.current = true
-        if (checkInterval) clearInterval(checkInterval)
-        signalOrchestrationComplete()
-        props.onComplete?.()
-        return
-      }
-
-      // If tasks are running, reset stable counter
-      if (currentPendingTasks > 0) {
-        stableCount = 0
-        return
-      }
-
-      // If no tasks have ever started and we've waited a bit, complete
-      if (!currentHasStartedTasks) {
-        stableCount++
-        // Wait 500ms (50 checks) before declaring no work to do
-        if (stableCount > 50 && !hasCompletedRef.current) {
+    // If no tasks have ever started, wait a bit then complete
+    if (!hasStartedTasks) {
+      stableCountRef.current++
+      // Debounce - wait 500ms before declaring no work
+      completionCheckTimeoutRef.current = setTimeout(() => {
+        if (!hasCompletedRef.current && stableCountRef.current > 0) {
           hasCompletedRef.current = true
-          if (checkInterval) clearInterval(checkInterval)
           signalOrchestrationComplete()
           props.onComplete?.()
         }
-        return
-      }
+      }, 500)
+      return
+    }
 
-      // Tasks have completed - check if we should continue or finish
-      stableCount++
+    // Tasks have completed - debounce before advancing
+    stableCountRef.current++
+    completionCheckTimeoutRef.current = setTimeout(() => {
+      if (reactiveDb.isClosed) return
 
-      // Wait at least 100ms (2 checks at 50ms) for any new tasks to register
-      if (stableCount < 2) {
-        return
-      }
-
-      // Check if stop was requested - halt before incrementing
+      // Check if stop was requested
       if (stopRequested && !hasCompletedRef.current) {
         hasCompletedRef.current = true
-        if (checkInterval) clearInterval(checkInterval)
         signalOrchestrationComplete()
         props.onComplete?.()
         return
       }
 
-      // All tasks complete
+      // Check max iterations
       if (ralphCount >= maxIterations - 1) {
-        // Max iterations reached
         if (!hasCompletedRef.current) {
           hasCompletedRef.current = true
-          if (checkInterval) clearInterval(checkInterval)
           signalOrchestrationComplete()
           props.onComplete?.()
         }
         return
       }
 
-      // Trigger next iteration by incrementing ralphCount
+      // Trigger next iteration
       const nextIteration = incrementRalphCount()
-      stableCount = 0
+      stableCountRef.current = 0
+      props.onIteration?.(nextIteration)
+    }, 100) // 100ms debounce
+  }, [hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount, stopRequested, reactiveDb])
 
-      if (props.onIteration) {
-        props.onIteration(nextIteration)
-      }
-    }, 50) // Check every 50ms
-
-    // Cleanup on unmount
-    return () => {
-      if (checkInterval) clearInterval(checkInterval)
+  // Cleanup on unmount
+  useUnmount(() => {
+    if (completionCheckTimeoutRef.current) {
+      clearTimeout(completionCheckTimeoutRef.current)
     }
-  }, [pendingTasks, hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount, stopRequested])
+  })
 
   const value: SmithersContextValue = useMemo(() => ({
     db: props.db,

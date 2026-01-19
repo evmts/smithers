@@ -1,7 +1,7 @@
 // Step component with automatic sequential execution within phases
 // Steps execute one after another unless wrapped in <Parallel>
 
-import { createContext, useContext, useRef, useCallback, useMemo, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
@@ -64,17 +64,6 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
 
   const currentStepIndex = props.isParallel ? -1 : (dbStepIndex ?? 0)
 
-  // Initialize step index in DB when execution is enabled
-  const hasInitializedRef = useRef(false)
-  useEffect(() => {
-    if (!executionEnabled || props.isParallel || hasInitializedRef.current) return
-    const existing = db.state.get<number>(stateKey)
-    if (existing === null) {
-      db.state.set(stateKey, 0, 'step_registry_init')
-    }
-    hasInitializedRef.current = true
-  }, [db, executionEnabled, props.isParallel, stateKey])
-
   const registerStep = useCallback((name: string): number => {
     const existingIndex = stepsRef.current.indexOf(name)
     if (existingIndex >= 0) {
@@ -82,8 +71,17 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     }
     const index = stepsRef.current.length
     stepsRef.current.push(name)
+    
+    // Initialize step index in DB when first step registers
+    if (index === 0 && !props.isParallel && executionEnabled) {
+      const existing = db.state.get<number>(stateKey)
+      if (existing === null) {
+        db.state.set(stateKey, 0, 'step_registry_init')
+      }
+    }
+    
     return index
-  }, []) // No dependencies needed - ref is mutable
+  }, [db, executionEnabled, props.isParallel, stateKey])
 
   const advanceStep = useCallback(() => {
     if (props.isParallel) return
@@ -184,7 +182,7 @@ export interface StepProps {
  * ```
  */
 export function Step(props: StepProps): ReactNode {
-  const { db, reactiveDb, executionId, executionEnabled } = useSmithers()
+  const { db, reactiveDb, executionId } = useSmithers()
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
   const executionScope = useExecutionScope()
@@ -270,130 +268,86 @@ export function Step(props: StepProps): ReactNode {
     })()
   }, [canExecute, db, props.name, props.onStart, props.snapshotBefore])
 
-  // Reactive completion detection - when step has started and all child tasks are done
-  useEffect(() => {
-    if (!executionEnabled) {
+  // Reactive completion detection - when step transitions from active to inactive
+  useEffectOnValueChange(isActive, () => {
+    // Only handle deactivation (completion), not activation
+    if (isActive) {
+      prevIsActiveRef.current = true
+      return
+    }
+
+    // Was active, now not active = completion
+    if (!prevIsActiveRef.current || !hasStartedRef.current || hasCompletedRef.current) {
       prevIsActiveRef.current = isActive
       return
     }
 
-    if (!prevIsActiveRef.current && isActive && !hasStartedRef.current) {
-      hasStartedRef.current = true
+    hasCompletedRef.current = true
+    prevIsActiveRef.current = false
 
-      ;(async () => {
-        // Register task with database
-        taskIdRef.current = db.tasks.start('step', props.name)
+    ;(async () => {
+      const id = stepIdRef.current
+      if (!id) return
 
-        try {
-          // Snapshot before if requested
-          if (props.snapshotBefore) {
-            try {
-              const { changeId } = await jjSnapshot(`Before step: ${props.name ?? 'unnamed'}`)
-              snapshotBeforeIdRef.current = changeId
-              console.log(`[Step] Created snapshot before: ${changeId}`)
-            } catch (error) {
-              console.warn('[Step] Could not create snapshot before:', error)
-            }
-          }
-
-          // Start step in database
-          const id = db.steps.start(props.name)
-          stepIdRef.current = id
-
-          console.log(`[Step] Started: ${props.name ?? 'unnamed'}`)
-
-          props.onStart?.()
-        } catch (error) {
-          console.error(`[Step] Error starting step:`, error)
-
-          if (stepIdRef.current) {
-            db.steps.fail(stepIdRef.current)
-          }
-
-          if (taskIdRef.current) {
-            db.tasks.complete(taskIdRef.current)
+      try {
+        // Snapshot after if requested
+        if (props.snapshotAfter) {
+          try {
+            const { changeId } = await jjSnapshot(`After step: ${props.name ?? 'unnamed'}`)
+            snapshotAfterIdRef.current = changeId
+            console.log(`[Step] Created snapshot after: ${changeId}`)
+          } catch (error) {
+            console.warn('[Step] Could not create snapshot after:', error)
           }
         }
-      })()
-    }
 
-    if (prevIsActiveRef.current && !isActive && hasStartedRef.current && !hasCompletedRef.current) {
-      hasCompletedRef.current = true
+        // Commit if requested
+        if (props.commitAfter) {
+          try {
+            const message = props.commitMessage ?? `Step: ${props.name ?? 'unnamed'}`
+            const result = await jjCommit(message)
+            commitHashRef.current = result.commitHash
 
-      ;(async () => {
-        const id = stepIdRef.current
-        if (!id) return
+            console.log(`[Step] Created commit: ${commitHashRef.current}`)
 
-        try {
-          // Snapshot after if requested
-          if (props.snapshotAfter) {
-            try {
-              const { changeId } = await jjSnapshot(`After step: ${props.name ?? 'unnamed'}`)
-              snapshotAfterIdRef.current = changeId
-              console.log(`[Step] Created snapshot after: ${changeId}`)
-            } catch (error) {
-              console.warn('[Step] Could not create snapshot after:', error)
-            }
+            db.vcs.logCommit({
+              vcs_type: 'jj',
+              commit_hash: result.commitHash,
+              change_id: result.changeId,
+              message,
+            })
+          } catch (error) {
+            console.warn('[Step] Could not create commit:', error)
           }
+        }
 
-          // Commit if requested
-          if (props.commitAfter) {
-            try {
-              const message = props.commitMessage ?? `Step: ${props.name ?? 'unnamed'}`
-              const result = await jjCommit(message)
-              commitHashRef.current = result.commitHash
-
-              console.log(`[Step] Created commit: ${commitHashRef.current}`)
-
-              db.vcs.logCommit({
-                vcs_type: 'jj',
-                commit_hash: result.commitHash,
-                change_id: result.changeId,
-                message,
-              })
-            } catch (error) {
-              console.warn('[Step] Could not create commit:', error)
-            }
-          }
-
-          // Complete step in database
+        // Complete step in database
+        if (!db.db.isClosed) {
           db.steps.complete(id, {
             ...(snapshotBeforeIdRef.current ? { snapshot_before: snapshotBeforeIdRef.current } : {}),
             ...(snapshotAfterIdRef.current ? { snapshot_after: snapshotAfterIdRef.current } : {}),
             ...(commitHashRef.current ? { commit_created: commitHashRef.current } : {}),
           })
-
-          console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
-
-          props.onComplete?.()
-
-          // Advance to next step
-          registry?.advanceStep()
-        } catch (error) {
-          console.error(`[Step] Error completing step:`, error)
-          db.steps.fail(id)
-        } finally {
-          if (taskIdRef.current) {
-            db.tasks.complete(taskIdRef.current)
-          }
         }
-      })()
-    }
 
-    prevIsActiveRef.current = isActive
-  }, [
-    db,
-    executionEnabled,
-    isActive,
-    props.commitAfter,
-    props.commitMessage,
-    props.name,
-    props.onComplete,
-    props.onStart,
-    props.snapshotAfter,
-    props.snapshotBefore,
-    registry,
-  ])
+        console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
+
+        props.onComplete?.()
+
+        // Advance to next step
+        registry?.advanceStep()
+      } catch (error) {
+        console.error(`[Step] Error completing step:`, error)
+        if (!db.db.isClosed) {
+          db.steps.fail(id)
+        }
+      } finally {
+        if (taskIdRef.current && !db.db.isClosed) {
+          db.tasks.complete(taskIdRef.current)
+        }
+      }
+    })()
+  })
 
   // Cleanup on unmount - complete step if it was started but not completed
   useUnmount(() => {

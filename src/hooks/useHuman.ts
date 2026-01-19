@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
+import { useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useSmithers } from '../components/SmithersProvider.js'
 import type { HumanInteraction } from '../db/human.js'
 import { useQueryOne } from '../reactive-sqlite/index.js'
@@ -60,20 +61,20 @@ export function useHuman(): UseHumanResult {
   )
 
   // Resolve promise when request status changes
-  useEffect(() => {
-    if (request && request.status !== 'pending' && resolveRef.current) {
-      let response = null
-      try {
-        response = request.response ? JSON.parse(request.response as unknown as string) : null
-      } catch {
-        response = request.response
-      }
+  useEffectOnValueChange(request?.status, () => {
+    if (!request || request.status === 'pending' || !resolveRef.current) return
 
-      const resolve = resolveRef.current
-      resolveRef.current = null // Clear first to prevent double-resolve
-      resolve(response)
+    let response = null
+    try {
+      response = request.response ? JSON.parse(request.response as unknown as string) : null
+    } catch {
+      response = request.response
     }
-  }, [request])
+
+    const resolve = resolveRef.current
+    resolveRef.current = null
+    resolve(response)
+  })
 
   const ask = useCallback(async <T = any>(prompt: string, options?: AskOptions) => {
     return new Promise<T>((resolve) => {

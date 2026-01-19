@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react'
 import { useRef } from 'react'
 import { useSmithers } from './SmithersProvider.js'
-import { useMount } from '../reconciler/hooks.js'
+import { useMount, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useQueryOne } from '../reactive-sqlite/index.js'
 import type { HumanInteraction } from '../db/human.js'
-import { useEffect } from 'react'
 
 export interface HumanProps {
   message?: string
@@ -57,22 +56,22 @@ export function Human(props: HumanProps): ReactNode {
   )
 
   // Handle resolution
-  useEffect(() => {
-    if (request && request.status !== 'pending') {
-      // Complete task to unblock orchestration
-      if (taskIdRef.current) {
-        db.tasks.complete(taskIdRef.current)
-        taskIdRef.current = null
-      }
+  useEffectOnValueChange(request?.status, () => {
+    if (!request || request.status === 'pending') return
 
-      // Fire callbacks
-      if (request.status === 'approved') {
-        props.onApprove?.()
-      } else {
-        props.onReject?.()
-      }
+    // Complete task to unblock orchestration
+    if (taskIdRef.current) {
+      db.tasks.complete(taskIdRef.current)
+      taskIdRef.current = null
     }
-  }, [request?.status])
+
+    // Fire callbacks
+    if (request.status === 'approved') {
+      props.onApprove?.()
+    } else {
+      props.onReject?.()
+    }
+  })
 
   return (
     <human message={props.message}>
