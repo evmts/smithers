@@ -21,6 +21,7 @@ import { createHumanModule, type HumanModule } from './human.js'
 import { createVcsModule, type VcsModule } from './vcs.js'
 import { createQueryModule, type QueryFunction } from './query.js'
 import { createRenderFramesModule, type RenderFramesModule } from './render-frames.js'
+import { createBuildStateModule, type BuildStateModule } from './build-state.js'
 
 export interface SmithersDB {
   /**
@@ -87,6 +88,11 @@ export interface SmithersDB {
    * Render frame snapshots for time-travel debugging
    */
   renderFrames: RenderFramesModule
+
+  /**
+   * Build state coordination for broken builds
+   */
+  buildState: BuildStateModule
 
   /**
    * Raw query access
@@ -209,6 +215,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   const human = createHumanModule({ rdb, getCurrentExecutionId })
   const vcs = createVcsModule({ rdb, getCurrentExecutionId })
   const renderFrames = createRenderFramesModule({ rdb, getCurrentExecutionId })
+  const buildState = createBuildStateModule({ rdb })
   const query = createQueryModule({ rdb })
 
   const db: SmithersDB = {
@@ -225,6 +232,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     human,
     vcs,
     renderFrames,
+    buildState,
     query,
     close: () => {
       rdb.close()
@@ -253,4 +261,5 @@ export type { ArtifactsModule } from './artifacts.js'
 export type { HumanModule } from './human.js'
 export type { VcsModule } from './vcs.js'
 export type { RenderFramesModule } from './render-frames.js'
+export type { BuildStateModule } from './build-state.js'
 export type { QueryFunction } from './query.js'

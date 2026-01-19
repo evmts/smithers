@@ -223,7 +223,22 @@ CREATE INDEX IF NOT EXISTS idx_transitions_key ON transitions(key);
 CREATE INDEX IF NOT EXISTS idx_transitions_created ON transitions(created_at DESC);
 
 -- ============================================================================
--- 8. ARTIFACTS - Generated Files/Outputs (Git References)
+-- 8. BUILD STATE - Broken Build Orchestration Coordination
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS build_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  status TEXT NOT NULL DEFAULT 'passing',   -- 'passing' | 'broken' | 'fixing'
+  fixer_agent_id TEXT,
+  broken_since TEXT,
+  last_check TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_build_state_status ON build_state(status);
+CREATE INDEX IF NOT EXISTS idx_build_state_fixer ON build_state(fixer_agent_id);
+
+-- ============================================================================
+-- 9. ARTIFACTS - Generated Files/Outputs (Git References)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS artifacts (
