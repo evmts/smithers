@@ -1,10 +1,10 @@
 import path from 'path'
 import * as fs from 'fs'
 import { pathToFileURL } from 'url'
-import { createElement, isValidElement, type ReactNode } from 'react'
+import React, { createElement, cloneElement, isValidElement, type ReactNode } from 'react'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
-import { SmithersProvider, type SmithersConfig } from '../components/SmithersProvider.js'
+import { SmithersProvider, createOrchestrationPromise, type SmithersConfig } from '../components/SmithersProvider.js'
 import type {
   ChatTransport,
   ChatTransportSendOptions,
@@ -177,15 +177,27 @@ function wrapWithProvider(
   node: ReactNode,
   db: SmithersDB,
   executionId: string,
-  config?: SmithersConfig
+  config?: SmithersConfig,
+  orchestrationToken?: string
 ): ReactNode {
   if (isValidElement(node) && node.type === SmithersProvider) {
+    // If already a SmithersProvider but missing token, clone with token
+    const props = node.props as { orchestrationToken?: string }
+    if (orchestrationToken && !props.orchestrationToken) {
+      return cloneElement(node as React.ReactElement<{ orchestrationToken?: string }>, { orchestrationToken })
+    }
     return node
   }
 
   return createElement(
     SmithersProvider,
-    { db, executionId, ...(config ? { config } : {}), children: node }
+    {
+      db,
+      executionId,
+      ...(config ? { config } : {}),
+      ...(orchestrationToken ? { orchestrationToken } : {}),
+      children: node
+    }
   )
 }
 
@@ -335,6 +347,9 @@ export class SmithersChatTransport implements ChatTransport<SmithersMessage, Smi
       const root = createSmithersRoot()
       session.root = root
 
+      // Create orchestration promise for completion signaling
+      const { promise: orchestrationPromise, token: orchestrationToken } = createOrchestrationPromise()
+
       const orchestrationNode = await resolveOrchestration(this.options.orchestration, {
         chatId: session.chatId,
         executionId: session.executionId,
@@ -343,8 +358,21 @@ export class SmithersChatTransport implements ChatTransport<SmithersMessage, Smi
         trigger: options.trigger,
       })
 
-      const wrapped = wrapWithProvider(orchestrationNode, session.db, session.executionId, this.options.config)
-      await root.mount(() => wrapped)
+      // Pass token to SmithersProvider so it can signal completion
+      const wrapped = wrapWithProvider(
+        orchestrationNode,
+        session.db,
+        session.executionId,
+        this.options.config,
+        orchestrationToken
+      )
+
+      // Use render() instead of mount() to avoid duplicate orchestration promise
+      // and wait for our orchestration promise with the token we control
+      await root.render(wrapped)
+
+      // Wait for SmithersProvider to signal completion
+      await orchestrationPromise
 
       const stopRequested = session.db.state.get('stop_requested') !== null
       if (stopRequested) {
