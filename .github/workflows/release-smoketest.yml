@@ -66,22 +66,17 @@ jobs:
           PREV_TAG="${{ steps.release.outputs.prev_tag }}"
           TAG="${{ steps.release.outputs.tag }}"
 
-          # Build JSON array of commits with proper escaping
-          COMMITS=()
           if [ -n "$PREV_TAG" ]; then
             RANGE="$PREV_TAG..$TAG"
           else
             RANGE="-20"
           fi
 
-          while IFS= read -r line; do
-            HASH=$(echo "$line" | cut -d'|' -f1)
-            SUBJECT=$(echo "$line" | cut -d'|' -f2 | jq -Rs '.' | sed 's/^"\(.*\)"$/\1/')
-            COMMITS+=("{\"hash\":\"$HASH\",\"subject\":\"$SUBJECT\"}")
-          done < <(git log --pretty=format:'%H|%s' $RANGE)
-
-          # Join array into JSON
-          HISTORY="[$(IFS=,; echo "${COMMITS[*]}")]"
+          # Use jq for robust JSON escaping - hash has no spaces so use space as delimiter
+          # jq -R reads raw lines, properly escaping any special chars
+          HISTORY=$(git log --pretty=format:'%H %s' $RANGE | \
+            jq -R 'split(" ") | {hash: .[0], subject: (.[1:] | join(" "))}' | \
+            jq -s '.')
 
           echo "history<<EOF" >> $GITHUB_OUTPUT
           echo "$HISTORY" >> $GITHUB_OUTPUT
