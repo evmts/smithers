@@ -205,7 +205,6 @@ export function Step(props: StepProps): ReactNode {
   const status = canExecute ? 'active' : isCompleted ? 'completed' : 'pending'
   const isDbClosed = () => db.db.isClosed
 
-<<<<<<< HEAD
   // Monitor child tasks for this step (only when started)
   // Uses the same pattern as SmithersProvider for reactive task counting
   const { data: childRunningTaskCount } = useQueryValue<number>(
