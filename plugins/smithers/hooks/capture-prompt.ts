@@ -50,9 +50,10 @@ async function main() {
     }
 
     await pg.close()
-  } catch {
-    // DB not initialized or other error - silently continue
-    // This hook should never block the user
+  } catch (error) {
+    if (process.env.DEBUG?.includes('smithers')) {
+      console.error('[capture-prompt] DB error:', error)
+    }
   }
 
   // Exit 0 to allow the prompt through

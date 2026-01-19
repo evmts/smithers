@@ -64,8 +64,13 @@ async function main() {
     await pg.close();
 
     // Remove the ralph flag (one-shot trigger)
-    const deleted = await Bun.file(ralphFlagPath).delete?.();
-    if (!deleted) await Bun.write(ralphFlagPath + ".done", "");
+    try {
+      await Bun.$`rm -f ${ralphFlagPath}`.quiet();
+    } catch {
+      if (process.env.DEBUG?.includes('smithers')) {
+        console.error('[ralph-check] Failed to remove ralph flag');
+      }
+    }
 
     const output: HookOutput = {
       decision: "block",
@@ -74,7 +79,10 @@ async function main() {
 
     console.log(JSON.stringify(output));
     process.exit(0);
-  } catch {
+  } catch (error) {
+    if (process.env.DEBUG?.includes('smithers')) {
+      console.error('[ralph-check] Error:', error);
+    }
     process.exit(0);
   }
 }
