@@ -4,7 +4,7 @@
 import { createContext, useContext, useRef, useCallback, useMemo, useEffect, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
-import { useMount, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
+import { useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
 
