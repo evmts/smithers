@@ -121,6 +121,10 @@ function runMigrations(rdb: ReactiveDatabase): void {
   if (!hasLogPath) {
     rdb.exec('ALTER TABLE agents ADD COLUMN log_path TEXT')
   }
+  const hasStreamSummary = agentsColumns.some((col) => col.name === 'stream_summary')
+  if (!hasStreamSummary) {
+    rdb.exec('ALTER TABLE agents ADD COLUMN stream_summary TEXT')
+  }
 
   // Migration: Add stream_summary column to agents table if missing
   const hasStreamSummary = agentsColumns.some((col) => col.name === 'stream_summary')
