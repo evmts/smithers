@@ -1983,7 +1983,7 @@ export function generateMCPServerConfig(configs: MCPToolConfig[]): Record<string
     switch (tool.type) {
       case 'sqlite':
         mcpConfig['mcpServers']['sqlite'] = {
-          command: 'npx',
+          command: 'bunx',
           args: [
             '-y',
             '@anthropic/mcp-server-sqlite',

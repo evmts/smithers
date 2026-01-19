@@ -32,26 +32,11 @@ Smithers uses a reactive render loop powered by React state:
 4. **Re-render**: State changes trigger reactive updates
 5. **Loop**: Process repeats until no pending agents remain
 
-## Why "Ralph Wiggum"?
-
-The name captures two key ideas:
-
-1. **Iteration Control**: Like Ralph's oblivious danger-awareness, loops can run away if not controlled
-2. **Safety Rails**: The `<Ralph>` component provides `maxIterations` to prevent infinite loops
-
-```tsx
-<Ralph
-  maxIterations={10}
-  onMaxIterations={() => console.log("I'm in danger!")}
->
-  {/* This loop will stop after 10 iterations */}
-</Ralph>
-```
-
 ## How It Differs from Other Frameworks
 
 | Traditional Agent Loops | Smithers Ralph Loop |
 |------------------------|---------------------|
+| Bespoke abstractions LLMs are often not tuned to writing | Familiar reactive declarative framework (React) |
 | Imperative while loops | Declarative reactive rendering |
 | Manual state tracking | Automatic state propagation |
 | Hard to visualize flow | Components describe the flow |

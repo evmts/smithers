@@ -101,7 +101,7 @@ describe('isMCPServer', () => {
   test('returns true for MCP server objects', () => {
     const server: MCPServer = {
       name: 'sqlite',
-      command: 'npx',
+      command: 'bunx',
       args: ['-y', '@anthropic/mcp-server-sqlite'],
     }
 
@@ -162,7 +162,7 @@ describe('parseToolSpecs', () => {
   test('separates MCP servers', () => {
     const mcpServer: MCPServer = {
       name: 'sqlite',
-      command: 'npx',
+      command: 'bunx',
       args: ['-y', '@anthropic/mcp-server-sqlite'],
     }
     const specs = [mcpServer]
@@ -181,7 +181,7 @@ describe('parseToolSpecs', () => {
     }
     const mcpServer: MCPServer = {
       name: 'sqlite',
-      command: 'npx',
+      command: 'bunx',
     }
     const specs = ['Read', customTool, mcpServer, 'Edit']
     const result = parseToolSpecs(specs)
@@ -224,7 +224,7 @@ describe('buildToolFlags', () => {
     }
     const mcpServer: MCPServer = {
       name: 'sqlite',
-      command: 'npx',
+      command: 'bunx',
     }
     const specs = [customTool, mcpServer]
     const flags = buildToolFlags(specs)

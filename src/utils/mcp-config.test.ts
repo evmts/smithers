@@ -78,7 +78,7 @@ describe('generateMCPServerConfig', () => {
     const result = generateMCPServerConfig(configs)
 
     expect(result.mcpServers.sqlite).toBeDefined()
-    expect(result.mcpServers.sqlite.command).toBe('npx')
+    expect(result.mcpServers.sqlite.command).toBe('bunx')
     expect(result.mcpServers.sqlite.args).toContain('-y')
     expect(result.mcpServers.sqlite.args).toContain('@anthropic/mcp-server-sqlite')
     expect(result.mcpServers.sqlite.args).toContain('--db-path')
@@ -121,7 +121,7 @@ describe('writeMCPConfigFile', () => {
     const config = {
       mcpServers: {
         sqlite: {
-          command: 'npx',
+          command: 'bunx',
           args: ['-y', '@anthropic/mcp-server-sqlite', '--db-path', './test.db']
         }
       }

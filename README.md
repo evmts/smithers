@@ -85,7 +85,7 @@ bun add smithers
 ### Required
 
 - **[Bun](https://bun.sh/)** - JavaScript runtime (v1.0+)
-- **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** - `npm install -g @anthropic-ai/claude-code`
+- **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** - `bun install -g @anthropic-ai/claude-code`
 
 ### Optional
 
