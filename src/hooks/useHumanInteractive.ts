@@ -166,6 +166,7 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   }, [session, db, handleCompletion])
 
   const createSession = useCallback((prompt: string, options?: AskInteractiveOptions): string => {
+    if (db.db.isClosed) throw new Error('Database is closed')
     const current = db.state.get<HookState>(stateKeyRef.current) ?? DEFAULT_STATE
     if (current.status === 'pending') {
       throw new Error('Cannot create a new interactive session while one is already pending')
