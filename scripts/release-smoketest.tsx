@@ -10,6 +10,8 @@
  * Each phase returns structured data for the next phase.
  */
 
+import * as fs from 'fs'
+import * as path from 'path'
 import { z } from 'zod'
 import { SmithersProvider } from '../src/components/SmithersProvider.js'
 import { Claude } from '../src/components/Claude.js'
@@ -302,7 +304,13 @@ async function main() {
   }
   console.log('Git history entries:', historyEntries)
 
-  const db = createSmithersDB({ path: '.smithers/smoketest.db' })
+  // Ensure .smithers directory exists
+  const dbDir = '.smithers'
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true })
+  }
+
+  const db = createSmithersDB({ path: path.join(dbDir, 'smoketest.db') })
   const executionId = db.execution.start('release-smoketest', 'scripts/release-smoketest.tsx')
 
   const root = createSmithersRoot()
