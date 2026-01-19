@@ -92,11 +92,11 @@ describe('middleware composition', () => {
     expect(order).toEqual([
       'transformOptions:first',
       'transformOptions:second',
-      'wrapExecute:second:before',
       'wrapExecute:first:before',
+      'wrapExecute:second:before',
       'execute',
-      'wrapExecute:first:after',
       'wrapExecute:second:after',
+      'wrapExecute:first:after',
       'transformChunk:first',
       'transformChunk:second',
       'transformResult:first',

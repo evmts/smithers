@@ -91,7 +91,7 @@ export function Phase(props: PhaseProps): ReactNode {
 
   // Handle skipped phases only when they become active (not on mount)
   useEffect(() => {
-    if (registry.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
+    if (registry?.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
       hasSkippedRef.current = true
       // Log skipped phase to database
       const id = db.phases.start(props.name, ralphCount)
@@ -104,7 +104,7 @@ export function Phase(props: PhaseProps): ReactNode {
       // Advance to next phase immediately
       registry?.advancePhase()
     }
-  }, [registry.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry])
+  }, [registry?.currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry])
 
   // Handle phase lifecycle transitions
   useEffect(() => {
@@ -137,8 +137,8 @@ export function Phase(props: PhaseProps): ReactNode {
 
   // Handler for when all steps in this phase complete
   const handleAllStepsComplete = useCallback(() => {
-    if (registry.isPhaseActive(myIndex)) {
-      registry.advancePhase()
+    if (registry?.isPhaseActive(myIndex)) {
+      registry?.advancePhase()
     }
   }, [registry, myIndex])
 
