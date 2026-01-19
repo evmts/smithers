@@ -1,7 +1,7 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
 
 export interface CommitProps {
@@ -29,8 +29,8 @@ export function Commit(props: CommitProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
-  useMount(() => {
-    if (!execution.isActive) return
+  const shouldExecute = smithers.executionEnabled && execution.isActive
+  useExecutionMount(shouldExecute, () => {
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-commit')
 
@@ -90,7 +90,7 @@ export function Commit(props: CommitProps): ReactNode {
         }
       }
     })()
-  })
+  }, [props.autoDescribe, props.message, props.notes, smithers])
 
   return (
     <jj-commit

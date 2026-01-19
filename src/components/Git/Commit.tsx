@@ -187,7 +187,7 @@ export function Commit(props: CommitProps): ReactNode {
         }
       }
     })()
-  })
+  }, [props.all, props.autoGenerate, props.children, props.files, props.message, props.notes, props.onError, props.onFinished, smithers])
 
   return (
     <git-commit

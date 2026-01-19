@@ -3,7 +3,7 @@
 
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
-import { useMount, useUnmount } from '../../reconciler/hooks.js'
+import { useUnmount, useExecutionMount } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { useExecutionContext } from '../ExecutionContext.js'
 
@@ -86,7 +86,7 @@ const DEFAULT_STATE: PostCommitState = {
 }
 
 export function PostCommit(props: PostCommitProps): ReactNode {
-  const { db, reactiveDb } = useSmithers()
+  const { db, reactiveDb, executionEnabled } = useSmithers()
   const execution = useExecutionContext()
 
   // Query state from db.state reactively
@@ -104,8 +104,10 @@ export function PostCommit(props: PostCommitProps): ReactNode {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const taskIdRef = useRef<string | null>(null)
 
-  useMount(() => {
-    if (!execution.isActive) return
+  const shouldExecute = executionEnabled && execution.isActive
+  useExecutionMount(shouldExecute, () => {
+    if (!db || !reactiveDb) return
+
     // Initialize state if not present
     const currentState = db.state.get<PostCommitState>('hook:postCommit')
     if (!currentState) {
@@ -169,7 +171,7 @@ export function PostCommit(props: PostCommitProps): ReactNode {
         console.error('[PostCommit] Failed to install hook:', errorMsg)
       }
     })()
-  })
+  }, [db, reactiveDb, executionEnabled, props.async, props.runOn])
 
   useUnmount(() => {
     if (pollIntervalRef.current) {

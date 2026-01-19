@@ -1,7 +1,7 @@
 import { useRef, useReducer, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { jjSnapshot, getJJStatus } from '../../utils/vcs.js'
-import { useMount, useMountedState } from '../../reconciler/hooks.js'
+import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useExecutionContext } from '../ExecutionContext.js'
 
 export interface SnapshotProps {
@@ -26,8 +26,8 @@ export function Snapshot(props: SnapshotProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
 
-  useMount(() => {
-    if (!execution.isActive) return
+  const shouldExecute = smithers.executionEnabled && execution.isActive
+  useExecutionMount(shouldExecute, () => {
     ;(async () => {
       taskIdRef.current = smithers.db.tasks.start('jj-snapshot')
 
@@ -67,7 +67,7 @@ export function Snapshot(props: SnapshotProps): ReactNode {
         }
       }
     })()
-  })
+  }, [props.message, smithers])
 
   return (
     <jj-snapshot

@@ -14,14 +14,6 @@ import { jjSnapshot } from '../utils/vcs.js'
 import type { SmithersMiddleware } from '../middleware/types.js'
 
 // ============================================================================
-// GLOBAL STORE (for universal renderer compatibility)
-// ============================================================================
-
-// Module-level store for context value - used as fallback when
-// React's Context API doesn't work in universal renderer mode
-let globalSmithersContext: SmithersContextValue | null = null
-
-// ============================================================================
 // ORCHESTRATION COMPLETION SIGNALS
 // ============================================================================
 
@@ -192,6 +184,11 @@ export interface SmithersContextValue {
    * Raw ReactiveDatabase instance (for useQuery hooks)
    */
   reactiveDb: ReactiveDatabase
+
+  /**
+   * Whether execution is enabled for this subtree
+   */
+  executionEnabled: boolean
 }
 
 // ============================================================================
@@ -214,12 +211,27 @@ export function useSmithers() {
     return ctx
   }
 
-  // Fall back to global store for universal renderer
-  if (globalSmithersContext) {
-    return globalSmithersContext
-  }
-
   throw new Error('useSmithers must be used within SmithersProvider')
+}
+
+export interface ExecutionBoundaryProps {
+  enabled: boolean
+  children: ReactNode
+}
+
+export function ExecutionBoundary(props: ExecutionBoundaryProps): ReactNode {
+  const parent = useSmithers()
+
+  const scopedValue = useMemo(() => ({
+    ...parent,
+    executionEnabled: parent.executionEnabled && props.enabled,
+  }), [parent, props.enabled])
+
+  return (
+    <SmithersContext.Provider value={scopedValue}>
+      {props.children}
+    </SmithersContext.Provider>
+  )
 }
 
 // ============================================================================
@@ -652,14 +664,10 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     completeTask,
     ralphCount,
     reactiveDb,
+    executionEnabled: true,
   }), [props.db, props.executionId, props.config, props.middleware, stopRequested, rebaseRequested, registerTask, completeTask, ralphCount, reactiveDb])
 
-  // Set global store BEFORE any children are evaluated
-  // This is critical for universal renderer compatibility where
-  // React's Context API may not propagate properly
-  globalSmithersContext = value
-
-  // Cleanup global context and orchestration on unmount
+  // Cleanup orchestration on unmount
   useUnmount(() => {
     // Clear timers
     if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current)
@@ -670,8 +678,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       try {
         const execution = await props.db.execution.current()
         if (execution) {
-          // Note: Could generate OrchestrationResult here and pass to onComplete if needed in the future
-          // (executionId, status, totalAgents, totalToolCalls, totalTokens, durationMs)
           props.onComplete?.()
         }
 
@@ -686,11 +692,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     })().catch((err) => {
       console.error('[SmithersProvider] Unexpected cleanup error:', err)
     })
-
-    // Clean up global context
-    if (globalSmithersContext === value) {
-      globalSmithersContext = null
-    }
   })
 
   return (

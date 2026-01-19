@@ -4,7 +4,6 @@
 import { createContext, useContext, useRef, useCallback, useMemo, useEffect, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
-import { useMount, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
 
@@ -48,7 +47,7 @@ export interface StepRegistryProviderProps {
 }
 
 export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
-  const { db, reactiveDb } = useSmithers()
+  const { db, reactiveDb, executionEnabled } = useSmithers()
   const stateKey = `stepIndex_${props.phaseId ?? 'default'}`
 
   // Track registered steps using ref for synchronous updates during render
@@ -64,15 +63,16 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
 
   const currentStepIndex = props.isParallel ? -1 : (dbStepIndex ?? 0)
 
-  // Initialize step index in DB
-  useMount(() => {
-    if (!props.isParallel) {
-      const existing = db.state.get<number>(stateKey)
-      if (existing === null || existing === undefined) {
-        db.state.set(stateKey, 0, 'step_registry_init')
-      }
+  // Initialize step index in DB when execution is enabled
+  const hasInitializedRef = useRef(false)
+  useEffect(() => {
+    if (!executionEnabled || props.isParallel || hasInitializedRef.current) return
+    const existing = db.state.get<number>(stateKey)
+    if (existing === null) {
+      db.state.set(stateKey, 0, 'step_registry_init')
     }
-  })
+    hasInitializedRef.current = true
+  }, [db, executionEnabled, props.isParallel, stateKey])
 
   const registerStep = useCallback((name: string): number => {
     const existingIndex = stepsRef.current.indexOf(name)
@@ -89,11 +89,8 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     const nextIndex = currentStepIndex + 1
     if (nextIndex < stepsRef.current.length) {
       db.state.set(stateKey, nextIndex, 'step_advance')
-    } else {
-      // All steps complete - signal phase completion
-      props.onAllStepsComplete?.()
     }
-  }, [db, stateKey, currentStepIndex, props.isParallel, props.onAllStepsComplete])
+  }, [db, stateKey, currentStepIndex, props.isParallel])
 
   const isStepActive = useCallback((index: number): boolean => {
     if (props.isParallel) return true // All steps active in parallel mode
@@ -165,11 +162,6 @@ export interface StepProps {
    * Callback when step completes
    */
   onComplete?: () => void
-
-  /**
-   * Callback when step encounters an error
-   */
-  onError?: (error: Error) => void
 }
 
 /**
@@ -191,7 +183,7 @@ export interface StepProps {
  * ```
  */
 export function Step(props: StepProps): ReactNode {
-  const { db, reactiveDb, executionId } = useSmithers()
+  const { db, executionEnabled } = useSmithers()
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
   const executionScope = useExecutionScope()
@@ -200,6 +192,7 @@ export function Step(props: StepProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const hasStartedRef = useRef(false)
   const hasCompletedRef = useRef(false)
+  const prevIsActiveRef = useRef(false)
   const snapshotBeforeIdRef = useRef<string | undefined>(undefined)
   const snapshotAfterIdRef = useRef<string | undefined>(undefined)
   const commitHashRef = useRef<string | undefined>(undefined)
@@ -343,25 +336,128 @@ export function Step(props: StepProps): ReactNode {
 
   // Reactive completion detection - when step has started and all child tasks are done
   useEffect(() => {
-    if (!hasStartedRef.current || hasCompletedRef.current || childRunningTaskCount !== 0) {
+    if (!executionEnabled) {
+      prevIsActiveRef.current = isActive
       return
     }
-    // Small delay to ensure child tasks have actually registered
-    // This prevents completing before children even start
-    const timeoutId = setTimeout(() => {
-      if (hasStartedRef.current && !hasCompletedRef.current) {
-        completeStep()
-      }
-    }, 100)
-    return () => clearTimeout(timeoutId)
-  }, [childRunningTaskCount, completeStep])
 
-  // Cleanup on unmount (for edge cases like component disposal)
-  useUnmount(() => {
-    if (hasStartedRef.current && !hasCompletedRef.current) {
-      completeStep()
+    if (!prevIsActiveRef.current && isActive && !hasStartedRef.current) {
+      hasStartedRef.current = true
+
+      ;(async () => {
+        // Register task with database
+        taskIdRef.current = db.tasks.start('step', props.name)
+
+        try {
+          // Snapshot before if requested
+          if (props.snapshotBefore) {
+            try {
+              const { changeId } = await jjSnapshot(`Before step: ${props.name ?? 'unnamed'}`)
+              snapshotBeforeIdRef.current = changeId
+              console.log(`[Step] Created snapshot before: ${changeId}`)
+            } catch (error) {
+              console.warn('[Step] Could not create snapshot before:', error)
+            }
+          }
+
+          // Start step in database
+          const id = db.steps.start(props.name)
+          stepIdRef.current = id
+
+          console.log(`[Step] Started: ${props.name ?? 'unnamed'}`)
+
+          props.onStart?.()
+        } catch (error) {
+          console.error(`[Step] Error starting step:`, error)
+
+          if (stepIdRef.current) {
+            db.steps.fail(stepIdRef.current)
+          }
+
+          if (taskIdRef.current) {
+            db.tasks.complete(taskIdRef.current)
+          }
+        }
+      })()
     }
-  })
+
+    if (prevIsActiveRef.current && !isActive && hasStartedRef.current && !hasCompletedRef.current) {
+      hasCompletedRef.current = true
+
+      ;(async () => {
+        const id = stepIdRef.current
+        if (!id) return
+
+        try {
+          // Snapshot after if requested
+          if (props.snapshotAfter) {
+            try {
+              const { changeId } = await jjSnapshot(`After step: ${props.name ?? 'unnamed'}`)
+              snapshotAfterIdRef.current = changeId
+              console.log(`[Step] Created snapshot after: ${changeId}`)
+            } catch (error) {
+              console.warn('[Step] Could not create snapshot after:', error)
+            }
+          }
+
+          // Commit if requested
+          if (props.commitAfter) {
+            try {
+              const message = props.commitMessage ?? `Step: ${props.name ?? 'unnamed'}`
+              const result = await jjCommit(message)
+              commitHashRef.current = result.commitHash
+
+              console.log(`[Step] Created commit: ${commitHashRef.current}`)
+
+              db.vcs.logCommit({
+                vcs_type: 'jj',
+                commit_hash: result.commitHash,
+                change_id: result.changeId,
+                message,
+              })
+            } catch (error) {
+              console.warn('[Step] Could not create commit:', error)
+            }
+          }
+
+          // Complete step in database
+          db.steps.complete(id, {
+            ...(snapshotBeforeIdRef.current ? { snapshot_before: snapshotBeforeIdRef.current } : {}),
+            ...(snapshotAfterIdRef.current ? { snapshot_after: snapshotAfterIdRef.current } : {}),
+            ...(commitHashRef.current ? { commit_created: commitHashRef.current } : {}),
+          })
+
+          console.log(`[Step] Completed: ${props.name ?? 'unnamed'}`)
+
+          props.onComplete?.()
+
+          // Advance to next step
+          registry?.advanceStep()
+        } catch (error) {
+          console.error(`[Step] Error completing step:`, error)
+          db.steps.fail(id)
+        } finally {
+          if (taskIdRef.current) {
+            db.tasks.complete(taskIdRef.current)
+          }
+        }
+      })()
+    }
+
+    prevIsActiveRef.current = isActive
+  }, [
+    db,
+    executionEnabled,
+    isActive,
+    props.commitAfter,
+    props.commitMessage,
+    props.name,
+    props.onComplete,
+    props.onStart,
+    props.snapshotAfter,
+    props.snapshotBefore,
+    registry,
+  ])
 
   return (
     <step {...(props.name ? { name: props.name } : {})} status={status}>

@@ -190,3 +190,37 @@ export function useEffectOnValueChange<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, value, ...deps]);
 }
+
+/**
+ * Runs a callback once when execution is enabled.
+ * Encapsulates the common pattern of:
+ * - executionEnabled check from SmithersProvider context
+ * - hasStartedRef idempotency guard
+ * - Proper dependency handling
+ * 
+ * @param executionEnabled - Whether execution is enabled (from useSmithers())
+ * @param fn - Callback to run once when execution becomes enabled
+ * @param deps - Additional dependencies (optional)
+ * 
+ * @example
+ * const { executionEnabled } = useSmithers()
+ * 
+ * useExecutionMount(executionEnabled, () => {
+ *   // Runs once when executionEnabled becomes true
+ *   executeTask();
+ * }, [someDep]);
+ */
+export function useExecutionMount(
+  executionEnabled: boolean,
+  fn: () => void,
+  deps: DependencyList = []
+): void {
+  const hasStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (!executionEnabled || hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    fn();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [executionEnabled, ...deps]);
+}

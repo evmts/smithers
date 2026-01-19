@@ -54,6 +54,7 @@ export { Human, type HumanProps } from './Human.js'
 // Smithers Provider (database-integrated, includes orchestration)
 export {
   SmithersProvider,
+  ExecutionBoundary,
   useSmithers,
   useRalph,
   createOrchestrationPromise,
