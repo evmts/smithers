@@ -4,7 +4,7 @@
  * Covers: DebugCollector, event emission, formatting
  */
 
-import { describe, it, test } from 'bun:test'
+import { describe, test } from 'bun:test'
 
 describe('createDebugCollector', () => {
   describe('collector creation', () => {

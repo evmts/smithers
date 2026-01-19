@@ -2,7 +2,7 @@
  * Tests for artifacts module - artifact tracking
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, beforeEach, afterEach } from 'bun:test'
 import { ReactiveDatabase } from '../reactive-sqlite/database.js'
 import { createArtifactsModule } from './artifacts.js'
 
@@ -44,7 +44,7 @@ describe('ArtifactsModule', () => {
     db.close()
   })
 
-  const createArtifacts = () => {
+  const _createArtifacts = () => {
     return createArtifactsModule({
       rdb: db,
       getCurrentExecutionId: () => currentExecutionId

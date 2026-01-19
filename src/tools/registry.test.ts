@@ -151,12 +151,11 @@ describe('isCustomTool', () => {
     expect(isCustomTool(server)).toBe(false)
   })
 
-  test('throws for null (in operator on null)', () => {
-    expect(() => isCustomTool(null as any)).toThrow(TypeError)
+  test('returns false for null', () => {
+    expect(isCustomTool(null as any)).toBe(false)
   })
 
   test('returns false for undefined', () => {
-    // typeof undefined === 'undefined' !== 'object', so returns false before 'in' check
     expect(isCustomTool(undefined as any)).toBe(false)
   })
 
@@ -167,8 +166,7 @@ describe('isCustomTool', () => {
       inputSchema: { type: 'object' },
       execute: 'not a function',
     }
-    // Has 'execute' key so passes the check, even if not a function
-    expect(isCustomTool(badTool as any)).toBe(true)
+    expect(isCustomTool(badTool as any)).toBe(false)
   })
 
   test('handles async execute functions', () => {
@@ -227,12 +225,11 @@ describe('isMCPServer', () => {
     expect(isMCPServer(tool)).toBe(false)
   })
 
-  test('throws for null (in operator on null)', () => {
-    expect(() => isMCPServer(null as any)).toThrow(TypeError)
+  test('returns false for null', () => {
+    expect(isMCPServer(null as any)).toBe(false)
   })
 
   test('returns false for undefined', () => {
-    // typeof undefined === 'undefined' !== 'object', so returns false before 'in' check
     expect(isMCPServer(undefined as any)).toBe(false)
   })
 

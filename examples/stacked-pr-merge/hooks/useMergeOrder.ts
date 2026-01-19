@@ -1,14 +1,20 @@
 /**
  * useMergeOrder - Hook to determine optimal merge order for stacked PRs
+ *
+ * State Management: Uses SQLite-backed state via db.state and useQueryValue
+ * for persistence and reactivity. NO useState/useRef for state.
  */
 
 import { useRef } from 'react'
+import { useSmithers } from '../../../src/components/SmithersProvider.js'
 import { useMount } from '../../../src/reconciler/hooks.js'
+import { useQueryValue } from '../../../src/reactive-sqlite/index.js'
 import type { WorktreeInfo, MergeCandidate, PRInfo } from '../types.js'
 
 export interface UseMergeOrderOptions {
   candidates: WorktreeInfo[]
   cwd: string
+  statePrefix?: string
   onComplete?: (order: MergeCandidate[]) => void
   onError?: (error: Error) => void
 }
@@ -24,31 +30,54 @@ export function useMergeOrder(options: UseMergeOrderOptions): {
   loading: boolean
   error: Error | null
 } {
-  const orderRef = useRef<MergeCandidate[]>([])
-  const loadingRef = useRef(true)
-  const errorRef = useRef<Error | null>(null)
+  const { db, reactiveDb } = useSmithers()
+  const prefix = options.statePrefix ?? 'merge-order'
+  const hasStartedRef = useRef(false)
+
+  // SQLite-backed state (reactive)
+  const { data: orderJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [`${prefix}:order`]
+  )
+  const mergeOrder: MergeCandidate[] = orderJson ? JSON.parse(orderJson) : []
+
+  const { data: loadingStr } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [`${prefix}:loading`]
+  )
+  const loading = loadingStr === 'true'
+
+  const { data: errorStr } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [`${prefix}:error`]
+  )
+  const error = errorStr ? new Error(errorStr) : null
 
   useMount(() => {
+    if (hasStartedRef.current) return
+    hasStartedRef.current = true
+
+    db.state.set(`${prefix}:loading`, 'true', 'merge-order-init')
+
     ;(async () => {
       try {
         const order = await calculateMergeOrder(options.candidates, options.cwd)
-        orderRef.current = order
-        loadingRef.current = false
+        db.state.set(`${prefix}:order`, order, 'merge-order-complete')
+        db.state.set(`${prefix}:loading`, 'false', 'merge-order-complete')
         options.onComplete?.(order)
       } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err))
-        errorRef.current = error
-        loadingRef.current = false
-        options.onError?.(error)
+        const errorObj = err instanceof Error ? err : new Error(String(err))
+        db.state.set(`${prefix}:error`, errorObj.message, 'merge-order-error')
+        db.state.set(`${prefix}:loading`, 'false', 'merge-order-error')
+        options.onError?.(errorObj)
       }
     })()
   })
 
-  return {
-    mergeOrder: orderRef.current,
-    loading: loadingRef.current,
-    error: errorRef.current,
-  }
+  return { mergeOrder, loading, error }
 }
 
 async function calculateMergeOrder(
@@ -61,12 +90,9 @@ async function calculateMergeOrder(
   for (const wt of mergeables) {
     if (!wt.prNumber) continue
 
-    // Fetch PR details
     const prInfo = await fetchPRInfo(wt.prNumber, cwd)
     if (!prInfo) continue
 
-    // Calculate priority (lower = merge first)
-    // Smaller PRs go first, then by update time
     const sizePriority = prInfo.additions + prInfo.deletions
     const timePriority = new Date(prInfo.updatedAt).getTime()
 
@@ -74,11 +100,10 @@ async function calculateMergeOrder(
       worktree: wt,
       pr: prInfo,
       priority: sizePriority + timePriority / 1e12,
-      dependencies: [], // TODO: analyze file dependencies
+      dependencies: [],
     })
   }
 
-  // Sort by priority (smaller/older first)
   enriched.sort((a, b) => a.priority - b.priority)
 
   return enriched

@@ -4,7 +4,7 @@
  * Covers: Subcommand routing, database lifecycle, error handling
  */
 
-import { describe, it, test, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 
 describe('dbCommand', () => {
   let consoleOutput: string[]

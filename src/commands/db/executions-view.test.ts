@@ -4,7 +4,7 @@
  * Covers: Execution list display, status formatting, duration calculation
  */
 
-import { describe, it, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { showExecutions } from './executions-view'
 
 describe('showExecutions', () => {

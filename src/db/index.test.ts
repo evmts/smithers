@@ -2,8 +2,8 @@
  * Tests for index module - SmithersDB factory and integration
  */
 
-import { describe, test, expect, afterEach } from 'bun:test'
-import { createSmithersDB, type SmithersDB } from './index.js'
+import { describe, test, afterEach } from 'bun:test'
+import { type SmithersDB } from './index.js'
 
 describe('createSmithersDB', () => {
   let db: SmithersDB | null = null

@@ -6,6 +6,9 @@
  * 2. Order Phase: Determine optimal merge order based on size/dependencies
  * 3. Rebase Phase: Rebase branches into linear stacked history
  * 4. Merge Phase: Cherry-pick and merge to main, close PRs
+ *
+ * State Management: Uses SQLite-backed state via db.state and useQueryValue
+ * for persistence and reactivity. NO useState/useRef for state.
  */
 
 import { useRef, type ReactNode } from 'react'
@@ -13,6 +16,7 @@ import { Phase } from '../../src/components/Phase.js'
 import { PhaseRegistryProvider } from '../../src/components/PhaseRegistry.js'
 import { useSmithers } from '../../src/components/SmithersProvider.js'
 import { useMount } from '../../src/reconciler/hooks.js'
+import { useQueryValue } from '../../src/reactive-sqlite/index.js'
 
 import { WorktreeStatusPhase } from './components/WorktreeStatusPhase.js'
 import { MergeOrderPhase } from './components/MergeOrderPhase.js'
@@ -20,6 +24,16 @@ import { StackedRebasePhase } from './components/StackedRebasePhase.js'
 import { MergePhase } from './components/MergePhase.js'
 
 import type { WorktreeInfo, MergeCandidate, MergeResult, StackedMergeState } from './types.js'
+
+// State keys for SQLite storage
+const STATE_KEYS = {
+  worktrees: 'stacked-merge:worktrees',
+  candidates: 'stacked-merge:candidates',
+  rebaseResults: 'stacked-merge:rebase-results',
+  mergeResults: 'stacked-merge:merge-results',
+  currentOp: 'stacked-merge:current-op',
+  phase: 'stacked-merge:phase',
+} as const
 
 export interface StackedPRMergeProps {
   cwd?: string
@@ -34,30 +48,61 @@ export function StackedPRMerge({
   closePRs = true,
   skipRebase = false,
 }: StackedPRMergeProps): ReactNode {
-  const { db } = useSmithers()
+  const { db, reactiveDb } = useSmithers()
+  const hasInitializedRef = useRef(false)
 
-  // State refs for workflow data
-  const worktreesRef = useRef<WorktreeInfo[]>([])
-  const candidatesRef = useRef<MergeCandidate[]>([])
-  const rebaseResultsRef = useRef<MergeResult[]>([])
-  const mergeResultsRef = useRef<MergeResult[]>([])
-  const currentOpRef = useRef<string | null>(null)
+  // SQLite-backed state via useQueryValue (reactive)
+  const { data: worktreesJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [STATE_KEYS.worktrees]
+  )
+  const worktrees: WorktreeInfo[] = worktreesJson ? JSON.parse(worktreesJson) : []
+
+  const { data: candidatesJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [STATE_KEYS.candidates]
+  )
+  const candidates: MergeCandidate[] = candidatesJson ? JSON.parse(candidatesJson) : []
+
+  const { data: rebaseResultsJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [STATE_KEYS.rebaseResults]
+  )
+  const rebaseResults: MergeResult[] = rebaseResultsJson ? JSON.parse(rebaseResultsJson) : []
+
+  const { data: mergeResultsJson } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [STATE_KEYS.mergeResults]
+  )
+  const mergeResults: MergeResult[] = mergeResultsJson ? JSON.parse(mergeResultsJson) : []
+
+  const { data: currentOp } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [STATE_KEYS.currentOp]
+  )
 
   // Load initial worktree status on mount
   useMount(() => {
+    if (hasInitializedRef.current) return
+    hasInitializedRef.current = true
+
     ;(async () => {
       try {
-        const worktrees = await fetchAllWorktreeStatus(cwd)
-        worktreesRef.current = worktrees
+        const fetchedWorktrees = await fetchAllWorktreeStatus(cwd)
+        db.state.set(STATE_KEYS.worktrees, fetchedWorktrees, 'stacked-merge-init')
 
-        // Calculate merge candidates with order
-        const candidates = await calculateMergeCandidates(worktrees, cwd)
-        candidatesRef.current = candidates
+        const fetchedCandidates = await calculateMergeCandidates(fetchedWorktrees, cwd)
+        db.state.set(STATE_KEYS.candidates, fetchedCandidates, 'stacked-merge-init')
 
         db.vcs.addReport({
           type: 'progress',
           title: 'Worktree analysis complete',
-          content: `Found ${worktrees.length} worktrees, ${candidates.length} merge candidates`,
+          content: `Found ${fetchedWorktrees.length} worktrees, ${fetchedCandidates.length} merge candidates`,
         })
       } catch (err) {
         console.error('Failed to fetch worktree status:', err)
@@ -65,27 +110,44 @@ export function StackedPRMerge({
     })()
   })
 
+  // State update helpers
+  const setCandidates = (newCandidates: MergeCandidate[]) => {
+    db.state.set(STATE_KEYS.candidates, newCandidates, 'merge-order')
+  }
+
+  const setRebaseResults = (results: MergeResult[]) => {
+    db.state.set(STATE_KEYS.rebaseResults, results, 'rebase-complete')
+  }
+
+  const setMergeResults = (results: MergeResult[]) => {
+    db.state.set(STATE_KEYS.mergeResults, results, 'merge-complete')
+  }
+
+  const setCurrentOp = (op: string | null) => {
+    db.state.set(STATE_KEYS.currentOp, op, 'current-op')
+  }
+
   return (
     <stacked-pr-merge target={targetBranch} close-prs={closePRs}>
       <PhaseRegistryProvider>
         <Phase name="Status" onComplete={() => console.log('[Merge] Status phase complete')}>
           <WorktreeStatusPhase
-            worktrees={worktreesRef.current}
-            onStatusComplete={(candidates) => {
-              console.log(`[Merge] Found ${candidates.length} merge candidates`)
+            worktrees={worktrees}
+            onStatusComplete={(newCandidates) => {
+              console.log(`[Merge] Found ${newCandidates.length} merge candidates`)
             }}
           />
         </Phase>
 
         <Phase
           name="Order"
-          skipIf={() => candidatesRef.current.length === 0}
+          skipIf={() => candidates.length === 0}
           onComplete={() => console.log('[Merge] Order phase complete')}
         >
           <MergeOrderPhase
-            candidates={candidatesRef.current}
+            candidates={candidates}
             onOrderDetermined={(order) => {
-              candidatesRef.current = order
+              setCandidates(order)
               console.log(`[Merge] Merge order determined: ${order.map((c) => c.worktree.name).join(' -> ')}`)
             }}
           />
@@ -93,16 +155,17 @@ export function StackedPRMerge({
 
         <Phase
           name="Rebase"
-          skipIf={() => skipRebase || candidatesRef.current.length === 0}
+          skipIf={() => skipRebase || candidates.length === 0}
           onComplete={() => console.log('[Merge] Rebase phase complete')}
         >
           <StackedRebasePhase
-            candidates={candidatesRef.current}
+            candidates={candidates}
             targetBranch={targetBranch}
-            results={rebaseResultsRef.current}
-            current={currentOpRef.current}
+            results={rebaseResults}
+            current={currentOp ?? null}
             onRebaseComplete={(results) => {
-              rebaseResultsRef.current = results
+              setRebaseResults(results)
+              setCurrentOp(null)
               const successful = results.filter((r) => r.success).length
               console.log(`[Merge] Rebased ${successful}/${results.length} branches`)
             }}
@@ -111,14 +174,14 @@ export function StackedPRMerge({
 
         <Phase
           name="Merge"
-          skipIf={() => candidatesRef.current.length === 0}
+          skipIf={() => candidates.length === 0}
           onComplete={() => console.log('[Merge] Merge phase complete')}
         >
           <MergePhase
-            candidates={candidatesRef.current}
+            candidates={candidates}
             targetBranch={targetBranch}
-            results={mergeResultsRef.current}
-            current={currentOpRef.current}
+            results={mergeResults}
+            current={currentOp ?? null}
             closePRs={closePRs}
           />
         </Phase>

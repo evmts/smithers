@@ -89,14 +89,19 @@ export type ToolSpec = string | Tool | MCPServer
  * Check if a tool spec is a custom Tool object
  */
 export function isCustomTool(spec: ToolSpec): spec is Tool {
-  return typeof spec === 'object' && 'execute' in spec
+  return (
+    typeof spec === 'object' &&
+    spec !== null &&
+    'execute' in spec &&
+    typeof spec.execute === 'function'
+  )
 }
 
 /**
  * Check if a tool spec is an MCP Server
  */
 export function isMCPServer(spec: ToolSpec): spec is MCPServer {
-  return typeof spec === 'object' && 'command' in spec && !('execute' in spec)
+  return typeof spec === 'object' && spec !== null && 'command' in spec && !('execute' in spec)
 }
 
 /**

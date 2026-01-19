@@ -4,7 +4,7 @@
  * Covers: Help text output, subcommand documentation
  */
 
-import { describe, it, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { showHelp } from './help'
 
 describe('showHelp', () => {

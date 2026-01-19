@@ -4,7 +4,7 @@
  * Covers: State display, JSON formatting, empty state handling
  */
 
-import { describe, it, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { showState } from './state-view'
 
 describe('showState', () => {

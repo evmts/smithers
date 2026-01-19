@@ -4,7 +4,7 @@
  * Covers: Memory stats, category/scope breakdown, recent memories display
  */
 
-import { describe, it, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { showMemories } from './memories-view'
 
 describe('showMemories', () => {
