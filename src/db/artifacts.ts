@@ -35,17 +35,17 @@ const mapArtifact = (row: ArtifactRow | null): Artifact | null => {
   return {
     id: row.id,
     execution_id: row.execution_id,
+    agent_id: row.agent_id ?? undefined,
     name: row.name,
     type: row.type as Artifact['type'],
     file_path: row.file_path,
+    git_hash: row.git_hash ?? undefined,
+    git_commit: row.git_commit ?? undefined,
+    summary: row.summary ?? undefined,
+    line_count: row.line_count ?? undefined,
+    byte_size: row.byte_size ?? undefined,
     metadata: parseJson(row.metadata, {}),
     created_at: new Date(row.created_at),
-    ...(row.agent_id !== null && { agent_id: row.agent_id }),
-    ...(row.git_hash !== null && { git_hash: row.git_hash }),
-    ...(row.git_commit !== null && { git_commit: row.git_commit }),
-    ...(row.summary !== null && { summary: row.summary }),
-    ...(row.line_count !== null && { line_count: row.line_count }),
-    ...(row.byte_size !== null && { byte_size: row.byte_size }),
   }
 }
 
