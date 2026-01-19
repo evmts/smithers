@@ -467,9 +467,9 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
                   break
 
                 case 'ci_failure':
-                  const ciFailure = await props.db.state.get('last_ci_failure')
+                  const ciFailure = await props.db.state.get<{ message?: string }>('last_ci_failure')
                   shouldStop = ciFailure !== null
-                  message = message || `CI failure detected: ${ciFailure?.value?.message ?? 'unknown'}`
+                  message = message || `CI failure detected: ${ciFailure?.message ?? 'unknown'}`
                   break
 
                 case 'custom':

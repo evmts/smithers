@@ -49,6 +49,8 @@ function DocsReviewOrchestration() {
               try {
                 const parsed = JSON.parse(result.output)
                 reviewResult = parsed
+                // TODO: Update CLAUDE.md always log error
+                // TODO: Update review postcommit hook to review for this log a warning that codex is rate limited and not able to review
               } catch {
                 reviewResult = {
                   needsChanges: false,
