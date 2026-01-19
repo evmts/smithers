@@ -39,10 +39,11 @@ export class LRUCache<T = AgentResult> implements CacheStore<T> {
         this.cache.delete(firstKey)
       }
     }
-    this.cache.set(key, {
-      value,
-      expiresAt: ttlSeconds ? Date.now() + ttlSeconds * 1000 : undefined,
-    })
+    const entry: { value: T; expiresAt?: number } = { value }
+    if (ttlSeconds) {
+      entry.expiresAt = Date.now() + ttlSeconds * 1000
+    }
+    this.cache.set(key, entry)
   }
 }
 
