@@ -32,7 +32,7 @@ describe('middleware composition', () => {
         order.push('transformOptions:first')
         return { ...opts, model: 'haiku' }
       },
-      wrapExecute: async (doExecute: () => Promise<AgentResult>) => {
+      wrapExecute: async ({ doExecute }: { doExecute: () => Promise<AgentResult> }) => {
         order.push('wrapExecute:first:before')
         const result = await doExecute()
         order.push('wrapExecute:first:after')
@@ -54,7 +54,7 @@ describe('middleware composition', () => {
         order.push('transformOptions:second')
         return { ...opts, timeout: 1234 }
       },
-      wrapExecute: async (doExecute: () => Promise<AgentResult>) => {
+      wrapExecute: async ({ doExecute }: { doExecute: () => Promise<AgentResult> }) => {
         order.push('wrapExecute:second:before')
         const result = await doExecute()
         order.push('wrapExecute:second:after')
@@ -81,7 +81,7 @@ describe('middleware composition', () => {
       return makeResult()
     }
 
-    await composed.wrapExecute?.(onExecute, options)
+    await composed.wrapExecute?.({ doExecute: onExecute, options })
 
     const chunk = composed.transformChunk?.('chunk') ?? 'chunk'
     expect(chunk).toBe('chunk-a-b')
@@ -135,8 +135,8 @@ describe('built-in middleware', () => {
       return makeResult({ output: `run-${calls}` })
     }
 
-    const first = await middleware.wrapExecute?.(execute, options)
-    const second = await middleware.wrapExecute?.(execute, options)
+    const first = await middleware.wrapExecute?.({ doExecute: execute, options })
+    const second = await middleware.wrapExecute?.({ doExecute: execute, options })
 
     expect(calls).toBe(1)
     expect(first?.output).toBe('run-1')
@@ -155,17 +155,17 @@ describe('built-in middleware', () => {
       return makeResult({ output: 'recovered' })
     }
 
-    const result = await middleware.wrapExecute?.(execute, { prompt: 'retry' })
+    const result = await middleware.wrapExecute?.({ doExecute: execute, options: { prompt: 'retry' } })
     expect(attempts).toBe(3)
     expect(result?.output).toBe('recovered')
   })
 
   test('rateLimitingMiddleware passes through results', async () => {
     const middleware = rateLimitingMiddleware({ requestsPerMinute: 1000 })
-    const result = await middleware.wrapExecute?.(
-      async () => makeResult({ output: 'rate' }),
-      { prompt: 'rate' },
-    )
+    const result = await middleware.wrapExecute?.({
+      doExecute: async () => makeResult({ output: 'rate' }),
+      options: { prompt: 'rate' },
+    })
     expect(result?.output).toBe('rate')
   })
 
@@ -180,10 +180,10 @@ describe('built-in middleware', () => {
       },
     })
 
-    const result = await middleware.wrapExecute?.(
-      async () => makeResult({ tokensUsed: { input: 1000, output: 2000 } }),
-      { prompt: 'cost', model: 'sonnet' },
-    )
+    const result = await middleware.wrapExecute?.({
+      doExecute: async () => makeResult({ tokensUsed: { input: 1000, output: 2000 } }),
+      options: { prompt: 'cost', model: 'sonnet' },
+    })
 
     expect(result?.output).toBe('ok')
     expect(lastTotal).toBeCloseTo(0.05)
@@ -210,7 +210,7 @@ describe('built-in middleware', () => {
     let caught: Error | null = null
 
     try {
-      await middleware.wrapExecute?.(async () => makeResult(), { prompt: 'validate' })
+      await middleware.transformResult?.(makeResult())
     } catch (error) {
       caught = error as Error
     }
