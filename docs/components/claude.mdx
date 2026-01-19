@@ -45,6 +45,8 @@ import { Claude } from "smithers-orchestrator";
 
 <ParamField path="maxTokens" type="number">
   Maximum tokens for the response.
+  
+  <Warning>Not yet implemented - this prop is reserved for future use.</Warning>
 </ParamField>
 
 <ParamField path="timeout" type="number">
@@ -71,6 +73,8 @@ import { Claude } from "smithers-orchestrator";
 
 <ParamField path="tools" type="Tool[]">
   Custom tools to provide to Claude.
+  
+  <Warning>Not yet implemented. Use `allowedTools` and `disallowedTools` to control built-in tools, or MCP configuration for custom tools.</Warning>
 
   ```tsx
   <Claude tools={[myCustomTool]}>
@@ -126,21 +130,24 @@ import { Claude } from "smithers-orchestrator";
   ```
 </ParamField>
 
-<ParamField path="validate" type="(output: T) => boolean">
-  Custom validation function.
+<ParamField path="validate" type="(result: AgentResult) => boolean | Promise<boolean>">
+  Custom validation function. Receives the full AgentResult including `output`, `structured`, `tokensUsed`, etc.
 
   ```tsx
-  <Claude validate={(r) => r.issues.length > 0}>
+  <Claude 
+    schema={AnalysisSchema}
+    validate={(result) => result.structured?.issues.length > 0}
+  >
     Must find at least one issue.
   </Claude>
   ```
 </ParamField>
 
-<ParamField path="retryOnValidationFailure" type="boolean" default="true">
+<ParamField path="retryOnValidationFailure" type="boolean" default="false">
   Retry if validation fails.
 </ParamField>
 
-<ParamField path="maxRetries" type="number" default="2">
+<ParamField path="maxRetries" type="number" default="3">
   Maximum retries for the outer error retry loop.
 </ParamField>
 
