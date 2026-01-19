@@ -1,14 +1,16 @@
 // Phase component with automatic SQLite-backed state management
 // Phases are always rendered in output, but only active phase renders children
 
-import { useRef, useEffect, useCallback, type ReactNode } from 'react'
+import { useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers, ExecutionBoundary } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
+import { createLogger, type Logger } from '../debug/index.js'
 
-type PhaseStatus = 'pending' | 'active' | 'completed' | 'skipped'
+type PhaseStatus = 'pending' | 'active' | 'completed' | 'skipped' | 'error'
 
-function getPhaseStatus(isSkipped: boolean, isActive: boolean, isCompleted: boolean): PhaseStatus {
+function getPhaseStatus(isSkipped: boolean, isActive: boolean, isCompleted: boolean, hasError: boolean): PhaseStatus {
+  if (hasError) return 'error'
   if (isSkipped) return 'skipped'
   if (isActive) return 'active'
   if (isCompleted) return 'completed'
