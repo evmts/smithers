@@ -2,12 +2,13 @@
  * useQuery hook for reactive SQLite queries
  */
 
-import { useSyncExternalStore, useCallback, useMemo, useEffect } from 'react'
+import { useSyncExternalStore, useCallback, useMemo } from 'react'
 import type { ReactiveDatabase } from '../database.js'
 import { extractReadTables } from '../parser.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
-import { useVersionTracking, useQueryCache } from './shared.js'
+import { useQueryCache, useStoreSignal } from './shared.js'
 import { useDatabaseOptional } from './context.js'
+import { useEffectOnValueChange } from '../../reconciler/hooks.js'
 
 /**
  * Hook to execute a reactive query
@@ -75,9 +76,8 @@ export function useQuery<T = Record<string, unknown>>(
 
   const { skip = false, deps = [] } = options
 
-  // Track version for forcing re-renders
-  const { incrementVersion, invalidateAndUpdate } = useVersionTracking()
   const { cacheRef, invalidateCache } = useQueryCache<T>()
+  const { subscribe: subscribeSignal, notify } = useStoreSignal()
 
   // Memoize the query key
   const queryKey = useMemo(
@@ -107,18 +107,22 @@ export function useQuery<T = Record<string, unknown>>(
       }
 
       const tables = extractReadTables(sql)
-      return db.subscribe(tables, () => {
-        invalidateCache()  // Clear cache so getSnapshot() recomputes
-        incrementVersion()
+      const unsubscribeDb = db.subscribe(tables, () => {
+        invalidateCache() // Clear cache so getSnapshot() recomputes
         onStoreChange()
       })
+      const unsubscribeSignal = subscribeSignal(onStoreChange)
+      return () => {
+        unsubscribeDb()
+        unsubscribeSignal()
+      }
     },
-    [db, sql, skip, incrementVersion, invalidateCache]
+    [db, sql, skip, invalidateCache, subscribeSignal]
   )
 
   // Get current snapshot
   const getSnapshot = useCallback(() => {
-    if (cacheRef.current.key !== queryKey) {
+    if (!cacheRef.current || cacheRef.current.key !== queryKey) {
       const result = executeQuery()
       cacheRef.current = {
         key: queryKey,
@@ -136,19 +140,22 @@ export function useQuery<T = Record<string, unknown>>(
     getSnapshot // Server snapshot (same as client for SQLite)
   )
 
+  const depsSignature = useMemo(() => deps, deps)
+
   // Re-fetch when deps change
-  useEffect(() => {
-    if (deps.length > 0) {
-      invalidateCache()
-      invalidateAndUpdate()
+  useEffectOnValueChange(depsSignature, () => {
+    if (deps.length === 0) {
+      return
     }
-  }, deps)
+    invalidateCache()
+    notify()
+  })
 
   // Refetch function
   const refetch = useCallback(() => {
     invalidateCache()
-    invalidateAndUpdate()
-  }, [invalidateCache, invalidateAndUpdate])
+    notify()
+  }, [invalidateCache, notify])
 
   return {
     data: snapshot.data,

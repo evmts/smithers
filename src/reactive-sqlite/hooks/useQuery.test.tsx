@@ -223,6 +223,50 @@ describe('useQuery', () => {
 
       root.dispose()
     })
+
+    test('rerenders on insert', async () => {
+      const root = createSmithersRoot()
+
+      function Users() {
+        const { data } = useQuery<{ id: number; name: string }>(
+          db,
+          'SELECT * FROM users ORDER BY id'
+        )
+        return <users count={data.length} />
+      }
+
+      await root.render(<Users />)
+      expect(root.toXML()).toContain('count="0"')
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      db.run('INSERT INTO users (name) VALUES (?)', ['alice'])
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(root.toXML()).toContain('count="1"')
+      root.dispose()
+    })
+
+    test('rerenders on replace', async () => {
+      const root = createSmithersRoot()
+
+      function Users() {
+        const { data } = useQuery<{ id: number; name: string }>(
+          db,
+          'SELECT * FROM users ORDER BY id'
+        )
+        return <users count={data.length} />
+      }
+
+      await root.render(<Users />)
+      expect(root.toXML()).toContain('count="0"')
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      db.run('REPLACE INTO users (id, name) VALUES (?, ?)', [1, 'alice'])
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(root.toXML()).toContain('count="1"')
+      root.dispose()
+    })
   })
 
   describe('skip option', () => {

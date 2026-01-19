@@ -379,6 +379,10 @@ describe('extractWriteTables', () => {
     expect(extractWriteTables('INSERT OR REPLACE INTO users (id, name) VALUES (?, ?)')).toEqual(['users'])
   })
 
+  test('extracts table from REPLACE INTO', () => {
+    expect(extractWriteTables('REPLACE INTO users (id, name) VALUES (?, ?)')).toEqual(['users'])
+  })
+
   test('extracts table from INSERT OR IGNORE INTO', () => {
     expect(extractWriteTables('INSERT OR IGNORE INTO users (id, name) VALUES (?, ?)')).toEqual(['users'])
   })

@@ -17,6 +17,29 @@ type PublicInstance = SmithersNode
 type HostContext = object
 type UpdatePayload = Props
 
+function diffProps(oldProps: Props, newProps: Props): UpdatePayload | null {
+  const updatePayload: Props = {}
+  let hasChanges = false
+
+  for (const key of Object.keys(newProps)) {
+    if (key === 'children') continue
+    if (oldProps[key] !== newProps[key]) {
+      updatePayload[key] = newProps[key]
+      hasChanges = true
+    }
+  }
+
+  for (const key of Object.keys(oldProps)) {
+    if (key === 'children') continue
+    if (!(key in newProps)) {
+      updatePayload[key] = undefined
+      hasChanges = true
+    }
+  }
+
+  return hasChanges ? updatePayload : null
+}
+
 /**
  * React Reconciler host configuration for SmithersNode trees.
  * This maps React's reconciliation operations to our SmithersNode structure.
@@ -119,37 +142,28 @@ const hostConfig = {
     oldProps: Props,
     newProps: Props
   ): UpdatePayload | null {
-    // Check if props have changed
-    const updatePayload: Props = {}
-    let hasChanges = false
-
-    for (const key of Object.keys(newProps)) {
-      if (key === 'children') continue
-      if (oldProps[key] !== newProps[key]) {
-        updatePayload[key] = newProps[key]
-        hasChanges = true
-      }
-    }
-
-    // Check for removed props
-    for (const key of Object.keys(oldProps)) {
-      if (key === 'children') continue
-      if (!(key in newProps)) {
-        updatePayload[key] = undefined
-        hasChanges = true
-      }
-    }
-
-    return hasChanges ? updatePayload : null
+    return diffProps(oldProps, newProps)
   },
 
   commitUpdate(
     instance: Instance,
-    updatePayload: UpdatePayload,
-    _type: string,
-    _oldProps: Props,
-    _newProps: Props
+    updatePayloadOrType: UpdatePayload | string,
+    typeOrOldProps: string | Props,
+    oldPropsOrNewProps: Props,
+    _newPropsOrHandle: Props | unknown
   ): void {
+    let updatePayload: UpdatePayload | null
+
+    if (typeof updatePayloadOrType === 'string') {
+      updatePayload = diffProps(typeOrOldProps as Props, oldPropsOrNewProps as Props)
+    } else {
+      updatePayload = updatePayloadOrType
+    }
+
+    if (!updatePayload) {
+      return
+    }
+
     for (const [key, value] of Object.entries(updatePayload)) {
       if (value === undefined) {
         delete instance.props[key]
