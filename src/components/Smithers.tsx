@@ -157,10 +157,9 @@ export function Smithers(props: SmithersProps): ReactNode {
   const subagentId = parseStateValue<string | null>(subagentIdRaw, null)
 
   // Query reactive state from DB
-  const agentQuery = subagentId
-    ? "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?"
-    : 'SELECT 1 WHERE 0'
-  const agentParams = subagentId ? [subagentId] : []
+  const agentQuery =
+    "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?"
+  const agentParams = [subagentId ?? '__never__']
   const { data: agentRow } = useQueryOne<{
     status: string
     result: string | null
@@ -250,7 +249,7 @@ export function Smithers(props: SmithersProps): ReactNode {
     ;(async () => {
       const endTotalTiming = log.time('subagent_execution')
       // Register task with database
-      taskIdRef.current = db.tasks.start('smithers')
+      taskIdRef.current = db.tasks.start('smithers', undefined, { scopeId: executionScope.scopeId })
 
       let activeAgentId: string | null = subagentId
 

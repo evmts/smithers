@@ -5,6 +5,8 @@ import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { extractText } from '../../utils/extract-text.js'
 import { useExecutionScope } from '../ExecutionScope.js'
+import { executeClaudeCLI } from '../agents/ClaudeCodeCLI.js'
+import { makeStateKey } from '../../utils/scope.js'
 
 interface CommitState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -13,6 +15,8 @@ interface CommitState {
 }
 
 export interface CommitProps {
+  /** Stable identifier for resumability */
+  id?: string
   /** Commit message (optional if autoGenerate is true) */
   message?: string
   /** Repository path (defaults to process.cwd) */
@@ -57,9 +61,17 @@ ${diffResult}
 Diff:
 ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : ''}`
 
-  // Use claude CLI with --print to get the response
-  const result = await Bun.$`claude --print --prompt ${prompt}`.text()
-  return result.trim()
+  const result = await executeClaudeCLI({
+    prompt,
+    cwd,
+    outputFormat: 'text',
+  })
+
+  if (result.stopReason === 'error') {
+    throw new Error(result.output)
+  }
+
+  return result.output.trim()
 }
 
 /**
@@ -69,8 +81,8 @@ ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : 
  */
 export function Commit(props: CommitProps): ReactNode {
   const smithers = useSmithers()
-  const opIdRef = useRef(crypto.randomUUID())
-  const stateKey = `git-commit:${opIdRef.current}`
+  const opIdRef = useRef(props.id ?? crypto.randomUUID())
+  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'git-commit', opIdRef.current)
 
   const { data: opState } = useQueryValue<string>(
     smithers.db.db,
@@ -87,18 +99,19 @@ export function Commit(props: CommitProps): ReactNode {
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
   const executionScope = useExecutionScope()
+  const shouldExecute = smithers.executionEnabled && executionScope.enabled
 
   const setState = (newState: CommitState) => {
     smithers.db.state.set(stateKey, newState, 'git-commit')
   }
 
-  useExecutionMount(executionScope.enabled, () => {
+  useExecutionMount(shouldExecute, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
       if (status !== 'pending') return
 
       // Register task with database
-      taskIdRef.current = smithers.db.tasks.start('git-commit')
+      taskIdRef.current = smithers.db.tasks.start('git-commit', undefined, { scopeId: executionScope.scopeId })
 
       try {
         setState({ status: 'running', result: null, error: null })
@@ -147,8 +160,6 @@ export function Commit(props: CommitProps): ReactNode {
           await (props.cwd ? commitCmd.cwd(props.cwd) : commitCmd).quiet()
         }
 
-        if (!isMounted()) return
-
         // Get commit info
         const commitHash = await getCommitHash('HEAD', props.cwd)
         const diffStats = await getDiffStats('HEAD~1', props.cwd)
@@ -182,15 +193,15 @@ export function Commit(props: CommitProps): ReactNode {
           deletions: diffStats.deletions,
         }
 
+        setState({ status: 'complete', result: commitResult, error: null })
         if (isMounted()) {
-          setState({ status: 'complete', result: commitResult, error: null })
           props.onFinished?.(commitResult)
         }
 
       } catch (err) {
+        const errorObj = err instanceof Error ? err : new Error(String(err))
+        setState({ status: 'error', result: null, error: errorObj.message })
         if (isMounted()) {
-          const errorObj = err instanceof Error ? err : new Error(String(err))
-          setState({ status: 'error', result: null, error: errorObj.message })
           props.onError?.(errorObj)
         }
       } finally {
@@ -199,7 +210,7 @@ export function Commit(props: CommitProps): ReactNode {
         }
       }
     })()
-  }, [executionScope.enabled, status, props.all, props.autoGenerate, props.children, props.cwd, props.files, props.message, props.notes, props.onError, props.onFinished, smithers])
+  }, [shouldExecute, status, props.all, props.autoGenerate, props.children, props.cwd, props.files, props.message, props.notes, props.onError, props.onFinished, smithers])
 
   return (
     <git-commit

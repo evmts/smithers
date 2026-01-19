@@ -6,6 +6,7 @@ import { useSmithers } from './SmithersProvider.js'
 import { jjSnapshot, jjCommit } from '../utils/vcs.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
+import { StepContext } from './StepContext.js'
 import { useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { createLogger, withErrorLogging, type Logger } from '../debug/index.js'
 
@@ -13,12 +14,16 @@ import { createLogger, withErrorLogging, type Logger } from '../debug/index.js'
 // STEP REGISTRY CONTEXT (for sequential execution within a phase)
 // ============================================================================
 
+const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, '\\$&')
+
 interface StepRegistryContextValue {
   registerStep: (name: string) => number
   currentStepIndex: number
   advanceStep: () => void
   isStepActive: (index: number) => boolean
   isStepCompleted: (index: number) => boolean
+  markStepComplete: (index: number) => void
+  getCompletionKey: (index: number) => string | null
   isParallel: boolean
 }
 
@@ -46,11 +51,18 @@ export interface StepRegistryProviderProps {
   phaseId?: string
   isParallel?: boolean
   onAllStepsComplete?: () => void
+  registryId?: string
+  enabled?: boolean
 }
 
 export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
   const { db, reactiveDb, executionEnabled } = useSmithers()
+  const isParallel = props.isParallel ?? false
+  const registryEnabled = props.enabled ?? true
+  const completionEnabled = executionEnabled && registryEnabled
+  const registryKey = props.registryId ?? props.phaseId ?? 'default'
   const stateKey = `stepIndex_${props.phaseId ?? 'default'}`
+  const completionKeyPrefix = isParallel ? `stepComplete:${registryKey}` : null
 
   // Track registered steps using ref for synchronous updates during render
   // This avoids race conditions when multiple Step components mount simultaneously
@@ -60,10 +72,23 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   const { data: dbStepIndex } = useQueryValue<number>(
     reactiveDb,
     `SELECT CAST(value AS INTEGER) as idx FROM state WHERE key = ?`,
-    [stateKey]
+    [stateKey],
+    { skip: isParallel }
   )
 
-  const currentStepIndex = props.isParallel ? -1 : (dbStepIndex ?? 0)
+  const currentStepIndex = isParallel ? -1 : (dbStepIndex ?? 0)
+  const completionPattern = completionKeyPrefix
+    ? `${escapeLikePattern(completionKeyPrefix)}:%`
+    : ''
+
+  const { data: completedCountRaw } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT COUNT(*) as count FROM state WHERE key LIKE ? ESCAPE '\\' AND value = '1'`,
+    [completionPattern],
+    { skip: !isParallel }
+  )
+
+  const completedCount = completedCountRaw ?? 0
 
   const registerStep = useCallback((name: string): number => {
     const existingIndex = stepsRef.current.indexOf(name)
@@ -168,8 +193,10 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     advanceStep,
     isStepActive,
     isStepCompleted,
-    isParallel: props.isParallel ?? false,
-  }), [registerStep, currentStepIndex, advanceStep, isStepActive, isStepCompleted, props.isParallel])
+    markStepComplete,
+    getCompletionKey,
+    isParallel,
+  }), [registerStep, currentStepIndex, advanceStep, isStepActive, isStepCompleted, markStepComplete, getCompletionKey, isParallel])
 
   return (
     <StepRegistryContext.Provider value={value}>
@@ -252,6 +279,15 @@ export function Step(props: StepProps): ReactNode {
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
   const executionScope = useExecutionScope()
+
+  const stepScopeRef = useRef<{ iteration: number; scopeId: string }>({
+    iteration: ralphCount,
+    scopeId: crypto.randomUUID(),
+  })
+  if (stepScopeRef.current.iteration !== ralphCount) {
+    stepScopeRef.current = { iteration: ralphCount, scopeId: crypto.randomUUID() }
+  }
+  const stepScopeId = stepScopeRef.current.scopeId
 
   const stepIdRef = useRef<string | null>(null)
   const taskIdRef = useRef<string | null>(null)
@@ -358,6 +394,7 @@ export function Step(props: StepProps): ReactNode {
       endTiming()
 
       log.info('Completed', { stepId: id })
+      registry?.markStepComplete(myIndex)
       props.onComplete?.()
       registry?.advanceStep()
     } catch (error) {
@@ -372,7 +409,7 @@ export function Step(props: StepProps): ReactNode {
         db.tasks.complete(taskIdRef.current)
       }
     }
-  }, [db, log, props.commitAfter, props.commitMessage, props.name, props.onComplete, props.onError, props.snapshotAfter, registry])
+  }, [db, log, myIndex, props.commitAfter, props.commitMessage, props.name, props.onComplete, props.onError, props.snapshotAfter, registry])
 
   const maybeCompleteStep = useCallback((runningCount: number, totalCount: number) => {
     if (!hasStartedRef.current || hasCompletedRef.current) return
@@ -492,6 +529,7 @@ export function Step(props: StepProps): ReactNode {
         db.tasks.complete(taskIdRef.current)
       }
       
+      registry?.markStepComplete(myIndex)
       props.onComplete?.()
     }
   })
@@ -502,9 +540,13 @@ export function Step(props: StepProps): ReactNode {
       status={status}
       {...(stepErrorRef.current ? { error: stepErrorRef.current.message } : {})}
     >
-      <ExecutionScopeProvider enabled={canExecute}>
-        {props.children}
-      </ExecutionScopeProvider>
+      {canExecute && (
+        <StepContext.Provider value={{ isActive: canExecute }}>
+          <ExecutionScopeProvider enabled={canExecute} scopeId={stepScopeId}>
+            {props.children}
+          </ExecutionScopeProvider>
+        </StepContext.Provider>
+      )}
     </step>
   )
 }

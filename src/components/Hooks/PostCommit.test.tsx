@@ -18,6 +18,7 @@ import { PostCommit } from './PostCommit.js'
 import { createSmithersDB, type SmithersDB } from '../../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../../reconciler/root.js'
 import { SmithersProvider } from '../SmithersProvider.js'
+import { makeStateKey } from '../../utils/scope.js'
 
 // ============================================================================
 // TEST UTILITIES
@@ -44,6 +45,10 @@ function cleanupTestContext(ctx: TestContext): void {
   setTimeout(() => {
     try { ctx.db.close() } catch {}
   }, 10)
+}
+
+function getStateKey(ctx: TestContext): string {
+  return makeStateKey(ctx.executionId, 'hook', 'postCommit')
 }
 
 // Helper to render PostCommit within SmithersProvider
@@ -158,7 +163,7 @@ describe('PostCommit lifecycle', () => {
     // Allow async mount to complete
     await new Promise(r => setTimeout(r, 100))
     
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
   })
 
@@ -215,12 +220,12 @@ describe('PostCommit state management', () => {
 
   test('initializes with default state when no prior state exists', async () => {
     // Ensure no prior state
-    expect(ctx.db.state.get('hook:postCommit')).toBeNull()
+    expect(ctx.db.state.get(getStateKey(ctx))).toBeNull()
     
     await renderPostCommit(ctx)
     await new Promise(r => setTimeout(r, 100))
     
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
     expect(state.triggered).toBe(false)
     expect(state.currentTrigger).toBeNull()
@@ -230,7 +235,7 @@ describe('PostCommit state management', () => {
   test('state preserves lastProcessedTimestamp across remount', async () => {
     // Set up initial state
     const timestamp = Date.now()
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: false,
       currentTrigger: null,
       hookInstalled: true,
@@ -241,12 +246,12 @@ describe('PostCommit state management', () => {
     await renderPostCommit(ctx)
     await new Promise(r => setTimeout(r, 50))
     
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state.lastProcessedTimestamp).toBe(timestamp)
   })
 
   test('triggered state persists in database', async () => {
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: true,
       currentTrigger: { type: 'post-commit', commitHash: 'abc123', timestamp: Date.now() },
       hookInstalled: true,
@@ -257,7 +262,7 @@ describe('PostCommit state management', () => {
     await renderPostCommit(ctx)
     await new Promise(r => setTimeout(r, 50))
     
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state.triggered).toBe(true)
     expect(state.currentTrigger.commitHash).toBe('abc123')
   })
@@ -289,7 +294,7 @@ describe('PostCommit trigger behavior', () => {
 
   test('renders children when triggered is true in state', async () => {
     // Pre-set triggered state
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: true,
       currentTrigger: { type: 'post-commit', commitHash: 'def456', timestamp: Date.now() },
       hookInstalled: true,
@@ -373,7 +378,7 @@ describe('PostCommit element attributes', () => {
   })
 
   test('post-commit-hook shows commit-hash when triggered', async () => {
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: true,
       currentTrigger: { type: 'post-commit', commitHash: 'abc123def', timestamp: Date.now() },
       hookInstalled: true,
@@ -389,7 +394,7 @@ describe('PostCommit element attributes', () => {
   })
 
   test('post-commit-hook shows installed attribute', async () => {
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: false,
       currentTrigger: null,
       hookInstalled: true,
@@ -405,7 +410,7 @@ describe('PostCommit element attributes', () => {
   })
 
   test('post-commit-hook shows error attribute when error', async () => {
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: false,
       currentTrigger: null,
       hookInstalled: false,
@@ -508,7 +513,7 @@ describe('PostCommit error handling', () => {
   test('handles hook installation error gracefully', async () => {
     // This would require mocking Bun.write to fail
     // For now, verify the error state structure
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: false,
       currentTrigger: null,
       hookInstalled: false,
@@ -555,7 +560,7 @@ describe('PostCommit polling logic', () => {
   test('starts polling interval on mount', async () => {
     // Pre-set state to simulate successful hook installation
     // This ensures polling starts even if hook install fails
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: false,
       currentTrigger: null,
       hookInstalled: true,
@@ -578,7 +583,7 @@ describe('PostCommit polling logic', () => {
 
   test('polling detects new trigger based on timestamp', async () => {
     // Set initial state with old timestamp
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: false,
       currentTrigger: null,
       hookInstalled: true,
@@ -597,7 +602,7 @@ describe('PostCommit polling logic', () => {
     await new Promise(r => setTimeout(r, 1200)) // Wait for at least one poll cycle
     
     // Trigger should have been detected
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
   })
 
@@ -605,7 +610,7 @@ describe('PostCommit polling logic', () => {
     const timestamp = Date.now()
     
     // Set state with already processed timestamp
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: true,
       currentTrigger: { type: 'post-commit', commitHash: 'old123', timestamp },
       hookInstalled: true,
@@ -624,7 +629,7 @@ describe('PostCommit polling logic', () => {
     await new Promise(r => setTimeout(r, 100))
     
     // Should still show the old trigger
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state.currentTrigger?.commitHash).toBe('old123')
   })
 })
@@ -650,14 +655,14 @@ describe('PostCommit git hook installation', () => {
     await renderPostCommit(ctx)
     await new Promise(r => setTimeout(r, 200))
     
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     // Either hookInstalled is true (success) or error is set (failure)
     expect(state !== null).toBe(true)
   })
 
   test('hook installation sets hookInstalled state', async () => {
     // Pre-set to verify the component updates it
-    ctx.db.state.set('hook:postCommit', {
+    ctx.db.state.set(getStateKey(ctx), {
       triggered: false,
       currentTrigger: null,
       hookInstalled: false,
@@ -668,7 +673,7 @@ describe('PostCommit git hook installation', () => {
     await renderPostCommit(ctx)
     await new Promise(r => setTimeout(r, 200))
     
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     // Either succeeded or errored, but state should be updated
     expect(state !== null).toBe(true)
   })
@@ -738,7 +743,7 @@ describe('PostCommit integration', () => {
     expect(() => ctx.root.dispose()).not.toThrow()
     
     // State should still exist in DB (persist across unmount)
-    const state = ctx.db.state.get<any>('hook:postCommit')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
   })
 

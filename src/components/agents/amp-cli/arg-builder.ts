@@ -21,8 +21,7 @@ export function buildAmpArgs(options: AmpCLIExecutionOptions): string[] {
   if (options.continue || options.resume) {
     args.push('threads', 'continue')
     if (options.resume) {
-      // Resume specific thread by ID (positional)
-      args.push(options.resume)
+      args.push('--thread-id', options.resume)
     } else {
       // Continue last thread without interactive picker
       args.push('--last')
@@ -39,6 +38,14 @@ export function buildAmpArgs(options: AmpCLIExecutionOptions): string[] {
   // Mode selection
   if (options.mode) {
     args.push('--mode', modeMap[options.mode] ?? options.mode)
+  }
+
+  if (options.maxTurns !== undefined) {
+    args.push('--max-turns', String(options.maxTurns))
+  }
+
+  if (options.systemPrompt) {
+    args.push('--system-prompt', options.systemPrompt)
   }
 
   // Permission mode

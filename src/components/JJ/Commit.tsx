@@ -1,43 +1,62 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
+import { useExecutionScope } from '../ExecutionScope.js'
 import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs.js'
-import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
-import { useExecutionContext } from '../ExecutionContext.js'
-import { useVersionTracking } from '../../reactive-sqlite/index.js'
+import { useExecutionMount } from '../../reconciler/hooks.js'
+import { useQueryValue } from '../../reactive-sqlite/index.js'
+import { makeStateKey } from '../../utils/scope.js'
 
 export interface CommitProps {
+  id?: string
   message?: string
   autoDescribe?: boolean
   notes?: string
   children?: ReactNode
 }
 
+interface CommitState {
+  status: 'pending' | 'running' | 'complete' | 'error'
+  result: { commitHash: string; changeId: string } | null
+  error: string | null
+}
+
 /**
  * JJ Commit component - creates a JJ commit with optional auto-describe.
  *
- * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
- * Registers with Ralph for task tracking.
+ * React pattern: Uses db.state for resumability and task tracking.
  */
 export function Commit(props: CommitProps): ReactNode {
   const smithers = useSmithers()
-  const execution = useExecutionContext()
-  const { invalidateAndUpdate } = useVersionTracking()
+  const executionScope = useExecutionScope()
+  const opIdRef = useRef(props.id ?? crypto.randomUUID())
+  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'jj-commit', opIdRef.current)
 
-  const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const commitHashRef = useRef<string | null>(null)
-  const changeIdRef = useRef<string | null>(null)
-  const errorRef = useRef<Error | null>(null)
+  const { data: opState } = useQueryValue<string>(
+    smithers.db.db,
+    'SELECT value FROM state WHERE key = ?',
+    [stateKey]
+  )
+  const defaultState: CommitState = { status: 'pending', result: null, error: null }
+  const { status, result, error } = (() => {
+    if (!opState) return defaultState
+    try { return JSON.parse(opState) as CommitState }
+    catch { return defaultState }
+  })()
+
   const taskIdRef = useRef<string | null>(null)
-  const isMounted = useMountedState()
+  const shouldExecute = smithers.executionEnabled && executionScope.enabled
 
-  const shouldExecute = smithers.executionEnabled && execution.isActive
+  const setState = (newState: CommitState) => {
+    smithers.db.state.set(stateKey, newState, 'jj-commit')
+  }
+
   useExecutionMount(shouldExecute, () => {
     ;(async () => {
-      taskIdRef.current = smithers.db.tasks.start('jj-commit')
+      if (status !== 'pending') return
+      taskIdRef.current = smithers.db.tasks.start('jj-commit', undefined, { scopeId: executionScope.scopeId })
 
       try {
-        statusRef.current = 'running'
-        invalidateAndUpdate()
+        setState({ status: 'running', result: null, error: null })
 
         let message = props.message
 
@@ -51,12 +70,7 @@ export function Commit(props: CommitProps): ReactNode {
           message = 'Commit by Smithers'
         }
 
-        const result = await jjCommit(message)
-
-        if (!isMounted()) return
-
-        commitHashRef.current = result.commitHash
-        changeIdRef.current = result.changeId
+        const commitResult = await jjCommit(message)
 
         const stats = await getJJDiffStats()
 
@@ -66,8 +80,8 @@ export function Commit(props: CommitProps): ReactNode {
 
         await smithers.db.vcs.logCommit({
           vcs_type: 'jj',
-          commit_hash: result.commitHash,
-          change_id: result.changeId,
+          commit_hash: commitResult.commitHash,
+          change_id: commitResult.changeId,
           message,
           files_changed: stats.files,
           insertions: stats.insertions,
@@ -75,30 +89,24 @@ export function Commit(props: CommitProps): ReactNode {
           ...(props.notes ? { smithers_metadata: { notes: props.notes } } : {}),
         })
 
-        if (isMounted()) {
-          statusRef.current = 'complete'
-          invalidateAndUpdate()
-        }
+        setState({ status: 'complete', result: { commitHash: commitResult.commitHash, changeId: commitResult.changeId }, error: null })
       } catch (err) {
-        if (isMounted()) {
-          errorRef.current = err instanceof Error ? err : new Error(String(err))
-          statusRef.current = 'error'
-          invalidateAndUpdate()
-        }
+        const errorObj = err instanceof Error ? err : new Error(String(err))
+        setState({ status: 'error', result: null, error: errorObj.message })
       } finally {
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
       }
     })()
-  }, [props.autoDescribe, props.message, props.notes, smithers])
+  }, [props.autoDescribe, props.message, props.notes, smithers, status, shouldExecute])
 
   return (
     <jj-commit
-      status={statusRef.current}
-      commit-hash={commitHashRef.current}
-      change-id={changeIdRef.current}
-      error={errorRef.current?.message}
+      status={status}
+      commit-hash={result?.commitHash}
+      change-id={result?.changeId}
+      error={error ?? undefined}
       message={props.message}
       auto-describe={props.autoDescribe}
     >

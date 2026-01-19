@@ -14,7 +14,7 @@ function PhaseTaskRunner(props: { name: string; delay?: number }) {
   const taskIdRef = React.useRef<string | null>(null)
 
   useExecutionEffect(executionScope.enabled, () => {
-    taskIdRef.current = db.tasks.start('phase-test-task', props.name)
+    taskIdRef.current = db.tasks.start('phase-test-task', props.name, { scopeId: executionScope.scopeId })
     const timeoutId = setTimeout(() => {
       if (!db.db.isClosed && taskIdRef.current) {
         db.tasks.complete(taskIdRef.current)

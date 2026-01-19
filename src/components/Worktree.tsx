@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react'
 import * as path from 'node:path'
 import { useSmithers } from './SmithersProvider.js'
+import { useExecutionScope } from './ExecutionScope.js'
 import { WorktreeProvider, type WorktreeContextValue } from './WorktreeProvider.js'
 import { useMount, useUnmount, useMountedState } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
@@ -29,6 +30,7 @@ interface WorktreeState {
 
 export function Worktree(props: WorktreeProps): ReactNode {
   const smithers = useSmithers()
+  const executionScope = useExecutionScope()
   // Use stable id for resumability (defaults to branch name if not provided)
   const worktreeId = props.id ?? props.branch
   const stateKey = `worktree:${worktreeId}`
@@ -55,7 +57,7 @@ export function Worktree(props: WorktreeProps): ReactNode {
 
   useMount(() => {
     ;(async () => {
-      taskIdRef.current = smithers.db.tasks.start('worktree', props.branch)
+      taskIdRef.current = smithers.db.tasks.start('worktree', props.branch, { scopeId: executionScope.scopeId })
 
       try {
         const defaultPath = path.join(process.cwd(), '.worktrees', props.branch)

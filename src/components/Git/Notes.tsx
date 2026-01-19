@@ -1,9 +1,10 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
+import { useExecutionScope } from '../ExecutionScope.js'
 import { addGitNotes, getGitNotes } from '../../utils/vcs.js'
 import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { useExecutionContext } from '../ExecutionContext.js'
+import { makeStateKey } from '../../utils/scope.js'
 
 interface NotesState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -12,6 +13,8 @@ interface NotesState {
 }
 
 export interface NotesProps {
+  /** Stable identifier for resumability */
+  id?: string
   /** Commit reference (default: HEAD) */
   commitRef?: string
   /** Repository path (defaults to process.cwd) */
@@ -39,9 +42,9 @@ export interface NotesResult {
  */
 export function Notes(props: NotesProps): ReactNode {
   const smithers = useSmithers()
-  const execution = useExecutionContext()
-  const opIdRef = useRef(crypto.randomUUID())
-  const stateKey = `git-notes:${opIdRef.current}`
+  const executionScope = useExecutionScope()
+  const opIdRef = useRef(props.id ?? crypto.randomUUID())
+  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'git-notes', opIdRef.current)
 
   const { data: opState } = useQueryValue<string>(
     smithers.db.db,
@@ -62,12 +65,13 @@ export function Notes(props: NotesProps): ReactNode {
     smithers.db.state.set(stateKey, newState, 'git-notes')
   }
 
-  const shouldExecute = smithers.executionEnabled && execution.isActive
+  const shouldExecute = smithers.executionEnabled && executionScope.enabled
   useExecutionMount(shouldExecute, () => {
     // Fire-and-forget async IIFE
     ;(async () => {
+      if (status !== 'pending') return
       // Register task with database
-      taskIdRef.current = smithers.db.tasks.start('git-notes')
+      taskIdRef.current = smithers.db.tasks.start('git-notes', undefined, { scopeId: executionScope.scopeId })
 
       try {
         setState({ status: 'running', result: null, error: null })

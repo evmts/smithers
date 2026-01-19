@@ -11,6 +11,7 @@ import { PhaseRegistryProvider } from './PhaseRegistry.js'
 import { useMount, useUnmount, useEffectOnValueChange } from '../reconciler/hooks.js'
 import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
 import { jjSnapshot } from '../utils/vcs.js'
+import { makeStateKey } from '../utils/scope.js'
 import type { SmithersMiddleware } from '../middleware/types.js'
 
 // ============================================================================
@@ -590,7 +591,10 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
                   break
 
                 case 'ci_failure':
-                  const ciFailure = await props.db.state.get<{ message?: string }>('last_ci_failure')
+                  const ciFailureKey = makeStateKey(props.executionId, 'hook', 'lastCIFailure')
+                  const ciFailure =
+                    await props.db.state.get<{ message?: string }>(ciFailureKey) ??
+                    await props.db.state.get<{ message?: string }>('last_ci_failure')
                   shouldStop = ciFailure !== null
                   message = message || `CI failure detected: ${ciFailure?.message ?? 'unknown'}`
                   break

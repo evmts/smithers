@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useRef } from 'react'
 import { useSmithers } from './SmithersProvider.js'
+import { useExecutionScope } from './ExecutionScope.js'
 import { useMount } from '../reconciler/hooks.js'
 
 export interface EndSummary {
@@ -68,6 +69,7 @@ export interface EndProps {
  */
 export function End(props: EndProps): ReactNode {
   const { db, executionId, requestStop } = useSmithers()
+  const executionScope = useExecutionScope()
   const taskIdRef = useRef<string | null>(null)
   const hasEndedRef = useRef(false)
 
@@ -76,7 +78,7 @@ export function End(props: EndProps): ReactNode {
     hasEndedRef.current = true
 
     ;(async () => {
-      taskIdRef.current = db.tasks.start('end', 'orchestration')
+      taskIdRef.current = db.tasks.start('end', 'orchestration', { scopeId: executionScope.scopeId })
 
       try {
         // Evaluate summary

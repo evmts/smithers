@@ -113,7 +113,7 @@ export function Claude(props: ClaudeProps): ReactNode {
     if (!shouldExecute) return
     ;(async () => {
       const endTotalTiming = log.time('agent_execution')
-      taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet')
+      taskIdRef.current = db.tasks.start('claude', props.model ?? 'sonnet', { scopeId: executionScope.scopeId })
 
       if (isStopRequested()) {
         log.info('Execution stopped by request')

@@ -4,13 +4,18 @@ import { useEffectOnValueChange } from '../reconciler/hooks.js'
 
 type ExecutionScopeValue = {
   enabled: boolean
+  scopeId: string | null
 }
 
-const ExecutionScopeContext = createContext<ExecutionScopeValue>({ enabled: true })
+const ExecutionScopeContext = createContext<ExecutionScopeValue>({ enabled: true, scopeId: null })
 
-export function ExecutionScopeProvider(props: { enabled: boolean; children: ReactNode }): ReactNode {
+export function ExecutionScopeProvider(props: { enabled: boolean; scopeId?: string | null; children: ReactNode }): ReactNode {
+  const parent = useContext(ExecutionScopeContext)
+  const scopeId = props.scopeId ?? parent.scopeId ?? null
+  const enabled = parent.enabled && props.enabled
+
   return (
-    <ExecutionScopeContext.Provider value={{ enabled: props.enabled }}>
+    <ExecutionScopeContext.Provider value={{ enabled, scopeId }}>
       {props.children}
     </ExecutionScopeContext.Provider>
   )

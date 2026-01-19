@@ -1,9 +1,21 @@
 import type { ReactNode } from 'react'
 import { useRef } from 'react'
 import { useSmithers } from './SmithersProvider.js'
+import { useExecutionScope } from './ExecutionScope.js'
 import { useMount, useEffectOnValueChange } from '../reconciler/hooks.js'
-import { useQueryOne } from '../reactive-sqlite/index.js'
+import { useQueryOne, useQueryValue } from '../reactive-sqlite/index.js'
 import type { HumanInteraction } from '../db/human.js'
+import { extractText } from '../utils/extract-text.js'
+import { parseJson } from '../db/utils.js'
+
+const hashString = (value: string): string => {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16)
+}
 
 export interface HumanProps {
   /**
@@ -36,42 +48,54 @@ export interface HumanProps {
  * ```
  */
 export function Human(props: HumanProps): ReactNode {
-  const { db } = useSmithers()
-  // Use stable id for resumability (falls back to random if not provided)
-  const humanId = props.id ?? crypto.randomUUID()
+  const { db, reactiveDb } = useSmithers()
+  const executionScope = useExecutionScope()
+  const smithersKey = (props as { __smithersKey?: unknown }).__smithersKey
+  const childrenText = extractText(props.children)
+  const fallbackSeed = [props.message, childrenText].filter(Boolean).join('|')
+  const fallbackId = smithersKey !== undefined && smithersKey !== null
+    ? `key:${String(smithersKey)}`
+    : (fallbackSeed ? `content:${hashString(fallbackSeed)}` : null)
+  const humanId = props.id ?? fallbackId
+  if (!humanId) {
+    throw new Error('Human requires a stable id, key, or content for resumability')
+  }
   const stateKey = `human:${humanId}`
   const taskIdRef = useRef<string | null>(null)
-  const requestIdRef = useRef<string | null>(null)
+
+  const { data: requestIdRaw } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = ?",
+    [stateKey]
+  )
+  const requestId = requestIdRaw ? parseJson<string>(requestIdRaw, null) : null
 
   useMount(() => {
     // Check for existing request (resumability)
-    const existingRequestId = db.state.get<string>(stateKey)
-    if (existingRequestId) {
-      requestIdRef.current = existingRequestId
+    if (requestId) {
       // Don't start a new task if resuming
       return
     }
 
     // Register blocking task
-    taskIdRef.current = db.tasks.start('human_interaction', props.message ?? 'Human input required')
+    taskIdRef.current = db.tasks.start('human_interaction', props.message ?? 'Human input required', { scopeId: executionScope.scopeId })
 
     // Create human interaction request
-    requestIdRef.current = db.human.request(
+    const newRequestId = db.human.request(
       'confirmation',
       props.message ?? 'Approve to continue'
     )
 
     // Store request id for resumability
-    db.state.set(stateKey, requestIdRef.current, 'human_request')
+    db.state.set(stateKey, newRequestId, 'human_request')
   })
 
   // Reactive subscription to the request
   const { data: request } = useQueryOne<HumanInteraction>(
-    db.db,
-    requestIdRef.current
-      ? `SELECT * FROM human_interactions WHERE id = ?`
-      : `SELECT 1 WHERE 0`,
-    requestIdRef.current ? [requestIdRef.current] : []
+    reactiveDb,
+    `SELECT * FROM human_interactions WHERE id = ?`,
+    requestId ? [requestId] : [],
+    { skip: !requestId }
   )
 
   // Handle resolution

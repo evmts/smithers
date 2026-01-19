@@ -2,6 +2,8 @@
 // Parses stream-json output from amp CLI
 
 import type { AgentResult, StopReason } from '../types/execution.js'
+import type { TailLogEntry } from '../claude-cli/message-parser.js'
+import { safeStringify } from '../../../debug/index.js'
 
 interface AmpStreamEvent {
   type: string
@@ -18,6 +20,20 @@ interface AmpStreamEvent {
   }
   session_id?: string
   error?: string
+  name?: string
+  tool_name?: string
+  toolName?: string
+  input?: unknown
+  arguments?: unknown
+  args?: unknown
+  tool?: {
+    name?: string
+    input?: unknown
+  }
+  data?: {
+    input?: unknown
+    args?: unknown
+  }
 }
 
 /**
@@ -101,4 +117,134 @@ export function extractTextFromStreamEvent(line: string): string | null {
     // Not valid JSON
   }
   return null
+}
+
+export function extractToolCallFromStreamEvent(line: string): { toolName: string; input?: unknown } | null {
+  try {
+    const event: AmpStreamEvent = JSON.parse(line)
+    const type = typeof event.type === 'string' ? event.type.toLowerCase() : ''
+    if (!type.includes('tool') || type.includes('result')) {
+      return null
+    }
+
+    const toolName = event.name
+      ?? event.tool_name
+      ?? event.toolName
+      ?? event.tool?.name
+      ?? 'unknown'
+
+    const input = event.input
+      ?? event.arguments
+      ?? event.args
+      ?? event.tool?.input
+      ?? event.data?.input
+      ?? event.data?.args
+
+    return { toolName, input }
+  } catch {
+    return null
+  }
+}
+
+export class AmpMessageParser {
+  private buffer = ''
+  private entries: TailLogEntry[] = []
+  private currentIndex = 0
+  private maxEntries: number
+  private currentMessageIndex: number | null = null
+  private onToolCall?: (toolName: string, input: unknown) => void
+
+  constructor(maxEntries: number = 100, onToolCall?: (toolName: string, input: unknown) => void) {
+    this.maxEntries = maxEntries
+    this.onToolCall = onToolCall
+  }
+
+  setOnToolCall(onToolCall?: (toolName: string, input: unknown) => void): void {
+    this.onToolCall = onToolCall
+  }
+
+  parseChunk(chunk: string): void {
+    this.buffer += chunk
+    let newlineIndex = this.buffer.indexOf('\n')
+    while (newlineIndex >= 0) {
+      const line = this.buffer.slice(0, newlineIndex)
+      this.buffer = this.buffer.slice(newlineIndex + 1)
+      this.processLine(line)
+      newlineIndex = this.buffer.indexOf('\n')
+    }
+  }
+
+  private processLine(line: string): void {
+    const trimmed = line.trim()
+    if (!trimmed) return
+
+    const toolCall = extractToolCallFromStreamEvent(line)
+    if (toolCall) {
+      this.onToolCall?.(toolCall.toolName, toolCall.input)
+      const content = toolCall.input !== undefined ? safeStringify(toolCall.input) : ''
+      this.addEntry({
+        type: 'tool-call',
+        content,
+        toolName: toolCall.toolName,
+      })
+      this.currentMessageIndex = null
+      return
+    }
+
+    const text = extractTextFromStreamEvent(line)
+    if (text) {
+      this.appendMessage(text)
+      return
+    }
+
+    this.appendMessage(line)
+  }
+
+  private appendMessage(text: string): void {
+    if (!text.trim()) return
+    if (
+      this.currentMessageIndex === null ||
+      !this.entries[this.currentMessageIndex] ||
+      this.entries[this.currentMessageIndex]?.type !== 'message'
+    ) {
+      this.addEntry({ type: 'message', content: text })
+      this.currentMessageIndex = this.entries.length - 1
+      return
+    }
+
+    this.entries[this.currentMessageIndex].content += text
+  }
+
+  private addEntry(entry: Omit<TailLogEntry, 'index'>): void {
+    this.entries.push({
+      ...entry,
+      index: this.currentIndex++,
+    })
+
+    if (this.entries.length > this.maxEntries) {
+      this.entries = this.entries.slice(-this.maxEntries)
+    }
+
+    if (entry.type !== 'message') {
+      this.currentMessageIndex = null
+    }
+  }
+
+  flush(): void {
+    if (this.buffer.trim()) {
+      this.processLine(this.buffer)
+    }
+    this.buffer = ''
+  }
+
+  reset(): void {
+    this.buffer = ''
+    this.entries = []
+    this.currentIndex = 0
+    this.currentMessageIndex = null
+  }
+
+  getLatestEntries(n: number): TailLogEntry[] {
+    return this.entries.slice(-n)
+  }
 }

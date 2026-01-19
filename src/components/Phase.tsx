@@ -83,6 +83,7 @@ export function Phase(props: PhaseProps): ReactNode {
   const log: Logger = useMemo(() => createLogger('Phase', { name: props.name }), [props.name])
 
   // Evaluate skipIf with error handling
+  skipIfErrorRef.current = null
   let isSkipped = false
   if (props.skipIf) {
     try {

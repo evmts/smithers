@@ -1,11 +1,13 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
+import { useExecutionScope } from '../ExecutionScope.js'
 import { getJJStatus } from '../../utils/vcs.js'
 import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
-import { useExecutionContext } from '../ExecutionContext.js'
-import { useVersionTracking } from '../../reactive-sqlite/index.js'
+import { useQueryValue } from '../../reactive-sqlite/index.js'
+import { makeStateKey } from '../../utils/scope.js'
 
 export interface StatusProps {
+  id?: string
   onDirty?: (status: { modified: string[]; added: string[]; deleted: string[] }) => void
   onClean?: () => void
   children?: ReactNode
@@ -17,53 +19,60 @@ export interface StatusProps {
  * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
+interface StatusState {
+  status: 'pending' | 'running' | 'complete' | 'error'
+  fileStatus: { modified: string[]; added: string[]; deleted: string[] } | null
+  isDirty: boolean | null
+  error: string | null
+}
+
 export function Status(props: StatusProps): ReactNode {
   const smithers = useSmithers()
-  const execution = useExecutionContext()
-  const { invalidateAndUpdate } = useVersionTracking()
+  const executionScope = useExecutionScope()
+  const opIdRef = useRef(props.id ?? crypto.randomUUID())
+  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'jj-status', opIdRef.current)
 
-  const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const isDirtyRef = useRef<boolean | null>(null)
-  const fileStatusRef = useRef<{
-    modified: string[]
-    added: string[]
-    deleted: string[]
-  } | null>(null)
-  const errorRef = useRef<Error | null>(null)
+  const { data: opState } = useQueryValue<string>(
+    smithers.db.db,
+    'SELECT value FROM state WHERE key = ?',
+    [stateKey]
+  )
+  const defaultState: StatusState = { status: 'pending', fileStatus: null, isDirty: null, error: null }
+  const { status, fileStatus, isDirty, error } = (() => {
+    if (!opState) return defaultState
+    try { return JSON.parse(opState) as StatusState }
+    catch { return defaultState }
+  })()
+
   const taskIdRef = useRef<string | null>(null)
   const isMounted = useMountedState()
+  const shouldExecute = smithers.executionEnabled && executionScope.enabled
 
-  const shouldExecute = smithers.executionEnabled && execution.isActive
+  const setState = (newState: StatusState) => {
+    smithers.db.state.set(stateKey, newState, 'jj-status')
+  }
+
   useExecutionMount(shouldExecute, () => {
     ;(async () => {
-      taskIdRef.current = smithers.db.tasks.start('jj-status')
+      if (status !== 'pending') return
+      taskIdRef.current = smithers.db.tasks.start('jj-status', undefined, { scopeId: executionScope.scopeId })
 
       try {
-        statusRef.current = 'running'
-        invalidateAndUpdate()
+        setState({ status: 'running', fileStatus: null, isDirty: null, error: null })
 
         const jjStatus = await getJJStatus()
-
-        if (!isMounted()) return
-
-        fileStatusRef.current = jjStatus
 
         const dirty =
           jjStatus.modified.length > 0 ||
           jjStatus.added.length > 0 ||
           jjStatus.deleted.length > 0
 
-        isDirtyRef.current = dirty
-
-        if (dirty) {
-          props.onDirty?.(jjStatus)
-        } else {
-          props.onClean?.()
-        }
-
         if (isMounted()) {
-          statusRef.current = 'complete'
-          invalidateAndUpdate()
+          if (dirty) {
+            props.onDirty?.(jjStatus)
+          } else {
+            props.onClean?.()
+          }
         }
 
         await smithers.db.vcs.addReport({
@@ -77,28 +86,27 @@ export function Status(props: StatusProps): ReactNode {
             ...jjStatus,
           },
         })
+
+        setState({ status: 'complete', fileStatus: jjStatus, isDirty: dirty, error: null })
       } catch (err) {
-        if (isMounted()) {
-          errorRef.current = err instanceof Error ? err : new Error(String(err))
-          statusRef.current = 'error'
-          invalidateAndUpdate()
-        }
+        const errorObj = err instanceof Error ? err : new Error(String(err))
+        setState({ status: 'error', fileStatus: null, isDirty: null, error: errorObj.message })
       } finally {
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
       }
     })()
-  }, [props.onClean, props.onDirty, smithers])
+  }, [props.onClean, props.onDirty, smithers, status, shouldExecute])
 
   return (
     <jj-status
-      status={statusRef.current}
-      is-dirty={isDirtyRef.current}
-      modified={fileStatusRef.current?.modified?.join(',')}
-      added={fileStatusRef.current?.added?.join(',')}
-      deleted={fileStatusRef.current?.deleted?.join(',')}
-      error={errorRef.current?.message}
+      status={status}
+      is-dirty={isDirty ?? undefined}
+      modified={fileStatus?.modified?.join(',')}
+      added={fileStatus?.added?.join(',')}
+      deleted={fileStatus?.deleted?.join(',')}
+      error={error ?? undefined}
     >
       {props.children}
     </jj-status>

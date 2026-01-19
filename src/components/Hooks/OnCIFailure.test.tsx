@@ -17,6 +17,7 @@ import { OnCIFailure } from './OnCIFailure.js'
 import { createSmithersDB, type SmithersDB } from '../../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../../reconciler/root.js'
 import { SmithersProvider } from '../SmithersProvider.js'
+import { makeStateKey } from '../../utils/scope.js'
 
 // ============================================================================
 // TEST UTILITIES
@@ -43,6 +44,10 @@ function cleanupTestContext(ctx: TestContext): void {
   setTimeout(() => {
     try { ctx.db.close() } catch {}
   }, 10)
+}
+
+function getStateKey(ctx: TestContext): string {
+  return makeStateKey(ctx.executionId, 'hook', 'ciFailure')
 }
 
 // Helper to render OnCIFailure within SmithersProvider
@@ -193,7 +198,7 @@ describe('OnCIFailure lifecycle', () => {
     // Allow async mount to complete
     await new Promise(r => setTimeout(r, 50))
     
-    const state = ctx.db.state.get<any>('hook:ciFailure')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
     expect(state.ciStatus).toBeDefined()
   })
@@ -204,7 +209,7 @@ describe('OnCIFailure lifecycle', () => {
     // Allow async mount to complete
     await new Promise(r => setTimeout(r, 100))
     
-    const state = ctx.db.state.get<any>('hook:ciFailure')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
     // Status should be polling or error (if gh CLI not available)
     expect(['polling', 'error', 'idle']).toContain(state.ciStatus)
@@ -267,12 +272,12 @@ describe('OnCIFailure state management', () => {
 
   test('initializes with default state when no prior state exists', async () => {
     // Ensure no prior state
-    expect(ctx.db.state.get('hook:ciFailure')).toBeNull()
+    expect(ctx.db.state.get(getStateKey(ctx))).toBeNull()
     
     await renderOnCIFailure(ctx)
     await new Promise(r => setTimeout(r, 50))
     
-    const state = ctx.db.state.get<any>('hook:ciFailure')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
     expect(state.triggered).toBe(false)
     expect(state.currentFailure).toBeNull()
@@ -288,12 +293,12 @@ describe('OnCIFailure state management', () => {
       error: null,
       processedRunIds: [12345, 67890],
     }
-    ctx.db.state.set('hook:ciFailure', initialState, 'test-setup')
+    ctx.db.state.set(getStateKey(ctx), initialState, 'test-setup')
     
     await renderOnCIFailure(ctx)
     await new Promise(r => setTimeout(r, 50))
     
-    const state = ctx.db.state.get<any>('hook:ciFailure')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state.processedRunIds).toContain(12345)
     expect(state.processedRunIds).toContain(67890)
   })
@@ -305,7 +310,7 @@ describe('OnCIFailure state management', () => {
     await new Promise(r => setTimeout(r, 50))
     
     // Should not throw and should have valid state
-    const state = ctx.db.state.get<any>('hook:ciFailure')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
   })
 })
@@ -336,7 +341,7 @@ describe('OnCIFailure trigger behavior', () => {
 
   test('renders children when triggered is true in state', async () => {
     // Pre-set triggered state
-    ctx.db.state.set('hook:ciFailure', {
+    ctx.db.state.set(getStateKey(ctx), {
       ciStatus: 'failed',
       currentFailure: { failed: true, runId: '123' },
       triggered: true,
@@ -361,7 +366,7 @@ describe('OnCIFailure trigger behavior', () => {
     await renderOnCIFailure(ctx, { onFailure })
     
     // Simulate a failure by setting state directly
-    ctx.db.state.set('hook:ciFailure', {
+    ctx.db.state.set(getStateKey(ctx), {
       ciStatus: 'failed',
       currentFailure: { failed: true, runId: '999' },
       triggered: true,
@@ -419,7 +424,7 @@ describe('OnCIFailure element attributes', () => {
   })
 
   test('ci-failure-hook shows run-id when triggered', async () => {
-    ctx.db.state.set('hook:ciFailure', {
+    ctx.db.state.set(getStateKey(ctx), {
       ciStatus: 'failed',
       currentFailure: { failed: true, runId: '12345' },
       triggered: true,
@@ -435,7 +440,7 @@ describe('OnCIFailure element attributes', () => {
   })
 
   test('ci-failure-hook shows workflow-name when triggered', async () => {
-    ctx.db.state.set('hook:ciFailure', {
+    ctx.db.state.set(getStateKey(ctx), {
       ciStatus: 'failed',
       currentFailure: { failed: true, runId: '123', workflowName: 'CI Build' },
       triggered: true,
@@ -451,7 +456,7 @@ describe('OnCIFailure element attributes', () => {
   })
 
   test('ci-failure-hook shows failed-jobs as comma-separated', async () => {
-    ctx.db.state.set('hook:ciFailure', {
+    ctx.db.state.set(getStateKey(ctx), {
       ciStatus: 'failed',
       currentFailure: { 
         failed: true, 
@@ -471,7 +476,7 @@ describe('OnCIFailure element attributes', () => {
   })
 
   test('ci-failure-hook shows error attribute when error', async () => {
-    ctx.db.state.set('hook:ciFailure', {
+    ctx.db.state.set(getStateKey(ctx), {
       ciStatus: 'error',
       currentFailure: null,
       triggered: false,
@@ -548,7 +553,7 @@ describe('OnCIFailure polling logic', () => {
 
   test('does not trigger for already processed runId', async () => {
     // Pre-populate processed run IDs
-    ctx.db.state.set('hook:ciFailure', {
+    ctx.db.state.set(getStateKey(ctx), {
       ciStatus: 'polling',
       currentFailure: null,
       triggered: false,
@@ -559,13 +564,13 @@ describe('OnCIFailure polling logic', () => {
     await renderOnCIFailure(ctx)
     await new Promise(r => setTimeout(r, 100))
     
-    const state = ctx.db.state.get<any>('hook:ciFailure')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     // Should not have triggered for the already-processed ID
     expect(state.processedRunIds).toContain(99999)
   })
 
   test('tracks multiple processed runIds', async () => {
-    ctx.db.state.set('hook:ciFailure', {
+    ctx.db.state.set(getStateKey(ctx), {
       ciStatus: 'polling',
       currentFailure: null,
       triggered: false,
@@ -576,7 +581,7 @@ describe('OnCIFailure polling logic', () => {
     await renderOnCIFailure(ctx)
     await new Promise(r => setTimeout(r, 50))
     
-    const state = ctx.db.state.get<any>('hook:ciFailure')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state.processedRunIds.length).toBeGreaterThanOrEqual(3)
     expect(state.processedRunIds).toContain(111)
     expect(state.processedRunIds).toContain(222)
@@ -673,7 +678,7 @@ describe('OnCIFailure integration', () => {
     expect(() => ctx.root.dispose()).not.toThrow()
     
     // State should still exist in DB (persist across unmount)
-    const state = ctx.db.state.get<any>('hook:ciFailure')
+    const state = ctx.db.state.get<any>(getStateKey(ctx))
     expect(state).toBeDefined()
   })
 })

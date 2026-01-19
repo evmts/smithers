@@ -173,7 +173,12 @@ export function PostCommit(props: PostCommitProps): ReactNode {
           if (inFlightRef.current) return
           inFlightRef.current = true
           try {
-            const trigger = db.state.get<HookTrigger>(lastTriggerKey)
+            const namespacedTrigger = db.state.get<HookTrigger>(lastTriggerKey)
+            const legacyTrigger = namespacedTrigger
+              ? null
+              : db.state.get<HookTrigger>('last_hook_trigger')
+            const trigger = namespacedTrigger ?? legacyTrigger
+            const triggerKey = namespacedTrigger ? lastTriggerKey : 'last_hook_trigger'
             const currentS = db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
 
             if (trigger && trigger.type === 'post-commit' && trigger.timestamp > currentS.lastProcessedTimestamp) {
@@ -193,7 +198,7 @@ export function PostCommit(props: PostCommitProps): ReactNode {
                 }, 'post-commit-triggered')
 
                 // Mark as processed in db
-                db.state.set(lastTriggerKey, {
+                db.state.set(triggerKey, {
                   ...trigger,
                   processed: true,
                 }, 'post-commit-hook')

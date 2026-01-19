@@ -1,11 +1,13 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
+import { useExecutionScope } from '../ExecutionScope.js'
 import { jjSnapshot, getJJStatus } from '../../utils/vcs.js'
-import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
-import { useExecutionContext } from '../ExecutionContext.js'
-import { useVersionTracking } from '../../reactive-sqlite/index.js'
+import { useExecutionMount } from '../../reconciler/hooks.js'
+import { useQueryValue } from '../../reactive-sqlite/index.js'
+import { makeStateKey } from '../../utils/scope.js'
 
 export interface SnapshotProps {
+  id?: string
   message?: string
   children?: ReactNode
 }
@@ -16,32 +18,46 @@ export interface SnapshotProps {
  * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
  * Registers with Ralph for task tracking.
  */
+interface SnapshotState {
+  status: 'pending' | 'running' | 'complete' | 'error'
+  changeId: string | null
+  error: string | null
+}
+
 export function Snapshot(props: SnapshotProps): ReactNode {
   const smithers = useSmithers()
-  const execution = useExecutionContext()
-  const { invalidateAndUpdate } = useVersionTracking()
+  const executionScope = useExecutionScope()
+  const opIdRef = useRef(props.id ?? crypto.randomUUID())
+  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'jj-snapshot', opIdRef.current)
 
-  const statusRef = useRef<'pending' | 'running' | 'complete' | 'error'>('pending')
-  const changeIdRef = useRef<string | null>(null)
-  const errorRef = useRef<Error | null>(null)
+  const { data: opState } = useQueryValue<string>(
+    smithers.db.db,
+    'SELECT value FROM state WHERE key = ?',
+    [stateKey]
+  )
+  const defaultState: SnapshotState = { status: 'pending', changeId: null, error: null }
+  const { status, changeId, error } = (() => {
+    if (!opState) return defaultState
+    try { return JSON.parse(opState) as SnapshotState }
+    catch { return defaultState }
+  })()
+
   const taskIdRef = useRef<string | null>(null)
-  const isMounted = useMountedState()
+  const shouldExecute = smithers.executionEnabled && executionScope.enabled
 
-  const shouldExecute = smithers.executionEnabled && execution.isActive
+  const setState = (newState: SnapshotState) => {
+    smithers.db.state.set(stateKey, newState, 'jj-snapshot')
+  }
+
   useExecutionMount(shouldExecute, () => {
     ;(async () => {
-      taskIdRef.current = smithers.db.tasks.start('jj-snapshot')
+      if (status !== 'pending') return
+      taskIdRef.current = smithers.db.tasks.start('jj-snapshot', undefined, { scopeId: executionScope.scopeId })
 
       try {
-        statusRef.current = 'running'
-        invalidateAndUpdate()
+        setState({ status: 'running', changeId: null, error: null })
 
         const result = await jjSnapshot(props.message)
-
-        if (!isMounted()) return
-
-        changeIdRef.current = result.changeId
-
         const fileStatus = await getJJStatus()
 
         await smithers.db.vcs.logSnapshot({
@@ -52,29 +68,23 @@ export function Snapshot(props: SnapshotProps): ReactNode {
           files_deleted: fileStatus.deleted,
         })
 
-        if (isMounted()) {
-          statusRef.current = 'complete'
-          invalidateAndUpdate()
-        }
+        setState({ status: 'complete', changeId: result.changeId, error: null })
       } catch (err) {
-        if (isMounted()) {
-          errorRef.current = err instanceof Error ? err : new Error(String(err))
-          statusRef.current = 'error'
-          invalidateAndUpdate()
-        }
+        const errorObj = err instanceof Error ? err : new Error(String(err))
+        setState({ status: 'error', changeId: null, error: errorObj.message })
       } finally {
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }
       }
     })()
-  }, [props.message, smithers])
+  }, [props.message, smithers, status, shouldExecute])
 
   return (
     <jj-snapshot
-      status={statusRef.current}
-      change-id={changeIdRef.current}
-      error={errorRef.current?.message}
+      status={status}
+      change-id={changeId ?? undefined}
+      error={error ?? undefined}
       message={props.message}
     >
       {props.children}

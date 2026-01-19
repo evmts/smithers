@@ -198,7 +198,20 @@ describe('buildAmpArgs', () => {
     const args = buildAmpArgs({ prompt: 'test', resume: 'T-abc123' })
     expect(args).toContain('threads')
     expect(args).toContain('continue')
+    expect(args).toContain('--thread-id')
     expect(args).toContain('T-abc123')
+  })
+
+  test('includes maxTurns', () => {
+    const args = buildAmpArgs({ prompt: 'test', maxTurns: 7 })
+    expect(args).toContain('--max-turns')
+    expect(args).toContain('7')
+  })
+
+  test('includes systemPrompt', () => {
+    const args = buildAmpArgs({ prompt: 'test', systemPrompt: 'Be terse' })
+    expect(args).toContain('--system-prompt')
+    expect(args).toContain('Be terse')
   })
 })
 

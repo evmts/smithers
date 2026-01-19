@@ -9,7 +9,11 @@ import type { AgentResult } from './agents/types/execution.js'
 import { useMountedState, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { LogWriter } from '../monitor/log-writer.js'
 import { uuid } from '../db/utils.js'
-import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
+import { truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
+import { AmpMessageParser } from './agents/amp-cli/output-parser.js'
+import { AmpStreamParser } from '../streaming/amp-parser.js'
+import type { SmithersStreamPart } from '../streaming/types.js'
+import type { StreamSummary } from '../db/types.js'
 import { useQuery, useVersionTracking } from '../reactive-sqlite/index.js'
 import { extractText } from '../utils/extract-text.js'
 import { composeMiddleware } from '../middleware/compose.js'
@@ -86,10 +90,11 @@ export function Amp(props: AmpProps): ReactNode {
 
   const maxEntries = props.tailLogCount ?? 10
   const taskIdRef = useRef<string | null>(null)
-  const messageParserRef = useRef<MessageParser>(new MessageParser(maxEntries * 2))
+  const messageParserRef = useRef<AmpMessageParser>(new AmpMessageParser(maxEntries * 2))
   const isMounted = useMountedState()
   const lastTailLogUpdateRef = useRef<number>(0)
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  messageParserRef.current.setOnToolCall(props.onToolCall)
 
   const shouldExecute = executionEnabled && executionScope.enabled
   const executionKey = shouldExecute ? ralphCount : null
@@ -105,7 +110,7 @@ export function Amp(props: AmpProps): ReactNode {
     if (!shouldExecute) return
     ;(async () => {
       const endTotalTiming = log.time('agent_execution')
-      taskIdRef.current = db.tasks.start('amp', props.mode ?? 'smart')
+      taskIdRef.current = db.tasks.start('amp', props.mode ?? 'smart', { scopeId: executionScope.scopeId })
 
       if (isStopRequested()) {
         log.info('Execution stopped by request')
@@ -117,7 +122,20 @@ export function Amp(props: AmpProps): ReactNode {
 
       const logWriter = new LogWriter(undefined, executionId ?? undefined)
       const logId = uuid()
-      const logFilename = `agent-${logId}.log`
+      const typedStreamingEnabled = props.experimentalTypedStreaming ?? false
+      const useLegacyLogFormat = typedStreamingEnabled && (props.legacyLogFormat ?? false)
+      const recordStreamEvents = props.recordStreamEvents ?? props.reportingEnabled !== false
+      const streamLogFilename = typedStreamingEnabled ? `agent-${logId}.ndjson` : `agent-${logId}.log`
+      const legacyLogFilename = useLegacyLogFormat ? `agent-${logId}.log.legacy.txt` : null
+      const streamParser = new AmpStreamParser()
+      const streamSummary: StreamSummary = {
+        textBlocks: 0,
+        reasoningBlocks: 0,
+        toolCalls: 0,
+        toolResults: 0,
+        errors: 0,
+      }
+      const logFilename = streamLogFilename
       let logPath: string | undefined
 
       log.debug('Starting execution', { logId })
@@ -186,6 +204,9 @@ export function Amp(props: AmpProps): ReactNode {
 
         if (props.reportingEnabled !== false) {
           logPath = logWriter.appendLog(logFilename, '')
+          if (legacyLogFilename) {
+            logWriter.appendLog(legacyLogFilename, '')
+          }
 
           currentAgentId = await db.agents.start(
             executionOptions.prompt,
@@ -222,18 +243,59 @@ export function Amp(props: AmpProps): ReactNode {
           }
         }
 
+        const handleStreamPart = (part: SmithersStreamPart) => {
+          if (typedStreamingEnabled) {
+            logWriter.appendStreamPart(logFilename, part)
+
+            if (recordStreamEvents && currentAgentId) {
+              db.agents.recordStreamEvent(currentAgentId, part)
+            }
+
+            if (part.type === 'text-end') {
+              streamSummary.textBlocks += 1
+            } else if (part.type === 'reasoning-end') {
+              streamSummary.reasoningBlocks += 1
+            } else if (part.type === 'tool-call') {
+              streamSummary.toolCalls += 1
+            } else if (part.type === 'tool-result') {
+              streamSummary.toolResults += 1
+            } else if (part.type === 'error') {
+              streamSummary.errors += 1
+            }
+
+            props.onStreamPart?.(part)
+          }
+
+        }
+
         const upstreamOnProgress = executionOptions.onProgress
         const onProgress = (chunk: string) => {
+          messageParserRef.current.parseChunk(chunk)
+          handleTailLogUpdate()
+
+          if (typedStreamingEnabled) {
+            if (legacyLogFilename) {
+              logWriter.appendLog(legacyLogFilename, chunk)
+            }
+            const parts = streamParser.parse(chunk)
+            for (const part of parts) {
+              handleStreamPart(part)
+            }
+            return
+          }
+
+          if (logFilename) {
+            logWriter.appendLog(logFilename, chunk)
+          }
+
+          const parts = streamParser.parse(chunk)
+          for (const part of parts) {
+            handleStreamPart(part)
+          }
+
           const transformedChunk = composed.transformChunk
             ? composed.transformChunk(chunk)
             : chunk
-
-          if (logFilename) {
-            logWriter.appendLog(logFilename, transformedChunk)
-          }
-
-          messageParserRef.current.parseChunk(transformedChunk)
-          handleTailLogUpdate()
 
           upstreamOnProgress?.(transformedChunk)
           props.onProgress?.(transformedChunk)
@@ -260,6 +322,22 @@ export function Amp(props: AmpProps): ReactNode {
 
         if (composed.transformResult) {
           agentResult = await composed.transformResult(agentResult)
+        }
+
+        const remainingParts = streamParser.flush()
+        for (const part of remainingParts) {
+          handleStreamPart(part)
+        }
+        if (typedStreamingEnabled && agentResult.sessionId) {
+          handleStreamPart({
+            type: 'session-info',
+            sessionId: agentResult.sessionId,
+            model: props.mode ?? 'smart',
+          })
+        }
+        if (typedStreamingEnabled && props.reportingEnabled !== false && currentAgentId) {
+          db.agents.setStreamSummary(currentAgentId, streamSummary)
+          logWriter.writeStreamSummaryFromCounts(logFilename, streamSummary)
         }
 
         messageParserRef.current.flush()
@@ -343,6 +421,9 @@ export function Amp(props: AmpProps): ReactNode {
         }
       } finally {
         await logWriter.flushStream(logFilename)
+        if (legacyLogFilename) {
+          await logWriter.flushStream(legacyLogFilename)
+        }
         if (taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
         }
