@@ -1,0 +1,199 @@
+---
+title: End
+description: Explicitly terminate orchestration with structured summary
+---
+
+# End Component
+
+The `<End>` component explicitly terminates orchestration and captures a structured summary of the run.
+
+## Basic Usage
+
+```tsx
+import { End } from "smithers-orchestrator";
+
+<End
+  summary={{
+    status: "success",
+    message: "PR #123 review completed",
+    data: { approved: true },
+  }}
+/>
+```
+
+## Props
+
+<ParamField path="summary" type="EndSummary | (() => EndSummary | Promise<EndSummary>)" required>
+  Structured summary of the run. Can be a static object or a function that returns one (sync or async).
+
+  ```tsx
+  // Static summary
+  <End summary={{ status: "success", message: "Done" }} />
+
+  // Dynamic summary
+  <End summary={async () => {
+    const result = await db.state.get("result");
+    return {
+      status: result.success ? "success" : "failure",
+      message: result.message,
+    };
+  }} />
+  ```
+</ParamField>
+
+<ParamField path="exitCode" type="number" default="0 for success, 1 for failure">
+  Process exit code.
+
+  ```tsx
+  <End summary={{ status: "failure", message: "Tests failed" }} exitCode={1} />
+  ```
+</ParamField>
+
+<ParamField path="reason" type="string">
+  Optional reason for ending. Defaults to "success" or "failure" based on status.
+
+  ```tsx
+  <End
+    summary={{ status: "partial", message: "Completed with warnings" }}
+    reason="partial_success"
+  />
+  ```
+</ParamField>
+
+## EndSummary Type
+
+```tsx
+interface EndSummary {
+  status: "success" | "failure" | "partial";
+  message: string;
+  data?: Record<string, unknown>;
+  metrics?: {
+    duration_ms?: number;
+    iterations?: number;
+    agents_run?: number;
+    tokens_used?: { input: number; output: number };
+  };
+}
+```
+
+## Examples
+
+### Success with Metrics
+
+```tsx
+<End
+  summary={{
+    status: "success",
+    message: "Feature implemented successfully",
+    data: {
+      filesModified: 5,
+      testsAdded: 12,
+    },
+    metrics: {
+      duration_ms: 45000,
+      iterations: 3,
+      agents_run: 7,
+      tokens_used: { input: 15000, output: 8000 },
+    },
+  }}
+/>
+```
+
+### Dynamic Summary from State
+
+```tsx
+function CompletionHandler() {
+  const { db } = useSmithers();
+
+  return (
+    <End
+      summary={async () => {
+        const review = await db.state.get("lastReview");
+        const iterations = await db.state.get("iterations");
+
+        return {
+          status: review?.approved ? "success" : "failure",
+          message: review?.approved
+            ? "PR approved and ready to merge"
+            : `Changes requested: ${review?.issues?.length ?? 0} issues`,
+          data: {
+            approved: review?.approved,
+            issues: review?.issues,
+          },
+          metrics: {
+            iterations: parseInt(iterations ?? "0"),
+          },
+        };
+      }}
+    />
+  );
+}
+```
+
+### Conditional End
+
+```tsx
+function WorkflowWithEnd() {
+  const { db, reactiveDb } = useSmithers();
+  
+  const phase = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'phase'"
+  ) ?? "working";
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <If condition={phase === "working"}>
+        <Claude onFinished={(r) => {
+          if (r.output.includes("COMPLETE")) {
+            db.state.set("phase", "done");
+          }
+        }}>
+          Complete the task.
+        </Claude>
+      </If>
+
+      <If condition={phase === "done"}>
+        <End
+          summary={{
+            status: "success",
+            message: "Task completed",
+          }}
+        />
+      </If>
+    </SmithersProvider>
+  );
+}
+```
+
+## Behavior
+
+When rendered, the End component:
+
+1. Evaluates the summary (sync or async)
+2. Stores the summary in the `executions` table
+3. Calls `requestStop()` to halt the Ralph loop
+4. Process exits with the specified exit code
+
+## Database Storage
+
+The summary is stored in the executions table:
+
+```tsx
+// Query the end summary
+const execution = await db.execution.get(executionId);
+console.log(execution.end_summary);  // The EndSummary object
+console.log(execution.end_reason);   // "success", "failure", etc.
+console.log(execution.exit_code);    // 0, 1, etc.
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Stop" icon="stop" href="/components/stop">
+    Stop without summary
+  </Card>
+  <Card title="SmithersProvider" icon="sitemap" href="/components/smithers-provider">
+    Orchestration context
+  </Card>
+</CardGroup>

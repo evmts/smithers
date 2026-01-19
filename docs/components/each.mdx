@@ -1,0 +1,127 @@
+---
+title: Each
+description: Iterate over arrays with type-safe rendering
+---
+
+# Each Component
+
+The `<Each>` component provides a clean way to iterate over arrays and render content for each item.
+
+## Basic Usage
+
+```tsx
+import { Each } from "smithers-orchestrator";
+
+const files = ["auth.ts", "api.ts", "db.ts"];
+
+<Each items={files}>
+  {(file, index) => (
+    <Claude key={file}>
+      Analyze file #{index + 1}: {file}
+    </Claude>
+  )}
+</Each>
+```
+
+## Props
+
+<ParamField path="items" type="T[]" required>
+  Array of items to iterate over.
+
+  ```tsx
+  <Each items={["feature-a", "feature-b", "feature-c"]}>
+    {(feature) => <Claude>Implement {feature}</Claude>}
+  </Each>
+  ```
+</ParamField>
+
+<ParamField path="children" type="(item: T, index: number) => ReactNode" required>
+  Render function called for each item. Receives the item and its index.
+
+  ```tsx
+  <Each items={tasks}>
+    {(task, index) => (
+      <Step name={`task-${index}`}>
+        <Claude>{task.description}</Claude>
+      </Step>
+    )}
+  </Each>
+  ```
+</ParamField>
+
+## Examples
+
+### Parallel File Analysis
+
+```tsx
+<Phase name="Analysis">
+  <Parallel>
+    <Each items={criticalFiles}>
+      {(file) => (
+        <Step name={file} key={file}>
+          <Claude allowedTools={["Read", "Grep"]}>
+            Analyze {file} for security issues.
+          </Claude>
+        </Step>
+      )}
+    </Each>
+  </Parallel>
+</Phase>
+```
+
+### Dynamic Task Generation
+
+```tsx
+function TaskWorkflow({ tasks }: { tasks: Task[] }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Each items={tasks}>
+        {(task, i) => (
+          <Phase name={`Task ${i + 1}`} key={task.id}>
+            <Step name={task.name}>
+              <Claude model={task.complexity === "high" ? "opus" : "sonnet"}>
+                {task.prompt}
+              </Claude>
+            </Step>
+          </Phase>
+        )}
+      </Each>
+    </SmithersProvider>
+  );
+}
+```
+
+### With Typed Items
+
+```tsx
+interface Feature {
+  name: string;
+  description: string;
+  priority: "high" | "medium" | "low";
+}
+
+const features: Feature[] = [
+  { name: "Auth", description: "User authentication", priority: "high" },
+  { name: "Search", description: "Full-text search", priority: "medium" },
+];
+
+<Each items={features}>
+  {(feature) => (
+    <Claude key={feature.name}>
+      Implement {feature.name}: {feature.description}
+      Priority: {feature.priority}
+    </Claude>
+  )}
+</Each>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Parallel" icon="arrows-split-up-and-left" href="/components/parallel">
+    Execute iterations concurrently
+  </Card>
+  <Card title="Phase" icon="layer-group" href="/components/phase">
+    Group workflow phases
+  </Card>
+</CardGroup>

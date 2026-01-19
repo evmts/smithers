@@ -83,6 +83,8 @@
         "components/review",
         "components/human",
         "components/stop",
+        "components/end",
+        "components/each",
         "components/if",
         "components/switch",
         "components/while",
@@ -104,7 +106,8 @@
         "guides/structured-output",
         "guides/mcp-integration",
         "guides/vcs-integration",
-        "guides/error-handling"
+        "guides/error-handling",
+        "guides/claude-log-format"
       ]
     },
     {
@@ -138,7 +141,8 @@
         "examples/multi-phase-review",
         "examples/structured-output",
         "examples/mcp-database",
-        "examples/subagent-workflow"
+        "examples/subagent-workflow",
+        "examples/kitchen-sink"
       ]
     }
   ],
