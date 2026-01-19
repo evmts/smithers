@@ -3,11 +3,13 @@ import type { SmithersMiddleware } from './types.js'
 interface TokenBucketOptions {
   requestsPerMinute: number
   tokensPerMinute?: number
+  acquireTimeoutMs?: number
 }
 
 class TokenBucket {
   private readonly requestCapacity: number
   private readonly tokenCapacity?: number
+  private readonly acquireTimeoutMs: number
   private requestTokens: number
   private tokenTokens: number
   private lastRefill: number
@@ -17,6 +19,7 @@ class TokenBucket {
     if (options.tokensPerMinute !== undefined) {
       this.tokenCapacity = options.tokensPerMinute
     }
+    this.acquireTimeoutMs = options.acquireTimeoutMs ?? 120000
     this.requestTokens = options.requestsPerMinute
     this.tokenTokens = options.tokensPerMinute ?? Infinity
     this.lastRefill = Date.now()
@@ -43,6 +46,7 @@ class TokenBucket {
   }
 
   async acquire(): Promise<void> {
+    const startTime = Date.now()
     while (true) {
       this.refill()
       const hasRequestToken = this.requestTokens >= 1
@@ -51,6 +55,10 @@ class TokenBucket {
       if (hasRequestToken && hasTokenBudget) {
         this.requestTokens -= 1
         return
+      }
+
+      if (Date.now() - startTime >= this.acquireTimeoutMs) {
+        throw new Error(`Rate limiter timeout after ${this.acquireTimeoutMs}ms`)
       }
 
       await new Promise((resolve) => setTimeout(resolve, 250))
@@ -67,6 +75,7 @@ class TokenBucket {
 export function rateLimitingMiddleware(options: {
   requestsPerMinute: number
   tokensPerMinute?: number
+  acquireTimeoutMs?: number
 }): SmithersMiddleware {
   const limiter = new TokenBucket(options)
 
