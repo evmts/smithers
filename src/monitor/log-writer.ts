@@ -66,7 +66,7 @@ export class LogWriter {
       this.streams.set(filename, stream)
     }
 
-    if (stream.fd === null) {
+    if (!stream.writable) {
       fs.appendFileSync(filepath, content, 'utf-8')
     } else if (!stream.writableEnded && !stream.destroyed) {
       stream.write(content)
