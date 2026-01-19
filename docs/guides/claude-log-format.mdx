@@ -15,10 +15,14 @@ Claude Code stores data under `~/.claude/`:
 - `~/.claude/history.jsonl`: lightweight user prompt history (no full assistant/tool detail).
 - `~/.claude/projects/<project-slug>/*.jsonl`: per-session logs (full message + tool content).
 
+<Note>
+**Version note:** Log paths vary by Claude Code version. Older versions use `*.jsonl` files directly in the project folder. Newer versions use a `sessions/` subdirectory with `session.jsonl` and `metadata.json` per session.
+</Note>
+
 Project slugs are path-like, for example:
 
 ```
-~/.claude/projects/-Users-williamcory-smithers--worktrees-uimessage-format/
+~/.claude/projects/-Users-<username>-<project-name>/
 ```
 
 ## JSONL Record Structure

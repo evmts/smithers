@@ -10,11 +10,10 @@ description: JSX workflow engine for coding agents—phases, parallelism, and pe
 Run CI recovery, PR finalization, stacked merges, release smoketests, and review processing as resumable workflows—not fragile scripts.
 
 ```jsx
-import { SmithersProvider, Phase, Claude, Parallel } from 'smithers-orchestrator'
-import { createSmithersDB } from 'smithers-orchestrator/db'
+import { SmithersProvider, Phase, Claude, Parallel, createSmithersDB } from 'smithers-orchestrator'
 
 function FeatureWorkflow({ featureSpec }) {
-  const db = createSmithersDB({ path: '.smithers/workflow.db' })
+  const db = createSmithersDB({ path: '.smithers/workflow' })
   const executionId = db.execution.start('feature-workflow', 'feature.tsx')
 
   return (

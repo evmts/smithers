@@ -61,7 +61,8 @@
       "group": "Core Concepts",
       "pages": [
         "concepts/ralph-wiggum-loop",
-        "concepts/database-persistence"
+        "concepts/database-persistence",
+        "concepts/renderer-architecture"
       ]
     },
     {
@@ -109,7 +110,8 @@
         "guides/vcs-integration",
         "guides/error-handling",
         "guides/claude-log-format",
-        "guides/debugging"
+        "guides/debugging",
+        "guides/monitoring"
       ]
     },
     {

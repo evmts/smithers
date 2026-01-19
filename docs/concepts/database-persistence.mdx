@@ -29,6 +29,10 @@ await db.close();
 
 The database is created as a directory containing SQLite data files.
 
+<Note>
+**Path semantics:** The `path` parameter specifies a **directory**, not a file. Smithers creates SQLite data files inside this directory. For manual queries, use `sqlite3 <path>/db.sqlite`.
+</Note>
+
 ## Database Structure
 
 The database tracks several entity types:

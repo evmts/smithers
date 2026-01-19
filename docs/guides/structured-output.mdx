@@ -105,7 +105,7 @@ Smithers automatically retries if validation fails:
 <Claude
   schema={AnalysisSchema}
   schemaRetries={2}  // Retry up to 2 times on validation failure
-  retryOnValidationFailure  // Default: true
+  retryOnValidationFailure={true}  // Enable retry on validation failure
   onFinished={(result) => {
     // Guaranteed to match schema
   }}
@@ -126,14 +126,13 @@ Add business logic validation:
 <Claude
   schema={AnalysisSchema}
   validate={(result) => {
+    // validate receives AgentResult; check result.structured
+    const data = result.structured;
+    if (!data) return false;
     // Must have at least one finding
-    if (result.issues.length === 0) {
-      return false;
-    }
+    if (data.issues.length === 0) return false;
     // Score must be reasonable
-    if (result.score < 0 || result.score > 100) {
-      return false;
-    }
+    if (data.score < 0 || data.score > 100) return false;
     return true;
   }}
   schemaRetries={2}
@@ -141,6 +140,10 @@ Add business logic validation:
   Find issues in the code.
 </Claude>
 ```
+
+<Info>
+The `validate` callback receives the full `AgentResult` object. Access the parsed schema data via `result.structured`.
+</Info>
 
 ## TypeScript Integration
 

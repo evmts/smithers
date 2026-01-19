@@ -35,25 +35,25 @@ smithers db stats
 
 ```bash
 # Using SQLite directly
-sqlite3 .smithers/my-workflow.db "SELECT * FROM phases ORDER BY created_at"
+sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM phases ORDER BY created_at"
 ```
 
 ### View Step Progress
 
 ```bash
-sqlite3 .smithers/my-workflow.db "SELECT * FROM steps ORDER BY created_at"
+sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM steps ORDER BY created_at"
 ```
 
 ### View Running Tasks
 
 ```bash
-sqlite3 .smithers/my-workflow.db "SELECT * FROM tasks WHERE status = 'running'"
+sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM tasks WHERE status = 'running'"
 ```
 
 ### View State History
 
 ```bash
-sqlite3 .smithers/my-workflow.db "SELECT * FROM state ORDER BY updated_at DESC"
+sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM state ORDER BY updated_at DESC"
 ```
 
 ## Claude Code Logs
@@ -98,10 +98,10 @@ ls -la ~/.claude/projects/*/sessions/ | grep <session-id>
 **Debug:**
 ```bash
 # Check for stuck tasks
-sqlite3 .smithers/db "SELECT * FROM tasks WHERE status = 'running'"
+sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM tasks WHERE status = 'running'"
 
 # Check last state change
-sqlite3 .smithers/db "SELECT * FROM state ORDER BY updated_at DESC LIMIT 5"
+sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM state ORDER BY updated_at DESC LIMIT 5"
 ```
 
 ### Phase Not Advancing
@@ -116,7 +116,7 @@ sqlite3 .smithers/db "SELECT * FROM state ORDER BY updated_at DESC LIMIT 5"
 **Debug:**
 ```bash
 # Check step status
-sqlite3 .smithers/db "SELECT * FROM steps WHERE phase_id = '<phase-id>'"
+sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM steps WHERE phase_id = '<phase-id>'"
 ```
 
 ### Crash Recovery Not Working
