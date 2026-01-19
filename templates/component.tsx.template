@@ -1,0 +1,104 @@
+import { useRef, useMemo, type ReactNode } from 'react'
+import { useSmithers } from './SmithersProvider.js'
+import { useQueryValue } from '../reactive-sqlite/index.js'
+import { useMount, useUnmount, useEffectOnValueChange } from '../reconciler/hooks.js'
+import { createLogger, type Logger } from '../debug/index.js'
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface MyComponentProps {
+  name: string
+  children?: ReactNode
+  onStart?: () => void
+  onComplete?: () => void
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
+/**
+ * MyComponent - Example component following Smithers patterns
+ *
+ * State management rules (from CLAUDE.md):
+ * - NEVER use useState
+ * - All state in SQLite (db.state/db.agents/db.vcs)
+ * - Use useRef for ephemeral, non-reactive values
+ * - Use useQueryValue for reactive DB queries
+ *
+ * @example
+ * ```tsx
+ * <MyComponent name="example" onComplete={() => console.log('done')}>
+ *   <Claude>Do something</Claude>
+ * </MyComponent>
+ * ```
+ */
+export function MyComponent(props: MyComponentProps): ReactNode {
+  const { db, reactiveDb, executionId, executionEnabled } = useSmithers()
+
+  // Refs for non-reactive state (IDs, flags)
+  const taskIdRef = useRef<string | null>(null)
+  const hasStartedRef = useRef(false)
+  const hasCompletedRef = useRef(false)
+
+  // Logger with component context
+  const log: Logger = useMemo(
+    () => createLogger('MyComponent', { name: props.name }),
+    [props.name]
+  )
+
+  // Reactive query for component status from SQLite
+  // Replace 'my_component_status' with actual table/query
+  const { data: status } = useQueryValue<string>(
+    reactiveDb,
+    `SELECT value FROM state WHERE key = ?`,
+    [`mycomponent_${props.name}_status`]
+  )
+
+  // Initialize on mount (when execution is enabled)
+  useMount(() => {
+    if (!executionEnabled || hasStartedRef.current) return
+    hasStartedRef.current = true
+
+    log.info('Starting', { name: props.name })
+    taskIdRef.current = db.tasks.start('my-component', props.name)
+    db.state.set(`mycomponent_${props.name}_status`, 'running')
+
+    props.onStart?.()
+  })
+
+  // React to status changes
+  useEffectOnValueChange(status, () => {
+    if (status === 'completed' && !hasCompletedRef.current) {
+      hasCompletedRef.current = true
+      log.info('Completed', { name: props.name })
+
+      if (taskIdRef.current) {
+        db.tasks.complete(taskIdRef.current)
+      }
+      props.onComplete?.()
+    }
+  }, [props.name, props.onComplete])
+
+  // Cleanup on unmount
+  useUnmount(() => {
+    if (hasStartedRef.current && !hasCompletedRef.current) {
+      log.debug('Unmount cleanup')
+      if (taskIdRef.current && !db.db.isClosed) {
+        db.tasks.complete(taskIdRef.current)
+      }
+    }
+  })
+
+  return (
+    <my-component
+      name={props.name}
+      status={status ?? 'pending'}
+      execution-id={executionId}
+    >
+      {props.children}
+    </my-component>
+  )
+}

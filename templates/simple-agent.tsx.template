@@ -1,0 +1,48 @@
+#!/usr/bin/env bun
+import { createSmithersRoot } from 'smithers-orchestrator'
+import { createSmithersDB } from 'smithers-orchestrator/db'
+import { SmithersProvider, Ralph, Phase, Claude } from 'smithers-orchestrator/components'
+
+/**
+ * Simple Agent Template
+ *
+ * Minimal orchestration with a single Claude agent.
+ * Use this as a starting point for simple automation tasks.
+ *
+ * Run with:
+ *   bun run this-file.tsx
+ */
+
+const db = await createSmithersDB({ path: '.smithers/data' })
+const executionId = await db.execution.start('Simple Agent', 'simple-agent.tsx')
+
+async function App() {
+  return (
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      maxIterations={3}
+      onComplete={() => console.log('Done!')}
+    >
+      <Ralph>
+        <Phase name="Execute">
+          <Claude
+            model="sonnet"
+            allowedTools={['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep']}
+            onFinished={(result) => {
+              console.log('Agent output:', result.output.slice(0, 200))
+            }}
+          >
+            Your prompt goes here. The agent will execute with the allowed tools.
+          </Claude>
+        </Phase>
+      </Ralph>
+    </SmithersProvider>
+  )
+}
+
+const root = createSmithersRoot()
+await root.mount(App)
+root.dispose()
+await db.execution.complete(executionId)
+await db.close()

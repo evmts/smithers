@@ -4,7 +4,6 @@ import { createSmithersDB } from 'smithers-orchestrator/db'
 import {
   Ralph,
   SmithersProvider,
-  Orchestration,
   Claude,
   Phase,
   Step,
@@ -16,25 +15,21 @@ import { PostCommit, OnCIFailure } from 'smithers-orchestrator/components/Hooks'
 /**
  * Smithers Orchestration Template
  *
- * This is a declarative AI agent workflow using the Smithers framework.
- * Edit this file to define your multi-agent orchestration.
- *
- * ALL STATE LIVES IN PGLITE - fully auditable, recoverable, and predictable.
+ * Declarative AI agent workflow using the Smithers framework.
+ * ALL STATE LIVES IN SQLITE - fully auditable, recoverable, and predictable.
  *
  * Run with:
  *   bunx smithers-orchestrator monitor
  */
 
 // ============================================================================
-// DATABASE SETUP - ALL DURABLE STATE LIVES HERE
+// DATABASE SETUP - ALL DURABLE STATE LIVES HERE (SQLite)
 // ============================================================================
 
-// Create PGlite database (persisted to .smithers/data)
 const db = await createSmithersDB({
   path: '.smithers/data',
 })
 
-// Start execution tracking
 const executionId = await db.execution.start(
   'My Orchestration',
   '.smithers/main.tsx',
@@ -50,150 +45,140 @@ const executionId = await db.execution.start(
 
 async function App() {
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Orchestration
-        globalTimeout={1800000} // 30 minutes
-        snapshotBeforeStart
-        stopConditions={[
-          { type: 'pattern', value: /STOP_ORCHESTRATION/i, message: 'Agent requested stop' }
-        ]}
-      >
-        <Ralph maxIterations={10}>
-          {/* ============================================================ */}
-          {/* PHASE 1: IMPLEMENTATION                                      */}
-          {/* Phases are always rendered - only the active one executes.   */}
-          {/* When a phase completes, the next phase automatically starts. */}
-          {/* ============================================================ */}
-          <Phase
-            name="Implementation"
-            onStart={() => console.log('Starting implementation phase')}
-            onComplete={() => console.log('Implementation phase complete')}
-          >
-            {/* Take a JJ snapshot before starting */}
-            <Snapshot description="Before implementation" />
-
-            {/* Check working copy status */}
-            <Status
-              onDirty={(status) => console.log('Working copy has changes:', status)}
-              onClean={() => console.log('Working copy is clean')}
-            />
-
-            {/* Main implementation step with Claude */}
-            <Step name="implement-feature" snapshotBefore commitAfter>
-              <Claude
-                model="sonnet"
-                reportingEnabled
-                tools={['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep']}
-                stopConditions={[
-                  { type: 'turn_limit', value: 50 },
-                  { type: 'token_limit', value: 100000 },
-                ]}
-                onError={(error) => console.error('Implementation failed:', error)}
-              >
-                {/* Your implementation prompt here */}
-                Implement the requested feature. Use the Report tool to log progress.
-              </Claude>
-            </Step>
-
-            {/* Auto-generate commit message using AI */}
-            <Describe useAgent="claude" />
-
-            {/* Create JJ commit with metadata */}
-            <Commit autoDescribe notes="implementation-phase" />
-          </Phase>
-
-          {/* ============================================================ */}
-          {/* PHASE 2: CODE REVIEW                                         */}
-          {/* This phase starts automatically when Implementation completes */}
-          {/* ============================================================ */}
-          <Phase
-            name="Review"
-            onStart={() => console.log('Starting review phase')}
-            onComplete={() => console.log('Review phase complete')}
-          >
-            <Review
-              target={{ type: 'diff', ref: 'main' }}
-              agent="claude"
-              model="sonnet"
-              blocking
-              criteria={[
-                'No security vulnerabilities',
-                'Code follows project conventions',
-                'Tests are included for new functionality',
-                'No performance regressions',
-              ]}
-              postToGitNotes
-              onFinished={(review) => {
-                if (review.approved) {
-                  console.log('Review approved!')
-                } else {
-                  console.log('Review found issues:', review.issues.length)
-                }
-              }}
-            />
-          </Phase>
-
-          {/* ============================================================ */}
-          {/* PHASE 3: TESTING                                             */}
-          {/* This phase starts automatically when Review completes        */}
-          {/* ============================================================ */}
-          <Phase
-            name="Testing"
-            onStart={() => console.log('Starting testing phase')}
-            onComplete={() => console.log('Testing phase complete')}
-          >
-            <Step name="run-tests">
-              <Claude
-                model="haiku"
-                tools={['Bash']}
-                stopConditions={[{ type: 'turn_limit', value: 10 }]}
-                onFinished={(result) => {
-                  const passed = result.output.includes('PASS') ||
-                                 result.output.includes('All tests passed')
-                  console.log(passed ? 'Tests passed!' : 'Tests failed')
-                }}
-              >
-                Run the test suite with `bun test`. Report the results.
-              </Claude>
-            </Step>
-          </Phase>
-
-          {/* ============================================================ */}
-          {/* PHASE 4: FINALIZE                                            */}
-          {/* This phase starts automatically when Testing completes       */}
-          {/* ============================================================ */}
-          <Phase
-            name="Finalize"
-            onStart={() => console.log('Starting finalize phase')}
-            onComplete={() => console.log('Orchestration complete!')}
-          >
-            <Commit message="Feature complete - all tests passing" />
-          </Phase>
-        </Ralph>
-
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      maxIterations={10}
+      globalTimeout={1800000}
+      snapshotOnStart
+      stopConditions={[
+        { type: 'total_tokens', value: 500000, message: 'Token budget exceeded' }
+      ]}
+      onComplete={() => console.log('Orchestration complete')}
+      onError={(err) => console.error('Orchestration error:', err)}
+    >
+      <Ralph>
         {/* ============================================================ */}
-        {/* HOOKS: AUTOMATED RESPONSES                                   */}
+        {/* PHASE 1: IMPLEMENTATION                                      */}
+        {/* Phases execute sequentially. Next starts when previous ends. */}
         {/* ============================================================ */}
+        <Phase
+          name="Implementation"
+          onStart={() => console.log('Starting implementation phase')}
+          onComplete={() => console.log('Implementation phase complete')}
+        >
+          <Snapshot description="Before implementation" />
 
-        {/* Run review on every commit made by Smithers */}
-        <PostCommit runOn="smithers-only">
-          <Review
-            target={{ type: 'commit', ref: 'HEAD' }}
-            postToGitNotes
+          <Status
+            onDirty={(status) => console.log('Working copy has changes:', status)}
+            onClean={() => console.log('Working copy is clean')}
           />
-        </PostCommit>
 
-        {/* Auto-fix CI failures */}
-        <OnCIFailure provider="github-actions" pollInterval={60000}>
-          <Claude
+          <Step name="implement-feature" snapshotBefore commitAfter>
+            <Claude
+              model="sonnet"
+              reportingEnabled
+              allowedTools={['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep']}
+              stopConditions={[
+                { type: 'turn_limit', value: 50 },
+                { type: 'token_limit', value: 100000 },
+              ]}
+              onError={(error) => console.error('Implementation failed:', error)}
+            >
+              Implement the requested feature. Use the Report tool to log progress.
+            </Claude>
+          </Step>
+
+          <Describe useAgent="claude" />
+          <Commit autoDescribe notes="implementation-phase" />
+        </Phase>
+
+        {/* ============================================================ */}
+        {/* PHASE 2: CODE REVIEW                                         */}
+        {/* ============================================================ */}
+        <Phase
+          name="Review"
+          onStart={() => console.log('Starting review phase')}
+          onComplete={() => console.log('Review phase complete')}
+        >
+          <Review
+            target={{ type: 'diff', ref: 'main' }}
+            agent="claude"
             model="sonnet"
-            tools={['Read', 'Edit', 'Bash']}
-          >
-            CI has failed. Analyze the failure logs and fix the issue.
-          </Claude>
-          <Commit autoDescribe notes="ci-fix" />
-        </OnCIFailure>
-      </Orchestration>
+            blocking
+            criteria={[
+              'No security vulnerabilities',
+              'Code follows project conventions',
+              'Tests are included for new functionality',
+              'No performance regressions',
+            ]}
+            postToGitNotes
+            onFinished={(review) => {
+              if (review.approved) {
+                console.log('Review approved!')
+              } else {
+                console.log('Review found issues:', review.issues.length)
+              }
+            }}
+          />
+        </Phase>
+
+        {/* ============================================================ */}
+        {/* PHASE 3: TESTING                                             */}
+        {/* ============================================================ */}
+        <Phase
+          name="Testing"
+          onStart={() => console.log('Starting testing phase')}
+          onComplete={() => console.log('Testing phase complete')}
+        >
+          <Step name="run-tests">
+            <Claude
+              model="haiku"
+              allowedTools={['Bash']}
+              stopConditions={[{ type: 'turn_limit', value: 10 }]}
+              onFinished={(result) => {
+                const passed = result.output.includes('PASS') ||
+                               result.output.includes('All tests passed')
+                console.log(passed ? 'Tests passed!' : 'Tests failed')
+              }}
+            >
+              Run the test suite with `bun test`. Report the results.
+            </Claude>
+          </Step>
+        </Phase>
+
+        {/* ============================================================ */}
+        {/* PHASE 4: FINALIZE                                            */}
+        {/* ============================================================ */}
+        <Phase
+          name="Finalize"
+          onStart={() => console.log('Starting finalize phase')}
+          onComplete={() => console.log('Orchestration complete!')}
+        >
+          <Commit message="Feature complete - all tests passing" />
+        </Phase>
+      </Ralph>
+
+      {/* ============================================================ */}
+      {/* HOOKS: AUTOMATED RESPONSES                                   */}
+      {/* ============================================================ */}
+
+      <PostCommit runOn="smithers-only">
+        <Review
+          target={{ type: 'commit', ref: 'HEAD' }}
+          postToGitNotes
+        />
+      </PostCommit>
+
+      <OnCIFailure provider="github-actions" pollInterval={60000}>
+        <Claude
+          model="sonnet"
+          allowedTools={['Read', 'Edit', 'Bash']}
+        >
+          CI has failed. Analyze the failure logs and fix the issue.
+        </Claude>
+        <Commit autoDescribe notes="ci-fix" />
+      </OnCIFailure>
     </SmithersProvider>
   )
 }
@@ -210,10 +195,8 @@ async function main() {
     console.log('║            SMITHERS ORCHESTRATION PLAN                   ║')
     console.log('╚══════════════════════════════════════════════════════════╝')
     console.log('')
-    console.log('Database: .smithers/data')
+    console.log('Database: .smithers/data (SQLite)')
     console.log('Execution ID:', executionId)
-    console.log('')
-    console.log('All state lives in PGlite - fully auditable!')
     console.log('')
     console.log('To inspect:')
     console.log('  bunx smithers-orchestrator db state')
@@ -224,21 +207,15 @@ async function main() {
     console.log('═══════════════════════════════════════════════════════════')
     console.log('')
 
-    // Execute the orchestration
     await root.mount(App)
-
-    // Dispose root to trigger useUnmount hooks (onComplete, cleanup)
     root.dispose()
 
-    // Mark execution as complete
     const finalState = await db.state.getAll()
     await db.execution.complete(executionId, finalState)
 
     console.log('')
     console.log('✅ Execution complete!')
-    console.log('')
 
-    // Show summary
     const execution = await db.execution.get(executionId)
     if (execution) {
       console.log('Summary:')
@@ -253,11 +230,8 @@ async function main() {
   } catch (error) {
     console.error('')
     console.error('❌ Execution failed:', error)
-    console.error('')
 
-    // Dispose root to ensure cleanup even on error
     root.dispose()
-
     await db.execution.fail(
       executionId,
       error instanceof Error ? error.message : String(error)

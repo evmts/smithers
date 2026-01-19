@@ -1,0 +1,101 @@
+import { useRef, useCallback } from 'react'
+import { useSmithers } from '../components/SmithersProvider.js'
+import { useQueryValue } from '../reactive-sqlite/index.js'
+import { useMount, useUnmount, useEffectOnValueChange } from '../reconciler/hooks.js'
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface UseMyHookOptions {
+  key: string
+  initialValue?: number
+  onChange?: (value: number) => void
+}
+
+export interface UseMyHookResult {
+  value: number
+  increment: () => void
+  decrement: () => void
+  reset: () => void
+}
+
+// ============================================================================
+// HOOK
+// ============================================================================
+
+/**
+ * useMyHook - Example hook following Smithers patterns
+ *
+ * State management rules (from CLAUDE.md):
+ * - NEVER use useState for persistent state
+ * - All durable state in SQLite via db.state/useQueryValue
+ * - Use useRef for ephemeral values (task IDs, flags)
+ * - Use useEffectOnValueChange for reactive updates
+ *
+ * @example
+ * ```tsx
+ * function Counter() {
+ *   const { value, increment, decrement } = useMyHook({
+ *     key: 'counter',
+ *     initialValue: 0,
+ *     onChange: (v) => console.log('Count:', v)
+ *   })
+ *
+ *   return <button onClick={increment}>{value}</button>
+ * }
+ * ```
+ */
+export function useMyHook(options: UseMyHookOptions): UseMyHookResult {
+  const { db, reactiveDb } = useSmithers()
+  const stateKey = `myhook_${options.key}`
+  const hasInitializedRef = useRef(false)
+
+  // Reactive query - auto-updates when DB changes
+  const { data: dbValue } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT CAST(value AS INTEGER) as val FROM state WHERE key = ?`,
+    [stateKey]
+  )
+
+  const value = dbValue ?? options.initialValue ?? 0
+
+  // Initialize state in DB on first mount
+  useMount(() => {
+    if (hasInitializedRef.current) return
+    hasInitializedRef.current = true
+
+    const existing = db.state.get<number>(stateKey)
+    if (existing === null && options.initialValue !== undefined) {
+      db.state.set(stateKey, options.initialValue, 'myhook_init')
+    }
+  })
+
+  // React to value changes
+  useEffectOnValueChange(value, () => {
+    options.onChange?.(value)
+  }, [options.onChange])
+
+  // Cleanup on unmount (optional - depends on hook semantics)
+  useUnmount(() => {
+    // Could clean up state here if needed:
+    // db.state.delete(stateKey)
+  })
+
+  // Actions that update SQLite (triggers re-render via useQueryValue)
+  const increment = useCallback(() => {
+    const current = db.state.get<number>(stateKey) ?? 0
+    db.state.set(stateKey, current + 1, 'myhook_increment')
+  }, [db, stateKey])
+
+  const decrement = useCallback(() => {
+    const current = db.state.get<number>(stateKey) ?? 0
+    db.state.set(stateKey, current - 1, 'myhook_decrement')
+  }, [db, stateKey])
+
+  const reset = useCallback(() => {
+    db.state.set(stateKey, options.initialValue ?? 0, 'myhook_reset')
+  }, [db, stateKey, options.initialValue])
+
+  return { value, increment, decrement, reset }
+}
