@@ -39,13 +39,13 @@ jobs:
       - name: Wait for npm availability
         run: |
           VERSION="${{ steps.release.outputs.version }}"
-          echo "Waiting for smithers@${VERSION} to be available on npm..."
+          echo "Waiting for smithers-orchestrator@${VERSION} to be available on npm..."
           
           MAX_ATTEMPTS=30
           ATTEMPT=0
           
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            if npm view smithers@${VERSION} version 2>/dev/null; then
+            if npm view smithers-orchestrator@${VERSION} version 2>/dev/null; then
               echo "Package available!"
               exit 0
             fi

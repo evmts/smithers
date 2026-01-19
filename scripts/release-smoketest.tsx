@@ -149,14 +149,14 @@ function SetupProjectPhase() {
           {`Create a fresh test project that installs smithers from npm.
 
 ## Target Version
-smithers@${VERSION}
+smithers-orchestrator@${VERSION}
 
 ## Instructions
 
 1. Create a new directory: smoketest-project/
 2. Initialize with: cd smoketest-project && bun init -y
-3. Install smithers: bun add smithers@${VERSION}
-4. Verify installation by checking node_modules/smithers exists
+3. Install smithers: bun add smithers-orchestrator@${VERSION}
+4. Verify installation by checking node_modules/smithers-orchestrator exists
 5. Create a basic tsconfig.json for TypeScript support
 
 Report the results including any errors encountered.`}
@@ -211,13 +211,13 @@ ${features ? JSON.stringify(features.newFeatures, null, 2) : 'No specific featur
 
 1. **Import Test**: Create a file that imports smithers components
    \`\`\`tsx
-   import { SmithersProvider, Claude, Phase, Step } from 'smithers'
+   import { SmithersProvider, Claude, Phase, Step } from 'smithers-orchestrator'
    console.log('Import successful')
    \`\`\`
 
 2. **JSX Runtime Test**: Verify JSX compiles correctly
    \`\`\`tsx
-   import { SmithersProvider } from 'smithers'
+   import { SmithersProvider } from 'smithers-orchestrator'
    const element = <SmithersProvider db={null as any} executionId="test">{null}</SmithersProvider>
    console.log('JSX works:', typeof element)
    \`\`\`
@@ -295,7 +295,7 @@ function ReleaseSmoketestOrchestration() {
 }
 
 async function main() {
-  console.log(`Starting release smoketest for smithers@${VERSION}`)
+  console.log(`Starting release smoketest for smithers-orchestrator@${VERSION}`)
   let historyEntries = 0
   try {
     historyEntries = JSON.parse(GIT_HISTORY).length
