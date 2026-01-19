@@ -212,6 +212,12 @@ export interface SmithersProviderProps {
   config?: SmithersConfig
 
   /**
+   * Optional tree serialization callback for frame capture.
+   * Prefer passing root.toXML() from createSmithersRoot().
+   */
+  getTreeXML?: () => string | null
+
+  /**
    * Maximum number of Ralph iterations (default: 100)
    */
   maxIterations?: number
@@ -324,7 +330,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   }, [])
 
   // Capture render frame on each Ralph iteration
-  useCaptureRenderFrame(props.db, ralphCount)
+  useCaptureRenderFrame(props.db, ralphCount, props.getTreeXML)
 
   // Ralph iteration monitoring effect - now uses DB-backed state
   useEffect(() => {

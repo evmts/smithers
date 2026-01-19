@@ -18,10 +18,9 @@ export interface SmithersNode {
   /** Reference to parent node (null for root) */
   parent: SmithersNode | null
   /**
-   * Unique key for reconciliation (set by jsx-runtime, not React reconciler).
-   * NOTE: React's `key` prop is NOT passed through to components/instances.
-   * The jsx-runtime handles this specially, but if using React reconciler
-   * directly, use `planKey` in props instead for accessible identifiers.
+   * Unique key for reconciliation (set by Smithers jsx-runtime).
+   * React's `key` prop is not passed through to components/instances, so
+   * smithers' jsx-runtime copies it into the `__smithersKey` prop.
    */
   key?: string | number
   /** Runtime execution state */

@@ -33,18 +33,9 @@ export const rendererMethods = {
       // Children are handled by insertNode, not setProperty
       return
     }
-    if (name === 'key') {
-      // NOTE: This code is currently UNREACHABLE when using React's jsx-runtime
-      // because React's special `key` prop is never passed to the reconciler.
-      // It's only used internally by React's fiber reconciliation algorithm.
-      //
-      // Kept here for:
-      // - Direct testing via rendererMethods (bypassing React)
-      // - Potential future custom JSX runtime implementations
-      // - Explicit manual SmithersNode construction
-      //
-      // If you need keys in serialized XML output, use a different prop name
-      // like `planKey`, `loopKey`, or `iteration` instead.
+    if (name === '__smithersKey' || name === 'key') {
+      // __smithersKey is injected by our custom jsx-runtime to expose React's key.
+      // "key" is still accepted for direct rendererMethods usage.
       node.key = value as string | number
       return
     }
