@@ -607,7 +607,7 @@ describe('SmithersChatTransport - Orchestration Context', () => {
     })
 
     const stream = await transport.sendMessages(createSendOptions('chat-react', []))
-    const chunks = await collectChunks(stream)
+    const chunks = await collectChunksWithTimeout(stream, 3000, true)
 
     // Null orchestration should complete successfully
     const statusChunks = chunks.filter(
