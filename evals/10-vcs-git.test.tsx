@@ -8,7 +8,6 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createTestEnvironment, cleanupTestEnvironment, logEvalResult } from './setup'
 import { SmithersProvider } from '../src/components/SmithersProvider'
 import { Phase } from '../src/components/Phase'
-import { Parallel } from '../src/components/Parallel'
 import * as Git from '../src/components/Git'
 import { validateXML } from './validation/output-validator'
 
