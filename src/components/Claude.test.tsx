@@ -962,11 +962,156 @@ describe('Claude with schema', () => {
     expect(retryPrompt).toContain('Expected object')
   })
 
-  test.todo('validates output against Zod schema')
-  test.todo('retries on schema validation failure')
-  test.todo('uses schemaRetries for max retries')
-  test.todo('returns typed structured data on success')
-  test.todo('returns error on schema validation exhaustion')
+  test('validates output against Zod schema', async () => {
+    const { parseStructuredOutput } = await import('../utils/structured-output.js')
+    const { z } = await import('zod')
+    
+    const schema = z.object({ name: z.string(), age: z.number() })
+    
+    const validResult = parseStructuredOutput('{"name": "Alice", "age": 30}', schema)
+    expect(validResult.success).toBe(true)
+    if (validResult.success) {
+      expect(validResult.data.name).toBe('Alice')
+      expect(validResult.data.age).toBe(30)
+    }
+    
+    const invalidResult = parseStructuredOutput('{"name": "Bob"}', schema)
+    expect(invalidResult.success).toBe(false)
+    expect(invalidResult.error).toContain('age')
+  })
+
+  test('retries on schema validation failure', async () => {
+    const { z } = await import('zod')
+    const executorModule = await import('./agents/claude-cli/executor.js')
+    
+    const schema = z.object({ status: z.string() })
+    let callCount = 0
+    
+    const executeSpy = spyOn(executorModule, 'executeClaudeCLIOnce').mockImplementation(async () => {
+      callCount++
+      if (callCount === 1) {
+        return {
+          output: 'invalid json here',
+          tokensUsed: { input: 50, output: 25 },
+          turnsUsed: 1,
+          stopReason: 'completed' as const,
+          durationMs: 100,
+        }
+      }
+      return {
+        output: '{"status": "success"}',
+        tokensUsed: { input: 100, output: 50 },
+        turnsUsed: 2,
+        stopReason: 'completed' as const,
+        durationMs: 200,
+      }
+    })
+    
+    try {
+      const result = await executorModule.executeClaudeCLI({
+        prompt: 'test',
+        schema,
+        schemaRetries: 2,
+      })
+      
+      expect(callCount).toBeGreaterThan(1)
+      expect(result.structured).toEqual({ status: 'success' })
+    } finally {
+      executeSpy.mockRestore()
+    }
+  })
+
+  test('uses schemaRetries for max retries', async () => {
+    const { z } = await import('zod')
+    const executorModule = await import('./agents/claude-cli/executor.js')
+    
+    const schema = z.object({ value: z.number() })
+    let callCount = 0
+    
+    const executeSpy = spyOn(executorModule, 'executeClaudeCLIOnce').mockImplementation(async () => {
+      callCount++
+      return {
+        output: 'always invalid',
+        tokensUsed: { input: 50, output: 25 },
+        turnsUsed: 1,
+        stopReason: 'completed' as const,
+        durationMs: 100,
+      }
+    })
+    
+    try {
+      await executorModule.executeClaudeCLI({
+        prompt: 'test',
+        schema,
+        schemaRetries: 3,
+      })
+      
+      expect(callCount).toBe(4)
+    } finally {
+      executeSpy.mockRestore()
+    }
+  })
+
+  test('returns typed structured data on success', async () => {
+    const { z } = await import('zod')
+    const executorModule = await import('./agents/claude-cli/executor.js')
+    
+    const schema = z.object({
+      items: z.array(z.object({ id: z.number(), name: z.string() })),
+      total: z.number(),
+    })
+    
+    const executeSpy = spyOn(executorModule, 'executeClaudeCLIOnce').mockResolvedValue({
+      output: '{"items": [{"id": 1, "name": "Item 1"}], "total": 1}',
+      tokensUsed: { input: 100, output: 50 },
+      turnsUsed: 1,
+      stopReason: 'completed' as const,
+      durationMs: 100,
+    })
+    
+    try {
+      const result = await executorModule.executeClaudeCLI({
+        prompt: 'test',
+        schema,
+      })
+      
+      expect(result.structured).toEqual({
+        items: [{ id: 1, name: 'Item 1' }],
+        total: 1,
+      })
+    } finally {
+      executeSpy.mockRestore()
+    }
+  })
+
+  test('returns error on schema validation exhaustion', async () => {
+    const { z } = await import('zod')
+    const executorModule = await import('./agents/claude-cli/executor.js')
+    
+    const schema = z.object({ required: z.boolean() })
+    
+    const executeSpy = spyOn(executorModule, 'executeClaudeCLIOnce').mockResolvedValue({
+      output: 'not valid json at all',
+      tokensUsed: { input: 50, output: 25 },
+      turnsUsed: 1,
+      stopReason: 'completed' as const,
+      durationMs: 100,
+    })
+    
+    try {
+      const result = await executorModule.executeClaudeCLI({
+        prompt: 'test',
+        schema,
+        schemaRetries: 2,
+      })
+      
+      expect(result.stopReason).toBe('error')
+      expect(result.output).toContain('Schema validation failed')
+      expect(result.output).toContain('retries')
+    } finally {
+      executeSpy.mockRestore()
+    }
+  })
 })
 
 // ============================================================================
@@ -974,12 +1119,192 @@ describe('Claude with schema', () => {
 // ============================================================================
 
 describe('Claude callbacks', () => {
-  // Callback behavior requires integration testing with actual execution
-  test.todo('onProgress is called with CLI output chunks')
-  test.todo('onToolCall is called when tools are invoked')
-  test.todo('onFinished is called with AgentResult on success')
-  test.todo('onError is called with Error on failure')
-  test.todo('callbacks are not called after unmount')
+  let db: SmithersDB
+  let executionId: string
+  let executeClaudeCLISpy: ReturnType<typeof spyOn>
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('test-callbacks', '/test/file.tsx')
+  })
+
+  afterEach(async () => {
+    await new Promise((r) => setTimeout(r, 10))
+    executeClaudeCLISpy?.mockRestore()
+    db.close()
+  })
+
+  test('onProgress is called with CLI output chunks', async () => {
+    const progressChunks: string[] = []
+    
+    executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockImplementation(async (options) => {
+      options.onProgress?.('Chunk 1')
+      options.onProgress?.('Chunk 2')
+      options.onProgress?.('Chunk 3')
+      return {
+        output: 'Complete',
+        tokensUsed: { input: 100, output: 50 },
+        turnsUsed: 1,
+        stopReason: 'completed',
+        durationMs: 100,
+      }
+    })
+    
+    const { Claude } = await import('./Claude.js')
+    const root = createSmithersRoot()
+    
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <Claude model="sonnet" onProgress={(chunk) => progressChunks.push(chunk)}>
+          Test prompt
+        </Claude>
+      </SmithersProvider>
+    )
+    
+    await new Promise((r) => setTimeout(r, 50))
+    
+    expect(progressChunks.length).toBeGreaterThanOrEqual(1)
+    
+    root.dispose()
+  })
+
+  test('onToolCall is called when tools are invoked', async () => {
+    const toolCalls: Array<{ tool: string; input: unknown }> = []
+    
+    executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockImplementation(async (options) => {
+      options.onToolCall?.('Read', { path: '/file.txt' })
+      options.onToolCall?.('Bash', { command: 'ls' })
+      return {
+        output: 'Done',
+        tokensUsed: { input: 100, output: 50 },
+        turnsUsed: 1,
+        stopReason: 'completed',
+        durationMs: 100,
+      }
+    })
+    
+    const { Claude } = await import('./Claude.js')
+    const root = createSmithersRoot()
+    
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <Claude 
+          model="sonnet" 
+          onToolCall={(tool, input) => toolCalls.push({ tool, input })}
+        >
+          Test prompt
+        </Claude>
+      </SmithersProvider>
+    )
+    
+    await new Promise((r) => setTimeout(r, 50))
+    
+    expect(toolCalls).toHaveLength(2)
+    expect(toolCalls[0]).toEqual({ tool: 'Read', input: { path: '/file.txt' } })
+    expect(toolCalls[1]).toEqual({ tool: 'Bash', input: { command: 'ls' } })
+    
+    root.dispose()
+  })
+
+  test('onFinished is called with AgentResult on success', async () => {
+    let finishedResult: AgentResult | null = null
+    
+    executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockResolvedValue({
+      output: 'Success output',
+      tokensUsed: { input: 150, output: 75 },
+      turnsUsed: 2,
+      stopReason: 'completed',
+      durationMs: 500,
+    })
+    
+    const { Claude } = await import('./Claude.js')
+    const root = createSmithersRoot()
+    
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <Claude model="sonnet" onFinished={(result) => { finishedResult = result }}>
+          Test prompt
+        </Claude>
+      </SmithersProvider>
+    )
+    
+    await new Promise((r) => setTimeout(r, 100))
+    
+    expect(finishedResult).not.toBeNull()
+    expect(finishedResult!.output).toBe('Success output')
+    expect(finishedResult!.tokensUsed.input).toBe(150)
+    expect(finishedResult!.tokensUsed.output).toBe(75)
+    
+    root.dispose()
+  })
+
+  test('onError is called with Error on failure', async () => {
+    let errorReceived: Error | null = null
+    
+    executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockRejectedValue(new Error('Execution failed'))
+    
+    const { Claude } = await import('./Claude.js')
+    const root = createSmithersRoot()
+    
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <Claude 
+          model="sonnet" 
+          maxRetries={0}
+          onError={(err) => { errorReceived = err }}
+        >
+          Test prompt
+        </Claude>
+      </SmithersProvider>
+    )
+    
+    await new Promise((r) => setTimeout(r, 100))
+    
+    expect(errorReceived).not.toBeNull()
+    expect(errorReceived!.message).toBe('Execution failed')
+    
+    root.dispose()
+  })
+
+  test('callbacks are not called after unmount', async () => {
+    let callbackCalledAfterUnmount = false
+    let resolveExecution: () => void
+    const executionPromise = new Promise<void>((r) => { resolveExecution = r })
+    
+    executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockImplementation(async () => {
+      await executionPromise
+      return {
+        output: 'Late result',
+        tokensUsed: { input: 100, output: 50 },
+        turnsUsed: 1,
+        stopReason: 'completed',
+        durationMs: 100,
+      }
+    })
+    
+    const { Claude } = await import('./Claude.js')
+    const root = createSmithersRoot()
+    
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <Claude 
+          model="sonnet" 
+          onFinished={() => { callbackCalledAfterUnmount = true }}
+        >
+          Test prompt
+        </Claude>
+      </SmithersProvider>
+    )
+    
+    await new Promise((r) => setTimeout(r, 10))
+    
+    root.dispose()
+    
+    resolveExecution!()
+    await new Promise((r) => setTimeout(r, 50))
+    
+    expect(callbackCalledAfterUnmount).toBe(false)
+  })
 })
 
 // ============================================================================
@@ -987,17 +1312,141 @@ describe('Claude callbacks', () => {
 // ============================================================================
 
 describe('Claude validation', () => {
+  let db: SmithersDB
+  let executionId: string
+  let executeClaudeCLISpy: ReturnType<typeof spyOn>
+
+  beforeEach(() => {
+    db = createSmithersDB({ path: ':memory:' })
+    executionId = db.execution.start('test-validation', '/test/file.tsx')
+  })
+
+  afterEach(async () => {
+    await new Promise((r) => setTimeout(r, 10))
+    executeClaudeCLISpy?.mockRestore()
+    db.close()
+  })
+
   test('validate function type check', () => {
-    // Validate is an async function that receives AgentResult
     const validate = async (result: AgentResult) => {
       return result.output.length > 0
     }
     expect(typeof validate).toBe('function')
   })
 
-  test.todo('calls validate function with result')
-  test.todo('retries when validate returns false and retryOnValidationFailure=true')
-  test.todo('throws when validate returns false and retryOnValidationFailure=false')
+  test('calls validate function with result', async () => {
+    let validatedResult: AgentResult | null = null
+    
+    executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockResolvedValue({
+      output: 'Validated output',
+      tokensUsed: { input: 100, output: 50 },
+      turnsUsed: 1,
+      stopReason: 'completed',
+      durationMs: 100,
+    })
+    
+    const { Claude } = await import('./Claude.js')
+    const root = createSmithersRoot()
+    
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <Claude 
+          model="sonnet" 
+          validate={async (result) => {
+            validatedResult = result
+            return true
+          }}
+        >
+          Test prompt
+        </Claude>
+      </SmithersProvider>
+    )
+    
+    await new Promise((r) => setTimeout(r, 100))
+    
+    expect(validatedResult).not.toBeNull()
+    expect(validatedResult!.output).toBe('Validated output')
+    
+    root.dispose()
+  })
+
+  test('retries when validate returns false and retryOnValidationFailure=true', async () => {
+    let validateCallCount = 0
+    let executionCount = 0
+    
+    executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockImplementation(async () => {
+      executionCount++
+      return {
+        output: executionCount === 1 ? 'First attempt' : 'Second attempt',
+        tokensUsed: { input: 100, output: 50 },
+        turnsUsed: 1,
+        stopReason: 'completed',
+        durationMs: 100,
+      }
+    })
+    
+    const { Claude } = await import('./Claude.js')
+    const root = createSmithersRoot()
+    
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+        <Claude 
+          model="sonnet" 
+          maxRetries={3}
+          retryOnValidationFailure={true}
+          validate={async (result) => {
+            validateCallCount++
+            return result.output === 'Second attempt'
+          }}
+        >
+          Test prompt
+        </Claude>
+      </SmithersProvider>
+    )
+    
+    await new Promise((r) => setTimeout(r, 200))
+    
+    expect(validateCallCount).toBeGreaterThan(1)
+    expect(executionCount).toBeGreaterThan(1)
+    
+    root.dispose()
+  })
+
+  test('throws when validate returns false and retryOnValidationFailure=false', async () => {
+    let errorReceived: Error | null = null
+    
+    executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockResolvedValue({
+      output: 'Invalid output',
+      tokensUsed: { input: 100, output: 50 },
+      turnsUsed: 1,
+      stopReason: 'completed',
+      durationMs: 100,
+    })
+    
+    const { Claude } = await import('./Claude.js')
+    const root = createSmithersRoot()
+    
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+        <Claude 
+          model="sonnet" 
+          maxRetries={0}
+          retryOnValidationFailure={false}
+          validate={async () => false}
+          onError={(err) => { errorReceived = err }}
+        >
+          Test prompt
+        </Claude>
+      </SmithersProvider>
+    )
+    
+    await new Promise((r) => setTimeout(r, 100))
+    
+    expect(errorReceived).not.toBeNull()
+    expect(errorReceived!.message).toContain('Validation failed')
+    
+    root.dispose()
+  })
 })
 
 // ============================================================================
