@@ -111,14 +111,19 @@ export function createSmithersRoot(): SmithersRoot {
       }
 
       // Check if App returns a Promise
-      const result = App()
-
       let element: ReactNode
-
-      if (isThenable(result)) {
-        element = await result
-      } else {
-        element = result as ReactNode
+      try {
+        const result = App()
+        if (isThenable(result)) {
+          element = await result
+        } else {
+          element = result as ReactNode
+        }
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error))
+        handleFatalError(err)
+        void completionPromise.catch(() => {})
+        return Promise.reject(err)
       }
 
       // Create the fiber root container

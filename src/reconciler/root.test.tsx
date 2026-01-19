@@ -31,6 +31,36 @@ describe('SmithersRoot mount', () => {
     root.dispose()
   })
 
+  test('rejects when App throws before render', async () => {
+    const root = createSmithersRoot()
+    let result: unknown = null
+    try {
+      await root.mount(() => { throw new Error('pre-render') })
+    } catch (error) {
+      result = error
+    }
+
+    expect(result).toBeInstanceOf(Error)
+    expect((result as Error).message).toBe('pre-render')
+
+    root.dispose()
+  })
+
+  test('rejects when App promise rejects', async () => {
+    const root = createSmithersRoot()
+    let result: unknown = null
+    try {
+      await root.mount(async () => { throw new Error('async-pre-render') })
+    } catch (error) {
+      result = error
+    }
+
+    expect(result).toBeInstanceOf(Error)
+    expect((result as Error).message).toBe('async-pre-render')
+
+    root.dispose()
+  })
+
   test.skip('render rejects on component errors', async () => {
     // SKIPPED: React reconciler error handling varies by mode and version.
     // The error IS thrown (visible in console), but the promise resolution

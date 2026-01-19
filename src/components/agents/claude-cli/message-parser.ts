@@ -46,45 +46,49 @@ export class MessageParser {
   }
 
   private processBuffer(): void {
-    // Look for tool call boundaries
-    const match = this.buffer.match(this.toolStartPattern)
+    while (true) {
+      // Look for tool call boundaries
+      const match = this.buffer.match(this.toolStartPattern)
 
-    if (match && match.index !== undefined) {
-      // Text before tool call is a message
-      const beforeTool = this.buffer.slice(0, match.index)
-      if (beforeTool.trim()) {
-        this.currentMessage += beforeTool
+      if (match && match.index !== undefined) {
+        // Text before tool call is a message
+        const beforeTool = this.buffer.slice(0, match.index)
+        if (beforeTool.trim()) {
+          this.currentMessage += beforeTool
+        }
+
+        // Flush current message if we have one
+        if (this.currentMessage.trim()) {
+          this.addEntry({
+            type: 'message',
+            content: this.currentMessage.trim(),
+          })
+          this.currentMessage = ''
+        }
+
+        // Find end of tool call (next blank line or another tool)
+        this.buffer = this.buffer.slice(match.index)
+        const toolEnd = this.findToolEnd()
+
+        if (toolEnd > 0) {
+          const toolContent = this.buffer.slice(0, toolEnd)
+          const toolName = this.extractToolName(toolContent)
+
+          this.addEntry({
+            type: 'tool-call',
+            content: toolContent.trim(),
+            toolName,
+          })
+
+          this.buffer = this.buffer.slice(toolEnd)
+          continue
+        }
+      } else {
+        // No tool call found, accumulate as message
+        this.currentMessage += this.buffer
+        this.buffer = ''
       }
-
-      // Flush current message if we have one
-      if (this.currentMessage.trim()) {
-        this.addEntry({
-          type: 'message',
-          content: this.currentMessage.trim(),
-        })
-        this.currentMessage = ''
-      }
-
-      // Find end of tool call (next blank line or another tool)
-      this.buffer = this.buffer.slice(match.index)
-      const toolEnd = this.findToolEnd()
-
-      if (toolEnd > 0) {
-        const toolContent = this.buffer.slice(0, toolEnd)
-        const toolName = this.extractToolName(toolContent)
-
-        this.addEntry({
-          type: 'tool-call',
-          content: toolContent.trim(),
-          toolName,
-        })
-
-        this.buffer = this.buffer.slice(toolEnd)
-      }
-    } else {
-      // No tool call found, accumulate as message
-      this.currentMessage += this.buffer
-      this.buffer = ''
+      break
     }
   }
 
@@ -143,7 +147,7 @@ export class MessageParser {
   }
 
   private extractToolName(content: string): string {
-    const match = content.match(/(?:Tool:|TOOL:)\s*(\w+)/) ||
+    const match = content.match(/(?:Tool:|TOOL:)\s*([^\s]+)/) ||
                   content.match(/<invoke\s+name="([^"]+)"/)
     return match?.[1] ?? 'unknown'
   }

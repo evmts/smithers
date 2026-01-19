@@ -1,10 +1,11 @@
 import { createContext, useContext, type ReactNode } from 'react'
+import { useExecutionScope } from './ExecutionScope.js'
 
 export interface ExecutionContextValue {
   isActive: boolean
 }
 
-const ExecutionContext = createContext<ExecutionContextValue>({ isActive: true })
+const ExecutionContext = createContext<ExecutionContextValue | null>(null)
 
 export interface ExecutionProviderProps {
   isActive: boolean
@@ -20,5 +21,10 @@ export function ExecutionProvider(props: ExecutionProviderProps): ReactNode {
 }
 
 export function useExecutionContext(): ExecutionContextValue {
-  return useContext(ExecutionContext)
+  const scope = useExecutionScope()
+  const context = useContext(ExecutionContext)
+  if (!context) {
+    return { isActive: scope.enabled }
+  }
+  return { isActive: context.isActive && scope.enabled }
 }

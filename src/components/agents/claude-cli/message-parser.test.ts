@@ -35,6 +35,16 @@ describe('MessageParser', () => {
       expect(toolEntry?.toolName).toBe('Read')
     })
 
+    test('parses multiple tool calls in a single chunk', () => {
+      parser.parseChunk('Tool: Read\npath: /a\n\nTool: Write\npath: /b\n\nDone')
+      parser.flush()
+
+      const toolEntries = parser.getEntries().filter(e => e.type === 'tool-call')
+      expect(toolEntries.length).toBeGreaterThanOrEqual(2)
+      expect(toolEntries[0].toolName).toBe('Read')
+      expect(toolEntries[1].toolName).toBe('Write')
+    })
+
     test('parses message with TOOL: prefix (uppercase)', () => {
       parser.parseChunk('Some text\n\nTOOL: Write\npath: /some/path\n\nMore text')
       parser.flush()
@@ -125,6 +135,15 @@ describe('MessageParser', () => {
       const entries = parser.getEntries()
       const toolEntry = entries.find(e => e.type === 'tool-call')
       expect(toolEntry?.toolName).toBe('Bash')
+    })
+
+    test('extracts tool names with hyphens', () => {
+      parser.parseChunk('Tool: read-file\npath: /file\n\n')
+      parser.flush()
+
+      const entries = parser.getEntries()
+      const toolEntry = entries.find(e => e.type === 'tool-call')
+      expect(toolEntry?.toolName).toBe('read-file')
     })
 
     test('extracts from <invoke name="..."> format', () => {
