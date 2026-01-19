@@ -177,7 +177,7 @@ describe('08-hooks-human', () => {
     })
   })
 
-  test('Human inside Phase renders', async () => {
+  test('Human inside nested Phase renders (first nested phase active)', async () => {
     const startTime = Date.now()
 
     await env.root.render(
@@ -199,7 +199,7 @@ describe('08-hooks-human', () => {
     expect(validation.valid).toBe(true)
 
     logEvalResult({
-      test: '08-human-in-phase',
+      test: '08-human-in-nested-phase',
       passed: true,
       duration_ms: duration,
       structured_output: { xml_valid: true },
