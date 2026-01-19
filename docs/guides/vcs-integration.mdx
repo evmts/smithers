@@ -178,8 +178,7 @@ function FeatureWorkflow() {
   const [phase, setPhase] = useState("implement");
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Orchestration snapshotBeforeStart>
+    <SmithersProvider db={db} executionId={executionId} snapshotBeforeStart>
         <Ralph maxIterations={10}>
           {phase === "implement" && (
             <Phase name="Implementation">
@@ -236,7 +235,6 @@ function FeatureWorkflow() {
             </Phase>
           )}
         </Ralph>
-      </Orchestration>
     </SmithersProvider>
   );
 }

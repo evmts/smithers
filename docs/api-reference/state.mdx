@@ -70,14 +70,14 @@ Get state transition history.
 
 ```tsx
 // History for a specific key
-const phaseHistory = await db.state.history("phase", 10);
+const phaseHistory = await db.state.history({ key: "phase", limit: 10 });
 // [
 //   { id: "t1", key: "phase", value: "start", trigger: "init", timestamp: ... },
 //   { id: "t2", key: "phase", value: "review", trigger: "tests_passed", ... },
 // ]
 
 // All history
-const allHistory = await db.state.history(undefined, 50);
+const allHistory = await db.state.history({ limit: 50 });
 ```
 
 ### replayTo

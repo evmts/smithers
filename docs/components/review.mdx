@@ -183,12 +183,13 @@ function ReviewWorkflow() {
 Make reviews gate the workflow:
 
 ```tsx
-<SmithersProvider db={db} executionId={executionId}>
-  <Orchestration
-    stopConditions={[
-      { type: "report_severity", value: "critical" }
-    ]}
-  >
+<SmithersProvider
+  db={db}
+  executionId={executionId}
+  stopConditions={[
+    { type: "report_severity", value: "critical" }
+  ]}
+>
     <Review
       blocking
       target={{ type: "diff", ref: "main" }}
@@ -204,7 +205,6 @@ Make reviews gate the workflow:
         }
       }}
     />
-  </Orchestration>
 </SmithersProvider>
 ```
 

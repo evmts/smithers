@@ -37,7 +37,7 @@ import { Step } from "smithers-orchestrator";
 ## Structured Workflow
 
 ```tsx
-<Orchestration globalTimeout={3600000}>
+<SmithersProvider db={db} executionId={executionId} globalTimeout={3600000}>
   <Phase name="Setup">
     <Step name="Check Environment">
       <Claude allowedTools={["Bash"]}>
@@ -76,7 +76,7 @@ import { Step } from "smithers-orchestrator";
       </Claude>
     </Step>
   </Phase>
-</Orchestration>
+</SmithersProvider>
 ```
 
 ## Database Tracking
@@ -84,7 +84,7 @@ import { Step } from "smithers-orchestrator";
 Steps are tracked in the database:
 
 ```tsx
-const steps = await db.steps.getByExecution(executionId);
+const steps = await db.steps.list({ executionId });
 // [
 //   { id: "s1", name: "Check Environment", status: "complete", ... },
 //   { id: "s2", name: "Create Branch", status: "complete", ... },
@@ -98,7 +98,7 @@ const steps = await db.steps.getByExecution(executionId);
   <Card title="Phase" icon="list" href="/components/phase">
     Group steps into phases
   </Card>
-  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+  <Card title="SmithersProvider" icon="sitemap" href="/components/smithers-provider">
     Top-level control
   </Card>
 </CardGroup>

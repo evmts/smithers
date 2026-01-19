@@ -77,7 +77,7 @@ const phase = db.phases.current(): Phase | null
 Lists all phases for an execution.
 
 ```tsx
-const phases = db.phases.list(executionId: string): Phase[]
+const phases = db.phases.list({ executionId: string }): Phase[]
 ```
 
 ## Phase Type
@@ -103,7 +103,7 @@ The `<Phase>` component automatically integrates with this module:
 ```tsx
 import { Phase } from "smithers-orchestrator";
 
-<Orchestration>
+<SmithersProvider db={db} executionId={executionId}>
   <Phase name="research">
     <Claude>Research the topic.</Claude>
   </Phase>
@@ -115,7 +115,7 @@ import { Phase } from "smithers-orchestrator";
   <Phase name="testing">
     <Claude>Write and run tests.</Claude>
   </Phase>
-</Orchestration>
+</SmithersProvider>
 ```
 
 ## Multi-Iteration Phases
@@ -134,7 +134,7 @@ Phases track their iteration number for workflows that loop:
 Query phases by iteration:
 
 ```tsx
-const phases = db.phases.list(executionId);
+const phases = db.phases.list({ executionId });
 
 // Group by iteration
 const byIteration = phases.reduce((acc, phase) => {
@@ -200,7 +200,7 @@ if (currentPhase) {
 }
 
 // List all phases
-const allPhases = db.phases.list(executionId);
+const allPhases = db.phases.list({ executionId });
 
 // Calculate total duration
 const totalDuration = allPhases

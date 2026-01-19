@@ -36,7 +36,7 @@ import { Subagent } from "smithers-orchestrator";
 ### Named Groups for Organization
 
 ```tsx
-<Orchestration>
+<SmithersProvider db={db} executionId={executionId}>
   <Subagent name="analysis">
     <Claude allowedTools={["Read", "Grep"]}>
       Analyze the codebase structure.
@@ -54,7 +54,7 @@ import { Subagent } from "smithers-orchestrator";
       Run tests and verify implementation.
     </Claude>
   </Subagent>
-</Orchestration>
+</SmithersProvider>
 ```
 
 ### Parallel Execution
@@ -72,7 +72,7 @@ Use `parallel={true}` to run multiple Claude instances concurrently:
 ### Combining Sequential and Parallel
 
 ```tsx
-<Orchestration>
+<SmithersProvider db={db} executionId={executionId}>
   {/* Sequential: analyze first */}
   <Subagent name="analysis">
     <Claude>Analyze the current architecture.</Claude>
@@ -91,7 +91,7 @@ Use `parallel={true}` to run multiple Claude instances concurrently:
       Combine the research findings and create an implementation plan.
     </Claude>
   </Subagent>
-</Orchestration>
+</SmithersProvider>
 ```
 
 ### With Phase Control
@@ -176,7 +176,7 @@ function ResearchWorkflow() {
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+  <Card title="SmithersProvider" icon="sitemap" href="/components/smithers-provider">
     Top-level workflow orchestration
   </Card>
   <Card title="Phase" icon="layer-group" href="/components/phase">

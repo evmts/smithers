@@ -59,7 +59,9 @@ function RetryWorkflow() {
 Handle errors at the orchestration level:
 
 ```tsx
-<Orchestration
+<SmithersProvider
+  db={db}
+  executionId={executionId}
   globalTimeout={3600000}
   onError={async (error) => {
     // Log to database
@@ -75,7 +77,7 @@ Handle errors at the orchestration level:
   }}
 >
   <WorkflowContent />
-</Orchestration>
+</SmithersProvider>
 ```
 
 ## Stop Conditions
@@ -83,7 +85,9 @@ Handle errors at the orchestration level:
 Use stop conditions to catch issues early:
 
 ```tsx
-<Orchestration
+<SmithersProvider
+  db={db}
+  executionId={executionId}
   stopConditions={[
     { type: "total_tokens", value: 50000 },
     { type: "report_severity", value: "critical" },
@@ -227,21 +231,22 @@ function RobustWorkflow() {
   });
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Orchestration
-        globalTimeout={3600000}
-        stopConditions={[
-          { type: "total_tokens", value: 100000 },
-        ]}
-        onError={async (error) => {
-          await db.vcs.addReport({
-            type: "error",
-            severity: "critical",
-            title: "Workflow Error",
-            content: error.message,
-          });
-        }}
-      >
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      globalTimeout={3600000}
+      stopConditions={[
+        { type: "total_tokens", value: 100000 },
+      ]}
+      onError={async (error) => {
+        await db.vcs.addReport({
+          type: "error",
+          severity: "critical",
+          title: "Workflow Error",
+          content: error.message,
+        });
+      }}
+    >
         <Ralph
           maxIterations={10}
           onMaxIterations={() => {
@@ -282,7 +287,6 @@ function RobustWorkflow() {
             <Stop reason="Cancelled after failures" />
           )}
         </Ralph>
-      </Orchestration>
     </SmithersProvider>
   );
 }
@@ -291,7 +295,7 @@ function RobustWorkflow() {
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+  <Card title="SmithersProvider" icon="sitemap" href="/components/smithers-provider">
     Workflow-level control
   </Card>
   <Card title="Ralph" icon="rotate" href="/components/ralph">

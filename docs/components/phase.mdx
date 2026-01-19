@@ -102,7 +102,7 @@ Phases are tracked in the database:
 
 ```tsx
 // Phases are automatically tracked when using SmithersProvider
-const phases = await db.phases.list(executionId);
+const phases = await db.phases.list({ executionId });
 // [
 //   { id: "p1", name: "Research", status: "complete", ... },
 //   { id: "p2", name: "Implementation", status: "running", ... },

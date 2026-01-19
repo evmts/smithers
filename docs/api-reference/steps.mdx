@@ -85,18 +85,10 @@ const step = db.steps.current(): Step | null
 
 ### list
 
-Lists all steps in a phase.
+Lists steps. Filter by phase or execution.
 
 ```tsx
-const steps = db.steps.list(phaseId: string): Step[]
-```
-
-### getByExecution
-
-Gets all steps for an execution.
-
-```tsx
-const steps = db.steps.getByExecution(executionId: string): Step[]
+const steps = db.steps.list({ phaseId?: string, executionId?: string }): Step[]
 ```
 
 ## Step Type
@@ -181,12 +173,12 @@ if (currentStep) {
 }
 
 // List steps in a phase
-const phaseSteps = db.steps.list(phaseId);
+const phaseSteps = db.steps.list({ phaseId });
 const completedSteps = phaseSteps.filter((s) => s.status === "completed");
 console.log(`Progress: ${completedSteps.length}/${phaseSteps.length}`);
 
 // Get all steps for execution
-const allSteps = db.steps.getByExecution(executionId);
+const allSteps = db.steps.list({ executionId });
 ```
 
 ## Related

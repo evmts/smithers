@@ -120,7 +120,6 @@ bunx smithers hook-trigger post-commit "$COMMIT_HASH"
 function CIRecoveryWorkflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Orchestration>
         <Ralph maxIterations={3}>
           <OnCIFailure
             provider="github-actions"
@@ -163,7 +162,6 @@ function CIRecoveryWorkflow() {
             )}
           </OnCIFailure>
         </Ralph>
-      </Orchestration>
     </SmithersProvider>
   );
 }
@@ -201,7 +199,7 @@ function PostCommitReview() {
   <Card title="VCS Integration" icon="code-branch" href="/guides/vcs-integration">
     Complete VCS integration guide
   </Card>
-  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
+  <Card title="SmithersProvider" icon="sitemap" href="/components/smithers-provider">
     Workflow orchestration
   </Card>
 </CardGroup>
