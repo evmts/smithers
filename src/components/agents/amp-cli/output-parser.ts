@@ -156,10 +156,12 @@ export class AmpMessageParser {
 
   constructor(maxEntries: number = 100, onToolCall?: (toolName: string, input: unknown) => void) {
     this.maxEntries = maxEntries
-    this.onToolCall = onToolCall
+    if (onToolCall) {
+      this.onToolCall = onToolCall
+    }
   }
 
-  setOnToolCall(onToolCall?: (toolName: string, input: unknown) => void): void {
+  setOnToolCall(onToolCall: (toolName: string, input: unknown) => void): void {
     this.onToolCall = onToolCall
   }
 
@@ -212,7 +214,10 @@ export class AmpMessageParser {
       return
     }
 
-    this.entries[this.currentMessageIndex].content += text
+    const entry = this.entries[this.currentMessageIndex]
+    if (entry) {
+      entry.content += text
+    }
   }
 
   private addEntry(entry: Omit<TailLogEntry, 'index'>): void {
@@ -222,7 +227,14 @@ export class AmpMessageParser {
     })
 
     if (this.entries.length > this.maxEntries) {
+      const overflow = this.entries.length - this.maxEntries
       this.entries = this.entries.slice(-this.maxEntries)
+      if (this.currentMessageIndex !== null) {
+        this.currentMessageIndex = Math.max(0, this.currentMessageIndex - overflow)
+        if (!this.entries[this.currentMessageIndex] || this.entries[this.currentMessageIndex]?.type !== 'message') {
+          this.currentMessageIndex = null
+        }
+      }
     }
 
     if (entry.type !== 'message') {

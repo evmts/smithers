@@ -94,7 +94,6 @@ export function Amp(props: AmpProps): ReactNode {
   const isMounted = useMountedState()
   const lastTailLogUpdateRef = useRef<number>(0)
   const pendingTailLogUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  messageParserRef.current.setOnToolCall(props.onToolCall)
 
   const shouldExecute = executionEnabled && executionScope.enabled
   const executionKey = shouldExecute ? ralphCount : null
@@ -122,7 +121,7 @@ export function Amp(props: AmpProps): ReactNode {
 
       const logWriter = new LogWriter(undefined, executionId ?? undefined)
       const logId = uuid()
-      const typedStreamingEnabled = props.experimentalTypedStreaming ?? false
+      const typedStreamingEnabled = props.experimentalTypedStreaming === true || props.onStreamPart !== undefined
       const useLegacyLogFormat = typedStreamingEnabled && (props.legacyLogFormat ?? false)
       const recordStreamEvents = props.recordStreamEvents ?? props.reportingEnabled !== false
       const streamLogFilename = typedStreamingEnabled ? `agent-${logId}.ndjson` : `agent-${logId}.log`

@@ -31,7 +31,7 @@ function createHooks(overrides?: Partial<AppHooks>) {
         lastGeneratedAt: null,
         generateNow: async () => {},
       }),
-      ...(overrides ?? {}),
+      ...overrides,
     },
   }
 }
@@ -53,6 +53,7 @@ describe('App keyboard handling', () => {
     const { hooks, keyboardHandlerRef } = createHooks()
 
     await root.render(<App dbPath="/tmp" hooks={hooks} />)
+    await waitForEffects()
 
     const handler = keyboardHandlerRef()
     expect(handler).not.toBeNull()
@@ -66,6 +67,7 @@ describe('App keyboard handling', () => {
     const { hooks, keyboardHandlerRef } = createHooks()
 
     await root.render(<App dbPath="/tmp" hooks={hooks} />)
+    await waitForEffects()
 
     const handler = keyboardHandlerRef()
     handler!({ name: 'tab', ctrl: false, shift: false })
@@ -78,6 +80,7 @@ describe('App keyboard handling', () => {
     const { hooks, keyboardHandlerRef } = createHooks()
 
     await root.render(<App dbPath="/tmp" hooks={hooks} />)
+    await waitForEffects()
 
     const handler = keyboardHandlerRef()
     handler!({ name: 'f4', ctrl: false, shift: false })

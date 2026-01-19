@@ -68,7 +68,7 @@ export function Human(props: HumanProps): ReactNode {
     "SELECT value FROM state WHERE key = ?",
     [stateKey]
   )
-  const requestId = requestIdRaw ? parseJson<string>(requestIdRaw, null) : null
+  const requestId = requestIdRaw ? parseJson<string>(requestIdRaw, '') : null
 
   useMount(() => {
     // Check for existing request (resumability)

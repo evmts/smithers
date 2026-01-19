@@ -2,9 +2,10 @@ import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot } from '../reconciler/root.js'
 import { Parallel, type ParallelProps } from './Parallel.js'
-import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
+import { SmithersProvider, signalOrchestrationComplete, useSmithers } from './SmithersProvider.js'
 import { Phase } from './Phase.js'
-import { useStepRegistry } from './Step.js'
+import { Step, useStepRegistry } from './Step.js'
+import { useExecutionEffect, useExecutionScope } from './ExecutionScope.js'
 import { useEffect, useRef } from 'react'
 
 describe('Parallel component', () => {
@@ -20,6 +21,24 @@ describe('Parallel component', () => {
     signalOrchestrationComplete()
     db.close()
   })
+
+  function ParallelTaskRunner(props: { name: string; delay?: number }) {
+    const { db } = useSmithers()
+    const executionScope = useExecutionScope()
+    const taskIdRef = useRef<string | null>(null)
+
+    useExecutionEffect(executionScope.enabled, () => {
+      taskIdRef.current = db.tasks.start('parallel-test-task', props.name)
+      const timeoutId = setTimeout(() => {
+        if (!db.db.isClosed && taskIdRef.current) {
+          db.tasks.complete(taskIdRef.current)
+        }
+      }, props.delay ?? 20)
+      return () => clearTimeout(timeoutId)
+    }, [db, executionScope.enabled, props.delay, props.name])
+
+    return <task name={props.name} />
+  }
 
   describe('Exports', () => {
     test('exports Parallel component', () => {
@@ -434,11 +453,36 @@ describe('Parallel component', () => {
       )
 
       const xml = root.toXML()
+      // First parallel block is active, so its children render
       expect(xml).toContain('parallel1-a')
       expect(xml).toContain('parallel1-b')
+      // Sequential step and second parallel block render as elements
+      // but children only render when that step becomes active
       expect(xml).toContain('sequential')
-      expect(xml).toContain('parallel2-a')
-      expect(xml).toContain('parallel2-b')
+      expect(xml).toContain('<parallel')
+      root.dispose()
+    })
+
+    test('Phase advances when parallel steps complete', async () => {
+      const root = createSmithersRoot()
+      await root.render(
+        <SmithersProvider db={db} executionId={executionId}>
+          <Phase name="ParallelPhase">
+            <Parallel>
+              <Step name="parallel-a"><ParallelTaskRunner name="parallel-a" delay={20} /></Step>
+              <Step name="parallel-b"><ParallelTaskRunner name="parallel-b" delay={20} /></Step>
+            </Parallel>
+          </Phase>
+          <Phase name="NextPhase">
+            <step name="next" />
+          </Phase>
+        </SmithersProvider>
+      )
+
+      await new Promise(r => setTimeout(r, 250))
+
+      const currentPhaseIndex = db.state.get<number>('currentPhaseIndex')
+      expect(currentPhaseIndex).toBe(1)
       root.dispose()
     })
   })

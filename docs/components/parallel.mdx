@@ -67,7 +67,8 @@ import { Phase, Parallel, Step, Claude } from "smithers-orchestrator";
 ### Mixed Sequential and Parallel
 
 <Note>
-**Aspirational example.** Sequential Steps before/after Parallel may not sequence as expected with the current implementation. See [Known Limitations](#known-limitations).
+Sequential Steps before/after Parallel sequence when Parallel blocks are direct Phase children.
+Nested Parallel inside a Step remains scoped to that Step. See [Known Limitations](#known-limitations).
 </Note>
 
 ```tsx
@@ -111,9 +112,9 @@ The Parallel component wraps children in a `StepRegistryProvider` with `isParall
 <Warning>
 **Parallel completion semantics are experimental.**
 
-- Steps inside `<Parallel>` use a separate step registry and don't participate in the parent phase's sequential step tracking
-- A Phase containing only `<Parallel>` Steps may not advance automatically - use Phase `onComplete` callback for explicit control
-- The "Mixed Sequential and Parallel" example is aspirational - sequential Steps before/after Parallel may not sequence as expected with the current implementation
+- Parallel uses a nested step registry; when used directly under a Phase it registers as a single step group
+- Nested Parallel inside a Step remains scoped to that Step
+- Completion still depends on step task tracking; long-running unrelated tasks can delay Parallel completion
 </Warning>
 
 For reliable phase-based workflows, wrap each Phase's content in explicit Steps:

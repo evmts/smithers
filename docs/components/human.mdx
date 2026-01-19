@@ -24,6 +24,11 @@ import { Human } from "smithers-orchestrator";
 
 ## Props
 
+<ParamField path="id" type="string">
+  Stable identifier for resumability. If omitted, Smithers derives one from `key`,
+  `message`, and child text. Provide `id` (or React `key`) when you need guaranteed uniqueness.
+</ParamField>
+
 <ParamField path="message" type="string">
   Short message shown to the human.
 
