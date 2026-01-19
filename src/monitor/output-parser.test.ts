@@ -162,4 +162,97 @@ describe('OutputParser', () => {
       expect(events[0].raw).toBe('Phase: Test - DONE')
     })
   })
+
+  describe('malformed input - missing tests', () => {
+    test.todo('handles binary data in chunk')
+    test.todo('handles null bytes in chunk')
+    test.todo('handles very long lines (>10KB)')
+    test.todo('handles chunk with only whitespace')
+    test.todo('handles chunk with only carriage returns')
+    test.todo('handles mixed line endings (\\r\\n, \\r, \\n)')
+    test.todo('handles unicode characters in chunk')
+    test.todo('handles emoji in chunk')
+    test.todo('handles control characters in chunk')
+    test.todo('handles chunk with BOM marker')
+  })
+
+  describe('phase parsing edge cases - missing tests', () => {
+    test.todo('Phase: with no name after colon')
+    test.todo('PHASE: uppercase variant')
+    test.todo('Phase: with very long name')
+    test.todo('Phase: with special characters in name')
+    test.todo('Phase: with multiple dashes in status')
+    test.todo('Phase: with only whitespace after colon')
+    test.todo('Phase: embedded in middle of line')
+  })
+
+  describe('agent parsing edge cases - missing tests', () => {
+    test.todo('Agent: with no name after colon')
+    test.todo('AGENT: uppercase variant')
+    test.todo('Agent: with very long name')
+    test.todo('Agent: with special characters in name')
+    test.todo('Claude with no following text')
+    test.todo('Claude embedded in longer word (ClaudeAgent)')
+    test.todo('Agent: with multiple dashes in status')
+  })
+
+  describe('tool parsing edge cases - missing tests', () => {
+    test.todo('Tool: with no name after colon')
+    test.todo('TOOL: uppercase variant')
+    test.todo('Tool: with very long name')
+    test.todo('Tool: with special characters in name')
+    test.todo('Tool: with no details after dash')
+    test.todo('Tool: with multiple dashes in details')
+    test.todo('Tool: with JSON in details')
+  })
+
+  describe('ralph parsing edge cases - missing tests', () => {
+    test.todo('Iteration with very large number')
+    test.todo('Iteration with zero')
+    test.todo('Iteration with negative number')
+    test.todo('ITERATION uppercase variant')
+    test.todo('Iteration with leading zeros')
+    test.todo('Iteration embedded in other text')
+  })
+
+  describe('error parsing edge cases - missing tests', () => {
+    test.todo('Error: with empty message')
+    test.todo('ERROR: uppercase variant')
+    test.todo('Stack trace with unusual format')
+    test.todo('Multiple Error: on same line')
+    test.todo('Error embedded in longer word')
+    test.todo('Error with very long message')
+    test.todo('Error with newlines in message')
+  })
+
+  describe('buffer handling edge cases - missing tests', () => {
+    test.todo('buffer accumulates correctly across many chunks')
+    test.todo('buffer handles very long incomplete lines')
+    test.todo('buffer clears after complete line')
+    test.todo('buffer handles alternating complete/incomplete chunks')
+    test.todo('flush with buffer containing only whitespace')
+    test.todo('flush with buffer containing incomplete multi-byte char')
+    test.todo('parseChunk with empty string')
+    test.todo('parseChunk with only newline')
+    test.todo('multiple flush calls in succession')
+  })
+
+  describe('regex edge cases - missing tests', () => {
+    test.todo('regex handles catastrophic backtracking patterns')
+    test.todo('regex handles ReDoS attack strings')
+    test.todo('regex handles repeated patterns')
+  })
+
+  describe('performance - missing tests', () => {
+    test.todo('handles thousands of lines efficiently')
+    test.todo('handles very frequent small chunks')
+    test.todo('memory usage remains stable with large buffer')
+  })
+
+  describe('encoding edge cases - missing tests', () => {
+    test.todo('handles UTF-8 encoded text')
+    test.todo('handles Latin-1 encoded text')
+    test.todo('handles invalid UTF-8 sequences')
+    test.todo('handles mixed encoding in single chunk')
+  })
 })

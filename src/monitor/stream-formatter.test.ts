@@ -221,4 +221,53 @@ describe('StreamFormatter', () => {
       expect(newStats.phasesCompleted).toBe(0)
     })
   })
+
+  describe('edge cases - missing tests', () => {
+    // Header edge cases
+    test.todo('formatHeader truncates very long file names to fit box width')
+    test.todo('formatHeader handles file names with special characters (unicode, emojis)')
+    test.todo('formatHeader handles empty file name')
+    test.todo('formatHeader handles file name with newlines')
+    
+    // Event formatting edge cases
+    test.todo('formatEvent handles unknown event type - falls through to default')
+    test.todo('formatEvent handles event with missing data fields')
+    test.todo('formatEvent handles event with null/undefined data values')
+    test.todo('formatEvent handles event with very long name (>100 chars)')
+    test.todo('formatEvent handles event with special characters in name')
+    test.todo('formatEvent handles event with newlines in data fields')
+    
+    // Tool event edge cases
+    test.todo('formatEvent tool with empty details string')
+    test.todo('formatEvent tool with multi-line summary preserves formatting')
+    test.todo('formatEvent tool with very long summary (>1000 chars)')
+    test.todo('formatEvent tool with special characters in summary')
+    test.todo('formatEvent tool with undefined logPath and summary')
+    
+    // Log deduplication
+    test.todo('consecutive log events are deduplicated (only first shown)')
+    test.todo('log events interspersed with other events are shown')
+    test.todo('lastEventType resets correctly between different event types')
+    
+    // Stats edge cases
+    test.todo('stats overflow - very large number of tool calls')
+    test.todo('stats remain accurate after mixed event types')
+    test.todo('phase with non-COMPLETE status does not increment phasesCompleted')
+    test.todo('agent with non-COMPLETE status does not increment agentsExecuted')
+    
+    // Summary edge cases
+    test.todo('formatSummary handles 0ms duration')
+    test.todo('formatSummary handles very large duration (>24h)')
+    test.todo('formatSummary handles negative duration gracefully')
+    test.todo('formatSummary truncates very long log directory path')
+    test.todo('formatSummary handles log directory with special characters')
+    
+    // Time formatting edge cases
+    test.todo('formatTime handles midnight correctly')
+    test.todo('formatTime handles different timezones')
+    
+    // Concurrent usage
+    test.todo('multiple formatEvent calls in rapid succession')
+    test.todo('stats consistency under concurrent updates')
+  })
 })
