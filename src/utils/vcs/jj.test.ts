@@ -278,3 +278,82 @@ describe('isJJRepo', () => {
     expect(typeof result).toBe('boolean')
   })
 })
+
+// ============================================================================
+// useSnapshot tests (out-of-loop JJ state access)
+// ============================================================================
+
+describe('useSnapshot', () => {
+  test('returns null when no snapshot has been fetched', async () => {
+    const { useSnapshot, clearSnapshotCache } = await import('./jj.js')
+    clearSnapshotCache()
+    
+    const result = useSnapshot()
+    expect(result).toBeNull()
+  })
+
+  test('returns cached snapshot after refreshSnapshot', async () => {
+    const { useSnapshot, refreshSnapshot, clearSnapshotCache } = await import('./jj.js')
+    clearSnapshotCache()
+    
+    const snapshot = await refreshSnapshot()
+    const cached = useSnapshot()
+    
+    expect(cached).not.toBeNull()
+    expect(cached?.timestamp).toBe(snapshot.timestamp)
+    expect(cached?.isJJRepo).toBe(snapshot.isJJRepo)
+  })
+
+  test('clearSnapshotCache resets the cache', async () => {
+    const { useSnapshot, refreshSnapshot, clearSnapshotCache } = await import('./jj.js')
+    
+    await refreshSnapshot()
+    expect(useSnapshot()).not.toBeNull()
+    
+    clearSnapshotCache()
+    expect(useSnapshot()).toBeNull()
+  })
+
+  test('JJStateSnapshot has correct shape', async () => {
+    const { refreshSnapshot, clearSnapshotCache } = await import('./jj.js')
+    clearSnapshotCache()
+    
+    const snapshot = await refreshSnapshot()
+    
+    expect(typeof snapshot.changeId).toBe('string')
+    expect(typeof snapshot.description).toBe('string')
+    expect(typeof snapshot.isJJRepo).toBe('boolean')
+    expect(typeof snapshot.timestamp).toBe('number')
+    expect(snapshot.status).toHaveProperty('modified')
+    expect(snapshot.status).toHaveProperty('added')
+    expect(snapshot.status).toHaveProperty('deleted')
+    expect(Array.isArray(snapshot.status.modified)).toBe(true)
+    expect(Array.isArray(snapshot.status.added)).toBe(true)
+    expect(Array.isArray(snapshot.status.deleted)).toBe(true)
+  })
+
+  test('useSnapshot is synchronous', async () => {
+    const { useSnapshot, refreshSnapshot, clearSnapshotCache } = await import('./jj.js')
+    clearSnapshotCache()
+    
+    await refreshSnapshot()
+    
+    const start = performance.now()
+    const result = useSnapshot()
+    const elapsed = performance.now() - start
+    
+    expect(result).not.toBeNull()
+    expect(elapsed).toBeLessThan(5) // Should be essentially instant
+  })
+
+  test('refreshSnapshot returns fresh data', async () => {
+    const { refreshSnapshot, clearSnapshotCache } = await import('./jj.js')
+    clearSnapshotCache()
+    
+    const first = await refreshSnapshot()
+    await new Promise(r => setTimeout(r, 10))
+    const second = await refreshSnapshot()
+    
+    expect(second.timestamp).toBeGreaterThan(first.timestamp)
+  })
+})

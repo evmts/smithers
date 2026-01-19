@@ -6,3 +6,11 @@ export { Commit, type CommitProps } from './Commit.js'
 export { Describe, type DescribeProps } from './Describe.js'
 export { Status, type StatusProps } from './Status.js'
 export { Rebase, type RebaseProps } from './Rebase.js'
+
+// Out-of-loop JJ state access
+export {
+  useSnapshot,
+  refreshSnapshot,
+  clearSnapshotCache,
+  type JJStateSnapshot,
+} from '../../utils/vcs/jj.js'
