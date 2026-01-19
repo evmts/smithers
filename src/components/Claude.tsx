@@ -7,7 +7,7 @@ import { useRalphCount } from '../hooks/useRalphCount.js'
 import { executeClaudeCLI } from './agents/ClaudeCodeCLI.js'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../utils/mcp-config.js'
 import type { ClaudeProps, AgentResult, CLIExecutionOptions } from './agents/types.js'
-import { useMountedState, useEffectOnValueChange } from '../reconciler/hooks.js'
+import { useMountedState, useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { LogWriter } from '../monitor/log-writer.js'
 import { uuid } from '../db/utils.js'
 import { MessageParser, truncateToLastLines, type TailLogEntry } from './agents/claude-cli/message-parser.js'
@@ -102,6 +102,13 @@ export function Claude(props: ClaudeProps): ReactNode {
 
   const shouldExecute = executionEnabled && phaseActive && stepActive
   const executionKey = shouldExecute ? ralphCount : null
+
+  useUnmount(() => {
+    if (pendingTailLogUpdateRef.current) {
+      clearTimeout(pendingTailLogUpdateRef.current)
+      pendingTailLogUpdateRef.current = null
+    }
+  })
 
   useEffectOnValueChange(executionKey, () => {
     if (!shouldExecute) return

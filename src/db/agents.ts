@@ -89,28 +89,34 @@ export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
       const currentPhaseId = getCurrentPhaseId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
-      rdb.run(
-        `INSERT INTO agents (id, execution_id, phase_id, model, system_prompt, prompt, status, started_at, created_at, log_path)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
-        [id, currentExecutionId, currentPhaseId, model, systemPrompt ?? null, prompt, now(), now(), logPath ?? null]
-      )
-      rdb.run('UPDATE executions SET total_agents = total_agents + 1 WHERE id = ?', [currentExecutionId])
+      const timestamp = now()
+      rdb.transaction(() => {
+        rdb.run(
+          `INSERT INTO agents (id, execution_id, phase_id, model, system_prompt, prompt, status, started_at, created_at, log_path)
+           VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
+          [id, currentExecutionId, currentPhaseId, model, systemPrompt ?? null, prompt, timestamp, timestamp, logPath ?? null]
+        )
+        rdb.run('UPDATE executions SET total_agents = total_agents + 1 WHERE id = ?', [currentExecutionId])
+      })
       setCurrentAgentId(id)
       return id
     },
 
     complete: (id: string, result: string, structuredResult?: Record<string, any>, tokens?: { input: number; output: number }) => {
       if (rdb.isClosed) return
-      const startRow = rdb.queryOne<{ started_at: string; execution_id: string }>('SELECT started_at, execution_id FROM agents WHERE id = ?', [id])
-      const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
-      rdb.run(
-        `UPDATE agents SET status = 'completed', result = ?, result_structured = ?, tokens_input = ?, tokens_output = ?, completed_at = ?, duration_ms = ? WHERE id = ?`,
-        [result, structuredResult ? JSON.stringify(structuredResult) : null, tokens?.input ?? null, tokens?.output ?? null, now(), durationMs, id]
-      )
-      if (tokens && startRow) {
-        rdb.run('UPDATE executions SET total_tokens_used = total_tokens_used + ? WHERE id = ?',
-          [(tokens.input ?? 0) + (tokens.output ?? 0), startRow.execution_id])
-      }
+      const timestamp = now()
+      rdb.transaction(() => {
+        const startRow = rdb.queryOne<{ started_at: string; execution_id: string }>('SELECT started_at, execution_id FROM agents WHERE id = ?', [id])
+        const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
+        rdb.run(
+          `UPDATE agents SET status = 'completed', result = ?, result_structured = ?, tokens_input = ?, tokens_output = ?, completed_at = ?, duration_ms = ? WHERE id = ?`,
+          [result, structuredResult ? JSON.stringify(structuredResult) : null, tokens?.input ?? null, tokens?.output ?? null, timestamp, durationMs, id]
+        )
+        if (tokens && startRow) {
+          rdb.run('UPDATE executions SET total_tokens_used = total_tokens_used + ? WHERE id = ?',
+            [(tokens.input ?? 0) + (tokens.output ?? 0), startRow.execution_id])
+        }
+      })
       if (getCurrentAgentId() === id) setCurrentAgentId(null)
     },
 

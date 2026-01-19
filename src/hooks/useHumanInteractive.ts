@@ -65,6 +65,7 @@ export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInt
   const resolveRef = useRef<((value: T) => void) | null>(null)
   const rejectRef = useRef<((error: Error) => void) | null>(null)
   const zodSchemaRef = useRef<ZodType | null>(null)
+  const handledSessionIdRef = useRef<string | null>(null)
 
   useMount(() => {
     const existing = db.state.get<HookState>(stateKeyRef.current)

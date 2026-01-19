@@ -34,32 +34,38 @@ export function createToolsModule(ctx: ToolsModuleContext): ToolsModule {
       const currentExecutionId = getCurrentExecutionId()
       if (!currentExecutionId) throw new Error('No active execution')
       const id = uuid()
-      rdb.run(
-        `INSERT INTO tool_calls (id, agent_id, execution_id, tool_name, input, status, started_at, created_at)
-         VALUES (?, ?, ?, ?, ?, 'running', ?, ?)`,
-        [id, agentId, currentExecutionId, toolName, JSON.stringify(input), now(), now()]
-      )
-      rdb.run('UPDATE executions SET total_tool_calls = total_tool_calls + 1 WHERE id = ?', [currentExecutionId])
-      rdb.run('UPDATE agents SET tool_calls_count = tool_calls_count + 1 WHERE id = ?', [agentId])
+      const timestamp = now()
+      rdb.transaction(() => {
+        rdb.run(
+          `INSERT INTO tool_calls (id, agent_id, execution_id, tool_name, input, status, started_at, created_at)
+           VALUES (?, ?, ?, ?, ?, 'running', ?, ?)`,
+          [id, agentId, currentExecutionId, toolName, JSON.stringify(input), timestamp, timestamp]
+        )
+        rdb.run('UPDATE executions SET total_tool_calls = total_tool_calls + 1 WHERE id = ?', [currentExecutionId])
+        rdb.run('UPDATE agents SET tool_calls_count = tool_calls_count + 1 WHERE id = ?', [agentId])
+      })
       return id
     },
 
     complete: (id: string, output: string, summary?: string) => {
-      const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM tool_calls WHERE id = ?', [id])
-      const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
       const outputSize = Buffer.byteLength(output, 'utf8')
+      const timestamp = now()
+      rdb.transaction(() => {
+        const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM tool_calls WHERE id = ?', [id])
+        const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
 
-      if (outputSize < 1024) {
-        rdb.run(
-          `UPDATE tool_calls SET status = 'completed', output_inline = ?, output_summary = ?, output_size_bytes = ?, completed_at = ?, duration_ms = ? WHERE id = ?`,
-          [output, summary ?? null, outputSize, now(), durationMs, id]
-        )
-      } else {
-        rdb.run(
-          `UPDATE tool_calls SET status = 'completed', output_summary = ?, output_size_bytes = ?, completed_at = ?, duration_ms = ? WHERE id = ?`,
-          [summary ?? output.slice(0, 200), outputSize, now(), durationMs, id]
-        )
-      }
+        if (outputSize < 1024) {
+          rdb.run(
+            `UPDATE tool_calls SET status = 'completed', output_inline = ?, output_summary = ?, output_size_bytes = ?, completed_at = ?, duration_ms = ? WHERE id = ?`,
+            [output, summary ?? null, outputSize, timestamp, durationMs, id]
+          )
+        } else {
+          rdb.run(
+            `UPDATE tool_calls SET status = 'completed', output_summary = ?, output_size_bytes = ?, completed_at = ?, duration_ms = ? WHERE id = ?`,
+            [summary ?? output.slice(0, 200), outputSize, timestamp, durationMs, id]
+          )
+        }
+      })
     },
 
     fail: (id: string, error: string) => {
