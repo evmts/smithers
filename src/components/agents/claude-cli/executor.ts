@@ -12,6 +12,24 @@ import { checkStopConditions } from './stop-conditions.js'
 import { parseClaudeOutput } from './output-parser.js'
 
 /**
+ * Check if CLI output indicates subscription/auth failure that could be retried with API key
+ */
+function shouldFallbackToApiKey(stdout: string, stderr: string, exitCode: number): boolean {
+  if (exitCode === 0) return false
+  const combined = `${stdout}\n${stderr}`.toLowerCase()
+  return (
+    combined.includes('subscription') ||
+    combined.includes('billing') ||
+    combined.includes('credits') ||
+    combined.includes('quota') ||
+    combined.includes('unauthorized') ||
+    combined.includes('authentication') ||
+    combined.includes('not logged in') ||
+    combined.includes('login required')
+  )
+}
+
+/**
  * Execute a single Claude CLI invocation (internal helper)
  */
 export async function executeClaudeCLIOnce(
@@ -155,6 +173,9 @@ export async function executeClaudeCLIOnce(
       stopReason = 'error'
     }
 
+    // Check if we should retry with API key (subscription failure)
+    const shouldRetry = !useApiKey && shouldFallbackToApiKey(stdout, stderr, exitCode)
+
     return {
       output: parsed.output,
       structured: parsed.structured,
@@ -164,6 +185,7 @@ export async function executeClaudeCLIOnce(
       durationMs,
       exitCode,
       ...(sessionId ? { sessionId } : {}),
+      ...(shouldRetry ? { shouldRetryWithApiKey: true } : {}),
     }
   } catch (error) {
     const durationMs = Date.now() - startTime
@@ -197,8 +219,15 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
       : schemaPrompt
   }
 
-  // Execute the initial request
-  let result = await executeClaudeCLIOnce(effectiveOptions, startTime)
+  // Execute the initial request - try subscription first (no API key)
+  const useSubscription = options.useSubscription ?? true
+  let result = await executeClaudeCLIOnce(effectiveOptions, startTime, !useSubscription)
+
+  // If subscription failed and API key is available, retry with API key
+  if (result.shouldRetryWithApiKey && process.env['ANTHROPIC_API_KEY']) {
+    options.onProgress?.('Subscription auth failed, retrying with API key...')
+    result = await executeClaudeCLIOnce(effectiveOptions, startTime, true)
+  }
 
   // If no schema, just return the result
   if (!options.schema) {

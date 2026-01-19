@@ -1,0 +1,488 @@
+---
+title: FallbackAgent Component
+description: Multi-provider failover component with automatic retry and error handling
+---
+
+<Warning>
+  **Planned Feature** - This component is not yet implemented.
+  See [github-actions-review-loop issue](/issues/github-actions-review-loop.md) for usage context.
+</Warning>
+
+# FallbackAgent Component
+
+Provides automatic failover across multiple AI providers with retry logic and graceful degradation. Tries agent children in priority order, falling back to next provider on error or timeout. Essential for production resilience and cost optimization.
+
+## Planned API
+
+```tsx
+interface FallbackAgentProps {
+  /**
+   * Agent components in priority order.
+   * Tries first child, falls back to next on error.
+   */
+  children: ReactNode
+
+  /**
+   * Number of retries per agent before failover.
+   * @default 2
+   */
+  maxRetries?: number
+
+  /**
+   * Callback when falling back from one agent to another.
+   */
+  onFallback?: (from: string, to: string, error: Error) => void
+
+  /**
+   * Callback when all agents fail.
+   */
+  onAllFailed?: (errors: Error[]) => void
+
+  /**
+   * Strategy for retry delays.
+   * @default 'exponential'
+   */
+  retryStrategy?: 'exponential' | 'linear' | 'none'
+
+  /**
+   * Initial retry delay in milliseconds.
+   * @default 1000
+   */
+  retryDelayMs?: number
+}
+
+export function FallbackAgent(props: FallbackAgentProps): JSX.Element
+```
+
+## Proposed Usage
+
+### Basic Multi-Provider Failover
+
+```tsx
+import { FallbackAgent, Claude, Codex, Gemini } from 'smithers-orchestrator'
+
+export function ReviewWorkflow() {
+  const prompt = "Review this pull request and provide feedback"
+
+  return (
+    <Phase name="Review">
+      <FallbackAgent>
+        <Codex>{prompt}</Codex>
+        <Claude model="sonnet">{prompt}</Claude>
+        <Gemini model="2.5-pro">{prompt}</Gemini>
+      </FallbackAgent>
+    </Phase>
+  )
+}
+```
+
+**Behavior:** Tries Codex first. On error/timeout, falls back to Claude. If Claude fails, tries Gemini. If all fail, propagates aggregate error.
+
+### With Retry Configuration
+
+```tsx
+<FallbackAgent
+  maxRetries={3}
+  retryStrategy="exponential"
+  retryDelayMs={2000}
+  onFallback={(from, to, error) => {
+    console.warn(`Falling back from ${from} to ${to}: ${error.message}`)
+    metrics.recordFallback(from, to)
+  }}
+>
+  <Claude model="opus">{prompt}</Claude>
+  <Claude model="sonnet">{prompt}</Claude>
+  <Claude model="haiku">{prompt}</Claude>
+</FallbackAgent>
+```
+
+**Retry sequence:** Opus fails → retry Opus (2s) → retry Opus (4s) → retry Opus (8s) → fallback to Sonnet
+
+### Cost Optimization Pattern
+
+```tsx
+<FallbackAgent
+  maxRetries={1}
+  onFallback={(from, to) => {
+    console.log(`Cost optimization: ${from} → ${to}`)
+  }}
+>
+  {/* Try cheap model first */}
+  <Claude model="haiku">{prompt}</Claude>
+
+  {/* Fallback to balanced model */}
+  <Claude model="sonnet">{prompt}</Claude>
+
+  {/* Last resort: expensive but capable */}
+  <Claude model="opus">{prompt}</Claude>
+</FallbackAgent>
+```
+
+### Cross-Provider Redundancy
+
+```tsx
+<FallbackAgent
+  onAllFailed={(errors) => {
+    console.error('All providers failed:', errors)
+    alerting.sendCritical('AI providers unavailable')
+  }}
+>
+  <Claude>{prompt}</Claude>
+  <Codex>{prompt}</Codex>
+  <Gemini>{prompt}</Gemini>
+</FallbackAgent>
+```
+
+Ensures workflow continues even if entire provider goes down.
+
+## Props (Planned)
+
+<ParamField path="children" type="ReactNode" required>
+  Agent components in priority order.
+
+  **Requirements:**
+  - Children must be agent components (Claude, Codex, Gemini, Smithers)
+  - Executed sequentially, not in parallel
+  - All agents receive same prompt/props from parent context
+
+  **Example:**
+  ```tsx
+  <FallbackAgent>
+    <Claude model="opus">Analyze this code</Claude>
+    <Codex model="gpt-4">Analyze this code</Codex>
+    <Gemini model="2.5-pro">Analyze this code</Gemini>
+  </FallbackAgent>
+  ```
+
+  **Order matters:** First child = highest priority, last = fallback of last resort
+</ParamField>
+
+<ParamField path="maxRetries" type="number" default="2">
+  Retries per agent before failover to next.
+
+  **Total attempts per agent:** `maxRetries + 1`
+
+  **Examples:**
+  - `maxRetries={0}` → Try once, immediate failover on error
+  - `maxRetries={2}` → Try up to 3 times before failover
+  - `maxRetries={5}` → Aggressive retry before giving up
+
+  **Use case:** Higher retries for transient network errors, lower for rate limits.
+</ParamField>
+
+<ParamField path="onFallback" type="(from: string, to: string, error: Error) => void">
+  Callback when falling back from one agent to next.
+
+  **Parameters:**
+  - `from` - Agent that failed (e.g., "Claude Opus")
+  - `to` - Agent being tried next (e.g., "Codex GPT-4")
+  - `error` - Error that triggered fallback
+
+  **Use cases:**
+  - Logging/observability
+  - Metrics collection
+  - Cost tracking
+  - Alerting on repeated failures
+
+  ```tsx
+  onFallback={(from, to, error) => {
+    logger.warn(`Fallback: ${from} → ${to}`, { error })
+    metrics.increment('agent.fallback', { from, to })
+  }}
+  ```
+</ParamField>
+
+<ParamField path="onAllFailed" type="(errors: Error[]) => void">
+  Callback when all agents fail.
+
+  Receives array of errors (one per agent attempt).
+
+  **Called before:** FallbackAgent throws aggregate error.
+
+  ```tsx
+  onAllFailed={(errors) => {
+    console.error(`Complete failure after ${errors.length} attempts`)
+    errors.forEach((err, i) => console.error(`Attempt ${i + 1}:`, err))
+    alerting.sendCritical('All AI providers failed')
+  }}
+  ```
+</ParamField>
+
+<ParamField path="retryStrategy" type="'exponential' | 'linear' | 'none'" default="exponential">
+  Strategy for calculating retry delays.
+
+  **Exponential:** Delay doubles each retry
+  - Retry 1: `retryDelayMs`
+  - Retry 2: `retryDelayMs * 2`
+  - Retry 3: `retryDelayMs * 4`
+  - Good for rate limits and transient errors
+
+  **Linear:** Fixed delay each retry
+  - All retries: `retryDelayMs`
+  - Simpler, more predictable
+
+  **None:** No delay between retries
+  - Immediate retry
+  - Use for fast failure scenarios
+</ParamField>
+
+<ParamField path="retryDelayMs" type="number" default="1000">
+  Initial retry delay in milliseconds.
+
+  **Exponential strategy:** Base delay that doubles each retry
+
+  **Linear strategy:** Fixed delay for all retries
+
+  **Examples:**
+  - `retryDelayMs={500}` → Quick retries (0.5s, 1s, 2s...)
+  - `retryDelayMs={5000}` → Conservative (5s, 10s, 20s...)
+  - `retryDelayMs={0}` → No delay (with strategy='none')
+</ParamField>
+
+## Implementation Status
+
+<Steps>
+  <Step title="Design Phase">
+    Component designed for github-actions-review-loop use case.
+    [View issue](/issues/github-actions-review-loop.md)
+  </Step>
+
+  <Step title="Core Implementation (Pending)">
+    Child iteration logic, error handling, retry with backoff.
+  </Step>
+
+  <Step title="Agent Detection (Pending)">
+    Identify agent type from child component for logging/metrics.
+  </Step>
+
+  <Step title="Testing (Future)">
+    Unit tests with mocked agents for success/failure/timeout scenarios.
+  </Step>
+</Steps>
+
+## Design Rationale
+
+### Sequential vs Parallel Execution
+
+**FallbackAgent:** Sequential (one at a time)
+```tsx
+<FallbackAgent>
+  <Claude />  {/* Try first */}
+  <Codex />   {/* Only if Claude fails */}
+</FallbackAgent>
+```
+
+**Parallel (different use case):**
+```tsx
+<Parallel>
+  <Claude />  {/* Both run simultaneously */}
+  <Codex />
+</Parallel>
+```
+
+FallbackAgent optimizes for cost (try cheap first) and resilience (fallback pattern).
+
+### Error Aggregation
+
+When all agents fail, FallbackAgent throws aggregate error:
+
+```typescript
+class FallbackError extends Error {
+  constructor(
+    public attempts: Array<{ agent: string; error: Error }>
+  ) {
+    super(`All agents failed after ${attempts.length} attempts`)
+  }
+}
+```
+
+Preserves all error details for debugging.
+
+### Retry Backoff Calculation
+
+```typescript
+function calculateDelay(
+  attempt: number,
+  strategy: RetryStrategy,
+  baseDelayMs: number
+): number {
+  switch (strategy) {
+    case 'exponential':
+      return baseDelayMs * Math.pow(2, attempt)
+    case 'linear':
+      return baseDelayMs
+    case 'none':
+      return 0
+  }
+}
+```
+
+Exponential backoff prevents thundering herd on rate-limited providers.
+
+### Agent Type Extraction
+
+```typescript
+function getAgentName(child: ReactElement): string {
+  const type = child.type
+  if (typeof type === 'function') {
+    return type.name || 'Unknown'
+  }
+  return String(type)
+}
+```
+
+Enables readable logging: "Falling back from Claude to Codex"
+
+## Examples of Use Cases
+
+### Use Case 1: Production Review System
+
+```tsx
+<FallbackAgent
+  maxRetries={2}
+  onFallback={(from, to, error) => {
+    // Track provider reliability
+    metrics.recordProviderFailure(from, error.message)
+    // Alert if primary provider consistently failing
+    if (from === 'Codex' && getRecentFailures('Codex') > 5) {
+      alerts.warn('Codex experiencing issues, investigate')
+    }
+  }}
+>
+  <Codex schema={reviewSchema}>{reviewPrompt}</Codex>
+  <Claude model="sonnet" schema={reviewSchema}>{reviewPrompt}</Claude>
+  <Gemini schema={reviewSchema}>{reviewPrompt}</Gemini>
+</FallbackAgent>
+```
+
+### Use Case 2: Cost-Optimized Pipeline
+
+```tsx
+// Try cheaper models first, fallback to expensive only if needed
+<FallbackAgent maxRetries={1}>
+  {/* Cheapest: Haiku */}
+  <Claude model="haiku">{simpleTask}</Claude>
+
+  {/* Medium: Sonnet */}
+  <Claude model="sonnet">{simpleTask}</Claude>
+
+  {/* Expensive: Opus (last resort) */}
+  <Claude model="opus">{simpleTask}</Claude>
+</FallbackAgent>
+```
+
+Most tasks complete with cheap model, expensive model only for complex cases.
+
+### Use Case 3: Geographic Failover
+
+```tsx
+<FallbackAgent>
+  {/* Primary region (low latency) */}
+  <Claude endpoint="https://us-west.anthropic.com">{prompt}</Claude>
+
+  {/* Fallback region */}
+  <Claude endpoint="https://eu-central.anthropic.com">{prompt}</Claude>
+
+  {/* Emergency fallback (different provider) */}
+  <Codex>{prompt}</Codex>
+</FallbackAgent>
+```
+
+### Use Case 4: A/B Testing with Fallback
+
+```tsx
+const useExperimentalModel = Math.random() < 0.1  // 10% traffic
+
+<FallbackAgent>
+  {useExperimentalModel ? (
+    <Claude model="opus-experimental">{prompt}</Claude>
+  ) : (
+    <Claude model="sonnet">{prompt}</Claude>
+  )}
+
+  {/* Safety fallback if experimental fails */}
+  <Claude model="haiku">{prompt}</Claude>
+</FallbackAgent>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card
+    title="GitHub Actions Review Loop"
+    icon="github"
+    href="/issues/github-actions-review-loop.md"
+  >
+    Primary use case - review system with multi-provider fallback
+  </Card>
+
+  <Card
+    title="Claude Component"
+    icon="robot"
+    href="/components/claude.mdx"
+  >
+    Primary agent - works as FallbackAgent child
+  </Card>
+
+  <Card
+    title="Codex Component"
+    icon="code"
+    href="/components/codex.mdx"
+  >
+    OpenAI Codex agent - planned fallback option
+  </Card>
+
+  <Card
+    title="Gemini Component"
+    icon="stars"
+    href="/components/gemini.mdx"
+  >
+    Google Gemini agent - planned fallback option
+  </Card>
+</CardGroup>
+
+## Alternatives Considered
+
+- **Manual try/catch chains**: Verbose, no retry logic, hard to maintain
+- **Higher-order component wrapping**: Less clear intent, more complex API
+- **External orchestration**: Loses Smithers observability and task tracking
+- **Parallel execution with race**: Wasteful, doesn't optimize for cost
+
+## Migration Path
+
+Current pattern (manual error handling):
+
+```tsx
+// Before (manual failover)
+let result
+try {
+  result = await claudeCall(prompt)
+} catch (err1) {
+  try {
+    result = await codexCall(prompt)
+  } catch (err2) {
+    try {
+      result = await geminiCall(prompt)
+    } catch (err3) {
+      throw new Error('All providers failed')
+    }
+  }
+}
+```
+
+With FallbackAgent:
+
+```tsx
+// After (declarative)
+<FallbackAgent>
+  <Claude>{prompt}</Claude>
+  <Codex>{prompt}</Codex>
+  <Gemini>{prompt}</Gemini>
+</FallbackAgent>
+```
+
+**Benefits:** Automatic retry, exponential backoff, metrics, cleaner syntax.
+
+## Feedback
+
+If you have feedback on this planned component, please comment on the [github-actions-review-loop issue](/issues/github-actions-review-loop.md).

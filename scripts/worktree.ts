@@ -230,7 +230,8 @@ async function deployToWorktree(
   const promptContent = await Bun.file(promptFile).text()
 
   // Build CLI command - detect codex vs claude
-  const isCodex = config.agent === 'codex' || config.agent.startsWith('o')
+  // OpenAI models: codex, o1, o1-mini, o1-preview, o3, o3-mini
+  const isCodex = config.agent === 'codex' || config.agent.startsWith('o1') || config.agent.startsWith('o3')
   const args: string[] = []
 
   if (isCodex) {
@@ -247,9 +248,6 @@ async function deployToWorktree(
     args.push('claude', '--print')
     if (config.agent) {
       args.push('--model', config.agent)
-    }
-    if (config.thinking) {
-      args.push('--thinking', config.thinking)
     }
     if (config.yolo) {
       args.push('--dangerously-skip-permissions')
@@ -282,11 +280,16 @@ Current working directory: ${worktreePath}
   console.log(`${'='.repeat(70)}\n`)
 
   // Execute Claude CLI in the worktree directory
+  // For Claude (non-codex): exclude ANTHROPIC_API_KEY to use subscription credits
+  const env = isCodex
+    ? { ...process.env }
+    : Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ANTHROPIC_API_KEY'))
+
   const proc = Bun.spawn(args, {
     cwd: worktreePath,
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env },
+    env,
   })
 
   let output = ''
@@ -315,6 +318,54 @@ Current working directory: ${worktreePath}
   }
 
   const exitCode = await proc.exited
+
+  // For Claude: check if subscription failed and retry with API key
+  if (!isCodex && exitCode !== 0 && process.env.ANTHROPIC_API_KEY) {
+    const combined = `${output}\n${stderrText}`.toLowerCase()
+    const isAuthFailure =
+      combined.includes('subscription') ||
+      combined.includes('billing') ||
+      combined.includes('credits') ||
+      combined.includes('quota') ||
+      combined.includes('unauthorized') ||
+      combined.includes('authentication') ||
+      combined.includes('not logged in') ||
+      combined.includes('login required')
+
+    if (isAuthFailure) {
+      console.log('\nSubscription auth failed, retrying with API key...\n')
+      const retryProc = Bun.spawn(args, {
+        cwd: worktreePath,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: { ...process.env }, // Include ANTHROPIC_API_KEY
+      })
+
+      let retryOutput = ''
+      const retryReader = retryProc.stdout.getReader()
+      try {
+        while (true) {
+          const { done, value } = await retryReader.read()
+          if (done) break
+          const chunk = decoder.decode(value, { stream: true })
+          retryOutput += chunk
+          process.stdout.write(chunk)
+        }
+      } catch {
+        // Reader closed
+      }
+
+      const retryStderr = await new Response(retryProc.stderr).text()
+      if (retryStderr) {
+        console.error(retryStderr)
+        retryOutput += '\n' + retryStderr
+      }
+
+      const retryExitCode = await retryProc.exited
+      return { success: retryExitCode === 0, output: retryOutput }
+    }
+  }
+
   return {
     success: exitCode === 0,
     output,
@@ -380,7 +431,8 @@ async function runWorktreeAgent(
   const prompt = buildWorktreePrompt(worktreeName, iteration, config.iterations)
 
   // Build CLI command
-  const isCodex = config.agent === 'codex' || config.agent.startsWith('o')
+  // OpenAI models: codex, o1, o1-mini, o1-preview, o3, o3-mini
+  const isCodex = config.agent === 'codex' || config.agent.startsWith('o1') || config.agent.startsWith('o3')
   const args: string[] = []
 
   if (isCodex) {
@@ -399,9 +451,6 @@ async function runWorktreeAgent(
     if (config.agent) {
       args.push('--model', config.agent)
     }
-    if (config.thinking) {
-      args.push('--thinking', config.thinking)
-    }
     if (config.yolo) {
       args.push('--dangerously-skip-permissions')
     }
@@ -411,11 +460,16 @@ async function runWorktreeAgent(
 
   console.log(`    [${worktreeName}] Starting...`)
 
+  // For Claude (non-codex): exclude ANTHROPIC_API_KEY to use subscription credits
+  const env = isCodex
+    ? { ...process.env }
+    : Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ANTHROPIC_API_KEY'))
+
   const proc = Bun.spawn(args, {
     cwd: isCodex ? config.cwd : worktreePath,
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env },
+    env,
   })
 
   let output = ''
@@ -435,7 +489,48 @@ async function runWorktreeAgent(
   const stderrText = await new Response(proc.stderr).text()
   if (stderrText) output += '\n' + stderrText
 
-  const exitCode = await proc.exited
+  let exitCode = await proc.exited
+
+  // For Claude: check if subscription failed and retry with API key
+  if (!isCodex && exitCode !== 0 && process.env.ANTHROPIC_API_KEY) {
+    const combined = `${output}\n${stderrText}`.toLowerCase()
+    const isAuthFailure =
+      combined.includes('subscription') ||
+      combined.includes('billing') ||
+      combined.includes('credits') ||
+      combined.includes('quota') ||
+      combined.includes('unauthorized') ||
+      combined.includes('authentication') ||
+      combined.includes('not logged in') ||
+      combined.includes('login required')
+
+    if (isAuthFailure) {
+      console.log(`    [${worktreeName}] Subscription auth failed, retrying with API key...`)
+      const retryProc = Bun.spawn(args, {
+        cwd: isCodex ? config.cwd : worktreePath,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: { ...process.env }, // Include ANTHROPIC_API_KEY
+      })
+
+      output = ''
+      const retryReader = retryProc.stdout.getReader()
+      try {
+        while (true) {
+          const { done, value } = await retryReader.read()
+          if (done) break
+          output += decoder.decode(value, { stream: true })
+        }
+      } catch {
+        // Reader closed
+      }
+
+      const retryStderr = await new Response(retryProc.stderr).text()
+      if (retryStderr) output += '\n' + retryStderr
+
+      exitCode = await retryProc.exited
+    }
+  }
 
   // Check if PR exists
   let hasPR = false

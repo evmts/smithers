@@ -161,4 +161,11 @@ export interface CLIExecutionOptions {
    * @default 2
    */
   schemaRetries?: number
+
+  /**
+   * Use Claude subscription credits instead of API credits.
+   * When true, excludes ANTHROPIC_API_KEY from environment.
+   * @default true
+   */
+  useSubscription?: boolean
 }

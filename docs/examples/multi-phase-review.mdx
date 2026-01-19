@@ -16,11 +16,11 @@ import { useState } from "react";
 import { createSmithersRoot } from "smithers";
 import { createSmithersDB } from "smithers-orchestrator/db";
 import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Orchestration } from "smithers-orchestrator/components/Orchestration";
 import { Ralph } from "smithers-orchestrator/components/Ralph";
 import { Phase } from "smithers-orchestrator/components/Phase";
 import { Claude } from "smithers-orchestrator/components/Claude";
 import { Review } from "smithers-orchestrator/components/Review";
+import { If } from "smithers-orchestrator/components/If";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/review-workflow" });
@@ -48,60 +48,60 @@ async function main() {
     };
 
     return (
-      <SmithersProvider db={db} executionId={executionId}>
-        <Orchestration
-          globalTimeout={3600000}
-          onComplete={() => console.log("Workflow complete!")}
-        >
-          <Ralph maxIterations={10}>
-            {phase === "implement" && (
-              <Phase name="Implementation">
-                <Claude
-                  model="sonnet"
-                  allowedTools={["Read", "Edit", "Write", "Glob", "Grep"]}
-                  onFinished={() => updatePhase("review")}
-                >
-                  Implement the user authentication feature:
-                  1. Create a login form component
-                  2. Add authentication API endpoint
-                  3. Implement session management
+      <SmithersProvider
+        db={db}
+        executionId={executionId}
+        globalTimeout={3600000}
+        onComplete={() => console.log("Workflow complete!")}
+      >
+        <Ralph maxIterations={10}>
+          <If condition={phase === "implement"}>
+            <Phase name="Implementation">
+              <Claude
+                model="sonnet"
+                allowedTools={["Read", "Edit", "Write", "Glob", "Grep"]}
+                onFinished={() => updatePhase("review")}
+              >
+                Implement the user authentication feature:
+                1. Create a login form component
+                2. Add authentication API endpoint
+                3. Implement session management
 
-                  Follow existing patterns in the codebase.
-                </Claude>
-              </Phase>
-            )}
+                Follow existing patterns in the codebase.
+              </Claude>
+            </Phase>
+          </If>
 
-            {phase === "review" && (
-              <Phase name="Code Review">
-                <Review
-                  target={{ type: "diff", ref: "main" }}
-                  model="sonnet"
-                  criteria={[
-                    "No security vulnerabilities",
-                    "No hardcoded secrets or credentials",
-                    "Input validation is comprehensive",
-                    "Error handling covers edge cases",
-                    "Code follows project conventions",
-                  ]}
-                  onFinished={(review) => {
-                    if (review.approved) {
-                      console.log("Review passed!");
-                      updatePhase("complete");
-                    } else {
-                      console.log("Review failed. Issues:");
-                      review.issues.forEach(issue => {
-                        console.log(`  [${issue.severity}] ${issue.file}: ${issue.description}`);
-                      });
-                      updatePhase("implement");
-                    }
-                  }}
-                />
-              </Phase>
-            )}
+          <If condition={phase === "review"}>
+            <Phase name="Code Review">
+              <Review
+                target={{ type: "diff", ref: "main" }}
+                model="sonnet"
+                criteria={[
+                  "No security vulnerabilities",
+                  "No hardcoded secrets or credentials",
+                  "Input validation is comprehensive",
+                  "Error handling covers edge cases",
+                  "Code follows project conventions",
+                ]}
+                onFinished={(review) => {
+                  if (review.approved) {
+                    console.log("Review passed!");
+                    updatePhase("complete");
+                  } else {
+                    console.log("Review failed. Issues:");
+                    review.issues.forEach(issue => {
+                      console.log(`  [${issue.severity}] ${issue.file}: ${issue.description}`);
+                    });
+                    updatePhase("implement");
+                  }
+                }}
+              />
+            </Phase>
+          </If>
 
-            {/* When phase is "complete", nothing renders, loop ends */}
-          </Ralph>
-        </Orchestration>
+          {/* When phase is "complete", nothing renders, loop ends */}
+        </Ralph>
       </SmithersProvider>
     );
   }

@@ -203,6 +203,7 @@ export function Claude(props: ClaudeProps): ReactNode {
               ...(props.onToolCall !== undefined ? { onToolCall: props.onToolCall } : {}),
               ...(props.schema !== undefined ? { schema: props.schema } : {}),
               ...(props.schemaRetries !== undefined ? { schemaRetries: props.schemaRetries } : {}),
+              ...(props.useSubscription !== undefined ? { useSubscription: props.useSubscription } : {}),
               onProgress: (chunk) => {
                 // Stream to log file
                 if (logFilename) {

@@ -231,7 +231,7 @@ cat .smithers/logs/tool-001.txt
 #!/usr/bin/env bun
 import { createSmithersRoot } from "smithers-orchestrator";
 import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider, Ralph, Claude, Phase, Orchestration } from "smithers-orchestrator/components";
+import { SmithersProvider, Ralph, Claude, Phase } from "smithers-orchestrator/components";
 
 // 1. Initialize database for persistent state
 const db = await createSmithersDB({ path: ".smithers/db" });
@@ -240,30 +240,32 @@ const executionId = await db.execution.start("My Orchestration", "main.tsx");
 // 2. Define orchestration component
 function App() {
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Orchestration globalTimeout={1800000}>
-        <Ralph maxIterations={10}>
-          {/* All phases are rendered unconditionally */}
-          {/* Only the active phase executes its children */}
-          <Phase name="Research">
-            <Claude model="sonnet">
-              Research the topic and gather information.
-            </Claude>
-          </Phase>
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      globalTimeout={1800000}
+    >
+      <Ralph maxIterations={10}>
+        {/* All phases are rendered unconditionally */}
+        {/* Only the active phase executes its children */}
+        <Phase name="Research">
+          <Claude model="sonnet">
+            Research the topic and gather information.
+          </Claude>
+        </Phase>
 
-          <Phase name="Implementation">
-            <Claude model="sonnet">
-              Implement the solution based on research.
-            </Claude>
-          </Phase>
+        <Phase name="Implementation">
+          <Claude model="sonnet">
+            Implement the solution based on research.
+          </Claude>
+        </Phase>
 
-          <Phase name="Testing">
-            <Claude model="sonnet">
-              Test the implementation.
-            </Claude>
-          </Phase>
-        </Ralph>
-      </Orchestration>
+        <Phase name="Testing">
+          <Claude model="sonnet">
+            Test the implementation.
+          </Claude>
+        </Phase>
+      </Ralph>
     </SmithersProvider>
   );
 }
@@ -323,7 +325,7 @@ bunx smithers-orchestrator init
 ```tsx
 import { createSmithersRoot } from "smithers-orchestrator";
 import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider, Ralph, Claude, Phase, Orchestration } from "smithers-orchestrator/components";
+import { SmithersProvider, Ralph, Claude, Phase } from "smithers-orchestrator/components";
 
 const db = await createSmithersDB({ path: ".smithers/db" });
 const executionId = await db.execution.start("Research Workflow", "main.tsx");
@@ -331,29 +333,27 @@ const executionId = await db.execution.start("Research Workflow", "main.tsx");
 function ResearchWorkflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Orchestration>
-        <Ralph maxIterations={3}>
-          {/* All phases rendered unconditionally - auto-sequencing */}
-          <Phase name="Research">
-            <Claude model="sonnet">
-              Research the topic and gather key findings.
-              Return structured findings as JSON.
-            </Claude>
-          </Phase>
+      <Ralph maxIterations={3}>
+        {/* All phases rendered unconditionally - auto-sequencing */}
+        <Phase name="Research">
+          <Claude model="sonnet">
+            Research the topic and gather key findings.
+            Return structured findings as JSON.
+          </Claude>
+        </Phase>
 
-          <Phase name="Summarize">
-            <Claude model="sonnet">
-              Based on the research findings, write a clear, concise summary.
-            </Claude>
-          </Phase>
+        <Phase name="Summarize">
+          <Claude model="sonnet">
+            Based on the research findings, write a clear, concise summary.
+          </Claude>
+        </Phase>
 
-          <Phase name="Review">
-            <Claude model="sonnet">
-              Review the summary for accuracy and completeness.
-            </Claude>
-          </Phase>
-        </Ralph>
-      </Orchestration>
+        <Phase name="Review">
+          <Claude model="sonnet">
+            Review the summary for accuracy and completeness.
+          </Claude>
+        </Phase>
+      </Ralph>
     </SmithersProvider>
   );
 }

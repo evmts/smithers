@@ -211,4 +211,11 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
    * If inside a <Worktree>, this defaults to the worktree cwd.
    */
   cwd?: string
+
+  /**
+   * Use Claude subscription credits instead of API credits.
+   * When true, excludes ANTHROPIC_API_KEY from environment.
+   * @default true
+   */
+  useSubscription?: boolean
 }

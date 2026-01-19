@@ -1,0 +1,512 @@
+---
+title: Worktree Component
+description: Git worktree isolation component for parallel branch execution and safe experimentation
+---
+
+<Warning>
+  **Planned Feature** - This component is not yet implemented.
+  See [worktree-component issue](/issues/worktree-component.md) for detailed design and implementation plan.
+</Warning>
+
+# Worktree Component
+
+Automatically provision git worktrees and ensure all nested agent components operate within isolated directory contexts. Enables parallel execution on different branches, safe experimentation, and clean phase isolation.
+
+## Planned API
+
+```tsx
+interface WorktreeProps {
+  /**
+   * Branch name for the worktree.
+   * If branch doesn't exist, created from base.
+   */
+  branch: string
+
+  /**
+   * Base ref to create branch from (if branch doesn't exist).
+   * @default 'HEAD'
+   */
+  base?: string
+
+  /**
+   * Explicit path for worktree directory.
+   * @default `.worktrees/${branch}`
+   */
+  path?: string
+
+  /**
+   * Automatically remove worktree on unmount.
+   * Only removes if component created it.
+   * @default false
+   */
+  cleanup?: boolean
+
+  /**
+   * Children components (agents, phases, etc.)
+   */
+  children: ReactNode
+
+  /**
+   * Callback when worktree is ready
+   */
+  onReady?: (worktreePath: string) => void
+
+  /**
+   * Callback on error
+   */
+  onError?: (error: Error) => void
+}
+
+export function Worktree(props: WorktreeProps): JSX.Element
+```
+
+## Proposed Usage
+
+### Basic Branch Isolation
+
+```tsx
+import { Worktree, Phase, Claude } from 'smithers-orchestrator'
+
+export function FeatureWorkflow() {
+  return (
+    <Worktree branch="feature-auth">
+      <Phase name="Implement Authentication">
+        <Claude>Implement user authentication system</Claude>
+      </Phase>
+    </Worktree>
+  )
+}
+```
+
+### Parallel Branch Execution
+
+```tsx
+<>
+  <Worktree branch="feature-a" cleanup>
+    <Phase name="Feature A">
+      <Claude>Implement feature A independently</Claude>
+    </Phase>
+  </Worktree>
+
+  <Worktree branch="feature-b" cleanup>
+    <Phase name="Feature B">
+      <Claude>Implement feature B in parallel</Claude>
+    </Phase>
+  </Worktree>
+</>
+```
+
+Both execute concurrently without interfering.
+
+### Safe Experimentation
+
+```tsx
+<Worktree branch="experiment" cleanup>
+  <Phase name="Risky Refactor">
+    <Claude>Try aggressive refactoring approach</Claude>
+  </Phase>
+</Worktree>
+// Worktree automatically deleted on unmount - no cleanup needed
+```
+
+### With Nested Smithers
+
+```tsx
+<Worktree branch="complex-feature" base="main">
+  <Smithers plannerModel="opus">
+    Plan and implement complex multi-phase feature with full isolation
+  </Smithers>
+</Worktree>
+```
+
+### Explicit Path
+
+```tsx
+<Worktree branch="hotfix" path="/tmp/hotfix-worktree">
+  <Phase name="Critical Fix">
+    <Claude>Fix critical production bug</Claude>
+  </Phase>
+</Worktree>
+```
+
+## Props (Planned)
+
+<ParamField path="branch" type="string" required>
+  Branch name for the worktree.
+
+  **Behavior:**
+  - If branch exists: Checkout branch in worktree
+  - If branch missing: Create from `base` ref (default HEAD)
+
+  **Examples:**
+  - `"feature-auth"` - Descriptive feature name
+  - `"hotfix-security"` - Hotfix branch
+  - `"experiment-${Date.now()}"` - Unique experimental branch
+
+  **Naming:** Standard git branch naming rules apply.
+</ParamField>
+
+<ParamField path="base" type="string" default="HEAD">
+  Base ref to create branch from when branch doesn't exist.
+
+  **Examples:**
+  - `"main"` - Branch from main
+  - `"develop"` - Branch from develop
+  - `"v1.2.3"` - Branch from tag
+  - `"abc123"` - Branch from specific commit
+
+  Ignored if branch already exists.
+</ParamField>
+
+<ParamField path="path" type="string">
+  Explicit worktree directory path.
+
+  **Default:** `.worktrees/${branch}` (relative to repo root)
+
+  **Absolute paths:**
+  ```tsx
+  <Worktree branch="test" path="/tmp/test-worktree" />
+  ```
+
+  **Relative paths:** Resolved relative to repo root
+  ```tsx
+  <Worktree branch="feat" path="./wt/feat" />
+  ```
+
+  **Path normalization:** Uses `path.resolve()` for consistent comparison.
+</ParamField>
+
+<ParamField path="cleanup" type="boolean" default="false">
+  Automatically remove worktree on unmount.
+
+  **Safety:** Only removes if this component created the worktree.
+
+  **Use case:** Temporary worktrees for experimentation or CI runs.
+
+  ```tsx
+  <Worktree branch="temp-branch" cleanup>
+    {/* Worktree deleted when component unmounts */}
+  </Worktree>
+  ```
+
+  **Failure handling:** Logs warning if cleanup fails, doesn't throw.
+
+  Default `false` to preserve worktrees across runs.
+</ParamField>
+
+<ParamField path="children" type="ReactNode" required>
+  Components to execute in worktree context.
+
+  **Context propagation:** All nested components receive worktree cwd automatically:
+  - Claude components
+  - Smithers components
+  - Command components
+  - Custom components using `useWorktree()` hook
+
+  **Transparency:** Children don't need worktree awareness - context handles it.
+</ParamField>
+
+<ParamField path="onReady" type="(worktreePath: string) => void">
+  Callback when worktree setup completes.
+
+  Receives absolute path to worktree directory.
+
+  ```tsx
+  onReady={(path) => {
+    console.log(`Worktree ready at ${path}`)
+    metrics.recordWorktreeCreated(path)
+  }}
+  ```
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Callback when worktree setup fails.
+
+  **Common errors:**
+  - Branch already checked out elsewhere
+  - Invalid branch name
+  - Insufficient permissions
+  - Path conflicts
+
+  ```tsx
+  onError={(error) => {
+    console.error(`Worktree setup failed: ${error.message}`)
+  }}
+  ```
+</ParamField>
+
+## Implementation Status
+
+<Steps>
+  <Step title="Design Phase">
+    Complete design with git utilities, context propagation, and agent integration.
+    [View issue](/issues/worktree-component.md)
+  </Step>
+
+  <Step title="Git Utilities (Pending)">
+    Implement worktree management functions: listWorktrees, addWorktree, removeWorktree, branchExists, worktreeExists.
+  </Step>
+
+  <Step title="WorktreeContext (Pending)">
+    Create context provider for cwd, branch, isWorktree propagation.
+  </Step>
+
+  <Step title="Component Implementation (Pending)">
+    Worktree component with lifecycle management and error handling.
+  </Step>
+
+  <Step title="Agent Integration (Pending)">
+    Update Claude, Smithers, Command components to respect worktree context.
+  </Step>
+
+  <Step title="Testing (Future)">
+    Unit tests for git utilities, integration tests for context propagation and agent execution.
+  </Step>
+</Steps>
+
+## Design Rationale
+
+### Context Propagation Pattern
+
+```
+┌────────────────────────────────────────────────┐
+│  <Worktree branch="feature">                   │
+│    WorktreeContext: { cwd, branch, isWorktree }│
+│         │                                      │
+│         ├─► <Phase>                            │
+│         │     └─► <Claude>                     │
+│         │           └─► useWorktree() → cwd   │
+│         │                                      │
+│         ├─► <Command>                          │
+│         │     └─► useWorktree() → cwd         │
+│         │                                      │
+│         └─► <Smithers>                         │
+│               └─► useWorktree() → cwd         │
+└────────────────────────────────────────────────┘
+```
+
+**Transparent:** Children automatically operate in worktree without explicit configuration.
+
+### Lifecycle States
+
+```
+┌───────────┐
+│  PENDING  │  Setting up worktree...
+└─────┬─────┘
+      │
+      ├─ Create worktree if missing
+      ├─ Check/create branch
+      │
+      ▼
+┌───────────┐
+│   READY   │  Render children in worktree context
+└─────┬─────┘
+      │
+      │ (on unmount, if cleanup=true && created by this component)
+      │
+      ▼
+┌───────────┐
+│  CLEANUP  │  Remove worktree
+└───────────┘
+```
+
+### Ralph Iteration Behavior
+
+**Design decision:** Worktrees persist across Ralph iterations.
+
+```tsx
+<Ralph>
+  <Worktree branch="feature">
+    {/* Worktree created on first iteration, reused in subsequent iterations */}
+    <Phase name="Implement">
+      <Claude>Iteratively improve implementation</Claude>
+    </Phase>
+  </Worktree>
+</Ralph>
+```
+
+**Rationale:**
+- Worktree creation expensive (git operations, disk I/O)
+- Most use cases want iteration on changes in same worktree
+- For per-iteration worktrees, use dynamic branch names:
+
+```tsx
+<Worktree branch={`iteration-${ralphCount}`}>
+```
+
+### Priority Override
+
+```tsx
+const worktree = useWorktree()
+const effectiveCwd = props.cwd ?? worktree?.cwd ?? process.cwd()
+```
+
+**Priority:** Explicit prop > Worktree context > process.cwd()
+
+Maintains flexibility for edge cases requiring override.
+
+## Examples of Use Cases
+
+### Use Case 1: Parallel Feature Development
+
+```tsx
+<Parallel>
+  <Worktree branch="auth-system" cleanup>
+    <Phase name="Authentication">
+      <Claude>Implement JWT authentication</Claude>
+    </Phase>
+  </Worktree>
+
+  <Worktree branch="payment-integration" cleanup>
+    <Phase name="Payments">
+      <Claude>Integrate payment provider</Claude>
+    </Phase>
+  </Worktree>
+
+  <Worktree branch="analytics-tracking" cleanup>
+    <Phase name="Analytics">
+      <Claude>Add analytics tracking</Claude>
+    </Phase>
+  </Worktree>
+</Parallel>
+```
+
+Three features developed concurrently in isolated worktrees.
+
+### Use Case 2: Review Different Approaches
+
+```tsx
+const approaches = ['approach-a', 'approach-b', 'approach-c']
+
+<Parallel>
+  {approaches.map(approach => (
+    <Worktree key={approach} branch={approach} cleanup>
+      <Phase name={`Test ${approach}`}>
+        <Claude>Implement and benchmark {approach}</Claude>
+      </Phase>
+    </Worktree>
+  ))}
+</Parallel>
+
+// Compare results and pick winner
+```
+
+### Use Case 3: Clean Test Environment
+
+```tsx
+<While id="fix-tests" condition={() => !testsPass} maxIterations={5}>
+  <Worktree branch="test-fixes" base="main">
+    <Phase name="Fix and Test">
+      <Claude>Fix failing tests</Claude>
+      <Command
+        cmd="bun test"
+        onFinished={(result) => {
+          testsPass = result.exitCode === 0
+        }}
+      />
+    </Phase>
+  </Worktree>
+</While>
+```
+
+Each iteration starts from clean main branch state.
+
+### Use Case 4: Nested Worktrees (Advanced)
+
+```tsx
+<Worktree branch="outer-feature">
+  <Phase name="Main Work">
+    <Claude>Work on outer feature</Claude>
+  </Phase>
+
+  <Worktree branch="inner-experiment">
+    {/* Inner worktree shadows outer - operates in nested context */}
+    <Phase name="Experiment">
+      <Claude>Risky experiment isolated from outer feature</Claude>
+    </Phase>
+  </Worktree>
+
+  <Phase name="Finalize">
+    {/* Back to outer worktree context */}
+    <Claude>Finalize outer feature</Claude>
+  </Phase>
+</Worktree>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card
+    title="Worktree Component Issue"
+    icon="github"
+    href="/issues/worktree-component.md"
+  >
+    Detailed design including git utilities, context provider, and agent integration
+  </Card>
+
+  <Card
+    title="Claude Component"
+    icon="robot"
+    href="/components/claude.mdx"
+  >
+    Automatically respects worktree context for cwd
+  </Card>
+
+  <Card
+    title="Command Component"
+    icon="terminal"
+    href="/components/command.mdx"
+  >
+    Executes commands in worktree directory when nested
+  </Card>
+
+  <Card
+    title="Parallel Component"
+    icon="layer-group"
+    href="/components/parallel.mdx"
+  >
+    Run multiple worktrees concurrently for parallel development
+  </Card>
+</CardGroup>
+
+## Alternatives Considered
+
+- **Manual cwd prop threading**: Verbose, error-prone, breaks abstraction
+- **Temporary directories without git**: Loses git history, no branch switching
+- **Git stash/unstash**: Complex lifecycle, state conflicts
+- **Cloning repository**: Expensive, duplicates entire repo
+
+## Migration Path
+
+Current workaround (manual worktree management):
+
+```tsx
+// Before (manual)
+const worktreePath = `.worktrees/${branchName}`
+await Bun.$`git worktree add ${worktreePath} ${branchName}`.quiet()
+
+try {
+  // Manually pass cwd to all components
+  const result = await executeClaudeCLI({
+    prompt: "...",
+    cwd: worktreePath
+  })
+} finally {
+  await Bun.$`git worktree remove ${worktreePath} --force`.quiet()
+}
+```
+
+With Worktree component:
+
+```tsx
+// After (declarative)
+<Worktree branch={branchName} cleanup>
+  <Claude>...</Claude>
+</Worktree>
+```
+
+**Benefits:** Automatic lifecycle, context propagation, error handling, cleanup.
+
+## Feedback
+
+If you have feedback on this planned component, please comment on the [worktree-component issue](/issues/worktree-component.md).

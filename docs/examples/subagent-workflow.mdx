@@ -16,11 +16,11 @@ import { useState } from "react";
 import { createSmithersRoot } from "smithers";
 import { createSmithersDB } from "smithers-orchestrator/db";
 import { SmithersProvider } from "smithers-orchestrator/components/SmithersProvider";
-import { Orchestration } from "smithers-orchestrator/components/Orchestration";
 import { Ralph } from "smithers-orchestrator/components/Ralph";
 import { Phase } from "smithers-orchestrator/components/Phase";
 import { Claude } from "smithers-orchestrator/components/Claude";
 import { Smithers } from "smithers-orchestrator/components/Smithers";
+import { If } from "smithers-orchestrator/components/If";
 
 async function main() {
   const db = await createSmithersDB({ path: ".smithers/feature-dev" });
@@ -31,112 +31,111 @@ async function main() {
     const [plan, setPlan] = useState<string | null>(null);
 
     return (
-      <SmithersProvider db={db} executionId={executionId}>
-        <Orchestration globalTimeout={7200000}>
-          <Ralph maxIterations={5}>
-            {/* Phase 1: High-level planning */}
-            {phase === "plan" && (
-              <Phase name="Planning">
-                <Claude
-                  model="opus"
-                  allowedTools={["Read", "Glob", "Grep"]}
-                  onFinished={(result) => {
-                    setPlan(result.output);
+      <SmithersProvider db={db} executionId={executionId} globalTimeout={7200000}>
+        <Ralph maxIterations={5}>
+          {/* Phase 1: High-level planning */}
+          <If condition={phase === "plan"}>
+            <Phase name="Planning">
+              <Claude
+                model="opus"
+                allowedTools={["Read", "Glob", "Grep"]}
+                onFinished={(result) => {
+                  setPlan(result.output);
+                  setPhase("implement");
+                }}
+              >
+                Analyze the codebase and create a high-level implementation plan for:
+
+                "Add a notification system with:
+                 - Database schema for notifications
+                 - REST API endpoints
+                 - Real-time WebSocket updates
+                 - React UI components"
+
+                Identify the key files, patterns, and technologies used.
+                Output a structured plan with phases.
+              </Claude>
+            </Phase>
+          </If>
+
+          {/* Phase 2: Subagent implements the feature */}
+          <If condition={phase === "implement"}>
+            <Phase name="Implementation">
+              <Smithers
+                plannerModel="opus"
+                executionModel="sonnet"
+                timeout={3600000}
+                keepScript
+                context={`
+                  Previous analysis:
+                  ${plan}
+
+                  This is a TypeScript project using:
+                  - Bun runtime
+                  - React frontend
+                  - PostgreSQL database
+                  - WebSocket for real-time updates
+                `}
+                onScriptGenerated={(script) => {
+                  console.log("Generated implementation script");
+                  db.vcs.addReport({
+                    type: "progress",
+                    severity: "info",
+                    title: "Script Generated",
+                    content: script.substring(0, 500) + "...",
+                  });
+                }}
+                onProgress={(msg) => console.log(`[Subagent] ${msg}`)}
+                onFinished={(result) => {
+                  console.log("Subagent completed!");
+                  console.log(`Duration: ${result.durationMs}ms`);
+                  console.log(`Tokens: ${result.tokensUsed.input + result.tokensUsed.output}`);
+                  setPhase("test");
+                }}
+                onError={(err) => {
+                  console.error("Subagent failed:", err);
+                  setPhase("plan");  // Go back to planning
+                }}
+              >
+                Implement the notification system based on the plan.
+
+                Requirements:
+                1. Create database migration for notifications table
+                2. Implement CRUD API endpoints
+                3. Add WebSocket handler for real-time updates
+                4. Create React components for notification UI
+                5. Write tests for each layer
+
+                Follow existing patterns and conventions.
+              </Smithers>
+            </Phase>
+          </If>
+
+          {/* Phase 3: Verify implementation */}
+          <If condition={phase === "test"}>
+            <Phase name="Verification">
+              <Claude
+                model="sonnet"
+                allowedTools={["Bash", "Read"]}
+                onFinished={(result) => {
+                  if (result.output.includes("All tests pass")) {
+                    setPhase("done");
+                  } else {
                     setPhase("implement");
-                  }}
-                >
-                  Analyze the codebase and create a high-level implementation plan for:
-
-                  "Add a notification system with:
-                   - Database schema for notifications
-                   - REST API endpoints
-                   - Real-time WebSocket updates
-                   - React UI components"
-
-                  Identify the key files, patterns, and technologies used.
-                  Output a structured plan with phases.
-                </Claude>
-              </Phase>
-            )}
-
-            {/* Phase 2: Subagent implements the feature */}
-            {phase === "implement" && (
-              <Phase name="Implementation">
-                <Smithers
-                  plannerModel="opus"
-                  executionModel="sonnet"
-                  timeout={3600000}
-                  keepScript
-                  context={`
-                    Previous analysis:
-                    ${plan}
-
-                    This is a TypeScript project using:
-                    - Bun runtime
-                    - React frontend
-                    - PostgreSQL database
-                    - WebSocket for real-time updates
-                  `}
-                  onScriptGenerated={(script) => {
-                    console.log("Generated implementation script");
-                    db.vcs.addReport({
-                      type: "progress",
-                      severity: "info",
-                      title: "Script Generated",
-                      content: script.substring(0, 500) + "...",
-                    });
-                  }}
-                  onProgress={(msg) => console.log(`[Subagent] ${msg}`)}
-                  onFinished={(result) => {
-                    console.log("Subagent completed!");
-                    console.log(`Duration: ${result.durationMs}ms`);
-                    console.log(`Tokens: ${result.tokensUsed.input + result.tokensUsed.output}`);
-                    setPhase("test");
-                  }}
-                  onError={(err) => {
-                    console.error("Subagent failed:", err);
-                    setPhase("plan");  // Go back to planning
-                  }}
-                >
-                  Implement the notification system based on the plan.
-
-                  Requirements:
-                  1. Create database migration for notifications table
-                  2. Implement CRUD API endpoints
-                  3. Add WebSocket handler for real-time updates
-                  4. Create React components for notification UI
-                  5. Write tests for each layer
-
-                  Follow existing patterns and conventions.
-                </Smithers>
-              </Phase>
-            )}
-
-            {/* Phase 3: Verify implementation */}
-            {phase === "test" && (
-              <Phase name="Verification">
-                <Claude
-                  model="sonnet"
-                  allowedTools={["Bash", "Read"]}
-                  onFinished={(result) => {
-                    if (result.output.includes("All tests pass")) {
-                      setPhase("done");
-                    } else {
-                      setPhase("implement");
-                    }
-                  }}
-                >
-                  Run the test suite and verify the notification system works:
-                  1. Run unit tests: bun test
-                  2. Check TypeScript compilation: bun run typecheck
-                  3. Verify the API endpoints exist
-                </Claude>
-              </Phase>
-            )}
-          </Ralph>
-        </Orchestration>
+                  }
+                }}
+              >
+                Run the test suite and verify the notification system works:
+                1. Run unit tests: bun test
+                2. Check TypeScript compilation: bun run typecheck
+                3. Verify the API endpoints exist
+              </Claude>
+            </Phase>
+          </If>
+        </Ralph>
       </SmithersProvider>
-    );
+      );
+    };
   }
 
   const root = createSmithersRoot();
@@ -211,7 +210,7 @@ Subagents can spawn their own subagents:
   <Card title="Smithers Component" icon="robot" href="/components/smithers">
     Smithers API reference
   </Card>
-  <Card title="Orchestration" icon="sitemap" href="/components/orchestration">
-    Workflow control
+  <Card title="SmithersProvider" icon="box" href="/components/smithers-provider">
+    Workflow control and context
   </Card>
 </CardGroup>

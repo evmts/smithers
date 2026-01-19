@@ -1,0 +1,634 @@
+---
+title: useCommand Hook
+description: Imperative hook for shell command execution with output capture and error handling
+---
+
+<Warning>
+  **Planned Feature** - This hook is not yet implemented.
+  Related to [Command component](/components/command.mdx) design.
+</Warning>
+
+# useCommand Hook
+
+Imperative hook for executing shell commands with output capture, error handling, and reactive state. Provides programmatic control over command execution for complex orchestration logic. Underlying implementation for `<Command>` component.
+
+## Planned API
+
+```tsx
+interface UseCommandOptions {
+  /**
+   * Working directory for command execution
+   */
+  cwd?: string
+
+  /**
+   * Environment variables (merged with process.env)
+   */
+  env?: Record<string, string>
+
+  /**
+   * Timeout in milliseconds
+   * @default 300000 (5 minutes)
+   */
+  timeout?: number
+
+  /**
+   * Auto-clear output after success
+   * @default false
+   */
+  autoClear?: boolean
+}
+
+interface UseCommandReturn {
+  /**
+   * Execute command. Returns promise that resolves with output.
+   * cmd can be string (shell) or array (direct execution)
+   */
+  run: (cmd: string | string[], args?: string[]) => Promise<CommandResult>
+
+  /**
+   * Current command output (stdout + stderr)
+   */
+  output: string
+
+  /**
+   * Current error if command failed
+   */
+  error: Error | null
+
+  /**
+   * Whether command is currently running
+   */
+  isRunning: boolean
+
+  /**
+   * Exit code of last command (null if never run)
+   */
+  exitCode: number | null
+
+  /**
+   * Clear output and error state
+   */
+  clear: () => void
+}
+
+interface CommandResult {
+  stdout: string
+  stderr: string
+  exitCode: number
+  durationMs: number
+  success: boolean
+}
+
+export function useCommand(options?: UseCommandOptions): UseCommandReturn
+```
+
+## Proposed Usage
+
+### Basic Command Execution
+
+```tsx
+import { useCommand } from 'smithers-orchestrator'
+
+function BuildComponent() {
+  const { run, output, isRunning, error } = useCommand()
+
+  const handleBuild = async () => {
+    try {
+      const result = await run('bun', ['run', 'build'])
+      console.log(`Build completed in ${result.durationMs}ms`)
+    } catch (err) {
+      console.error('Build failed:', error)
+    }
+  }
+
+  return (
+    <button onClick={handleBuild} disabled={isRunning}>
+      {isRunning ? 'Building...' : 'Build'}
+    </button>
+  )
+}
+```
+
+### Sequential Commands
+
+```tsx
+function CIPipeline() {
+  const cmd = useCommand({ cwd: '/project' })
+
+  const runPipeline = async () => {
+    await cmd.run('bun install')
+    await cmd.run('bun run typecheck')
+    await cmd.run('bun run lint')
+    await cmd.run('bun test')
+
+    console.log('Pipeline complete!')
+  }
+
+  return <button onClick={runPipeline}>Run CI</button>
+}
+```
+
+### Output Streaming Display
+
+```tsx
+function CommandRunner() {
+  const { run, output, isRunning } = useCommand({ autoClear: false })
+
+  const runScript = () => {
+    run('npm', ['run', 'dev'])
+  }
+
+  return (
+    <>
+      <button onClick={runScript}>Start Dev Server</button>
+      <pre>{output}</pre>
+      {isRunning && <spinner>Running...</spinner>}
+    </>
+  )
+}
+```
+
+### Conditional Execution Based on Output
+
+```tsx
+function DeployWorkflow() {
+  const test = useCommand()
+  const deploy = useCommand()
+
+  const runWorkflow = async () => {
+    const testResult = await test.run('bun test')
+
+    if (testResult.success) {
+      console.log('Tests passed, deploying...')
+      await deploy.run('bun run deploy')
+    } else {
+      console.error('Tests failed, skipping deployment')
+      console.error(test.output)
+    }
+  }
+
+  return <button onClick={runWorkflow}>Test & Deploy</button>
+}
+```
+
+### With Custom Environment
+
+```tsx
+function BuildWithEnv() {
+  const { run } = useCommand({
+    env: {
+      NODE_ENV: 'production',
+      CI: 'true'
+    }
+  })
+
+  const build = () => {
+    run('bun run build')
+  }
+
+  return <button onClick={build}>Production Build</button>
+}
+```
+
+## API Reference
+
+<ParamField path="options.cwd" type="string">
+  Working directory for command execution.
+
+  Respects worktree context if inside `<Worktree>`.
+
+  **Priority:** Hook option > Worktree context > process.cwd()
+
+  ```tsx
+  const cmd = useCommand({ cwd: '/path/to/project' })
+  ```
+</ParamField>
+
+<ParamField path="options.env" type="Record<string, string>">
+  Environment variables merged with process.env.
+
+  Applied to all commands executed by this hook instance.
+
+  ```tsx
+  const cmd = useCommand({
+    env: {
+      DEBUG: 'app:*',
+      LOG_LEVEL: 'verbose'
+    }
+  })
+  ```
+</ParamField>
+
+<ParamField path="options.timeout" type="number" default="300000">
+  Default timeout for commands in milliseconds (5 minutes).
+
+  Can be overridden per-command via run options.
+
+  ```tsx
+  const cmd = useCommand({ timeout: 60000 })  // 1 minute default
+  ```
+</ParamField>
+
+<ParamField path="options.autoClear" type="boolean" default="false">
+  Automatically clear output/error after successful command.
+
+  Useful for sequential commands where only failures matter.
+
+  ```tsx
+  const cmd = useCommand({ autoClear: true })
+  await cmd.run('step1')  // Output cleared after success
+  await cmd.run('step2')  // Only shows step2 output
+  ```
+</ParamField>
+
+## Return Values
+
+<ParamField path="run" type="(cmd: string | string[], args?: string[]) => Promise<CommandResult>">
+  Execute command and return promise with result.
+
+  **String form (shell):**
+  ```tsx
+  await run('echo "hello" && ls -la')
+  ```
+
+  **Array form (direct):**
+  ```tsx
+  await run(['git', 'status', '--porcelain'])
+  ```
+
+  **With args:**
+  ```tsx
+  await run('git', ['commit', '-m', 'message'])
+  ```
+
+  **Throws on error:** Unless error is caught, non-zero exit throws.
+
+  **Updates state:** Sets `output`, `error`, `exitCode`, `isRunning` reactively.
+</ParamField>
+
+<ParamField path="output" type="string">
+  Current command output (stdout + stderr combined).
+
+  Updates reactively during command execution (if streaming supported).
+
+  Empty string if no command run yet.
+
+  ```tsx
+  const { output } = useCommand()
+  console.log(output)  // "Build successful\n..."
+  ```
+</ParamField>
+
+<ParamField path="error" type="Error | null">
+  Error from last command if failed.
+
+  Null if last command succeeded or no command run.
+
+  ```tsx
+  const { error } = useCommand()
+  if (error) {
+    console.error('Command failed:', error.message)
+  }
+  ```
+</ParamField>
+
+<ParamField path="isRunning" type="boolean">
+  Whether command is currently executing.
+
+  Useful for loading states and disabling UI during execution.
+
+  ```tsx
+  const { isRunning } = useCommand()
+  return <button disabled={isRunning}>Run</button>
+  ```
+</ParamField>
+
+<ParamField path="exitCode" type="number | null">
+  Exit code of last command.
+
+  - `0` = success
+  - Non-zero = failure
+  - `null` = no command run yet
+
+  ```tsx
+  const { exitCode } = useCommand()
+  const status = exitCode === 0 ? 'passed' : 'failed'
+  ```
+</ParamField>
+
+<ParamField path="clear" type="() => void">
+  Clear output, error, and exitCode state.
+
+  Does not stop running command.
+
+  ```tsx
+  const { clear, output } = useCommand()
+
+  const reset = () => {
+    clear()
+    console.log(output)  // ""
+  }
+  ```
+</ParamField>
+
+## Implementation Status
+
+<Steps>
+  <Step title="Design Phase">
+    Hook API designed alongside Command component.
+  </Step>
+
+  <Step title="Core Implementation (Pending)">
+    Bun.spawn wrapper with state management, error handling, timeout.
+  </Step>
+
+  <Step title="Reactive State (Pending)">
+    useRef for state that triggers re-renders on command completion.
+  </Step>
+
+  <Step title="Worktree Integration (Pending)">
+    Auto-detect worktree context via useWorktree() hook.
+  </Step>
+
+  <Step title="Testing (Future)">
+    Unit tests for success/failure cases, timeout handling, state updates.
+  </Step>
+</Steps>
+
+## Design Rationale
+
+### Why Imperative Hook?
+
+**Programmatic control:** Complex logic requires imperative command execution
+
+**Conditional execution:** Run commands based on runtime conditions
+
+**Sequential pipelines:** Chain commands with dependencies
+
+**State access:** React to command output in component logic
+
+**Complement to Component:** `<Command>` declarative, `useCommand` imperative
+
+### Implementation Sketch
+
+```typescript
+export function useCommand(options?: UseCommandOptions): UseCommandReturn {
+  const worktree = useWorktree()
+  const outputRef = useRef<string>('')
+  const errorRef = useRef<Error | null>(null)
+  const isRunningRef = useRef<boolean>(false)
+  const exitCodeRef = useRef<number | null>(null)
+  const [, forceUpdate] = useReducer(x => x + 1, 0)
+
+  const run = async (
+    cmd: string | string[],
+    args?: string[]
+  ): Promise<CommandResult> => {
+    isRunningRef.current = true
+    errorRef.current = null
+    forceUpdate()
+
+    const effectiveCwd = options?.cwd ?? worktree?.cwd ?? process.cwd()
+    const timeout = options?.timeout ?? 300000
+
+    try {
+      const cmdArray = Array.isArray(cmd)
+        ? cmd
+        : args
+          ? [cmd, ...args]
+          : ['sh', '-c', cmd]
+
+      const start = Date.now()
+      const proc = Bun.spawn(cmdArray, {
+        cwd: effectiveCwd,
+        env: { ...process.env, ...options?.env },
+        stdout: 'pipe',
+        stderr: 'pipe'
+      })
+
+      // Timeout handling
+      const timeoutId = setTimeout(() => proc.kill(), timeout)
+
+      const stdout = await new Response(proc.stdout).text()
+      const stderr = await new Response(proc.stderr).text()
+      const exitCode = await proc.exited
+
+      clearTimeout(timeoutId)
+
+      const result: CommandResult = {
+        stdout,
+        stderr,
+        exitCode,
+        durationMs: Date.now() - start,
+        success: exitCode === 0
+      }
+
+      outputRef.current = stdout + stderr
+      exitCodeRef.current = exitCode
+
+      if (exitCode !== 0) {
+        const error = new Error(`Command failed with exit code ${exitCode}`)
+        errorRef.current = error
+        throw error
+      }
+
+      if (options?.autoClear) {
+        outputRef.current = ''
+        errorRef.current = null
+      }
+
+      return result
+    } finally {
+      isRunningRef.current = false
+      forceUpdate()
+    }
+  }
+
+  const clear = () => {
+    outputRef.current = ''
+    errorRef.current = null
+    exitCodeRef.current = null
+    forceUpdate()
+  }
+
+  return {
+    run,
+    output: outputRef.current,
+    error: errorRef.current,
+    isRunning: isRunningRef.current,
+    exitCode: exitCodeRef.current,
+    clear
+  }
+}
+```
+
+### State Management with useRef
+
+Uses `useRef` + manual `forceUpdate` instead of `useState`:
+
+**Rationale:**
+- Avoids stale closures in async run function
+- Single source of truth (refs)
+- Controlled re-renders via forceUpdate
+- Matches CLAUDE.md guidance (no useState)
+
+## Examples of Use Cases
+
+### Use Case 1: Git Workflow
+
+```tsx
+function GitWorkflow() {
+  const git = useCommand()
+
+  const commitAndPush = async (message: string) => {
+    await git.run('git add .')
+
+    const statusResult = await git.run('git status --porcelain')
+    if (!statusResult.stdout.trim()) {
+      console.log('No changes to commit')
+      return
+    }
+
+    await git.run('git', ['commit', '-m', message])
+    await git.run('git push origin main')
+
+    console.log('Changes pushed successfully')
+  }
+
+  return <button onClick={() => commitAndPush('feat: new feature')}>Commit & Push</button>
+}
+```
+
+### Use Case 2: Build Pipeline with Error Handling
+
+```tsx
+function BuildPipeline() {
+  const cmd = useCommand()
+  const [stage, setStage] = useState<string>('idle')
+
+  const runBuild = async () => {
+    try {
+      setStage('install')
+      await cmd.run('bun install')
+
+      setStage('typecheck')
+      await cmd.run('bun run typecheck')
+
+      setStage('lint')
+      await cmd.run('bun run lint')
+
+      setStage('test')
+      await cmd.run('bun test')
+
+      setStage('build')
+      await cmd.run('bun run build')
+
+      setStage('complete')
+    } catch (error) {
+      setStage('failed')
+      console.error(`Build failed at ${stage}:`, cmd.error)
+    }
+  }
+
+  return (
+    <>
+      <button onClick={runBuild} disabled={cmd.isRunning}>Build</button>
+      <status>Stage: {stage}</status>
+      {cmd.error && <error>{cmd.error.message}</error>}
+    </>
+  )
+}
+```
+
+### Use Case 3: Live Output Display
+
+```tsx
+function CommandTerminal() {
+  const cmd = useCommand({ autoClear: false })
+  const [history, setHistory] = useState<string[]>([])
+
+  const runCommand = async (input: string) => {
+    try {
+      await cmd.run(input)
+      setHistory(prev => [...prev, `$ ${input}`, cmd.output])
+    } catch (error) {
+      setHistory(prev => [...prev, `$ ${input}`, cmd.output, `Error: ${cmd.error?.message}`])
+    }
+  }
+
+  return (
+    <>
+      <terminal>
+        {history.map((line, i) => <div key={i}>{line}</div>)}
+        {cmd.isRunning && <spinner>Running...</spinner>}
+      </terminal>
+      <input onSubmit={runCommand} />
+    </>
+  )
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card
+    title="Command Component"
+    icon="terminal"
+    href="/components/command.mdx"
+  >
+    Declarative command execution - wraps useCommand internally
+  </Card>
+
+  <Card
+    title="Worktree Component"
+    icon="code-branch"
+    href="/components/worktree.mdx"
+  >
+    Git worktree isolation - useCommand respects worktree context
+  </Card>
+
+  <Card
+    title="Phase Component"
+    icon="layer-group"
+    href="/components/phase.mdx"
+  >
+    Sequential execution - natural place to use useCommand
+  </Card>
+</CardGroup>
+
+## Alternatives Considered
+
+- **Only component (no hook)**: Insufficient for complex imperative logic
+- **Direct Bun.spawn**: No state management, verbose error handling
+- **Separate hooks per command**: Overhead for sequential commands
+- **useState for state**: Stale closures in async, violates CLAUDE.md
+
+## Migration Path
+
+Current pattern (direct Bun.spawn):
+
+```tsx
+// Before (manual)
+const proc = Bun.spawn(['git', 'status'])
+const output = await new Response(proc.stdout).text()
+const exitCode = await proc.exited
+if (exitCode !== 0) {
+  throw new Error('Command failed')
+}
+```
+
+With useCommand:
+
+```tsx
+// After (hook)
+const { run } = useCommand()
+const result = await run('git', ['status'])
+// Automatic error handling, state management
+```
+
+**Benefits:** State tracking, timeout handling, error handling, worktree integration.
+
+## Feedback
+
+If you have feedback on this planned hook, please open a discussion or issue on the Smithers repository.

@@ -1,422 +1,125 @@
 ---
-title: If Component
-description: Conditional execution component that enables or disables child execution based on runtime conditions
+title: If
+description: Conditional rendering component for cleaner JSX
 ---
-
-<Warning>
-  **Planned Feature** - This component is not yet implemented.
-  See [control-flow-components issue](/issues/control-flow-components.md) for design details and implementation plan.
-</Warning>
 
 # If Component
 
-Conditionally enables execution based on runtime conditions while always rendering plan structure. Part of the control flow component family alongside `<While>` and `<Switch>`, the `<If>` component gates execution of child components without hiding workflow structure from plan output.
+The `<If>` component provides declarative conditional rendering. It's a cleaner alternative to `{condition && (<Component />)}` patterns.
 
-## Planned API
-
-```tsx
-interface IfProps {
-  /**
-   * Stable identifier for resumability across restarts. Required.
-   * Must not use random IDs - component identity must be deterministic.
-   */
-  id: string
-
-  /**
-   * Condition function evaluated once per scope when If becomes active.
-   * Can be async for database queries or external checks.
-   * Result persisted to SQLite for crash-resume.
-   */
-  condition: () => boolean | Promise<boolean>
-
-  /**
-   * Optional key to force re-evaluation within same scope.
-   * Changing this value invalidates stored decision and re-runs condition.
-   */
-  recomputeKey?: string
-
-  /**
-   * Children rendered when condition is true (then branch).
-   */
-  children: ReactNode
-
-  /**
-   * Optional children rendered when condition is false (else branch).
-   * Use <Else> component for cleaner syntax.
-   */
-  else?: ReactNode
-}
-
-export function If(props: IfProps): JSX.Element
-
-/**
- * Else component for cleaner else branch syntax.
- * Must be child of <If>.
- */
-export function Else(props: { children: ReactNode }): JSX.Element
-```
-
-## Proposed Usage
-
-### Basic Conditional Execution
+## Basic Usage
 
 ```tsx
-import { Phase, Step, Claude, If } from 'smithers-orchestrator'
+import { If } from "smithers-orchestrator";
 
-export function DeploymentWorkflow() {
-  const testsPassedRef = useRef(false)
-
-  return (
-    <>
-      <Phase name="Testing">
-        <Claude
-          onFinished={(result) => {
-            testsPassedRef.current = result.includes('PASS')
-          }}
-        >
-          Run test suite
-        </Claude>
-      </Phase>
-
-      <If id="deploy-if-tests-pass" condition={() => testsPassedRef.current}>
-        <Phase name="Deploy">
-          <Claude>Deploy to production</Claude>
-        </Phase>
-      </If>
-    </>
-  )
-}
-```
-
-### Async Condition with Database Query
-
-```tsx
-<If
-  id="merge-if-approved"
-  condition={async () => {
-    const { db } = useSmithers()
-    const review = await db.state.get('reviewResult')
-    return review?.approved === true
-  }}
->
-  <Phase name="Merge">
-    <Claude>Merge the PR to main</Claude>
+<If condition={phase === "implement"}>
+  <Phase name="Implementation">
+    <Claude>Implement the feature.</Claude>
   </Phase>
 </If>
 ```
 
-### Else Branch (Prop Syntax)
+## Props
 
-```tsx
-<If
-  id="tests-branch"
-  condition={async () => {
-    const { db } = useSmithers()
-    const hasTests = await db.state.get('hasTests')
-    return hasTests === true
-  }}
-  else={
-    <Phase name="Write Tests">
-      <Claude>Write missing test coverage</Claude>
-    </Phase>
-  }
->
-  <Phase name="Run Tests">
-    <Claude>Execute test suite</Claude>
-  </Phase>
-</If>
-```
-
-### Else Branch (Component Syntax)
-
-```tsx
-<If id="fix-path" condition={() => hasQuickFix}>
-  <Phase name="Quick Fix">
-    <Claude>Apply quick fix</Claude>
-  </Phase>
-
-  <Else>
-    <Phase name="Deep Investigation">
-      <Claude>Investigate root cause</Claude>
-    </Phase>
-  </Else>
-</If>
-```
-
-## Props (Planned)
-
-<ParamField path="id" type="string" required>
-  Stable identifier for component identity across restarts. Must be deterministic - random IDs forbidden.
-
-  Used to build scope ID (`scopeId.if.{id}.then` / `scopeId.if.{id}.else`) and state keys for persisted decision.
-
-  **Examples:**
-  - `"deploy-if-tests-pass"` - Descriptive and stable
-  - `"merge-if-approved"` - Indicates purpose
-  - ❌ `crypto.randomUUID()` - Random, breaks resumability
-</ParamField>
-
-<ParamField path="condition" type="() => boolean | Promise<boolean>" required>
-  Function evaluated once when If becomes active (executionEnabled=true).
-
-  Result persisted to SQLite. On crash-resume, reads persisted decision instead of re-evaluating.
-
-  **Async support:** Can query database, call APIs, or perform I/O.
-
-  **Evaluation timing:** Runs at start of If execution, holds control-flow task until decision written.
+<ParamField path="condition" type="boolean" required>
+  Condition to evaluate. Children render only when true.
 
   ```tsx
-  // Sync example
-  condition={() => testsPassedRef.current}
-
-  // Async example
-  condition={async () => {
-    const result = await fetch('/api/checks')
-    return result.ok
-  }}
-  ```
-</ParamField>
-
-<ParamField path="recomputeKey" type="string">
-  Optional key to force condition re-evaluation within same scope.
-
-  When this value changes, invalidates stored decision and re-runs condition function.
-
-  **Use case:** Condition depends on external state that changes between workflow runs.
-
-  ```tsx
-  <If
-    id="check-version"
-    condition={() => checkVersion()}
-    recomputeKey={packageVersion}  // Re-evaluate when version changes
-  >
-    ...
+  <If condition={status === "ready"}>
+    <Claude>Start the task.</Claude>
   </If>
   ```
-
-  Default: Empty string (evaluate once per scope)
 </ParamField>
 
 <ParamField path="children" type="ReactNode" required>
-  Components rendered when condition evaluates to true (then branch).
-
-  Executes under scoped ExecutionBoundary with `executionEnabled` gated by condition result.
-
-  Always renders in plan output with `active` status indicator.
+  Content to render when condition is true.
 </ParamField>
 
-<ParamField path="else" type="ReactNode">
-  Optional components rendered when condition evaluates to false (else branch).
-
-  Alternative to using `<Else>` component as child.
-
-  Executes under separate scoped ExecutionBoundary with opposite execution gate.
-</ParamField>
-
-## Implementation Status
-
-<Steps>
-  <Step title="Design Phase">
-    Issue created with detailed scoping design and API proposal.
-    [View issue](/issues/control-flow-components.md)
-  </Step>
-
-  <Step title="Prerequisites (Pending)">
-    Requires ExecutionBoundary, makeScopeId, makeStateKey, tasks.scope_id schema.
-    Part of control-flow infrastructure from parent issue.
-  </Step>
-
-  <Step title="Implementation (Pending)">
-    Component implementation, condition evaluation with task gating, scope creation.
-  </Step>
-
-  <Step title="Testing (Future)">
-    Unit tests for sync/async conditions, crash-resume, nested If components.
-  </Step>
-
-  <Step title="Integration (Future)">
-    Integration with Phase auto-sequencing and existing orchestration patterns.
-  </Step>
-</Steps>
-
-## Design Rationale
-
-### Why Unconditional Rendering?
-
-Plan output always shows both branches with active/inactive status:
-
-```xml
-<if condition="hasTests" status="evaluated" result="true">
-  <branch type="then" active="true">
-    <phase name="Run Tests" status="active">...</phase>
-  </branch>
-  <branch type="else" active="false">
-    <phase name="Write Tests" status="skipped">...</phase>
-  </branch>
-</if>
-```
-
-**Benefits:**
-- Full workflow visibility regardless of execution path
-- Easier debugging - see what didn't run and why
-- Plan diffing works across executions with different branches taken
-- Matches Smithers philosophy of declarative, inspectable workflows
-
-### Scoping Architecture
-
-```
-┌──────────────────────────────────────────────────────┐
-│  <If id="check">                                     │
-│    ├── ExecutionBoundary (scopeId: root.if.check.then, enabled: result===true)
-│    │     └── <Phase name="Then Phase">               │
-│    │           └── Phase registry isolated to scope  │
-│    │                                                  │
-│    └── ExecutionBoundary (scopeId: root.if.check.else, enabled: result===false)
-│          └── <Phase name="Else Phase">               │
-│                └── Different phase registry instance │
-└──────────────────────────────────────────────────────┘
-```
-
-Each branch gets:
-- Isolated scope ID for database state
-- Separate Phase/Step registry instance (no index collision)
-- Execution gating via `executionEnabled` context
-- Plan rendering regardless of execution state
-
-### Task Gating for Correctness
-
-Condition evaluation holds a control-flow task:
+## Multi-Phase Workflow
 
 ```tsx
-const taskId = db.tasks.start('control_flow', `if:${ifId}`, { scopeId })
-const conditionResult = await props.condition()
-db.state.set(decisionKey, conditionResult ? 1 : 0, 'if_condition_evaluated')
-db.state.set(recomputeKey, recomputeTag, 'if_recompute_key')
-db.tasks.complete(taskId)
+import { useState } from "react";
+import { If, Ralph, Phase, Claude } from "smithers-orchestrator";
+
+function Workflow() {
+  const [phase, setPhase] = useState("research");
+
+  return (
+    <Ralph maxIterations={10}>
+      <If condition={phase === "research"}>
+        <Phase name="Research">
+          <Claude onFinished={() => setPhase("implement")}>
+            Research the codebase.
+          </Claude>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement"}>
+        <Phase name="Implementation">
+          <Claude onFinished={() => setPhase("test")}>
+            Implement the feature.
+          </Claude>
+        </Phase>
+      </If>
+
+      <If condition={phase === "test"}>
+        <Phase name="Testing">
+          <Claude onFinished={() => setPhase("done")}>
+            Run tests.
+          </Claude>
+        </Phase>
+      </If>
+    </Ralph>
+  );
+}
 ```
 
-Prevents global Ralph tick from advancing until decision persisted. Critical for resumability.
+## Comparison
 
-## Examples of Use Cases
-
-### Use Case 1: CI-Dependent Deployment
+### Before (Inline Conditional)
 
 ```tsx
-<Phase name="Build">
-  <Claude>Build application artifacts</Claude>
-</Phase>
-
-<Phase name="Test">
-  <Claude
-    onFinished={async (result) => {
-      const { db } = useSmithers()
-      await db.state.set('ciPassed', result.includes('All tests passed'))
-    }}
-  >
-    Run CI test suite
-  </Claude>
-</Phase>
-
-<If
-  id="deploy-on-ci-pass"
-  condition={async () => {
-    const { db } = useSmithers()
-    return await db.state.get('ciPassed') === true
-  }}
->
-  <Phase name="Deploy">
-    <Claude>Deploy to production environment</Claude>
+{phase === "implement" && (
+  <Phase name="Implementation">
+    <Claude>Implement the feature.</Claude>
   </Phase>
+)}
+```
 
-  <Else>
-    <Phase name="Notify Failure">
-      <Claude>Send failure notification to team</Claude>
-    </Phase>
-  </Else>
+### After (If Component)
+
+```tsx
+<If condition={phase === "implement"}>
+  <Phase name="Implementation">
+    <Claude>Implement the feature.</Claude>
+  </Phase>
 </If>
 ```
 
-### Use Case 2: Feature Flag Controlled Execution
+## Benefits
+
+1. **Cleaner JSX** - No curly braces or parentheses clutter
+2. **Better Readability** - Intent is explicit
+3. **Consistent Style** - Matches JSX component patterns
+4. **No Empty Renders** - Returns `null` when condition is false (same as `&&`)
+
+## Complex Conditions
 
 ```tsx
-<If
-  id="experimental-feature"
-  condition={async () => {
-    const flags = await fetch('/api/feature-flags').then(r => r.json())
-    return flags.enableNewAlgorithm === true
-  }}
->
-  <Phase name="New Algorithm">
-    <Claude>Use experimental optimization algorithm</Claude>
+<If condition={phase === "test" && testsEnabled}>
+  <Phase name="Testing">
+    <Claude>Run tests.</Claude>
   </Phase>
-
-  <Else>
-    <Phase name="Legacy Algorithm">
-      <Claude>Use proven stable algorithm</Claude>
-    </Phase>
-  </Else>
-</If>
-```
-
-### Use Case 3: Nested Conditionals
-
-```tsx
-<If id="needs-review" condition={() => prSize > 300}>
-  <Phase name="Request Review">
-    <Claude>Request thorough code review for large PR</Claude>
-  </Phase>
-
-  <If id="senior-approval" condition={() => touchesCriticalPath}>
-    <Phase name="Senior Review">
-      <Claude>Escalate to senior engineer review</Claude>
-    </Phase>
-  </If>
 </If>
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card
-    title="Control Flow Components Issue"
-    icon="github"
-    href="/issues/control-flow-components.md"
-  >
-    Detailed design including scoping infrastructure, ExecutionBoundary, and implementation plan
+  <Card title="Phase" icon="layer-group" href="/components/phase">
+    Phase workflow structure
   </Card>
-
-  <Card
-    title="While Component"
-    icon="rotate"
-    href="/components/while.mdx"
-  >
-    Iterative loop component - shares same scoping and execution gating infrastructure
-  </Card>
-
-  <Card
-    title="Switch Component"
-    icon="code-branch"
-    href="/components/switch.mdx"
-  >
-    Multi-way branching - similar to If but with multiple cases
-  </Card>
-
-  <Card
-    title="Phase Component"
-    icon="layer-group"
-    href="/components/phase.mdx"
-  >
-    Works seamlessly with If - phases inside branches auto-sequence correctly
+  <Card title="Ralph" icon="rotate" href="/components/ralph">
+    Loop control
   </Card>
 </CardGroup>
-
-## Alternatives Considered
-
-- **Conditional rendering via React**: Hides workflow structure from plan output, breaks debugging
-- **skipIf prop on Phase**: Requires duplicate inverse conditions, no else branch support
-- **Higher-order components**: More complex API, less discoverable
-- **Render props**: Clunky syntax, deviates from declarative children pattern
-
-## Feedback
-
-If you have feedback on this planned component, please comment on the [control-flow-components issue](/issues/control-flow-components.md).

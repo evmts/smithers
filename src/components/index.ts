@@ -40,6 +40,7 @@ export {
 } from './Step.js'
 
 // Basic workflow components
+export { If, type IfProps } from './If.js'
 export { Stop, type StopProps } from './Stop.js'
 export { Subagent, type SubagentProps } from './Subagent.js'
 export { Persona, type PersonaProps } from './Persona.js'
@@ -47,7 +48,7 @@ export { Constraints, type ConstraintsProps } from './Constraints.js'
 export { Task, type TaskProps } from './Task.js'
 export { Human, type HumanProps } from './Human.js'
 
-// Smithers Provider and Orchestration (database-integrated)
+// Smithers Provider (database-integrated, includes orchestration)
 export {
   SmithersProvider,
   useSmithers,
@@ -56,10 +57,15 @@ export {
   signalOrchestrationComplete,
   signalOrchestrationError,
 } from './SmithersProvider.js'
-export type { SmithersConfig, SmithersContextValue, SmithersProviderProps, RalphContextType } from './SmithersProvider.js'
-
-export { Orchestration } from './Orchestration.js'
-export type { OrchestrationProps, GlobalStopCondition, OrchestrationContext, OrchestrationResult } from './Orchestration.js'
+export type {
+  SmithersConfig,
+  SmithersContextValue,
+  SmithersProviderProps,
+  RalphContextType,
+  GlobalStopCondition,
+  OrchestrationContext,
+  OrchestrationResult,
+} from './SmithersProvider.js'
 
 // Smithers subagent component
 export { Smithers, executeSmithers } from './Smithers.js'
