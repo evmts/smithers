@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Install Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+
       - name: Run AI Review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -102,6 +105,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Install Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
 
       - name: Download CI outputs
         uses: actions/download-artifact@v4
