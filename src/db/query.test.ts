@@ -2,7 +2,7 @@
  * Tests for query module - raw query access
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, beforeEach, afterEach } from 'bun:test'
 import { ReactiveDatabase } from '../reactive-sqlite/database.js'
 import { createQueryModule } from './query.js'
 

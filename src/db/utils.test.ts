@@ -2,8 +2,7 @@
  * Tests for utils module - shared utilities
  */
 
-import { describe, test, expect } from 'bun:test'
-import { uuid, now, parseJson } from './utils.js'
+import { describe, test } from 'bun:test'
 
 describe('utils', () => {
   describe('uuid', () => {
