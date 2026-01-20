@@ -1,12 +1,12 @@
 # 01_taro_hello.tape
 # Purpose: JSX workflow you can review + state persisted under .smithers/
 
-Output 01_taro_hello.gif
+Output "01_taro_hello.gif"
 
 Require bash
 Require gum
 
-Set Shell bash
+Set Shell "bash"
 Set Theme "Catppuccin Frappe"
 Set FontFamily "JetBrains Mono"
 Set FontSize 22
@@ -22,37 +22,38 @@ Type "gum style --border double --align center --width 64 --padding '1 2' 'SMITH
 Enter
 Sleep 700ms
 
-Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
-Enter
-Type "rm -rf 01_taro_hello && mkdir 01_taro_hello && cd 01_taro_hello"
+Type "# Create a simple Smithers workflow"
 Enter
 Sleep 300ms
 
-Type "gum style --border normal --padding '0 1' 'hello.tsx (JSX workflow)'"
+Type "cat hello.tsx"
 Enter
 Sleep 200ms
 
-Type "cat > hello.tsx <<'EOF'"
+Hide
+Type "cat << 'HEREDOC'"
 Enter
 Type "#!/usr/bin/env bun"
 Enter
-Type "import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from \"smithers-orchestrator\";"
+Type "import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from 'smithers-orchestrator';"
 Enter
+Type ""
 Enter
-Type "const db = createSmithersDB({ path: \".smithers/hello\" });"
+Type "const db = createSmithersDB({ path: '.smithers/hello' });"
 Enter
-Type "const executionId = db.execution.start(\"Hello\", \"hello.tsx\");"
+Type "const executionId = db.execution.start('Hello', 'hello.tsx');"
 Enter
+Type ""
 Enter
-Type "async function Hello() {"
+Type "function Hello() {"
 Enter
 Type "  return ("
 Enter
 Type "    <SmithersProvider db={db} executionId={executionId} maxIterations={3}>"
 Enter
-Type "      <Claude model=\"haiku\" maxTurns={1} onFinished={(r) => console.log(r.output)}>"
+Type "      <Claude model='haiku' maxTurns={1}>"
 Enter
-Type "        Say \"Hello from Smithers!\""
+Type "        Say 'Hello from Smithers!'"
 Enter
 Type "      </Claude>"
 Enter
@@ -62,6 +63,7 @@ Type "  );"
 Enter
 Type "}"
 Enter
+Type ""
 Enter
 Type "const root = createSmithersRoot();"
 Enter
@@ -69,31 +71,43 @@ Type "await root.mount(Hello);"
 Enter
 Type "db.close();"
 Enter
-Type "EOF"
+Type "HEREDOC"
 Enter
-Sleep 300ms
+Show
 
-Type "sed -n '1,18p' hello.tsx"
-Enter
-Sleep 1000ms
+Sleep 1200ms
 
-Type "gum style --border normal --padding '0 1' 'Run (Bun + Claude Code CLI):'"
+Type "gum style --border normal --padding '0 1' 'Run with Bun + Claude Code CLI:'"
 Enter
 Sleep 250ms
 
 Type "# bun hello.tsx"
 Enter
 Sleep 350ms
+
 Type "gum spin --spinner dot --title 'Brewing workflow...' -- sleep 1"
 Enter
+Sleep 100ms
+
 Type "echo 'Success! Hello from Smithers!'"
 Enter
 Sleep 600ms
 
+Type "gum style --border normal --padding '0 1' 'State persisted in SQLite:'"
+Enter
+Sleep 200ms
+
+Type "ls -la .smithers/hello/"
+Enter
+Sleep 200ms
+
+Hide
 Type "mkdir -p .smithers/hello && touch .smithers/hello/execution.sqlite"
 Enter
-Type "ls -la .smithers/hello"
+Type "ls -la .smithers/hello/"
 Enter
+Show
+
 Sleep 900ms
 
 Type "gum style --border double --align center --width 64 --padding '1 2' 'State persisted in SQLite.' 'Docs: https://smithers.sh'"

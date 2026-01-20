@@ -64,7 +64,7 @@ Then ask Claude:
 "Create a workflow that monitors CI, fixes failures, and escalates after 3 attempts."
 ```
 
-![Plugin Demo](tapes/02_matcha_plugin.gif)
+![Plugin Demo](docs/images/02_matcha_plugin.gif)
 
 ### Option B: npm package
 
@@ -122,7 +122,7 @@ Run:
 bun hello.tsx
 ```
 
-![Hello Demo](tapes/01_taro_hello.gif)
+![Hello Demo](docs/images/01_taro_hello.gif)
 
 ---
 
@@ -196,7 +196,7 @@ bun examples/stacked-pr-merge/index.tsx --skip-rebase
 | Review Processor | Parallel processing of review backlogs | `bun examples/review-processor/index.tsx` |
 | Task Audit | Audit task management across codebase | `bun examples/task-management-audit/index.tsx` |
 
-![Gallery](tapes/10_strawberry_gallery.gif)
+![Gallery](docs/images/10_strawberry_gallery.gif)
 
 ---
 
@@ -218,7 +218,7 @@ Smithers uses React's component model to define execution plans as **reviewable 
 - **Claude can generate it** - Agent-native syntax
 - **Git can version it** - Workflows are code, not prompts
 
-![Resume Demo](tapes/03_brown_sugar_resume.gif)
+![Resume Demo](docs/images/03_brown_sugar_resume.gif)
 
 ---
 
@@ -233,7 +233,7 @@ Smithers uses React's component model to define execution plans as **reviewable 
 | `<Worktree>` | Isolate repo changes per branch |
 | SQLite DB | Flight recorder: state + history + resumable executions |
 
-![Worktrees Demo](tapes/04_thai_tea_worktrees.gif)
+![Worktrees Demo](docs/images/04_thai_tea_worktrees.gif)
 
 ---
 
@@ -350,7 +350,7 @@ const UserSchema = z.object({
 // result.structured: { name: string, email: string }
 ```
 
-![Structured Output](tapes/07_lychee_structured_output.gif)
+![Structured Output](docs/images/07_lychee_structured_output.gif)
 
 ### MCP Tool Integration
 
@@ -412,7 +412,7 @@ Spawn a new Smithers instance to plan and execute complex subtasks:
 </Smithers>
 ```
 
-![Subagents](tapes/08_honeydew_subagents.gif)
+![Subagents](docs/images/08_honeydew_subagents.gif)
 
 ### Worktree
 
@@ -437,7 +437,7 @@ First-class version control support:
 <Commit autoDescribe />
 ```
 
-![VCS Primitives](tapes/05_oolong_vcs_primitives.gif)
+![VCS Primitives](docs/images/05_oolong_vcs_primitives.gif)
 
 ### Orchestration Lifecycle
 
@@ -562,7 +562,7 @@ smithers db executions                    # What ran
 smithers db state --execution-id abc123   # State at each point
 ```
 
-![Safety](tapes/09_wintermelon_safety.gif)
+![Safety](docs/images/09_wintermelon_safety.gif)
 
 ---
 
@@ -576,7 +576,7 @@ smithers db state --execution-id <id>     # See state for a run
 smithers db stats                         # Database statistics
 ```
 
-![Observability](tapes/06_jasmine_observability.gif)
+![Observability](docs/images/06_jasmine_observability.gif)
 
 ---
 

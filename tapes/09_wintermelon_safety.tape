@@ -1,12 +1,12 @@
 # 09_wintermelon_safety.tape
 # Purpose: show safety primitives: allowlists + permissionMode + review/human gates.
 
-Output 09_wintermelon_safety.gif
+Output "09_wintermelon_safety.gif"
 
 Require bash
 Require gum
 
-Set Shell bash
+Set Shell "bash"
 Set Theme "Catppuccin Frappe"
 Set FontFamily "JetBrains Mono"
 Set FontSize 22
@@ -18,26 +18,28 @@ Set WindowBar Rings
 Set Framerate 30
 Set TypingSpeed 35ms
 
-Type "gum style --border double --align center --width 70 --padding '1 2' 'WINTERMELON' 'Safety: tool allowlists + permission gating + review checkpoints'"
-Enter
-Sleep 800ms
-
+Hide
 Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
 Enter
 Type "rm -rf 09_wintermelon_safety && mkdir 09_wintermelon_safety && cd 09_wintermelon_safety"
 Enter
 Sleep 300ms
+Show
+
+Type "gum style --border double --align center --width 70 --padding '1 2' 'WINTERMELON' 'Safety: tool allowlists + permission gating + review checkpoints'"
+Enter
+Sleep 800ms
 
 Type "cat > safety.tsx <<'EOF'"
 Enter
-Type "import { Claude } from \"smithers-orchestrator\";"
+Type "import { Claude } from 'smithers-orchestrator';"
 Enter
 Enter
 Type "<Claude"
 Enter
-Type "  allowedTools={[\"Bash\", \"Edit\", \"Write\"]}"
+Type "  allowedTools={['Bash', 'Edit', 'Write']}"
 Enter
-Type "  permissionMode=\"confirm\""
+Type "  permissionMode='confirm'"
 Enter
 Type "  acceptEdits={false}"
 Enter

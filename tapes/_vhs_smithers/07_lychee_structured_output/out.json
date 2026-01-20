@@ -1,0 +1,5 @@
+{
+  'summary': 'Adds a resume-safe CI recovery workflow.',
+  'changedFiles': ['ci-recovery.tsx', 'README.md'],
+  'risks': ['Potentially modifies git state', 'Runs commands']
+}

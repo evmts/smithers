@@ -1,12 +1,12 @@
 # 06_jasmine_observability.tape
 # Purpose: emphasize queryable history (executions/phases/tasks/transitions).
 
-Output 06_jasmine_observability.gif
+Output "06_jasmine_observability.gif"
 
 Require bash
 Require gum
 
-Set Shell bash
+Set Shell "bash"
 Set Theme "Catppuccin Frappe"
 Set FontFamily "JetBrains Mono"
 Set FontSize 22
@@ -18,15 +18,17 @@ Set WindowBar Rings
 Set Framerate 30
 Set TypingSpeed 35ms
 
-Type "gum style --border double --align center --width 68 --padding '1 2' 'JASMINE' 'Observability: inspect executions, phases, steps, tasks'"
-Enter
-Sleep 800ms
-
+Hide
 Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
 Enter
 Type "rm -rf 06_jasmine_observability && mkdir 06_jasmine_observability && cd 06_jasmine_observability"
 Enter
 Sleep 300ms
+Show
+
+Type "gum style --border double --align center --width 68 --padding '1 2' 'JASMINE' 'Observability: inspect executions, phases, steps, tasks'"
+Enter
+Sleep 800ms
 
 Type "gum style --border normal --padding '0 1' 'Smithers CLI (examples):'"
 Enter

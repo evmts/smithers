@@ -1,12 +1,12 @@
 # 07_lychee_structured_output.tape
 # Purpose: demonstrate typed JSON return values for workflows.
 
-Output 07_lychee_structured_output.gif
+Output "07_lychee_structured_output.gif"
 
 Require bash
 Require gum
 
-Set Shell bash
+Set Shell "bash"
 Set Theme "Catppuccin Frappe"
 Set FontFamily "JetBrains Mono"
 Set FontSize 22
@@ -18,21 +18,23 @@ Set WindowBar Rings
 Set Framerate 30
 Set TypingSpeed 35ms
 
-Type "gum style --border double --align center --width 66 --padding '1 2' 'LYCHEE' 'Structured output: make agents return typed JSON'"
-Enter
-Sleep 800ms
-
+Hide
 Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
 Enter
 Type "rm -rf 07_lychee_structured_output && mkdir 07_lychee_structured_output && cd 07_lychee_structured_output"
 Enter
 Sleep 300ms
+Show
+
+Type "gum style --border double --align center --width 66 --padding '1 2' 'LYCHEE' 'Structured output: make agents return typed JSON'"
+Enter
+Sleep 800ms
 
 Type "cat > structured.tsx <<'EOF'"
 Enter
-Type "import { z } from \"zod\";"
+Type "import { z } from 'zod';"
 Enter
-Type "import { Claude } from \"smithers-orchestrator\";"
+Type "import { Claude } from 'smithers-orchestrator';"
 Enter
 Enter
 Type "const ReviewSummary = z.object({"
@@ -76,11 +78,11 @@ Type "cat > out.json <<'EOF'"
 Enter
 Type "{"
 Enter
-Type "  \"summary\": \"Adds a resume-safe CI recovery workflow.\","
+Type "  'summary': 'Adds a resume-safe CI recovery workflow.',"
 Enter
-Type "  \"changedFiles\": [\"ci-recovery.tsx\", \"README.md\"],"
+Type "  'changedFiles': ['ci-recovery.tsx', 'README.md'],"
 Enter
-Type "  \"risks\": [\"Potentially modifies git state\", \"Runs commands\"]"
+Type "  'risks': ['Potentially modifies git state', 'Runs commands']"
 Enter
 Type "}"
 Enter

@@ -52,5 +52,7 @@ Tapes are designed to be deterministic and storybook-style. Commands prefixed wi
 After generating, copy GIFs to docs/images:
 
 ```bash
-cp *.gif ../docs/images/
+cp tapes/*.gif docs/images/
 ```
+
+GIFs are already generated and committed in `docs/images/`.

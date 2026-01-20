@@ -1,12 +1,12 @@
 # 10_strawberry_gallery.tape
 # Purpose: a "menu GIF" you can pin in README, docs, or X thread.
 
-Output 10_strawberry_gallery.gif
+Output "10_strawberry_gallery.gif"
 
 Require bash
 Require gum
 
-Set Shell bash
+Set Shell "bash"
 Set Theme "Catppuccin Frappe"
 Set FontFamily "JetBrains Mono"
 Set FontSize 22
@@ -18,15 +18,17 @@ Set WindowBar Rings
 Set Framerate 30
 Set TypingSpeed 35ms
 
-Type "gum style --border double --align center --width 68 --padding '1 2' 'STRAWBERRY' 'Pick a workflow. Run. Verify. Iterate.'"
-Enter
-Sleep 800ms
-
+Hide
 Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
 Enter
 Type "rm -rf 10_strawberry_gallery && mkdir 10_strawberry_gallery && cd 10_strawberry_gallery"
 Enter
 Sleep 300ms
+Show
+
+Type "gum style --border double --align center --width 68 --padding '1 2' 'STRAWBERRY' 'Pick a workflow. Run. Verify. Iterate.'"
+Enter
+Sleep 800ms
 
 Type "gum style --border normal --padding '1 2' 'Examples you can start from:'"
 Enter

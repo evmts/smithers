@@ -1,12 +1,12 @@
 # 08_honeydew_subagents.tape
 # Purpose: show nested orchestration (Smithers inside Worktree) with a captured plan.
 
-Output 08_honeydew_subagents.gif
+Output "08_honeydew_subagents.gif"
 
 Require bash
 Require gum
 
-Set Shell bash
+Set Shell "bash"
 Set Theme "Catppuccin Frappe"
 Set FontFamily "JetBrains Mono"
 Set FontSize 22
@@ -18,24 +18,26 @@ Set WindowBar Rings
 Set Framerate 30
 Set TypingSpeed 35ms
 
-Type "gum style --border double --align center --width 68 --padding '1 2' 'HONEYDEW' 'Nested Smithers: planner + executor in an isolated worktree'"
-Enter
-Sleep 800ms
-
+Hide
 Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
 Enter
 Type "rm -rf 08_honeydew_subagents && mkdir 08_honeydew_subagents && cd 08_honeydew_subagents"
 Enter
 Sleep 300ms
+Show
+
+Type "gum style --border double --align center --width 68 --padding '1 2' 'HONEYDEW' 'Nested Smithers: planner + executor in an isolated worktree'"
+Enter
+Sleep 800ms
 
 Type "cat > subagent.tsx <<'EOF'"
 Enter
-Type "import { Worktree, Smithers } from \"smithers-orchestrator\";"
+Type "import { Worktree, Smithers } from 'smithers-orchestrator';"
 Enter
 Enter
-Type "<Worktree branch=\"complex-feature\" base=\"main\">"
+Type "<Worktree branch='complex-feature' base='main'>"
 Enter
-Type "  <Smithers plannerModel=\"opus\">"
+Type "  <Smithers plannerModel='opus'>"
 Enter
 Type "    Plan and implement a complex multi-phase feature with full isolation."
 Enter

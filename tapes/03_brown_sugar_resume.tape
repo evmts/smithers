@@ -1,12 +1,12 @@
 # 03_brown_sugar_resume.tape
 # Purpose: show the restart-proof loop narrative + inspectability.
 
-Output 03_brown_sugar_resume.gif
+Output "03_brown_sugar_resume.gif"
 
 Require bash
 Require gum
 
-Set Shell bash
+Set Shell "bash"
 Set Theme "Catppuccin Frappe"
 Set FontFamily "JetBrains Mono"
 Set FontSize 22
@@ -18,15 +18,17 @@ Set WindowBar Rings
 Set Framerate 30
 Set TypingSpeed 35ms
 
-Type "gum style --border double --align center --width 66 --padding '1 2' 'BROWN SUGAR' 'Durable Ralphing: run -> verify -> iterate (and resume)'"
-Enter
-Sleep 800ms
-
+Hide
 Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
 Enter
 Type "rm -rf 03_brown_sugar_resume && mkdir 03_brown_sugar_resume && cd 03_brown_sugar_resume"
 Enter
 Sleep 300ms
+Show
+
+Type "gum style --border double --align center --width 66 --padding '1 2' 'BROWN SUGAR' 'Durable Ralphing: run -> verify -> iterate (and resume)'"
+Enter
+Sleep 800ms
 
 Type "gum style --border normal --padding '1 2' 'A long-running loop needs:' '- persistence' '- stop / restart' '- audit trail'"
 Enter
@@ -40,11 +42,9 @@ Type "gum style --border normal --padding '0 1' 'Simulated CI recovery loop:'"
 Enter
 Sleep 200ms
 
-Type "bash -lc 'i=1; while true; do echo \"[iteration $i] run tests\"; sleep 0.45; echo \"[iteration $i] verify\"; sleep 0.45; echo \"[iteration $i] apply fix\"; sleep 0.45; i=$((i+1)); done'"
+Type "for i in 1 2 3; do echo '[iteration' \$i'] run tests'; sleep 0.3; echo '[iteration' \$i'] verify'; sleep 0.3; echo '[iteration' \$i'] apply fix'; sleep 0.3; done"
 Enter
-Sleep 1800ms
-Ctrl+C
-Sleep 400ms
+Sleep 3000ms
 
 Type "echo '[stopped] process exited, but state is still in .smithers/ci-recovery'"
 Enter
