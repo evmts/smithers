@@ -35,7 +35,7 @@ Run it:
 bun demo.tsx
 ```
 
-Smithers is a JSX framework for coding agents. You write the plan; Claude executes it. The plan evolves reactively based on agent output.
+Smithers is a JSX framework for coding agents. Write the plan in any coding harness, then monitor your agents as they execute it. The plan evolves reactively based on agent output.
 
 ---
 
@@ -49,7 +49,7 @@ You program the **plan**, not the agents.
 | `agent.do_step_2()` | `<Step name="code">` |
 | `if failed: retry()` | `<Claude>Fix it</Claude>` |
 
-The plan is declarative. Like Terraform, not AWS SDK.
+The plan is declarative. Like Terraform, not AWS CDK. Plans evolve in an easy-to-understand declarative way over time—and if the plan breaks for any reason, your monitoring agent can edit the code and restart.
 
 Each iteration:
 1. Render JSX → execution plan
@@ -62,11 +62,13 @@ Ralph is the event loop. React handles the diffing.
 
 ---
 
-## Why JSX?
+## Why React?
 
-LLMs are trained on XML. The nested tagged structure matches how they think. Claude generates valid Smithers workflows naturally.
+LLMs are trained on XML—the nested tagged structure matches how they think. LLMs are also great at writing React. Claude generates valid Smithers workflows naturally.
 
-JSX gives you:
+React has a rich ecosystem that works well with agents: Zustand, React Query, and reactive versions of most libraries plug directly into React's reactivity system. This lets you compose declarative plans from battle-tested primitives.
+
+React gives you:
 - Composition and reuse
 - Version control diffs that make sense
 - Agent-generated code you can review
