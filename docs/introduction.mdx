@@ -20,7 +20,7 @@ import {
   Claude,
 } from "smithers-orchestrator";
 
-const sqliteDb = createSmithersDB({ path: ".smithers/demo" });
+const sqliteDb = createSmithersDB({ path: ".smithers/demo.db" });
 const executionId = sqliteDb.execution.start("Demo", "demo.tsx");
 
 function Demo() {

@@ -13,6 +13,14 @@ bun add smithers-orchestrator
 
 Requires [Bun](https://bun.sh/) 1.0+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic's CLI for agentic coding).
 
+## Initialize
+
+```bash
+bun smithers init
+```
+
+This creates the `.smithers/` directory with the database schema.
+
 ---
 
 ## Hello World
@@ -23,7 +31,7 @@ Create `hello.tsx`:
 #!/usr/bin/env bun
 import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
 
-const db = createSmithersDB({ path: ".smithers/hello" });
+const db = createSmithersDB({ path: ".smithers/hello.db" });
 const executionId = db.execution.start("Hello", "hello.tsx");
 
 function Hello() {
@@ -45,6 +53,12 @@ Run it:
 
 ```bash
 bun hello.tsx
+```
+
+Or use the monitor for a live view:
+
+```bash
+bun smithers monitor hello.tsx
 ```
 
 <Accordion title="TypeScript Configuration">
@@ -84,7 +98,7 @@ import {
   Claude,
 } from "smithers-orchestrator";
 
-const db = createSmithersDB({ path: ".smithers/workflow" });
+const db = createSmithersDB({ path: ".smithers/workflow.db" });
 
 // Resume if incomplete, else start new
 let executionId: string;
