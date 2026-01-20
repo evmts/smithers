@@ -56,7 +56,7 @@ export interface StepRegistryProviderProps {
 }
 
 export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
-  const { db, reactiveDb, executionEnabled } = useSmithers()
+  const { db, reactiveDb, executionEnabled, executionId, ralphCount } = useSmithers()
   const isParallel = props.isParallel ?? false
   const registryEnabled = props.enabled ?? true
   const completionEnabled = executionEnabled && registryEnabled
@@ -67,6 +67,10 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   // Track registered steps using ref for synchronous updates during render
   // This avoids race conditions when multiple Step components mount simultaneously
   const stepsRef = useRef<string[]>([])
+
+  // For tracking direct child tasks when no Steps are registered (e.g., Claude directly in Phase)
+  const hasSeenTasksRef = useRef(false)
+  const taskTrackingEnabledRef = useRef(false)
 
   // Read current step index from SQLite (for sequential mode)
   const { data: dbStepIndex } = useQueryValue<number>(
@@ -89,6 +93,28 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   )
 
   const completedCount = completedCountRaw ?? 0
+
+  // Track direct child tasks (for phases with Claude but no Step wrappers)
+  // Only query if no steps have been registered yet
+  const shouldTrackTasks = completionEnabled && stepsRef.current.length === 0
+
+  const { data: runningTaskCount } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT COUNT(*) as count
+     FROM tasks
+     WHERE execution_id = ? AND iteration = ? AND status = 'running' AND component_type NOT IN ('step', 'phase')`,
+    [executionId, ralphCount],
+    { skip: !shouldTrackTasks }
+  )
+
+  const { data: totalTaskCount } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT COUNT(*) as count
+     FROM tasks
+     WHERE execution_id = ? AND iteration = ? AND component_type NOT IN ('step', 'phase')`,
+    [executionId, ralphCount],
+    { skip: !shouldTrackTasks }
+  )
 
   const registerStep = useCallback((name: string): number => {
     const existingIndex = stepsRef.current.indexOf(name)
@@ -125,20 +151,43 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     if (!completionEnabled) return
     if (hasNotifiedAllCompleteRef.current) return
     const totalSteps = stepsRef.current.length
-    if (totalSteps === 0) return
+
+    // Handle case when no Steps are registered but there are direct child tasks (e.g., Claude in Phase)
+    if (totalSteps === 0) {
+      // Track if we've seen any tasks
+      const currentTotalTasks = totalTaskCount ?? 0
+      const currentRunningTasks = runningTaskCount ?? 0
+
+      if (currentTotalTasks > 0) {
+        hasSeenTasksRef.current = true
+        taskTrackingEnabledRef.current = true
+      }
+
+      // Only complete if we've seen tasks and they're all done running
+      if (taskTrackingEnabledRef.current && hasSeenTasksRef.current && currentRunningTasks === 0) {
+        hasNotifiedAllCompleteRef.current = true
+        props.onAllStepsComplete?.()
+      }
+      return
+    }
+
     const completedCountValue = completedOverride ?? (isParallel ? completedCount : completedStepsRef.current.size)
     const sequentialDone = !isParallel && currentStepIndex >= totalSteps
     if (sequentialDone || completedCountValue >= totalSteps) {
       hasNotifiedAllCompleteRef.current = true
       props.onAllStepsComplete?.()
     }
-  }, [completionEnabled, completedCount, currentStepIndex, isParallel, props.onAllStepsComplete])
+  }, [completionEnabled, completedCount, currentStepIndex, isParallel, props.onAllStepsComplete, runningTaskCount, totalTaskCount])
 
   const sequentialCompletionToken = completionEnabled && !isParallel
     ? `${currentStepIndex}/${registeredStepCount}`
     : 'disabled'
   const parallelCompletionToken = completionEnabled && isParallel
     ? `${completedCount}/${registeredStepCount}`
+    : 'disabled'
+  // Token for tracking direct child tasks when no Steps are registered
+  const taskCompletionToken = completionEnabled && registeredStepCount === 0
+    ? `${runningTaskCount ?? 0}/${totalTaskCount ?? 0}`
     : 'disabled'
 
   useEffectOnValueChange(sequentialCompletionToken, () => {
@@ -150,6 +199,12 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     if (!isParallel) return
     maybeNotifyAllComplete(completedCount)
   }, [completedCount, isParallel, maybeNotifyAllComplete, parallelCompletionToken])
+
+  // Effect for direct task tracking when no Steps are registered
+  useEffectOnValueChange(taskCompletionToken, () => {
+    if (registeredStepCount > 0) return  // Steps are registered, use step-based completion
+    maybeNotifyAllComplete()
+  }, [maybeNotifyAllComplete, registeredStepCount, taskCompletionToken])
 
   const advanceStep = useCallback(() => {
     if (isParallel) return
