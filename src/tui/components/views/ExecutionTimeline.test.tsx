@@ -211,7 +211,7 @@ describe('tui/components/views/ExecutionTimeline', () => {
     })
 
     test('displays event status with correct color', async () => {
-      const phaseId = ctx.db.phases.start('TestPhase')
+      const _phaseId = ctx.db.phases.start('TestPhase')
       // Phase starts as 'running'
 
       let element: React.ReactElement | null = null
@@ -312,7 +312,7 @@ describe('tui/components/views/ExecutionTimeline', () => {
 
     test('tool events without duration have no details', async () => {
       const agentId = ctx.db.agents.start('prompt', 'claude-3')
-      const toolId = ctx.db.tools.start(agentId, 'Read', { path: '/tmp' })
+      const _toolId = ctx.db.tools.start(agentId, 'Read', { path: '/tmp' })
       // Duration is null by default
 
       let element: React.ReactElement | null = null
@@ -630,7 +630,7 @@ describe('tui/components/views/ExecutionTimeline', () => {
 
   describe('edge cases', () => {
     test('handles events with empty names', async () => {
-      const phaseId = ctx.db.phases.start('')
+      const _phaseId = ctx.db.phases.start('')
 
       let element: React.ReactElement | null = null
 
@@ -716,7 +716,7 @@ describe('tui/components/views/ExecutionTimeline', () => {
     })
 
     test('handles null token counts (defaults to 0)', async () => {
-      const agentId = ctx.db.agents.start('prompt', 'claude-3')
+      const _agentId = ctx.db.agents.start('prompt', 'claude-3')
       // tokens are null by default
 
       let element: React.ReactElement | null = null

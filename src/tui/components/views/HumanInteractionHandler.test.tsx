@@ -5,7 +5,6 @@
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import React from 'react'
-import type { SmithersDB } from '../../../db/index.js'
 import { createTuiTestContext, cleanupTuiTestContext, waitForEffects, type TuiTestContext } from '../../test-utils.js'
 import { HumanInteractionHandler, type HumanInteractionHandlerProps } from './HumanInteractionHandler.js'
 import { resetTuiState, readTuiState } from '../../state.js'

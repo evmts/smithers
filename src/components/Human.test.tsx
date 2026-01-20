@@ -303,7 +303,7 @@ describe('Human ID generation', () => {
 
   test('uses __smithersKey for fallback id when available', async () => {
     // This tests the key-based fallback when rendered in a list/keyed context
-    const HumanWithKey = (props: HumanProps & { __smithersKey?: string }) => {
+    const _HumanWithKey = (props: HumanProps & { __smithersKey?: string }) => {
       return <Human {...props} />
     }
 
