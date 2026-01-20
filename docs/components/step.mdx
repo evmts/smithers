@@ -3,21 +3,17 @@ title: Step
 description: Individual step within a workflow phase
 ---
 
-# Step Component
+# Step
 
-The `<Step>` component represents an individual step within a workflow phase, providing fine-grained tracking.
-
-## Basic Usage
+Individual task within a Phase. Steps execute sequentially.
 
 ```tsx
-import { Step } from "smithers-orchestrator";
-
 <Phase name="Implementation">
   <Step name="Create API">
     <Claude>Create the API endpoint.</Claude>
   </Step>
   <Step name="Add Tests">
-    <Claude>Write tests for the API.</Claude>
+    <Claude>Write tests.</Claude>
   </Step>
 </Phase>
 ```
@@ -68,82 +64,24 @@ import { Step } from "smithers-orchestrator";
 
 ## VCS Integration
 
-Steps can automatically create JJ snapshots and commits:
-
 ```tsx
-<Phase name="Implementation">
-  <Step 
-    name="Implement Feature"
-    snapshotBefore
-    commitAfter
-    commitMessage="feat: implement user authentication"
-    onComplete={() => console.log("Feature implemented")}
-  >
-    <Claude>Implement the authentication system.</Claude>
-  </Step>
-</Phase>
+<Step 
+  name="Implement Feature"
+  snapshotBefore
+  commitAfter
+  commitMessage="feat: implement auth"
+>
+  <Claude>Implement the authentication system.</Claude>
+</Step>
 ```
 
-<Info>
-VCS operations fail gracefully - if JJ is not configured or an operation fails, a warning is logged but the step continues. This prevents VCS issues from blocking workflow execution.
-</Info>
-
-## Structured Workflow
-
-```tsx
-<SmithersProvider db={db} executionId={executionId} globalTimeout={3600000}>
-  <Phase name="Setup">
-    <Step name="Check Environment">
-      <Claude allowedTools={["Bash"]}>
-        Verify dependencies are installed.
-      </Claude>
-    </Step>
-    <Step name="Create Branch">
-      <Claude allowedTools={["Bash"]}>
-        Create a feature branch.
-      </Claude>
-    </Step>
-  </Phase>
-
-  <Phase name="Development">
-    <Step name="Implement Feature">
-      <Claude allowedTools={["Edit", "Write"]}>
-        Write the code.
-      </Claude>
-    </Step>
-    <Step name="Add Tests">
-      <Claude allowedTools={["Write"]}>
-        Create test files.
-      </Claude>
-    </Step>
-  </Phase>
-
-  <Phase name="Verification">
-    <Step name="Run Tests">
-      <Claude allowedTools={["Bash"]}>
-        Execute the test suite.
-      </Claude>
-    </Step>
-    <Step name="Run Linter">
-      <Claude allowedTools={["Bash"]}>
-        Check code style.
-      </Claude>
-    </Step>
-  </Phase>
-</SmithersProvider>
-```
+VCS operations fail gracefully—if JJ is unavailable, a warning is logged but the step continues.
 
 ## Database Tracking
 
-Steps are tracked in the database:
-
 ```tsx
 const steps = db.steps.getByExecution(executionId);
-// [
-//   { id: "s1", name: "Check Environment", status: "complete", ... },
-//   { id: "s2", name: "Create Branch", status: "complete", ... },
-//   { id: "s3", name: "Implement Feature", status: "running", ... },
-// ]
+// [{ id: "s1", name: "Create API", status: "complete" }, ...]
 ```
 
 ## Related

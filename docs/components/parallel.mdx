@@ -3,94 +3,31 @@ title: Parallel
 description: Execute children concurrently within a Phase
 ---
 
-# Parallel Component
+# Parallel
 
-The `<Parallel>` component enables concurrent execution of child components. By default, Steps within a Phase execute sequentially—wrap them in Parallel to execute simultaneously.
-
-<Warning>
-**Experimental.** Parallel execution works but has limitations with phase advancement. See limitations section below.
-</Warning>
-
-## Basic Usage
+Execute children concurrently. Steps within a Phase normally run sequentially—wrap in Parallel to run simultaneously.
 
 ```tsx
-import { Phase, Parallel, Step, Claude } from "smithers-orchestrator";
-
 <Phase name="Build">
-  <Step name="build-parallel">
-    <Parallel>
-      <Step name="Frontend">
-        <Claude>Build the frontend application.</Claude>
-      </Step>
-      <Step name="Backend">
-        <Claude>Build the backend services.</Claude>
-      </Step>
-    </Parallel>
-  </Step>
+  <Parallel>
+    <Step name="lint"><Claude>Run linting.</Claude></Step>
+    <Step name="test"><Claude>Run tests.</Claude></Step>
+    <Step name="typecheck"><Claude>Run tsc.</Claude></Step>
+  </Parallel>
 </Phase>
 ```
+
+<Warning>
+**Experimental.** Parallel execution works but has limitations with phase advancement.
+</Warning>
 
 ## Props
 
-<ParamField path="children" type="ReactNode">
-  Child components to execute in parallel.
-</ParamField>
+| Prop | Type | Description |
+|------|------|-------------|
+| `children` | `ReactNode` | Components to execute in parallel |
 
-## Examples
-
-### Parallel Build Tasks
-
-```tsx
-<Phase name="Build">
-  <Step name="checks">
-    <Parallel>
-      <Step name="lint">
-        <Claude allowedTools={["Bash"]}>
-          Run the linter.
-        </Claude>
-      </Step>
-      <Step name="typecheck">
-        <Claude allowedTools={["Bash"]}>
-          Run TypeScript type checking.
-        </Claude>
-      </Step>
-      <Step name="test">
-        <Claude allowedTools={["Bash"]}>
-          Run the test suite.
-        </Claude>
-      </Step>
-    </Parallel>
-  </Step>
-</Phase>
-```
-
-### Mixed Sequential and Parallel
-
-<Note>
-Sequential Steps before/after Parallel sequence when Parallel blocks are direct Phase children.
-Nested Parallel inside a Step remains scoped to that Step. See [Known Limitations](#known-limitations).
-</Note>
-
-```tsx
-<Phase name="CI">
-  <Step name="setup">
-    <Claude>Install dependencies.</Claude>
-  </Step>
-  
-  <Step name="checks">
-    <Parallel>
-      <Step name="lint"><Claude>Run linting.</Claude></Step>
-      <Step name="test"><Claude>Run tests.</Claude></Step>
-    </Parallel>
-  </Step>
-  
-  <Step name="deploy">
-    <Claude>Deploy to production.</Claude>
-  </Step>
-</Phase>
-```
-
-### With Worktree Isolation
+## With Worktree Isolation
 
 ```tsx
 <Parallel>
@@ -103,24 +40,14 @@ Nested Parallel inside a Step remains scoped to that Step. See [Known Limitation
 </Parallel>
 ```
 
-## How It Works
+## Limitations
 
-The Parallel component wraps children in a `StepRegistryProvider` with `isParallel` enabled. This signals to the orchestrator that child Steps should execute concurrently rather than waiting for each to complete before starting the next.
-
-## Known Limitations
-
-<Warning>
-**Parallel completion semantics are experimental.**
-
-- Parallel uses a nested step registry; when used directly under a Phase it registers as a single step group
-- Nested Parallel inside a Step remains scoped to that Step
-- Children render only while the parallel group is active, matching Step gating semantics
-</Warning>
-
-For reliable phase-based workflows, wrap each Phase's content in explicit Steps:
+- Parallel uses a nested step registry
+- Children render only while the parallel group is active
+- For reliable phase advancement, wrap in an explicit Step:
 
 ```tsx
-<Phase name="Build" onComplete={() => advanceToNextPhase()}>
+<Phase name="Build">
   <Step name="parallel-builds">
     <Parallel>
       <Claude>Build frontend</Claude>
@@ -128,17 +55,6 @@ For reliable phase-based workflows, wrap each Phase's content in explicit Steps:
     </Parallel>
   </Step>
 </Phase>
-```
-
-## Rendering
-
-The Parallel component renders as a `<parallel>` element containing its children:
-
-```xml
-<parallel>
-  <step name="Frontend">...</step>
-  <step name="Backend">...</step>
-</parallel>
 ```
 
 ## Related

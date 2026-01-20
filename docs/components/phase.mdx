@@ -3,27 +3,19 @@ title: Phase
 description: Group related steps in a workflow phase
 ---
 
-# Phase Component
+# Phase
 
-The `<Phase>` component groups related steps semantically, providing structure and observability to workflows.
-
-## Basic Usage
+Group related steps into sequential workflow phases.
 
 ```tsx
-import { Phase, Step } from "smithers-orchestrator";
-
 <Phase name="Research">
   <Step name="analyze">
-    <Claude allowedTools={["Read", "Glob", "Grep"]}>
-      Research the codebase.
-    </Claude>
+    <Claude>Research the codebase.</Claude>
   </Step>
 </Phase>
 ```
 
-<Warning>
-A Phase requires at least one `<Step>` child to advance automatically. Phases advance when all Steps complete. Without Steps, use `onComplete` with manual phase progression.
-</Warning>
+Phases advance when all Steps complete. Only the active phase renders children.
 
 ## Props
 
@@ -83,9 +75,7 @@ A Phase requires at least one `<Step>` child to advance automatically. Phases ad
   ```
 </ParamField>
 
-## Runtime Semantics
-
-Understanding how phases execute is critical for building correct workflows:
+## Runtime
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -104,105 +94,17 @@ Understanding how phases execute is critical for building correct workflows:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Key behaviors:**
-
-1. **Phases advance when all Steps complete** - The phase monitors its child Steps via `StepRegistryProvider`. When every Step reaches completion, the phase automatically advances to the next.
-
-2. **A Phase with no Steps will not automatically advance** - Without Steps, the phase has no completion signal. Use `onComplete` callback with manual phase control if you need stepless phases.
-
-3. **Only the active phase renders children** - Pending/completed phases render their `<phase>` element in output (for observability) but skip child execution.
-
-4. **Must be under PhaseRegistryProvider** - Phases require context from `SmithersProvider` or `Ralph`. Without it, all phases render as active (no sequencing).
-
-5. **Sequential by default** - Phases execute in declaration order. Use `skipIf` to conditionally skip phases.
-
-## Multi-Phase Workflow
-
-```tsx
-import { useSmithers, If } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
-function FeatureWorkflowBody() {
-  const { db } = useSmithers();
-  
-  const { data: phaseJson } = useQueryValue<string>(
-    db.db,
-    "SELECT value FROM state WHERE key = 'phase'"
-  );
-  const phase = phaseJson ? JSON.parse(phaseJson) : "research";
-  
-  const setPhase = (p: string) => db.state.set('phase', p);
-
-  return (
-    <>
-      <If condition={phase === "research"}>
-        <Phase name="Research">
-          <Step name="find-files">
-            <Claude
-              allowedTools={["Glob", "Grep"]}
-              onFinished={() => setPhase("implement")}
-            >
-              Find relevant files.
-            </Claude>
-          </Step>
-        </Phase>
-      </If>
-
-      <If condition={phase === "implement"}>
-        <Phase name="Implementation">
-          <Step name="write-code">
-            <Claude
-              allowedTools={["Edit", "Write"]}
-              onFinished={() => setPhase("test")}
-            >
-              Implement the solution.
-            </Claude>
-          </Step>
-        </Phase>
-      </If>
-
-      <If condition={phase === "test"}>
-        <Phase name="Testing">
-          <Step name="run-tests">
-            <Claude
-              allowedTools={["Bash"]}
-              onFinished={(r) => {
-                if (r.output.includes("PASS")) {
-                  setPhase("done");
-                } else {
-                  setPhase("implement");
-                }
-              }}
-            >
-              Run the tests.
-            </Claude>
-          </Step>
-        </Phase>
-      </If>
-    </>
-  );
-}
-
-export function FeatureWorkflow({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-      <FeatureWorkflowBody />
-    </SmithersProvider>
-  );
-}
-```
+**Behavior:**
+- Phases advance when all Steps complete
+- Only the active phase renders children
+- Requires `SmithersProvider` context for sequencing
+- Use `skipIf` to conditionally skip phases
 
 ## Database Tracking
 
-Phases are tracked in the database:
-
 ```tsx
-// Phases are automatically tracked when using SmithersProvider
 const phases = db.phases.list(executionId);
-// [
-//   { id: "p1", name: "Research", status: "complete", ... },
-//   { id: "p2", name: "Implementation", status: "running", ... },
-// ]
+// [{ id: "p1", name: "Research", status: "complete" }, ...]
 ```
 
 ## Related

@@ -1,15 +1,15 @@
 ---
-title: Hook Components
+title: Hooks
 description: Event-driven components that trigger on external events
 ---
 
-# Hook Components
+# Hooks
 
-Hook components listen for external events and trigger their children when those events occur. They're useful for building reactive workflows that respond to CI/CD events, commits, and other triggers.
+Event-driven components that trigger on CI failures, commits, and other external events.
 
 ## OnCIFailure
 
-Monitors CI status and triggers children when a failure is detected.
+Trigger on CI failure:
 
 ```tsx
 import { OnCIFailure } from "smithers-orchestrator";
@@ -60,16 +60,9 @@ interface CIFailure {
 }
 ```
 
-### How It Works
-
-1. On mount, starts polling GitHub Actions for the latest run status
-2. When a failed run is detected (that hasn't been processed before), triggers children
-3. Keeps track of processed run IDs to avoid re-triggering on the same failure
-4. Persists processed run IDs to database state for restart resilience
-
 ## PostCommit
 
-Triggers children when a git commit is made.
+Trigger on git commit:
 
 ```tsx
 import { PostCommit } from "smithers-orchestrator";
@@ -96,23 +89,6 @@ import { PostCommit } from "smithers-orchestrator";
 <ParamField path="children" type="ReactNode" required>
   Content to render when a commit is detected.
 </ParamField>
-
-### How It Works
-
-1. On mount, installs a git post-commit hook that calls `bunx smithers hook-trigger post-commit "$COMMIT_HASH"`
-2. Polls database state for `last_hook_trigger` to detect new commits
-3. When a commit is detected (matching the `runOn` filter), renders children
-4. Marks triggers as processed to avoid re-triggering
-
-### Git Hook Installation
-
-The PostCommit component automatically installs this hook at `.git/hooks/post-commit`:
-
-```bash
-#!/bin/bash
-COMMIT_HASH=$(git rev-parse HEAD)
-bunx smithers hook-trigger post-commit "$COMMIT_HASH"
-```
 
 ## Example: CI Recovery Workflow
 

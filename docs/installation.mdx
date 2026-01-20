@@ -1,144 +1,27 @@
 ---
 title: Installation
-description: Install Smithers via Claude Code plugin or npm package
+description: Install Smithers via npm or Claude Code plugin
 ---
 
 # Installation
 
-Smithers can be installed as a Claude Code plugin (recommended) or as an npm package for programmatic use.
-
-## Claude Code Plugin (Recommended)
-
-The plugin gives Claude Code the ability to generate Smithers orchestration workflows.
-
-<Steps>
-  <Step title="Add the Smithers marketplace">
-    ```bash
-    /plugin marketplace add evmts/smithers
-    ```
-  </Step>
-
-  <Step title="Install the plugin">
-    ```bash
-    /plugin install smithers@smithers
-    ```
-  </Step>
-</Steps>
-
-Now you can ask Claude to create orchestration workflows:
-
-```
-You: "Create a workflow that reviews PRs and posts comments"
-Claude: *generates pr-review-workflow.tsx*
-```
-
-## npm Package
-
-For programmatic use in your own scripts:
-
-<CodeGroup>
-
-```bash bun (recommended)
+```bash
 bun add smithers-orchestrator
 ```
 
-```bash npm
-npm install smithers-orchestrator
-```
-
-```bash pnpm
-pnpm add smithers-orchestrator
-```
-
-```bash yarn
-yarn add smithers-orchestrator
-```
-
-</CodeGroup>
-
-## Package Names
-
-| Name | Type | Usage |
-|------|------|-------|
-| `smithers-orchestrator` | npm package | `import { ... } from "smithers-orchestrator"` |
-| `smithers` | CLI binary | `smithers db executions`, `smithers db state` |
-| `smithers-orchestrator` | Claude Code skill | Plugin provides this skill to Claude |
-
-<Note>
-The npm package and CLI binary have different names. Install `smithers-orchestrator` from npm, use the `smithers` command in your terminal.
-</Note>
-
-## Dependencies
-
-### Required
-
-| Dependency | Version | Purpose |
-|------------|---------|---------|
-| [Bun](https://bun.sh) | 1.0+ | JavaScript runtime |
-| [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) | latest | Agent execution |
-
-### Bundled Dependencies
-
-These are included as dependencies of smithers-orchestrator (not peer deps):
-
-- **react** - Reactive primitives for state management
-- **bun:sqlite (reactive-sqlite wrapper)** - SQLite for persistence
-- **zod** - Schema validation for structured output
-
-### Optional
-
-| Dependency | Purpose |
-|------------|---------|
-| [jj (Jujutsu)](https://github.com/martinvonz/jj) | Alternative VCS with better snapshot support |
-
-## Project Setup
-
-### TypeScript Configuration
-
-Add JSX support to your `tsconfig.json`:
-
-```json
-{
-  "compilerOptions": {
-    "jsx": "preserve",
-    "jsxImportSource": "smithers-orchestrator",
-    "moduleResolution": "bundler",
-    "target": "ESNext",
-    "module": "ESNext"
-  }
-}
-```
-
-### Bun Configuration
-
-Create a `bunfig.toml` for React JSX:
-
-```toml
-[dev]
-jsx = "react"
-```
-
-## Verify Installation
-
-Create a test file `test.tsx`:
+## Verify
 
 ```tsx
 #!/usr/bin/env bun
-
-import {
-  createSmithersRoot,
-  createSmithersDB,
-  SmithersProvider,
-  Claude,
-} from "smithers-orchestrator";
+import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
 
 const db = createSmithersDB({ path: ".smithers/test" });
 const executionId = db.execution.start("Test", "test.tsx");
 
-async function Test() {
+function Test() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Claude model="haiku" maxTurns={1} onFinished={(r) => console.log("Success!", r.output)}>
+      <Claude model="haiku" maxTurns={1} onFinished={(r) => console.log(r.output)}>
         Say "Hello from Smithers!"
       </Claude>
     </SmithersProvider>
@@ -150,44 +33,47 @@ await root.mount(Test);
 db.close();
 ```
 
-Run it:
-
 ```bash
 bun test.tsx
 ```
 
-You should see Claude respond with "Hello from Smithers!"
+## Claude Code Plugin
 
-## Troubleshooting
+```bash
+/plugin marketplace add evmts/smithers
+/plugin install smithers@smithers
+```
 
-<AccordionGroup>
-  <Accordion title="Claude Code not found">
-    Make sure Claude Code is installed globally:
-    ```bash
-    npm install -g @anthropic-ai/claude-code
-    ```
-    Verify it's in your PATH:
-    ```bash
-    which claude
-    ```
-  </Accordion>
+Now Claude can generate orchestration workflows for you.
 
-  <Accordion title="JSX compilation errors">
-    Ensure your `bunfig.toml` has the React JSX configuration:
-    ```toml
-    [dev]
-    jsx = "react"
-    ```
-  </Accordion>
+## Dependencies
 
-  <Accordion title="Database permission errors">
-    The SQLite database needs write access to the directory. Check permissions:
-    ```bash
-    mkdir -p .smithers
-    chmod 755 .smithers
-    ```
-  </Accordion>
-</AccordionGroup>
+| Required | Version |
+|----------|---------|
+| [Bun](https://bun.sh) | 1.0+ |
+| [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) | latest |
+
+**Bundled:** react, bun:sqlite, zod
+
+**Optional:** [jj (Jujutsu)](https://github.com/martinvonz/jj) for VCS snapshots
+
+## Configuration
+
+**tsconfig.json:**
+```json
+{
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "smithers-orchestrator"
+  }
+}
+```
+
+**bunfig.toml:**
+```toml
+[dev]
+jsx = "react"
+```
 
 ## Next Steps
 
@@ -196,6 +82,6 @@ You should see Claude respond with "Hello from Smithers!"
     Create your first workflow
   </Card>
   <Card title="Core Concepts" icon="lightbulb" href="/concepts/ralph-wiggum-loop">
-    Understand how Smithers works
+    How it works
   </Card>
 </CardGroup>
