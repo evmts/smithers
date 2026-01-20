@@ -154,7 +154,7 @@ Smithers provides 6 specialized agents, each with distinct roles and tool permis
 | **Orchestrator** | `claude-sonnet-4` | Primary agent. Takes plans and writes `.tsx` Smithers scripts. Delegates to specialists. | Full smithers_* tools |
 | **Planner** | `claude-sonnet-4` | Creates human-readable plans from user requests. Interviews user, outputs structured plan. | Read-only. Cannot write code. |
 | **Explorer** | `gemini-3-flash` | Fast codebase exploration. Knows Smithers SQLite schema. Contextual grep for internal code. | Read-only: smithers_glob, smithers_grep, read |
-| **Librarian** | `claude-sonnet-4` | Documentation lookup. Smithers API reference. External implementation examples. | Read-only. Web search allowed. |
+| **Librarian** | `claude-sonnet-4` | Documentation + abstraction extraction. After successful runs, extracts reusable components/hooks to `.smithers/lib/`. | Read-only + `smithers_create` for lib/. Web search allowed. |
 | **Oracle** | `gpt-5.2` | Architecture decisions, debugging, code review. Deep reasoning for complex problems. | Read-only. Cannot modify. |
 | **Monitor** | `gemini-3-flash` | Watches running executions. Reports progress, detects issues, suggests interventions. | smithers_status, smithers_frames only |
 
@@ -291,6 +291,43 @@ This allows Explorer to answer questions like:
 - "What phases are in execution X?"
 - "Show me all failed agents"
 - "What was the last error?"
+
+#### Librarian: Post-Execution Abstraction
+
+After successful workflow completion, Librarian automatically:
+
+1. **Analyzes** the completed workflow for patterns
+2. **Identifies** repeated code, common utilities, extractable logic
+3. **Extracts** reusable components/hooks to `.smithers/lib/`
+4. **Documents** with usage examples and types
+
+**Auto-trigger mechanism:**
+
+```tsx
+// In SmithersProvider, on successful completion:
+onComplete={() => {
+  // Invoke Librarian agent with abstraction prompt
+  smithers_run({
+    script: '.smithers/lib-extractor.tsx',
+    name: 'librarian-abstraction'
+  })
+}
+```
+
+**Output structure:**
+```
+.smithers/lib/
+├── index.ts              # Re-exports all
+├── components/*.tsx      # Reusable Phase/Step patterns
+├── hooks/use*.ts         # Custom hooks
+└── utils/*.ts            # Helper functions
+```
+
+**Quality standards:**
+- Single responsibility
+- Clear typed interface
+- Documented with examples
+- Named by function, not origin
 
 ### Permission Configuration
 
