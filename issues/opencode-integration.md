@@ -77,6 +77,7 @@ bun add -g smithers-orchestrator && smithers
 ┌─────────────────────────────────────────────────────────────┐
 │               Smithers Plugin Tools                          │
 │  smithers_discover   - Find .tsx workflows in repo          │
+│  smithers_create     - Create workflow (typechecks first)   │
 │  smithers_run        - Start new execution                  │
 │  smithers_resume     - Resume incomplete execution          │
 │  smithers_status     - Get execution tree/state             │
@@ -130,6 +131,16 @@ smithers-orchestrator/
 // src/control-plane/index.ts
 export interface SmithersControlPlane {
   discoverScripts(opts?: { cwd?: string }): Promise<ScriptInfo[]>
+
+  createWorkflow(opts: {
+    name: string
+    content: string
+    overwrite?: boolean
+  }): Promise<{ 
+    path: string
+    created: boolean 
+    errors?: string[]  // Typecheck errors if validation fails
+  }>
 
   run(opts: {
     script: string
@@ -219,6 +230,7 @@ You have access to Smithers tools (smithers_*) plus all standard OpenCode tools.
 ## Smithers Tools
 
 - `smithers_discover` - Find workflow scripts in the repo
+- `smithers_create` - Create workflow in .smithers/ (typechecks before writing)
 - `smithers_run` - Start a new workflow execution
 - `smithers_resume` - Resume an incomplete execution  
 - `smithers_status` - Get current execution state and phase tree
@@ -328,14 +340,15 @@ export default function smithersPlugin(ctx) {
         }
       }),
 
-      smithers_create_workflow: tool({
-        description: "Create a Smithers workflow file in .smithers/ directory",
+      smithers_create: tool({
+        description: "Create a Smithers workflow file in .smithers/. Typechecks before writing.",
         args: {
           name: tool.schema.string().describe("Workflow name (becomes filename)"),
           content: tool.schema.string().describe("Full TSX content of the workflow"),
           overwrite: tool.schema.boolean().optional().describe("Overwrite if exists")
         },
         async execute(args) {
+          // Validates imports, typechecks with bun, then writes
           return await cp.createWorkflow(args)
         }
       })
