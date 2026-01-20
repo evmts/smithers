@@ -13,7 +13,7 @@
 
 ## Executive Summary
 
-**What**: Make `bunx smithers-orchestrator` (or globally installed `smithers`) launch OpenCode TUI preconfigured as a "Smithers planning mode" where the LLM only has access to Smithers MCP tools.
+**What**: Make `bunx smithers-orchestrator` (or globally installed `smithers`) launch OpenCode TUI preconfigured with Smithers agent and plugin tools.
 
 **Why**: Users currently need to set up Smithers scripts manually. By wrapping OpenCode with a Smithers-focused configuration, we provide a zero-config experience where users run one command and get an AI that can write/execute Smithers orchestrations.
 
@@ -70,13 +70,12 @@ bun add -g smithers-orchestrator && smithers
 │                     OpenCode TUI                             │
 │  - Loads smithers agent (primary)                           │
 │  - Loads smithers plugin (custom tools)                     │
-│  - Loads smithers MCP server (optional, for tool access)    │
-│  - All built-in tools disabled except smithers_* + read     │
+│  - All OpenCode tools available + smithers_* from plugin     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│               Smithers MCP / Plugin Tools                    │
+│               Smithers Plugin Tools                          │
 │  smithers_discover   - Find .tsx workflows in repo          │
 │  smithers_run        - Start new execution                  │
 │  smithers_resume     - Resume incomplete execution          │
@@ -88,21 +87,20 @@ bun add -g smithers-orchestrator && smithers
 
 ### Key Design Decisions
 
-1. **Plugin vs MCP Server**: Use OpenCode plugin (not MCP) for simpler integration
-   - **Rationale**: Plugin adds tools directly; no separate server process
-   - **Alternative**: MCP server works but adds complexity
+1. **Plugin (not MCP)**: Tools added directly via OpenCode plugin
+   - **Rationale**: Plugin adds tools inline, no separate server process
+   - **Benefit**: Simpler than MCP, tools have direct access to control plane
 
-2. **Write-Only Restriction**: Disable only write/edit/patch—allow everything else
-   - **Rationale**: Agent needs full read/search/bash access to understand codebase
-   - **Method**: `OPENCODE_CONFIG_CONTENT` + agent frontmatter `tools:` section
-   - **Restriction**: Only file writing disabled—agent writes via `smithers_create_workflow` tool
+2. **Full Tool Access**: All OpenCode tools enabled
+   - **Rationale**: Agent needs full capabilities to explore codebase
+   - **Method**: Default OpenCode config, just set custom agent + plugin
 
 3. **Embedded Config Directory**: Ship `opencode/` folder inside package
    - **Rationale**: `OPENCODE_CONFIG_DIR` loads agents/plugins from custom path
-   - **Alternative**: Generate config at runtime (more complex, less predictable)
+   - **Contents**: `agents/smithers.md` + `plugins/smithers.ts`
 
 4. **Control Plane API**: Abstract SQLite details behind stable API
-   - **Rationale**: Plugin should call `controlPlane.run()`, not raw SQL
+   - **Rationale**: Plugin calls `controlPlane.run()`, not raw SQL
    - **Benefit**: Can change internal storage without breaking plugin
 
 ### Directory Structure
@@ -114,10 +112,8 @@ smithers-orchestrator/
 ├── opencode/                     # Embedded OpenCode config directory
 │   ├── agents/
 │   │   └── smithers.md           # Primary Smithers agent definition
-│   ├── plugins/
-│   │   └── smithers.ts           # Plugin with Smithers tools
-│   └── tools/
-│       └── (empty - tools via plugin)
+│   └── plugins/
+│       └── smithers.ts           # Plugin with Smithers tools
 ├── src/
 │   ├── control-plane/
 │   │   ├── index.ts              # SmithersControlPlane interface
@@ -128,41 +124,31 @@ smithers-orchestrator/
 └── package.json                  # Add opencode-ai as dependency
 ```
 
-### API Design
-
-**Control Plane Interface:**
+### Control Plane API
 
 ```ts
 // src/control-plane/index.ts
 export interface SmithersControlPlane {
   discoverScripts(opts?: { cwd?: string }): Promise<ScriptInfo[]>
 
-  createWorkflow(opts: {
-    name: string
-    content: string
-    overwrite?: boolean
-  }): Promise<{ path: string; created: boolean }>
-
   run(opts: {
     script: string
     name?: string
     maxIterations?: number
-    dbPath?: string
   }): Promise<{ executionId: string; dbPath: string }>
 
   resume(opts?: {
     executionId?: string
-    dbPath?: string
   }): Promise<{ executionId: string; dbPath: string }>
 
-  status(executionId: string, dbPath?: string): Promise<ExecutionStatus>
+  status(executionId: string): Promise<ExecutionStatus>
 
   frames(
     executionId: string,
-    opts?: { since?: number; limit?: number; dbPath?: string }
+    opts?: { since?: number; limit?: number }
   ): Promise<{ frames: Frame[]; cursor: number }>
 
-  cancel(executionId: string, dbPath?: string): Promise<void>
+  cancel(executionId: string): Promise<void>
 }
 
 export interface ScriptInfo {
@@ -183,48 +169,89 @@ export interface ExecutionStatus {
 }
 ```
 
+### CLI Commands (for reference)
+
+**Existing commands:**
+```bash
+# Run a workflow file
+smithers run [file]              # Default: .smithers/main.tsx
+
+# Monitor with LLM-friendly output
+smithers monitor [file]          # Recommended for agent use
+
+# Database inspection
+smithers db executions           # List all executions
+smithers db state --execution-id X  # View execution state
+smithers db stats                # Statistics
+
+# Initialize new project
+smithers init                    # Create .smithers/ with template
+```
+
+**New commands to add:**
+```bash
+# Discover workflows in repo
+smithers discover                # List .tsx files with SmithersProvider
+
+# Resume incomplete execution
+smithers resume [execution-id]   # Resume latest or specific execution
+
+# Execution status (JSON output for agent parsing)
+smithers status [execution-id]   # Current state, phase tree, iteration
+
+# Create workflow from template
+smithers new <name> [--template <type>]  # Generate .smithers/<name>.tsx
+```
+
 **OpenCode Agent:**
 
 ```md
 ---
 description: Orchestrates Smithers JSX workflows - write, run, resume, and monitor multi-agent executions
 mode: primary
-tools:
-  # Smithers tools
-  smithers_*: true
-  
-  # Full access to read/explore/search
-  read: true
-  glob: true
-  bash: true
-  webfetch: true
-  
-  # Disable direct file writing - use smithers_create_workflow instead
-  write: false
-  edit: false
-  patch: false
 ---
 
 You are the Smithers Orchestrator.
 
 Your role is to help users create and manage multi-agent AI workflows using Smithers.
-You have full access to read, search, and explore the codebase. You can run bash commands.
+You have access to Smithers tools (smithers_*) plus all standard OpenCode tools.
 
-**You cannot write files directly.** Instead, use the `smithers_create_workflow` tool to create Smithers workflow files.
+## Smithers Tools
+
+- `smithers_discover` - Find workflow scripts in the repo
+- `smithers_run` - Start a new workflow execution
+- `smithers_resume` - Resume an incomplete execution  
+- `smithers_status` - Get current execution state and phase tree
+- `smithers_frames` - Get execution frames (for monitoring progress)
+- `smithers_cancel` - Cancel a running execution
+
+## Workflow
 
 When a user describes a task:
-1. Explore the codebase to understand the context
-2. Design a Smithers workflow (React TSX with Phase/Step/Claude components)
-3. Use `smithers_create_workflow` to write it to `.smithers/`
-4. Use `smithers_run` to execute it
+1. Check for existing workflows: `smithers_discover`
+2. Check for incomplete executions that can be resumed
+3. Either resume with `smithers_resume` or create a new workflow file
+4. Run with `smithers_run`
 5. Monitor progress with `smithers_status` and `smithers_frames`
-6. If it fails, analyze and offer to resume with `smithers_resume`
 
 When creating workflows, follow Smithers conventions:
 - Use SmithersProvider with db and executionId
-- Structure work as Phase > Step > Claude
+- Structure work as Phase > Step > Claude components
 - Include db.execution.findIncomplete() for resumability
-- Complex tasks should use multiple Phases with clear separation of concerns
+- Complex tasks should use multiple Phases with clear separation
+
+Example workflow structure:
+\`\`\`tsx
+<SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+  <Phase name="analyze">
+    <Claude>Analyze the codebase</Claude>
+  </Phase>
+  <Phase name="implement">
+    <Step name="code"><Claude>Write the code</Claude></Step>
+    <Step name="test"><Claude>Write tests</Claude></Step>
+  </Phase>
+</SmithersProvider>
+\`\`\`
 ```
 
 **OpenCode Plugin:**
@@ -238,7 +265,6 @@ export default function smithersPlugin(ctx) {
   const cp = createControlPlane({ root: ctx.worktree ?? ctx.directory })
 
   return {
-    // Tools only - blocking handled by config + agent definition
     tool: {
       smithers_discover: tool({
         description: "Find Smithers workflow scripts (.tsx files with SmithersProvider)",
@@ -430,13 +456,7 @@ program
     const configDir = path.join(import.meta.dirname, "..", "opencode")
     
     const configContent = JSON.stringify({
-      default_agent: "smithers",
-      tools: {
-        // Disable direct file writing - agent uses smithers_create_workflow
-        write: false,
-        edit: false,
-        patch: false
-      }
+      default_agent: "smithers"
     })
 
     const proc = spawn({
@@ -491,7 +511,7 @@ Describe what you want to automate—the agent handles the rest.
 ## Acceptance Criteria
 
 - [ ] **AC1**: `bunx smithers-orchestrator` launches OpenCode TUI with Smithers agent active
-- [ ] **AC2**: Smithers agent has full read/bash/search access, only write/edit/patch disabled
+- [ ] **AC2**: Smithers plugin provides smithers_* tools via control plane API
 - [ ] **AC3**: `smithers_discover` finds `.tsx` workflows in repo
 - [ ] **AC4**: `smithers_run` starts execution and returns executionId
 - [ ] **AC5**: `smithers_status` returns phase tree and current state
@@ -539,14 +559,9 @@ describe("OpenCode Integration", () => {
     expect(proc.exitCode).toBe(0)
   })
 
-  it("config disables write tools only", async () => {
-    // Verify OPENCODE_CONFIG_CONTENT disables only writing
-    const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!)
-    expect(config.tools.write).toBe(false)
-    expect(config.tools.edit).toBe(false)
-    expect(config.tools.patch).toBe(false)
-    // bash, read, webfetch should NOT be in config (allowed by default)
-    expect(config.tools.bash).toBeUndefined()
+  it("loads smithers plugin with tools", async () => {
+    // Verify plugin is loaded from OPENCODE_CONFIG_DIR
+    // Plugin should register smithers_* tools
   })
 })
 ```
@@ -582,7 +597,7 @@ describe("OpenCode Integration", () => {
   - **Resolution**: Try bundling first, fallback detection if package size issues
 
 - [x] **Q2**: How do we handle workflow file creation?
-  - **Resolution**: `smithers_create_workflow` tool writes validated .tsx files to `.smithers/` only
+  - **Resolution**: Agent uses standard `write` tool—full OpenCode capabilities enabled
 
 - [ ] **Q3**: Should the runner spawn bun subprocess or run inline?
   - **Inline**: Faster, but blocks OpenCode
@@ -594,6 +609,6 @@ describe("OpenCode Integration", () => {
 - [OpenCode Plugins Docs](https://opencode.ai/docs/plugins)
 - [OpenCode Agents Docs](https://opencode.ai/docs/agents)
 - [OpenCode Config Docs](https://opencode.ai/docs/config)
-- [OpenCode MCP Servers](https://opencode.ai/docs/mcp-servers)
+
 - [Existing Smithers Quickstart](../docs/quickstart.mdx)
 - [OpenCode Reference Submodule](../reference/opencode/)
