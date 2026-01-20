@@ -28,7 +28,7 @@ describe('Parallel component', () => {
     const taskIdRef = useRef<string | null>(null)
 
     useExecutionEffect(executionScope.enabled, () => {
-      taskIdRef.current = db.tasks.start('parallel-test-task', props.name)
+      taskIdRef.current = db.tasks.start('parallel-test-task', props.name, { scopeId: executionScope.scopeId })
       const timeoutId = setTimeout(() => {
         if (!db.db.isClosed && taskIdRef.current) {
           db.tasks.complete(taskIdRef.current)
