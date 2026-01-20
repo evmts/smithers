@@ -92,10 +92,10 @@ bun add -g smithers-orchestrator && smithers
    - **Rationale**: Plugin adds tools directly; no separate server process
    - **Alternative**: MCP server works but adds complexity
 
-2. **Minimal Tools via Config**: Disable bash/write/edit/patch in config + agent definition
-   - **Rationale**: OpenCode natively supports tool disabling—no hooks needed
+2. **Write-Only Restriction**: Disable only write/edit/patch—allow everything else
+   - **Rationale**: Agent needs full read/search/bash access to understand codebase
    - **Method**: `OPENCODE_CONFIG_CONTENT` + agent frontmatter `tools:` section
-   - **Exception**: Keep `read` for codebase exploration, `glob` for file discovery
+   - **Restriction**: Only file writing disabled—agent writes via `smithers_create_workflow` tool
 
 3. **Embedded Config Directory**: Ship `opencode/` folder inside package
    - **Rationale**: `OPENCODE_CONFIG_DIR` loads agents/plugins from custom path
@@ -136,6 +136,12 @@ smithers-orchestrator/
 // src/control-plane/index.ts
 export interface SmithersControlPlane {
   discoverScripts(opts?: { cwd?: string }): Promise<ScriptInfo[]>
+
+  createWorkflow(opts: {
+    name: string
+    content: string
+    overwrite?: boolean
+  }): Promise<{ path: string; created: boolean }>
 
   run(opts: {
     script: string
@@ -184,36 +190,41 @@ export interface ExecutionStatus {
 description: Orchestrates Smithers JSX workflows - write, run, resume, and monitor multi-agent executions
 mode: primary
 tools:
+  # Smithers tools
   smithers_*: true
+  
+  # Full access to read/explore/search
   read: true
   glob: true
+  bash: true
+  webfetch: true
   
-  bash: false
+  # Disable direct file writing - use smithers_create_workflow instead
   write: false
   edit: false
   patch: false
-  webfetch: false
 ---
 
 You are the Smithers Orchestrator.
 
 Your role is to help users create and manage multi-agent AI workflows using Smithers.
-When a user describes a task, you:
+You have full access to read, search, and explore the codebase. You can run bash commands.
 
-1. Design a Smithers workflow (React TSX with Phase/Step/Claude components)
-2. Use smithers_run to execute it
-3. Monitor progress with smithers_status and smithers_frames
-4. If it fails, analyze and offer to resume with smithers_resume
+**You cannot write files directly.** Instead, use the `smithers_create_workflow` tool to create Smithers workflow files.
 
-You CANNOT modify files directly. You can only:
-- Read files to understand the codebase
-- Write and execute Smithers workflows
-- Monitor execution progress
+When a user describes a task:
+1. Explore the codebase to understand the context
+2. Design a Smithers workflow (React TSX with Phase/Step/Claude components)
+3. Use `smithers_create_workflow` to write it to `.smithers/`
+4. Use `smithers_run` to execute it
+5. Monitor progress with `smithers_status` and `smithers_frames`
+6. If it fails, analyze and offer to resume with `smithers_resume`
 
 When creating workflows, follow Smithers conventions:
 - Use SmithersProvider with db and executionId
 - Structure work as Phase > Step > Claude
 - Include db.execution.findIncomplete() for resumability
+- Complex tasks should use multiple Phases with clear separation of concerns
 ```
 
 **OpenCode Plugin:**
@@ -288,6 +299,18 @@ export default function smithersPlugin(ctx) {
         async execute(args) {
           await cp.cancel(args.executionId)
           return { cancelled: true }
+        }
+      }),
+
+      smithers_create_workflow: tool({
+        description: "Create a Smithers workflow file in .smithers/ directory",
+        args: {
+          name: tool.schema.string().describe("Workflow name (becomes filename)"),
+          content: tool.schema.string().describe("Full TSX content of the workflow"),
+          overwrite: tool.schema.boolean().optional().describe("Overwrite if exists")
+        },
+        async execute(args) {
+          return await cp.createWorkflow(args)
         }
       })
     }
@@ -409,15 +432,10 @@ program
     const configContent = JSON.stringify({
       default_agent: "smithers",
       tools: {
-        bash: false,
+        // Disable direct file writing - agent uses smithers_create_workflow
         write: false,
         edit: false,
-        patch: false,
-        webfetch: false
-      },
-      permission: {
-        bash: "deny",
-        edit: "deny"
+        patch: false
       }
     })
 
@@ -473,7 +491,7 @@ Describe what you want to automate—the agent handles the rest.
 ## Acceptance Criteria
 
 - [ ] **AC1**: `bunx smithers-orchestrator` launches OpenCode TUI with Smithers agent active
-- [ ] **AC2**: Smithers agent can only use `smithers_*`, `read`, `glob` tools (others blocked)
+- [ ] **AC2**: Smithers agent has full read/bash/search access, only write/edit/patch disabled
 - [ ] **AC3**: `smithers_discover` finds `.tsx` workflows in repo
 - [ ] **AC4**: `smithers_run` starts execution and returns executionId
 - [ ] **AC5**: `smithers_status` returns phase tree and current state
@@ -521,11 +539,14 @@ describe("OpenCode Integration", () => {
     expect(proc.exitCode).toBe(0)
   })
 
-  it("config disables non-smithers tools", async () => {
-    // Verify OPENCODE_CONFIG_CONTENT has tools disabled
+  it("config disables write tools only", async () => {
+    // Verify OPENCODE_CONFIG_CONTENT disables only writing
     const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!)
-    expect(config.tools.bash).toBe(false)
     expect(config.tools.write).toBe(false)
+    expect(config.tools.edit).toBe(false)
+    expect(config.tools.patch).toBe(false)
+    // bash, read, webfetch should NOT be in config (allowed by default)
+    expect(config.tools.bash).toBeUndefined()
   })
 })
 ```
@@ -560,9 +581,8 @@ describe("OpenCode Integration", () => {
   - **Alternative**: Require global install, detect with `which opencode`
   - **Resolution**: Try bundling first, fallback detection if package size issues
 
-- [ ] **Q2**: How do we handle workflow file creation?
-  - **Impact**: Agent needs to write .tsx files but we disabled `write` tool
-  - **Resolution**: Add `smithers_create_workflow` tool that validates and writes only Smithers files
+- [x] **Q2**: How do we handle workflow file creation?
+  - **Resolution**: `smithers_create_workflow` tool writes validated .tsx files to `.smithers/` only
 
 - [ ] **Q3**: Should the runner spawn bun subprocess or run inline?
   - **Inline**: Faster, but blocks OpenCode
