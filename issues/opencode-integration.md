@@ -88,12 +88,13 @@ bun add -g smithers-orchestrator && smithers
 
 ### Key Design Decisions
 
-1. **Plugin vs MCP Server**: Use OpenCode plugin (not MCP) for tighter integration
-   - **Rationale**: Plugin can add tools + use `tool.execute.before` hook to enforce minimal tools
-   - **Alternative**: MCP server works but can't block other tools
+1. **Plugin vs MCP Server**: Use OpenCode plugin (not MCP) for simpler integration
+   - **Rationale**: Plugin adds tools directly; no separate server process
+   - **Alternative**: MCP server works but adds complexity
 
-2. **Minimal Tools Philosophy**: Disable bash/write/edit/patch—LLM only uses Smithers tools
-   - **Rationale**: Force the agent to think in Smithers workflows, not raw commands
+2. **Minimal Tools via Config**: Disable bash/write/edit/patch in config + agent definition
+   - **Rationale**: OpenCode natively supports tool disabling—no hooks needed
+   - **Method**: `OPENCODE_CONFIG_CONTENT` + agent frontmatter `tools:` section
    - **Exception**: Keep `read` for codebase exploration, `glob` for file discovery
 
 3. **Embedded Config Directory**: Ship `opencode/` folder inside package
@@ -225,20 +226,8 @@ export default function smithersPlugin(ctx) {
   const { createControlPlane } = await import("smithers-orchestrator/control-plane")
   const cp = createControlPlane({ root: ctx.worktree ?? ctx.directory })
 
-  const ALLOWED = new Set([
-    "smithers_discover", "smithers_run", "smithers_resume",
-    "smithers_status", "smithers_frames", "smithers_cancel",
-    "read", "glob"
-  ])
-
   return {
-    // Block all non-Smithers tools
-    "tool.execute.before": async ({ input }) => {
-      if (!ALLOWED.has(input.tool)) {
-        throw new Error(`Tool '${input.tool}' disabled in Smithers mode. Use Smithers workflows instead.`)
-      }
-    },
-
+    // Tools only - blocking handled by config + agent definition
     tool: {
       smithers_discover: tool({
         description: "Find Smithers workflow scripts (.tsx files with SmithersProvider)",
@@ -532,9 +521,11 @@ describe("OpenCode Integration", () => {
     expect(proc.exitCode).toBe(0)
   })
 
-  it("blocks non-smithers tools", async () => {
-    // Call plugin's tool.execute.before hook with bash tool
-    // Expect error
+  it("config disables non-smithers tools", async () => {
+    // Verify OPENCODE_CONFIG_CONTENT has tools disabled
+    const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!)
+    expect(config.tools.bash).toBe(false)
+    expect(config.tools.write).toBe(false)
   })
 })
 ```
