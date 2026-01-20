@@ -14,8 +14,8 @@ describe('modelMap', () => {
     expect(modelMap.sonnet).toBe('claude-sonnet-4-20250514')
   })
 
-  test('maps haiku to claude-haiku-3-20250514', () => {
-    expect(modelMap.haiku).toBe('claude-haiku-3-20250514')
+  test('maps haiku to claude-haiku-4-5-20251001', () => {
+    expect(modelMap.haiku).toBe('claude-haiku-4-5-20251001')
   })
 })
 

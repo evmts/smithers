@@ -10,7 +10,7 @@ import type { CLIExecutionOptions, ClaudePermissionMode, ClaudeOutputFormat } fr
 export const modelMap: Record<string, string> = {
   opus: 'claude-opus-4-20250514',
   sonnet: 'claude-sonnet-4-20250514',
-  haiku: 'claude-haiku-3-20250514',
+  haiku: 'claude-haiku-4-5-20251001',
 }
 
 /**
