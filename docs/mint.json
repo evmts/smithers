@@ -144,6 +144,7 @@
       "group": "Examples",
       "pages": [
         "examples/hello-world",
+        "examples/coverage-loop",
         "examples/multi-phase-review",
         "examples/structured-output",
         "examples/mcp-database",

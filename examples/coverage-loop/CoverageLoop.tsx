@@ -1,97 +1,99 @@
 /**
  * CoverageLoop - While-based loop for test coverage improvement
+ * 
+ * Uses SQLite for all state management (no useRef).
+ * Coverage metrics stored in db.state, reactive via useQueryValue.
  */
 
 import type { ReactNode } from 'react'
-import { useRef } from 'react'
 import { While, useWhileIteration } from '../../src/components/While.js'
 import { useSmithers } from '../../src/components/SmithersProvider.js'
 import { Claude } from '../../src/components/Claude.js'
-import { useMount } from '../../src/reconciler/hooks.js'
-import { parseCoverage, formatCoverage, type CoverageResult } from './utils.js'
+import { useQueryValue } from '../../src/db/index.js'
+import { parseCoverage, formatCoverage } from './utils.js'
 
 interface CoverageLoopProps {
   targetCoverage: number
   maxIterations: number
 }
 
-const COVERAGE_PROMPT = `Review this codebase for test coverage and identify missing tests.
+const COVERAGE_PROMPT = `Improve test coverage for this codebase.
 
 <task>
-1. Run \`bun test --coverage\` to see current coverage
-2. Identify files with lowest coverage (look for uncovered line numbers in output)
-3. Find highest leverage opportunities - focus on:
-   - Core business logic with low coverage
-   - Utility functions lacking edge case tests
-   - Error handling paths not exercised
-4. When adding tests for an API, be comprehensive:
-   - Happy path cases
-   - Boundary conditions (empty, null, max values)
-   - Error cases (invalid input, network failures)
-   - Edge cases specific to the domain
-5. Make atomic commits with emoji conventional format:
-   - \`bun test\` must pass before committing
-   - Pre-commit hooks must pass
-   - Format: \`<emoji> <type>(<scope>): <description>\`
+1. Run \`bun test --coverage\` to measure current coverage
+2. Find files with lowest coverage (uncovered lines in output)
+3. Prioritize:
+   - Core business logic
+   - Utility functions lacking edge cases
+   - Uncovered error paths
+4. For each file, add comprehensive tests:
+   - Happy path
+   - Edge cases (empty, null, max)
+   - Error handling
+5. Atomic commits: \`<emoji> <type>(<scope>): <description>\`
 </task>
 
 <constraints>
-- Only add tests, do not modify implementation code
-- Each commit should be focused on one file or closely related files
-- Run \`bun test\` after each change to verify tests pass
-- Stop after making 2-3 meaningful test additions per iteration
+- Only add tests, no implementation changes
+- Run \`bun test\` after each change
+- 2-3 test additions per iteration max
 </constraints>
 
 <report>
-After completing, report:
-- Files improved with before/after coverage
-- Number of new test cases added
-- Any files that need more coverage but were skipped
+- Files improved (before/after coverage)
+- New test count
+- Skipped files needing coverage
 </report>`
 
-export function CoverageLoop(props: CoverageLoopProps): ReactNode {
-  const { targetCoverage, maxIterations } = props
-  const { db } = useSmithers()
-  const coverageRef = useRef<CoverageResult | null>(null)
-  const checkIdRef = useRef(0)
+export function CoverageLoop({ targetCoverage, maxIterations }: CoverageLoopProps): ReactNode {
+  const { db, reactiveDb } = useSmithers()
+
+  const currentCoverage = useQueryValue<number>(
+    reactiveDb,
+    "SELECT CAST(value AS REAL) FROM state WHERE key = 'coverage.current'"
+  ) ?? 0
+
+  const checkCount = useQueryValue<number>(
+    reactiveDb,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'coverage.checkCount'"
+  ) ?? 0
 
   const checkCoverage = async (): Promise<boolean> => {
     const proc = Bun.spawn(['bun', 'test', '--coverage'], {
       stdout: 'pipe',
       stderr: 'pipe',
-      cwd: process.cwd(), // Use current working directory
+      cwd: process.cwd(),
     })
     const output = await new Response(proc.stdout).text()
     await proc.exited
 
     const result = parseCoverage(output)
-    coverageRef.current = result
-    checkIdRef.current += 1
+    const minCoverage = Math.min(result.functionCoverage, result.lineCoverage)
+    const newCheckCount = checkCount + 1
 
-    const currentCoverage = Math.min(result.functionCoverage, result.lineCoverage)
-    console.log(`[Coverage Check #${checkIdRef.current}] ${formatCoverage(result)}`)
-
-    // Store in state for visibility
-    db.state.set('coverage.current', currentCoverage, 'coverage_check')
+    db.state.set('coverage.current', minCoverage, 'coverage_check')
     db.state.set('coverage.target', targetCoverage, 'coverage_check')
+    db.state.set('coverage.checkCount', newCheckCount, 'coverage_check')
+    db.state.set('coverage.functionCoverage', result.functionCoverage, 'coverage_check')
+    db.state.set('coverage.lineCoverage', result.lineCoverage, 'coverage_check')
+    db.state.set('coverage.passed', result.passed, 'coverage_check')
+    db.state.set('coverage.failed', result.failed, 'coverage_check')
 
-    // Continue while coverage is below target
-    return currentCoverage < targetCoverage
+    console.log(`[Check #${newCheckCount}] ${formatCoverage(result)}`)
+
+    return minCoverage < targetCoverage
   }
 
   return (
-    <coverage-loop target={targetCoverage} maxIterations={maxIterations}>
+    <coverage-loop target={targetCoverage} max={maxIterations} current={currentCoverage}>
       <While
         id="coverage-improvement"
         condition={checkCoverage}
         maxIterations={maxIterations}
-        onIteration={(i) => console.log(`\n=== Coverage Iteration ${i + 1} ===`)}
+        onIteration={(i) => console.log(`\n=== Iteration ${i + 1} ===`)}
         onComplete={(iterations, reason) => {
-          console.log(`\n=== Coverage Loop Complete ===`)
-          console.log(`Iterations: ${iterations}, Reason: ${reason}`)
-          if (coverageRef.current) {
-            console.log(`Final: ${formatCoverage(coverageRef.current)}`)
-          }
+          console.log(`\n=== Complete: ${iterations} iterations, ${reason} ===`)
+          console.log(`Final coverage: ${currentCoverage.toFixed(2)}%`)
         }}
       >
         <CoverageIteration />
@@ -102,7 +104,15 @@ export function CoverageLoop(props: CoverageLoopProps): ReactNode {
 
 function CoverageIteration(): ReactNode {
   const ctx = useWhileIteration()
-  const completedRef = useRef(false)
+  const { db } = useSmithers()
+
+  const handleComplete = () => {
+    const completed = db.state.get<boolean>(`iteration.${ctx?.iteration}.completed`)
+    if (!completed) {
+      db.state.set(`iteration.${ctx?.iteration}.completed`, true, 'iteration_complete')
+      ctx?.signalComplete()
+    }
+  }
 
   return (
     <iteration index={ctx?.iteration ?? 0}>
@@ -110,18 +120,11 @@ function CoverageIteration(): ReactNode {
         model="sonnet"
         permissionMode="acceptEdits"
         maxTurns={50}
-        onFinished={() => {
-          if (!completedRef.current) {
-            completedRef.current = true
-            ctx?.signalComplete()
-          }
-        }}
+        onFinished={handleComplete}
         onError={(err) => {
           console.error('Agent error:', err.message)
-          if (!completedRef.current) {
-            completedRef.current = true
-            ctx?.signalComplete()
-          }
+          db.state.set(`iteration.${ctx?.iteration}.error`, err.message, 'iteration_error')
+          handleComplete()
         }}
       >
         {COVERAGE_PROMPT}

@@ -1,0 +1,267 @@
+---
+title: Coverage Loop
+description: Automated test coverage improvement loop
+---
+
+# Coverage Loop
+
+A While-based loop that automatically improves test coverage until a target threshold is reached.
+
+## Code
+
+```tsx
+#!/usr/bin/env bun
+
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  While,
+  useWhileIteration,
+  Claude,
+  useSmithers,
+} from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
+interface CoverageResult {
+  functionCoverage: number;
+  lineCoverage: number;
+  passed: number;
+  failed: number;
+}
+
+function parseCoverage(output: string): CoverageResult {
+  const allFilesMatch = output.match(/All files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/);
+  const passMatch = output.match(/(\d+)\s+pass/);
+  const failMatch = output.match(/(\d+)\s+fail/);
+
+  return {
+    functionCoverage: allFilesMatch ? parseFloat(allFilesMatch[1]) : 0,
+    lineCoverage: allFilesMatch ? parseFloat(allFilesMatch[2]) : 0,
+    passed: passMatch ? parseInt(passMatch[1], 10) : 0,
+    failed: failMatch ? parseInt(failMatch[1], 10) : 0,
+  };
+}
+
+const COVERAGE_PROMPT = `Improve test coverage for this codebase.
+
+<task>
+1. Run \`bun test --coverage\` to measure current coverage
+2. Find files with lowest coverage
+3. Add comprehensive tests (happy path, edge cases, errors)
+4. Atomic commits with conventional format
+</task>
+
+<constraints>
+- Only add tests, no implementation changes
+- Run \`bun test\` after each change
+- 2-3 test additions per iteration max
+</constraints>`;
+
+function CoverageLoop({ targetCoverage = 98, maxIterations = 20 }) {
+  const { db, reactiveDb } = useSmithers();
+
+  // Reactive state from SQLite
+  const currentCoverage = useQueryValue<number>(
+    reactiveDb,
+    "SELECT CAST(value AS REAL) FROM state WHERE key = 'coverage.current'"
+  ) ?? 0;
+
+  const checkCount = useQueryValue<number>(
+    reactiveDb,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'coverage.checkCount'"
+  ) ?? 0;
+
+  const checkCoverage = async (): Promise<boolean> => {
+    const proc = Bun.spawn(["bun", "test", "--coverage"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const result = parseCoverage(output);
+    const minCoverage = Math.min(result.functionCoverage, result.lineCoverage);
+
+    // Store all metrics in SQLite
+    db.state.set("coverage.current", minCoverage, "coverage_check");
+    db.state.set("coverage.target", targetCoverage, "coverage_check");
+    db.state.set("coverage.checkCount", checkCount + 1, "coverage_check");
+    db.state.set("coverage.passed", result.passed, "coverage_check");
+    db.state.set("coverage.failed", result.failed, "coverage_check");
+
+    console.log(`[Check #${checkCount + 1}] ${minCoverage.toFixed(2)}%`);
+
+    return minCoverage < targetCoverage;
+  };
+
+  return (
+    <While
+      id="coverage-improvement"
+      condition={checkCoverage}
+      maxIterations={maxIterations}
+      onComplete={(iterations, reason) => {
+        console.log(`Complete: ${iterations} iterations (${reason})`);
+        console.log(`Final: ${currentCoverage.toFixed(2)}%`);
+      }}
+    >
+      <CoverageIteration />
+    </While>
+  );
+}
+
+function CoverageIteration() {
+  const ctx = useWhileIteration();
+  const { db } = useSmithers();
+
+  const handleComplete = () => {
+    const key = `iteration.${ctx?.iteration}.completed`;
+    if (!db.state.get<boolean>(key)) {
+      db.state.set(key, true, "iteration_complete");
+      ctx?.signalComplete();
+    }
+  };
+
+  return (
+    <Claude
+      model="sonnet"
+      permissionMode="acceptEdits"
+      maxTurns={50}
+      onFinished={handleComplete}
+      onError={(err) => {
+        db.state.set(`iteration.${ctx?.iteration}.error`, err.message, "error");
+        handleComplete();
+      }}
+    >
+      {COVERAGE_PROMPT}
+    </Claude>
+  );
+}
+
+async function main() {
+  const db = createSmithersDB({ path: ".smithers/coverage-loop" });
+  const executionId = db.execution.start("Coverage Loop", "coverage-loop.tsx");
+  const root = createSmithersRoot();
+
+  await root.mount(() => (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={20}>
+      <CoverageLoop targetCoverage={98} maxIterations={20} />
+    </SmithersProvider>
+  ));
+
+  db.execution.complete(executionId);
+  db.close();
+}
+
+main();
+```
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────┐
+│                                                     │
+│    ┌──────────────────┐                             │
+│    │  Check Coverage  │◀──────────────────┐        │
+│    │  (bun test)      │                   │        │
+│    └────────┬─────────┘                   │        │
+│             │                              │        │
+│             ▼                              │        │
+│    ┌──────────────────┐           ┌───────┴──────┐ │
+│    │  < Target?       │───YES────▶│   Claude     │ │
+│    │  (e.g., < 98%)   │           │   Add Tests  │ │
+│    └────────┬─────────┘           └──────────────┘ │
+│             │ NO                                    │
+│             ▼                                       │
+│    ┌──────────────────┐                             │
+│    │     Complete     │                             │
+│    └──────────────────┘                             │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+## State Management
+
+All state is stored in SQLite, not React refs:
+
+```tsx
+// ❌ Old pattern - useRef (ephemeral, not queryable)
+const coverageRef = useRef(0);
+coverageRef.current = newValue;
+
+// ✅ New pattern - SQLite (persistent, reactive)
+db.state.set("coverage.current", newValue, "coverage_check");
+
+// Read reactively
+const currentCoverage = useQueryValue<number>(
+  reactiveDb,
+  "SELECT CAST(value AS REAL) FROM state WHERE key = 'coverage.current'"
+) ?? 0;
+```
+
+Benefits:
+- State survives process restarts
+- Query history via `db.state.history("coverage.current")`
+- Inspect with `smithers db state`
+
+## Running
+
+```bash
+# Default: 98% target, 20 max iterations
+bun examples/coverage-loop/index.tsx
+
+# Custom thresholds
+TARGET_COVERAGE=95 MAX_ITERATIONS=10 bun examples/coverage-loop/index.tsx
+```
+
+## Inspecting Progress
+
+```bash
+# View current coverage metrics
+smithers db state | grep coverage
+
+# View iteration history
+smithers db transitions
+```
+
+## Customization
+
+### Different Test Runners
+
+```tsx
+// Jest
+Bun.spawn(["npm", "test", "--", "--coverage"]);
+
+// Vitest
+Bun.spawn(["npx", "vitest", "--coverage"]);
+```
+
+### File-Specific Targeting
+
+```tsx
+const COVERAGE_PROMPT = `Focus on improving coverage for:
+- src/auth/*.ts
+- src/api/*.ts
+
+Skip test files and generated code.`;
+```
+
+### Stricter Thresholds
+
+```tsx
+<CoverageLoop
+  targetCoverage={100}
+  maxIterations={50}
+/>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="While Component" icon="arrows-rotate" href="/components/while">
+    Loop control API
+  </Card>
+  <Card title="State Persistence" icon="database" href="/concepts/database-persistence">
+    SQLite state management
+  </Card>
+</CardGroup>
