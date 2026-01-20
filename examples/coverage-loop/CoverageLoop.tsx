@@ -59,6 +59,7 @@ export function CoverageLoop(props: CoverageLoopProps): ReactNode {
     const proc = Bun.spawn(['bun', 'test', '--coverage'], {
       stdout: 'pipe',
       stderr: 'pipe',
+      cwd: process.cwd(), // Use current working directory
     })
     const output = await new Response(proc.stdout).text()
     await proc.exited
@@ -107,7 +108,7 @@ function CoverageIteration(): ReactNode {
     <iteration index={ctx?.iteration ?? 0}>
       <Claude
         model="sonnet"
-        permissionMode="auto"
+        permissionMode="acceptEdits"
         maxTurns={50}
         onFinished={() => {
           if (!completedRef.current) {

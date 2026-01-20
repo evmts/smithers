@@ -37,15 +37,10 @@ program
 program
   .command("monitor [file]")
   .description("Run with LLM-friendly monitoring (recommended)")
-  .option(
-    "-f, --file <file>",
-    "Orchestration file to monitor",
-    DEFAULT_MAIN_FILE,
-  )
   .option("--no-summary", "Disable Haiku summarization")
-  .action(async (options) => {
+  .action(async (file: string | undefined, options: { summary: boolean }) => {
     const { monitor } = await import("../src/commands/monitor.ts");
-    return monitor(options.file, options);
+    return monitor(file ?? DEFAULT_MAIN_FILE, options);
   });
 
 program
