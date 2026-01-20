@@ -247,11 +247,11 @@ The `<Ralph>` component is deprecated. Use `<SmithersProvider>` instead - it inc
 ### How do I resume a crashed run?
 
 ```tsx
-const incomplete = await db.execution.findIncomplete();
+const incomplete = db.execution.findIncomplete();
 if (incomplete) {
   executionId = incomplete.id; // Resume from here
 } else {
-  executionId = await db.execution.start("My Workflow", "workflow.tsx");
+  executionId = db.execution.start("My Workflow", "workflow.tsx");
 }
 ```
 

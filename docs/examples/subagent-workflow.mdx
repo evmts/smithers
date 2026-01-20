@@ -26,8 +26,8 @@ import {
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 async function main() {
-  const db = await createSmithersDB({ path: ".smithers/feature-dev" });
-  const executionId = await db.execution.start("Feature Development", "feature-dev.tsx");
+  const db = createSmithersDB({ path: ".smithers/feature-dev" });
+  const executionId = db.execution.start("Feature Development", "feature-dev.tsx");
   if (db.state.get("phase") === null) {
     db.state.set("phase", "plan", "init_phase");
   }
@@ -168,16 +168,16 @@ async function main() {
     const root = createSmithersRoot();
     await root.mount(App);
 
-    await db.execution.complete(executionId, {
+    db.execution.complete(executionId, {
       summary: "Feature development workflow completed",
       output: { finalPhase: db.state.get("phase") },
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    await db.execution.fail(executionId, error.message);
+    db.execution.fail(executionId, error.message);
     throw error;
   } finally {
-    await db.close();
+    db.close();
   }
 }
 

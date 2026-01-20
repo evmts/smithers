@@ -43,7 +43,7 @@ A Phase requires at least one `<Step>` child to advance automatically. Phases ad
   Skip this phase if condition returns truthy. Takes precedence over automatic state management.
 
   ```tsx
-  const hasTests = useQueryValue(db.db, "SELECT value FROM state WHERE key = 'has_tests'");
+  const { data: hasTests } = useQueryValue<string>(reactiveDb, "SELECT value FROM state WHERE key = 'has_tests'");
 
   <Phase name="WriteTests" skipIf={() => hasTests}>
     <Step name="tests">

@@ -132,8 +132,8 @@ import {
   Claude,
 } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/test" });
-const executionId = await db.execution.start("Test", "test.tsx");
+const db = createSmithersDB({ path: ".smithers/test" });
+const executionId = db.execution.start("Test", "test.tsx");
 
 async function Test() {
   return (
@@ -147,7 +147,7 @@ async function Test() {
 
 const root = createSmithersRoot();
 await root.mount(Test);
-await db.close();
+db.close();
 ```
 
 Run it:

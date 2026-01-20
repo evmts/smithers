@@ -21,8 +21,8 @@ import {
 } from "smithers-orchestrator";
 
 async function main() {
-  const db = await createSmithersDB({ path: ".smithers/data-analysis" });
-  const executionId = await db.execution.start("Data Analysis", "data-analysis.tsx");
+  const db = createSmithersDB({ path: ".smithers/data-analysis" });
+  const executionId = db.execution.start("Data Analysis", "data-analysis.tsx");
 
   function DataAnalysis() {
     return (
@@ -71,15 +71,15 @@ async function main() {
     const root = createSmithersRoot();
     await root.mount(DataAnalysis);
 
-    await db.execution.complete(executionId, {
+    db.execution.complete(executionId, {
       summary: "Data analysis complete",
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    await db.execution.fail(executionId, error.message);
+    db.execution.fail(executionId, error.message);
     throw error;
   } finally {
-    await db.close();
+    db.close();
   }
 }
 

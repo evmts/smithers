@@ -44,10 +44,11 @@ import { If, SmithersProvider, Phase, Step, Claude, useSmithers } from "smithers
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function Workflow({ db, executionId }) {
-  const phase = useQueryValue<string>(
+  const { data: phaseVal } = useQueryValue<string>(
     db.db,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
+  );
+  const phase = phaseVal ?? "research";
   
   const setPhase = (p: string) => db.state.set('phase', p);
 

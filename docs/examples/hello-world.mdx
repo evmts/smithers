@@ -25,8 +25,8 @@ import {
 
 async function main() {
   // Create database for state persistence
-  const db = await createSmithersDB({ path: ".smithers/hello-world" });
-  const executionId = await db.execution.start("Hello World", "hello-world.tsx");
+  const db = createSmithersDB({ path: ".smithers/hello-world" });
+  const executionId = db.execution.start("Hello World", "hello-world.tsx");
 
   function HelloWorld() {
     return (
@@ -48,15 +48,15 @@ async function main() {
     const root = createSmithersRoot();
     await root.mount(HelloWorld);
 
-    await db.execution.complete(executionId, {
+    db.execution.complete(executionId, {
       summary: "Hello World workflow completed",
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    await db.execution.fail(executionId, error.message);
+    db.execution.fail(executionId, error.message);
     throw error;
   } finally {
-    await db.close();
+    db.close();
   }
 }
 

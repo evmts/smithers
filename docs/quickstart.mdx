@@ -52,16 +52,16 @@ import {
 } from "smithers-orchestrator";
 
 // 1. Create database for state persistence
-const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
 // 2. Start or resume execution
 let executionId: string;
-const incomplete = await db.execution.findIncomplete();
+const incomplete = db.execution.findIncomplete();
 if (incomplete) {
   executionId = incomplete.id;
   console.log("Resuming:", executionId);
 } else {
-  executionId = await db.execution.start("My Workflow", "my-workflow.tsx");
+  executionId = db.execution.start("My Workflow", "my-workflow.tsx");
 }
 
 // 3. Define workflow with Phase/Step/Claude composition
@@ -111,15 +111,15 @@ try {
   await root.mount(Workflow);
 
   // 5. Complete and close
-  await db.execution.complete(executionId, {
+  db.execution.complete(executionId, {
     summary: "My Workflow completed",
   });
 } catch (err) {
   const error = err instanceof Error ? err : new Error(String(err));
-  await db.execution.fail(executionId, error.message);
+  db.execution.fail(executionId, error.message);
   throw error;
 } finally {
-  await db.close();
+  db.close();
 }
 ```
 
@@ -134,18 +134,18 @@ bun my-workflow.tsx
 <Steps>
   <Step title="Create Database">
     ```tsx
-    const db = await createSmithersDB({ path: ".smithers/my-workflow" });
+    const db = createSmithersDB({ path: ".smithers/my-workflow" });
     ```
     SQLite database persists all state, enabling resume on crash/restart.
   </Step>
 
   <Step title="Start/Resume Execution">
     ```tsx
-    const incomplete = await db.execution.findIncomplete();
+    const incomplete = db.execution.findIncomplete();
     if (incomplete) {
       executionId = incomplete.id;
     } else {
-      executionId = await db.execution.start("My Workflow", "my-workflow.tsx");
+      executionId = db.execution.start("My Workflow", "my-workflow.tsx");
     }
     ```
     Automatically resumes incomplete executions.
@@ -182,13 +182,13 @@ bun my-workflow.tsx
   <Step title="Close Database">
     ```tsx
     try {
-      await db.execution.complete(executionId);
+      db.execution.complete(executionId);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      await db.execution.fail(executionId, error.message);
+      db.execution.fail(executionId, error.message);
       throw error;
     } finally {
-      await db.close();
+      db.close();
     }
     ```
     Mark complete and flush writes.
@@ -209,8 +209,8 @@ import {
   Claude,
 } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/simple" });
-const executionId = await db.execution.start("Simple", "simple.tsx");
+const db = createSmithersDB({ path: ".smithers/simple" });
+const executionId = db.execution.start("Simple", "simple.tsx");
 
 function Workflow() {
   return (
@@ -225,15 +225,15 @@ function Workflow() {
 const root = createSmithersRoot();
 try {
   await root.mount(Workflow);
-  await db.execution.complete(executionId, {
+  db.execution.complete(executionId, {
     summary: "Simple workflow completed",
   });
 } catch (err) {
   const error = err instanceof Error ? err : new Error(String(err));
-  await db.execution.fail(executionId, error.message);
+  db.execution.fail(executionId, error.message);
   throw error;
 } finally {
-  await db.close();
+  db.close();
 }
 ```
 

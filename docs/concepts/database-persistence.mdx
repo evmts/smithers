@@ -19,12 +19,12 @@ import { createSmithersDB } from "smithers-orchestrator";
 
 // Create a database at a specific path
 // .smithers/my-workflow is the default location we recommend for workflow databases
-const db = await createSmithersDB({
+const db = createSmithersDB({
   path: ".smithers/my-workflow"
 });
 
 // Always close when done
-await db.close();
+db.close();
 ```
 
 The database is created as a directory containing SQLite data files.
@@ -54,21 +54,21 @@ Every workflow run is an execution:
 
 ```tsx
 // Start a new execution
-const executionId = await db.execution.start(
+const executionId = db.execution.start(
   "Feature Implementation",  // name
   "scripts/feature.tsx"      // file path
 );
 
 // Complete the execution
-await db.execution.complete(executionId, {
+db.execution.complete(executionId, {
   summary: "Feature implemented successfully"
 });
 
 // Or mark as failed
-await db.execution.fail(executionId, "Tests failed");
+db.execution.fail(executionId, "Tests failed");
 
 // Find incomplete executions (for resume)
-const incomplete = await db.execution.findIncomplete();
+const incomplete = db.execution.findIncomplete();
 if (incomplete) {
   console.log(`Resuming execution: ${incomplete.id}`);
 }
@@ -299,11 +299,11 @@ smithers db current
   <Accordion title="Always close the database">
     Ensure the database is closed to flush writes:
     ```tsx
-    const db = await createSmithersDB({ path: ".smithers/data" });
+    const db = createSmithersDB({ path: ".smithers/data" });
     try {
       // ... do work
     } finally {
-      await db.close();
+      db.close();
     }
     ```
   </Accordion>
@@ -319,7 +319,7 @@ smithers db current
   <Accordion title="Check for incomplete executions on startup">
     Resume interrupted workflows:
     ```tsx
-    const incomplete = await db.execution.findIncomplete();
+    const incomplete = db.execution.findIncomplete();
     if (incomplete) {
       // Resume the workflow
       const state = db.state.getAll();

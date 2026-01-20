@@ -971,11 +971,12 @@ function Claude({ model, children }) {
   const agentIdRef = useRef<string | null>(null)
 
   // No useState! Query DB for reactive updates
-  const status = useQueryValue<string>(
+  const { data: statusVal } = useQueryValue<string>(
     db.db,
     "SELECT status FROM agents WHERE id = ?",
     [agentIdRef.current]
-  ) ?? 'pending'
+  )
+  const status = statusVal ?? 'pending'
 
   useMount(async () => {
     // Create record

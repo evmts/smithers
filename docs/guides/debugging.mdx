@@ -130,7 +130,7 @@ sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM steps WHERE phase_id = '<
 
 **Fix:** Ensure all state uses `db.state` and execution resume logic is present:
 ```tsx
-const incomplete = await db.execution.findIncomplete();
+const incomplete = db.execution.findIncomplete();
 if (incomplete) {
   executionId = incomplete.id;
 }

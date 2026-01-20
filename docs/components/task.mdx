@@ -63,15 +63,18 @@ import { Task, Phase, Step } from "smithers-orchestrator";
 function TaskTracker() {
   const { db } = useSmithers();
   
-  const tasks = useQueryValue<Array<{id: number, name: string, done: boolean}>>(
+  const { data: tasksVal } = useQueryValue<string>(
     db.db,
     "SELECT value FROM state WHERE key = 'tasks'"
-  ) ?? [
-    { id: 1, name: "Research", done: false },
-    { id: 2, name: "Design", done: false },
-    { id: 3, name: "Implement", done: false },
-    { id: 4, name: "Test", done: false },
-  ];
+  );
+  const tasks: Array<{id: number, name: string, done: boolean}> = tasksVal 
+    ? JSON.parse(tasksVal) 
+    : [
+        { id: 1, name: "Research", done: false },
+        { id: 2, name: "Design", done: false },
+        { id: 3, name: "Implement", done: false },
+        { id: 4, name: "Test", done: false },
+      ];
 
   const markDone = (id: number) => {
     const updated = tasks.map(t =>
@@ -106,10 +109,11 @@ function TaskTracker() {
 function PersistentTasks() {
   const { db } = useSmithers();
   
-  const tasks = useQueryValue<Array<{name: string, done: boolean}>>(
+  const { data: tasksVal } = useQueryValue<string>(
     db.db,
     "SELECT value FROM state WHERE key = 'tasks'"
-  ) ?? [];
+  );
+  const tasks: Array<{name: string, done: boolean}> = tasksVal ? JSON.parse(tasksVal) : [];
 
   const completeTask = (index: number) => {
     const newTasks = [...tasks];
@@ -145,10 +149,11 @@ const tasks = [
 function TaskDrivenWorkflowBody() {
   const { db } = useSmithers();
   
-  const currentTaskIndex = useQueryValue<number>(
+  const { data: indexVal } = useQueryValue<string>(
     db.db,
     "SELECT value FROM state WHERE key = 'currentTaskIndex'"
-  ) ?? 0;
+  );
+  const currentTaskIndex = indexVal ? JSON.parse(indexVal) : 0;
 
   return (
     <>

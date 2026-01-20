@@ -212,8 +212,8 @@ import {
   Claude,
 } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/notifications" });
-const executionId = await db.execution.start("Notifications", "notifications.tsx");
+const db = createSmithersDB({ path: ".smithers/notifications" });
+const executionId = db.execution.start("Notifications", "notifications.tsx");
 
 function NotificationWorkflow() {
   return (
@@ -242,8 +242,8 @@ function NotificationWorkflow() {
 
 const root = createSmithersRoot();
 await root.mount(NotificationWorkflow);
-await db.execution.complete(executionId);
-await db.close();
+db.execution.complete(executionId);
+db.close();
 ```
 
 ## Debugging Generated Scripts

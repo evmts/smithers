@@ -96,15 +96,17 @@ function IterativeWorkflowBody({ attempts, testsPassing }) {
 
 export function IterativeWorkflow({ db, executionId }) {
   // State in SQLite, not useState (see State Management docs)
-  const attempts = useQueryValue<number>(
+  const { data: attemptsVal } = useQueryValue<number>(
     db.db,
     "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'attempts'"
-  ) ?? 0;
+  );
+  const attempts = attemptsVal ?? 0;
 
-  const testsPassing = useQueryValue<boolean>(
+  const { data: testsPassingVal } = useQueryValue<number>(
     db.db,
     "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'tests_passing'"
-  ) ?? false;
+  );
+  const testsPassing = Boolean(testsPassingVal);
 
   return (
     <SmithersProvider
@@ -165,10 +167,11 @@ function PhaseWorkflowBody({ phase, setPhase }) {
 
 export function PhaseWorkflow({ db, executionId }) {
   // State in SQLite, not useState
-  const phase = useQueryValue<string>(
+  const { data: phaseVal } = useQueryValue<string>(
     db.db,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
+  );
+  const phase = phaseVal ?? "research";
 
   const setPhase = (newPhase: string) => {
     db.db.run(
@@ -246,8 +249,9 @@ Smithers uses React as a workflow DSL. Understanding these rules prevents common
   <Accordion title="✅ DO: Store state in SQLite">
     ```tsx
     // Good - durable
-    const phase = useQueryValue<string>(db.db,
-      "SELECT value FROM state WHERE key = 'phase'") ?? "start";
+    const { data: phaseVal } = useQueryValue<string>(db.db,
+      "SELECT value FROM state WHERE key = 'phase'");
+    const phase = phaseVal ?? "start";
     const setPhase = (p: string) => db.state.set('phase', p);
     ```
   </Accordion>
@@ -363,8 +367,9 @@ The orchestration context tracks:
     State in SQLite survives restarts. State in memory doesn't:
     ```tsx
     // Good - durable, survives restarts
-    const phase = useQueryValue<string>(db.db,
-      "SELECT value FROM state WHERE key = 'phase'") ?? "start";
+    const { data: phaseVal } = useQueryValue<string>(db.db,
+      "SELECT value FROM state WHERE key = 'phase'");
+    const phase = phaseVal ?? "start";
     const setPhase = (p: string) =>
       db.db.run("INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)", [p]);
 

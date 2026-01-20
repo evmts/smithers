@@ -37,8 +37,8 @@ const AnalysisSchema = z.object({
 type Analysis = z.infer<typeof AnalysisSchema>;
 
 async function main() {
-  const db = await createSmithersDB({ path: ".smithers/analysis" });
-  const executionId = await db.execution.start("Code Analysis", "analysis.tsx");
+  const db = createSmithersDB({ path: ".smithers/analysis" });
+  const executionId = db.execution.start("Code Analysis", "analysis.tsx");
   let analysisResult: Analysis | null = null;
 
   function AnalysisWorkflow() {
@@ -106,16 +106,16 @@ async function main() {
       throw new Error("Structured output missing; execution incomplete.");
     }
 
-    await db.execution.complete(executionId, {
+    db.execution.complete(executionId, {
       summary: "Code analysis complete",
       output: analysisResult,
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    await db.execution.fail(executionId, error.message);
+    db.execution.fail(executionId, error.message);
     throw error;
   } finally {
-    await db.close();
+    db.close();
   }
 }
 

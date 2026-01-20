@@ -88,15 +88,17 @@ import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 function DataPipelineBody() {
   const { db, reactiveDb } = useSmithers();
 
-  const phase = useQueryValue<string>(
+  const { data: phaseJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "query";
+  );
+  const phase = phaseJson ? JSON.parse(phaseJson) : "query";
 
-  const data = useQueryValue<string>(
+  const { data: dataJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'data'"
   );
+  const data = dataJson ? JSON.parse(dataJson) : null;
 
   const setPhase = (newPhase: string) => {
     db.state.set("phase", newPhase);

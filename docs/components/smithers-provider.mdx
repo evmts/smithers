@@ -14,8 +14,8 @@ SmithersProvider includes the Ralph loop internally. The `<Ralph>` component is 
 ```tsx
 import { createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
 
-const db = await createSmithersDB({ path: ".smithers/my-workflow" });
-const executionId = await db.execution.start("My Workflow", "workflow.tsx");
+const db = createSmithersDB({ path: ".smithers/my-workflow" });
+const executionId = db.execution.start("My Workflow", "workflow.tsx");
 
 function Workflow() {
   return (
@@ -34,7 +34,7 @@ function Workflow() {
   The database instance for state persistence.
 
   ```tsx
-  const db = await createSmithersDB({ path: ".smithers/data" });
+  const db = createSmithersDB({ path: ".smithers/data" });
   <SmithersProvider db={db} executionId={executionId}>
   ```
 </ParamField>
@@ -43,7 +43,7 @@ function Workflow() {
   Unique identifier for the current execution.
 
   ```tsx
-  const executionId = await db.execution.start("Task", "task.tsx");
+  const executionId = db.execution.start("Task", "task.tsx");
   <SmithersProvider db={db} executionId={executionId}>
   ```
 </ParamField>
@@ -315,17 +315,17 @@ import { createSmithersRoot, createSmithersDB } from "smithers-orchestrator";
 import { SmithersProvider, Claude, useSmithers } from "smithers-orchestrator";
 
 async function main() {
-  const db = await createSmithersDB({ path: ".smithers/example" });
+  const db = createSmithersDB({ path: ".smithers/example" });
 
   // Check for incomplete execution to resume
   let executionId: string;
-  const incomplete = await db.execution.findIncomplete();
+  const incomplete = db.execution.findIncomplete();
 
   if (incomplete) {
     executionId = incomplete.id;
     console.log("Resuming execution:", executionId);
   } else {
-    executionId = await db.execution.start("Example", "example.tsx");
+    executionId = db.execution.start("Example", "example.tsx");
   }
 
   function Workflow() {
@@ -349,17 +349,18 @@ async function main() {
   const root = createSmithersRoot();
   await root.mount(Workflow);
 
-  await db.execution.complete(executionId);
-  await db.close();
+  db.execution.complete(executionId);
+  db.close();
 }
 
 function WorkflowContent() {
   const { db, reactiveDb, requestStop, isStopRequested } = useSmithers();
   
-  const phase = useQueryValue<string>(
+  const { data: phaseVal } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "start";
+  );
+  const phase = phaseVal ? JSON.parse(phaseVal) : "start";
   
   const setPhase = (p: string) => db.state.set('phase', p);
 
@@ -425,7 +426,7 @@ main();
     ```tsx
     const root = createSmithersRoot();
     await root.mount(Workflow);
-    await db.close();  // Always close
+    db.close();  // Always close
     ```
   </Accordion>
 </AccordionGroup>

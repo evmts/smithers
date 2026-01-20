@@ -31,9 +31,9 @@ import {
 } from "smithers-orchestrator";
 
 async function main() {
-  const db = await createSmithersDB({ path: ".smithers/kitchen-sink" });
+  const db = createSmithersDB({ path: ".smithers/kitchen-sink" });
 
-  const executionId = await db.execution.start(
+  const executionId = db.execution.start(
     "Kitchen Sink Demo",
     "kitchen-sink.tsx"
   );
@@ -113,15 +113,15 @@ async function main() {
     const root = createSmithersRoot();
     await root.mount(KitchenSinkWorkflow);
 
-    await db.execution.complete(executionId, {
+    db.execution.complete(executionId, {
       summary: "Kitchen sink workflow completed",
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    await db.execution.fail(executionId, error.message);
+    db.execution.fail(executionId, error.message);
     throw error;
   } finally {
-    await db.close();
+    db.close();
   }
 }
 

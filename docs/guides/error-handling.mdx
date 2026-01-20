@@ -30,10 +30,11 @@ import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 function RetryWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
 
-  const attempts = useQueryValue<number>(
+  const { data: attemptsVal } = useQueryValue<number>(
     reactiveDb,
     "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
-  ) ?? 0;
+  );
+  const attempts = attemptsVal ?? 0;
 
   const { data: lastErrorJson } = useQueryValue<string>(
     reactiveDb,
@@ -268,17 +269,19 @@ import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 function RobustWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
 
-  const phase = useQueryValue<string>(
+  const { data: phaseVal } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "start";
+  );
+  const phase = phaseVal ?? "start";
 
-  const attempts = useQueryValue<number>(
+  const { data: attemptsVal } = useQueryValue<number>(
     reactiveDb,
     "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
-  ) ?? 0;
+  );
+  const attempts = attemptsVal ?? 0;
 
-  const errorsJson = useQueryValue<string>(
+  const { data: errorsJson } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'errors'"
   );
