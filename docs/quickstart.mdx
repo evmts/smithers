@@ -5,30 +5,38 @@ description: Install Smithers and run your first workflow in 2 minutes
 
 # Quick Start
 
-## 📦 Install
+## Install
 
 ```bash
-bun add smithers-orchestrator
+bun add -g smithers-orchestrator
 ```
 
-Requires [Bun](https://bun.sh/) 1.0+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic's CLI for agentic coding).
+This installs the `smithers` CLI globally. Requires [Bun](https://bun.sh/) 1.0+.
 
-## ⚙️ Initialize
+## Run
+
+Just type:
 
 ```bash
-bun smithers init
+smithers
 ```
 
-This creates the `.smithers/` directory with the database schema.
+This launches the interactive agent. Same API as [OpenCode](https://opencode.ai) since Smithers wraps it.
+
+Or run a specific workflow file:
+
+```bash
+smithers hello.tsx
+```
 
 ---
 
-## 👋 Hello World
+## Hello World
 
 Create `hello.tsx`:
 
 ```tsx
-#!/usr/bin/env bun
+#!/usr/bin/env smithers
 import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
 
 const db = createSmithersDB({ path: ".smithers/hello.db" });
@@ -52,13 +60,7 @@ await db.close();
 Run it:
 
 ```bash
-bun hello.tsx
-```
-
-Or use the monitor for a live view:
-
-```bash
-bun smithers monitor hello.tsx
+smithers hello.tsx
 ```
 
 <Accordion title="TypeScript Configuration">
@@ -83,12 +85,12 @@ jsx = "react"
 
 ---
 
-## 🔄 Multi-Phase Workflow
+## Multi-Phase Workflow
 
 Create `workflow.tsx`:
 
 ```tsx
-#!/usr/bin/env bun
+#!/usr/bin/env smithers
 import {
   createSmithersRoot,
   createSmithersDB,
@@ -175,7 +177,7 @@ try {
 
 ---
 
-## 🔍 Inspect State
+## Inspect State
 
 ```bash
 smithers db executions              # List runs
@@ -190,7 +192,6 @@ smithers db stats                   # Statistics
 | Required | Version |
 |----------|---------|
 | [Bun](https://bun.sh) | 1.0+ |
-| [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) | latest |
 
 **Bundled:** react, bun:sqlite, zod
 
@@ -198,7 +199,7 @@ smithers db stats                   # Statistics
 
 ---
 
-## 🚀 Next Steps
+## Next Steps
 
 <CardGroup cols={2}>
   <Card title="Add to Harness" icon="plug" href="/harness-integration">

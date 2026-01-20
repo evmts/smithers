@@ -10,3 +10,6 @@
 [submodule "reference/react"]
 	path = reference/react
 	url = https://github.com/facebook/react.git
+[submodule "reference/opencode"]
+	path = reference/opencode
+	url = https://github.com/anomalyco/opencode.git
