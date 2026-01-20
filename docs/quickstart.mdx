@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: Your first Smithers workflow
+description: Install Smithers and run your first workflow in 2 minutes
 ---
 
 # Quick Start
@@ -11,7 +11,7 @@ description: Your first Smithers workflow
 bun add smithers-orchestrator
 ```
 
-Requires [Bun](https://bun.sh/) 1.0+ and [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code).
+Requires [Bun](https://bun.sh/) 1.0+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic's CLI for agentic coding).
 
 ---
 
@@ -29,8 +29,8 @@ const executionId = db.execution.start("Hello", "hello.tsx");
 function Hello() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Claude model="haiku" maxTurns={1} onFinished={(r) => console.log(r.output)}>
-        Say "Hello from Smithers!"
+      <Claude model="sonnet" maxTurns={3} onFinished={(r) => console.log(r.output)}>
+        Find and fix any lint errors in this repository. Run the linter to verify.
       </Claude>
     </SmithersProvider>
   );
@@ -46,6 +46,26 @@ Run it:
 ```bash
 bun hello.tsx
 ```
+
+<Accordion title="TypeScript Configuration">
+If you're using TypeScript, add these settings:
+
+**tsconfig.json:**
+```json
+{
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "smithers-orchestrator"
+  }
+}
+```
+
+**bunfig.toml:**
+```toml
+[dev]
+jsx = "react"
+```
+</Accordion>
 
 ---
 
@@ -111,7 +131,7 @@ try {
   db.execution.fail(executionId, String(err));
   throw err;
 } finally {
-  db.close();
+  await db.close();
 }
 ```
 
@@ -125,7 +145,7 @@ try {
 
 **`db.execution.findIncomplete`** — Finds crashed executions to resume.
 
-**`SmithersProvider`** — Root component. Runs the Ralph loop.
+**`SmithersProvider`** — Root component. Runs the reactive render loop.
 
 **`Phase`** — Sequential stages. Only the active phase executes.
 
@@ -141,24 +161,6 @@ try {
 
 ---
 
-## Let Claude Write It
-
-Install the plugin:
-
-```
-/plugin add evmts/smithers
-```
-
-Then describe what you want:
-
-```
-Create a workflow that monitors CI, fixes failures, and escalates after 3 attempts.
-```
-
-Claude generates the `.tsx` file. Review it like any other code.
-
----
-
 ## Inspect State
 
 ```bash
@@ -169,9 +171,25 @@ smithers db stats                   # Statistics
 
 ---
 
+## Dependencies
+
+| Required | Version |
+|----------|---------|
+| [Bun](https://bun.sh) | 1.0+ |
+| [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) | latest |
+
+**Bundled:** react, bun:sqlite, zod
+
+**Optional:** Version control (git or [jj](https://github.com/martinvonz/jj)) for state snapshots
+
+---
+
 ## Next Steps
 
 <CardGroup cols={2}>
+  <Card title="Add to Harness" icon="plug" href="/harness-integration">
+    Use in Claude, Cursor, Amp, or as MCP
+  </Card>
   <Card title="Claude Component" icon="cube" href="/components/claude">
     Full API reference
   </Card>
@@ -180,8 +198,5 @@ smithers db stats                   # Statistics
   </Card>
   <Card title="Examples" icon="code" href="/examples/hello-world">
     Production workflows
-  </Card>
-  <Card title="Database" icon="database" href="/concepts/database-persistence">
-    State persistence
   </Card>
 </CardGroup>

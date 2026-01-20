@@ -7,16 +7,25 @@ description: Let your agent write agents
 
 **Let your agent write agents.**
 
+Your orchestrating agent writes React code that spawns and controls other agents. The plan is the code. The code is the plan.
+
+Used to orchestrate coding agents that run for days, ship PRs autonomously, and self-heal when they fail.
+
 ```tsx
 #!/usr/bin/env bun
-import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Claude,
+} from "smithers-orchestrator";
 
-const db = createSmithersDB({ path: ".smithers/demo" });
-const executionId = db.execution.start("Demo", "demo.tsx");
+const sqliteDb = createSmithersDB({ path: ".smithers/demo" });
+const executionId = sqliteDb.execution.start("Demo", "demo.tsx");
 
 function Demo() {
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+    <SmithersProvider db={sqliteDb} executionId={executionId} maxIterations={5}>
       <Claude model="sonnet" onFinished={(r) => console.log(r.output)}>
         Fix the failing tests in this repository.
       </Claude>
@@ -26,21 +35,81 @@ function Demo() {
 
 const root = createSmithersRoot();
 await root.mount(Demo);
-await db.close();
+await sqliteDb.close();
 ```
 
-Run it:
+Run it and monitor the execution frame by frame:
 
 ```bash
 bun demo.tsx
 ```
 
-Smithers is a JSX framework for coding agents. Write the plan in any coding harness, then monitor your agents as they execute it. The plan evolves reactively based on agent output.
+Smithers is a React framework for coding agents. Write the plan in any coding harness, then monitor your agents as they execute it. The plan evolves reactively based on agent output.
+
+By evolving a declarative plan rather than wiring up every agent interaction, Smithers excels at:
+
+1. One-time agents — accomplish a task and discard
+2. Long-running agents — run for days or weeks
+
+**Build things like:**
+- [Hello World](/examples/hello-world) — Your first agent
+- [Coverage Loop](/examples/coverage-loop) — Run until tests pass
+- [Multi-Phase Review](/examples/multi-phase-review) — Implement, test, review
+- [Subagent Workflow](/examples/subagent-workflow) — Agents spawning agents
+- [MCP Database Access](/examples/mcp-database) — Connect to external tools
+
+## Core Idea
+
+You program the **plan**, not the agents. The plan is real executable code—React components that declare what should happen.
+
+| Other Frameworks     | Smithers                   |
+| -------------------- | -------------------------- |
+| `agent.do_step_1()`  | `<Phase name="implement">` |
+| `agent.do_step_2()`  | `<Step name="code">`       |
+| `if failed: retry()` | `<Claude>Fix it</Claude>`  |
+
+The plan is declarative. Like Terraform, not AWS CDK. Plans evolve in an easy-to-understand declarative way over time—and if the plan breaks for any reason, your monitoring agent can edit the code and restart.
+
+What renders is the current state of the multi-agent setup as readable XML, with SQLite durably persisting state.
+
+Each iteration:
+
+1. Render React → execution plan
+2. Execute runnable agents
+3. Agent output updates state
+4. State change triggers re-render
+5. Loop until done
+
+The plan runs as deterministic code, but agents can read it to understand the larger context they're operating within.
+
+Ralph (the [autonomous agent loop pattern](https://ghuntley.com/ralph/)) handles the render cycle, allowing the plan to run and evolve indefinitely. See [concepts](/concepts/ralph-wiggum-loop). React handles the diffing.
+
+---
+
+## Why React?
+
+LLMs and humans perform well writing declarative React code. All coding agents can one-shot valid Smithers workflows naturally.
+
+Most multi-agent frameworks fail. They add coordination overhead that costs more than it saves—you end up worse than a simple while loop. Smithers avoids this by making the plan declarative and the state durable. React's functional nature makes even complex multiagent setups easy to modularize and easy to reason about.
+
+React has a rich ecosystem that works well with agents: Zustand, React Query, and reactive versions of most libraries plug directly into React's reactivity system. This lets you compose declarative plans from battle-tested primitives.
+
+React gives you:
+
+- Composition and reuse
+- Version control diffs that make sense
+- Agent-generated code you can review
+- A massive ecosystem of reactive hooks to reuse
+
+---
 
 <Tip>
 **React Hook Compatibility**: All [TanStack AI](https://tanstack.com/ai/latest/docs) and [Vercel AI SDK](https://ai-sdk.dev/docs) React hooks work in Smithers components. Use `useChat` for streaming chat, `useCompletion` for text completion, and `useObject` for structured generation.
 
+Use any hook library in addition to the ones built in to Smithers.
+
 ```tsx
+import { If, Claude } from "smithers-orchestrator";
 import { useChat } from "@tanstack/ai-react";
 // or
 import { useChat, useCompletion, useObject } from "ai/react";
@@ -49,51 +118,19 @@ function MyAgent() {
   const { messages, sendMessage, isLoading } = useChat({
     connection: fetchServerSentEvents("/api/chat"),
   });
-  
   return (
-    <Claude>
-      {messages.map(m => m.parts.map(p => p.type === 'text' && p.content))}
-    </Claude>
+    <If condition={!isLoading}>
+      <Claude>
+        {messages.map((m) =>
+          m.parts.map((p) => p.type === "text" && p.content),
+        )}
+      </Claude>
+    </If>
   );
 }
 ```
+
 </Tip>
-
----
-
-## Core Idea
-
-You program the **plan**, not the agents.
-
-| Other Frameworks | Smithers |
-|------------------|----------|
-| `agent.do_step_1()` | `<Phase name="implement">` |
-| `agent.do_step_2()` | `<Step name="code">` |
-| `if failed: retry()` | `<Claude>Fix it</Claude>` |
-
-The plan is declarative. Like Terraform, not AWS CDK. Plans evolve in an easy-to-understand declarative way over time—and if the plan breaks for any reason, your monitoring agent can edit the code and restart.
-
-Each iteration:
-1. Render JSX → execution plan
-2. Execute runnable agents
-3. Agent output updates state
-4. State change triggers re-render
-5. Loop until done
-
-Ralph is the event loop. React handles the diffing.
-
----
-
-## Why React?
-
-LLMs are trained on XML—the nested tagged structure matches how they think. LLMs are also great at writing React. Claude generates valid Smithers workflows naturally.
-
-React has a rich ecosystem that works well with agents: Zustand, React Query, and reactive versions of most libraries plug directly into React's reactivity system. This lets you compose declarative plans from battle-tested primitives.
-
-React gives you:
-- Composition and reuse
-- Version control diffs that make sense
-- Agent-generated code you can review
 
 ---
 
@@ -135,9 +172,7 @@ const ReviewSchema = z.object({
   issues: z.array(z.string()),
 });
 
-<Claude schema={ReviewSchema}>
-  Review the PR.
-</Claude>
+<Claude schema={ReviewSchema}>Review the PR.</Claude>;
 // result.structured: { approved: boolean, issues: string[] }
 ```
 
@@ -173,22 +208,26 @@ if (incomplete) {
 
 ## Observability
 
-The JSX is the observability. What you write is what gets logged.
+The React tree is the observability. What you write is what gets logged.
 
 ```tsx
 <Phase name="deploy">
-  <Step name="build" status="complete">...</Step>
-  <Step name="test" status="running">...</Step>
+  <Step name="build" status="complete">
+    ...
+  </Step>
+  <Step name="test" status="running">
+    ...
+  </Step>
 </Phase>
 ```
 
-SQLite stores every frame. Use JJ or git to rewind.
+SQLite stores every frame. Use version control to rewind.
 
 ---
 
 ## Roadmap
 
-**North Star: SuperSmithers** — A meta-agent that watches your agents and rewrites their code to optimize. The architecture supports it. Not yet implemented.
+**North Star: SuperSmithers** — A meta-agent that watches your agents and rewrites their code to optimize. The architecture is ready. Coming soon.
 
 ---
 
