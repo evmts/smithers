@@ -38,6 +38,18 @@ function shouldFallbackToApiKey(stdout: string, stderr: string, exitCode: number
   )
 }
 
+/**
+ * Format command for logging, redacting the prompt (always last arg)
+ */
+function formatCommandForLogs(args: string[]): string {
+  if (args.length === 0) return 'claude'
+  const safe = [...args]
+  if (safe.length > 0) {
+    safe[safe.length - 1] = '[prompt redacted]'
+  }
+  return `claude ${safe.join(' ')}`
+}
+
 type StreamUsage = {
   tokensUsed: { input: number; output: number }
   turnsUsed: number
@@ -240,7 +252,7 @@ export async function executeClaudeCLIOnce(
 
     const shouldRetry = !useApiKey && shouldFallbackToApiKey(stdout, stderr, exitCode)
     const output = exitCode !== 0
-      ? `Claude CLI failed (exit ${exitCode})\nCommand: claude ${args.join(' ')}\n\nSTDOUT:\n${parsed.output}\n\nSTDERR:\n${stderr}`
+      ? `Claude CLI failed (exit ${exitCode})\nCommand: ${formatCommandForLogs(args)}\n\nSTDOUT:\n${parsed.output}\n\nSTDERR:\n${stderr}`
       : parsed.output
 
     if (exitCode !== 0) {
@@ -273,7 +285,7 @@ export async function executeClaudeCLIOnce(
     const errorMessage = error instanceof Error ? error.message : String(error)
 
     return {
-      output: `Claude CLI execution error\nCommand: claude ${args.join(' ')}\nError: ${errorMessage}`,
+      output: `Claude CLI execution error\nCommand: ${formatCommandForLogs(args)}\nError: ${errorMessage}`,
       tokensUsed: { input: 0, output: 0 },
       turnsUsed: 0,
       stopReason: 'error',
@@ -301,13 +313,14 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
   }
 
   // Execute the initial request - try subscription first (no API key)
-  const useSubscription = options.useSubscription ?? true
-  let result = await executeClaudeCLIOnce(effectiveOptions, startTime, !useSubscription)
+  let useApiKey = !(options.useSubscription ?? true)
+  let result = await executeClaudeCLIOnce(effectiveOptions, startTime, useApiKey)
   let activeSessionId = result.sessionId ?? effectiveOptions.resume
 
   // If subscription failed and API key is available, retry with API key
   if (result.shouldRetryWithApiKey && process.env['ANTHROPIC_API_KEY']) {
     options.onProgress?.('Subscription auth failed, retrying with API key...')
+    useApiKey = true
     result = await executeClaudeCLIOnce(effectiveOptions, startTime, true)
     activeSessionId = result.sessionId ?? activeSessionId
   }
@@ -357,7 +370,7 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
       retryOptions.continue = true
     }
 
-    result = await executeClaudeCLIOnce(retryOptions, startTime)
+    result = await executeClaudeCLIOnce(retryOptions, startTime, useApiKey)
     activeSessionId = result.sessionId ?? activeSessionId
   }
 

@@ -5,7 +5,6 @@ export {
   // Argument builder
   buildClaudeArgs,
   modelMap,
-  permissionFlags,
   formatMap,
   // Stop conditions
   checkStopConditions,

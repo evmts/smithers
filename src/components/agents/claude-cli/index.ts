@@ -5,7 +5,6 @@
 export {
   buildClaudeArgs,
   modelMap,
-  permissionFlags,
   formatMap,
 } from './arg-builder.js'
 

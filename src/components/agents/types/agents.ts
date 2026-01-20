@@ -133,7 +133,7 @@ export interface BaseAgentProps {
 
 export type ClaudeModel = 'opus' | 'sonnet' | 'haiku' | string
 
-export type ClaudePermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions'
+export type ClaudePermissionMode = 'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
 
 export type ClaudeOutputFormat = 'text' | 'json' | 'stream-json'
 

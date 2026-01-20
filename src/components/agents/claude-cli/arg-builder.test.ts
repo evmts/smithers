@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect } from 'bun:test'
-import { buildClaudeArgs, modelMap, permissionFlags, formatMap } from './arg-builder.js'
+import { buildClaudeArgs, modelMap, formatMap } from './arg-builder.js'
 
 describe('modelMap', () => {
   test('maps opus to claude-opus-4-20250514', () => {
@@ -19,17 +19,28 @@ describe('modelMap', () => {
   })
 })
 
-describe('permissionFlags', () => {
-  test('default returns empty array', () => {
-    expect(permissionFlags.default).toEqual([])
+describe('permission modes', () => {
+  test('default returns no permission flags', () => {
+    const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'default' })
+    expect(args).not.toContain('--permission-mode')
+    expect(args).not.toContain('--dangerously-skip-permissions')
   })
 
-  test('acceptEdits returns skip-permissions flag', () => {
-    expect(permissionFlags.acceptEdits).toEqual(['--dangerously-skip-permissions'])
+  test('acceptEdits uses --permission-mode flag', () => {
+    const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'acceptEdits' })
+    expect(args).toContain('--permission-mode')
+    expect(args).toContain('acceptEdits')
   })
 
-  test('bypassPermissions returns skip-permissions flag', () => {
-    expect(permissionFlags.bypassPermissions).toEqual(['--dangerously-skip-permissions'])
+  test('bypassPermissions uses --dangerously-skip-permissions', () => {
+    const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'bypassPermissions' })
+    expect(args).toContain('--dangerously-skip-permissions')
+  })
+
+  test('plan uses --permission-mode flag', () => {
+    const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'plan' as any })
+    expect(args).toContain('--permission-mode')
+    expect(args).toContain('plan')
   })
 })
 
@@ -105,13 +116,14 @@ describe('buildClaudeArgs', () => {
   })
 
   describe('permission mode handling', () => {
-    test('adds flags for acceptEdits mode', () => {
+    test('adds --permission-mode for acceptEdits mode', () => {
       const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'acceptEdits' })
 
-      expect(args).toContain('--dangerously-skip-permissions')
+      expect(args).toContain('--permission-mode')
+      expect(args).toContain('acceptEdits')
     })
 
-    test('adds flags for bypassPermissions mode', () => {
+    test('adds --dangerously-skip-permissions for bypassPermissions mode', () => {
       const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'bypassPermissions' })
 
       expect(args).toContain('--dangerously-skip-permissions')
@@ -121,12 +133,14 @@ describe('buildClaudeArgs', () => {
       const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'default' })
 
       expect(args).not.toContain('--dangerously-skip-permissions')
+      expect(args).not.toContain('--permission-mode')
     })
 
     test('omits permission flags when undefined', () => {
       const args = buildClaudeArgs({ prompt: 'test' })
 
       expect(args).not.toContain('--dangerously-skip-permissions')
+      expect(args).not.toContain('--permission-mode')
     })
   })
 
@@ -267,6 +281,7 @@ describe('buildClaudeArgs', () => {
 
   describe('combined options', () => {
     test('builds correct args with all options', () => {
+      // Note: continue and resume are mutually exclusive, so we test with resume only
       const args = buildClaudeArgs({
         prompt: 'write a test',
         model: 'sonnet',
@@ -277,7 +292,6 @@ describe('buildClaudeArgs', () => {
         mcpConfig: '/mcp.json',
         allowedTools: ['Read'],
         disallowedTools: ['Bash'],
-        continue: true,
         resume: 'session-1'
       })
 
@@ -286,7 +300,8 @@ describe('buildClaudeArgs', () => {
       expect(args).toContain('claude-sonnet-4-20250514')
       expect(args).toContain('--max-turns')
       expect(args).toContain('10')
-      expect(args).toContain('--dangerously-skip-permissions')
+      expect(args).toContain('--permission-mode')
+      expect(args).toContain('acceptEdits')
       expect(args).toContain('--system-prompt')
       expect(args).toContain('Be concise')
       expect(args).toContain('--output-format')
@@ -297,7 +312,6 @@ describe('buildClaudeArgs', () => {
       expect(args).toContain('Read')
       expect(args).toContain('--disallowedTools')
       expect(args).toContain('Bash')
-      expect(args).toContain('--continue')
       expect(args).toContain('--resume')
       expect(args).toContain('session-1')
       expect(args[args.length - 1]).toBe('write a test')

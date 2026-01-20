@@ -287,7 +287,7 @@ describe('arg-builder integration', () => {
       allowedTools: ['Read', 'Write'],
       disallowedTools: ['Bash'],
       continue: true,
-      resume: 'session-123',
+      // Note: cannot have both continue and resume - removed resume
     }
 
     const args = buildClaudeArgs(options)
@@ -310,8 +310,6 @@ describe('arg-builder integration', () => {
     expect(args).toContain('--disallowedTools')
     expect(args).toContain('Bash')
     expect(args).toContain('--continue')
-    expect(args).toContain('--resume')
-    expect(args).toContain('session-123')
     expect(args[args.length - 1]).toBe('test prompt')
   })
 })

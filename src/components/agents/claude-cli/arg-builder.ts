@@ -14,12 +14,12 @@ export const modelMap: Record<string, string> = {
 }
 
 /**
- * Permission mode to CLI flag mapping
+ * Build permission arguments based on mode
  */
-export const permissionFlags: Record<ClaudePermissionMode, string[]> = {
-  default: [],
-  acceptEdits: ['--dangerously-skip-permissions'],
-  bypassPermissions: ['--dangerously-skip-permissions'],
+function buildPermissionArgs(mode?: ClaudePermissionMode): string[] {
+  if (!mode || mode === 'default') return []
+  if (mode === 'bypassPermissions') return ['--dangerously-skip-permissions']
+  return ['--permission-mode', mode]
 }
 
 /**
@@ -51,10 +51,13 @@ export function buildClaudeArgs(options: CLIExecutionOptions): string[] {
     args.push('--max-turns', String(options.maxTurns))
   }
 
-  // Permission mode
-  if (options.permissionMode) {
-    args.push(...permissionFlags[options.permissionMode])
+  // Validate continue/resume mutual exclusivity
+  if (options.continue && options.resume) {
+    throw new Error('Cannot specify both continue and resume options')
   }
+
+  // Permission mode
+  args.push(...buildPermissionArgs(options.permissionMode))
 
   // System prompt
   if (options.systemPrompt) {
