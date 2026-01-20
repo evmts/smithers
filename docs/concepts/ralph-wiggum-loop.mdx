@@ -5,9 +5,9 @@ description: How the plan evolves over time
 
 # The Ralph Loop
 
-Ralph is the event loop. Each iteration:
+[Ralph](https://ghuntley.com/ralph/) is the autonomous agent loop pattern. Each iteration:
 
-1. Render JSX → execution plan
+1. Render React → execution plan
 2. Execute runnable agents
 3. Agent output updates state
 4. State change triggers re-render
@@ -32,7 +32,7 @@ Smithers uses a reactive render loop powered by React state:
 │                                                         │
 │  ┌──────────┐    ┌─────────┐    ┌──────────────────┐   │
 │  │  Render  │───▶│ Execute │───▶│ Update Signals   │   │
-│  │   JSX    │    │ Claude  │    │ (onFinished)     │   │
+│  │  React   │    │ Agents  │    │ (onFinished)     │   │
 │  └──────────┘    └─────────┘    └──────────────────┘   │
 │       ▲                                   │             │
 │       │                                   │             │
@@ -42,8 +42,8 @@ Smithers uses a reactive render loop powered by React state:
 └─────────────────────────────────────────────────────────┘
 ```
 
-1. **Render**: Your JSX components render using React's state management
-2. **Execute**: `<Claude>` nodes execute via the Claude Code CLI
+1. **Render**: Your React components render using React's state management
+2. **Execute**: `<Claude>` nodes execute via the Claude CLI
 3. **Update**: `onFinished` callbacks update React state
 4. **Re-render**: State changes trigger reactive updates
 5. **Loop**: Process repeats until no pending agents remain
@@ -174,12 +174,7 @@ export function PhaseWorkflow({ db, executionId }) {
   );
   const phase = phaseVal ?? "research";
 
-  const setPhase = (newPhase: string) => {
-    db.db.run(
-      "INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)",
-      [newPhase]
-    );
-  };
+  const setPhase = (newPhase: string) => db.state.set('phase', newPhase);
 
   return (
     <SmithersProvider
@@ -320,7 +315,7 @@ Smithers uses React as a workflow DSL. Understanding these rules prevents common
 
 ## Orchestration Context
 
-SmithersProvider exposes orchestration context. `useRalph` is deprecated; use `db.tasks` for task coordination:
+SmithersProvider exposes orchestration context via `useSmithers()`:
 
 ```tsx
 import { useSmithers, useMount } from "smithers-orchestrator";
@@ -345,7 +340,7 @@ function CustomStep() {
 ```
 
 The orchestration context tracks:
-- Active tasks (db.tasks)
+- Active tasks (`db.tasks`)
 - Completed tasks
 - Iteration count
 - Stop/timeout state
@@ -368,11 +363,8 @@ The orchestration context tracks:
     State in SQLite survives restarts. State in memory doesn't:
     ```tsx
     // Good - durable, survives restarts
-    const { data: phaseVal } = useQueryValue<string>(db.db,
-      "SELECT value FROM state WHERE key = 'phase'");
-    const phase = phaseVal ?? "start";
-    const setPhase = (p: string) =>
-      db.db.run("INSERT OR REPLACE INTO state (key, value) VALUES ('phase', ?)", [p]);
+    const phase = db.state.get('phase') ?? "start";
+    const setPhase = (p: string) => db.state.set('phase', p);
 
     // Bad - lost on restart
     const [phase, setPhase] = useState("start");
@@ -411,7 +403,7 @@ The orchestration context tracks:
 
 ## SmithersProvider: The Root Ralph Loop
 
-`<SmithersProvider>` is a special Ralph Wiggum Loop that serves as the root orchestration wrapper. Unlike `<Ralph>` which is used for specific workflows within your component tree, `<SmithersProvider>` wraps your entire orchestration and manages the global Ralph loop.
+`<SmithersProvider>` is the root orchestration wrapper that manages the Ralph loop for your entire workflow.
 
 **Default Behavior:**
 By default, `<SmithersProvider>` runs the Ralph loop for up to **100 iterations**. This is sufficient for most workflows.
