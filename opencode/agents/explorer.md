@@ -1,15 +1,15 @@
 ---
 description: Fast codebase exploration with Smithers SQLite schema knowledge
 color: "#F59E0B"
-mode: auto
+mode: subagent
 model: google/gemini-2.5-flash
 permission:
-  "*": "deny"
-  read: "allow"
-  smithers_glob: "allow"
-  smithers_grep: "allow"
-  smithers_discover: "allow"
-  smithers_status: "allow"
+  "*": deny
+  read: allow
+  smithers_glob: allow
+  smithers_grep: allow
+  smithers_discover: allow
+  smithers_status: allow
 ---
 
 # Smithers Explorer

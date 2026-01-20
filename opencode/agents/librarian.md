@@ -1,16 +1,16 @@
 ---
 description: Smithers API documentation and external reference lookup
 color: "#3B82F6"
-mode: auto
-model: anthropic/claude-sonnet-4
+mode: subagent
+model: anthropic/claude-sonnet-4-20250514
 permission:
-  "*": "deny"
-  read: "allow"
-  smithers_glob: "allow"
-  smithers_grep: "allow"
-  smithers_discover: "allow"
-  webfetch: "allow"
-  websearch: "allow"
+  "*": deny
+  read: allow
+  smithers_glob: allow
+  smithers_grep: allow
+  smithers_discover: allow
+  webfetch: allow
+  websearch: allow
 ---
 
 # Smithers Librarian

@@ -1,13 +1,13 @@
 ---
 description: Watches running executions, reports progress, detects issues
 color: "#8B5CF6"
-mode: auto
+mode: subagent
 model: google/gemini-2.5-flash
 permission:
-  "*": "deny"
-  smithers_status: "allow"
-  smithers_frames: "allow"
-  smithers_discover: "allow"
+  "*": deny
+  smithers_status: allow
+  smithers_frames: allow
+  smithers_discover: allow
 ---
 
 # Smithers Monitor

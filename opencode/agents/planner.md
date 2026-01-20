@@ -1,14 +1,14 @@
 ---
 description: Creates human-readable plans from user requests through interview
 color: "#10B981"
-mode: auto
-model: anthropic/claude-sonnet-4
+mode: subagent
+model: anthropic/claude-sonnet-4-20250514
 permission:
-  "*": "deny"
-  read: "allow"
-  smithers_glob: "allow"
-  smithers_grep: "allow"
-  smithers_discover: "allow"
+  "*": deny
+  read: allow
+  smithers_glob: allow
+  smithers_grep: allow
+  smithers_discover: allow
 ---
 
 # Smithers Planner

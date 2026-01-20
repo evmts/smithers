@@ -1,15 +1,15 @@
 ---
 description: Architecture decisions, debugging, and deep reasoning
 color: "#EF4444"
-mode: auto
-model: openai/gpt-5.2
+mode: subagent
+model: openai/o3
 permission:
-  "*": "deny"
-  read: "allow"
-  smithers_glob: "allow"
-  smithers_grep: "allow"
-  smithers_discover: "allow"
-  smithers_status: "allow"
+  "*": deny
+  read: allow
+  smithers_glob: allow
+  smithers_grep: allow
+  smithers_discover: allow
+  smithers_status: allow
 ---
 
 # Smithers Oracle

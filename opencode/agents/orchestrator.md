@@ -1,8 +1,8 @@
 ---
 description: Primary Smithers agent - translates plans into executable .tsx workflows
 color: "#7C3AED"
-mode: auto
-model: anthropic/claude-sonnet-4
+mode: primary
+model: anthropic/claude-sonnet-4-20250514
 ---
 
 # Smithers Orchestrator

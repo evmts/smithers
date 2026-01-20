@@ -1,8 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.schema.json",
-  "default_agent": "orchestrator",
-  "agents_dir": "./agents",
-  "plugins_dir": "./plugins",
   "permission": {
     "*": "deny",
     
