@@ -8,10 +8,17 @@ Set Height 500
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
 
-Hide
-Type "cd /tmp && rm -rf structured_demo && mkdir structured_demo && cd structured_demo"
+Type "# Define Zod schema for typed agent output"
+Sleep 500ms
 Enter
-Type "cat > structured.tsx << 'EOF'"
+Sleep 500ms
+
+Type "cat structured.tsx"
+Sleep 500ms
+Enter
+
+Hide
+Type "cat << 'EOF'"
 Enter
 Type "import { z } from 'zod'"
 Enter
@@ -19,7 +26,7 @@ Type "import { Claude } from 'smithers-orchestrator'"
 Enter
 Type ""
 Enter
-Type "const ReviewSummary = z.object({"
+Type "const ReviewSchema = z.object({"
 Enter
 Type "  summary: z.string(),"
 Enter
@@ -33,50 +40,39 @@ Type ""
 Enter
 Type "<Claude"
 Enter
-Type "  schema={ReviewSummary}"
-Enter
-Type "  schemaRetries={2}"
+Type "  schema={ReviewSchema}"
 Enter
 Type "  onFinished={(r) => console.log(r.structuredOutput)}"
 Enter
 Type ">"
 Enter
-Type "  Summarize this PR for a reviewer."
+Type "  Summarize this PR for review."
 Enter
 Type "</Claude>"
 Enter
 Type "EOF"
 Enter
 Show
-
-Type "echo '# Define a Zod schema for typed agent output'"
-Sleep 500ms
-Enter
-Sleep 500ms
-
-Type "cat structured.tsx"
-Sleep 500ms
-Enter
 Sleep 2s
 
-Type "echo '# Agent returns validated JSON:'"
-Enter
+Type "bun structured.tsx"
 Sleep 500ms
+Enter
 
 Hide
-Type "cat << 'JSONEOF'"
+Type "cat << 'JSON'"
 Enter
 Type "{"
 Enter
-Type "  summary: Adds resume-safe CI recovery,"
+Type "  summary: Adds resume-safe CI recovery workflow,"
 Enter
-Type "  changedFiles: [ci-recovery.tsx],"
+Type "  changedFiles: [ci-recovery.tsx, db.ts],"
 Enter
-Type "  risks: [Modifies git state]"
+Type "  risks: [Modifies git state, Requires API key]"
 Enter
 Type "}"
 Enter
-Type "JSONEOF"
+Type "JSON"
 Enter
 Show
 Sleep 2s

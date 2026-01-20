@@ -8,44 +8,49 @@ Set Height 500
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
 
-Hide
-Type "cd /tmp && rm -rf vcs_demo && mkdir vcs_demo && cd vcs_demo"
+Type "# Agent makes changes and commits with audit trail"
+Sleep 500ms
 Enter
-Type "git init -q && echo 'v1' > app.txt && git add . && git commit -qm 'init'"
+Sleep 500ms
+
+Type "git add -A && git commit -m 'feat: add user auth'"
+Sleep 500ms
+Enter
+
+Hide
+Type "echo '[main abc1234] feat: add user auth'"
+Enter
+Type "echo ' 3 files changed, 142 insertions(+)'"
 Enter
 Show
-
-Type "echo '# Agent makes changes and commits'"
-Sleep 500ms
-Enter
-
-Type "echo 'v2' >> app.txt"
-Sleep 500ms
-Enter
-
-Type "git add app.txt"
-Sleep 500ms
-Enter
-
-Type "git commit -m 'feat: update app'"
-Sleep 500ms
-Enter
 Sleep 1s
 
-Type "echo '# Add audit metadata via git notes'"
-Enter
-
-Type "git notes add -m 'smithers: executionId=e_01 model=sonnet'"
+Type "# Smithers adds execution metadata via git notes"
 Sleep 500ms
 Enter
-Sleep 1s
+Sleep 500ms
+
+Type "git notes add -m 'smithers: executionId=e_42 model=sonnet phase=implement'"
+Sleep 500ms
+Enter
+Sleep 500ms
 
 Type "git log -1 --oneline"
 Sleep 500ms
 Enter
+
+Hide
+Type "echo 'abc1234 feat: add user auth'"
+Enter
+Show
 Sleep 1s
 
 Type "git notes show HEAD"
 Sleep 500ms
 Enter
+
+Hide
+Type "echo 'smithers: executionId=e_42 model=sonnet phase=implement'"
+Enter
+Show
 Sleep 2s

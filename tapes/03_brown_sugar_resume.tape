@@ -8,54 +8,80 @@ Set Height 500
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
 
-Hide
-Type "cd /tmp && rm -rf resume_demo && mkdir resume_demo && cd resume_demo"
-Enter
-Type "mkdir -p .smithers/ci-recovery && touch .smithers/ci-recovery/execution.sqlite"
-Enter
-Show
-
-Type "echo '# Start a long-running workflow'"
+Type "# Start a long-running CI recovery workflow"
 Sleep 500ms
 Enter
+Sleep 500ms
 
 Type "bun ci-recovery.tsx"
 Sleep 500ms
 Enter
 
 Hide
-Type "echo '[iteration 1] running tests...'"
+Type "echo '[smithers] Starting execution e_42'"
 Enter
-Type "sleep 0.5 && echo '[iteration 2] running tests...'"
+Type "echo '[iteration 1] Running tests...'"
 Enter
-Type "sleep 0.5 && echo '[iteration 3] running tests...'"
+Type "sleep 0.3"
+Enter
+Type "echo '[iteration 1] 2 tests failed'"
+Enter
+Type "echo '[claude] Fixing auth_test.ts...'"
+Enter
+Type "sleep 0.3"
+Enter
+Type "echo '[iteration 2] Running tests...'"
+Enter
+Type "sleep 0.3"
+Enter
+Type "echo '[iteration 2] 1 test failed'"
+Enter
+Type "echo '[claude] Fixing db_test.ts...'"
+Enter
+Type "sleep 0.3"
+Enter
+Type "echo '[iteration 3] Running tests...'"
 Enter
 Show
-Sleep 2s
+Sleep 1s
 
-Type@0ms ""
 Ctrl+C
 Sleep 500ms
 
-Type "echo '# Process interrupted! But state persists in SQLite'"
+Type "# Process killed! But state persists in SQLite"
+Sleep 500ms
 Enter
 Sleep 1s
 
 Type "ls .smithers/ci-recovery/"
 Sleep 500ms
 Enter
+
+Hide
+Type "echo 'execution.sqlite'"
+Enter
+Show
 Sleep 1s
 
-Type "echo '# Resume from where we left off'"
+Type "# Resume from where we left off"
+Sleep 500ms
 Enter
+Sleep 500ms
+
 Type "bun ci-recovery.tsx"
 Sleep 500ms
 Enter
 
 Hide
-Type "echo '[resumed] continuing at iteration 3'"
+Type "echo '[smithers] Resuming execution e_42 at iteration 3'"
 Enter
-Type "echo '[iteration 3] tests passed!'"
+Type "echo '[iteration 3] Running tests...'"
+Enter
+Type "sleep 0.3"
+Enter
+Type "echo '[iteration 3] All tests passed!'"
+Enter
+Type "echo '[smithers] Execution complete'"
 Enter
 Show
 Sleep 2s

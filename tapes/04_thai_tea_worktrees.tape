@@ -8,36 +8,50 @@ Set Height 500
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
 
-Hide
-Type "cd /tmp && rm -rf worktree_demo && mkdir worktree_demo && cd worktree_demo"
+Type "# Create isolated worktrees for parallel agent work"
+Sleep 500ms
 Enter
-Type "git init -q && echo 'base' > README.md && git add . && git commit -qm 'init'"
+Sleep 500ms
+
+Type "git worktree add -b feature-auth .worktrees/feature-auth"
+Sleep 500ms
+Enter
+
+Hide
+Type "echo 'Preparing worktree (new branch feature-auth)'"
+Enter
+Type "echo 'HEAD is now at abc1234 init'"
 Enter
 Show
+Sleep 1s
 
-Type "echo '# Create isolated worktrees for parallel work'"
+Type "git worktree add -b feature-api .worktrees/feature-api"
 Sleep 500ms
 Enter
 
-Type "mkdir -p .worktrees"
-Sleep 500ms
+Hide
+Type "echo 'Preparing worktree (new branch feature-api)'"
 Enter
-
-Type "git worktree add -b feature-a .worktrees/feature-a"
-Sleep 500ms
+Type "echo 'HEAD is now at abc1234 init'"
 Enter
-Sleep 500ms
-
-Type "git worktree add -b feature-b .worktrees/feature-b"
-Sleep 500ms
-Enter
-Sleep 500ms
+Show
+Sleep 1s
 
 Type "git worktree list"
 Sleep 500ms
 Enter
+
+Hide
+Type "echo '/project              abc1234 [main]'"
+Enter
+Type "echo '/project/.worktrees/feature-auth  abc1234 [feature-auth]'"
+Enter
+Type "echo '/project/.worktrees/feature-api   abc1234 [feature-api]'"
+Enter
+Show
 Sleep 2s
 
-Type "echo '# Each agent works in its own worktree - no conflicts'"
+Type "# Each agent works in its own worktree - no conflicts"
+Sleep 500ms
 Enter
 Sleep 2s

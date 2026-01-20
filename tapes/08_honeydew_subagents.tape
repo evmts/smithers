@@ -8,22 +8,29 @@ Set Height 500
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
 
-Hide
-Type "cd /tmp && rm -rf subagent_demo && mkdir subagent_demo && cd subagent_demo"
+Type "# Nested Smithers: planner + executor in isolated worktree"
+Sleep 500ms
 Enter
-Type "cat > subagent.tsx << 'EOF'"
+Sleep 500ms
+
+Type "cat subagent.tsx"
+Sleep 500ms
+Enter
+
+Hide
+Type "cat << 'EOF'"
 Enter
 Type "import { Worktree, Smithers } from 'smithers-orchestrator'"
 Enter
 Type ""
 Enter
-Type "// Nested orchestration: planner + executor in isolated worktree"
+Type "// Planner generates a script, executor runs it"
 Enter
 Type "<Worktree branch='complex-feature' base='main'>"
 Enter
-Type "  <Smithers plannerModel='opus'>"
+Type "  <Smithers plannerModel='opus' executionModel='sonnet'>"
 Enter
-Type "    Plan and implement a complex multi-phase feature."
+Type "    Implement multi-phase payment processing."
 Enter
 Type "  </Smithers>"
 Enter
@@ -32,27 +39,36 @@ Enter
 Type "EOF"
 Enter
 Show
-
-Type "echo '# Nested Smithers: planner + executor in isolated worktree'"
-Sleep 500ms
-Enter
-Sleep 500ms
-
-Type "cat subagent.tsx"
-Sleep 500ms
-Enter
 Sleep 2s
 
-Type "echo '# The planner generates a persisted plan:'"
-Enter
+Type "bun subagent.tsx"
 Sleep 500ms
+Enter
 
-Type "echo '1) Inspect repository structure'"
+Hide
+Type "echo '[smithers] Creating worktree: complex-feature'"
 Enter
-Type "echo '2) Make changes in worktree'"
+Type "echo '[planner:opus] Generating execution plan...'"
 Enter
-Type "echo '3) Run tests'"
+Type "sleep 0.3"
 Enter
-Type "echo '4) Open review gate'"
+Type "echo '[planner:opus] Plan: 4 phases, 12 steps'"
 Enter
+Type "echo '[executor:sonnet] Phase 1: Schema design'"
+Enter
+Type "sleep 0.3"
+Enter
+Type "echo '[executor:sonnet] Phase 2: API implementation'"
+Enter
+Type "sleep 0.3"
+Enter
+Type "echo '[executor:sonnet] Phase 3: Tests'"
+Enter
+Type "sleep 0.3"
+Enter
+Type "echo '[executor:sonnet] Phase 4: Documentation'"
+Enter
+Type "echo '[smithers] Subagent complete'"
+Enter
+Show
 Sleep 2s

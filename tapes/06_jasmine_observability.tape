@@ -8,7 +8,7 @@ Set Height 500
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
 
-Type "echo '# Query execution history with smithers db'"
+Type "# Query execution history from SQLite"
 Sleep 500ms
 Enter
 Sleep 500ms
@@ -18,47 +18,47 @@ Sleep 500ms
 Enter
 
 Hide
-Type "echo 'id        name         status     duration'"
+Type "echo 'ID       NAME          STATUS     DURATION'"
 Enter
-Type "echo '--------  -----------  ---------  --------'"
+Type "echo '──────── ───────────── ────────── ────────'"
 Enter
-Type "echo 'e_01      PR Review    completed  42s'"
+Type "echo 'e_41     PR Review     completed  42s'"
 Enter
-Type "echo 'e_02      CI Recovery  running    3m'"
+Type "echo 'e_42     CI Recovery   running    3m 12s'"
 Enter
-Show
-Sleep 2s
-
-Type "smithers db phases --execution e_02"
-Sleep 500ms
-Enter
-
-Hide
-Type "echo 'phase       iterations  status'"
-Enter
-Type "echo '----------  ----------  -------'"
-Enter
-Type "echo 'implement   2           done'"
-Enter
-Type "echo 'test        2           done'"
-Enter
-Type "echo 'review      0           pending'"
+Type "echo 'e_43     Night Shift   pending    -'"
 Enter
 Show
 Sleep 2s
 
-Type "smithers db tasks --execution e_02"
+Type "smithers db state --execution e_42"
 Sleep 500ms
 Enter
 
 Hide
-Type "echo 'id       description'"
+Type "echo 'KEY            VALUE'"
 Enter
-Type "echo '-------  -------------------'"
+Type "echo '────────────── ─────────────────'"
 Enter
-Type "echo 'task_17  Run tests'"
+Type "echo 'phase          implement'"
 Enter
-Type "echo 'task_18  Fix failing test'"
+Type "echo 'iteration      3'"
+Enter
+Type "echo 'tests_passed   false'"
+Enter
+Type "echo 'last_error     auth_test.ts:42'"
+Enter
+Show
+Sleep 2s
+
+Type "smithers db stats"
+Sleep 500ms
+Enter
+
+Hide
+Type "echo 'Executions: 43  |  Agents: 127  |  Tasks: 891'"
+Enter
+Type "echo 'DB size: 2.4 MB  |  Uptime: 14d'"
 Enter
 Show
 Sleep 2s

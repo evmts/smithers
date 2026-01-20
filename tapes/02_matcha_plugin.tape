@@ -8,10 +8,42 @@ Set Height 500
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
 
-Hide
-Type "cd /tmp && rm -rf matcha_demo && mkdir matcha_demo && cd matcha_demo"
+Type "# In Claude Code, install the plugin:"
+Sleep 500ms
 Enter
-Type "cat > pr-review-workflow.tsx << 'EOF'"
+Sleep 500ms
+
+Type "/plugin add evmts/smithers"
+Sleep 500ms
+Enter
+
+Hide
+Type "echo '✓ Installed smithers plugin'"
+Enter
+Show
+Sleep 1s
+
+Type "# Then ask Claude to generate a workflow:"
+Sleep 500ms
+Enter
+Sleep 500ms
+
+Type "# You: Create a workflow that reviews PRs"
+Sleep 500ms
+Enter
+Sleep 500ms
+
+Type "# Claude: I'll create a PR review workflow..."
+Sleep 500ms
+Enter
+Sleep 1s
+
+Type "cat pr-review-workflow.tsx"
+Sleep 500ms
+Enter
+
+Hide
+Type "cat << 'EOF'"
 Enter
 Type "#!/usr/bin/env bun"
 Enter
@@ -31,9 +63,9 @@ Type "  return ("
 Enter
 Type "    <SmithersProvider db={db} executionId={executionId}>"
 Enter
-Type "      <Phase name='Review PR'>"
+Type "      <Phase name='review'>"
 Enter
-Type "        <Step name='read'><Claude>Read the PR</Claude></Step>"
+Type "        <Step name='read'><Claude>Read the PR diff</Claude></Step>"
 Enter
 Type "        <Step name='gate'><Review criteria={['Correctness','Safety']} /></Step>"
 Enter
@@ -56,25 +88,4 @@ Enter
 Type "EOF"
 Enter
 Show
-
-Type "echo '# In Claude Code:'"
-Sleep 500ms
-Enter
-Type "echo '/plugin marketplace add evmts/smithers'"
-Enter
-Type "echo '/plugin install smithers@smithers'"
-Enter
-Sleep 1s
-
-Type "echo ''"
-Enter
-Type "echo '# You: Create a workflow that reviews PRs'"
-Enter
-Type "echo '# Claude: generated pr-review-workflow.tsx'"
-Enter
-Sleep 1s
-
-Type "cat pr-review-workflow.tsx"
-Sleep 500ms
-Enter
 Sleep 3s
