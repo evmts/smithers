@@ -304,11 +304,7 @@ export function Smithers(props: SmithersProps): ReactNode {
           throw new Error(smithersResult.output || 'Smithers subagent execution failed')
         }
 
-        if (!isMounted()) {
-          return
-        }
-
-        // Log completion to database (this also sets status to 'completed')
+        // ALWAYS log completion to database regardless of mount state
         // Store full structured data including planningResult for reconstruction
         if (props.reportingEnabled !== false && activeAgentId) {
           await db.agents.complete(
@@ -321,6 +317,10 @@ export function Smithers(props: SmithersProps): ReactNode {
             },
             smithersResult.tokensUsed
           )
+        }
+
+        if (!isMounted()) {
+          return
         }
 
         const totalDurationMs = endTotalTiming()

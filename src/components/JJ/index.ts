@@ -9,7 +9,7 @@ export { Rebase, type RebaseProps } from './Rebase.js'
 
 // Out-of-loop JJ state access
 export {
-  useSnapshot,
+  getSnapshot,
   refreshSnapshot,
   clearSnapshotCache,
   type JJStateSnapshot,

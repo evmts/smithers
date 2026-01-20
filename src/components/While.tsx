@@ -51,39 +51,49 @@ export function While(props: WhileProps): ReactNode {
     hasInitializedRef.current = true
 
     ;(async () => {
-      if (db.state.get(statusKey) === null) {
-        const conditionResult = await props.condition()
-        
-        if (conditionResult && iterationValue < maxIterations) {
-          db.state.set(iterationKey, 0, 'while_init')
-          db.state.set(statusKey, 'running', 'while_start')
-          props.onIteration?.(0)
-        } else {
-          db.state.set(statusKey, 'complete', 'while_condition_false')
-          props.onComplete?.(0, 'condition')
+      const taskId = db.tasks.start('while_init', whileId)
+      try {
+        if (db.state.get(statusKey) === null) {
+          const conditionResult = await props.condition()
+          
+          if (conditionResult && iterationValue < maxIterations) {
+            db.state.set(iterationKey, 0, 'while_init')
+            db.state.set(statusKey, 'running', 'while_start')
+            props.onIteration?.(0)
+          } else {
+            db.state.set(statusKey, 'complete', 'while_condition_false')
+            props.onComplete?.(0, 'condition')
+          }
         }
+      } finally {
+        db.tasks.complete(taskId)
       }
     })()
   })
 
   const handleIterationComplete = async () => {
-    const nextIteration = iterationValue + 1
-    
-    if (nextIteration >= maxIterations) {
-      db.state.set(statusKey, 'complete', 'while_max')
-      props.onComplete?.(nextIteration, 'max')
-      return
-    }
+    const taskId = db.tasks.start('while_condition', `${whileId}:${iterationValue}`)
+    try {
+      const nextIteration = iterationValue + 1
+      
+      if (nextIteration >= maxIterations) {
+        db.state.set(statusKey, 'complete', 'while_max')
+        props.onComplete?.(nextIteration, 'max')
+        return
+      }
 
-    const conditionResult = await props.condition()
-    if (!conditionResult) {
-      db.state.set(statusKey, 'complete', 'while_condition')
-      props.onComplete?.(nextIteration, 'condition')
-      return
-    }
+      const conditionResult = await props.condition()
+      if (!conditionResult) {
+        db.state.set(statusKey, 'complete', 'while_condition')
+        props.onComplete?.(nextIteration, 'condition')
+        return
+      }
 
-    db.state.set(iterationKey, nextIteration, 'while_advance')
-    props.onIteration?.(nextIteration)
+      db.state.set(iterationKey, nextIteration, 'while_advance')
+      props.onIteration?.(nextIteration)
+    } finally {
+      db.tasks.complete(taskId)
+    }
   }
 
   const contextValue = useMemo(() => ({

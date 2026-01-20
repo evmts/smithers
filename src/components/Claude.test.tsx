@@ -443,7 +443,8 @@ describe('buildClaudeArgs', () => {
 
   test('includes permission flags for acceptEdits', () => {
     const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'acceptEdits' })
-    expect(args).toContain('--dangerously-skip-permissions')
+    expect(args).toContain('--permission-mode')
+    expect(args).toContain('acceptEdits')
   })
 
   test('includes permission flags for bypassPermissions', () => {
@@ -454,6 +455,7 @@ describe('buildClaudeArgs', () => {
   test('no permission flags for default mode', () => {
     const args = buildClaudeArgs({ prompt: 'test', permissionMode: 'default' })
     expect(args).not.toContain('--dangerously-skip-permissions')
+    expect(args).not.toContain('--permission-mode')
   })
 
   test('includes system prompt when specified', () => {

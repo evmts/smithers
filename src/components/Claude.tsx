@@ -64,7 +64,7 @@ export function Claude(props: ClaudeProps): ReactNode {
   const agentIdRef = useRef<string | null>(null)
   const tailLogRef = useRef<TailLogEntry[]>([])
   const { invalidateAndUpdate } = useVersionTracking()
-  const { data: agentRows } = useQuery<AgentRow>(
+  const { data: agentRows = [] } = useQuery<AgentRow>(
     reactiveDb,
     "SELECT status, result, result_structured, error, tokens_input, tokens_output, duration_ms FROM agents WHERE id = ?",
     [agentIdRef.current ?? '']
