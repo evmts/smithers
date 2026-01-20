@@ -96,7 +96,7 @@ export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
            VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
           [id, currentExecutionId, currentPhaseId, model, systemPrompt ?? null, prompt, timestamp, timestamp, logPath ?? null]
         )
-        rdb.run('UPDATE executions SET total_agents = total_agents + 1 WHERE id = ?', [currentExecutionId])
+        rdb.run('UPDATE executions SET total_agents = COALESCE(total_agents, 0) + 1 WHERE id = ?', [currentExecutionId])
       })
       setCurrentAgentId(id)
       return id
@@ -113,7 +113,7 @@ export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
           [result, structuredResult ? JSON.stringify(structuredResult) : null, tokens?.input ?? null, tokens?.output ?? null, timestamp, durationMs, id]
         )
         if (tokens && startRow) {
-          rdb.run('UPDATE executions SET total_tokens_used = total_tokens_used + ? WHERE id = ?',
+          rdb.run('UPDATE executions SET total_tokens_used = COALESCE(total_tokens_used, 0) + ? WHERE id = ?',
             [(tokens.input ?? 0) + (tokens.output ?? 0), startRow.execution_id])
         }
       })

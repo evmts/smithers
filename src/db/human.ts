@@ -2,7 +2,7 @@
 // Handles requests for human input/confirmation
 
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
-import { uuid, now } from './utils.js'
+import { uuid, now, parseJson } from './utils.js'
 
 export type HumanInteractionType =
   | 'confirmation'
@@ -125,9 +125,9 @@ export interface HumanModuleContext {
 export function parseHumanInteraction(row: HumanInteractionRow): HumanInteraction {
   return {
     ...row,
-    options: row.options ? JSON.parse(row.options) : null,
-    response: row.response ? JSON.parse(row.response) : null,
-    session_config: row.session_config ? JSON.parse(row.session_config) : null,
+    options: parseJson<string[] | null>(row.options, null),
+    response: parseJson<any>(row.response, null),
+    session_config: parseJson<InteractiveSessionConfig | null>(row.session_config, null),
   }
 }
 

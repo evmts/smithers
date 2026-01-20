@@ -122,9 +122,11 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
 
     findIncomplete: (): Execution | null => {
       if (rdb.isClosed) return null
-      return mapExecution(rdb.queryOne(
+      const exec = mapExecution(rdb.queryOne(
         "SELECT * FROM executions WHERE status IN ('pending', 'running') ORDER BY created_at DESC LIMIT 1"
       ))
+      if (exec) setCurrentExecutionId(exec.id)
+      return exec
     },
   }
 

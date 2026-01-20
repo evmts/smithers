@@ -53,9 +53,11 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
 
     setMany: (updates: Record<string, unknown>, trigger?: string) => {
       if (rdb.isClosed) return
-      for (const [key, value] of Object.entries(updates)) {
-        state.set(key, value, trigger)
-      }
+      rdb.transaction(() => {
+        for (const [key, value] of Object.entries(updates)) {
+          state.set(key, value, trigger)
+        }
+      })
     },
 
     getAll: (): Record<string, unknown> => {
@@ -96,18 +98,17 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
 
     delete: (key: string, trigger?: string): void => {
       if (rdb.isClosed) return
-      const oldValue = state.get(key)
-      if (oldValue === null) return // Key doesn't exist
+      const oldRow = rdb.queryOne<{ value: string }>('SELECT value FROM state WHERE key = ?', [key])
+      if (!oldRow) return // Key doesn't exist
 
       rdb.run('DELETE FROM state WHERE key = ?', [key])
       rdb.invalidate(['state'])
 
-      // Log transition
       const currentExecutionId = getCurrentExecutionId()
       if (currentExecutionId) {
         rdb.run(
           'INSERT INTO transitions (id, execution_id, key, old_value, new_value, trigger, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [uuid(), currentExecutionId, key, JSON.stringify(oldValue), 'null', trigger ?? 'delete', now()]
+          [uuid(), currentExecutionId, key, oldRow.value, 'null', trigger ?? 'delete', now()]
         )
       }
     },

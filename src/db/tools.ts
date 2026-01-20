@@ -42,8 +42,8 @@ export function createToolsModule(ctx: ToolsModuleContext): ToolsModule {
            VALUES (?, ?, ?, ?, ?, 'running', ?, ?)`,
           [id, agentId, currentExecutionId, toolName, JSON.stringify(input), timestamp, timestamp]
         )
-        rdb.run('UPDATE executions SET total_tool_calls = total_tool_calls + 1 WHERE id = ?', [currentExecutionId])
-        rdb.run('UPDATE agents SET tool_calls_count = tool_calls_count + 1 WHERE id = ?', [agentId])
+        rdb.run('UPDATE executions SET total_tool_calls = COALESCE(total_tool_calls, 0) + 1 WHERE id = ?', [currentExecutionId])
+        rdb.run('UPDATE agents SET tool_calls_count = COALESCE(tool_calls_count, 0) + 1 WHERE id = ?', [agentId])
       })
       return id
     },
