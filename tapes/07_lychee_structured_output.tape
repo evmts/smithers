@@ -1,41 +1,23 @@
-# 07_lychee_structured_output.tape
-# Purpose: demonstrate typed JSON return values for workflows.
-
+# Smithers Structured Output Demo
 Output "07_lychee_structured_output.gif"
 
-Require bash
-Require gum
-
 Set Shell "bash"
+Set FontSize 18
+Set Width 900
+Set Height 500
+Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
-Set FontFamily "JetBrains Mono"
-Set FontSize 22
-Set Width 1200
-Set Height 675
-Set Padding 20
-Set BorderRadius 12
-Set WindowBar Rings
-Set Framerate 30
-Set TypingSpeed 35ms
 
 Hide
-Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
+Type "cd /tmp && rm -rf structured_demo && mkdir structured_demo && cd structured_demo"
 Enter
-Type "rm -rf 07_lychee_structured_output && mkdir 07_lychee_structured_output && cd 07_lychee_structured_output"
+Type "cat > structured.tsx << 'EOF'"
 Enter
-Sleep 300ms
-Show
-
-Type "gum style --border double --align center --width 66 --padding '1 2' 'LYCHEE' 'Structured output: make agents return typed JSON'"
+Type "import { z } from 'zod'"
 Enter
-Sleep 800ms
-
-Type "cat > structured.tsx <<'EOF'"
+Type "import { Claude } from 'smithers-orchestrator'"
 Enter
-Type "import { z } from 'zod';"
-Enter
-Type "import { Claude } from 'smithers-orchestrator';"
-Enter
+Type ""
 Enter
 Type "const ReviewSummary = z.object({"
 Enter
@@ -45,8 +27,9 @@ Type "  changedFiles: z.array(z.string()),"
 Enter
 Type "  risks: z.array(z.string()),"
 Enter
-Type "});"
+Type "})"
 Enter
+Type ""
 Enter
 Type "<Claude"
 Enter
@@ -64,34 +47,36 @@ Type "</Claude>"
 Enter
 Type "EOF"
 Enter
-Sleep 300ms
+Show
 
-Type "sed -n '1,22p' structured.tsx"
+Type "echo '# Define a Zod schema for typed agent output'"
+Sleep 500ms
 Enter
-Sleep 900ms
+Sleep 500ms
 
-Type "gum style --border normal --padding '0 1' 'Representative JSON:'"
+Type "cat structured.tsx"
+Sleep 500ms
 Enter
-Sleep 250ms
+Sleep 2s
 
-Type "cat > out.json <<'EOF'"
+Type "echo '# Agent returns validated JSON:'"
+Enter
+Sleep 500ms
+
+Hide
+Type "cat << 'JSONEOF'"
 Enter
 Type "{"
 Enter
-Type "  'summary': 'Adds a resume-safe CI recovery workflow.',"
+Type "  summary: Adds resume-safe CI recovery,"
 Enter
-Type "  'changedFiles': ['ci-recovery.tsx', 'README.md'],"
+Type "  changedFiles: [ci-recovery.tsx],"
 Enter
-Type "  'risks': ['Potentially modifies git state', 'Runs commands']"
+Type "  risks: [Modifies git state]"
 Enter
 Type "}"
 Enter
-Type "EOF"
+Type "JSONEOF"
 Enter
-Type "cat out.json"
-Enter
-Sleep 1100ms
-
-Type "gum style --border double --align center --width 66 --padding '1 2' 'Stop parsing strings. Start consuming structured results.'"
-Enter
-Sleep 1100ms
+Show
+Sleep 2s

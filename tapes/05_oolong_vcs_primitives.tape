@@ -1,98 +1,51 @@
-# 05_oolong_vcs_primitives.tape
-# Purpose: show VCS primitives and an audit trail via notes.
-
+# Smithers VCS Primitives Demo
 Output "05_oolong_vcs_primitives.gif"
 
-Require bash
-Require gum
-Require git
-
 Set Shell "bash"
+Set FontSize 18
+Set Width 900
+Set Height 500
+Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
-Set FontFamily "JetBrains Mono"
-Set FontSize 22
-Set Width 1200
-Set Height 675
-Set Padding 20
-Set BorderRadius 12
-Set WindowBar Rings
-Set Framerate 30
-Set TypingSpeed 35ms
 
 Hide
-Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
+Type "cd /tmp && rm -rf vcs_demo && mkdir vcs_demo && cd vcs_demo"
 Enter
-Type "rm -rf 05_oolong_vcs_primitives && mkdir 05_oolong_vcs_primitives && cd 05_oolong_vcs_primitives"
+Type "git init -q && echo 'v1' > app.txt && git add . && git commit -qm 'init'"
 Enter
-Sleep 300ms
-Type "git init -q"
-Enter
-Type "echo 'v1' > app.txt"
-Enter
-Type "git add app.txt"
-Enter
-Type "git commit -qm 'chore: init'"
-Enter
-Sleep 300ms
 Show
 
-Type "gum style --border double --align center --width 66 --padding '1 2' 'OOLONG' 'Repo-native primitives: commits + notes + review gates'"
+Type "echo '# Agent makes changes and commits'"
+Sleep 500ms
 Enter
-Sleep 800ms
 
 Type "echo 'v2' >> app.txt"
+Sleep 500ms
 Enter
-Type "git add app.txt"
-Enter
-Type "git commit -qm 'feat: update app'"
-Enter
-Sleep 300ms
 
-Type "git notes add -m 'smithers: executionId=e_01 model=sonnet prompt=update app'"
+Type "git add app.txt"
+Sleep 500ms
 Enter
-Sleep 200ms
+
+Type "git commit -m 'feat: update app'"
+Sleep 500ms
+Enter
+Sleep 1s
+
+Type "echo '# Add audit metadata via git notes'"
+Enter
+
+Type "git notes add -m 'smithers: executionId=e_01 model=sonnet'"
+Sleep 500ms
+Enter
+Sleep 1s
 
 Type "git log -1 --oneline"
+Sleep 500ms
 Enter
-Sleep 800ms
+Sleep 1s
 
 Type "git notes show HEAD"
+Sleep 500ms
 Enter
-Sleep 900ms
-
-Type "gum style --border normal --padding '0 1' 'In Smithers, commits + notes are first-class:'"
-Enter
-Sleep 250ms
-
-Type "cat > vcs-snippet.tsx <<'EOF'"
-Enter
-Type "import { Commit } from 'smithers-orchestrator';"
-Enter
-Enter
-Type "<Commit"
-Enter
-Type "  message='feat: Add user authentication'"
-Enter
-Type "  all"
-Enter
-Type "  notes={{ smithers: true, prompt: 'Add auth' }}"
-Enter
-Type "  onFinished={(result) => {"
-Enter
-Type "    console.log('Committed: ' + result.commitHash);"
-Enter
-Type "  }}"
-Enter
-Type "/>"
-Enter
-Type "EOF"
-Enter
-Sleep 200ms
-
-Type "cat vcs-snippet.tsx"
-Enter
-Sleep 1100ms
-
-Type "gum style --border double --align center --width 66 --padding '1 2' 'Automation that leaves an audit trail.'"
-Enter
-Sleep 1100ms
+Sleep 2s

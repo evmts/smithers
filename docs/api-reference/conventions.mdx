@@ -5,57 +5,46 @@ description: Shared contracts for the database API
 
 # API Conventions
 
-These conventions apply to the Smithers database APIs.
-
 ## Sync vs Async
 
-All `db.*` modules are synchronous (no Promises). If a method returns a Promise,
-it will be explicitly documented (e.g., `db.tasks.withTask`).
+All `db.*` methods are synchronous. Exceptions documented explicitly.
 
-## Casing and Shapes
+## Casing
 
-- Method parameters use **camelCase**.
-- Return values use **snake_case** to match database column names.
-- JSON fields are parsed where noted; otherwise they are returned as stored.
+- Parameters: **camelCase**
+- Return values: **snake_case** (matches DB columns)
 
 ## Timestamps
 
-- Timestamps are stored as ISO 8601 strings in SQLite.
-- Some modules map timestamps to `Date` objects:
-  - `db.execution`
-  - `db.agents`
-  - `db.artifacts`
-  - `db.vcs`
-- Other modules return ISO strings directly:
-  - `db.state`, `db.memories`, `db.phases`, `db.steps`, `db.tools`, `db.tasks`, `db.human`
+ISO 8601 strings in SQLite. Some modules map to `Date`:
+
+| `Date` objects | ISO strings |
+|----------------|-------------|
+| `db.execution`, `db.agents`, `db.artifacts`, `db.vcs` | `db.state`, `db.memories`, `db.phases`, `db.steps`, `db.tools`, `db.tasks`, `db.human` |
 
 ## Status Vocabulary
 
-Common statuses:
+Common: `pending`, `running`, `completed`, `failed`, `cancelled`
 
-- `pending`, `running`, `completed`, `failed`, `cancelled`
-
-Module-specific additions:
-
+Module-specific:
 - Phases/Steps: `skipped`
 - Human: `approved`, `rejected`, `timeout`
 
 ## Execution Scope
 
-Modules that write records require a current execution (set by `db.execution.start()`):
+These require current execution (`db.execution.start()`):
+`db.phases`, `db.steps`, `db.agents`, `db.tools`, `db.tasks`, `db.artifacts`, `db.human`, `db.vcs`
 
-- `db.phases`, `db.steps`, `db.agents`, `db.tools`, `db.tasks`, `db.artifacts`, `db.human`, `db.vcs`
-
-## JSON Parsing Notes
+## JSON Parsing
 
 Parsed fields (returned as objects):
 
-- `db.tools`: `input`
-- `db.agents`: `result_structured`, `stream_summary`
-- `db.artifacts`: `metadata`
-- `db.human`: `options`, `response`, `session_config`
-- `db.vcs`: `files_changed`, `files_modified`, `files_added`, `files_deleted`, `issues`, `approvals`, `data`
+| Module | Fields |
+|--------|--------|
+| `db.tools` | `input` |
+| `db.agents` | `result_structured`, `stream_summary` |
+| `db.artifacts` | `metadata` |
+| `db.human` | `options`, `response`, `session_config` |
+| `db.vcs` | `files_changed`, `files_modified`, `issues`, `approvals`, `data` |
 
-Raw JSON strings (caller must parse):
-
-- `db.state.history`: `old_value`, `new_value`
+Raw JSON (caller parses): `db.state.history` (`old_value`, `new_value`)

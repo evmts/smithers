@@ -5,155 +5,65 @@ description: Track workflow executions
 
 # Execution API
 
-The execution API tracks workflow runs, enabling resume and observability.
+```tsx
+const executionId = db.execution.start("Feature Implementation", "scripts/feature.tsx");
+// ... run workflow ...
+db.execution.complete(executionId, { summary: "Done" });
+```
 
 ## Contract
 
-- **Sync:** All methods are synchronous.
-- **Return shape:** snake_case fields with `Date` objects for timestamps.
-- **Status:** `pending | running | completed | failed | cancelled`.
+- **Sync:** All methods are synchronous
+- **Return shape:** snake_case fields with `Date` timestamps
+- **Status:** `pending | running | completed | failed | cancelled`
 
 ## Methods
 
-### start
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `start` | `(name: string, filePath: string, config?: object) => string` | Start new execution |
+| `complete` | `(id: string, result?: object) => void` | Mark complete |
+| `fail` | `(id: string, error: string) => void` | Mark failed |
+| `cancel` | `(id: string) => void` | Cancel execution |
+| `current` | `() => Execution \| null` | Get current execution |
+| `get` | `(id: string) => Execution \| null` | Get by ID |
+| `list` | `(limit?: number) => Execution[]` | List recent executions |
+| `findIncomplete` | `() => Execution \| null` | Find incomplete (for resume) |
 
-Start a new execution.
-
-```tsx
-const executionId = db.execution.start(
-  "Feature Implementation",  // name
-  "scripts/feature.tsx",     // file path
-  { timeout: 3600000 }       // optional config
-);
-```
-
-### complete
-
-Mark execution as complete.
+## Resume Pattern
 
 ```tsx
-db.execution.complete(executionId);
+const db = createSmithersDB({ path: ".smithers/data" });
 
-// Optional result payload (stored as JSON)
-db.execution.complete(executionId, { summary: "Feature implemented successfully" });
-```
-
-Result payload is optional. If omitted, `executions.result` is stored as `null`.
-
-### fail
-
-Mark execution as failed.
-
-```tsx
-db.execution.fail(executionId, "Tests failed");
-```
-
-### cancel
-
-Cancel an execution.
-
-```tsx
-db.execution.cancel(executionId);
-```
-
-### current
-
-Get the current execution.
-
-```tsx
-const current = db.execution.current();
-if (current) {
-  console.log(`Running: ${current.name}`);
-}
-```
-
-### get
-
-Get a specific execution.
-
-```tsx
-const execution = db.execution.get(executionId);
-```
-
-### list
-
-List recent executions.
-
-```tsx
-const recent = db.execution.list(10);
-```
-
-### findIncomplete
-
-Find an incomplete execution (for resume).
-
-```tsx
+let executionId: string;
 const incomplete = db.execution.findIncomplete();
+
 if (incomplete) {
-  console.log("Resuming:", incomplete.id);
+  executionId = incomplete.id;
+} else {
+  executionId = db.execution.start("New Task", "task.tsx");
+}
+
+try {
+  // run workflow
+  db.execution.complete(executionId);
+} catch (err) {
+  db.execution.fail(executionId, err.message);
+  throw err;
+} finally {
+  db.close();
 }
 ```
 
-## Completion and `<End>`
+## End Summary
 
-- `db.execution.complete()` updates `status`, `result`, and `completed_at`.
-- `<End>` writes `end_summary`, `end_reason`, and `exit_code` to the `executions` table.
+`<End>` writes `end_summary`, `end_reason`, and `exit_code` to the executions table:
 
 ```tsx
-// Read End summary via raw query
 const row = db.db.queryOne<{ end_summary: string | null }>(
   "SELECT end_summary FROM executions WHERE id = ?",
   [executionId]
 );
-const endSummary = row?.end_summary ? JSON.parse(row.end_summary) : null;
-```
-
-## Usage Patterns
-
-### Resume on Startup
-
-```tsx
-function main() {
-  const db = createSmithersDB({ path: ".smithers/data" });
-
-  // Check for interrupted execution
-  let executionId: string;
-  const incomplete = db.execution.findIncomplete();
-
-  if (incomplete) {
-    executionId = incomplete.id;
-    console.log(`Resuming execution: ${executionId}`);
-  } else {
-    executionId = db.execution.start("New Task", "task.tsx");
-  }
-
-  try {
-    // ... run workflow ...
-
-    db.execution.complete(executionId);
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    db.execution.fail(executionId, error.message);
-    throw error;
-  } finally {
-    db.close();
-  }
-}
-```
-
-### Track Multiple Executions
-
-```tsx
-// List recent executions
-const executions = db.execution.list(10);
-
-for (const exec of executions) {
-  console.log(`${exec.name}: ${exec.status}`);
-  console.log(`  Started: ${exec.started_at}`);
-  if (exec.completed_at) {
-    console.log(`  Completed: ${exec.completed_at}`);
-  }
-}
 ```
 
 ## Types
@@ -179,11 +89,5 @@ interface Execution {
 
 ## Related
 
-<CardGroup cols={2}>
-  <Card title="Agents API" icon="robot" href="/api-reference/agents">
-    Track agents
-  </Card>
-  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs">
-    Version control
-  </Card>
-</CardGroup>
+- [Agents API](/api-reference/agents)
+- [VCS API](/api-reference/vcs)

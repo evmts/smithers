@@ -3,15 +3,9 @@ title: Commit
 description: Create git commits with metadata tracking
 ---
 
-# Commit Component
-
-The `<Commit>` component creates git commits with optional notes and metadata tracking.
-
-## Basic Usage
+# Commit
 
 ```tsx
-import { Commit } from "smithers-orchestrator";
-
 <Commit
   message="feat: Add user authentication"
   onFinished={(result) => console.log("Committed:", result.commitHash)}
@@ -20,67 +14,17 @@ import { Commit } from "smithers-orchestrator";
 
 ## Props
 
-<ParamField path="message" type="string">
-  Commit message.
+| Prop | Type | Description |
+|------|------|-------------|
+| `message` | `string` | Commit message |
+| `autoGenerate` | `boolean` | Auto-generate message from changes |
+| `files` | `string[]` | Specific files to commit |
+| `all` | `boolean` | Stage all changes (`git add -A`) |
+| `notes` | `Record<string, any>` | Git notes to attach |
+| `onFinished` | `(result: CommitResult) => void` | Called on completion |
+| `onError` | `(error: Error) => void` | Called on error |
 
-  ```tsx
-  <Commit message="fix: Resolve login bug" />
-  ```
-</ParamField>
-
-<ParamField path="autoGenerate" type="boolean">
-  Auto-generate commit message from changes.
-
-  ```tsx
-  <Commit autoGenerate />
-  ```
-</ParamField>
-
-<ParamField path="files" type="string[]">
-  Specific files to commit.
-
-  ```tsx
-  <Commit
-    message="Update config"
-    files={["config.json", "settings.ts"]}
-  />
-  ```
-</ParamField>
-
-<ParamField path="all" type="boolean">
-  Stage all changes (git add -A).
-
-  ```tsx
-  <Commit message="Update all" all />
-  ```
-</ParamField>
-
-<ParamField path="notes" type="Record<string, any>">
-  Add git notes to the commit.
-
-  ```tsx
-  <Commit
-    message="feat: Add feature"
-    notes={{
-      smithers: true,
-      executionId: executionId,
-      prompt: "Add user authentication",
-    }}
-  />
-  ```
-</ParamField>
-
-### Callbacks
-
-<ParamField path="onFinished" type="(result: CommitResult) => void">
-  Called when commit completes.
-</ParamField>
-
-<ParamField path="onError" type="(error: Error) => void">
-  Called on error.
-</ParamField>
-
-## CommitResult Type
+### CommitResult
 
 ```tsx
 interface CommitResult {
@@ -92,73 +36,37 @@ interface CommitResult {
 }
 ```
 
-## Workflow with Commits
-
-```tsx
-import { useState } from "react";
-
-function CommitWorkflow() {
-  const [phase, setPhase] = useState("implement");
-
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-      <If condition={phase === "implement"}>
-        <Claude
-          allowedTools={["Edit", "Write"]}
-          onFinished={() => setPhase("commit")}
-        >
-          Implement the feature.
-        </Claude>
-      </If>
-
-      <If condition={phase === "commit"}>
-        <Commit
-          message="feat: Add new feature"
-          all
-          notes={{
-            smithers: true,
-            workflow: "feature-implementation",
-          }}
-          onFinished={(result) => {
-            console.log(`Committed ${result.commitHash}`);
-            setPhase("done");
-          }}
-          onError={(err) => {
-            console.error("Commit failed:", err);
-            setPhase("implement");
-          }}
-        />
-      </If>
-    </SmithersProvider>
-  );
-}
-```
-
 ## Auto-Generated Messages
-
-Let Claude generate the commit message:
 
 ```tsx
 <Commit
   autoGenerate
   all
   notes={{ smithers: true }}
-  onFinished={(result) => {
-    console.log("Auto-generated message:", result.message);
+  onFinished={(r) => console.log("Message:", r.message)}
+/>
+```
+
+## With Git Notes
+
+```tsx
+<Commit
+  message="feat: Add feature"
+  notes={{
+    smithers: true,
+    executionId: executionId,
+    prompt: "Add user authentication",
   }}
 />
 ```
 
 ## Database Tracking
 
-Commits are logged to the database:
+Commits are logged:
 
 ```tsx
 const commits = await db.vcs.getCommits(10);
-// [
-//   { hash: "abc123", message: "feat: Add feature", ... },
-//   { hash: "def456", message: "fix: Bug fix", ... },
-// ]
+// [{ hash: "abc123", message: "feat: Add feature", ... }]
 ```
 
 ## Related

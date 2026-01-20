@@ -3,11 +3,7 @@ title: WorktreeProvider
 description: Context provider for git worktree information
 ---
 
-# WorktreeProvider Component
-
-The `<WorktreeProvider>` provides worktree context to child components, enabling access to worktree-specific information like working directory and branch.
-
-## Basic Usage
+# WorktreeProvider
 
 ```tsx
 import { WorktreeProvider, useWorktree } from "smithers-orchestrator";
@@ -17,21 +13,16 @@ import { WorktreeProvider, useWorktree } from "smithers-orchestrator";
 </WorktreeProvider>
 ```
 
-## useWorktree Hook
-
-Access worktree context from any child component:
+## useWorktree
 
 ```tsx
 function MyComponent() {
   const worktree = useWorktree();
-
-  if (!worktree) {
-    return <text>Not in a worktree</text>;
-  }
-
+  if (!worktree) return <text>Not in a worktree</text>;
+  
   return (
-    <Claude>
-      Working in {worktree.cwd} on branch {worktree.branch}
+    <Claude cwd={worktree.cwd}>
+      Working on {worktree.branch}
     </Claude>
   );
 }
@@ -39,42 +30,27 @@ function MyComponent() {
 
 ## Context Value
 
-```typescript
-interface WorktreeContextValue {
-  cwd: string;      // Working directory path
-  branch: string;   // Git branch name
-  isWorktree: true; // Always true within provider
-}
-```
+| Property | Type | Description |
+|----------|------|-------------|
+| `cwd` | `string` | Working directory path |
+| `branch` | `string` | Git branch name |
+| `isWorktree` | `true` | Always true within provider |
 
-## With Worktree Component
-
-Usually used internally by the `<Worktree>` component:
+## With Parallel Worktrees
 
 ```tsx
-import { Worktree, useWorktree } from "smithers-orchestrator";
-
-function ParallelFeatures() {
-  return (
-    <Parallel>
-      <Worktree branch="feature-a">
-        <FeatureWorkflow />
-      </Worktree>
-      <Worktree branch="feature-b">
-        <FeatureWorkflow />
-      </Worktree>
-    </Parallel>
-  );
-}
+<Parallel>
+  <Worktree branch="feature-a">
+    <FeatureWorkflow />
+  </Worktree>
+  <Worktree branch="feature-b">
+    <FeatureWorkflow />
+  </Worktree>
+</Parallel>
 
 function FeatureWorkflow() {
   const { cwd, branch } = useWorktree()!;
-  
-  return (
-    <Claude cwd={cwd}>
-      Implement feature on {branch}
-    </Claude>
-  );
+  return <Claude cwd={cwd}>Implement feature on {branch}</Claude>;
 }
 ```
 

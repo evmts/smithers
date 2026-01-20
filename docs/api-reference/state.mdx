@@ -5,116 +5,44 @@ description: Key-value state storage with history tracking
 
 # State API
 
-The state API provides key-value storage with full history tracking.
+```tsx
+const phase = db.state.get<string>("phase");
+db.state.set("phase", "review", "tests_passed");
+db.state.setMany({ phase: "complete", result: { success: true } });
+```
 
 ## Contract
 
-- **Sync:** All methods are synchronous.
-- **Storage:** Values are JSON-serialized on write and parsed on read (`get`, `getAll`).
-- **History:** `old_value` and `new_value` are stored as JSON strings; timestamps are ISO strings.
+- **Sync:** All methods are synchronous
+- **Storage:** Values JSON-serialized on write, parsed on read
+- **History:** `old_value`/`new_value` stored as JSON strings; timestamps are ISO strings
 
 ## Methods
 
-All State API methods are **synchronous** (use SQLite's synchronous API via bun:sqlite).
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `get` | `<T>(key: string) => T \| null` | Get value by key |
+| `set` | `<T>(key: string, value: T, trigger?: string) => void` | Set value with optional trigger |
+| `setMany` | `(updates: Record<string, unknown>, trigger?: string) => void` | Set multiple values atomically |
+| `getAll` | `() => Record<string, unknown>` | Get all state as object |
+| `has` | `(key: string) => boolean` | Check if key exists |
+| `delete` | `(key: string, trigger?: string) => void` | Delete key |
+| `reset` | `() => void` | Clear all state |
+| `history` | `(key?: string, limit?: number) => Transition[]` | Get transition history |
 
-### get
-
-Get a value by key.
-
-```tsx
-const phase = db.state.get<string>("phase");
-// "review" | null
-```
-
-### set
-
-Set a value with optional trigger.
+## Usage
 
 ```tsx
 db.state.set("phase", "review");
+db.state.set("phase", "review", "tests_passed"); // with trigger
 
-// With trigger for tracking what caused the change
-db.state.set("phase", "review", "tests_passed");
-```
+db.state.setMany({ phase: "review", reviewer: "claude" }, "implementation_done");
 
-### setMany
-
-Set multiple values atomically.
-
-```tsx
-db.state.setMany({
-  phase: "complete",
-  completedAt: Date.now(),
-  result: { success: true },
-});
-
-// With trigger
-db.state.setMany(
-  { phase: "review", reviewer: "claude" },
-  "implementation_done"
-);
-```
-
-### getAll
-
-Get all state as an object.
-
-```tsx
-const state = db.state.getAll();
-// { phase: "review", attempts: 3, data: {...} }
-```
-
-### reset
-
-Clear all state.
-
-```tsx
-db.state.reset();
-```
-
-### history
-
-Get state transition history.
-
-```tsx
-// History for a specific key (positional args: key, limit)
 const phaseHistory = db.state.history("phase", 10);
-// [
-//   { id: "t1", key: "phase", old_value: null, new_value: "start", trigger: "init", ... },
-//   { id: "t2", key: "phase", old_value: "start", new_value: "review", trigger: "tests_passed", ... },
-// ]
-
-// All history (no key filter)
-const allHistory = db.state.history(undefined, 50);
-
-// Default: last 100 transitions
-const recentHistory = db.state.history();
+// [{ id, key, old_value, new_value, trigger, created_at }, ...]
 ```
 
-### has
-
-Check if a key exists in state.
-
-```tsx
-if (db.state.has("phase")) {
-  console.log("Phase key exists");
-}
-```
-
-### delete
-
-Delete a key from state (with optional trigger for tracking).
-
-```tsx
-db.state.delete("tempData");
-
-// With trigger for auditing
-db.state.delete("cache", "cleanup");
-```
-
-## Usage Patterns
-
-### Initialize from Database
+## Reactive State
 
 ```tsx
 import { useSmithers } from "smithers-orchestrator";
@@ -128,77 +56,19 @@ function WorkflowBody() {
   );
   const phase = phaseJson ? JSON.parse(phaseJson) : "start";
 
-  const updatePhase = (newPhase: string) => {
-    db.state.set("phase", newPhase, "phase_change");
-  };
-
   return (
-    <>
-      <If condition={phase === "start"}>
-        <Claude onFinished={() => updatePhase("done")}>
-          Complete the task.
-        </Claude>
-      </If>
-    </>
+    <If condition={phase === "start"}>
+      <Claude onFinished={() => db.state.set("phase", "done")}>
+        Complete the task.
+      </Claude>
+    </If>
   );
-}
-
-export function Workflow({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-      <WorkflowBody />
-    </SmithersProvider>
-  );
-}
-```
-
-### Track Causality with Triggers
-
-```tsx
-<Claude
-  onFinished={(result) => {
-    if (result.output.includes("PASS")) {
-      db.state.set("phase", "complete", "tests_passed");
-    } else {
-      db.state.set("phase", "retry", "tests_failed");
-    }
-  }}
->
-  Run tests.
-</Claude>
-```
-
-### Manual Checkpoint and Rollback
-
-```tsx
-// Save checkpoint
-const checkpoint = db.state.getAll();
-
-// Try risky operation
-try {
-  riskyOperation();
-  db.state.set("status", "success");
-} catch (error) {
-  // Roll back by resetting and restoring keys
-  db.state.reset();
-  db.state.setMany(checkpoint, "error_rollback");
 }
 ```
 
 ## Types
 
 ```tsx
-interface StateModule {
-  get: <T>(key: string) => T | null;
-  set: <T>(key: string, value: T, trigger?: string) => void;
-  setMany: (updates: Record<string, unknown>, trigger?: string) => void;
-  getAll: () => Record<string, unknown>;
-  reset: () => void;
-  history: (key?: string, limit?: number) => Transition[];
-  has: (key: string) => boolean;
-  delete: (key: string, trigger?: string) => void;
-}
-
 interface Transition {
   id: string;
   execution_id?: string;
@@ -213,11 +83,5 @@ interface Transition {
 
 ## Related
 
-<CardGroup cols={2}>
-  <Card title="Database Persistence" icon="database" href="/concepts/database-persistence">
-    State persistence concepts
-  </Card>
-  <Card title="Database API" icon="server" href="/api-reference/database">
-    Database overview
-  </Card>
-</CardGroup>
+- [Database API](/api-reference/database)
+- [Database Persistence](/concepts/database-persistence)

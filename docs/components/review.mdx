@@ -3,170 +3,59 @@ title: Review
 description: AI-powered code review with configurable criteria
 ---
 
-# Review Component
-
-The `<Review>` component performs AI-powered code reviews against specified criteria, with options to post to GitHub or git notes.
-
-## Basic Usage
+# Review
 
 ```tsx
-import { Review } from "smithers-orchestrator";
-
 <Review
   target={{ type: "diff", ref: "main" }}
-  criteria={[
-    "No security vulnerabilities",
-    "Tests cover edge cases",
-  ]}
+  criteria={["No security vulnerabilities", "Tests cover edge cases"]}
   onFinished={(review) => {
-    if (review.approved) {
-      console.log("Review passed!");
-    } else {
-      console.log("Issues found:", review.issues);
-    }
+    if (review.approved) console.log("Passed!");
+    else console.log("Issues:", review.issues);
   }}
 />
 ```
 
 ## Props
 
-<ParamField path="target" type="ReviewTarget" required>
-  What to review.
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `target` | `ReviewTarget` | required | What to review (see below) |
+| `criteria` | `string[]` | `[]` | Review criteria to check |
+| `model` | `'opus' \| 'sonnet' \| 'haiku'` | `'sonnet'` | Model for review |
+| `blocking` | `boolean` | `false` | Block workflow on failure |
+| `postToGitHub` | `boolean` | `false` | Post comments to GitHub PR |
+| `postToGitNotes` | `boolean` | `false` | Store review in git notes |
+| `agent` | `Claude props` | - | Custom agent configuration |
+| `onFinished` | `(result: ReviewResult) => void` | - | Called on completion |
+| `onError` | `(error: Error) => void` | - | Called on error |
 
-  ```tsx
-  // Review diff against a branch
-  { type: "diff", ref: "main" }
+### ReviewTarget
 
-  // Review a specific commit
-  { type: "commit", ref: "abc123" }
+```tsx
+{ type: "diff", ref: "main" }       // Diff against branch
+{ type: "commit", ref: "abc123" }   // Specific commit
+{ type: "pr", ref: "123" }          // Pull request
+{ type: "files", paths: [...] }     // Specific files
+```
 
-  // Review a pull request
-  { type: "pr", ref: "123" }
-
-  // Review specific files
-  { type: "files", paths: ["src/auth.ts", "src/api.ts"] }
-  ```
-</ParamField>
-
-<ParamField path="criteria" type="string[]">
-  Review criteria to check against.
-
-  ```tsx
-  criteria={[
-    "No hardcoded secrets",
-    "Input is validated",
-    "Error handling is comprehensive",
-    "Code follows project conventions",
-  ]}
-  ```
-</ParamField>
-
-<ParamField path="agent" type="Claude props">
-  Custom agent configuration for the review.
-</ParamField>
-
-<ParamField path="model" type="'opus' | 'sonnet' | 'haiku'" default="sonnet">
-  Model to use for the review.
-</ParamField>
-
-<ParamField path="blocking" type="boolean" default="false">
-  Whether failures should block the workflow.
-</ParamField>
-
-<ParamField path="postToGitHub" type="boolean" default="false">
-  Post review comments to GitHub PR.
-</ParamField>
-
-<ParamField path="postToGitNotes" type="boolean" default="false">
-  Store review in git notes.
-</ParamField>
-
-### Callbacks
-
-<ParamField path="onFinished" type="(result: ReviewResult) => void">
-  Called when review completes.
-</ParamField>
-
-<ParamField path="onError" type="(error: Error) => void">
-  Called on error.
-</ParamField>
-
-## ReviewResult Type
+### ReviewResult
 
 ```tsx
 interface ReviewResult {
   approved: boolean;
   summary: string;
-  issues: ReviewIssue[];
-}
-
-interface ReviewIssue {
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  file: string;
-  line?: number;
-  description: string;
-  suggestion?: string;
+  issues: Array<{
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    file: string;
+    line?: number;
+    description: string;
+    suggestion?: string;
+  }>;
 }
 ```
 
-## Review Workflow Example
-
-```tsx
-function ReviewWorkflowBody() {
-  const { db } = useSmithers();
-  
-  const { data: phaseJson } = useQueryValue<string>(
-    db.db,
-    "SELECT value FROM state WHERE key = 'phase'"
-  );
-  const phase = phaseJson ? JSON.parse(phaseJson) : "implement";
-  
-  const setPhase = (p: string) => db.state.set('phase', p);
-
-  return (
-    <>
-      <If condition={phase === "implement"}>
-        <Claude
-          allowedTools={["Edit", "Write"]}
-          onFinished={() => setPhase("review")}
-        >
-          Implement the feature.
-        </Claude>
-      </If>
-
-      <If condition={phase === "review"}>
-        <Review
-          target={{ type: "diff", ref: "main" }}
-          criteria={[
-            "No security vulnerabilities",
-            "No hardcoded secrets",
-            "Tests are included",
-            "Code is documented",
-          ]}
-          onFinished={(review) => {
-            if (review.approved) {
-              setPhase("done");
-            } else {
-              console.log("Issues:", review.issues);
-              setPhase("implement");
-            }
-          }}
-        />
-      </If>
-    </>
-  );
-}
-
-export function ReviewWorkflow({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-      <ReviewWorkflowBody />
-    </SmithersProvider>
-  );
-}
-```
-
-## PR Review Example
+## PR Review with GitHub Posting
 
 ```tsx
 <Review
@@ -174,47 +63,13 @@ export function ReviewWorkflow({ db, executionId }) {
   model="opus"
   criteria={[
     "Changes are backwards compatible",
-    "Performance impact is acceptable",
     "Security considerations addressed",
   ]}
   postToGitHub
   onFinished={(review) => {
-    if (!review.approved) {
-      // Block merge
-      process.exit(1);
-    }
+    if (!review.approved) process.exit(1);
   }}
 />
-```
-
-## Blocking Reviews
-
-Make reviews gate the workflow:
-
-```tsx
-<SmithersProvider
-  db={db}
-  executionId={executionId}
-  stopConditions={[
-    { type: "report_severity", value: "critical" }
-  ]}
->
-    <Review
-      blocking
-      target={{ type: "diff", ref: "main" }}
-      criteria={["No critical security issues"]}
-      onFinished={async (review) => {
-        if (!review.approved) {
-          await db.vcs.addReport({
-            type: "finding",
-            severity: "critical",
-            title: "Review Failed",
-            content: review.summary,
-          });
-        }
-      }}
-    />
-</SmithersProvider>
 ```
 
 ## Related

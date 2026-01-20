@@ -3,62 +3,37 @@ title: Human
 description: Pause workflow for human input or approval
 ---
 
-# Human Component
-
-The `<Human>` component pauses the workflow to request human input or approval.
-
-## Basic Usage
+# Human
 
 ```tsx
-import { Human } from "smithers-orchestrator";
-
 <Human
   message="Review the implementation"
   onApprove={() => setPhase("continue")}
   onReject={() => setPhase("cancelled")}
 >
   The agent has implemented the feature.
-  Please review the changes before continuing.
+  Please review before continuing.
 </Human>
 ```
 
 ## Props
 
-<ParamField path="id" type="string">
-  Stable identifier for resumability. If omitted, Smithers derives one from `key`,
-  `message`, and child text. Provide `id` (or React `key`) when you need guaranteed uniqueness.
-</ParamField>
-
-<ParamField path="message" type="string">
-  Short message shown to the human.
-
-  ```tsx
-  <Human message="Approve deployment?">
-  ```
-</ParamField>
-
-<ParamField path="onApprove" type="() => void">
-  Called when human approves.
-</ParamField>
-
-<ParamField path="onReject" type="() => void">
-  Called when human rejects.
-</ParamField>
-
-<ParamField path="children" type="JSX.Element">
-  Detailed content shown to the human.
-</ParamField>
+| Prop | Type | Description |
+|------|------|-------------|
+| `id` | `string` | Stable ID for resumability |
+| `message` | `string` | Short message shown to human |
+| `children` | `ReactNode` | Detailed content shown |
+| `onApprove` | `() => void` | Called on approval |
+| `onReject` | `() => void` | Called on rejection |
 
 ## Approval Workflow
 
 ```tsx
-import { useState } from "react";
-
 function ApprovalWorkflow() {
   const [phase, setPhase] = useState("implement");
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+    <SmithersProvider db={db} executionId={executionId}>
       <If condition={phase === "implement"}>
         <Claude onFinished={() => setPhase("review")}>
           Implement the feature.
@@ -71,83 +46,18 @@ function ApprovalWorkflow() {
           onApprove={() => setPhase("deploy")}
           onReject={() => setPhase("implement")}
         >
-          The feature has been implemented.
-          Please review the changes in the diff.
+          Review the changes in the diff.
         </Human>
       </If>
 
       <If condition={phase === "deploy"}>
-        <Claude
-          allowedTools={["Bash"]}
-          onFinished={() => setPhase("done")}
-        >
+        <Claude onFinished={() => setPhase("done")}>
           Deploy the changes.
         </Claude>
       </If>
 
       <If condition={phase === "cancelled"}>
         <Stop reason="Human rejected changes" />
-      </If>
-    </SmithersProvider>
-  );
-}
-```
-
-## Multi-Checkpoint Workflow
-
-```tsx
-import { useState } from "react";
-
-function StrictWorkflow() {
-  const [phase, setPhase] = useState("prompt-input");
-
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={20}>
-      <If condition={phase === "prompt-input"}>
-        <Human
-          message="Confirm Feature Request"
-          onApprove={() => setPhase("research")}
-          onReject={() => setPhase("cancelled")}
-        >
-          Feature: Add user authentication
-          Are you sure you want to proceed?
-        </Human>
-      </If>
-
-      <If condition={phase === "research"}>
-        <Claude onFinished={() => setPhase("plan-review")}>
-          Research the implementation approach.
-        </Claude>
-      </If>
-
-      <If condition={phase === "plan-review"}>
-        <Human
-          message="Approve Plan"
-          onApprove={() => setPhase("implement")}
-          onReject={() => setPhase("research")}
-        >
-          Review the implementation plan.
-        </Human>
-      </If>
-
-      <If condition={phase === "implement"}>
-        <Claude onFinished={() => setPhase("final-review")}>
-          Implement the feature.
-        </Claude>
-      </If>
-
-      <If condition={phase === "final-review"}>
-        <Human
-          message="Final Review"
-          onApprove={() => setPhase("done")}
-          onReject={() => setPhase("implement")}
-        >
-          Final review before completion.
-        </Human>
-      </If>
-
-      <If condition={phase === "cancelled"}>
-        <Stop reason="Workflow cancelled by human" />
       </If>
     </SmithersProvider>
   );

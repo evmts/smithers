@@ -5,20 +5,23 @@ description: Long-term knowledge storage across workflows
 
 # Memories API
 
-The memories API stores long-term knowledge that persists across workflow sessions.
+```tsx
+db.memories.addFact("api-endpoint", "The API is at /api/v2/users", "discovered in auth.ts");
+db.memories.addLearning("test-pattern", "Use vitest for unit tests", "package.json");
+db.memories.addPreference("commit-style", "Use conventional commits", "project");
 
-## Contract
+const facts = db.memories.list("fact", "project");
+const match = db.memories.search("API endpoint", "fact", 5);
+```
 
-- **Sync:** All methods are synchronous.
-- **Return shape:** snake_case fields; timestamps are ISO strings.
-- **Uniqueness:** `key` is unique per `(category, scope, key)`.
+All methods sync. Uniqueness: `(category, scope, key)`.
 
 ## Categories
 
 | Category | Purpose |
 |----------|---------|
-| `fact` | Discovered facts about the codebase |
-| `learning` | Lessons learned from past executions |
+| `fact` | Discovered facts about codebase |
+| `learning` | Lessons from past executions |
 | `preference` | User preferences and conventions |
 | `context` | Contextual information |
 | `skill` | Reusable patterns or procedures |
@@ -33,181 +36,20 @@ The memories API stores long-term knowledge that persists across workflow sessio
 
 ## Methods
 
-### addFact
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `addFact` | `(key, content, source) => void` | Store discovered fact |
+| `addLearning` | `(key, content, source) => void` | Store lesson learned |
+| `addPreference` | `(key, content, scope?) => void` | Store preference |
+| `add` | `(input: MemoryInput) => void` | Generic add |
+| `get` | `(category, key) => Memory \| null` | Retrieve by key |
+| `list` | `(category?, scope?, limit?) => Memory[]` | List memories |
+| `search` | `(query, category?, limit?) => Memory[]` | Search by content |
+| `update` | `(id, updates) => void` | Update memory |
+| `delete` | `(id) => void` | Remove memory |
+| `stats` | `() => MemoryStats` | Get statistics |
 
-Store a discovered fact.
-
-```tsx
-db.memories.addFact(
-  "api-endpoint",                    // key
-  "The API is at /api/v2/users",     // content
-  "discovered in auth.ts"            // source
-);
-```
-
-### addLearning
-
-Store a lesson learned.
-
-```tsx
-db.memories.addLearning(
-  "test-pattern",
-  "Use vitest for unit tests in this project",
-  "package.json analysis"
-);
-```
-
-### addPreference
-
-Store a user preference.
-
-```tsx
-db.memories.addPreference(
-  "commit-style",
-  "Use conventional commits with scope",
-  "project"  // scope
-);
-```
-
-### add
-
-Generic memory addition.
-
-```tsx
-db.memories.add({
-  category: "skill",
-  key: "deploy-process",
-  content: "1. Run tests\n2. Build\n3. Push to main\n4. Deploy triggers automatically",
-  scope: "project",
-  source: "CONTRIBUTING.md",
-});
-```
-
-### get
-
-Retrieve a specific memory.
-
-```tsx
-const memory = db.memories.get("fact", "api-endpoint");
-// { id, category, key, content, source, scope, ... }
-```
-
-### list
-
-List memories by category and/or scope.
-
-```tsx
-// All facts
-const facts = db.memories.list("fact");
-
-// Project-scoped preferences
-const prefs = db.memories.list("preference", "project");
-
-// All memories, limited
-const all = db.memories.list(undefined, undefined, 100);
-```
-
-### search
-
-Search memories by content.
-
-```tsx
-const relevant = db.memories.search("API endpoint", "fact", 5);
-// Returns memories matching the search query
-```
-
-### update
-
-Update an existing memory.
-
-```tsx
-db.memories.update(memoryId, {
-  content: "Updated content",
-});
-```
-
-### delete
-
-Remove a memory.
-
-```tsx
-db.memories.delete(memoryId);
-```
-
-### stats
-
-Get memory statistics.
-
-```tsx
-const stats = db.memories.stats();
-// {
-//   total: 42,
-//   byCategory: { fact: 20, learning: 15, preference: 7 },
-//   byScope: { global: 10, project: 30, session: 2 }
-// }
-```
-
-## Usage Patterns
-
-### Store Discoveries
-
-```tsx
-<Claude
-  onFinished={(result) => {
-    // Extract and store discoveries
-    if (result.output.includes("found endpoint")) {
-      db.memories.addFact(
-        "discovered-endpoint",
-        result.output,
-        "codebase exploration"
-      );
-    }
-  }}
->
-  Explore the API structure.
-</Claude>
-```
-
-### Learn from Failures
-
-```tsx
-<Claude
-  onError={(error) => {
-    db.memories.addLearning(
-      `error-${Date.now()}`,
-      `Encountered error: ${error.message}. Solution: ...`,
-      "error handler"
-    );
-  }}
->
-  Attempt the task.
-</Claude>
-```
-
-### Retrieve Context
-
-```tsx
-function InformedWorkflow() {
-  // Load relevant memories
-  const facts = db.memories.list("fact", "project");
-  const prefs = db.memories.list("preference", "project");
-
-  const context = [
-    "Known facts:",
-    ...facts.map(f => `- ${f.content}`),
-    "Preferences:",
-    ...prefs.map(p => `- ${p.content}`),
-  ].join("\n");
-
-  return (
-    <Claude systemPrompt={context}>
-      Work with knowledge of the project.
-    </Claude>
-  );
-}
-```
-
-## Types
+## Memory Type
 
 ```tsx
 interface Memory {
@@ -217,32 +59,26 @@ interface Memory {
   content: string;
   confidence: number;
   source?: string;
-  source_execution_id?: string;
   scope: "global" | "project" | "session";
   created_at: string;
-  updated_at: string;
-  accessed_at: string;
-  expires_at?: string;
 }
+```
 
-interface MemoryInput {
-  category: Memory["category"];
-  key: string;
-  content: string;
-  confidence?: number;
-  source?: string;
-  scope?: Memory["scope"];
-  expires_at?: string;
-}
+## Usage
+
+```tsx
+// Load context for agent
+const facts = db.memories.list("fact", "project");
+const context = facts.map(f => `- ${f.content}`).join("\n");
+
+<Claude systemPrompt={`Known facts:\n${context}`}>
+  Work with project knowledge.
+</Claude>
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="State API" icon="database" href="/api-reference/state">
-    Short-term state
-  </Card>
-  <Card title="Database" icon="server" href="/api-reference/database">
-    Database overview
-  </Card>
+  <Card title="State API" icon="database" href="/api-reference/state" />
+  <Card title="Database" icon="server" href="/api-reference/database" />
 </CardGroup>

@@ -1,64 +1,39 @@
 ---
-title: Command Component
-description: Shell command execution component with output capture and task tracking
+title: Command
+description: Shell command execution with output capture and task tracking
 ---
 
+# Command
+
 <Warning>
-  **Planned Feature** - This component is not yet implemented.
-  See [useCommand hook proposal](#related) for design context.
+**Planned Feature** - Not yet implemented.
 </Warning>
 
-# Command Component
+```tsx
+<Command
+  cmd="bun"
+  args={["run", "build"]}
+  onFinished={(result) => console.log(`Done in ${result.durationMs}ms`)}
+  onError={(error) => console.error(error.stderr)}
+/>
+```
 
-Execute shell commands as declarative components with automatic output capture, error handling, and task lifecycle tracking. Provides both component and hook interfaces for maximum flexibility.
+## Props
 
-## Planned API
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `cmd` | `string \| string[]` | required | Command to execute (shell string or array form) |
+| `args` | `string[]` | - | Arguments when cmd is string |
+| `cwd` | `string` | `process.cwd()` | Working directory |
+| `env` | `Record<string, string>` | - | Environment variables (merged with process.env) |
+| `timeout` | `number` | `300000` | Timeout in milliseconds |
+| `onFinished` | `(result) => void` | - | Success callback |
+| `onError` | `(error) => void` | - | Error callback |
+| `children` | `(result) => ReactNode` | - | Render function for output handling |
+
+## Result Types
 
 ```tsx
-interface CommandProps {
-  /**
-   * Command to execute (string or array form)
-   */
-  cmd: string | string[]
-
-  /**
-   * Command arguments (when cmd is string)
-   */
-  args?: string[]
-
-  /**
-   * Working directory for command execution
-   */
-  cwd?: string
-
-  /**
-   * Environment variables (merged with process.env)
-   */
-  env?: Record<string, string>
-
-  /**
-   * Timeout in milliseconds
-   * @default 300000 (5 minutes)
-   */
-  timeout?: number
-
-  /**
-   * Callback when command completes successfully
-   */
-  onFinished?: (result: CommandResult) => void
-
-  /**
-   * Callback on command error
-   */
-  onError?: (error: CommandError) => void
-
-  /**
-   * Children rendered after command completes
-   * Receives output as prop
-   */
-  children?: (result: CommandResult) => ReactNode
-}
-
 interface CommandResult {
   stdout: string
   stderr: string
@@ -66,89 +41,26 @@ interface CommandResult {
   durationMs: number
   success: boolean
 }
-
-interface CommandError extends Error {
-  stdout: string
-  stderr: string
-  exitCode: number
-  signal?: string
-}
-
-export function Command(props: CommandProps): JSX.Element
 ```
 
-## Proposed Usage
-
-### Basic Command Execution
-
-```tsx
-import { Command, Phase, Step } from 'smithers-orchestrator'
-
-export function BuildWorkflow() {
-  return (
-    <Phase name="Build">
-      <Step name="build">
-        <Command
-          cmd="bun"
-          args={["run", "build"]}
-          onFinished={(result) => {
-            console.log(`Build completed in ${result.durationMs}ms`)
-          }}
-          onError={(error) => {
-            console.error(`Build failed: ${error.stderr}`)
-          }}
-        />
-      </Step>
-    </Phase>
-  )
-}
-```
-
-### With Children (Output Handling)
+## With Output Handling
 
 ```tsx
 <Command cmd="git status --porcelain">
   {(result) => {
     const hasChanges = result.stdout.trim().length > 0
-    return (
-      <If id="changes-detected" condition={() => hasChanges}>
-        <Phase name="Commit Changes">
-          <Step name="commit">
-            <Claude>Uncommitted changes detected - create commit</Claude>
-          </Step>
-        </Phase>
-      </If>
-    )
+    return hasChanges ? (
+      <Phase name="Commit">
+        <Step name="commit">
+          <Claude>Create commit for changes</Claude>
+        </Step>
+      </Phase>
+    ) : null
   }}
 </Command>
 ```
 
-### Environment Variables
-
-```tsx
-<Command
-  cmd="npm"
-  args={["run", "test"]}
-  env={{
-    NODE_ENV: "test",
-    CI: "true"
-  }}
-  cwd="/path/to/project"
-/>
-```
-
-### Shell Command (String Form)
-
-```tsx
-<Command
-  cmd="bun run typecheck && bun run lint && bun test"
-  onFinished={(result) => {
-    console.log('All checks passed')
-  }}
-/>
-```
-
-### Parallel Commands
+## Parallel Commands
 
 ```tsx
 <Parallel>
@@ -158,7 +70,7 @@ export function BuildWorkflow() {
 </Parallel>
 ```
 
-### Sequential Pipeline
+## Sequential Pipeline
 
 ```tsx
 <Phase name="CI Pipeline">
@@ -174,364 +86,35 @@ export function BuildWorkflow() {
 </Phase>
 ```
 
-## Props (Planned)
+## Shell vs Direct Execution
 
-<ParamField path="cmd" type="string | string[]" required>
-  Command to execute.
-
-  **String form (shell):**
-  ```tsx
-  cmd="echo 'Hello' && ls -la"
-  ```
-  Executed via shell, supports pipes/redirects/chaining.
-
-  **Array form (direct):**
-  ```tsx
-  cmd={["git", "status", "--porcelain"]}
-  ```
-  Direct execution, safer for untrusted input (no shell injection).
-
-  **With args prop:**
-  ```tsx
-  cmd="git"
-  args={["commit", "-m", "message"]}
-  ```
-  Equivalent to `["git", "commit", "-m", "message"]`
-</ParamField>
-
-<ParamField path="args" type="string[]">
-  Arguments when cmd is string (single command).
-
-  Ignored when cmd is array.
-
-  ```tsx
-  <Command cmd="npm" args={["install", "react"]} />
-  // Equivalent to: npm install react
-  ```
-</ParamField>
-
-<ParamField path="cwd" type="string">
-  Working directory for command execution.
-
-  Respects worktree context if inside `<Worktree>` component.
-
-  **Priority:** Explicit cwd > worktree context > process.cwd()
-
-  ```tsx
-  <Command cmd="ls" cwd="/tmp" />
-  ```
-</ParamField>
-
-<ParamField path="env" type="Record<string, string>">
-  Environment variables merged with process.env.
-
-  ```tsx
-  <Command
-    cmd="npm test"
-    env={{
-      NODE_ENV: "test",
-      DEBUG: "app:*"
-    }}
-  />
-  ```
-
-  Variables override process.env for this command only.
-</ParamField>
-
-<ParamField path="timeout" type="number" default="300000">
-  Timeout in milliseconds (default 5 minutes).
-
-  Command killed if exceeds timeout.
-
-  ```tsx
-  <Command cmd="long-running-task" timeout={600000} /> {/* 10 minutes */}
-  ```
-
-  Set to 0 for no timeout (use cautiously).
-</ParamField>
-
-<ParamField path="onFinished" type="(result: CommandResult) => void">
-  Callback when command completes successfully (exitCode 0).
-
-  Receives stdout, stderr, exitCode, duration.
-
-  ```tsx
-  onFinished={(result) => {
-    console.log(`Output: ${result.stdout}`)
-    console.log(`Duration: ${result.durationMs}ms`)
-  }}
-  ```
-</ParamField>
-
-<ParamField path="onError" type="(error: CommandError) => void">
-  Callback when command fails (non-zero exit or timeout).
-
-  Error includes stdout/stderr captured before failure.
-
-  ```tsx
-  onError={(error) => {
-    console.error(`Command failed with exit ${error.exitCode}`)
-    console.error(`stderr: ${error.stderr}`)
-  }}
-  ```
-
-  **Note:** onError prevents error propagation. Omit to throw errors.
-</ParamField>
-
-<ParamField path="children" type="(result: CommandResult) => ReactNode">
-  Optional render function receiving command output.
-
-  Called after command completes successfully.
-
-  Enables conditional rendering based on output.
-
-  ```tsx
-  <Command cmd="git diff --name-only">
-    {(result) => {
-      const files = result.stdout.trim().split('\n')
-      return files.map(file => (
-        <Step name={`Process ${file}`}>
-          <Claude>Review changes to {file}</Claude>
-        </Step>
-      ))
-    }}
-  </Command>
-  ```
-</ParamField>
-
-## Implementation Status
-
-<Steps>
-  <Step title="Design Phase">
-    Component API designed alongside useCommand hook proposal.
-  </Step>
-
-  <Step title="useCommand Hook (Pending)">
-    Underlying hook implementation provides core command execution logic.
-  </Step>
-
-  <Step title="Component Wrapper (Pending)">
-    Declarative component wrapping useCommand hook with task tracking.
-  </Step>
-
-  <Step title="Worktree Integration (Pending)">
-    Auto-detect worktree context and use as default cwd.
-  </Step>
-
-  <Step title="Testing (Future)">
-    Unit tests for success/error cases, timeout handling, environment isolation.
-  </Step>
-</Steps>
-
-## Design Rationale
-
-### Component vs Hook
-
-**Component form:** Declarative, fits orchestration patterns
+**String form** — shell execution with pipes/redirects:
 ```tsx
-<Command cmd="build" />
+<Command cmd="bun run typecheck && bun run lint" />
 ```
 
-**Hook form:** Imperative, for complex logic
+**Array form** — direct execution, safer for dynamic input:
 ```tsx
-const { run, output, isRunning } = useCommand()
-const handleBuild = async () => {
-  await run('bun run build')
-}
+<Command cmd={["git", "commit", "-m", message]} />
 ```
 
-Both backed by same implementation. Component creates task, hook doesn't.
+## Worktree Context
 
-### Task Lifecycle Integration
-
-```tsx
-export function Command(props: CommandProps): ReactNode {
-  const { db } = useSmithers()
-  const taskIdRef = useRef<string | null>(null)
-
-  useMount(() => {
-    ;(async () => {
-      taskIdRef.current = db.tasks.start('command', props.cmd.toString())
-
-      try {
-        const result = await executeCommand(props)
-        props.onFinished?.(result)
-      } catch (error) {
-        props.onError?.(error)
-        throw error
-      } finally {
-        db.tasks.complete(taskIdRef.current)
-      }
-    })()
-  })
-
-  return <command cmd={props.cmd} status={status} />
-}
-```
-
-Creates task on mount, completes on success/error.
-
-### Shell vs Direct Execution
-
-**String cmd → shell execution:**
-- Supports pipes, redirects, chaining
-- Subject to shell injection if cmd includes untrusted input
-- Use for trusted commands with shell features
-
-**Array cmd → direct execution:**
-- No shell involved, safer
-- No pipes/redirects/chaining
-- Recommended for dynamic commands
-
-### Worktree Context Integration
+Commands inside `<Worktree>` automatically execute in worktree directory:
 
 ```tsx
-const worktree = useWorktree()
-const effectiveCwd = props.cwd ?? worktree?.cwd ?? process.cwd()
-```
-
-Commands inside `<Worktree>` automatically execute in worktree directory.
-
-## Examples of Use Cases
-
-### Use Case 1: CI Pipeline
-
-```tsx
-<Phase name="CI Checks">
-  <Step name="checks">
-    <Parallel>
-      <Command
-        cmd="bun run typecheck"
-        onError={() => console.error('Type errors detected')}
-      />
-      <Command
-        cmd="bun run lint"
-        onError={() => console.error('Lint errors detected')}
-      />
-      <Command
-        cmd="bun test"
-        onError={() => console.error('Tests failed')}
-      />
-    </Parallel>
-  </Step>
-</Phase>
-```
-
-### Use Case 2: Git Workflow
-
-```tsx
-<Phase name="Commit and Push">
-  <Step name="commit-push">
-    <Command cmd="git add ." />
-
-    <Command cmd="git status --porcelain">
-      {(result) => {
-        const hasChanges = result.stdout.trim().length > 0
-        return hasChanges ? (
-          <>
-            <Command
-              cmd="git"
-              args={["commit", "-m", "automated commit"]}
-            />
-            <Command cmd="git push origin main" />
-          </>
-        ) : (
-          <text>No changes to commit</text>
-        )
-      }}
-    </Command>
-  </Step>
-</Phase>
-```
-
-### Use Case 3: Build Matrix
-
-```tsx
-const platforms = ['darwin', 'linux', 'win32']
-
-<Parallel>
-  {platforms.map(platform => (
-    <Command
-      key={platform}
-      cmd="bun run build"
-      env={{ TARGET_PLATFORM: platform }}
-      onFinished={(result) => {
-        console.log(`${platform} build: ${result.durationMs}ms`)
-      }}
-    />
-  ))}
-</Parallel>
+<Worktree branch="feature">
+  <Command cmd="bun test" />  {/* runs in worktree cwd */}
+</Worktree>
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card
-    title="useCommand Hook"
-    icon="code"
-    href="/api-reference/use-command.mdx"
-  >
-    Imperative hook for command execution - underlying implementation
-  </Card>
-
-  <Card
-    title="Worktree Component"
-    icon="code-branch"
-    href="/components/worktree.mdx"
-  >
-    Git worktree isolation - Command respects worktree cwd
-  </Card>
-
-  <Card
-    title="Parallel Component"
-    icon="layer-group"
-    href="/components/parallel.mdx"
-  >
+  <Card title="Parallel" icon="layer-group" href="/components/parallel">
     Run multiple commands concurrently
   </Card>
-
-  <Card
-    title="Step Component"
-    icon="shoe-prints"
-    href="/components/step.mdx"
-  >
-    Sequential execution - natural container for Command
+  <Card title="Worktree" icon="code-branch" href="/components/worktree">
+    Git worktree isolation
   </Card>
 </CardGroup>
-
-## Alternatives Considered
-
-- **Direct Bun.spawn in components**: No task tracking, verbose
-- **Shell scripts**: External to orchestration, not resumable
-- **Agent-based command execution**: Overkill for simple commands
-- **Imperative-only (no component)**: Doesn't fit declarative pattern
-
-## Migration Path
-
-Current pattern (manual Bun.spawn):
-
-```tsx
-// Before (imperative)
-const { db } = useSmithers()
-const taskId = db.tasks.start('build', 'build')
-try {
-  const proc = Bun.spawn(['bun', 'run', 'build'])
-  await proc.exited
-  db.tasks.complete(taskId)
-} catch (error) {
-  db.tasks.fail(taskId, error)
-}
-```
-
-With Command:
-
-```tsx
-// After (declarative)
-<Command cmd="bun" args={["run", "build"]} />
-```
-
-**Benefits:** Automatic task tracking, error handling, cleaner syntax.
-
-## Feedback
-
-If you have feedback on this planned component, please open a discussion or issue on the Smithers repository.

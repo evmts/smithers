@@ -1,63 +1,46 @@
-# 10_strawberry_gallery.tape
-# Purpose: a "menu GIF" you can pin in README, docs, or X thread.
-
+# Smithers Gallery Demo
 Output "10_strawberry_gallery.gif"
 
-Require bash
-Require gum
-
 Set Shell "bash"
+Set FontSize 18
+Set Width 900
+Set Height 500
+Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
-Set FontFamily "JetBrains Mono"
-Set FontSize 22
-Set Width 1200
-Set Height 675
-Set Padding 20
-Set BorderRadius 12
-Set WindowBar Rings
-Set Framerate 30
-Set TypingSpeed 35ms
 
-Hide
-Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
+Type "echo '# Smithers Example Workflows'"
+Sleep 500ms
 Enter
-Type "rm -rf 10_strawberry_gallery && mkdir 10_strawberry_gallery && cd 10_strawberry_gallery"
-Enter
-Sleep 300ms
-Show
+Sleep 500ms
 
-Type "gum style --border double --align center --width 68 --padding '1 2' 'STRAWBERRY' 'Pick a workflow. Run. Verify. Iterate.'"
+Type "echo ''"
 Enter
-Sleep 800ms
+Type "echo '1) Hello World        - smallest runnable workflow'"
+Enter
+Type "echo '2) Multi-Phase Review - implement -> review -> commit'"
+Enter
+Type "echo '3) Structured Output  - Zod schema + retries'"
+Enter
+Type "echo '4) Worktrees          - parallel branches'"
+Enter
+Type "echo '5) Subagents          - planner + executor'"
+Enter
+Type "echo '6) CI Recovery        - resume-safe loops'"
+Enter
+Sleep 2s
 
-Type "gum style --border normal --padding '1 2' 'Examples you can start from:'"
+Type "echo ''"
 Enter
-Sleep 250ms
+Type "echo '# Quick start:'"
+Enter
+Type "echo 'bunx smithers init'"
+Enter
+Type "echo 'bun examples/hello.tsx'"
+Enter
+Sleep 2s
 
-Type "cat > menu.txt <<'EOF'"
+Type "echo ''"
 Enter
-Type "1) Hello World (smallest runnable workflow)"
+Type "echo '# Docs: https://smithers.sh'"
 Enter
-Type "2) Multi-Phase Review (implement -> review -> commit)"
-Enter
-Type "3) Structured Output (Zod schema + retries)"
-Enter
-Type "4) Worktrees (parallel branches)"
-Enter
-Type "5) Subagents (planner + executor)"
-Enter
-Type "6) Kitchen Sink (all primitives together)"
-Enter
-Type "EOF"
-Enter
-Type "cat menu.txt"
-Enter
-Sleep 1100ms
-
-Type "gum style --border normal --padding '1 2' 'Fastest onboarding:' '/plugin marketplace add evmts/smithers' '/plugin install smithers@smithers'"
-Enter
-Sleep 900ms
-
-Type "gum style --border double --align center --width 68 --padding '1 2' 'Docs: https://smithers.sh' 'Make agentic automation restart-proof.'"
-Enter
-Sleep 1200ms
+Sleep 2s

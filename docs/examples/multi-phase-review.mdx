@@ -3,11 +3,7 @@ title: Multi-Phase Review
 description: Implement → Review → Iterate workflow
 ---
 
-# Multi-Phase Review Workflow
-
-A workflow that implements features, reviews them, and iterates until approved.
-
-## Code
+# Multi-Phase Review
 
 ```tsx
 #!/usr/bin/env bun
@@ -28,29 +24,21 @@ import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 async function main() {
   const db = createSmithersDB({ path: ".smithers/review-workflow" });
 
-  // Resume if incomplete execution exists
   let executionId: string;
   const incomplete = db.execution.findIncomplete();
   if (incomplete) {
     executionId = incomplete.id;
-    console.log("Resuming execution:", executionId);
+    console.log("Resuming:", executionId);
   } else {
     executionId = db.execution.start("Review Workflow", "review-workflow.tsx");
   }
 
   function ReviewWorkflow() {
     const { db, reactiveDb } = useSmithers();
-
-    // State in SQLite, reactive via useQueryValue
     const { data: phase } = useQueryValue<string>(
-      reactiveDb,
-      "SELECT value FROM state WHERE key = 'phase'"
+      reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
     );
     const currentPhase = phase ?? "implement";
-
-    const setPhase = (newPhase: string) => {
-      db.state.set("phase", newPhase, `transition_to_${newPhase}`);
-    };
 
     return (
       <>
@@ -60,14 +48,10 @@ async function main() {
               <Claude
                 model="sonnet"
                 allowedTools={["Read", "Edit", "Write", "Glob", "Grep"]}
-                onFinished={() => setPhase("review")}
+                onFinished={() => db.state.set("phase", "review", "transition_to_review")}
               >
-                Implement the user authentication feature:
-                1. Create a login form component
-                2. Add authentication API endpoint
-                3. Implement session management
-
-                Follow existing patterns in the codebase.
+                Implement user authentication: login form, API endpoint, session management.
+                Follow existing patterns.
               </Claude>
             </Step>
           </Phase>
@@ -81,42 +65,30 @@ async function main() {
                 model="sonnet"
                 criteria={[
                   "No security vulnerabilities",
-                  "No hardcoded secrets or credentials",
+                  "No hardcoded secrets",
                   "Input validation is comprehensive",
                   "Error handling covers edge cases",
-                  "Code follows project conventions",
                 ]}
                 onFinished={(review) => {
                   if (review.approved) {
                     console.log("Review passed!");
-                    setPhase("complete");
+                    db.state.set("phase", "complete", "approved");
                   } else {
-                    console.log("Review failed. Issues:");
-                    review.issues.forEach(issue => {
-                      console.log(`  [${issue.severity}] ${issue.file}: ${issue.description}`);
-                    });
-                    setPhase("implement");
+                    console.log("Issues found:", review.issues.length);
+                    db.state.set("phase", "implement", "rejected");
                   }
                 }}
               />
             </Step>
           </Phase>
         </If>
-
-        {/* When phase is "complete", nothing renders, loop ends */}
       </>
     );
   }
 
   function App() {
     return (
-      <SmithersProvider
-        db={db}
-        executionId={executionId}
-        maxIterations={10}
-        globalTimeout={3600000}
-        onComplete={() => console.log("Workflow complete!")}
-      >
+      <SmithersProvider db={db} executionId={executionId} maxIterations={10} globalTimeout={3600000}>
         <ReviewWorkflow />
       </SmithersProvider>
     );
@@ -125,11 +97,7 @@ async function main() {
   try {
     const root = createSmithersRoot();
     await root.mount(App);
-
-    db.execution.complete(executionId, {
-      summary: "Review workflow completed",
-      output: { finalPhase: db.state.get("phase") },
-    });
+    db.execution.complete(executionId, { summary: "Review workflow complete" });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     db.execution.fail(executionId, error.message);
@@ -142,100 +110,44 @@ async function main() {
 main();
 ```
 
-## How It Works
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│  ┌──────────────┐         ┌──────────────┐                 │
-│  │  Implement   │────────▶│    Review    │                 │
-│  │   (Claude)   │         │   (Review)   │                 │
-│  └──────────────┘         └──────────────┘                 │
-│         ▲                        │                          │
-│         │                        │                          │
-│         │    ┌───────────┐      │                          │
-│         └────│ Not       │◀─────┘                          │
-│              │ Approved  │       │                          │
-│              └───────────┘       │                          │
-│                                  │ Approved                 │
-│                                  ▼                          │
-│                          ┌──────────────┐                  │
-│                          │   Complete   │                  │
-│                          └──────────────┘                  │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## State Persistence
-
-The workflow state is persisted to the database using SQLite:
-
-```tsx
-// State is saved on each transition
-db.state.set("phase", "review", "transition_to_review");
-
-// State is read reactively via useQueryValue
-const { data: phase } = useQueryValue<string>(
-  reactiveDb,
-  "SELECT value FROM state WHERE key = 'phase'"
-);
-const currentPhase = phase ?? "implement";
-```
-
-This approach ensures:
-- State survives process restarts
-- No stale closures (common with useState)
-- Automatic re-renders when state changes
-
-## Inspecting State
+## Run It
 
 ```bash
-# View current state
-smithers db state
+bun review-workflow.tsx
+```
 
-# View transition history
+## What's Happening
+
+- **Review** — AI code review against criteria list
+- **target** — Reviews diff against main branch
+- **Loop** — Failed review returns to implement phase
+- **SQLite state** — Survives restarts, no stale closures
+
+## Inspect State
+
+```bash
+smithers db state
 smithers db transitions
 ```
 
 ## Customization
 
-### Stricter Review Criteria
-
 ```tsx
+// Stricter criteria
 <Review
   criteria={[
     "No security vulnerabilities (OWASP Top 10)",
     "100% test coverage for new code",
     "All public APIs documented",
-    "No TODO comments",
-    "Performance considerations addressed",
   ]}
 />
-```
 
-### Human Checkpoint
-
-Add human approval before review:
-
-```tsx
-<If condition={currentPhase === "pre-review"}>
+// Add human checkpoint
+<If condition={phase === "pre-review"}>
   <Human
-    message="Review implementation before AI review?"
-    onApprove={() => setPhase("review")}
-    onReject={() => setPhase("implement")}
-  >
-    Implementation complete. Ready for AI review?
-  </Human>
+    message="Ready for AI review?"
+    onApprove={() => db.state.set("phase", "review")}
+    onReject={() => db.state.set("phase", "implement")}
+  />
 </If>
 ```
-
-## Related
-
-<CardGroup cols={2}>
-  <Card title="Review Component" icon="magnifying-glass" href="/components/review">
-    Review API reference
-  </Card>
-  <Card title="Database Persistence" icon="database" href="/concepts/database-persistence">
-    State persistence
-  </Card>
-</CardGroup>

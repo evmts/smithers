@@ -44,6 +44,21 @@ interface SmithersIntrinsicElements {
         [key: string]: unknown
       }
 
+      codex: {
+        status?: string
+        result?: unknown
+        error?: string
+        model?: string
+        sandboxMode?: string
+        approvalPolicy?: string
+        onFinished?: (result: unknown) => void
+        onError?: (error: Error) => void
+        validate?: (result: unknown) => Promise<boolean>
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
       'smithers-stop': {
         children?: React.ReactNode
         key?: string | number

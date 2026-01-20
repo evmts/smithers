@@ -5,10 +5,6 @@ description: Give Claude access to SQLite databases
 
 # MCP Database Access
 
-Use the Sqlite component to let Claude query databases.
-
-## Code
-
 ```tsx
 #!/usr/bin/env bun
 
@@ -30,38 +26,17 @@ async function main() {
         <Claude
           model="sonnet"
           maxTurns={10}
-          onFinished={(result) => {
-            console.log("Analysis complete!");
-            console.log(result.output);
-          }}
+          onFinished={(result) => console.log(result.output)}
         >
           <Sqlite path="./ecommerce.db" readOnly>
-            E-commerce database with the following schema:
-
             users(id, name, email, created_at, country)
             orders(id, user_id, total, status, created_at)
             order_items(id, order_id, product_id, quantity, price)
             products(id, name, category, price, stock)
           </Sqlite>
 
-          Generate a comprehensive business report:
-
-          1. Revenue Analysis
-             - Total revenue by month (last 12 months)
-             - Revenue by product category
-             - Average order value trends
-
-          2. Customer Analysis
-             - Top 10 customers by lifetime value
-             - Customer acquisition by country
-             - Repeat customer rate
-
-          3. Product Performance
-             - Best selling products
-             - Products with low stock
-             - Category performance comparison
-
-          Save the report as a markdown file: reports/business-report.md
+          Generate a business report: revenue by month, top customers,
+          best-selling products. Save to reports/business-report.md
         </Claude>
       </SmithersProvider>
     );
@@ -70,10 +45,7 @@ async function main() {
   try {
     const root = createSmithersRoot();
     await root.mount(DataAnalysis);
-
-    db.execution.complete(executionId, {
-      summary: "Data analysis complete",
-    });
+    db.execution.complete(executionId, { summary: "Data analysis complete" });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     db.execution.fail(executionId, error.message);
@@ -86,84 +58,56 @@ async function main() {
 main();
 ```
 
-<Note>
-If you restrict `allowedTools`, include any MCP tools you need (for Sqlite, allow `sqlite`), or omit `allowedTools` to avoid blocking DB access.
-</Note>
+## Run It
+
+```bash
+bun data-analysis.tsx
+```
+
+## What's Happening
+
+- **Sqlite** — Exposes database to Claude via MCP tools
+- **readOnly** — Prevents accidental mutations
+- **Schema in children** — Claude sees table structure in system prompt
 
 ## Multiple Databases
 
 ```tsx
 <Claude model="sonnet" maxTurns={15}>
-  <Sqlite path="./users.db" readOnly>
-    User database: users, profiles, preferences
-  </Sqlite>
+  <Sqlite path="./users.db" readOnly>User database: users, profiles</Sqlite>
+  <Sqlite path="./analytics.db" readOnly>Analytics: events, sessions</Sqlite>
 
-  <Sqlite path="./analytics.db" readOnly>
-    Analytics database: events, sessions, pageviews
-  </Sqlite>
-
-  Cross-reference data between the two databases:
-
-  1. Find users who signed up but never logged an event
-  2. Identify most active users by session count
-  3. Correlate user preferences with behavior patterns
+  Cross-reference: find users who signed up but never logged an event.
 </Claude>
-```
-
-## Read-Only for Safety
-
-```tsx
-<Sqlite path="./production.db" readOnly>
-  Production database - read-only access for safety.
-</Sqlite>
 ```
 
 ## Workflow with Database
 
-_Excerpt: render `DataWorkflow` inside a `SmithersProvider` that supplies `db` and `executionId`._
-
 ```tsx
-import { Claude, If, Sqlite, useSmithers } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
 function DataWorkflow() {
   const { db, reactiveDb } = useSmithers();
-
   const { data: phase } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
   );
-  const currentPhase = phase ?? "analyze";
-
-  const setPhase = (newPhase: string) => {
-    db.state.set("phase", newPhase);
-  };
 
   return (
     <>
-      <If condition={currentPhase === "analyze"}>
+      <If condition={(phase ?? "analyze") === "analyze"}>
         <Claude
           model="sonnet"
           onFinished={(result) => {
             db.state.set("findings", result.output);
-            setPhase("report");
+            db.state.set("phase", "report");
           }}
         >
-          <Sqlite path="./data.db" readOnly>
-            Sales database.
-          </Sqlite>
+          <Sqlite path="./data.db" readOnly>Sales database.</Sqlite>
           Analyze Q4 sales performance.
         </Claude>
       </If>
 
-      <If condition={currentPhase === "report"}>
-        <Claude
-          allowedTools={["Write"]}
-          onFinished={() => setPhase("done")}
-        >
-          Create a formatted report from these findings:
-          {db.state.get("findings")}
-
+      <If condition={phase === "report"}>
+        <Claude allowedTools={["Write"]} onFinished={() => db.state.set("phase", "done")}>
+          Create report from: {db.state.get("findings")}
           Save to reports/q4-analysis.md
         </Claude>
       </If>
@@ -171,14 +115,3 @@ function DataWorkflow() {
   );
 }
 ```
-
-## Related
-
-<CardGroup cols={2}>
-  <Card title="Sqlite Component" icon="database" href="/components/sqlite">
-    Sqlite API reference
-  </Card>
-  <Card title="MCP Integration" icon="plug" href="/guides/mcp-integration">
-    MCP guide
-  </Card>
-</CardGroup>

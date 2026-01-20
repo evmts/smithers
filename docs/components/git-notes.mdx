@@ -1,13 +1,9 @@
 ---
-title: Git Notes
+title: Notes
 description: Add metadata to commits via git notes
 ---
 
-# Git Notes Component
-
-The `<Notes>` component adds or appends structured metadata to git commits via git notes.
-
-## Basic Usage
+# Notes
 
 ```tsx
 import { Notes } from "smithers-orchestrator";
@@ -18,47 +14,18 @@ import { Notes } from "smithers-orchestrator";
     confidence: 0.95,
     issues: []
   }}
-  onFinished={(result) => console.log("Notes added:", result)}
 />
 ```
 
 ## Props
 
-<ParamField path="commitRef" type="string" default="HEAD">
-  Git commit reference to attach notes to.
-
-  ```tsx
-  <Notes commitRef="abc123" data={{ reviewed: true }} />
-  ```
-</ParamField>
-
-<ParamField path="data" type="Record<string, any>" required>
-  Structured data to store in notes. Automatically includes smithers metadata.
-
-  ```tsx
-  <Notes data={{ 
-    phase: "review",
-    score: 85,
-    suggestions: ["Add tests", "Update docs"]
-  }} />
-  ```
-</ParamField>
-
-<ParamField path="append" type="boolean" default={false}>
-  Append to existing notes instead of replacing.
-
-  ```tsx
-  <Notes append data={{ additionalReview: true }} />
-  ```
-</ParamField>
-
-<ParamField path="onFinished" type="(result: NotesResult) => void">
-  Callback when notes are successfully added.
-</ParamField>
-
-<ParamField path="onError" type="(error: Error) => void">
-  Callback on error.
-</ParamField>
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `commitRef` | `string` | `"HEAD"` | Git commit reference |
+| `data` | `Record<string, any>` | required | Structured metadata |
+| `append` | `boolean` | `false` | Append vs replace existing notes |
+| `onFinished` | `(result: NotesResult) => void` | - | Success callback |
+| `onError` | `(error: Error) => void` | - | Error callback |
 
 ## NotesResult
 
@@ -72,29 +39,22 @@ interface NotesResult {
 
 ## Automatic Metadata
 
-Notes automatically include smithers tracking:
+Notes include smithers tracking:
 
 ```json
 {
   "smithers": true,
   "executionId": "exec-123",
   "timestamp": 1705596000000,
-  "reviewedBy": "smithers",
-  "confidence": 0.95
+  "reviewedBy": "smithers"
 }
 ```
 
-## Example: Post-Review Notes
+## With Commit
 
 ```tsx
 <Git.Commit message="feat: add auth">
-  <Notes
-    data={{
-      reviewPassed: true,
-      lintClean: true,
-      testsRun: 42
-    }}
-  />
+  <Notes data={{ reviewPassed: true, testsRun: 42 }} />
 </Git.Commit>
 ```
 
@@ -102,7 +62,7 @@ Notes automatically include smithers tracking:
 
 <CardGroup cols={2}>
   <Card title="Git Commit" icon="code-commit" href="/components/commit">
-    Commit changes with VCS tracking
+    Commit with VCS tracking
   </Card>
   <Card title="Hooks" icon="webhook" href="/components/hooks">
     Git hook automation

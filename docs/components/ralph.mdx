@@ -3,21 +3,11 @@ title: Ralph
 description: Loop controller component for iteration-based workflows
 ---
 
-# Ralph Component
-
-<Note>
-**Most users should use [`<SmithersProvider>`](/components/smithers-provider) instead.** SmithersProvider is the canonical orchestrator that handles Ralph internally along with database, state management, and lifecycle concerns. Use `<Ralph>` only for legacy compatibility or when you specifically need the `<ralph>` element in serialized output.
-</Note>
+# Ralph
 
 <Warning>
-**Deprecated.** `<Ralph>` is a compatibility wrapper and does not control the loop by itself. Pass `maxIterations`, `onIteration`, and `onComplete` to `<SmithersProvider>` instead.
+**Deprecated.** Use `<SmithersProvider>` which handles Ralph internally. This page is for advanced users.
 </Warning>
-
-The `<Ralph>` component is the internal loop controller that powers Smithers workflows. It manages iteration count and task tracking for workflows that need to loop until completion. SmithersProvider wraps Ralph automatically—this page documents Ralph for advanced users who need direct access.
-
-## Minimum Viable Ralph
-
-The simplest possible orchestration is just `<Ralph>` with a `<Claude>` inside:
 
 ```tsx
 <SmithersProvider db={db} executionId={executionId}>
@@ -27,61 +17,31 @@ The simplest possible orchestration is just `<Ralph>` with a `<Claude>` inside:
 </SmithersProvider>
 ```
 
-This creates a single-agent loop that runs until Claude completes its task. The `<Claude>` component handles the LLM call and tool execution internally.
+## Props
 
-## Basic Usage
-
-```tsx
-import { SmithersProvider, Ralph } from "smithers-orchestrator";
-
-<SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-  <Ralph>
-    <Claude onFinished={() => { /* state change triggers re-render */ }}>
-      Keep improving until tests pass.
-    </Claude>
-  </Ralph>
-</SmithersProvider>
-```
+| Prop | Type | Description |
+|------|------|-------------|
+| `maxIterations` | `number` | Deprecated. Use `SmithersProvider` prop |
+| `onIteration` | `(n: number) => void` | Deprecated. Use `SmithersProvider` prop |
+| `onComplete` | `() => void` | Deprecated. Use `SmithersProvider` prop |
+| `onMaxIterations` | `() => void` | Called when max iterations reached |
 
 ## Accessing Iteration Count
 
-You can access the current iteration count via context:
-
 ```tsx
-import { useSmithers } from "smithers-orchestrator";
-
 function MyComponent() {
   const { ralphCount } = useSmithers();
-
   return <div>Iteration: {ralphCount}</div>;
 }
 ```
-
-## Props
-
-<ParamField path="maxIterations" type="number" default="100">
-  Deprecated on `<Ralph>`. Configure `maxIterations` on `<SmithersProvider>` instead.
-</ParamField>
-
-<ParamField path="onIteration" type="(iteration: number) => void">
-  Deprecated on `<Ralph>`. Use `<SmithersProvider onIteration>` instead.
-</ParamField>
-
-<ParamField path="onComplete" type="() => void">
-  Deprecated on `<Ralph>`. Use `<SmithersProvider onComplete>` instead.
-</ParamField>
-
-<ParamField path="onMaxIterations" type="() => void">
-  Called when max iterations is reached without completion. Useful for handling timeout scenarios.
-</ParamField>
 
 ## Related
 
 <CardGroup cols={2}>
   <Card title="SmithersProvider" icon="cube" href="/components/smithers-provider">
-    **Start here** — the canonical orchestrator for most workflows
+    Canonical orchestrator for most workflows
   </Card>
   <Card title="Ralph Wiggum Loop" icon="sitemap" href="/concepts/ralph-wiggum-loop">
-    Deep dive into how the execution loop works internally
+    Execution loop internals
   </Card>
 </CardGroup>

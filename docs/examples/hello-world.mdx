@@ -5,14 +5,6 @@ description: Your first Smithers workflow
 
 # Hello World
 
-<Info>
-**Recommended starting point.** This is the simplest runnable Smithers workflow. Copy this and modify.
-</Info>
-
-The simplest Smithers workflow.
-
-## Code
-
 ```tsx
 #!/usr/bin/env bun
 
@@ -24,7 +16,6 @@ import {
 } from "smithers-orchestrator";
 
 async function main() {
-  // Create database for state persistence
   const db = createSmithersDB({ path: ".smithers/hello-world" });
   const executionId = db.execution.start("Hello World", "hello-world.tsx");
 
@@ -47,10 +38,7 @@ async function main() {
   try {
     const root = createSmithersRoot();
     await root.mount(HelloWorld);
-
-    db.execution.complete(executionId, {
-      summary: "Hello World workflow completed",
-    });
+    db.execution.complete(executionId, { summary: "Hello World workflow completed" });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     db.execution.fail(executionId, error.message);
@@ -69,30 +57,17 @@ main();
 bun hello-world.tsx
 ```
 
-## Output (Example, Will Vary)
+## Output
 
 ```
 Claude says: 🎭 *adjusts monocle* Greetings, distinguished user!
 From the depths of the Smithers framework, I emerge to proclaim:
-"Hello from Smithers!" May your orchestrations be ever reactive
-and your agents perpetually productive! 🎩
+"Hello from Smithers!" May your orchestrations be ever reactive! 🎩
 ```
 
 ## What's Happening
 
-1. **Database Creation**: SQLite database stores execution state
-2. **Execution Tracking**: Each run gets a unique ID for observability
-3. **SmithersProvider**: Provides context to child components
-4. **Claude Component**: Executes a prompt with Claude Haiku
-5. **Cleanup**: Database is closed to flush writes
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Multi-Phase Review" icon="list-check" href="/examples/multi-phase-review">
-    Build a more complex workflow
-  </Card>
-  <Card title="Structured Output" icon="code" href="/examples/structured-output">
-    Get typed responses
-  </Card>
-</CardGroup>
+- **Database** — SQLite stores execution state for observability
+- **SmithersProvider** — Provides context to child components
+- **Claude** — Executes prompt with Claude Haiku
+- **Cleanup** — Database closed to flush writes

@@ -1,39 +1,21 @@
-# 09_wintermelon_safety.tape
-# Purpose: show safety primitives: allowlists + permissionMode + review/human gates.
-
+# Smithers Safety Demo
 Output "09_wintermelon_safety.gif"
 
-Require bash
-Require gum
-
 Set Shell "bash"
+Set FontSize 18
+Set Width 900
+Set Height 500
+Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
-Set FontFamily "JetBrains Mono"
-Set FontSize 22
-Set Width 1200
-Set Height 675
-Set Padding 20
-Set BorderRadius 12
-Set WindowBar Rings
-Set Framerate 30
-Set TypingSpeed 35ms
 
 Hide
-Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
+Type "cd /tmp && rm -rf safety_demo && mkdir safety_demo && cd safety_demo"
 Enter
-Type "rm -rf 09_wintermelon_safety && mkdir 09_wintermelon_safety && cd 09_wintermelon_safety"
+Type "cat > safety.tsx << 'EOF'"
 Enter
-Sleep 300ms
-Show
-
-Type "gum style --border double --align center --width 70 --padding '1 2' 'WINTERMELON' 'Safety: tool allowlists + permission gating + review checkpoints'"
+Type "import { Claude } from 'smithers-orchestrator'"
 Enter
-Sleep 800ms
-
-Type "cat > safety.tsx <<'EOF'"
-Enter
-Type "import { Claude } from 'smithers-orchestrator';"
-Enter
+Type ""
 Enter
 Type "<Claude"
 Enter
@@ -45,22 +27,34 @@ Type "  acceptEdits={false}"
 Enter
 Type ">"
 Enter
-Type "  Analyze the repo, propose a patch, but do not apply edits without approval."
+Type "  Analyze the repo and propose a patch."
+Enter
+Type "  Do not apply edits without approval."
 Enter
 Type "</Claude>"
 Enter
 Type "EOF"
 Enter
-Sleep 300ms
+Show
+
+Type "echo '# Safety props: allowedTools, permissionMode, acceptEdits'"
+Sleep 500ms
+Enter
+Sleep 500ms
 
 Type "cat safety.tsx"
+Sleep 500ms
 Enter
-Sleep 1000ms
+Sleep 2s
 
-Type "gum style --border normal --padding '1 2' 'Patterns that scale:' '- isolate work in worktrees' '- use Review/Human gates' '- persist an audit trail in SQLite'"
+Type "echo '# Safety patterns:'"
 Enter
-Sleep 1000ms
-
-Type "gum style --border double --align center --width 70 --padding '1 2' 'Automation you can trust is automation you can inspect.'"
+Type "echo '  - allowedTools: restrict which tools agent can use'"
 Enter
-Sleep 1100ms
+Type "echo '  - permissionMode: require confirmation for actions'"
+Enter
+Type "echo '  - acceptEdits: control whether edits auto-apply'"
+Enter
+Type "echo '  - Review gates: human checkpoints in workflow'"
+Enter
+Sleep 3s

@@ -5,97 +5,41 @@ description: Track Claude agent invocations
 
 # Agents API
 
-The agents API tracks Claude invocations within executions.
+```tsx
+const agentId = db.agents.start("Implement the feature", "sonnet", "You are a senior engineer");
+// ... agent runs ...
+db.agents.complete(agentId, "Feature implemented", { success: true }, { input: 1000, output: 500 });
+```
 
 ## Contract
 
-- **Sync:** All methods are synchronous.
-- **Return shape:** snake_case fields with `Date` timestamps.
-- **Status:** `pending | running | completed | failed | cancelled`.
+- **Sync:** All methods are synchronous
+- **Return shape:** snake_case fields with `Date` timestamps
+- **Status:** `pending | running | completed | failed | cancelled`
 
 ## Methods
 
-### start
-
-Log the start of an agent.
-
-```tsx
-const agentId = db.agents.start(
-  "Implement the feature",      // prompt
-  "sonnet",                      // model
-  "You are a senior engineer"    // system prompt
-);
-```
-
-### complete
-
-Mark agent as complete.
-
-```tsx
-db.agents.complete(
-  agentId,
-  "Feature implemented",         // output
-  { success: true, files: 3 },   // structured result
-  { input: 1000, output: 500 }   // tokens
-);
-```
-
-`structuredResult` is stored as `result_structured` in the database.
-
-### fail
-
-Mark agent as failed.
-
-```tsx
-db.agents.fail(agentId, "Timeout exceeded");
-```
-
-### current
-
-Get the currently running agent.
-
-```tsx
-const agent = db.agents.current();
-if (agent) {
-  console.log(`Running: ${agent.prompt.substring(0, 50)}...`);
-}
-```
-
-### list
-
-List agents for an execution.
-
-```tsx
-const agents = db.agents.list(executionId);
-
-for (const agent of agents) {
-  console.log(`${agent.model}: ${agent.status}`);
-  console.log(`  Tokens: ${agent.tokens_input ?? 0} in, ${agent.tokens_output ?? 0} out`);
-}
-```
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `start` | `(prompt: string, model: string, systemPrompt?: string) => string` | Start agent |
+| `complete` | `(id: string, output: string, result?: object, tokens?: {input, output}) => void` | Mark complete |
+| `fail` | `(id: string, error: string) => void` | Mark failed |
+| `current` | `() => Agent \| null` | Get running agent |
+| `list` | `(executionId: string) => Agent[]` | List agents for execution |
 
 ## Tool Calls
 
-Track tools used by agents:
-
 ```tsx
-// Start a tool call
-const toolId = db.tools.start(
-  agentId,
-  "Edit",
-  { file: "src/main.ts", changes: "..." }
-);
-
-// Complete the tool call
-db.tools.complete(
-  toolId,
-  "File edited successfully",
-  "Edited src/main.ts: added 15 lines"
-);
-
-// List tool calls for an agent
+const toolId = db.tools.start(agentId, "Edit", { file: "src/main.ts" });
+db.tools.complete(toolId, "File edited successfully", "Added 15 lines");
 const tools = db.tools.list(agentId);
 ```
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `tools.start` | `(agentId: string, toolName: string, input: object) => string` | Start tool call |
+| `tools.complete` | `(id: string, output: string, summary?: string) => void` | Complete tool call |
+| `tools.list` | `(agentId: string) => ToolCall[]` | List tool calls |
 
 ## Types
 
@@ -116,47 +60,22 @@ interface Agent {
   tool_calls_count: number;
   started_at?: Date;
   completed_at?: Date;
-  created_at: Date;
   duration_ms?: number;
-  log_path?: string;
-  stream_summary?: StreamSummary;
 }
 
 interface ToolCall {
   id: string;
   agent_id: string;
-  execution_id: string;
   tool_name: string;
   input: Record<string, any>;
   output_inline?: string;
   output_summary?: string;
-  output_size_bytes?: number;
-  output_path?: string;
-  output_git_hash?: string;
-  error?: string;
   status: "pending" | "running" | "completed" | "failed";
-  started_at?: string;
-  completed_at?: string;
-  created_at: string;
   duration_ms?: number;
-}
-
-interface StreamSummary {
-  textBlocks: number;
-  reasoningBlocks: number;
-  toolCalls: number;
-  toolResults: number;
-  errors: number;
 }
 ```
 
 ## Related
 
-<CardGroup cols={2}>
-  <Card title="Execution API" icon="play" href="/api-reference/execution">
-    Execution tracking
-  </Card>
-  <Card title="Claude Component" icon="robot" href="/components/claude">
-    Claude component
-  </Card>
-</CardGroup>
+- [Execution API](/api-reference/execution)
+- [Claude Component](/components/claude)

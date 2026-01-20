@@ -3,30 +3,13 @@ title: VCS Integration
 description: Git and Jujutsu version control integration
 ---
 
-# VCS Integration Guide
-
-Smithers has first-class support for Git and Jujutsu (jj) version control.
-
-## Git Commits
-
-Create commits with the Commit component:
+# VCS Integration
 
 ```tsx
-import { Commit } from "smithers-orchestrator";
-
-<Commit
-  message="feat: Add user authentication"
-  all  // Stage all changes
-  notes={{ smithers: true, prompt: "Add auth" }}
-  onFinished={(result) => {
-    console.log(`Committed: ${result.commitHash}`);
-  }}
-/>
+<Commit message="feat: Add auth" all notes={{ smithers: true }} />
 ```
 
 ## Auto-Generated Messages
-
-Let Claude generate the commit message:
 
 ```tsx
 <Commit autoGenerate all />
@@ -34,63 +17,39 @@ Let Claude generate the commit message:
 
 ## Selective Commits
 
-Commit specific files:
-
 ```tsx
-<Commit
-  message="fix: Update config"
-  files={["config.json", "settings.ts"]}
-/>
+<Commit message="fix: Update config" files={["config.json", "settings.ts"]} />
 ```
 
 ## Git Notes
 
-Store metadata in git notes:
-
 ```tsx
 <Commit
   message="feat: New feature"
-  notes={{
-    smithers: true,
-    executionId: executionId,
-    prompt: "Implement the new feature",
-    model: "sonnet",
-  }}
+  notes={{ smithers: true, executionId, prompt: "Implement feature" }}
 />
 ```
 
-Read notes:
+Read with `git notes show HEAD`.
 
-```bash
-git notes show HEAD
-```
-
-## Code Review
-
-Review changes before committing:
+## Complete Workflow
 
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
-function ReviewAndCommitBody() {
+function FeatureWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
-
   const { data: phaseJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
   );
   const phase = phaseJson ? JSON.parse(phaseJson) : "implement";
-
-  const setPhase = (newPhase: string) => {
-    db.state.set("phase", newPhase);
-  };
 
   return (
     <>
       <If condition={phase === "implement"}>
         <Claude
           allowedTools={["Edit", "Write"]}
-          onFinished={() => setPhase("review")}
+          onFinished={() => db.state.set("phase", "review")}
         >
           Implement the feature.
         </Claude>
@@ -99,53 +58,28 @@ function ReviewAndCommitBody() {
       <If condition={phase === "review"}>
         <Review
           target={{ type: "diff", ref: "main" }}
-          criteria={[
-            "No security vulnerabilities",
-            "Tests included",
-          ]}
-          onFinished={(review) => {
-            if (review.approved) {
-              setPhase("commit");
-            } else {
-              setPhase("implement");
-            }
-          }}
+          criteria={["No security issues", "Tests pass"]}
+          onFinished={(r) => db.state.set("phase", r.approved ? "commit" : "implement")}
         />
       </If>
 
       <If condition={phase === "commit"}>
-        <Commit
-          autoGenerate
-          all
-          onFinished={() => setPhase("done")}
-        />
+        <Commit autoGenerate all onFinished={() => db.state.set("phase", "done")} />
       </If>
     </>
   );
 }
-
-export function ReviewAndCommit({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-      <ReviewAndCommitBody />
-    </SmithersProvider>
-  );
-}
 ```
 
-## Snapshots (Jujutsu)
-
-For jj users, create snapshots:
+## Jujutsu Snapshots
 
 ```tsx
-// Before risky operations
+// Snapshot before risky operations
 await db.vcs.logSnapshot({
   snapshotId: await jjSnapshot(),
   description: "Before refactoring",
   timestamp: new Date(),
 });
-
-// Perform work...
 
 // Rollback if needed
 const snapshots = await db.vcs.getSnapshots(1);
@@ -154,10 +88,7 @@ await jjRestore(snapshots[0].snapshotId);
 
 ## Database Tracking
 
-All VCS operations are logged to the database:
-
 ```tsx
-// Log a commit
 await db.vcs.logCommit({
   hash: "abc123",
   message: "feat: Add feature",
@@ -169,133 +100,12 @@ await db.vcs.logCommit({
   vcsType: "git",
 });
 
-// Query commits
 const commits = await db.vcs.getCommits(10);
-```
-
-## Review Tracking
-
-```tsx
-// Log a review
-await db.vcs.logReview({
-  reviewId: "r1",
-  target: "abc123",
-  approved: false,
-  summary: "Issues found",
-  issues: [
-    { severity: "high", file: "auth.ts", description: "..." }
-  ],
-});
-
-// Get blocking reviews
-const blocking = await db.vcs.getBlockingReviews();
-```
-
-## Complete Workflow
-
-```tsx
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
-function FeatureWorkflowBody() {
-  const { db, reactiveDb } = useSmithers();
-
-  const { data: phaseJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
-  );
-  const phase = phaseJson ? JSON.parse(phaseJson) : "implement";
-
-  const setPhase = (newPhase: string) => {
-    db.state.set("phase", newPhase);
-  };
-
-  return (
-    <>
-      <If condition={phase === "implement"}>
-        <Phase name="Implementation">
-          <Step name="implement">
-            <Claude
-              allowedTools={["Edit", "Write"]}
-              onFinished={() => setPhase("test")}
-            >
-              Implement the feature.
-            </Claude>
-          </Step>
-        </Phase>
-      </If>
-
-      <If condition={phase === "test"}>
-        <Phase name="Testing">
-          <Step name="test">
-            <Claude
-              allowedTools={["Bash"]}
-              onFinished={(result) => {
-                if (result.output.includes("PASS")) {
-                  setPhase("review");
-                } else {
-                  setPhase("implement");
-                }
-              }}
-            >
-              Run the tests.
-            </Claude>
-          </Step>
-        </Phase>
-      </If>
-
-      <If condition={phase === "review"}>
-        <Phase name="Review">
-          <Step name="review">
-            <Review
-              target={{ type: "diff", ref: "main" }}
-              criteria={["No security issues", "Tests pass"]}
-              onFinished={(review) => {
-                if (review.approved) {
-                  setPhase("commit");
-                } else {
-                  setPhase("implement");
-                }
-              }}
-            />
-          </Step>
-        </Phase>
-      </If>
-
-      <If condition={phase === "commit"}>
-        <Phase name="Commit">
-          <Step name="commit">
-            <Commit
-              autoGenerate
-              all
-              notes={{ smithers: true }}
-              onFinished={() => setPhase("done")}
-            />
-          </Step>
-        </Phase>
-      </If>
-    </>
-  );
-}
-
-function FeatureWorkflow({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10} snapshotBeforeStart>
-      <FeatureWorkflowBody />
-    </SmithersProvider>
-  );
-}
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Commit Component" icon="code-commit" href="/components/commit">
-    Commit API reference
-  </Card>
-  <Card title="Review Component" icon="magnifying-glass" href="/components/review">
-    Review API reference
-  </Card>
-  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs">
-    Database VCS operations
-  </Card>
+  <Card title="Commit Component" icon="code-commit" href="/components/commit" />
+  <Card title="Review Component" icon="magnifying-glass" href="/components/review" />
 </CardGroup>

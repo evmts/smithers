@@ -3,13 +3,7 @@ title: Error Handling
 description: Handle errors gracefully in Smithers workflows
 ---
 
-# Error Handling Guide
-
-Strategies for handling errors in Smithers workflows.
-
-## Basic Error Handling
-
-Use the `onError` callback:
+# Error Handling
 
 ```tsx
 <Claude
@@ -22,25 +16,18 @@ Use the `onError` callback:
 
 ## Retry with State
 
-Implement retry logic with signals:
-
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function RetryWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
-
   const { data: attemptsVal } = useQueryValue<number>(
-    reactiveDb,
-    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
+    reactiveDb, "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
   );
   const attempts = attemptsVal ?? 0;
-
-  const { data: lastErrorJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'lastError'"
+  const { data: lastError } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'lastError'"
   );
-  const lastError = lastErrorJson ? JSON.parse(lastErrorJson) : null;
 
   return (
     <>
@@ -52,58 +39,19 @@ function RetryWorkflowBody() {
             db.state.set("attempts", attempts + 1);
           }}
         >
-          <If condition={lastError !== null}>
-            <>Previous attempt failed: {lastError}</>
-          </If>
-          Attempt the task (attempt {attempts + 1}/3).
+          {lastError && <>Previous: {lastError}</>}
+          Attempt {attempts + 1}/3.
         </Claude>
       </If>
-
       <If condition={attempts >= 3}>
         <Stop reason={`Failed after 3 attempts: ${lastError}`} />
       </If>
     </>
   );
 }
-
-export function RetryWorkflow({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-      <RetryWorkflowBody />
-    </SmithersProvider>
-  );
-}
-```
-
-## Orchestration-Level Errors
-
-Handle errors at the orchestration level:
-
-```tsx
-<SmithersProvider
-  db={db}
-  executionId={executionId}
-  globalTimeout={3600000}
-  onError={async (error) => {
-    // Log to database
-    await db.vcs.addReport({
-      type: "error",
-      severity: "critical",
-      title: "Workflow Failed",
-      content: error.message,
-    });
-
-    // Send notification
-    await sendAlert(`Workflow failed: ${error.message}`);
-  }}
->
-  <WorkflowContent />
-</SmithersProvider>
 ```
 
 ## Stop Conditions
-
-Use stop conditions to catch issues early:
 
 ```tsx
 <SmithersProvider
@@ -112,258 +60,64 @@ Use stop conditions to catch issues early:
   stopConditions={[
     { type: "total_tokens", value: 50000 },
     { type: "report_severity", value: "critical" },
-    {
-      type: "custom",
-      fn: (result) => result.output.includes("FATAL"),
-      message: "Fatal error detected",
-    },
+    { type: "custom", fn: (r) => r.output.includes("FATAL"), message: "Fatal error" },
   ]}
-  onStopRequested={() => {
-    console.log("Workflow stopped by condition");
-  }}
->
-```
-
-## Database Logging
-
-Log errors to the database for debugging:
-
-```tsx
-<Claude
-  onError={async (error) => {
-    // Log the failure
-    await db.vcs.addReport({
-      type: "error",
-      severity: "warning",
-      title: "Agent Failed",
-      content: error.message,
-      data: {
-        phase: phase,
-        attempts: attempts,
-        timestamp: new Date().toISOString(),
-      },
-    });
-
-    // Store learning for future
-    await db.memories.addLearning(
-      `error-${Date.now()}`,
-      `Encountered error: ${error.message}`,
-      "error handler"
-    );
-  }}
->
+/>
 ```
 
 ## Graceful Degradation
 
-Fall back to simpler approaches:
-
 ```tsx
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
 function ResilientWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
-
-  const { data: approachJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'approach'"
+  const { data: approach } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'approach'"
   );
-  const approach = approachJson ? JSON.parse(approachJson) : "full";
-
-  const setApproach = (newApproach: string) => {
-    db.state.set("approach", newApproach);
-  };
 
   return (
     <>
       <If condition={approach === "full"}>
-        <Claude
-          model="opus"
-          maxTurns={20}
-          onFinished={() => setApproach("done")}
-          onError={() => setApproach("simple")}
+        <Claude model="opus" maxTurns={20}
+          onFinished={() => db.state.set("approach", "done")}
+          onError={() => db.state.set("approach", "simple")}
         >
-          Comprehensive analysis with full toolset.
+          Comprehensive analysis.
         </Claude>
       </If>
-
       <If condition={approach === "simple"}>
-        <Claude
-          model="sonnet"
-          maxTurns={5}
-          allowedTools={["Read"]}
-          onFinished={() => setApproach("done")}
-          onError={() => setApproach("manual")}
+        <Claude model="sonnet" maxTurns={5} allowedTools={["Read"]}
+          onFinished={() => db.state.set("approach", "done")}
+          onError={() => db.state.set("approach", "manual")}
         >
-          Simplified analysis, read-only.
+          Simplified analysis.
         </Claude>
       </If>
-
       <If condition={approach === "manual"}>
-        <Human
-          message="Automated analysis failed"
-          onApprove={() => setApproach("done")}
-        >
-          Both automated approaches failed.
+        <Human message="Automated analysis failed" onApprove={() => db.state.set("approach", "done")}>
           Please review manually.
         </Human>
       </If>
     </>
   );
 }
-
-export function ResilientWorkflow({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-      <ResilientWorkflowBody />
-    </SmithersProvider>
-  );
-}
-```
-
-## Validation Errors
-
-Handle schema validation failures:
-
-```tsx
-<Claude
-  schema={StrictSchema}
-  maxRetries={2}
-  onFinished={(result) => {
-    if (!result.structured) {
-      console.warn("No structured output");
-      return;
-    }
-    // Use structured output
-  }}
-  onError={(error) => {
-    if (error.message.includes("validation")) {
-      console.error("Schema validation failed after retries");
-      // Fall back to unstructured output
-    }
-  }}
->
 ```
 
 ## Timeout Handling
 
-Handle timeouts explicitly:
-
 ```tsx
 <Claude
-  timeout={60000}  // 1 minute
+  timeout={60000}
   onError={(error) => {
     if (error.message.includes("timeout")) {
-      console.log("Agent timed out, trying shorter task");
       setApproach("shorter");
     }
   }}
 >
 ```
 
-## Complete Error Handling Pattern
-
-```tsx
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
-function RobustWorkflowBody() {
-  const { db, reactiveDb } = useSmithers();
-
-  const { data: phaseVal } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
-  );
-  const phase = phaseVal ?? "start";
-
-  const { data: attemptsVal } = useQueryValue<number>(
-    reactiveDb,
-    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
-  );
-  const attempts = attemptsVal ?? 0;
-
-  const { data: errorsJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'errors'"
-  );
-  const errors: string[] = errorsJson ? JSON.parse(errorsJson) : [];
-
-  return (
-    <>
-      <If condition={phase === "start" && attempts < 3}>
-        <Claude
-          onFinished={() => db.state.set("phase", "done")}
-          onError={(error) => {
-            const newErrors = [...errors, error.message];
-            db.state.set("errors", JSON.stringify(newErrors));
-            db.state.set("attempts", attempts + 1);
-            if (attempts >= 2) {
-              db.state.set("phase", "fallback");
-            }
-          }}
-        >
-          Primary task.
-          <If condition={errors.length > 0}>
-            <>Previous errors: {errors.join(", ")}</>
-          </If>
-        </Claude>
-      </If>
-
-      <If condition={phase === "fallback"}>
-        <Human
-          message="Automated task failed"
-          onApprove={() => db.state.set("phase", "done")}
-          onReject={() => db.state.set("phase", "cancelled")}
-        >
-          Failed {attempts} times.
-          Errors: {errors.join("; ")}
-        </Human>
-      </If>
-
-      <If condition={phase === "cancelled"}>
-        <Stop reason="Cancelled after failures" />
-      </If>
-    </>
-  );
-}
-
-export function RobustWorkflow({ db, executionId }) {
-  return (
-    <SmithersProvider
-      db={db}
-      executionId={executionId}
-      globalTimeout={3600000}
-      maxIterations={10}
-      stopConditions={[
-        { type: "total_tokens", value: 100000 },
-      ]}
-      onError={async (error) => {
-        await db.vcs.addReport({
-          type: "error",
-          severity: "critical",
-          title: "Workflow Error",
-          content: error.message,
-        });
-      }}
-      onMaxIterations={() => {
-        console.error("Max iterations reached");
-      }}
-    >
-      <RobustWorkflowBody />
-    </SmithersProvider>
-  );
-}
-```
-
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="SmithersProvider" icon="sitemap" href="/components/smithers-provider">
-    Workflow-level control
-  </Card>
-  <Card title="Ralph" icon="rotate" href="/components/ralph">
-    Iteration control
-  </Card>
-  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs">
-    Error logging
-  </Card>
+  <Card title="SmithersProvider" icon="sitemap" href="/components/smithers-provider" />
+  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs" />
 </CardGroup>

@@ -5,25 +5,9 @@ description: Step tracking within workflow phases
 
 # Steps API
 
-The `db.steps` module tracks individual steps within workflow phases. Steps represent discrete units of work that can be tracked for progress and VCS operations.
-
-## Contract
-
-- **Sync:** All methods are synchronous.
-- **Return shape:** raw rows with snake_case fields.
-- **Time:** Timestamps are ISO strings (not `Date`).
-
-## Overview
-
 ```tsx
-import { createSmithersDB } from "smithers-orchestrator";
-
-const db = createSmithersDB({ path: ".smithers/my-workflow" });
-
-// Start a step
 const stepId = db.steps.start("implement-feature");
-
-// Complete with VCS info
+// ... do work ...
 db.steps.complete(stepId, {
   snapshot_before: "abc123",
   snapshot_after: "def456",
@@ -31,81 +15,68 @@ db.steps.complete(stepId, {
 });
 ```
 
+## Contract
+
+- **Sync:** All methods are synchronous
+- **Return shape:** snake_case fields, timestamps as ISO strings
+
 ## Methods
 
-### start
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `start` | `(name?: string) => string` | Start a step |
+| `complete` | `(id: string, vcsInfo?: VcsInfo) => void` | Complete with optional VCS info |
+| `fail` | `(id: string) => void` | Mark failed |
+| `current` | `() => Step \| null` | Get active step |
+| `list` | `(phaseId: string) => Step[]` | List steps for phase |
+| `getByExecution` | `(executionId: string) => Step[]` | List steps for execution |
 
-Starts a new step within the current phase.
+### VcsInfo
 
 ```tsx
-const stepId = db.steps.start(name?: string): string
+interface VcsInfo {
+  snapshot_before?: string;  // JJ change ID before
+  snapshot_after?: string;   // JJ change ID after
+  commit_created?: string;   // Commit hash if created
+}
 ```
 
-<ParamField path="name" type="string">
-  Optional name for the step.
-</ParamField>
-
-**Returns:** The step ID.
-
-### complete
-
-Completes a step, optionally recording VCS information.
+## Component Usage
 
 ```tsx
-db.steps.complete(
-  id: string,
-  vcsInfo?: {
-    snapshot_before?: string;
-    snapshot_after?: string;
-    commit_created?: string;
+<Phase name="implementation">
+  <Step name="setup-database">
+    <Claude>Set up the database schema.</Claude>
+  </Step>
+
+  <Step name="implement-api">
+    <Claude>Implement the API endpoints.</Claude>
+  </Step>
+</Phase>
+```
+
+## VCS Tracking
+
+```tsx
+async function trackedStep() {
+  const beforeSnapshot = await jjSnapshot("Before refactoring");
+  const stepId = db.steps.start("refactoring");
+
+  try {
+    // do work...
+    const afterSnapshot = await jjSnapshot("After refactoring");
+    db.steps.complete(stepId, {
+      snapshot_before: beforeSnapshot.changeId,
+      snapshot_after: afterSnapshot.changeId,
+    });
+  } catch (error) {
+    db.steps.fail(stepId);
+    throw error;
   }
-): void
+}
 ```
 
-<ParamField path="id" type="string" required>
-  The step ID to complete.
-</ParamField>
-
-<ParamField path="vcsInfo" type="object">
-  Optional VCS tracking information:
-  - `snapshot_before`: JJ change ID before the step
-  - `snapshot_after`: JJ change ID after the step
-  - `commit_created`: Commit hash if a commit was made
-</ParamField>
-
-### fail
-
-Marks a step as failed.
-
-```tsx
-db.steps.fail(id: string): void
-```
-
-### current
-
-Gets the currently active step.
-
-```tsx
-const step = db.steps.current(): Step | null
-```
-
-### list
-
-Lists steps for a phase.
-
-```tsx
-const steps = db.steps.list(phaseId: string): Step[]
-```
-
-### getByExecution
-
-Lists steps for an execution.
-
-```tsx
-const steps = db.steps.getByExecution(executionId: string): Step[]
-```
-
-## Step Type
+## Types
 
 ```tsx
 interface Step {
@@ -124,84 +95,7 @@ interface Step {
 }
 ```
 
-## Usage with the Step Component
-
-The `<Step>` component automatically integrates with this module:
-
-```tsx
-import { Step } from "smithers-orchestrator";
-
-<Phase name="implementation">
-  <Step name="setup-database">
-    <Claude>Set up the database schema.</Claude>
-  </Step>
-
-  <Step name="implement-api">
-    <Claude>Implement the API endpoints.</Claude>
-  </Step>
-
-  <Step name="write-tests">
-    <Claude>Write tests for the API.</Claude>
-  </Step>
-</Phase>
-```
-
-## VCS Tracking Example
-
-Steps can track VCS snapshots for rollback capabilities:
-
-```tsx
-async function trackedStep() {
-  // Create snapshot before
-  const beforeSnapshot = await jjSnapshot("Before refactoring");
-
-  // Start step
-  const stepId = db.steps.start("refactoring");
-
-  try {
-    // Do work...
-
-    // Create snapshot after
-    const afterSnapshot = await jjSnapshot("After refactoring");
-
-    // Complete with VCS info
-    db.steps.complete(stepId, {
-      snapshot_before: beforeSnapshot.changeId,
-      snapshot_after: afterSnapshot.changeId,
-    });
-  } catch (error) {
-    db.steps.fail(stepId);
-    // Can rollback to beforeSnapshot if needed
-    throw error;
-  }
-}
-```
-
-## Querying Steps
-
-```tsx
-// Get current step
-const currentStep = db.steps.current();
-if (currentStep) {
-  console.log(`Working on: ${currentStep.name}`);
-}
-
-// List steps in a phase
-const phaseSteps = db.steps.list(phaseId);
-const completedSteps = phaseSteps.filter((s) => s.status === "completed");
-console.log(`Progress: ${completedSteps.length}/${phaseSteps.length}`);
-
-// Get all steps for execution
-const allSteps = db.steps.getByExecution(executionId);
-```
-
 ## Related
 
-<CardGroup cols={2}>
-  <Card title="Phases API" icon="layer-group" href="/api-reference/phases">
-    Phase tracking
-  </Card>
-  <Card title="Step Component" icon="shoe-prints" href="/components/step">
-    Step component reference
-  </Card>
-</CardGroup>
+- [Phases API](/api-reference/phases)
+- [Step Component](/components/step)

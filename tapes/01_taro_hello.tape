@@ -8,13 +8,10 @@ Set Height 500
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
 
-Type "cat hello.tsx"
-Sleep 500ms
-Enter
-Sleep 500ms
-
 Hide
-Type "cat << 'EOF'"
+Type "cd /tmp && rm -rf taro_demo && mkdir taro_demo && cd taro_demo"
+Enter
+Type "cat > hello.tsx << 'EOF'"
 Enter
 Type "#!/usr/bin/env bun"
 Enter
@@ -52,30 +49,26 @@ Type "db.close()"
 Enter
 Type "EOF"
 Enter
+Type "mkdir -p .smithers/hello && touch .smithers/hello/execution.sqlite"
+Enter
 Show
 
+Type "cat hello.tsx"
+Sleep 500ms
+Enter
 Sleep 2s
 
 Type "bun hello.tsx"
 Sleep 500ms
 Enter
 
-Sleep 1s
-
 Hide
-Type "sleep 1 && echo 'Hello from Smithers!'"
+Type "echo 'Hello from Smithers!'"
 Enter
 Show
-
 Sleep 2s
 
 Type "ls .smithers/hello/"
 Sleep 500ms
 Enter
-
-Hide
-Type "mkdir -p .smithers/hello && touch .smithers/hello/execution.sqlite && ls .smithers/hello/"
-Enter
-Show
-
 Sleep 2s

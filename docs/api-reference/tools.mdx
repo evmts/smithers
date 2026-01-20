@@ -5,111 +5,24 @@ description: Tool call tracking for agent observability
 
 # Tools API
 
-The `db.tools` module tracks tool calls made by agents. This provides observability into what tools agents are using and their results.
-
-## Contract
-
-- **Sync:** All methods are synchronous.
-- **Return shape:** snake_case fields; `input` is parsed JSON.
-- **Time:** Timestamps are ISO strings (not `Date`).
-
-## Overview
-
 ```tsx
-import { createSmithersDB } from "smithers-orchestrator";
-
 const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
-// Start tracking a tool call
 const toolId = db.tools.start(agentId, "Edit", { file: "src/app.ts" });
-
-// Complete with output
 db.tools.complete(toolId, "File edited successfully", "Modified 15 lines");
 ```
 
+All methods sync. Returns snake_case fields; `input` is parsed JSON.
+
 ## Methods
 
-### start
-
-Starts tracking a tool call.
-
-```tsx
-const toolId = db.tools.start(
-  agentId: string,
-  toolName: string,
-  input: Record<string, any>
-): string
-```
-
-<ParamField path="agentId" type="string" required>
-  The agent ID making the tool call.
-</ParamField>
-
-<ParamField path="toolName" type="string" required>
-  Name of the tool being called (e.g., "Read", "Edit", "Bash").
-</ParamField>
-
-<ParamField path="input" type="Record<string, any>" required>
-  Input parameters passed to the tool.
-</ParamField>
-
-**Returns:** The tool call ID.
-
-### complete
-
-Completes a tool call with its output.
-
-```tsx
-db.tools.complete(
-  id: string,
-  output: string,
-  summary?: string
-): void
-```
-
-<ParamField path="id" type="string" required>
-  The tool call ID.
-</ParamField>
-
-<ParamField path="output" type="string" required>
-  The full output from the tool.
-</ParamField>
-
-<ParamField path="summary" type="string">
-  Optional summary for large outputs. If output is >1KB, only the summary is stored inline.
-</ParamField>
-
-### fail
-
-Marks a tool call as failed.
-
-```tsx
-db.tools.fail(id: string, error: string): void
-```
-
-<ParamField path="id" type="string" required>
-  The tool call ID.
-</ParamField>
-
-<ParamField path="error" type="string" required>
-  Error message describing the failure.
-</ParamField>
-
-### list
-
-Lists all tool calls for an agent.
-
-```tsx
-const toolCalls = db.tools.list(agentId: string): ToolCall[]
-```
-
-### getOutput
-
-Gets the full output for a tool call.
-
-```tsx
-const output = db.tools.getOutput(id: string): string | null
-```
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `start` | `(agentId, toolName, input) => string` | Start tracking, returns tool ID |
+| `complete` | `(id, output, summary?) => void` | Mark complete with output |
+| `fail` | `(id, error) => void` | Mark failed |
+| `list` | `(agentId) => ToolCall[]` | List agent's tool calls |
+| `getOutput` | `(id) => string \| null` | Get full output |
 
 ## ToolCall Type
 
@@ -117,105 +30,44 @@ const output = db.tools.getOutput(id: string): string | null
 interface ToolCall {
   id: string;
   agent_id: string;
-  execution_id: string;
   tool_name: string;
   input: Record<string, any>;
   output_inline: string | null;
-  output_path: string | null;
-  output_git_hash: string | null;
   output_summary: string | null;
-  output_size_bytes: number | null;
   error: string | null;
   status: 'pending' | 'running' | 'completed' | 'failed';
   started_at: string | null;
   completed_at: string | null;
   duration_ms: number | null;
-  created_at: string;
 }
-```
-
-## Usage with onToolCall
-
-The Claude component can track tool calls via the `onToolCall` prop:
-
-```tsx
-<Claude
-  onToolCall={(toolName, input) => {
-    console.log(`Tool called: ${toolName}`, input);
-  }}
->
-  Edit the file to fix the bug.
-</Claude>
-```
-
-## Querying Tool Calls
-
-```tsx
-// Get all tool calls for an agent
-const toolCalls = db.tools.list(agentId);
-
-// Analyze tool usage
-const toolUsage = toolCalls.reduce((acc, tc) => {
-  acc[tc.tool_name] = (acc[tc.tool_name] || 0) + 1;
-  return acc;
-}, {});
-console.log("Tool usage:", toolUsage);
-
-// Find failed tool calls
-const failures = toolCalls.filter((tc) => tc.status === "failed");
-if (failures.length > 0) {
-  console.log("Tool failures:", failures.map((f) => f.error));
-}
-
-// Calculate average tool duration
-const avgDuration =
-  toolCalls
-    .filter((tc) => tc.duration_ms)
-    .reduce((sum, tc) => sum + tc.duration_ms!, 0) / toolCalls.length;
 ```
 
 ## Output Storage
 
-Tool outputs are stored based on size:
+- **< 1KB**: Stored in `output_inline`
+- **≥ 1KB**: Summary in `output_summary`, full output not stored inline
 
-- **< 1KB**: Stored inline in `output_inline`
-- **>= 1KB**: Summary stored in `output_summary`, full output not stored inline
-
-If you want to persist full output for large payloads, store it yourself and set
-`output_path` or `output_git_hash` via a custom update.
+## Usage with Claude
 
 ```tsx
-// Get output (handles both cases)
-const output = db.tools.getOutput(toolId);
-if (output) {
-  console.log("Full output:", output);
-} else {
-  const toolCall = db.tools.list(agentId).find((tc) => tc.id === toolId);
-  console.log("Summary:", toolCall?.output_summary);
-}
+<Claude
+  onToolCall={(toolName, input) => console.log(`Tool: ${toolName}`, input)}
+>
+  Edit the file.
+</Claude>
 ```
 
-## Statistics
-
-Tool calls update execution and agent statistics:
+## Querying
 
 ```tsx
-// Execution stats
-const execution = db.execution.get(executionId);
-console.log(`Total tool calls: ${execution.total_tool_calls}`);
-
-// Agent stats
-const agent = db.agents.list(executionId).find((a) => a.id === agentId);
-console.log(`Agent tool calls: ${agent?.tool_calls_count ?? 0}`);
+const tools = db.tools.list(agentId);
+const failures = tools.filter(t => t.status === "failed");
+const avgDuration = tools.reduce((s, t) => s + (t.duration_ms ?? 0), 0) / tools.length;
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Agents API" icon="robot" href="/api-reference/agents">
-    Agent tracking
-  </Card>
-  <Card title="Claude Component" icon="cube" href="/components/claude">
-    Claude component reference
-  </Card>
+  <Card title="Agents API" icon="robot" href="/api-reference/agents" />
+  <Card title="Claude Component" icon="cube" href="/components/claude" />
 </CardGroup>

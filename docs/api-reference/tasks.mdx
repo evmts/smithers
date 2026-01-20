@@ -5,125 +5,51 @@ description: Task tracking for Ralph iteration management
 
 # Tasks API
 
-The `db.tasks` module provides task tracking for Ralph iteration management. It tracks component-level tasks within the execution lifecycle.
+```tsx
+const taskId = db.tasks.start("claude", "code-analyzer");
+// ... execute component ...
+db.tasks.complete(taskId);
+```
 
 ## Contract
 
-- **Sync:** All methods are synchronous except `withTask`, which returns a Promise.
-- **Scope:** Methods operate on the current execution.
-
-## Overview
-
-```tsx
-import { createSmithersDB } from "smithers-orchestrator";
-
-const db = createSmithersDB({ path: ".smithers/my-workflow" });
-
-// Start a task
-const taskId = db.tasks.start("claude", "code-analyzer");
-
-// Complete the task
-db.tasks.complete(taskId);
-
-// Or mark as failed
-db.tasks.fail(taskId);
-```
+- **Sync:** All methods synchronous except `withTask` (returns Promise)
+- **Scope:** Methods operate on current execution
 
 ## Methods
 
-### start
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `start` | `(componentType: string, componentName?: string) => string` | Start task |
+| `complete` | `(id: string) => void` | Mark complete |
+| `fail` | `(id: string) => void` | Mark failed (does not stop orchestration) |
+| `getRunningCount` | `(iteration: number) => number` | Count running tasks |
+| `getTotalCount` | `(iteration: number) => number` | Count all tasks |
+| `list` | `() => Task[]` | List all tasks |
+| `getCurrentIteration` | `() => number` | Get current Ralph iteration |
+| `withTask` | `<T>(type: string, name: string, fn: () => T) => Promise<T>` | Execute within task lifecycle |
 
-Starts a new task and returns its ID.
-
-```tsx
-function start(componentType: string, componentName?: string): string
-```
-
-<ParamField path="componentType" type="string" required>
-  The type of component (e.g., "claude", "review", "commit").
-</ParamField>
-
-<ParamField path="componentName" type="string">
-  Optional name for the component instance.
-</ParamField>
-
-**Returns:** The task ID.
-
-### complete
-
-Marks a task as completed.
+## Usage
 
 ```tsx
-function complete(id: string): void
+const taskId = db.tasks.start('claude', 'reviewer');
+try {
+  // execute...
+  db.tasks.complete(taskId);
+} catch {
+  db.tasks.fail(taskId);
+}
+
+// Check iteration progress
+const iteration = db.tasks.getCurrentIteration();
+const running = db.tasks.getRunningCount(iteration);
+const total = db.tasks.getTotalCount(iteration);
+if (running === 0 && total > 0) {
+  console.log("All tasks completed");
+}
 ```
 
-<ParamField path="id" type="string" required>
-  The task ID to complete.
-</ParamField>
-
-### fail
-
-Marks a task as failed.
-
-```tsx
-function fail(id: string): void
-```
-
-<ParamField path="id" type="string" required>
-  The task ID to mark as failed.
-</ParamField>
-
-`fail()` marks task status only; it does not stop orchestration.
-
-### getRunningCount
-
-Gets the count of running tasks for a specific iteration.
-
-```tsx
-function getRunningCount(iteration: number): number
-```
-
-<ParamField path="iteration" type="number" required>
-  The Ralph iteration number.
-</ParamField>
-
-### getTotalCount
-
-Gets the count of all tasks for a specific iteration.
-
-```tsx
-function getTotalCount(iteration: number): number
-```
-
-### list
-
-Gets all tasks for the current execution.
-
-```tsx
-function list(): Task[]
-```
-
-### getCurrentIteration
-
-Gets the current Ralph iteration from the state table.
-
-```tsx
-function getCurrentIteration(): number
-```
-
-### withTask
-
-Executes a function within a task lifecycle (start → complete/fail).
-
-```tsx
-function withTask<T>(
-  componentType: string,
-  componentName: string | undefined,
-  fn: () => T | Promise<T>
-): Promise<T>
-```
-
-## Task Type
+## Types
 
 ```tsx
 interface Task {
@@ -139,45 +65,7 @@ interface Task {
 }
 ```
 
-## Usage in Components
-
-The Claude component automatically uses the tasks module:
-
-```tsx
-// Inside Claude component (simplified)
-const taskId = db.tasks.start('claude', props.model);
-try {
-  // Execute Claude CLI...
-  db.tasks.complete(taskId);
-} catch {
-  db.tasks.fail(taskId);
-}
-```
-
-## Querying Tasks
-
-```tsx
-// List all tasks
-const allTasks = db.tasks.list();
-
-// Count running tasks in current iteration
-const iteration = db.tasks.getCurrentIteration();
-const runningCount = db.tasks.getRunningCount(iteration);
-
-// Check if all tasks completed
-const totalCount = db.tasks.getTotalCount(iteration);
-if (runningCount === 0 && totalCount > 0) {
-  console.log("All tasks completed for this iteration");
-}
-```
-
 ## Related
 
-<CardGroup cols={2}>
-  <Card title="Phases API" icon="layer-group" href="/api-reference/phases">
-    Phase tracking
-  </Card>
-  <Card title="Steps API" icon="shoe-prints" href="/api-reference/steps">
-    Step tracking
-  </Card>
-</CardGroup>
+- [Phases API](/api-reference/phases)
+- [Steps API](/api-reference/steps)

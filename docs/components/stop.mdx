@@ -3,46 +3,31 @@ title: Stop
 description: Signal workflow termination
 ---
 
-# Stop Component
-
-The `<Stop>` component signals that the workflow should terminate.
-
-## Basic Usage
+# Stop
 
 ```tsx
-import { Stop } from "smithers-orchestrator";
-
 <Stop reason="Task completed successfully" />
 ```
 
 ## Props
 
-<ParamField path="reason" type="string">
-  Reason for stopping the workflow.
-
-  ```tsx
-  <Stop reason="Critical error encountered" />
-  ```
-</ParamField>
+| Prop | Type | Description |
+|------|------|-------------|
+| `reason` | `string` | Reason for stopping |
 
 ## Conditional Stop
 
 ```tsx
-import { useState } from "react";
-
 function ConditionalWorkflow() {
   const [status, setStatus] = useState("running");
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+    <SmithersProvider db={db} executionId={executionId}>
       <If condition={status === "running"}>
         <Claude
           onFinished={(result) => {
-            if (result.output.includes("CRITICAL")) {
-              setStatus("error");
-            } else if (result.output.includes("DONE")) {
-              setStatus("complete");
-            }
+            if (result.output.includes("CRITICAL")) setStatus("error");
+            else if (result.output.includes("DONE")) setStatus("complete");
           }}
         >
           Process the task.
@@ -59,22 +44,6 @@ function ConditionalWorkflow() {
     </SmithersProvider>
   );
 }
-```
-
-## With Human Rejection
-
-```tsx
-<Human
-  message="Approve?"
-  onApprove={() => setPhase("continue")}
-  onReject={() => setPhase("cancelled")}
->
-  Review the changes.
-</Human>
-
-<If condition={phase === "cancelled"}>
-  <Stop reason="Rejected by human" />
-</If>
 ```
 
 ## Related

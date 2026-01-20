@@ -3,55 +3,26 @@ title: Each
 description: Iterate over arrays with type-safe rendering
 ---
 
-# Each Component
-
-The `<Each>` component provides a clean way to iterate over arrays and render content for each item.
-
-## Basic Usage
+# Each
 
 ```tsx
-import { Each } from "smithers-orchestrator";
-
-const files = ["auth.ts", "api.ts", "db.ts"];
+const files = ["auth.ts", "api.ts", "db.ts"]
 
 <Each items={files}>
   {(file, index) => (
-    <Claude key={file}>
-      Analyze file #{index + 1}: {file}
-    </Claude>
+    <Claude key={file}>Analyze file #{index + 1}: {file}</Claude>
   )}
 </Each>
 ```
 
 ## Props
 
-<ParamField path="items" type="T[]" required>
-  Array of items to iterate over.
+| Prop | Type | Description |
+|------|------|-------------|
+| `items` | `T[]` | Array of items to iterate over |
+| `children` | `(item: T, index: number) => ReactNode` | Render function for each item |
 
-  ```tsx
-  <Each items={["feature-a", "feature-b", "feature-c"]}>
-    {(feature) => <Claude>Implement {feature}</Claude>}
-  </Each>
-  ```
-</ParamField>
-
-<ParamField path="children" type="(item: T, index: number) => ReactNode" required>
-  Render function called for each item. Receives the item and its index.
-
-  ```tsx
-  <Each items={tasks}>
-    {(task, index) => (
-      <Step name={`task-${index}`}>
-        <Claude>{task.description}</Claude>
-      </Step>
-    )}
-  </Each>
-  ```
-</ParamField>
-
-## Examples
-
-### Parallel File Analysis
+## Parallel File Analysis
 
 ```tsx
 <Phase name="Analysis">
@@ -71,7 +42,7 @@ const files = ["auth.ts", "api.ts", "db.ts"];
 </Phase>
 ```
 
-### Dynamic Task Generation
+## Dynamic Task Generation
 
 ```tsx
 function TaskWorkflow({ tasks }: { tasks: Task[] }) {
@@ -89,23 +60,23 @@ function TaskWorkflow({ tasks }: { tasks: Task[] }) {
         )}
       </Each>
     </SmithersProvider>
-  );
+  )
 }
 ```
 
-### With Typed Items
+## With Typed Items
 
 ```tsx
 interface Feature {
-  name: string;
-  description: string;
-  priority: "high" | "medium" | "low";
+  name: string
+  description: string
+  priority: "high" | "medium" | "low"
 }
 
 const features: Feature[] = [
   { name: "Auth", description: "User authentication", priority: "high" },
   { name: "Search", description: "Full-text search", priority: "medium" },
-];
+]
 
 <Each items={features}>
   {(feature) => (

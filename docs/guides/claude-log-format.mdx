@@ -5,138 +5,70 @@ description: How Claude Code stores session logs and how to map them to UIMessag
 
 # Claude Code Log Format
 
-This guide documents where Claude Code stores logs and what the JSONL structure looks like,
-so we can map entries into UIMessage parts later.
-
-## Locations
-
-Claude Code stores data under `~/.claude/`:
-
-- `~/.claude/history.jsonl`: lightweight user prompt history (no full assistant/tool detail).
-- `~/.claude/projects/<project-slug>/*.jsonl`: per-session logs (full message + tool content).
+Claude Code stores logs at `~/.claude/`:
+- `history.jsonl` - Lightweight prompt history
+- `projects/<project-slug>/*.jsonl` - Full session logs
 
 <Note>
-**Version note:** Log paths vary by Claude Code version. Older versions use `*.jsonl` files directly in the project folder. Newer versions use a `sessions/` subdirectory with `session.jsonl` and `metadata.json` per session.
+Newer versions use `sessions/` subdirectory with `session.jsonl` and `metadata.json`.
 </Note>
 
-Project slugs are path-like, for example:
+## JSONL Structure
 
+Common fields: `uuid`, `parentUuid`, `sessionId`, `type` (`user`|`assistant`), `timestamp`, `message`.
+
+### User Message
+
+```json
+{ "type": "user", "message": { "role": "user", "content": "Write unit tests" } }
 ```
-~/.claude/projects/-Users-<username>-<project-name>/
-```
 
-## JSONL Record Structure
-
-Each line is a JSON object. Common top-level fields:
-
-- `uuid`, `parentUuid`: event id and parent link for threading.
-- `sessionId`: per-session UUID (matches filename).
-- `type`: `"user"` or `"assistant"`.
-- `timestamp`: ISO timestamp.
-- `cwd`, `gitBranch`, `version`: environment metadata.
-- `agentId`, `slug`, `requestId`: present for agent sidechains.
-- `message`: the LLM message payload (role/content/usage/etc).
-- `isApiErrorMessage`: true for API errors (e.g., rate/billing issues).
-- `toolUseResult`: optional, structured tool result payload for some tool outputs.
-
-### User Message Example
+### Assistant Text
 
 ```json
 {
-  "type": "user",
-  "message": {
-    "role": "user",
-    "content": "Write unit tests"
-  }
+  "type": "assistant",
+  "message": { "role": "assistant", "content": [{ "type": "text", "text": "..." }] }
 }
 ```
 
-### Assistant Message Example (Text)
+### Tool Use
 
 ```json
 {
   "type": "assistant",
   "message": {
-    "role": "assistant",
-    "model": "claude-haiku-4-5-20251001",
-    "type": "message",
-    "content": [
-      { "type": "text", "text": "..." }
-    ]
+    "content": [{ "type": "tool_use", "id": "toolu_01...", "name": "Read", "input": {} }]
   }
 }
 ```
 
-### Assistant Tool Use Example
-
-```json
-{
-  "type": "assistant",
-  "message": {
-    "role": "assistant",
-    "content": [
-      {
-        "type": "tool_use",
-        "id": "toolu_01...",
-        "name": "Read",
-        "input": { "file_path": "/abs/path/file.ts" }
-      }
-    ]
-  }
-}
-```
-
-### Tool Result Example (User Role)
-
-Tool results appear as a `type: "user"` record with a tool result payload in `message.content`.
-If the tool returns file content, `toolUseResult` mirrors it with structured metadata.
+### Tool Result
 
 ```json
 {
   "type": "user",
   "message": {
-    "role": "user",
-    "content": [
-      {
-        "type": "tool_result",
-        "tool_use_id": "toolu_01...",
-        "content": "line 1\nline 2\n..."
-      }
-    ]
+    "content": [{ "type": "tool_result", "tool_use_id": "toolu_01...", "content": "..." }]
   },
-  "toolUseResult": {
-    "type": "text",
-    "file": {
-      "filePath": "/abs/path/file.ts",
-      "content": "line 1\nline 2\n...",
-      "numLines": 42
-    }
-  }
+  "toolUseResult": { "type": "text", "file": { "filePath": "...", "numLines": 42 } }
 }
 ```
 
 ## Mapping to UIMessage
 
-Suggested mapping to Vercel AI SDK `UIMessage` parts:
+| Claude JSONL | UIMessage |
+|--------------|-----------|
+| `role=user text` | `UIMessage(role=user, parts=[text])` |
+| `role=assistant text` | `UIMessage(role=assistant, parts=[text])` |
+| `tool_use` | `DynamicToolUIPart(state=input-available)` |
+| `tool_result` | `DynamicToolUIPart(state=output-available)` |
+| `isApiErrorMessage` | `UIMessage` + `metadata.error=true` |
 
-```
-Claude JSONL record        => UIMessage / UIMessagePart
--------------------------------------------------------
-message.role=user text     => UIMessage(role=user, parts=[text])
-message.role=assistant text=> UIMessage(role=assistant, parts=[text])
-tool_use                  => DynamicToolUIPart (toolName, toolCallId, state=input-available, input)
-tool_result               => DynamicToolUIPart (toolCallId, state=output-available, output)
-isApiErrorMessage         => UIMessage(role=assistant, parts=[text]) + metadata.error=true
-```
+Tool linkage uses `tool_use_id`.
 
-Notes:
+## Gaps
 
-- There is no explicit reasoning block in the JSONL observed so far.
-- Tool result linkage uses `tool_use_id` to connect tool calls and outputs.
-- `history.jsonl` is insufficient for UIMessage reconstruction (missing assistant/tool detail).
-
-## Open Gaps
-
-- Reasoning/extended thinking blocks: not observed in JSONL logs yet.
-- Streaming state: no explicit `streaming` markers observed.
-- Source citations: not observed; likely absent from Claude Code logs.
+- No reasoning/extended thinking blocks observed
+- No streaming markers
+- No source citations

@@ -5,85 +5,66 @@ description: Phase tracking for workflow organization
 
 # Phases API
 
-The `db.phases` module tracks workflow phases. Phases group related steps and provide high-level progress tracking.
-
-## Contract
-
-- **Sync:** All methods are synchronous.
-- **Return shape:** raw rows with snake_case fields.
-- **Time:** Timestamps are ISO strings (not `Date`).
-
-## Overview
-
 ```tsx
-import { createSmithersDB } from "smithers-orchestrator";
-
-const db = createSmithersDB({ path: ".smithers/my-workflow" });
-
-// Start a phase
 const phaseId = db.phases.start("implementation", 0);
-
-// Complete the phase
+// ... do work ...
 db.phases.complete(phaseId);
 ```
 
+## Contract
+
+- **Sync:** All methods are synchronous
+- **Return shape:** snake_case fields, timestamps as ISO strings
+
 ## Methods
 
-### start
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `start` | `(name: string, iteration?: number) => string` | Start a phase |
+| `complete` | `(id: string) => void` | Mark complete |
+| `fail` | `(id: string) => void` | Mark failed |
+| `current` | `() => Phase \| null` | Get active phase |
+| `list` | `(executionId: string) => Phase[]` | List phases for execution |
 
-Starts a new phase.
-
-```tsx
-function start(name: string, iteration?: number): string
-```
-
-<ParamField path="name" type="string" required>
-  The name of the phase.
-</ParamField>
-
-<ParamField path="iteration" type="number" default="0">
-  The Ralph iteration number (for tracking across loop iterations).
-</ParamField>
-
-**Returns:** The phase ID.
-
-### complete
-
-Marks a phase as completed.
+## Component Usage
 
 ```tsx
-function complete(id: string): void
+<SmithersProvider db={db} executionId={executionId}>
+  <Phase name="research">
+    <Step name="research">
+      <Claude>Research the topic.</Claude>
+    </Step>
+  </Phase>
+
+  <Phase name="implementation">
+    <Step name="implement">
+      <Claude>Implement the feature.</Claude>
+    </Step>
+  </Phase>
+</SmithersProvider>
 ```
 
-<ParamField path="id" type="string" required>
-  The phase ID to complete.
-</ParamField>
+## Multi-Iteration
 
-### fail
-
-Marks a phase as failed.
+Phases track iteration numbers for looping workflows:
 
 ```tsx
-function fail(id: string): void
+<SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+  <Phase name="implement">
+    {/* Tracked with iteration 0, 1, 2, etc. */}
+    <Claude>Implement the feature.</Claude>
+  </Phase>
+</SmithersProvider>
 ```
 
-### current
-
-Gets the currently active phase.
+Query by iteration:
 
 ```tsx
-function current(): Phase | null
+const phases = db.phases.list(executionId);
+const iteration2 = phases.filter(p => p.iteration === 2);
 ```
 
-### list
-
-Lists all phases for an execution.
-
-```tsx
-function list(executionId: string): Phase[]
-```
-
-## Phase Type
+## Types
 
 ```tsx
 interface Phase {
@@ -100,150 +81,7 @@ interface Phase {
 }
 ```
 
-## Usage with the Phase Component
-
-The `<Phase>` component automatically integrates with this module:
-
-```tsx
-import { Phase, Step } from "smithers-orchestrator";
-
-<SmithersProvider db={db} executionId={executionId}>
-  <Phase name="research">
-    <Step name="research">
-      <Claude>Research the topic.</Claude>
-    </Step>
-  </Phase>
-
-  <Phase name="implementation">
-    <Step name="implement">
-      <Claude>Implement the feature.</Claude>
-    </Step>
-  </Phase>
-
-  <Phase name="testing">
-    <Step name="test">
-      <Claude>Write and run tests.</Claude>
-    </Step>
-  </Phase>
-</SmithersProvider>
-```
-
-## Multi-Iteration Phases
-
-Phases track their iteration number for workflows that loop:
-
-```tsx
-<SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-  <Phase name="implement">
-    {/* This phase will be tracked with iteration 0, 1, 2, etc. */}
-    <Step name="implement">
-      <Claude>Implement the feature.</Claude>
-    </Step>
-  </Phase>
-</SmithersProvider>
-```
-
-Query phases by iteration:
-
-```tsx
-const phases = db.phases.list(executionId);
-
-// Group by iteration
-const byIteration = phases.reduce((acc, phase) => {
-  if (!acc[phase.iteration]) acc[phase.iteration] = [];
-  acc[phase.iteration].push(phase);
-  return acc;
-}, {});
-
-// Check iteration 2 progress
-const iteration2 = byIteration[2] || [];
-const completed = iteration2.filter((p) => p.status === "completed");
-```
-
-## State-Driven Phases
-
-Common pattern with database state:
-
-```tsx
-import { useSmithers } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
-function StateDrivenWorkflowBody() {
-  const { db, reactiveDb } = useSmithers();
-  const { data: phaseJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'currentPhase'"
-  );
-  const phase = phaseJson ? JSON.parse(phaseJson) : null;
-
-  return (
-    <>
-      <If condition={phase === "implement"}>
-        <Phase name="Implementation">
-          <Step name="implement">
-            <Claude onFinished={() => db.state.set("currentPhase", "review")}>
-              Implement the feature.
-            </Claude>
-          </Step>
-        </Phase>
-      </If>
-
-      <If condition={phase === "review"}>
-        <Phase name="Review">
-          <Step name="review">
-            <Review
-              onFinished={(r) => {
-                if (r.approved) {
-                  db.state.set("currentPhase", "complete");
-                } else {
-                  db.state.set("currentPhase", "implement");
-                }
-              }}
-            />
-          </Step>
-        </Phase>
-      </If>
-    </>
-  );
-}
-
-export function StateDrivenWorkflow({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-      <StateDrivenWorkflowBody />
-    </SmithersProvider>
-  );
-}
-```
-
-## Querying Phases
-
-```tsx
-// Get current phase
-const currentPhase = db.phases.current();
-if (currentPhase) {
-  console.log(`Current phase: ${currentPhase.name}`);
-}
-
-// List all phases
-const allPhases = db.phases.list(executionId);
-
-// Calculate total duration
-const totalDuration = allPhases
-  .filter((p) => p.duration_ms)
-  .reduce((sum, p) => sum + p.duration_ms!, 0);
-
-// Find failed phases
-const failed = allPhases.filter((p) => p.status === "failed");
-```
-
 ## Related
 
-<CardGroup cols={2}>
-  <Card title="Steps API" icon="shoe-prints" href="/api-reference/steps">
-    Step tracking within phases
-  </Card>
-  <Card title="Phase Component" icon="layer-group" href="/components/phase">
-    Phase component reference
-  </Card>
-</CardGroup>
+- [Steps API](/api-reference/steps)
+- [Phase Component](/components/phase)

@@ -3,15 +3,9 @@ title: End
 description: Explicitly terminate orchestration with structured summary
 ---
 
-# End Component
-
-The `<End>` component explicitly terminates orchestration and captures a structured summary of the run.
-
-## Basic Usage
+# End
 
 ```tsx
-import { End } from "smithers-orchestrator";
-
 <End
   summary={{
     status: "success",
@@ -23,44 +17,13 @@ import { End } from "smithers-orchestrator";
 
 ## Props
 
-<ParamField path="summary" type="EndSummary | (() => EndSummary | Promise<EndSummary>)" required>
-  Structured summary of the run. Can be a static object or a function that returns one (sync or async).
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `summary` | `EndSummary \| () => EndSummary` | required | Structured run summary |
+| `exitCode` | `number` | `0` or `1` | Process exit code |
+| `reason` | `string` | from status | Optional reason string |
 
-  ```tsx
-  // Static summary
-  <End summary={{ status: "success", message: "Done" }} />
-
-  // Dynamic summary
-  <End summary={() => {
-    const result = db.state.get("result");
-    return {
-      status: result.success ? "success" : "failure",
-      message: result.message,
-    };
-  }} />
-  ```
-</ParamField>
-
-<ParamField path="exitCode" type="number" default="0 for success, 1 for failure">
-  Process exit code.
-
-  ```tsx
-  <End summary={{ status: "failure", message: "Tests failed" }} exitCode={1} />
-  ```
-</ParamField>
-
-<ParamField path="reason" type="string">
-  Optional reason for ending. Defaults to "success" or "failure" based on status.
-
-  ```tsx
-  <End
-    summary={{ status: "partial", message: "Completed with warnings" }}
-    reason="partial_success"
-  />
-  ```
-</ParamField>
-
-## EndSummary Type
+### EndSummary
 
 ```tsx
 interface EndSummary {
@@ -76,19 +39,30 @@ interface EndSummary {
 }
 ```
 
-## Examples
+## Dynamic Summary
 
-### Success with Metrics
+```tsx
+<End
+  summary={() => {
+    const review = db.state.get("lastReview");
+    return {
+      status: review?.approved ? "success" : "failure",
+      message: review?.approved
+        ? "PR approved"
+        : `${review?.issues?.length ?? 0} issues found`,
+      data: { approved: review?.approved, issues: review?.issues },
+    };
+  }}
+/>
+```
+
+## With Metrics
 
 ```tsx
 <End
   summary={{
     status: "success",
-    message: "Feature implemented successfully",
-    data: {
-      filesModified: 5,
-      testsAdded: 12,
-    },
+    message: "Feature implemented",
     metrics: {
       duration_ms: 45000,
       iterations: 3,
@@ -99,107 +73,16 @@ interface EndSummary {
 />
 ```
 
-### Dynamic Summary from State
-
-```tsx
-function CompletionHandler() {
-  const { db } = useSmithers();
-
-  return (
-    <End
-      summary={() => {
-        const review = db.state.get("lastReview");
-        const iterations = db.state.get("iterations");
-
-        return {
-          status: review?.approved ? "success" : "failure",
-          message: review?.approved
-            ? "PR approved and ready to merge"
-            : `Changes requested: ${review?.issues?.length ?? 0} issues`,
-          data: {
-            approved: review?.approved,
-            issues: review?.issues,
-          },
-          metrics: {
-            iterations: parseInt(iterations ?? "0"),
-          },
-        };
-      }}
-    />
-  );
-}
-```
-
-### Conditional End
-
-```tsx
-function WorkflowWithEndBody() {
-  const { db, reactiveDb } = useSmithers();
-  
-  const { data: phaseJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
-  );
-  const phase = phaseJson ? JSON.parse(phaseJson) : "working";
-
-  return (
-    <>
-      <If condition={phase === "working"}>
-        <Claude onFinished={(r) => {
-          if (r.output.includes("COMPLETE")) {
-            db.state.set("phase", "done");
-          }
-        }}>
-          Complete the task.
-        </Claude>
-      </If>
-
-      <If condition={phase === "done"}>
-        <End
-          summary={{
-            status: "success",
-            message: "Task completed",
-          }}
-        />
-      </If>
-    </>
-  );
-}
-
-export function WorkflowWithEnd({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <WorkflowWithEndBody />
-    </SmithersProvider>
-  );
-}
-```
-
-## Behavior
-
-When rendered, the End component:
-
-1. Evaluates the summary (sync or async)
-2. Stores the summary in the `executions` table
-3. Calls `requestStop()` to halt the Ralph loop
-4. Process exits with the specified exit code
-
 ## Database Storage
 
-The summary is stored in the executions table:
+Summary stored in `executions` table:
 
 ```tsx
-// Query the end summary
-const row = db.db.queryOne<{
-  end_summary: string | null;
-  end_reason: string | null;
-  exit_code: number;
-}>("SELECT end_summary, end_reason, exit_code FROM executions WHERE id = ?", [executionId]);
-
-const endSummary = row?.end_summary ? JSON.parse(row.end_summary) : null;
-console.log(endSummary);        // The EndSummary object
-console.log(row?.end_reason);   // "success", "failure", etc.
-console.log(row?.exit_code);    // 0, 1, etc.
+const row = db.db.queryOne<{ end_summary: string }>(
+  "SELECT end_summary FROM executions WHERE id = ?",
+  [executionId]
+);
+const summary = JSON.parse(row.end_summary);
 ```
 
 ## Related

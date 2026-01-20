@@ -3,11 +3,7 @@ title: Structured Output
 description: Get typed, validated responses from Claude using Zod schemas
 ---
 
-# Structured Output Guide
-
-Get predictable, typed responses from Claude using Zod schemas with automatic validation and retry.
-
-## Basic Schema
+# Structured Output
 
 ```tsx
 import { z } from "zod";
@@ -19,11 +15,7 @@ const ResultSchema = z.object({
 
 <Claude
   schema={ResultSchema}
-  onFinished={(result) => {
-    // result.structured is typed!
-    console.log(result.structured.success);
-    console.log(result.structured.message);
-  }}
+  onFinished={(result) => console.log(result.structured.success)}
 >
   Complete the task.
 </Claude>
@@ -31,88 +23,26 @@ const ResultSchema = z.object({
 
 ## Schema with Descriptions
 
-Descriptions help Claude understand what each field should contain:
-
 ```tsx
 const AnalysisSchema = z.object({
-  summary: z.string().describe("A 1-2 sentence summary of the findings"),
-  confidence: z.number().min(0).max(1).describe("Confidence level from 0 to 1"),
-  score: z.number().min(0).max(100).describe("Overall quality score from 0 to 100"),
+  summary: z.string().describe("1-2 sentence summary"),
+  confidence: z.number().min(0).max(1),
   issues: z.array(z.object({
-    severity: z.enum(["low", "medium", "high", "critical"])
-      .describe("Impact level of this issue"),
-    description: z.string().describe("Clear description of the issue"),
-    location: z.string().describe("File path and line number"),
-  })).describe("List of issues found, ordered by severity"),
-});
-```
-
-## Enums and Literals
-
-```tsx
-const StatusSchema = z.object({
-  status: z.enum(["success", "failure", "pending"]),
-  errorCode: z.literal("E001").optional(),
-  category: z.union([
-    z.literal("bug"),
-    z.literal("feature"),
-    z.literal("refactor"),
-  ]),
-});
-```
-
-## Arrays and Objects
-
-```tsx
-const ReportSchema = z.object({
-  // Simple array
-  tags: z.array(z.string()),
-
-  // Array of objects
-  findings: z.array(z.object({
-    type: z.string(),
-    message: z.string(),
+    severity: z.enum(["low", "medium", "high", "critical"]),
+    description: z.string(),
+    location: z.string(),
   })),
-
-  // Nested objects
-  metadata: z.object({
-    author: z.string(),
-    timestamp: z.string(),
-    version: z.number(),
-  }),
-
-  // Record type
-  scores: z.record(z.string(), z.number()),
-});
-```
-
-## Optional and Default Values
-
-```tsx
-const ConfigSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-  enabled: z.boolean().default(true),
-  maxRetries: z.number().default(3),
 });
 ```
 
 ## Validation and Retry
 
-Smithers automatically retries if validation fails:
-
 ```tsx
 <Claude
   schema={AnalysisSchema}
-  schemaRetries={2}  // Retry up to 2 times on validation failure
-  retryOnValidationFailure={true}  // Enable retry on validation failure
-  onFinished={(result) => {
-    // Guaranteed to match schema
-  }}
-  onError={(err) => {
-    // Called after all retries exhausted
-    console.error("Validation failed:", err);
-  }}
+  schemaRetries={2}
+  retryOnValidationFailure={true}
+  onError={(err) => console.error("Validation failed:", err)}
 >
   Analyze the code.
 </Claude>
@@ -120,20 +50,12 @@ Smithers automatically retries if validation fails:
 
 ## Custom Validation
 
-Add business logic validation:
-
 ```tsx
 <Claude
   schema={AnalysisSchema}
   validate={(result) => {
-    // validate receives AgentResult; check result.structured
     const data = result.structured;
-    if (!data) return false;
-    // Must have at least one finding
-    if (data.issues.length === 0) return false;
-    // Score must be reasonable
-    if (data.score < 0 || data.score > 100) return false;
-    return true;
+    return data && data.issues.length > 0 && data.score >= 0;
   }}
   schemaRetries={2}
 >
@@ -142,66 +64,39 @@ Add business logic validation:
 ```
 
 <Info>
-The `validate` callback receives the full `AgentResult` object. Access the parsed schema data via `result.structured`.
+The `validate` callback receives the full `AgentResult`. Access parsed data via `result.structured`.
 </Info>
 
 ## TypeScript Integration
 
-Full type inference:
-
 ```tsx
-const UserSchema = z.object({
-  name: z.string(),
-  email: z.string().email(),
-  role: z.enum(["admin", "user", "guest"]),
-});
-
-// Infer the type
 type User = z.infer<typeof UserSchema>;
 
 <Claude<User>
   schema={UserSchema}
   onFinished={(result) => {
     const user: User = result.structured!;
-    // Fully typed access
-    console.log(user.name);
-    console.log(user.email);
-    console.log(user.role);  // "admin" | "user" | "guest"
+    console.log(user.role); // "admin" | "user" | "guest"
   }}
 >
 ```
 
-## Complex Real-World Example
+## Real-World Example
 
 ```tsx
 const CodeReviewSchema = z.object({
-  summary: z.string().describe("Executive summary of the review"),
-
-  verdict: z.enum(["approve", "request_changes", "comment"])
-    .describe("Overall review verdict"),
-
+  verdict: z.enum(["approve", "request_changes", "comment"]),
   issues: z.array(z.object({
     severity: z.enum(["critical", "major", "minor", "nitpick"]),
-    category: z.enum(["security", "performance", "maintainability", "correctness", "style"]),
+    category: z.enum(["security", "performance", "correctness"]),
     file: z.string(),
-    line: z.number().optional(),
     title: z.string().max(100),
     description: z.string(),
-    suggestion: z.string().optional(),
-    autoFixable: z.boolean().default(false),
-  })).describe("Issues found during review"),
-
-  positives: z.array(z.string())
-    .describe("Good practices observed"),
-
+  })),
   metrics: z.object({
     linesReviewed: z.number(),
-    filesReviewed: z.number(),
     complexityScore: z.number().min(1).max(10),
   }),
-
-  nextSteps: z.array(z.string())
-    .describe("Recommended actions"),
 });
 
 <Claude
@@ -211,66 +106,18 @@ const CodeReviewSchema = z.object({
   allowedTools={["Read", "Glob", "Grep"]}
   onFinished={(result) => {
     const review = result.structured!;
-
-    if (review.verdict === "approve") {
-      console.log("✅ Review approved!");
-    } else {
-      console.log(`❌ ${review.issues.length} issues found`);
-      for (const issue of review.issues) {
-        console.log(`  [${issue.severity}] ${issue.title}`);
-      }
+    if (review.verdict !== "approve") {
+      console.log(`${review.issues.length} issues found`);
     }
   }}
 >
-  Review the changes in this PR comprehensively.
+  Review the changes in this PR.
 </Claude>
-```
-
-## Prompt Tips
-
-Help Claude produce valid output:
-
-```tsx
-<Claude schema={Schema}>
-  Analyze the code and return a structured response.
-
-  Important:
-  - All required fields must be present
-  - Severity must be one of: low, medium, high, critical
-  - Score must be between 0 and 100
-  - Include at least one recommendation
-</Claude>
-```
-
-## Handling Errors
-
-```tsx
-<Claude
-  schema={Schema}
-  onFinished={(result) => {
-    if (!result.structured) {
-      console.error("No structured output despite validation passing");
-      return;
-    }
-    // Use result.structured safely
-  }}
-  onError={(error) => {
-    if (error.message.includes("validation")) {
-      console.error("Schema validation failed after retries");
-    } else {
-      console.error("Execution error:", error);
-    }
-  }}
->
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Claude Component" icon="robot" href="/components/claude">
-    Claude API reference
-  </Card>
-  <Card title="Structured Output Example" icon="code" href="/examples/structured-output">
-    Complete example
-  </Card>
+  <Card title="Claude Component" icon="robot" href="/components/claude" />
+  <Card title="Structured Output Example" icon="code" href="/examples/structured-output" />
 </CardGroup>

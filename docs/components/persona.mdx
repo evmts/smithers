@@ -1,76 +1,42 @@
 ---
 title: Persona
-description: Define a persona or role for Claude
+description: Define a role for Claude
 ---
 
-# Persona Component
-
-The `<Persona>` component defines a role or persona for Claude to adopt. Personas are rendered as part of the system message and help guide Claude's behavior and expertise.
-
-<Info>
-**Current Implementation:** Persona content is serialized into the prompt as a `<persona>` element but is not yet automatically extracted into the Claude system message. The persona text is included in the prompt children and will be visible to Claude, but dedicated system message integration is planned for a future release.
-</Info>
-
-## Usage
+# Persona
 
 ```tsx
 import { Persona } from "smithers-orchestrator";
 
 <Claude>
   <Persona role="security expert">
-    You specialize in application security, penetration testing, and secure code review.
-    Focus on OWASP Top 10 vulnerabilities and security best practices.
+    You specialize in application security and OWASP Top 10.
   </Persona>
-
-  Review this authentication code for security issues.
+  Review this authentication code.
 </Claude>
 ```
+
+<Info>
+Persona content serializes into the prompt as a `<persona>` element.
+</Info>
 
 ## Props
 
-<ParamField path="role" type="string">
-  A short name for the persona role (e.g., "security expert", "senior engineer").
-</ParamField>
-
-<ParamField path="children" type="ReactNode">
-  Detailed description of the persona's expertise, focus areas, and behavior.
-</ParamField>
+| Prop | Type | Description |
+|------|------|-------------|
+| `role` | `string` | Short role name (e.g., "security expert") |
+| `children` | `ReactNode` | Detailed expertise description |
 
 ## Examples
-
-### Security Expert
-
-```tsx
-<Claude>
-  <Persona role="security expert">
-    You are a security researcher with expertise in:
-    - Web application security
-    - OWASP Top 10 vulnerabilities
-    - Secure coding practices
-    - Penetration testing methodology
-
-    Always prioritize security over convenience.
-  </Persona>
-
-  Audit this API endpoint for security vulnerabilities.
-</Claude>
-```
 
 ### Code Reviewer
 
 ```tsx
 <Claude>
   <Persona role="senior code reviewer">
-    You are a senior engineer performing thorough code reviews.
-    Focus on:
-    - Code correctness and logic errors
-    - Performance implications
-    - Maintainability and readability
-    - Test coverage gaps
-
-    Be constructive but thorough in feedback.
+    Focus on correctness, performance, maintainability.
+    Be constructive but thorough.
   </Persona>
-
   Review this pull request.
 </Claude>
 ```
@@ -79,92 +45,41 @@ import { Persona } from "smithers-orchestrator";
 
 ```tsx
 <Claude>
-  <Persona role="database optimization specialist">
-    You specialize in database performance optimization with deep expertise in:
-    - Query optimization and indexing strategies
-    - Database schema design
-    - N+1 query detection and resolution
-    - Connection pooling and caching
+  <Persona role="database specialist">
+    Expert in query optimization, indexing, schema design.
   </Persona>
-
-  Analyze these slow queries and suggest optimizations.
+  Analyze these slow queries.
 </Claude>
 ```
 
-## Combining with Constraints
-
-Personas work well with the `<Constraints>` component:
+### With Constraints
 
 ```tsx
 <Claude>
   <Persona role="technical writer">
-    You write clear, concise technical documentation.
+    You write clear, concise documentation.
   </Persona>
-
   <Constraints>
     - Use simple language
     - Include code examples
-    - Keep explanations under 200 words
   </Constraints>
-
   Document this API endpoint.
 </Claude>
 ```
 
 ## Best Practices
 
-<AccordionGroup>
-  <Accordion title="Be specific about expertise">
-    Instead of "You are an expert", specify what kind of expert:
-    ```tsx
-    // Good
-    <Persona role="React performance specialist">
-      You specialize in React performance optimization, including:
-      - Virtual DOM optimization
-      - Memoization strategies
-      - Bundle size reduction
-    </Persona>
-
-    // Less effective
-    <Persona role="expert">
-      You are an expert developer.
-    </Persona>
-    ```
-  </Accordion>
-
-  <Accordion title="Include behavioral guidance">
-    Tell Claude how to behave, not just what it knows:
-    ```tsx
-    <Persona role="patient mentor">
-      You are a patient teacher who explains concepts step by step.
-      Always check for understanding before moving on.
-      Use analogies when explaining complex topics.
-    </Persona>
-    ```
-  </Accordion>
-
-  <Accordion title="Match persona to task">
-    Choose personas that align with the task at hand:
-    ```tsx
-    // For code review
-    <Persona role="meticulous code reviewer" />
-
-    // For creative tasks
-    <Persona role="innovative architect" />
-
-    // For debugging
-    <Persona role="systematic debugger" />
-    ```
-  </Accordion>
-</AccordionGroup>
+- **Be specific:** "React performance specialist" vs "expert developer"
+- **Include behavior:** "Always check for understanding before moving on"
+- **Match task:** code review → "meticulous reviewer", debugging → "systematic debugger"
 
 ## Related
 
 <CardGroup cols={2}>
   <Card title="Constraints" icon="list-check" href="/components/constraints">
-    Define constraints for Claude's responses
+    Define response constraints
   </Card>
-  <Card title="Claude Component" icon="robot" href="/components/claude">
-    Core Claude component reference
+  <Card title="Claude" icon="robot" href="/components/claude">
+    Claude component
   </Card>
 </CardGroup>

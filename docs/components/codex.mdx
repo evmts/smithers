@@ -1,109 +1,38 @@
 ---
-title: Codex Component
-description: OpenAI Codex CLI agent wrapper for code generation and analysis
+title: Codex
+description: OpenAI Codex CLI agent wrapper
 ---
 
 <Warning>
-  **Planned Feature** - This component is not yet implemented.
-  See [GitHub issues](https://github.com/evmts/smithers/issues) for usage context and design.
+**Planned Feature** - Not yet implemented.
 </Warning>
 
-# Codex Component
-
-Wraps OpenAI Codex CLI for code-focused AI agent capabilities with structured output, tool use, and Smithers task lifecycle integration. Provides alternative to Claude with OpenAI's code-specialized models.
-
-## Planned API
+# Codex
 
 ```tsx
-interface CodexProps<TSchema extends z.ZodType = z.ZodType> {
-  /**
-   * Prompt/task for the agent.
-   */
-  children: ReactNode
-
-  /**
-   * Model selection.
-   * @default 'gpt-4-turbo'
-   */
-  model?: 'gpt-4' | 'gpt-4-turbo' | 'gpt-3.5-turbo'
-
-  /**
-   * Temperature for randomness (0-2).
-   * @default 1
-   */
-  temperature?: number
-
-  /**
-   * System prompt for agent behavior.
-   */
-  systemPrompt?: string
-
-  /**
-   * Working directory for code operations.
-   */
-  cwd?: string
-
-  /**
-   * Environment variables.
-   */
-  env?: Record<string, string>
-
-  /**
-   * Timeout in milliseconds.
-   * @default 300000 (5 minutes)
-   */
-  timeout?: number
-
-  /**
-   * Zod schema for structured output.
-   */
-  schema?: TSchema
-
-  /**
-   * Callback on successful completion.
-   */
-  onFinished?: (result: AgentResult<TSchema>) => void
-
-  /**
-   * Callback on error.
-   */
-  onError?: (error: Error) => void
-}
-
-interface AgentResult<TSchema extends z.ZodType = z.ZodType> {
-  output: string
-  structured?: z.infer<TSchema>
-  toolCalls?: ToolCall[]
-  durationMs: number
-}
-
-export function Codex<TSchema extends z.ZodType = z.ZodType>(
-  props: CodexProps<TSchema>
-): JSX.Element
+<Codex model="gpt-4-turbo">
+  Implement user authentication with JWT tokens.
+</Codex>
 ```
 
-## Proposed Usage
+Wraps OpenAI Codex CLI for code-focused AI agent tasks. Alternative to Claude with OpenAI's code-specialized models.
 
-### Basic Code Generation
+## Props
 
-```tsx
-import { Codex, Phase, Step } from 'smithers-orchestrator'
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | — | Prompt for the agent |
+| `model` | `'gpt-4' \| 'gpt-4-turbo' \| 'gpt-3.5-turbo'` | `'gpt-4-turbo'` | Model selection |
+| `temperature` | `number` | `1` | Randomness (0-2) |
+| `systemPrompt` | `string` | — | System-level instructions |
+| `cwd` | `string` | — | Working directory |
+| `env` | `Record<string, string>` | — | Environment variables |
+| `timeout` | `number` | `300000` | Timeout in ms |
+| `schema` | `ZodType` | — | Structured output schema |
+| `onFinished` | `(result: AgentResult) => void` | — | Success callback |
+| `onError` | `(error: Error) => void` | — | Error callback |
 
-export function ImplementFeature() {
-  return (
-    <Phase name="Implementation">
-      <Step name="implement">
-        <Codex model="gpt-4-turbo">
-          Implement user authentication with JWT tokens.
-          Include login, logout, and token refresh endpoints.
-        </Codex>
-      </Step>
-    </Phase>
-  )
-}
-```
-
-### With Structured Output
+## With Structured Output
 
 ```tsx
 import { z } from 'zod'
@@ -121,435 +50,37 @@ const reviewSchema = z.object({
 <Codex
   model="gpt-4"
   schema={reviewSchema}
-  onFinished={(result) => {
-    const review = result.structured
-    console.log(`Decision: ${review.decision}`)
-    console.log(`Issues: ${review.issues.length}`)
-  }}
+  onFinished={(result) => console.log(result.structured)}
 >
-  Review this pull request and provide structured feedback
+  Review this pull request
 </Codex>
 ```
 
-### Custom System Prompt
+## In Fallback Chain
 
 ```tsx
-<Codex
-  model="gpt-4-turbo"
-  systemPrompt="You are a senior software engineer specializing in React and TypeScript. Focus on performance, type safety, and maintainability."
->
-  Refactor this component to use modern React patterns
-</Codex>
-```
-
-### In Fallback Chain
-
-```tsx
-import { FallbackAgent, Codex, Claude } from 'smithers-orchestrator'
-
 <FallbackAgent>
   <Codex model="gpt-4-turbo">{prompt}</Codex>
   <Claude model="sonnet">{prompt}</Claude>
 </FallbackAgent>
 ```
 
-## Props (Planned)
-
-<ParamField path="children" type="ReactNode" required>
-  Prompt or task for the agent.
-
-  Can be string or JSX elements. Converted to string for CLI.
-
-  ```tsx
-  <Codex>Implement feature X</Codex>
-  ```
-
-  ```tsx
-  <Codex>
-    Analyze this code:
-    {codeSnippet}
-
-    Suggest improvements for performance.
-  </Codex>
-  ```
-</ParamField>
-
-<ParamField path="model" type="'gpt-4' | 'gpt-4-turbo' | 'gpt-3.5-turbo'" default="gpt-4-turbo">
-  OpenAI model selection.
-
-  **Options:**
-  - `gpt-4` - Original GPT-4 (high quality, slower, more expensive)
-  - `gpt-4-turbo` - Faster GPT-4 variant with extended context
-  - `gpt-3.5-turbo` - Faster, cheaper, less capable
-
-  **Use cases:**
-  - Complex code: `gpt-4`
-  - Balanced: `gpt-4-turbo`
-  - Simple tasks: `gpt-3.5-turbo`
-</ParamField>
-
-<ParamField path="temperature" type="number" default="1">
-  Controls randomness in responses (0-2).
-
-  **Lower (0-0.5):** More deterministic, focused
-  - Code generation
-  - Refactoring
-  - Bug fixing
-
-  **Medium (0.5-1):** Balanced creativity
-  - General tasks
-  - Documentation
-
-  **Higher (1-2):** More creative, diverse
-  - Brainstorming
-  - Exploration
-</ParamField>
-
-<ParamField path="systemPrompt" type="string">
-  System-level instructions defining agent behavior and role.
-
-  **Examples:**
-  ```tsx
-  systemPrompt="You are an expert in database optimization and SQL performance tuning."
-  ```
-
-  ```tsx
-  systemPrompt="Focus on security best practices. Flag any potential vulnerabilities."
-  ```
-
-  Overrides default Codex system prompt.
-</ParamField>
-
-<ParamField path="cwd" type="string">
-  Working directory for code operations.
-
-  Respects worktree context if inside `<Worktree>`.
-
-  **Priority:** Explicit cwd > Worktree context > process.cwd()
-</ParamField>
-
-<ParamField path="env" type="Record<string, string>">
-  Environment variables for CLI execution.
-
-  Merged with process.env.
-
-  ```tsx
-  <Codex env={{ DEBUG: "true", LOG_LEVEL: "verbose" }}>
-    Debug this issue
-  </Codex>
-  ```
-</ParamField>
-
-<ParamField path="timeout" type="number" default="300000">
-  Timeout in milliseconds (default 5 minutes).
-
-  Agent killed if exceeds timeout.
-
-  ```tsx
-  <Codex timeout={600000}>  {/* 10 minutes for complex task */}
-    Implement large refactoring
-  </Codex>
-  ```
-</ParamField>
-
-<ParamField path="schema" type="z.ZodType">
-  Zod schema for structured output validation.
-
-  Agent output parsed and validated against schema.
-
-  ```tsx
-  const schema = z.object({
-    files: z.array(z.string()),
-    changes: z.number(),
-    summary: z.string()
-  })
-
-  <Codex schema={schema}>Analyze changes</Codex>
-  ```
-
-  **Benefits:**
-  - Type-safe output
-  - Validation errors caught early
-  - Better agent prompting (schema in prompt)
-</ParamField>
-
-<ParamField path="onFinished" type="(result: AgentResult<TSchema>) => void">
-  Callback on successful completion.
-
-  Receives parsed output if schema provided.
-
-  ```tsx
-  onFinished={(result) => {
-    console.log(`Agent completed in ${result.durationMs}ms`)
-    if (result.structured) {
-      // Type-safe access
-      processResults(result.structured)
-    }
-  }}
-  ```
-</ParamField>
-
-<ParamField path="onError" type="(error: Error) => void">
-  Callback on error (timeout, API error, validation failure).
-
-  ```tsx
-  onError={(error) => {
-    console.error(`Codex failed: ${error.message}`)
-    metrics.recordAgentFailure('codex', error)
-  }}
-  ```
-
-  **Note:** Prevents error propagation if provided. Omit to throw.
-</ParamField>
-
-## Implementation Status
-
-<Steps>
-  <Step title="Design Phase">
-    Component designed for multi-provider failover in review system.
-    [View on GitHub](https://github.com/evmts/smithers/issues)
-  </Step>
-
-  <Step title="CLI Wrapper (Pending)">
-    Implement Codex CLI wrapper similar to ClaudeCodeCLI.ts pattern.
-  </Step>
-
-  <Step title="Structured Output (Pending)">
-    JSON schema generation from Zod, response validation.
-  </Step>
-
-  <Step title="Task Integration (Pending)">
-    Smithers task lifecycle, database logging, observability.
-  </Step>
-
-  <Step title="Testing (Future)">
-    Unit tests with mocked API, integration tests with real Codex.
-  </Step>
-</Steps>
-
-## Design Rationale
-
-### Why Codex Component?
-
-**Provider diversity:** Reduce dependency on single AI provider
-
-**Cost optimization:** OpenAI pricing may be more favorable for certain workloads
-
-**Model capabilities:** GPT-4 excels at certain code tasks
-
-**Fallback resilience:** Alternative when Claude unavailable
-
-### Implementation Pattern
-
-Similar to Claude component:
-
-```typescript
-export function Codex<TSchema extends z.ZodType = z.ZodType>(
-  props: CodexProps<TSchema>
-): ReactNode {
-  const { db } = useSmithers()
-  const worktree = useWorktree()
-  const taskIdRef = useRef<string | null>(null)
-
-  useMount(() => {
-    ;(async () => {
-      taskIdRef.current = db.tasks.start('codex_agent', extractPrompt(props.children))
-
-      try {
-        const result = await executeCodexCLI({
-          prompt: extractPrompt(props.children),
-          model: props.model ?? 'gpt-4-turbo',
-          temperature: props.temperature,
-          systemPrompt: props.systemPrompt,
-          cwd: props.cwd ?? worktree?.cwd,
-          env: props.env,
-          timeout: props.timeout ?? 300000,
-          schema: props.schema
-        })
-
-        props.onFinished?.(result)
-      } catch (error) {
-        props.onError?.(error)
-        throw error
-      } finally {
-        db.tasks.complete(taskIdRef.current)
-      }
-    })()
-  })
-
-  return <codex-agent model={props.model} status="running" />
-}
-```
-
-### Authentication
-
-Uses `OPENAI_API_KEY` environment variable:
+## Authentication
 
 ```bash
 export OPENAI_API_KEY="sk-..."
 ```
 
-Required in GitHub Actions secrets for CI integration.
-
-## Examples of Use Cases
-
-### Use Case 1: Code Review
-
-```tsx
-const reviewSchema = z.object({
-  decision: z.enum(['approve', 'request_changes']),
-  blocking: z.boolean(),
-  issues: z.array(z.object({
-    severity: z.enum(['critical', 'major', 'minor']),
-    message: z.string(),
-    file: z.string().optional()
-  })),
-  summary: z.string()
-})
-
-<Codex
-  model="gpt-4"
-  schema={reviewSchema}
-  systemPrompt="You are a senior code reviewer. Focus on correctness, security, and maintainability."
-  onFinished={async (result) => {
-    const review = result.structured
-    await db.state.set('lastReview', review)
-
-    if (review.decision === 'request_changes') {
-      await postReviewComment(review.issues)
-    }
-  }}
->
-  Review this PR:
-
-  {prDiff}
-
-  Check for:
-  - Security vulnerabilities
-  - Performance issues
-  - Type safety
-  - Test coverage
-</Codex>
-```
-
-### Use Case 2: Refactoring
-
-```tsx
-<Codex
-  model="gpt-4-turbo"
-  temperature={0.3}  // Lower temp for focused refactoring
-  systemPrompt="Expert in React hooks and modern patterns. Preserve functionality while improving code quality."
->
-  Refactor this component to:
-  1. Use modern React hooks (no class components)
-  2. Extract custom hooks for reusable logic
-  3. Add proper TypeScript types
-  4. Improve performance with memoization
-
-  {componentCode}
-</Codex>
-```
-
-### Use Case 3: Bug Analysis
-
-```tsx
-const bugAnalysisSchema = z.object({
-  rootCause: z.string(),
-  affectedFiles: z.array(z.string()),
-  suggestedFix: z.string(),
-  testCases: z.array(z.string())
-})
-
-<Codex
-  model="gpt-4"
-  schema={bugAnalysisSchema}
-  systemPrompt="Expert debugger. Provide root cause analysis and concrete fixes."
->
-  Analyze this bug:
-
-  Error: {errorMessage}
-  Stack trace: {stackTrace}
-  Recent changes: {gitDiff}
-
-  Provide root cause, affected files, and suggested fix.
-</Codex>
-```
-
 ## Related
 
 <CardGroup cols={2}>
-  <Card
-    title="GitHub Actions Review Loop"
-    icon="github"
-    href="https://github.com/evmts/smithers/issues"
-  >
-    Primary use case - multi-provider review system
+  <Card title="FallbackAgent" icon="shield-halved" href="/components/fallback-agent">
+    Multi-provider failover
   </Card>
-
-  <Card
-    title="FallbackAgent Component"
-    icon="shield-halved"
-    href="/components/fallback-agent"
-  >
-    Multi-provider failover - Codex used as fallback option
+  <Card title="Claude" icon="robot" href="/components/claude">
+    Primary agent
   </Card>
-
-  <Card
-    title="Claude Component"
-    icon="robot"
-    href="/components/claude"
-  >
-    Primary agent - Codex provides alternative/fallback
-  </Card>
-
-  <Card
-    title="Gemini Component"
-    icon="stars"
-    href="/components/gemini"
-  >
-    Google Gemini agent - another fallback option
+  <Card title="Gemini" icon="stars" href="/components/gemini">
+    Google Gemini agent
   </Card>
 </CardGroup>
-
-## Alternatives Considered
-
-- **Direct OpenAI API calls**: No CLI abstraction, harder to test
-- **Generic LLM component**: Less specialized, more configuration needed
-- **Wrap existing tools**: Codex CLI not widely available, need custom wrapper
-- **Only support Claude**: Single point of failure, vendor lock-in
-
-## Migration Path
-
-Current pattern (manual OpenAI API):
-
-```tsx
-// Before (manual API calls)
-const completion = await openai.chat.completions.create({
-  model: 'gpt-4',
-  messages: [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: prompt }
-  ],
-  temperature: 0.7
-})
-const result = completion.choices[0].message.content
-```
-
-With Codex component:
-
-```tsx
-// After (declarative)
-<Codex
-  model="gpt-4"
-  temperature={0.7}
-  systemPrompt={systemPrompt}
->
-  {prompt}
-</Codex>
-```
-
-**Benefits:** Task tracking, worktree integration, error handling, observability.
-
-## Feedback
-
-If you have feedback on this planned component, please [open an issue](https://github.com/evmts/smithers/issues).

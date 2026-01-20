@@ -27,3 +27,11 @@ export type {
   AmpPermissionMode,
   AmpCLIExecutionOptions,
 } from './amp.js'
+
+export type {
+  CodexProps,
+  CodexModel,
+  CodexSandboxMode,
+  CodexApprovalPolicy,
+  CodexCLIExecutionOptions,
+} from './codex.js'

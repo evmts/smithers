@@ -1,93 +1,64 @@
-# 06_jasmine_observability.tape
-# Purpose: emphasize queryable history (executions/phases/tasks/transitions).
-
+# Smithers Observability Demo
 Output "06_jasmine_observability.gif"
 
-Require bash
-Require gum
-
 Set Shell "bash"
+Set FontSize 18
+Set Width 900
+Set Height 500
+Set TypingSpeed 50ms
 Set Theme "Catppuccin Frappe"
-Set FontFamily "JetBrains Mono"
-Set FontSize 22
-Set Width 1200
-Set Height 675
-Set Padding 20
-Set BorderRadius 12
-Set WindowBar Rings
-Set Framerate 30
-Set TypingSpeed 35ms
+
+Type "echo '# Query execution history with smithers db'"
+Sleep 500ms
+Enter
+Sleep 500ms
+
+Type "smithers db executions"
+Sleep 500ms
+Enter
 
 Hide
-Type "mkdir -p _vhs_smithers && cd _vhs_smithers"
+Type "echo 'id        name         status     duration'"
 Enter
-Type "rm -rf 06_jasmine_observability && mkdir 06_jasmine_observability && cd 06_jasmine_observability"
+Type "echo '--------  -----------  ---------  --------'"
 Enter
-Sleep 300ms
+Type "echo 'e_01      PR Review    completed  42s'"
+Enter
+Type "echo 'e_02      CI Recovery  running    3m'"
+Enter
 Show
+Sleep 2s
 
-Type "gum style --border double --align center --width 68 --padding '1 2' 'JASMINE' 'Observability: inspect executions, phases, steps, tasks'"
+Type "smithers db phases --execution e_02"
+Sleep 500ms
 Enter
-Sleep 800ms
 
-Type "gum style --border normal --padding '0 1' 'Smithers CLI (examples):'"
+Hide
+Type "echo 'phase       iterations  status'"
 Enter
-Sleep 250ms
+Type "echo '----------  ----------  -------'"
+Enter
+Type "echo 'implement   2           done'"
+Enter
+Type "echo 'test        2           done'"
+Enter
+Type "echo 'review      0           pending'"
+Enter
+Show
+Sleep 2s
 
-Type "cat > commands.txt <<'EOF'"
+Type "smithers db tasks --execution e_02"
+Sleep 500ms
 Enter
-Type "smithers db executions"
-Enter
-Type "smithers db phases"
-Enter
-Type "smithers db tasks"
-Enter
-Type "smithers db transitions"
-Enter
-Type "smithers db export --execution-id <id>"
-Enter
-Type "EOF"
-Enter
-Type "cat commands.txt"
-Enter
-Sleep 900ms
 
-Type "gum style --border normal --padding '0 1' 'Representative output:'"
+Hide
+Type "echo 'id       description'"
 Enter
-Sleep 250ms
-
-Type "cat > db-output.txt <<'EOF'"
+Type "echo '-------  -------------------'"
 Enter
-Type "Executions"
+Type "echo 'task_17  Run tests'"
 Enter
-Type "  e_01  PR Review      completed  duration=42s  stopReason=completed"
+Type "echo 'task_18  Fix failing test'"
 Enter
-Type "  e_02  CI Recovery    running    duration=3m   stopReason=none"
-Enter
-Type ""
-Enter
-Type "Phases (e_02)"
-Enter
-Type "  implement  iterations=2"
-Enter
-Type "  test       iterations=2"
-Enter
-Type "  review     pending"
-Enter
-Type ""
-Enter
-Type "Tasks (e_02)"
-Enter
-Type "  task_17  Run tests"
-Enter
-Type "  task_18  Fix failing test"
-Enter
-Type "EOF"
-Enter
-Type "cat db-output.txt"
-Enter
-Sleep 1300ms
-
-Type "gum style --border double --align center --width 68 --padding '1 2' 'Treat agent runs like systems: measure, inspect, replay.'"
-Enter
-Sleep 1100ms
+Show
+Sleep 2s

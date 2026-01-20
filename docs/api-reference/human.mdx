@@ -5,300 +5,77 @@ description: Human-in-the-loop interaction management
 
 # Human API
 
-The `db.human` module handles requests for human input, confirmation, or approval within workflows.
-
-## Contract
-
-- **Sync:** All methods are synchronous.
-- **Return shape:** snake_case fields; `options`, `response`, and `session_config` are parsed JSON.
-- **Status:** `pending | approved | rejected | timeout | cancelled | completed | failed`.
-
-## Overview
-
 ```tsx
-import { createSmithersDB } from "smithers-orchestrator";
-
 const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
-// Create a human interaction request
 const requestId = db.human.request("confirmation", "Deploy to production?");
-
-// External harness resolves the request
 db.human.resolve(requestId, "approved", { confirmed: true });
 ```
 
+All methods sync. Status: `pending | approved | rejected | timeout | cancelled | completed | failed`.
+
 ## Methods
 
-### request
-
-Creates a human interaction request.
-
-```tsx
-const requestId = db.human.request(
-  type: string,
-  prompt: string,
-  options?: string[]
-): string
-```
-
-<ParamField path="type" type="string" required>
-  The type of interaction (e.g., "confirmation", "select", "input").
-</ParamField>
-
-<ParamField path="prompt" type="string" required>
-  The prompt to display to the human.
-</ParamField>
-
-<ParamField path="options" type="string[]">
-  Optional list of choices for selection-type interactions.
-</ParamField>
-
-**Returns:** The request ID.
-
-### resolve
-
-Resolves a pending request (called by external harness or UI).
-
-```tsx
-db.human.resolve(
-  id: string,
-  status: 'approved' | 'rejected',
-  response?: unknown
-): void
-```
-
-<ParamField path="id" type="string" required>
-  The request ID to resolve.
-</ParamField>
-
-<ParamField path="status" type="'approved' | 'rejected'" required>
-  Whether the human approved or rejected the request.
-</ParamField>
-
-<ParamField path="response" type="unknown">
-  Optional response data from the human.
-</ParamField>
-
-`resolve()` is for non-interactive requests. Use `completeInteractive()` for
-interactive sessions.
-
-### requestInteractive
-
-Starts an interactive human session (multi-turn).
-
-```tsx
-const sessionId = db.human.requestInteractive(
-  prompt: string,
-  config: InteractiveSessionConfig
-): string
-```
-
-### completeInteractive
-
-Completes an interactive session with a lifecycle outcome.
-
-```tsx
-db.human.completeInteractive(
-  id: string,
-  outcome: 'completed' | 'cancelled' | 'timeout' | 'failed',
-  response: unknown,
-  options?: { transcript?: string; duration?: number; error?: string }
-): void
-```
-
-### cancelInteractive
-
-Cancels a pending interactive session.
-
-```tsx
-db.human.cancelInteractive(id: string): void
-```
-
-### get
-
-Gets a request by ID.
-
-```tsx
-const request = db.human.get(id: string): HumanInteraction | null
-```
-
-### listPending
-
-Lists all pending requests.
-
-```tsx
-const pending = db.human.listPending(executionId?: string): HumanInteraction[]
-```
-
-If `executionId` is omitted, the current execution is used. Pass `"*"` to list
-pending requests across all executions.
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `request` | `(type, prompt, options?) => string` | Create request, returns ID |
+| `resolve` | `(id, status, response?) => void` | Resolve pending request |
+| `requestInteractive` | `(prompt, config) => string` | Start multi-turn session |
+| `completeInteractive` | `(id, outcome, response, opts?) => void` | Complete session |
+| `cancelInteractive` | `(id) => void` | Cancel session |
+| `get` | `(id) => HumanInteraction \| null` | Get by ID |
+| `listPending` | `(executionId?) => HumanInteraction[]` | List pending requests |
 
 ## HumanInteraction Type
 
 ```tsx
 interface HumanInteraction {
   id: string;
-  execution_id: string;
   type: 'confirmation' | 'select' | 'input' | 'text' | 'interactive_session';
   prompt: string;
   options: string[] | null;
-  status:
-    | 'pending'
-    | 'approved'
-    | 'rejected'
-    | 'timeout'
-    | 'cancelled'
-    | 'completed'
-    | 'failed';
+  status: 'pending' | 'approved' | 'rejected' | 'timeout' | 'cancelled' | 'completed' | 'failed';
   response: any | null;
   created_at: string;
   resolved_at: string | null;
-  session_config?: InteractiveSessionConfig | null;
-  session_transcript?: string | null;
-  session_duration?: number | null;
-  error?: string | null;
 }
 ```
 
 ## useHuman Hook
 
-For components, use the `useHuman` hook for a more ergonomic API:
-
 ```tsx
 import { useHuman } from "smithers-orchestrator/hooks";
 
-function DeploymentWorkflow() {
+function DeployWorkflow() {
   const { ask, status } = useHuman();
-
-  const handleDeploy = async () => {
-    const choice = await ask<string>("Deploy to production?", {
-      options: ["Yes", "No"],
-    });
-
-    if (choice === "Yes") {
-      // Proceed with deployment
-    }
+  
+  const deploy = async () => {
+    const choice = await ask<string>("Deploy?", { options: ["Yes", "No"] });
+    if (choice === "Yes") { /* proceed */ }
   };
-
-  return (
-    <button onClick={handleDeploy} disabled={status === "pending"}>
-      Deploy
-    </button>
-  );
 }
 ```
-
-### useHuman API
-
-```tsx
-interface UseHumanResult {
-  ask: <T = any>(prompt: string, options?: AskOptions) => Promise<T>;
-  status: 'idle' | 'pending' | 'resolved';
-  requestId: string | null;
-}
-
-interface AskOptions {
-  options?: string[];
-}
-```
-
-**Return semantics:** `ask()` resolves to the stored response. For `options`,
-this is typically the selected option string.
 
 ## useHumanInteractive Hook
 
-Interactive human sessions for complex decisions:
-
 ```tsx
-import { useHumanInteractive } from "smithers-orchestrator/hooks";
+const { requestAsync, status } = useHumanInteractive();
 
-function ReviewWorkflow() {
-  const { requestAsync, status } = useHumanInteractive();
-
-  const handleReview = async () => {
-    const result = await requestAsync(
-      "Review the refactor and decide whether to proceed.",
-      { captureTranscript: true }
-    );
-
-    if (result.outcome === "completed") {
-      // Proceed
-    }
-  };
-
-  return (
-    <button onClick={handleReview} disabled={status === "pending"}>
-      Request review
-    </button>
-  );
-}
-```
-
-### useHumanInteractive API
-
-```tsx
-interface UseHumanInteractiveResult<T = InteractiveSessionResult> {
-  request: (prompt: string, options?: AskInteractiveOptions) => void;
-  requestAsync: (prompt: string, options?: AskInteractiveOptions) => Promise<T>;
-  status: "idle" | "pending" | "success" | "error";
-  data: T | null;
-  error: Error | null;
-  sessionId: string | null;
-  cancel: () => void;
-  reset: () => void;
-}
+const result = await requestAsync("Review changes.", { captureTranscript: true });
+if (result.outcome === "completed") { /* proceed */ }
 ```
 
 ## Integration Pattern
 
-Human interaction typically follows this pattern:
-
-1. **Workflow creates request** - `db.human.request()` or `useHuman().ask()`
-2. **UI polls for pending requests** - `db.human.listPending()`
-3. **Human responds via UI** - User clicks approve/reject
-4. **UI resolves request** - `db.human.resolve()`
-5. **Workflow continues** - Promise resolves with response
-
-For interactive sessions, use `requestInteractive()` and resolve via
-`completeInteractive()` or `cancelInteractive()`.
-
-## Example: Approval Workflow
-
-```tsx
-function ApprovalWorkflow() {
-  const { ask } = useHuman();
-
-  return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Claude
-        onFinished={async (result) => {
-          // Ask for human approval before committing
-          const choice = await ask<string>(
-            `Ready to commit these changes?\n\n${result.output}`,
-            { options: ["Approve", "Reject"] }
-          );
-
-          if (choice === "Approve") {
-            db.state.set("phase", "commit");
-          } else {
-            db.state.set("phase", "revise");
-          }
-        }}
-      >
-        Implement the feature.
-      </Claude>
-    </SmithersProvider>
-  );
-}
-```
+1. Workflow creates request via `db.human.request()` or `useHuman().ask()`
+2. UI polls `db.human.listPending()`
+3. Human responds
+4. UI calls `db.human.resolve()`
+5. Promise resolves
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Human Component" icon="user" href="/components/human">
-    Human component reference
-  </Card>
-  <Card title="Hooks API" icon="hook" href="/api-reference/hooks">
-    React hooks for Smithers
-  </Card>
+  <Card title="Human Component" icon="user" href="/components/human" />
+  <Card title="Hooks API" icon="hook" href="/api-reference/hooks" />
 </CardGroup>

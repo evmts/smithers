@@ -5,258 +5,99 @@ description: React hooks for Smithers workflows
 
 # Smithers Hooks
 
-Smithers provides React hooks for common workflow patterns.
-
-## useHuman
-
-Hook to pause execution and request human input.
-
 ```tsx
-import { useHuman } from "smithers-orchestrator";
+import { useHuman, useSmithers, useRalphCount } from "smithers-orchestrator";
 
-function DeployWorkflow() {
-  const { ask, status, requestId } = useHuman();
-
-  const handleDeploy = async () => {
-    const choice = await ask<string>("Deploy to production?", {
-      options: ["Yes", "No"],
-    });
-
-    if (choice === "Yes") {
-      // Proceed with deployment
-    }
+function Workflow() {
+  const { ask } = useHuman();
+  const { db, executionId } = useSmithers();
+  const count = useRalphCount();
+  
+  const deploy = async () => {
+    const choice = await ask<string>("Deploy?", { options: ["Yes", "No"] });
+    if (choice === "Yes") { /* proceed */ }
   };
-
-  return (
-    <button onClick={handleDeploy} disabled={status === "pending"}>
-      {status === "pending" ? "Waiting for approval..." : "Deploy"}
-    </button>
-  );
 }
 ```
 
-### API
+## useHuman
+
+Pause execution for human input.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ask` | `<T>(prompt, options?) => Promise<T>` | Request input, resolves when responded |
+| `status` | `'idle' \| 'pending' \| 'resolved'` | Current request state |
+| `requestId` | `string \| null` | Active request ID |
 
 ```tsx
-interface UseHumanResult {
-  ask: <T = any>(prompt: string, options?: AskOptions) => Promise<T>;
-  status: 'idle' | 'pending' | 'resolved';
-  requestId: string | null;
-}
-
 interface AskOptions {
   options?: string[];
 }
 ```
 
-`ask()` resolves to the stored response (typically the selected option string).
-
-### How it Works
-
-1. `ask()` creates a request in `db.human`
-2. Returns a promise that resolves when an external harness calls `db.human.resolve()`
-3. Uses reactive queries to detect when the request status changes
-
-### Example: Multi-Choice Input
-
-```tsx
-const { ask } = useHuman();
-
-const environment = await ask<string>("Select deployment target:", {
-  options: ["staging", "production", "development"],
-});
-
-console.log(`Deploying to ${environment}`);
-```
+Creates request in `db.human`, resolves when external harness calls `db.human.resolve()`.
 
 ## useHumanInteractive
 
-Interactive human sessions for multi-turn collaboration.
+Multi-turn interactive sessions.
 
-```tsx
-import { useHumanInteractive } from "smithers-orchestrator/hooks";
-
-function ReviewWorkflow() {
-  const { requestAsync, status } = useHumanInteractive();
-
-  const review = async () => {
-    const result = await requestAsync(
-      "Review the refactor and decide whether to proceed.",
-      { captureTranscript: true }
-    );
-    if (result.outcome === "completed") {
-      console.log("Decision:", result.response);
-    }
-  };
-
-  return (
-    <button onClick={review} disabled={status === "pending"}>
-      {status === "pending" ? "Waiting for review..." : "Request review"}
-    </button>
-  );
-}
-```
-
-### API
-
-```tsx
-interface UseHumanInteractiveResult<T = InteractiveSessionResult> {
-  request: (prompt: string, options?: AskInteractiveOptions) => void;
-  requestAsync: (prompt: string, options?: AskInteractiveOptions) => Promise<T>;
-  status: "idle" | "pending" | "success" | "error";
-  data: T | null;
-  error: Error | null;
-  sessionId: string | null;
-  cancel: () => void;
-  reset: () => void;
-}
-```
+| Property | Type | Description |
+|----------|------|-------------|
+| `requestAsync` | `(prompt, options?) => Promise<T>` | Start async session |
+| `request` | `(prompt, options?) => void` | Start session (fire-and-forget) |
+| `status` | `'idle' \| 'pending' \| 'success' \| 'error'` | Session state |
+| `data` | `T \| null` | Session result |
+| `sessionId` | `string \| null` | Active session ID |
+| `cancel` | `() => void` | Cancel session |
+| `reset` | `() => void` | Reset state |
 
 ## useRalphCount
 
-Hook to get the current Ralph iteration count reactively.
-
-```tsx
-import { useRalphCount } from "smithers-orchestrator";
-
-function IterationDisplay() {
-  const count = useRalphCount();
-
-  return <div>Current iteration: {count}</div>;
-}
-```
-
-### API
+Returns current Ralph iteration (0-indexed). Re-renders on change.
 
 ```tsx
 function useRalphCount(): number
 ```
 
-Returns the current Ralph iteration count (0-indexed). The hook subscribes to the database state, so components re-render when the count changes.
-
-### How it Works
-
-Uses `useQueryValue` to reactively subscribe to the `ralphCount` state key:
+Used by `<Claude>` to detect iteration increments:
 
 ```tsx
-const { data } = useQueryValue<number>(
-  reactiveDb,
-  "SELECT CAST(value AS INTEGER) as count FROM state WHERE key = 'ralphCount'"
-);
-return data ?? 0;
-```
-
-### Usage with Components
-
-The `useRalphCount` hook is used internally by components like `<Claude>` to detect when Ralph increments the iteration:
-
-```tsx
-// Inside Claude component
 const ralphCount = useRalphCount();
-
-useEffectOnValueChange(ralphCount, () => {
-  // Re-execute when Ralph increments
-  executeClaudeCLI({ ... });
-});
-```
-
-### Example: Conditional Rendering Based on Iteration
-
-```tsx
-function IterationAwareComponent() {
-  const count = useRalphCount();
-
-  return (
-    <div>
-      <If condition={count === 0}>
-        <InitialSetup />
-      </If>
-      <If condition={count > 0 && count < 5}>
-        <MainWorkflow iteration={count} />
-      </If>
-      <If condition={count >= 5}>
-        <FinalReview />
-      </If>
-    </div>
-  );
-}
+useEffectOnValueChange(ralphCount, () => executeTask());
 ```
 
 ## useSmithers
 
-Hook to access the Smithers context (database, execution ID, etc.).
+Access Smithers context.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `db` | `SmithersDB` | Database with all modules |
+| `reactiveDb` | `ReactiveDatabase` | For custom reactive queries |
+| `executionId` | `string \| null` | Current execution |
+| `isStopRequested` | `() => boolean` | Check if stop requested |
+
+## Custom Hooks
 
 ```tsx
-import { useSmithers } from "smithers-orchestrator";
-
-function MyComponent() {
-  const { db, executionId, isStopRequested } = useSmithers();
-
-  if (isStopRequested()) {
-    return <div>Workflow stopped</div>;
-  }
-
-  return <div>Execution: {executionId}</div>;
-}
-```
-
-### API
-
-```tsx
-interface SmithersContextValue {
-  db: SmithersDB;
-  reactiveDb: ReactiveDatabase;
-  executionId: string | null;
-  isStopRequested: () => boolean;
-}
-```
-
-### Usage
-
-The `useSmithers` hook provides access to:
-
-- **db**: The full Smithers database with all modules (`db.state`, `db.agents`, etc.)
-- **reactiveDb**: The underlying ReactiveDatabase for custom queries
-- **executionId**: Current execution ID
-- **isStopRequested**: Function to check if stop has been requested
-
-## Custom Hooks Pattern
-
-Create custom hooks for your workflow patterns:
-
-```tsx
-import { useSmithers } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
 function useWorkflowProgress() {
   const { reactiveDb, executionId } = useSmithers();
-
+  
   const { data: total } = useQueryValue<number>(
     reactiveDb,
-    "SELECT COUNT(*) as count FROM phases WHERE execution_id = ?",
+    "SELECT COUNT(*) FROM phases WHERE execution_id = ?",
     [executionId ?? ""],
     { skip: !executionId }
   );
-
-  const { data: completed } = useQueryValue<number>(
-    reactiveDb,
-    "SELECT COUNT(*) as count FROM phases WHERE execution_id = ? AND status = 'completed'",
-    [executionId ?? ""],
-    { skip: !executionId }
-  );
-
-  const progress = total ? (completed ?? 0) / total : 0;
-  return { progress, total: total ?? 0, completed: completed ?? 0 };
+  
+  return { progress: total ? (completed ?? 0) / total : 0 };
 }
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Human API" icon="user" href="/api-reference/human">
-    Human interaction database API
-  </Card>
-  <Card title="Reactive Hooks" icon="bolt" href="/api-reference/reactive-hooks">
-    SQLite reactive query hooks
-  </Card>
+  <Card title="Human API" icon="user" href="/api-reference/human" />
+  <Card title="Reactive Hooks" icon="bolt" href="/api-reference/reactive-hooks" />
 </CardGroup>

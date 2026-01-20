@@ -1,203 +1,70 @@
 ---
 title: Subagent
-description: Group and organize Claude executions with named execution boundaries
+description: Named execution boundaries for Claude grouping
 ---
 
-# Subagent Component
-
-The `<Subagent>` component wraps child components in a named execution boundary. This provides better organization, debugging visibility, and optional parallel execution.
-
-<Note>
-**Stable.** The `parallel` prop is currently metadata-only and does not enforce execution semantics.
-</Note>
-
-<Info>
-**Current Implementation:** Subagent provides named grouping for debugging and plan visualization. The `parallel` prop is currently a metadata hint only—it does not enforce parallel or sequential execution. For actual parallel execution, use the `<Parallel>` component which wraps children in a parallel StepRegistryProvider.
-</Info>
-
-## Usage
+# Subagent
 
 ```tsx
-import { Subagent } from "smithers-orchestrator";
-
 <Subagent name="researcher">
   <Claude>Research the topic thoroughly.</Claude>
 </Subagent>
 ```
 
+Wraps child components in a named execution boundary for organization, debugging visibility, and logging.
+
+<Note>
+The `parallel` prop is metadata-only. For actual parallel execution, use `<Parallel>`.
+</Note>
+
 ## Props
 
-<ParamField path="name" type="string">
-  A descriptive name for this subagent group. Used for debugging and logging.
-</ParamField>
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `name` | `string` | — | Name for debugging and logging |
+| `parallel` | `boolean` | `false` | Metadata hint (does not enforce parallelism) |
+| `children` | `ReactNode` | — | Components to group |
 
-<ParamField path="parallel" type="boolean" default="false">
-  When true, child Claude components execute in parallel rather than sequentially.
-</ParamField>
-
-<ParamField path="children" type="ReactNode">
-  The Claude components or other content to group.
-</ParamField>
-
-## Examples
-
-### Named Groups for Organization
+## Named Groups
 
 ```tsx
-<SmithersProvider db={db} executionId={executionId}>
-  <Subagent name="analysis">
-    <Claude allowedTools={["Read", "Grep"]}>
-      Analyze the codebase structure.
-    </Claude>
-  </Subagent>
+<Subagent name="analysis">
+  <Claude allowedTools={["Read", "Grep"]}>
+    Analyze the codebase structure.
+  </Claude>
+</Subagent>
 
-  <Subagent name="implementation">
-    <Claude allowedTools={["Read", "Edit", "Write"]}>
-      Implement the feature based on analysis.
-    </Claude>
-  </Subagent>
-
-  <Subagent name="testing">
-    <Claude allowedTools={["Bash"]}>
-      Run tests and verify implementation.
-    </Claude>
-  </Subagent>
-</SmithersProvider>
-```
-
-### Parallel Execution
-
-The `parallel` prop is a metadata hint for debugging and visualization. For actual parallel execution, use the `<Parallel>` component:
-
-```tsx
-import { Parallel } from "smithers-orchestrator";
-
-{/* Actual parallel execution */}
-<Parallel>
-  <Claude>Research React performance patterns.</Claude>
-  <Claude>Research database optimization techniques.</Claude>
-  <Claude>Research caching strategies.</Claude>
-</Parallel>
-
-{/* Metadata-only (does not enforce parallel execution) */}
-<Subagent name="parallel-research" parallel={true}>
-  <Claude>Research React performance patterns.</Claude>
+<Subagent name="implementation">
+  <Claude allowedTools={["Read", "Edit", "Write"]}>
+    Implement the feature.
+  </Claude>
 </Subagent>
 ```
 
-### Combining Sequential and Parallel
+## With Parallel Execution
 
-Use `<Parallel>` for actual parallel execution within a workflow:
-
-```tsx
-<SmithersProvider db={db} executionId={executionId}>
-  {/* Sequential: analyze first */}
-  <Subagent name="analysis">
-    <Claude>Analyze the current architecture.</Claude>
-  </Subagent>
-
-  {/* Parallel: research topics simultaneously */}
-  <Subagent name="research">
-    <Parallel>
-      <Claude>Research frontend optimization.</Claude>
-      <Claude>Research backend optimization.</Claude>
-      <Claude>Research infrastructure options.</Claude>
-    </Parallel>
-  </Subagent>
-
-  {/* Sequential: synthesize and implement */}
-  <Subagent name="synthesis">
-    <Claude>
-      Combine the research findings and create an implementation plan.
-    </Claude>
-  </Subagent>
-</SmithersProvider>
-```
-
-### With Phase Control
+Use `<Parallel>` inside Subagent for actual parallel execution:
 
 ```tsx
-function ResearchWorkflow() {
-  const [phase, setPhase] = useState("gather");
-
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-        <If condition={phase === "gather"}>
-          <Subagent name="data-gathering" parallel={true}>
-            <Claude onFinished={() => setPhase("analyze")}>
-              Gather requirements from the codebase.
-            </Claude>
-            <Claude>
-              Gather similar implementations from open source.
-            </Claude>
-          </Subagent>
-        </If>
-
-        <If condition={phase === "analyze"}>
-          <Subagent name="analysis">
-            <Claude onFinished={() => setPhase("done")}>
-              Analyze gathered data and create recommendations.
-            </Claude>
-          </Subagent>
-        </If>
-    </SmithersProvider>
-  );
-}
+<Subagent name="research">
+  <Parallel>
+    <Claude>Research frontend optimization.</Claude>
+    <Claude>Research backend optimization.</Claude>
+  </Parallel>
+</Subagent>
 ```
 
 ## Best Practices
 
-<AccordionGroup>
-  <Accordion title="Use descriptive names">
-    Names should clearly indicate the subagent's purpose:
-    ```tsx
-    // Good - descriptive
-    <Subagent name="security-audit">
-    <Subagent name="frontend-implementation">
-    <Subagent name="api-integration">
-
-    // Less helpful
-    <Subagent name="step1">
-    <Subagent name="agent">
-    ```
-  </Accordion>
-
-  <Accordion title="Use Parallel for independent tasks">
-    Use `<Parallel>` (not `parallel={true}`) for actual parallel execution of independent tasks:
-    ```tsx
-    // Good - independent research tasks with actual parallel execution
-    <Subagent name="research">
-      <Parallel>
-        <Claude>Research topic A</Claude>
-        <Claude>Research topic B</Claude>
-      </Parallel>
-    </Subagent>
-
-    // Bad - second task depends on first
-    <Parallel>
-      <Claude>Create the database schema</Claude>
-      <Claude>Write queries for the schema</Claude>  {/* Needs schema first! */}
-    </Parallel>
-    ```
-  </Accordion>
-
-  <Accordion title="Group related operations">
-    Keep logically related Claude calls together:
-    ```tsx
-    <Subagent name="user-feature">
-      <Claude>Implement user registration</Claude>
-      <Claude>Implement user login</Claude>
-      <Claude>Implement password reset</Claude>
-    </Subagent>
-    ```
-  </Accordion>
-</AccordionGroup>
+- **Use descriptive names** — `security-audit`, `api-integration`, not `step1`
+- **Use Parallel for independent tasks** — wrap truly independent work in `<Parallel>`
+- **Group related operations** — keep logically related Claude calls together
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="SmithersProvider" icon="sitemap" href="/components/smithers-provider">
-    Top-level workflow orchestration
+  <Card title="Parallel" icon="layer-group" href="/components/parallel">
+    Actual parallel execution
   </Card>
   <Card title="Phase" icon="layer-group" href="/components/phase">
     Phase-based workflow control

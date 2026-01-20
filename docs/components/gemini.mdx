@@ -1,145 +1,39 @@
 ---
-title: Gemini Component
-description: Google Gemini AI agent wrapper with multi-modal support and structured output
+title: Gemini
+description: Google Gemini AI agent with multi-modal support
 ---
 
 <Warning>
-  **Planned Feature** - This component is not yet implemented.
-  See [GitHub issues](https://github.com/evmts/smithers/issues) for usage context and design.
+**Planned Feature** - Not yet implemented.
 </Warning>
 
-# Gemini Component
-
-Wraps Google Gemini API for AI agent capabilities with multi-modal input support (text, images, code), structured output, and Smithers task lifecycle integration. Provides alternative to Claude and Codex with Google's latest models.
-
-## Planned API
+# Gemini
 
 ```tsx
-interface GeminiProps<TSchema extends z.ZodType = z.ZodType> {
-  /**
-   * Prompt/task for the agent.
-   */
-  children: ReactNode
-
-  /**
-   * Model selection.
-   * @default 'gemini-2.5-pro'
-   */
-  model?: 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-1.5-pro'
-
-  /**
-   * Temperature for randomness (0-2).
-   * @default 1
-   */
-  temperature?: number
-
-  /**
-   * System prompt for agent behavior.
-   */
-  systemPrompt?: string
-
-  /**
-   * Working directory for code operations.
-   */
-  cwd?: string
-
-  /**
-   * Environment variables.
-   */
-  env?: Record<string, string>
-
-  /**
-   * Timeout in milliseconds.
-   * @default 300000 (5 minutes)
-   */
-  timeout?: number
-
-  /**
-   * Zod schema for structured output.
-   */
-  schema?: TSchema
-
-  /**
-   * Multi-modal inputs (images, files).
-   */
-  media?: Array<{
-    type: 'image' | 'file'
-    path: string
-  }>
-
-  /**
-   * Callback on successful completion.
-   */
-  onFinished?: (result: AgentResult<TSchema>) => void
-
-  /**
-   * Callback on error.
-   */
-  onError?: (error: Error) => void
-}
-
-interface AgentResult<TSchema extends z.ZodType = z.ZodType> {
-  output: string
-  structured?: z.infer<TSchema>
-  durationMs: number
-}
-
-export function Gemini<TSchema extends z.ZodType = z.ZodType>(
-  props: GeminiProps<TSchema>
-): JSX.Element
-```
-
-## Proposed Usage
-
-### Basic Text Generation
-
-```tsx
-import { Gemini, Phase, Step } from 'smithers-orchestrator'
-
-export function AnalyzeCode() {
-  return (
-    <Phase name="Analysis">
-      <Step name="analyze">
-        <Gemini model="gemini-2.5-pro">
-          Analyze this codebase and identify architectural issues.
-          Focus on scalability and maintainability concerns.
-        </Gemini>
-      </Step>
-    </Phase>
-  )
-}
-```
-
-### With Structured Output
-
-```tsx
-import { z } from 'zod'
-
-const architectureSchema = z.object({
-  issues: z.array(z.object({
-    category: z.enum(['scalability', 'maintainability', 'performance', 'security']),
-    severity: z.enum(['critical', 'major', 'minor']),
-    description: z.string(),
-    recommendation: z.string()
-  })),
-  summary: z.string(),
-  overallScore: z.number().min(0).max(10)
-})
-
-<Gemini
-  model="gemini-2.5-pro"
-  schema={architectureSchema}
-  onFinished={(result) => {
-    const analysis = result.structured
-    console.log(`Architecture score: ${analysis.overallScore}/10`)
-    console.log(`Critical issues: ${analysis.issues.filter(i => i.severity === 'critical').length}`)
-  }}
->
-  Analyze codebase architecture
+<Gemini model="gemini-2.5-pro">
+  Analyze this codebase and identify architectural issues.
 </Gemini>
 ```
 
-### Multi-Modal Analysis (Images)
+Wraps Google Gemini API for AI agent capabilities with multi-modal input (text, images, code) and structured output.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | — | Prompt for the agent |
+| `model` | `'gemini-2.5-pro' \| 'gemini-2.5-flash' \| 'gemini-1.5-pro'` | `'gemini-2.5-pro'` | Model selection |
+| `temperature` | `number` | `1` | Randomness (0-2) |
+| `systemPrompt` | `string` | — | System-level instructions |
+| `cwd` | `string` | — | Working directory |
+| `env` | `Record<string, string>` | — | Environment variables |
+| `timeout` | `number` | `300000` | Timeout in ms |
+| `schema` | `ZodType` | — | Structured output schema |
+| `media` | `Array<{type: 'image' \| 'file', path: string}>` | — | Multi-modal inputs |
+| `onFinished` | `(result: AgentResult) => void` | — | Success callback |
+| `onError` | `(error: Error) => void` | — | Error callback |
+
+## Multi-Modal Analysis
 
 ```tsx
 <Gemini
@@ -149,24 +43,32 @@ const architectureSchema = z.object({
     { type: 'image', path: './screenshots/expected.png' }
   ]}
 >
-  Compare these two UI screenshots.
-  Identify differences and suggest CSS fixes for the bug.
+  Compare these UI screenshots. Identify differences and suggest CSS fixes.
 </Gemini>
 ```
 
-### Fast Model for Simple Tasks
+## With Structured Output
 
 ```tsx
-<Gemini model="gemini-2.5-flash" temperature={0.3}>
-  Extract function names from this code file
+import { z } from 'zod'
+
+const analysisSchema = z.object({
+  issues: z.array(z.object({
+    category: z.enum(['scalability', 'maintainability', 'performance', 'security']),
+    severity: z.enum(['critical', 'major', 'minor']),
+    description: z.string()
+  })),
+  overallScore: z.number().min(0).max(10)
+})
+
+<Gemini model="gemini-2.5-pro" schema={analysisSchema}>
+  Analyze codebase architecture
 </Gemini>
 ```
 
-### In Fallback Chain
+## In Fallback Chain
 
 ```tsx
-import { FallbackAgent, Claude, Codex, Gemini } from 'smithers-orchestrator'
-
 <FallbackAgent>
   <Claude model="sonnet">{prompt}</Claude>
   <Codex model="gpt-4">{prompt}</Codex>
@@ -174,428 +76,28 @@ import { FallbackAgent, Claude, Codex, Gemini } from 'smithers-orchestrator'
 </FallbackAgent>
 ```
 
-## Props (Planned)
+## Why Gemini?
 
-<ParamField path="children" type="ReactNode" required>
-  Prompt or task for the agent.
+- **2M token context** — analyze entire codebases
+- **Multi-modal** — native image/video/audio understanding
+- **Speed** — Gemini Flash competitive on speed, lower cost
 
-  Converted to string for API call.
-
-  ```tsx
-  <Gemini>Analyze this code for security issues</Gemini>
-  ```
-
-  Can include dynamic content:
-  ```tsx
-  <Gemini>
-    Review changes in PR #{prNumber}:
-    {prDiff}
-  </Gemini>
-  ```
-</ParamField>
-
-<ParamField path="model" type="'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-1.5-pro'" default="gemini-2.5-pro">
-  Google Gemini model selection.
-
-  **Options:**
-  - `gemini-2.5-pro` - Latest, most capable (2M token context)
-  - `gemini-2.5-flash` - Faster, cheaper, smaller context
-  - `gemini-1.5-pro` - Previous generation (stable)
-
-  **Use cases:**
-  - Complex analysis: `gemini-2.5-pro`
-  - Large codebases: `gemini-2.5-pro` (huge context)
-  - Simple tasks: `gemini-2.5-flash`
-  - Stable/production: `gemini-1.5-pro`
-</ParamField>
-
-<ParamField path="temperature" type="number" default="1">
-  Controls randomness (0-2).
-
-  **Lower (0-0.5):** Deterministic, focused
-  - Code analysis
-  - Bug fixing
-  - Security reviews
-
-  **Medium (0.5-1):** Balanced
-  - General tasks
-  - Documentation
-
-  **Higher (1-2):** Creative
-  - Design suggestions
-  - Brainstorming
-</ParamField>
-
-<ParamField path="systemPrompt" type="string">
-  System-level instructions for agent behavior.
-
-  **Examples:**
-  ```tsx
-  systemPrompt="You are a security expert. Flag all potential vulnerabilities, even minor ones."
-  ```
-
-  ```tsx
-  systemPrompt="Focus on performance optimization. Suggest concrete improvements with benchmarks."
-  ```
-</ParamField>
-
-<ParamField path="cwd" type="string">
-  Working directory for code operations.
-
-  Respects worktree context if inside `<Worktree>`.
-
-  **Priority:** Explicit cwd > Worktree context > process.cwd()
-</ParamField>
-
-<ParamField path="env" type="Record<string, string>">
-  Environment variables merged with process.env.
-
-  ```tsx
-  <Gemini env={{ LOG_LEVEL: "debug" }}>
-    Debug this issue with verbose logging
-  </Gemini>
-  ```
-</ParamField>
-
-<ParamField path="timeout" type="number" default="300000">
-  Timeout in milliseconds (default 5 minutes).
-
-  ```tsx
-  <Gemini timeout={600000}>  {/* 10 minutes */}
-    Analyze large codebase
-  </Gemini>
-  ```
-</ParamField>
-
-<ParamField path="schema" type="z.ZodType">
-  Zod schema for structured output validation.
-
-  Gemini supports JSON mode with schema constraints.
-
-  ```tsx
-  const issueSchema = z.object({
-    type: z.enum(['bug', 'feature', 'refactor']),
-    priority: z.number().min(1).max(5),
-    description: z.string()
-  })
-
-  <Gemini schema={issueSchema}>
-    Categorize this issue
-  </Gemini>
-  ```
-
-  **Type safety:** `result.structured` typed as `z.infer<typeof issueSchema>`
-</ParamField>
-
-<ParamField path="media" type="Array<{ type: 'image' | 'file', path: string }>">
-  Multi-modal inputs for vision and document analysis.
-
-  **Image analysis:**
-  ```tsx
-  <Gemini
-    media={[
-      { type: 'image', path: './screenshot.png' }
-    ]}
-  >
-    Describe what's wrong with this UI
-  </Gemini>
-  ```
-
-  **Multiple images:**
-  ```tsx
-  <Gemini
-    media={[
-      { type: 'image', path: './before.png' },
-      { type: 'image', path: './after.png' }
-    ]}
-  >
-    Compare these screenshots and list differences
-  </Gemini>
-  ```
-
-  **File analysis:**
-  ```tsx
-  <Gemini
-    media={[
-      { type: 'file', path: './large-dataset.csv' }
-    ]}
-  >
-    Analyze this CSV and identify patterns
-  </Gemini>
-  ```
-
-  Supports images (PNG, JPEG, WebP) and documents (PDF, TXT, CSV).
-</ParamField>
-
-<ParamField path="onFinished" type="(result: AgentResult<TSchema>) => void">
-  Callback on successful completion.
-
-  ```tsx
-  onFinished={(result) => {
-    console.log(`Gemini completed in ${result.durationMs}ms`)
-    if (result.structured) {
-      // Type-safe structured output
-      processData(result.structured)
-    }
-  }}
-  ```
-</ParamField>
-
-<ParamField path="onError" type="(error: Error) => void">
-  Callback on error.
-
-  ```tsx
-  onError={(error) => {
-    console.error(`Gemini error: ${error.message}`)
-    metrics.recordProviderFailure('gemini', error)
-  }}
-  ```
-
-  Prevents error propagation if provided.
-</ParamField>
-
-## Implementation Status
-
-<Steps>
-  <Step title="Design Phase">
-    Component designed for multi-provider fallback in review workflows.
-    [View on GitHub](https://github.com/evmts/smithers/issues)
-  </Step>
-
-  <Step title="API Client (Pending)">
-    Implement Gemini API client using Bun native fetch.
-  </Step>
-
-  <Step title="Multi-Modal Support (Pending)">
-    Image/file upload, base64 encoding, media API integration.
-  </Step>
-
-  <Step title="Structured Output (Pending)">
-    JSON schema generation, response validation with Zod.
-  </Step>
-
-  <Step title="Task Integration (Pending)">
-    Smithers task lifecycle, database logging, observability.
-  </Step>
-
-  <Step title="Testing (Future)">
-    Unit tests with mocked API, integration tests with real Gemini.
-  </Step>
-</Steps>
-
-## Design Rationale
-
-### Why Gemini Component?
-
-**Massive context window:** 2M tokens in Gemini 2.5 Pro (analyze entire codebases)
-
-**Multi-modal capabilities:** Native image/video/audio understanding
-
-**Speed:** Gemini Flash competitive on speed, lower cost
-
-**Provider diversity:** Reduce single-provider dependency
-
-**Free tier:** Gemini offers generous free quota for development
-
-### API vs CLI
-
-Unlike Claude (CLI) and Codex (CLI), Gemini uses direct API:
-
-```typescript
-async function executeGeminiAPI(props: GeminiProps): Promise<AgentResult> {
-  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.GOOGLE_API_KEY}`
-    },
-    body: JSON.stringify({
-      contents: buildContents(props),
-      generationConfig: {
-        temperature: props.temperature,
-        responseSchema: props.schema ? zodToJsonSchema(props.schema) : undefined
-      },
-      systemInstruction: props.systemPrompt
-    })
-  })
-
-  return parseResponse(await response.json())
-}
-```
-
-**Rationale:** No official Gemini CLI, API well-documented and stable.
-
-### Authentication
-
-Uses `GOOGLE_API_KEY` environment variable:
+## Authentication
 
 ```bash
 export GOOGLE_API_KEY="AIza..."
 ```
 
-Required in GitHub Actions secrets for CI integration.
-
-### Multi-Modal Content Format
-
-```typescript
-interface Content {
-  role: 'user' | 'model'
-  parts: Array<
-    | { text: string }
-    | { inlineData: { mimeType: string; data: string } }
-  >
-}
-```
-
-Text and images combined in single request.
-
-## Examples of Use Cases
-
-### Use Case 1: UI Screenshot Analysis
-
-```tsx
-<Gemini
-  model="gemini-2.5-pro"
-  media={[
-    { type: 'image', path: './ui-bug.png' }
-  ]}
-  schema={z.object({
-    issues: z.array(z.object({
-      element: z.string(),
-      problem: z.string(),
-      cssFix: z.string()
-    })),
-    severity: z.enum(['critical', 'minor'])
-  })}
->
-  Analyze this screenshot for UI bugs.
-  Identify misaligned elements, broken styles, and provide CSS fixes.
-</Gemini>
-```
-
-### Use Case 2: Entire Codebase Analysis
-
-```tsx
-// Gemini 2.5 Pro: 2M token context - can analyze huge codebases
-<Gemini
-  model="gemini-2.5-pro"
-  timeout={900000}  // 15 minutes for large analysis
->
-  Analyze entire codebase structure:
-
-  {await getAllSourceFiles()}
-
-  Provide:
-  1. Architectural overview
-  2. Dependencies graph
-  3. Code quality metrics
-  4. Refactoring opportunities
-</Gemini>
-```
-
-### Use Case 3: Document Understanding
-
-```tsx
-<Gemini
-  model="gemini-2.5-pro"
-  media={[
-    { type: 'file', path: './requirements.pdf' }
-  ]}
-  schema={z.object({
-    features: z.array(z.string()),
-    technicalRequirements: z.array(z.string()),
-    timeline: z.string(),
-    complexity: z.enum(['low', 'medium', 'high'])
-  })}
->
-  Extract structured information from this requirements document.
-  List all features, technical requirements, and estimate complexity.
-</Gemini>
-```
-
-### Use Case 4: Fast Fallback
-
-```tsx
-<FallbackAgent>
-  {/* Try expensive model first */}
-  <Claude model="opus">{complexPrompt}</Claude>
-
-  {/* Fast, cheap fallback */}
-  <Gemini model="gemini-2.5-flash" temperature={0.5}>
-    {complexPrompt}
-  </Gemini>
-</FallbackAgent>
-```
-
 ## Related
 
 <CardGroup cols={2}>
-  <Card
-    title="GitHub Actions Review Loop"
-    icon="github"
-    href="https://github.com/evmts/smithers/issues"
-  >
-    Multi-provider review system - Gemini as fallback option
+  <Card title="FallbackAgent" icon="shield-halved" href="/components/fallback-agent">
+    Multi-provider failover
   </Card>
-
-  <Card
-    title="FallbackAgent Component"
-    icon="shield-halved"
-    href="/components/fallback-agent"
-  >
-    Multi-provider failover - Gemini used for redundancy
+  <Card title="Claude" icon="robot" href="/components/claude">
+    Primary agent
   </Card>
-
-  <Card
-    title="Claude Component"
-    icon="robot"
-    href="/components/claude"
-  >
-    Primary agent - Gemini provides alternative
-  </Card>
-
-  <Card
-    title="Codex Component"
-    icon="code"
-    href="/components/codex"
-  >
-    OpenAI agent - another fallback option
+  <Card title="Codex" icon="code" href="/components/codex">
+    OpenAI agent
   </Card>
 </CardGroup>
-
-## Alternatives Considered
-
-- **CLI wrapper**: No official Gemini CLI, would need custom tool
-- **Generic LLM component**: Less specialized, more configuration
-- **Only support Claude/Codex**: Missing multi-modal and huge context benefits
-- **Vertex AI**: More complex auth, less suitable for open-source tool
-
-## Migration Path
-
-Current pattern (manual Gemini API):
-
-```tsx
-// Before (manual)
-const response = await fetch('https://generativelanguage.googleapis.com/...', {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${apiKey}` },
-  body: JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }]
-  })
-})
-const data = await response.json()
-const result = data.candidates[0].content.parts[0].text
-```
-
-With Gemini component:
-
-```tsx
-// After (declarative)
-<Gemini>{prompt}</Gemini>
-```
-
-**Benefits:** Task tracking, error handling, structured output, multi-modal support, observability.
-
-## Feedback
-
-If you have feedback on this planned component, please [open an issue](https://github.com/evmts/smithers/issues).

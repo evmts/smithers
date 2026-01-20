@@ -3,193 +3,75 @@ title: Task
 description: Track individual tasks within workflows
 ---
 
-# Task Component
-
-<Note>
-**Not to be confused with `db.tasks.*`**
-
-- `<Task>` component = Declarative UI element for displaying task progress in workflows (this page)
-- `db.tasks.*` = Internal API for tracking async component lifecycle (start/complete/fail)
-
-Components like `<Claude>`, `<Step>`, and `<Worktree>` use `db.tasks.start()` and `db.tasks.complete()` internally to signal when they're running. The `<Task>` component is purely presentational—it renders a checkbox-style task item.
-</Note>
-
-The `<Task>` component represents a trackable task within a workflow. Tasks can be marked as done/not done to track progress through complex workflows.
-
-## Usage
+# Task
 
 ```tsx
-import { Task, Phase, Step } from "smithers-orchestrator";
-
 <Phase name="implementation">
   <Step name="tasks">
     <Task done={false}>Research existing patterns</Task>
     <Task done={true}>Design component API</Task>
     <Task done={false}>Implement component</Task>
-    <Task done={false}>Write tests</Task>
   </Step>
 </Phase>
 ```
 
+Renders a checkbox-style task item for tracking progress through workflows.
+
+<Note>
+**Not to be confused with `db.tasks.*`** — that's the internal API for tracking async component lifecycle. This `<Task>` component is purely presentational.
+</Note>
+
 ## Props
 
-<ParamField path="done" type="boolean" default="false">
-  Whether the task is complete.
-</ParamField>
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `done` | `boolean` | `false` | Whether the task is complete |
+| `children` | `ReactNode` | — | Task description |
 
-<ParamField path="children" type="ReactNode">
-  Description of the task.
-</ParamField>
-
-## Examples
-
-### Basic Task List
-
-```tsx
-<SmithersProvider db={db} executionId={executionId}>
-  <Phase name="setup">
-    <Step name="tasks">
-      <Task done={true}>Initialize project</Task>
-      <Task done={true}>Configure TypeScript</Task>
-      <Task done={false}>Set up testing framework</Task>
-    </Step>
-  </Phase>
-</SmithersProvider>
-```
-
-### Dynamic Task Tracking
+## Dynamic Task Tracking
 
 ```tsx
 function TaskTracker() {
-  const { db } = useSmithers();
-  
-  const { data: tasksVal } = useQueryValue<string>(
-    db.db,
-    "SELECT value FROM state WHERE key = 'tasks'"
-  );
-  const tasks: Array<{id: number, name: string, done: boolean}> = tasksVal 
-    ? JSON.parse(tasksVal) 
-    : [
-        { id: 1, name: "Research", done: false },
-        { id: 2, name: "Design", done: false },
-        { id: 3, name: "Implement", done: false },
-        { id: 4, name: "Test", done: false },
-      ];
-
-  const markDone = (id: number) => {
-    const updated = tasks.map(t =>
-      t.id === id ? { ...t, done: true } : t
-    );
-    db.state.set('tasks', updated);
-  };
+  const { db } = useSmithers()
+  const tasks = useQueryValue<string>(db.db, "SELECT value FROM state WHERE key = 'tasks'")
+  const parsed = tasks ? JSON.parse(tasks) : []
 
   return (
-    <Phase name="feature-development">
-      <Step name="tasks">
-        {tasks.map(task => (
-          <Task key={task.id} done={task.done}>
-            {task.name}
-          </Task>
-        ))}
-
-        <Claude
-          onFinished={() => markDone(getCurrentTaskId())}
-        >
-          Complete the next incomplete task.
-        </Claude>
-      </Step>
-    </Phase>
-  );
+    <Step name="tasks">
+      {parsed.map((task, i) => (
+        <Task key={i} done={task.done}>{task.name}</Task>
+      ))}
+    </Step>
+  )
 }
 ```
 
-### With Database Persistence
+## Task-Driven Workflow
 
 ```tsx
-function PersistentTasks() {
-  const { db } = useSmithers();
-  
-  const { data: tasksVal } = useQueryValue<string>(
-    db.db,
-    "SELECT value FROM state WHERE key = 'tasks'"
-  );
-  const tasks: Array<{name: string, done: boolean}> = tasksVal ? JSON.parse(tasksVal) : [];
+const tasks = ["Analyze", "Refactor", "Test", "Document"]
 
-  const completeTask = (index: number) => {
-    const newTasks = [...tasks];
-    newTasks[index].done = true;
-    db.state.set("tasks", newTasks, "task-tracker");
-  };
-
-  return (
-    <Phase name="tracked-work">
-      <Step name="tasks">
-        {tasks.map((task, i) => (
-          <Task key={i} done={task.done}>
-            {task.name}
-          </Task>
-        ))}
-      </Step>
-    </Phase>
-  );
-}
-```
-
-### Task-Driven Workflow
-
-```tsx
-const tasks = [
-  "Analyze the current implementation",
-  "Identify areas for improvement",
-  "Refactor the component",
-  "Update tests",
-  "Document changes",
-];
-
-function TaskDrivenWorkflowBody() {
-  const { db } = useSmithers();
-  
-  const { data: indexVal } = useQueryValue<string>(
-    db.db,
-    "SELECT value FROM state WHERE key = 'currentTaskIndex'"
-  );
-  const currentTaskIndex = indexVal ? JSON.parse(indexVal) : 0;
+function TaskDrivenWorkflow() {
+  const { db } = useSmithers()
+  const indexVal = useQueryValue<string>(db.db, "SELECT value FROM state WHERE key = 'idx'")
+  const idx = indexVal ? JSON.parse(indexVal) : 0
 
   return (
     <>
-      <Phase name="tasks">
-        <Step name="tasks">
-          {tasks.map((task, i) => (
-            <Task key={i} done={i < currentTaskIndex}>
-              {task}
-            </Task>
-          ))}
-        </Step>
-      </Phase>
-
-      <If condition={currentTaskIndex < tasks.length}>
-        <Claude
-          onFinished={() => db.state.set('currentTaskIndex', currentTaskIndex + 1)}
-        >
-          Complete this task: {tasks[currentTaskIndex]}
+      <Step name="tasks">
+        {tasks.map((t, i) => <Task key={i} done={i < idx}>{t}</Task>)}
+      </Step>
+      <If condition={idx < tasks.length}>
+        <Claude onFinished={() => db.state.set('idx', idx + 1)}>
+          Complete: {tasks[idx]}
         </Claude>
       </If>
     </>
-  );
-}
-
-export function TaskDrivenWorkflow({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={tasks.length}>
-      <TaskDrivenWorkflowBody />
-    </SmithersProvider>
-  );
+  )
 }
 ```
 
 ## Rendering
-
-The Task component renders as a `<task>` element with a `done` attribute, which can be styled or processed by your workflow visualization:
 
 ```xml
 <task done="true">Research existing patterns</task>
@@ -198,39 +80,8 @@ The Task component renders as a `<task>` element with a `done` attribute, which 
 
 ## Best Practices
 
-<AccordionGroup>
-  <Accordion title="Keep tasks atomic">
-    Each task should represent a single, well-defined action:
-    ```tsx
-    // Good - atomic tasks
-    <Task done={false}>Create user model</Task>
-    <Task done={false}>Add validation rules</Task>
-    <Task done={false}>Write migration</Task>
-
-    // Less effective - compound task
-    <Task done={false}>Create user model with validation and migration</Task>
-    ```
-  </Accordion>
-
-  <Accordion title="Use with Phase for organization">
-    Group related tasks within phases:
-    ```tsx
-    <Phase name="backend">
-      <Step name="tasks">
-        <Task done={true}>Create API endpoint</Task>
-        <Task done={false}>Add authentication</Task>
-      </Step>
-    </Phase>
-
-    <Phase name="frontend">
-      <Step name="tasks">
-        <Task done={false}>Create form component</Task>
-        <Task done={false}>Add validation</Task>
-      </Step>
-    </Phase>
-    ```
-  </Accordion>
-</AccordionGroup>
+- **Keep tasks atomic** — each task should represent a single action
+- **Use with Phase** — group related tasks within phases
 
 ## Related
 

@@ -5,157 +5,69 @@ description: Inspect, debug, and troubleshoot Smithers workflows
 
 # Debugging Playbook
 
-Operational guide for inspecting execution state and debugging workflows.
-
-## CLI Commands
-
 ```bash
-# List all executions
-smithers db executions
-
-# List executions for a specific workflow
-smithers db executions --source my-workflow.tsx
-
-# View execution details
-smithers db execution <execution-id>
-
-# View current state
-smithers db state
-
-# View state for specific execution
-smithers db state --execution <execution-id>
-
-# View database statistics
-smithers db stats
+smithers db executions                    # List all
+smithers db execution <id>                # View details
+smithers db state --execution <id>        # View state
 ```
 
-## Inspecting State
-
-### View Phase Progress
-
-```bash
-# Using SQLite directly
-sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM phases ORDER BY created_at"
-```
-
-### View Step Progress
-
-```bash
-sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM steps ORDER BY created_at"
-```
-
-### View Running Tasks
+## Direct SQLite Inspection
 
 ```bash
 sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM tasks WHERE status = 'running'"
-```
-
-### View State History
-
-```bash
-sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM state ORDER BY updated_at DESC"
+sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM state ORDER BY updated_at DESC LIMIT 5"
 ```
 
 ## Claude Code Logs
 
-Claude execution logs are stored at:
-
-```
-~/.claude/projects/<project-path>/sessions/
-```
-
-Each session contains:
-- `session.jsonl` - Full conversation log
+Logs stored at `~/.claude/projects/<project-path>/sessions/`:
+- `session.jsonl` - Full conversation
 - `metadata.json` - Session metadata
 
-### Correlating Logs to Executions
-
+Correlate with:
 ```tsx
-// Log session IDs in your workflow
-<Claude
-  onFinished={(result) => {
-    console.log("Session:", result.sessionId);
-  }}
->
-```
-
-Find the session:
-```bash
-ls -la ~/.claude/projects/*/sessions/ | grep <session-id>
+<Claude onFinished={(r) => console.log("Session:", r.sessionId)}>
 ```
 
 ## Common Issues
 
-### Workflow Stalls
+**Workflow Stalls**
+- No state change in `onFinished`
+- Missing task completion call
 
-**Symptom:** Orchestration stops advancing.
+Debug: `SELECT * FROM tasks WHERE status = 'running'`
 
-**Causes:**
-1. No state change in `onFinished` callback
-2. Untracked async work completing after task check
-3. Missing task completion call
+**Phase Not Advancing**
+- Step not completing
+- No Steps in Phase
+- `skipIf` returning wrong value
 
-**Debug:**
-```bash
-# Check for stuck tasks
-sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM tasks WHERE status = 'running'"
+Debug: `SELECT * FROM steps WHERE phase_id = '<id>'`
 
-# Check last state change
-sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM state ORDER BY updated_at DESC LIMIT 5"
-```
+**Crash Recovery Fails**
+- Using `useState` instead of SQLite
+- Not checking `db.execution.findIncomplete()`
 
-### Phase Not Advancing
-
-**Symptom:** Phase stuck, next phase never starts.
-
-**Causes:**
-1. Step not completing
-2. No Steps in Phase (see Phase docs)
-3. `skipIf` returning wrong value
-
-**Debug:**
-```bash
-# Check step status
-sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM steps WHERE phase_id = '<phase-id>'"
-```
-
-### Crash Recovery Not Working
-
-**Symptom:** Workflow restarts from beginning.
-
-**Causes:**
-1. Using `useState` instead of SQLite state
-2. Not checking `db.execution.findIncomplete()`
-3. Database not persisted (in-memory mode)
-
-**Fix:** Ensure all state uses `db.state` and execution resume logic is present:
+Fix:
 ```tsx
 const incomplete = db.execution.findIncomplete();
-if (incomplete) {
-  executionId = incomplete.id;
-}
+if (incomplete) executionId = incomplete.id;
 ```
 
-## Database Schema
-
-Key tables for debugging:
+## Key Tables
 
 | Table | Purpose |
 |-------|---------|
-| `executions` | Workflow run records |
-| `state` | Key-value state storage |
-| `phases` | Phase progress tracking |
-| `steps` | Step completion tracking |
-| `tasks` | Async task tracking |
-| `agents` | Agent execution logs |
+| `executions` | Workflow runs |
+| `state` | Key-value storage |
+| `phases` | Phase progress |
+| `steps` | Step completion |
+| `tasks` | Async tracking |
+| `agents` | Agent logs |
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Database Persistence" icon="database" href="/concepts/database-persistence">
-    How state is stored
-  </Card>
-  <Card title="Claude Log Format" icon="file-lines" href="/guides/claude-log-format">
-    Understanding Claude logs
-  </Card>
+  <Card title="Database Persistence" icon="database" href="/concepts/database-persistence" />
+  <Card title="Claude Log Format" icon="file-lines" href="/guides/claude-log-format" />
 </CardGroup>

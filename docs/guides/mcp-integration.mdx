@@ -3,201 +3,92 @@ title: MCP Integration
 description: Connect Claude to external tools via Model Context Protocol
 ---
 
-# MCP Integration Guide
-
-Model Context Protocol (MCP) allows Claude to interact with external systems through standardized tool interfaces.
-
-## Built-in MCP Components
-
-### Sqlite
-
-Give Claude access to SQLite databases:
+# MCP Integration
 
 ```tsx
-import { Sqlite } from "smithers-orchestrator";
-
 <Claude model="sonnet" maxTurns={10}>
   <Sqlite path="./data.db" readOnly>
-    Database schema:
-    - users(id, name, email)
-    - orders(id, user_id, total)
+    Schema: users(id, name, email), orders(id, user_id, total)
   </Sqlite>
-
-  Find users who have placed orders over $100.
+  Find users who placed orders over $100.
 </Claude>
 ```
 
-### Read-Only for Safety
-
-```tsx
-<Sqlite path="./production.db" readOnly>
-  Production data - read only access.
-</Sqlite>
-```
-
-## Multiple MCP Servers
+## Multiple Databases
 
 ```tsx
 <Claude model="sonnet" maxTurns={15}>
   <Sqlite path="./users.db">User database</Sqlite>
   <Sqlite path="./analytics.db">Analytics database</Sqlite>
-
   Cross-reference user signups with analytics events.
 </Claude>
 ```
 
-## Custom MCP Configuration
+## Custom Tools
 
 <Warning>
-**Experimental.** The `tools` prop API is functional but may change. For most use cases, prefer the built-in `<Sqlite>` component.
+**Experimental.** The `tools` prop API may change. Prefer built-in `<Sqlite>` for most cases.
 </Warning>
-
-For advanced MCP setups, configure tools directly:
 
 ```tsx
 <Claude
-  tools={[
-    {
-      name: "query_database",
-      description: "Query the PostgreSQL database",
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: { type: "string", description: "SQL query to execute" },
-        },
-        required: ["query"],
-      },
-      execute: async (input, context) => {
-        const result = await db.query(input.query);
-        return JSON.stringify(result);
-      },
+  tools={[{
+    name: "query_database",
+    description: "Query PostgreSQL",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string" } },
+      required: ["query"],
     },
-  ]}
+    execute: async (input) => JSON.stringify(await db.query(input.query)),
+  }]}
 >
-  Query the database for user statistics.
+  Query for user statistics.
 </Claude>
 ```
 
-## Common Patterns
-
-### Data Analysis Pipeline
+## Data Pipeline
 
 ```tsx
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
 function DataPipelineBody() {
   const { db, reactiveDb } = useSmithers();
-
-  const { data: phaseJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+  const { data: phase } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
   );
-  const phase = phaseJson ? JSON.parse(phaseJson) : "query";
-
-  const { data: dataJson } = useQueryValue<string>(
-    reactiveDb,
-    "SELECT value FROM state WHERE key = 'data'"
+  const { data } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'data'"
   );
-  const data = dataJson ? JSON.parse(dataJson) : null;
-
-  const setPhase = (newPhase: string) => {
-    db.state.set("phase", newPhase);
-  };
 
   return (
     <>
       <If condition={phase === "query"}>
-        <Claude
-          model="sonnet"
-          onFinished={(result) => {
-            db.state.set("data", result.output);
-            setPhase("analyze");
-          }}
-        >
-          <Sqlite path="./sales.db" readOnly>
-            Sales database with orders and products.
-          </Sqlite>
-
-          Query the top 10 products by revenue.
+        <Claude onFinished={(r) => { db.state.set("data", r.output); db.state.set("phase", "analyze"); }}>
+          <Sqlite path="./sales.db" readOnly>Sales data</Sqlite>
+          Query top 10 products by revenue.
         </Claude>
       </If>
-
       <If condition={phase === "analyze"}>
-        <Claude
-          model="sonnet"
-          allowedTools={["Write"]}
-          onFinished={() => setPhase("done")}
-        >
-          Analyze this data and write a report:
-          {data}
-
-          Save to reports/sales-analysis.md
+        <Claude allowedTools={["Write"]} onFinished={() => db.state.set("phase", "done")}>
+          Analyze and save report: {data}
         </Claude>
       </If>
     </>
   );
 }
-
-export function DataPipeline({ db, executionId }) {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-      <DataPipelineBody />
-    </SmithersProvider>
-  );
-}
 ```
 
-### Database with File Output
+## Security
+
+<Warning>Always use `readOnly` for production databases.</Warning>
 
 ```tsx
-<Claude model="sonnet" maxTurns={10} allowedTools={["Write"]}>
-  <Sqlite path="./analytics.db" readOnly>
-    Event tracking database.
-  </Sqlite>
-
-  Generate a CSV export of daily active users.
-  Save to exports/dau.csv
-</Claude>
-```
-
-## Security Considerations
-
-<Warning>
-Always use `readOnly` for production databases to prevent accidental modifications.
-</Warning>
-
-```tsx
-// Safe - read only
-<Sqlite path="./prod.db" readOnly>...</Sqlite>
-
-// Risky - allows writes
-<Sqlite path="./prod.db">...</Sqlite>
-```
-
-## Tool Restrictions
-
-Combine MCP with tool restrictions:
-
-```tsx
-<Claude
-  allowedTools={["query_database"]}  // Only database access
-  disallowedTools={["Bash"]}         // No shell commands
->
-  <Sqlite path="./data.db" readOnly>
-    Schema here.
-  </Sqlite>
-
-  Analyze the data (no shell commands needed).
-</Claude>
+<Sqlite path="./prod.db" readOnly>...</Sqlite>  // Safe
+<Sqlite path="./prod.db">...</Sqlite>           // Risky
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Sqlite Component" icon="database" href="/components/sqlite">
-    Sqlite API reference
-  </Card>
-  <Card title="MCP Database Example" icon="code" href="/examples/mcp-database">
-    Complete example
-  </Card>
+  <Card title="Sqlite Component" icon="database" href="/components/sqlite" />
+  <Card title="MCP Database Example" icon="code" href="/examples/mcp-database" />
 </CardGroup>

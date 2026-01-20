@@ -5,76 +5,38 @@ description: Track generated files and outputs
 
 # Artifacts API
 
-The `db.artifacts` module tracks files and outputs generated during workflow execution.
-
-## Contract
-
-- **Sync:** All methods are synchronous.
-- **Execution scope:** `add()` uses the current execution (set by `db.execution.start()`).
-- **Return shape:** snake_case fields with `Date` timestamps; `metadata` defaults to `{}`.
-
-## Overview
-
 ```tsx
-import { createSmithersDB } from "smithers-orchestrator";
-
 const db = createSmithersDB({ path: ".smithers/my-workflow" });
 
-// Add an artifact
-const artifactId = db.artifacts.add(
+const id = db.artifacts.add(
   "analysis-report",
   "document",
   "./reports/analysis.md",
   agentId,
   { format: "markdown", wordCount: 1500 }
 );
+
+const artifacts = db.artifacts.list(executionId);
 ```
+
+All methods sync. Requires current execution via `db.execution.start()`.
 
 ## Methods
 
-### add
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `add` | `(name, type, filePath, agentId?, metadata?) => string` | Add artifact, returns ID |
+| `list` | `(executionId) => Artifact[]` | List execution artifacts |
 
-Adds a new artifact.
+## Artifact Types
 
-```tsx
-const artifactId = db.artifacts.add(
-  name: string,
-  type: 'file' | 'code' | 'document' | 'image' | 'data',
-  filePath: string,
-  agentId?: string,
-  metadata?: Record<string, any>
-): string
-```
-
-<ParamField path="name" type="string" required>
-  Human-readable name for the artifact.
-</ParamField>
-
-<ParamField path="type" type="'file' | 'code' | 'document' | 'image' | 'data'" required>
-  The type of artifact.
-</ParamField>
-
-<ParamField path="filePath" type="string" required>
-  Path to the artifact file (stored as provided).
-</ParamField>
-
-<ParamField path="agentId" type="string">
-  Optional ID of the agent that created this artifact.
-</ParamField>
-
-<ParamField path="metadata" type="Record<string, any>">
-  Optional metadata about the artifact. Defaults to `{}`.
-</ParamField>
-
-**Returns:** The artifact ID.
-
-### list
-
-Lists all artifacts for an execution.
-
-```tsx
-const artifacts = db.artifacts.list(executionId: string): Artifact[]
-```
+| Type | Description | Examples |
+|------|-------------|----------|
+| `file` | Generic file | Any path |
+| `code` | Source code | `.ts`, `.py` |
+| `document` | Reports/docs | `.md`, `.html` |
+| `image` | Images | `.png`, `.svg` |
+| `data` | Data files | `.json`, `.csv` |
 
 ## Artifact Type
 
@@ -87,125 +49,43 @@ interface Artifact {
   type: 'file' | 'code' | 'document' | 'image' | 'data';
   file_path: string;
   metadata: Record<string, any>;
-  git_hash?: string;
-  git_commit?: string;
-  summary?: string;
-  line_count?: number;
-  byte_size?: number;
   created_at: Date;
 }
 ```
 
-## Artifact Types
-
-| Type | Description | Examples |
-|------|-------------|----------|
-| `file` | Generic file artifact | Any file path |
-| `code` | Generated source code | `.ts`, `.tsx`, `.py` files |
-| `document` | Reports and docs | `.md`, `.html`, `.txt` |
-| `image` | Images | `.png`, `.jpg`, `.svg` |
-| `data` | Data files | `.json`, `.csv` exports |
-
-## Path Conventions
-
-- Paths are stored exactly as provided (no normalization).
-- Smithers does **not** validate file existence on `add()`.
-- Recommended: store repo-relative paths for portability.
-
-## Examples
-
-### Tracking Generated Code
+## Usage
 
 ```tsx
 <Claude
-  onFinished={async (result) => {
-    // Track generated files
+  onFinished={(result) => {
     for (const file of result.filesModified) {
-      db.artifacts.add(
-        file.name,
-        "code",
-        file.path,
-        agentId,
-        {
-          linesAdded: file.insertions,
-          linesRemoved: file.deletions,
-        }
-      );
+      db.artifacts.add(file.name, "code", file.path, agentId, {
+        linesAdded: file.insertions
+      });
     }
   }}
 >
-  Generate a new API endpoint.
+  Generate endpoint.
 </Claude>
 ```
 
-### Tracking Reports
+## Querying
 
 ```tsx
-<Review
-  onFinished={(review) => {
-    // Save review as artifact
-    const reportPath = `./reports/review-${Date.now()}.md`;
-    Bun.write(reportPath, JSON.stringify(review, null, 2));
-
-    db.artifacts.add(
-      "code-review",
-      "document",
-      reportPath,
-      undefined,
-      {
-        approved: review.approved,
-        issueCount: review.issues.length,
-      }
-    );
-  }}
-/>
-```
-
-### Tracking Logs
-
-```tsx
-const logPath = `./logs/agent-${agentId}.log`;
-
-db.artifacts.add(
-  "agent-output",
-  "file",
-  logPath,
-  agentId,
-  {
-    tokensUsed: result.tokensUsed,
-    durationMs: result.durationMs,
-  }
-);
-```
-
-## Querying Artifacts
-
-```tsx
-// Get all artifacts
 const artifacts = db.artifacts.list(executionId);
-
-// Filter by type
-const reports = artifacts.filter((a) => a.type === "report");
-const code = artifacts.filter((a) => a.type === "code");
-
-// Get artifacts by agent
-const agentArtifacts = artifacts.filter((a) => a.agent_id === agentId);
-
-// Calculate total generated code
-const codeArtifacts = artifacts.filter((a) => a.type === "code");
-const totalLines = codeArtifacts.reduce(
-  (sum, a) => sum + (a.metadata.linesAdded || 0),
-  0
-);
+const code = artifacts.filter(a => a.type === "code");
+const byAgent = artifacts.filter(a => a.agent_id === agentId);
 ```
+
+## Notes
+
+- Paths stored as provided (no normalization)
+- File existence not validated on `add()`
+- Use repo-relative paths for portability
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Agents API" icon="robot" href="/api-reference/agents">
-    Agent tracking
-  </Card>
-  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs">
-    Version control tracking
-  </Card>
+  <Card title="Agents API" icon="robot" href="/api-reference/agents" />
+  <Card title="VCS API" icon="code-branch" href="/api-reference/vcs" />
 </CardGroup>

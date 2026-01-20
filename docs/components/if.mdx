@@ -1,17 +1,11 @@
 ---
 title: If
-description: Conditional rendering component for cleaner JSX
+description: Conditional rendering component
 ---
 
-# If Component
-
-The `<If>` component provides declarative conditional rendering. It's a cleaner alternative to `{condition && (<Component />)}` patterns.
-
-## Basic Usage
+# If
 
 ```tsx
-import { If, Phase, Step, Claude } from "smithers-orchestrator";
-
 <If condition={phase === "implement"}>
   <Phase name="Implementation">
     <Step name="implement">
@@ -23,34 +17,20 @@ import { If, Phase, Step, Claude } from "smithers-orchestrator";
 
 ## Props
 
-<ParamField path="condition" type="boolean" required>
-  Condition to evaluate. Children render only when true.
-
-  ```tsx
-  <If condition={status === "ready"}>
-    <Claude>Start the task.</Claude>
-  </If>
-  ```
-</ParamField>
-
-<ParamField path="children" type="ReactNode" required>
-  Content to render when condition is true.
-</ParamField>
+| Prop | Type | Description |
+|------|------|-------------|
+| `condition` | `boolean` | Children render only when true |
+| `children` | `ReactNode` | Content to render when condition is true |
 
 ## Multi-Phase Workflow
 
 ```tsx
-import { If, SmithersProvider, Phase, Step, Claude, useSmithers } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
-
 function Workflow({ db, executionId }) {
   const { data: phaseVal } = useQueryValue<string>(
-    db.db,
-    "SELECT value FROM state WHERE key = 'phase'"
-  );
-  const phase = phaseVal ?? "research";
-  
-  const setPhase = (p: string) => db.state.set('phase', p);
+    db.db, "SELECT value FROM state WHERE key = 'phase'"
+  )
+  const phase = phaseVal ?? "research"
+  const setPhase = (p: string) => db.state.set('phase', p)
 
   return (
     <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
@@ -84,16 +64,9 @@ function Workflow({ db, executionId }) {
         </Phase>
       </If>
     </SmithersProvider>
-  );
+  )
 }
 ```
-
-## Benefits
-
-1. **Cleaner JSX** - No curly braces or parentheses clutter
-2. **Better Readability** - Intent is explicit
-3. **Consistent Style** - Matches JSX component patterns
-4. **No Empty Renders** - Returns `null` when condition is false (same as `&&`)
 
 ## Complex Conditions
 
@@ -113,7 +86,7 @@ function Workflow({ db, executionId }) {
   <Card title="Phase" icon="layer-group" href="/components/phase">
     Phase workflow structure
   </Card>
-  <Card title="Ralph" icon="rotate" href="/components/ralph">
-    Loop control
+  <Card title="Switch" icon="code-branch" href="/components/switch">
+    Multi-way branching
   </Card>
 </CardGroup>

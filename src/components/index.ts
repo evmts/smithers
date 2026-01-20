@@ -6,6 +6,7 @@
 export { Claude, type ClaudeProps, type AgentResult, executeClaudeCLI } from './Claude.js'
 export { ClaudeApi, type ClaudeApiProps } from './ClaudeApi.js'
 export { Amp, type AmpProps, executeAmpCLI } from './Amp.js'
+export { Codex, type CodexProps, executeCodexCLI } from './Codex.js'
 
 // Ralph - Loop controller (backwards compatibility)
 export { Ralph, type RalphProps, RalphContext } from './Ralph.js'
