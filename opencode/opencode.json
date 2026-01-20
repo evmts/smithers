@@ -1,0 +1,32 @@
+{
+  "$schema": "https://opencode.ai/config.schema.json",
+  "default_agent": "orchestrator",
+  "agents_dir": "./agents",
+  "plugins_dir": "./plugins",
+  "permission": {
+    "*": "deny",
+    
+    "read": "allow",
+    
+    "smithers_discover": "allow",
+    "smithers_create": "allow",
+    "smithers_run": "allow",
+    "smithers_resume": "allow",
+    "smithers_status": "allow",
+    "smithers_frames": "allow",
+    "smithers_cancel": "allow",
+    "smithers_glob": "allow",
+    "smithers_grep": "allow",
+    
+    "task": "deny",
+    "edit": "deny",
+    "write": "deny",
+    "bash": "deny",
+    "websearch": "deny",
+    "webfetch": "deny",
+    "codesearch": "deny",
+    "glob": "deny",
+    "grep": "deny",
+    "list": "deny"
+  }
+}

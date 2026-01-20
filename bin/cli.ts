@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
 import { Command } from "commander";
+import { spawn } from "bun";
+import path from "path";
 import { DEFAULT_DB_DIR, DEFAULT_MAIN_FILE, resolveDbPaths } from "../src/commands/cli-utils.ts";
 import pkg from "../package.json";
 
@@ -9,9 +11,29 @@ const program = new Command();
 program
   .name("smithers")
   .description(
-    "CLI tool for multi-agent AI orchestration with Smithers framework",
+    "AI orchestration framework - launches OpenCode with Smithers tools",
   )
-  .version(pkg.version);
+  .version(pkg.version)
+  .action(async () => {
+    const configDir = path.join(import.meta.dirname, "..", "opencode")
+    
+    const configContent = JSON.stringify({
+      default_agent: "orchestrator"
+    })
+
+    const proc = spawn({
+      cmd: ["opencode", "--agent", "orchestrator"],
+      env: {
+        ...process.env,
+        OPENCODE_CONFIG_DIR: configDir,
+        OPENCODE_CONFIG_CONTENT: configContent
+      },
+      stdio: ["inherit", "inherit", "inherit"]
+    })
+
+    const exitCode = await proc.exited
+    process.exit(exitCode)
+  });
 
 program
   .command("init")
