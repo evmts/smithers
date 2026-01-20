@@ -421,7 +421,7 @@ describe('buildClaudeArgs', () => {
   test('maps shorthand model names to full IDs', () => {
     expect(modelMap.opus).toBe('claude-opus-4-20250514')
     expect(modelMap.sonnet).toBe('claude-sonnet-4-20250514')
-    expect(modelMap.haiku).toBe('claude-haiku-3-20250514')
+    expect(modelMap.haiku).toBe('claude-haiku-4-5-20251001')
   })
 
   test('includes model flag when specified', () => {
