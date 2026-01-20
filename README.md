@@ -64,8 +64,6 @@ Then ask Claude:
 "Create a workflow that monitors CI, fixes failures, and escalates after 3 attempts."
 ```
 
-![Plugin Demo](docs/images/02_matcha_plugin.gif)
-
 ### Option B: npm package
 
 ```bash
@@ -121,8 +119,6 @@ Run:
 ```bash
 bun hello.tsx
 ```
-
-![Hello Demo](docs/images/01_taro_hello.gif)
 
 ---
 
@@ -196,8 +192,6 @@ bun examples/stacked-pr-merge/index.tsx --skip-rebase
 | Review Processor | Parallel processing of review backlogs | `bun examples/review-processor/index.tsx` |
 | Task Audit | Audit task management across codebase | `bun examples/task-management-audit/index.tsx` |
 
-![Gallery](docs/images/10_strawberry_gallery.gif)
-
 ---
 
 ## Why Smithers
@@ -218,8 +212,6 @@ Smithers uses React's component model to define execution plans as **reviewable 
 - **Claude can generate it** - Agent-native syntax
 - **Git can version it** - Workflows are code, not prompts
 
-![Resume Demo](docs/images/03_brown_sugar_resume.gif)
-
 ---
 
 ## Core Primitives
@@ -232,8 +224,6 @@ Smithers uses React's component model to define execution plans as **reviewable 
 | `<Claude>` | Execute Claude via CLI with tool access + structured output |
 | `<Worktree>` | Isolate repo changes per branch |
 | SQLite DB | Flight recorder: state + history + resumable executions |
-
-![Worktrees Demo](docs/images/04_thai_tea_worktrees.gif)
 
 ---
 
@@ -350,8 +340,6 @@ const UserSchema = z.object({
 // result.structured: { name: string, email: string }
 ```
 
-![Structured Output](docs/images/07_lychee_structured_output.gif)
-
 ### MCP Tool Integration
 
 Give Claude access to external tools via Model Context Protocol:
@@ -412,8 +400,6 @@ Spawn a new Smithers instance to plan and execute complex subtasks:
 </Smithers>
 ```
 
-![Subagents](docs/images/08_honeydew_subagents.gif)
-
 ### Worktree
 
 Run agents in isolated git worktrees:
@@ -436,8 +422,6 @@ First-class version control support:
 <Snapshot description="Before refactoring" />
 <Commit autoDescribe />
 ```
-
-![VCS Primitives](docs/images/05_oolong_vcs_primitives.gif)
 
 ### Orchestration Lifecycle
 
@@ -562,8 +546,6 @@ smithers db executions                    # What ran
 smithers db state --execution-id abc123   # State at each point
 ```
 
-![Safety](docs/images/09_wintermelon_safety.gif)
-
 ---
 
 ## Debugging & Observability
@@ -575,8 +557,6 @@ smithers db executions                    # List all runs
 smithers db state --execution-id <id>     # See state for a run
 smithers db stats                         # Database statistics
 ```
-
-![Observability](docs/images/06_jasmine_observability.gif)
 
 ---
 
