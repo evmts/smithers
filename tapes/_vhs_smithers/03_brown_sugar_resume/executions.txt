@@ -1,3 +1,0 @@
-id        name         status     started_at
---------  -----------  ---------  ---------------------
-e_01      CI Recovery   running    2026-01-20T12:34:56Z

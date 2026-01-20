@@ -1,6 +1,0 @@
-1) Hello World (smallest runnable workflow)
-2) Multi-Phase Review (implement -> review -> commit)
-3) Structured Output (Zod schema + retries)
-4) Worktrees (parallel branches)
-5) Subagents (planner + executor)
-6) Kitchen Sink (all primitives together)

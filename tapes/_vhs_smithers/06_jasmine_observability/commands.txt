@@ -1,5 +1,0 @@
-smithers db executions
-smithers db phases
-smithers db tasks
-smithers db transitions
-smithers db export --execution-id <id>
