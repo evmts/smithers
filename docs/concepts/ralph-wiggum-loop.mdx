@@ -126,7 +126,61 @@ export function IterativeWorkflow({ db, executionId }) {
 
 ### Implicit Stopping
 
-Ralph also stops implicitly when nothing renders for an iteration. If no components mount and register tasks, the loop completes after 500ms. However, using the `stopped` prop is more explicit and recommended.
+Ralph also stops implicitly when nothing renders for an iteration. If no components mount and register tasks within 500ms, the loop assumes the workflow is complete.
+
+**What this means:**
+- The 500ms is a *detection timeout*, not an execution limit
+- Your agents can run for hours—this only applies to detecting when there's nothing left to do
+- If any component calls `db.tasks.start()`, the loop waits for that task to complete
+
+Using the `stopped` prop is more explicit and recommended.
+
+## State: db.state vs db.tasks
+
+Smithers has two state systems. Use the right one:
+
+| API | Purpose | Example |
+|-----|---------|---------|
+| `db.state` | Workflow state that drives rendering | Current phase, attempt count, flags |
+| `db.tasks` | Track in-flight async work | API calls, file operations, agent execution |
+
+```tsx
+// db.state: Controls WHAT renders
+db.state.set("phase", "implement");  // Triggers re-render, shows different UI
+const phase = db.state.get("phase");
+
+// db.tasks: Controls WHEN the loop advances
+const taskId = db.tasks.start("fetch-api");
+await fetch("/api/data");
+db.tasks.complete(taskId);  // Loop can now advance
+```
+
+**Rule of thumb:** `db.state` answers "what phase are we in?" `db.tasks` answers "is work still running?"
+
+## useQueryValue: Reactive SQLite State
+
+`useQueryValue` makes SQLite state reactive—when the database changes, your component re-renders:
+
+```tsx
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
+function MyComponent() {
+  const { db, reactiveDb } = useSmithers();
+  
+  // Reactive: re-renders when 'phase' changes in DB
+  const { data: phase } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'phase'"
+  );
+  
+  // Update triggers re-render automatically
+  const setPhase = (p: string) => db.state.set("phase", p);
+  
+  return <Text>{phase ?? "loading..."}</Text>;
+}
+```
+
+**vs useState:** `useState` is lost on restart and doesn't persist. `useQueryValue` reads from SQLite, survives restarts, and syncs across components.
 
 ## Reactive Updates
 
@@ -401,6 +455,91 @@ The orchestration context tracks:
   </Accordion>
 </AccordionGroup>
 
+## Nested Loops (Subralphs)
+
+Smithers supports multiple patterns for nested execution within a Ralph loop:
+
+### While: Condition-Based Subloops
+
+`<While>` creates a subloop that iterates until a condition is false:
+
+```tsx
+import { While, Claude, useWhileIteration } from "smithers-orchestrator";
+
+function FixTests() {
+  const ctx = useWhileIteration();
+  return (
+    <Claude
+      onFinished={(r) => {
+        if (r.output.includes("All tests pass")) {
+          ctx?.signalComplete(); // Exits the While loop
+        }
+      }}
+    >
+      Run tests. If any fail, fix them. Attempt {ctx?.iteration ?? 0}.
+    </Claude>
+  );
+}
+
+<While id="test-loop" condition={() => true} maxIterations={10}>
+  <FixTests />
+</While>
+```
+
+`While` state persists in SQLite (`while.{id}.iteration`, `while.{id}.status`), so loops survive restarts.
+
+### Smithers: Autonomous Subagents
+
+`<Smithers>` spawns a completely independent subagent that plans and executes a complex task:
+
+```tsx
+import { Smithers } from "smithers-orchestrator";
+
+<Smithers
+  plannerModel="opus"      // Plans the work
+  executionModel="sonnet"  // Executes each step
+  timeout={3600000}        // 1 hour limit
+  keepScript               // Save generated script for debugging
+  onFinished={(result) => {
+    console.log(`Completed in ${result.durationMs}ms`);
+    db.state.set("phase", "next");
+  }}
+>
+  Implement the notification system: database schema, REST API, WebSocket updates, React components, and tests.
+</Smithers>
+```
+
+The `<Smithers>` component:
+1. Uses Claude to generate a complete Smithers script for the task
+2. Executes that script as a subprocess with its own Ralph loop
+3. Reports results back to the parent workflow
+
+Subagents can spawn their own subagents for arbitrarily deep nesting.
+
+### Subagent: Named Execution Boundaries
+
+`<Subagent>` groups related agents for debugging and optional parallel execution:
+
+```tsx
+import { Subagent, Claude } from "smithers-orchestrator";
+
+<Subagent name="research" parallel>
+  <Claude>Research topic A</Claude>
+  <Claude>Research topic B</Claude>
+</Subagent>
+```
+
+### When to Use Each
+
+| Pattern | Use Case |
+|---------|----------|
+| `While` | Retry loops, polling, iterating until condition |
+| `Smithers` | Complex autonomous subtasks needing their own planning |
+| `Subagent` | Grouping agents, parallel execution, named scopes |
+| `Phase/Step` | Sequential workflow stages |
+
+---
+
 ## SmithersProvider: The Root Ralph Loop
 
 `<SmithersProvider>` is the root orchestration wrapper that manages the Ralph loop for your entire workflow.
@@ -446,13 +585,97 @@ You can also set custom limits based on your workflow needs:
 </SmithersProvider>
 ```
 
+## Complete Example: Retry Until Tests Pass
+
+This example shows all the pieces working together:
+
+```tsx
+#!/usr/bin/env bun
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Claude,
+  If,
+  useSmithers,
+} from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+
+const db = createSmithersDB({ path: ".smithers/retry-tests.db" });
+const executionId = db.execution.start("Retry Tests", "retry.tsx");
+
+function RetryWorkflow() {
+  const { db, reactiveDb } = useSmithers();
+
+  // Reactive state from SQLite
+  const { data: attemptsRaw } = useQueryValue<number>(
+    reactiveDb,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
+  );
+  const attempts = attemptsRaw ?? 0;
+
+  const { data: doneRaw } = useQueryValue<number>(
+    reactiveDb,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'"
+  );
+  const done = Boolean(doneRaw);
+
+  return (
+    <If condition={!done}>
+      <Claude
+        model="sonnet"
+        onFinished={(result) => {
+          db.state.set("attempts", attempts + 1);
+          if (result.output.includes("All tests pass")) {
+            db.state.set("done", 1);  // Stops the loop
+          }
+        }}
+      >
+        Run the tests. If any fail, fix them. Attempt #{attempts + 1}.
+      </Claude>
+    </If>
+  );
+}
+
+function App() {
+  const { data: doneRaw } = useQueryValue<number>(
+    db.reactive,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'"
+  );
+  const done = Boolean(doneRaw);
+
+  return (
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      maxIterations={10}
+      stopped={done}  // Explicit stop condition
+    >
+      <RetryWorkflow />
+    </SmithersProvider>
+  );
+}
+
+const root = createSmithersRoot();
+await root.mount(App);
+await db.close();
+```
+
+**What happens:**
+1. Loop starts, `done=false`, `attempts=0`
+2. Claude runs tests, fails, calls `onFinished`
+3. `db.state.set("attempts", 1)` triggers re-render
+4. Loop iterates, Claude runs again
+5. Tests pass → `db.state.set("done", 1)`
+6. `stopped={done}` becomes `true`, loop exits
+
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="React State Management" icon="database" href="https://react.dev/learn/managing-state">
-    Learn about React state from official docs
-  </Card>
   <Card title="Database Persistence" icon="hard-drive" href="/concepts/database-persistence">
     Persist state across restarts
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/coverage-loop">
+    See more working examples
   </Card>
 </CardGroup>

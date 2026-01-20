@@ -300,7 +300,8 @@ function TaskMonitor() {
 
 ```tsx
 import { createSmithersRoot, createSmithersDB } from "smithers-orchestrator";
-import { SmithersProvider, Claude, useSmithers } from "smithers-orchestrator";
+import { SmithersProvider, Claude, useSmithers, If, Stop } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 async function main() {
   const db = createSmithersDB({ path: ".smithers/example" });

@@ -1,0 +1,183 @@
+---
+title: Add to Coding Harness
+description: Use Smithers in Claude Code, Cursor, Amp, or as an MCP server
+---
+
+# Add to Coding Harness
+
+Smithers works as a standalone library, but it's most powerful when integrated with your AI coding harness. Choose your setup:
+
+---
+
+## Claude Code Plugin
+
+The official plugin lets Claude generate and run Smithers workflows.
+
+```bash
+/plugin marketplace add evmts/smithers
+/plugin install smithers@smithers
+```
+
+Now ask Claude:
+
+```
+Create a workflow that monitors CI, fixes failures, and escalates after 3 attempts.
+```
+
+Claude generates the `.tsx` file. Review it like any other code.
+
+---
+
+## Cursor
+
+Add the Smithers skill to your project:
+
+**`.cursor/rules/smithers.mdc`:**
+
+```markdown
+---
+description: Create and monitor multi-agent AI orchestrations using Smithers framework
+globs: ["**/*.tsx", "**/smithers/**"]
+---
+
+# Smithers Orchestrator
+
+When asked to create multi-agent workflows, orchestrations, or pipelines:
+
+1. Use `smithers-orchestrator` package
+2. Structure as React TSX with Phase/Step/Claude components
+3. Always use createSmithersDB for persistence
+4. Handle resumption with db.execution.findIncomplete()
+
+Example structure:
+\`\`\`tsx
+import { createSmithersRoot, createSmithersDB, SmithersProvider, Phase, Step, Claude } from "smithers-orchestrator";
+
+const db = createSmithersDB({ path: ".smithers/workflow" });
+const executionId = db.execution.start("Name", "file.tsx");
+
+function Workflow() {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Phase name="phase1">
+        <Step name="step1">
+          <Claude>Task description</Claude>
+        </Step>
+      </Phase>
+    </SmithersProvider>
+  );
+}
+\`\`\`
+```
+
+---
+
+## Amp
+
+Add the Smithers skill to your Amp setup:
+
+**`.amp/skills/smithers/SKILL.md`:**
+
+```markdown
+---
+description: Create and monitor multi-agent AI orchestrations using Smithers framework. Use when user wants to coordinate multiple AI agents, create complex workflows, build agent pipelines, or mentions "smithers", "multi-agent", "orchestration", "workflow", "agent coordination".
+---
+
+# Smithers Orchestrator Skill
+
+[Full skill content - see plugins/skill/SKILL.md for complete version]
+```
+
+Or install from the plugin registry:
+
+```bash
+amp skill add evmts/smithers
+```
+
+---
+
+## MCP Server
+
+Run Smithers as an MCP (Model Context Protocol) server for any compatible client.
+
+**Start the server:**
+
+```bash
+bunx smithers-orchestrator serve --port 3847
+```
+
+**Configure your MCP client:**
+
+```json
+{
+  "mcpServers": {
+    "smithers": {
+      "command": "bunx",
+      "args": ["smithers-orchestrator", "serve"],
+      "env": {
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+**Available MCP tools:**
+
+| Tool | Description |
+|------|-------------|
+| `smithers_create_workflow` | Generate a workflow from description |
+| `smithers_run` | Execute a workflow file |
+| `smithers_status` | Check execution status |
+| `smithers_resume` | Resume incomplete execution |
+| `smithers_list` | List all executions |
+
+---
+
+## Standalone CLI
+
+Run workflows directly without any harness:
+
+```bash
+# Run a workflow
+bunx smithers run workflow.tsx
+
+# With options
+bunx smithers run workflow.tsx --resume --verbose
+
+# Database commands
+bunx smithers db executions
+bunx smithers db state --execution-id <id>
+bunx smithers db stats
+```
+
+---
+
+## Environment Variables
+
+All integrations use:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | Claude API key |
+| `SMITHERS_DB_PATH` | No | Default: `.smithers/db` |
+| `SMITHERS_LOG_LEVEL` | No | `debug`, `info`, `warn`, `error` |
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Your first workflow
+  </Card>
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts/ralph-wiggum-loop">
+    How it works
+  </Card>
+  <Card title="Components" icon="cube" href="/components/claude">
+    Full API reference
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/hello-world">
+    Production workflows
+  </Card>
+</CardGroup>

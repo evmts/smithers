@@ -25,15 +25,16 @@ description: Conditional rendering component
 ## Multi-Phase Workflow
 
 ```tsx
-function Workflow({ db, executionId }) {
+function WorkflowBody() {
+  const { db, reactiveDb } = useSmithers()
   const { data: phaseVal } = useQueryValue<string>(
-    db.db, "SELECT value FROM state WHERE key = 'phase'"
+    reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
   )
   const phase = phaseVal ?? "research"
   const setPhase = (p: string) => db.state.set('phase', p)
 
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+    <>
       <If condition={phase === "research"}>
         <Phase name="Research">
           <Step name="research">
@@ -63,6 +64,14 @@ function Workflow({ db, executionId }) {
           </Step>
         </Phase>
       </If>
+    </>
+  )
+}
+
+function Workflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+      <WorkflowBody />
     </SmithersProvider>
   )
 }

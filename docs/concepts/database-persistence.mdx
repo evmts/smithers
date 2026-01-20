@@ -8,7 +8,7 @@ description: SQLite persistence for state and history
 All state lives in SQLite. Survives restarts. Enables replay.
 
 ```tsx
-const db = createSmithersDB({ path: ".smithers/data" });
+const db = createSmithersDB({ path: ".smithers/data.db" });
 
 // State
 db.state.set("phase", "review");
@@ -19,30 +19,24 @@ db.execution.start("Task", "task.tsx");
 db.execution.findIncomplete();
 
 // Always close
-db.close();
+await db.close();
 ```
-
-**North Star:** This persistence layer enables SuperSmithers—a future meta-agent that watches execution history and rewrites agent code to optimize.
 
 ## Creating a Database
 
 ```tsx
 import { createSmithersDB } from "smithers-orchestrator";
 
-// Create a database at a specific path
-// .smithers/my-workflow is the default location we recommend for workflow databases
 const db = createSmithersDB({
-  path: ".smithers/my-workflow"
+  path: ".smithers/my-workflow.db"
 });
 
 // Always close when done
-db.close();
+await db.close();
 ```
 
-The database is created as a directory containing SQLite data files.
-
 <Note>
-**Path semantics:** The `path` parameter specifies a **directory**, not a file. Smithers creates SQLite data files inside this directory. For manual queries, use `sqlite3 <path>/db.sqlite`.
+**Path semantics:** The `path` parameter specifies a SQLite **file** path. For manual queries, use `sqlite3 .smithers/my-workflow.db`.
 </Note>
 
 ## Database Structure
@@ -188,6 +182,27 @@ await db.tools.complete(
 const tools = await db.tools.list(agentId);
 ```
 
+## Task Tracking
+
+Track async work so the Ralph loop knows when to advance:
+
+```tsx
+// Start a task (returns task ID)
+const taskId = db.tasks.start("fetch-data", "api-call");
+
+try {
+  await fetchData();
+  db.tasks.complete(taskId);
+} catch (err) {
+  db.tasks.fail(taskId, err.message);
+}
+
+// Query running tasks
+const running = db.tasks.listRunning(executionId);
+```
+
+The orchestrator waits for all tasks to complete before advancing to the next iteration.
+
 ## Memories (Long-term Knowledge)
 
 Store knowledge that persists across workflows:
@@ -280,10 +295,9 @@ For advanced use cases, query the database directly:
 
 ```tsx
 // Run a custom query
-const results = await db.query<{ count: number }>(
-  "SELECT COUNT(*) as count FROM agents WHERE model = $1",
-  ["sonnet"]
-);
+const results = db.db.query<{ count: number }, [string]>(
+  "SELECT COUNT(*) as count FROM agents WHERE model = ?"
+).all("sonnet");
 console.log(`${results[0].count} sonnet agents`);
 ```
 
@@ -311,11 +325,11 @@ smithers db current
   <Accordion title="Always close the database">
     Ensure the database is closed to flush writes:
     ```tsx
-    const db = createSmithersDB({ path: ".smithers/data" });
+    const db = createSmithersDB({ path: ".smithers/data.db" });
     try {
       // ... do work
     } finally {
-      db.close();
+      await db.close();
     }
     ```
   </Accordion>

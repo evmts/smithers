@@ -35,7 +35,10 @@ Phases advance when all Steps complete. Only the active phase renders children.
   Skip this phase if condition returns truthy. Takes precedence over automatic state management.
 
   ```tsx
-  const { data: hasTests } = useQueryValue<string>(reactiveDb, "SELECT value FROM state WHERE key = 'has_tests'");
+  const { reactiveDb } = useSmithers()
+  const { data: hasTests } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'has_tests'"
+  )
 
   <Phase name="WriteTests" skipIf={() => hasTests}>
     <Step name="tests">

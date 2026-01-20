@@ -53,7 +53,7 @@
       "pages": [
         "introduction",
         "quickstart",
-        "installation",
+        "harness-integration",
         "examples/hello-world"
       ]
     },
