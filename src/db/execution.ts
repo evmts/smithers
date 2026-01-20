@@ -64,7 +64,8 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
   const execution: ExecutionModule = {
     start: (name: string, filePath: string, config?: Record<string, any>): string => {
       if (rdb.isClosed) return uuid()
-      const id = uuid()
+      // Use SMITHERS_EXECUTION_ID from control plane if set, otherwise generate new UUID
+      const id = process.env['SMITHERS_EXECUTION_ID'] ?? uuid()
       rdb.run(
         `INSERT INTO executions (id, name, file_path, status, config, started_at, created_at)
          VALUES (?, ?, ?, 'running', ?, ?, ?)`,

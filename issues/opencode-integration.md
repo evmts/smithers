@@ -1011,6 +1011,55 @@ describe("Permission Enforcement", () => {
 | MODIFY | `docs/introduction.mdx` | Update for new UX |
 | MODIFY | `docs/quickstart.mdx` | Simplify to global install |
 
+## Known Bugs (from Integration Testing)
+
+### BUG-1: Execution ID Mismatch (CRITICAL)
+
+**Problem**: `smithers_run` generates execution ID `exec-1768943038309-txbqud`, but the workflow subprocess creates a different ID via `db.execution.start()` → `uuid()`.
+
+**Impact**: `smithers_status` and `smithers_frames` can't find executions—returns "Execution not found".
+
+**Root Cause**: 
+- Control plane `runner.ts` generates `SMITHERS_EXECUTION_ID` env var
+- But workflow ignores it and creates new ID via `db.execution.start()`
+
+**Fix Required**:
+Option A: Workflow should use `SMITHERS_EXECUTION_ID` if set
+```ts
+// In db/execution.ts start()
+const id = process.env.SMITHERS_EXECUTION_ID ?? uuid()
+```
+
+Option B: Control plane should wait for workflow to register, then return actual ID
+```ts
+// Poll database until execution appears
+while (!db.query("SELECT id FROM executions WHERE file_path = ?").get(scriptPath)) {
+  await Bun.sleep(100)
+}
+```
+
+**Status**: Unresolved—needs implementation.
+
+### BUG-2: Terminal Display Corruption
+
+**Problem**: OpenCode UI renders content outside boundaries, corrupting terminal with workflow code.
+
+**Root Cause**: Unknown—likely OpenCode UI issue with long content in tool outputs.
+
+**Workaround**: Truncate tool outputs or use simpler formatting.
+
+**Status**: Investigate OpenCode UI behavior.
+
+### BUG-3: Database Path Inconsistency
+
+**Problem**: `smithers_run` uses `deriveDbPath()` but workflows may use different paths.
+
+**Root Cause**: Multiple ways to specify DB path (env var, constructor arg, default).
+
+**Fix Required**: Standardize on `SMITHERS_DB_PATH` env var.
+
+---
+
 ## Open Questions
 
 - [x] **Q1**: Should we bundle OpenCode or require separate install?

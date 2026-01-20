@@ -201,8 +201,8 @@ function runMigrations(rdb: ReactiveDatabase): void {
  * Create a Smithers database instance
  */
 export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
-  // Determine database path
-  const dbPath = options.path ?? ':memory:'
+  // Determine database path - prefer env var from control plane, then options, then memory
+  const dbPath = process.env['SMITHERS_DB_PATH'] ?? options.path ?? ':memory:'
 
   // Create ReactiveDatabase
   const rdb = new ReactiveDatabase(dbPath)
