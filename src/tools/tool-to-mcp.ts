@@ -10,8 +10,8 @@ export interface MCPToolDefinition {
 export function toolToMCPDefinition(name: string, tool: SmithersTool): MCPToolDefinition {
   const jsonSchema = zodToJsonSchema(tool.inputSchema)
   const isObjectSchema =
-    jsonSchema.type === 'object' ||
-    (typeof jsonSchema.properties === 'object' && jsonSchema.properties !== null)
+    jsonSchema['type'] === 'object' ||
+    (typeof jsonSchema['properties'] === 'object' && jsonSchema['properties'] !== null)
 
   if (!isObjectSchema) {
     throw new Error(`Tool ${name} input schema must be an object for MCP.`)

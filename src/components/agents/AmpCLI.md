@@ -81,10 +81,12 @@ The component maps to `amp` CLI commands:
 | Prop | CLI Flag |
 |------|----------|
 | `mode` | `--mode` / `-m` |
+| `maxTurns` | `--max-turns` |
+| `systemPrompt` | `--system-prompt` |
 | `permissionMode: 'bypassPermissions'` | `--dangerously-allow-all` |
 | `labels` | `--label` / `-l` (can be repeated) |
 | `continueThread` | `threads continue --last` |
-| `resumeThread` | `threads continue <threadId>` |
+| `resumeThread` | `threads continue --thread-id <threadId>` |
 
 ## Differences from Claude Component
 

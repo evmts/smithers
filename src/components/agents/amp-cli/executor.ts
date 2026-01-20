@@ -68,8 +68,12 @@ export async function executeAmpCLI(options: AmpCLIExecutionOptions): Promise<Ag
     : null
 
   // Write prompt to stdin
-  await proc.stdin.write(new TextEncoder().encode(prompt))
-  await proc.stdin.end()
+  if (!proc.stdin || typeof proc.stdin === 'number') {
+    throw new Error('Failed to get stdin handle')
+  }
+  const stdin = proc.stdin as import('bun').FileSink
+  await stdin.write(new TextEncoder().encode(prompt))
+  await stdin.end()
 
   // Collect output
   let stdout = ''
@@ -80,8 +84,14 @@ export async function executeAmpCLI(options: AmpCLIExecutionOptions): Promise<Ag
   let stopTriggered = false
   const streamParser = new AmpStreamParser()
 
-  const stdoutReader = proc.stdout.getReader()
-  const stderrReader = proc.stderr.getReader()
+  if (!proc.stdout || typeof proc.stdout === 'number') {
+    throw new Error('Failed to get stdout handle')
+  }
+  if (!proc.stderr || typeof proc.stderr === 'number') {
+    throw new Error('Failed to get stderr handle')
+  }
+  const stdoutReader = (proc.stdout as ReadableStream<Uint8Array>).getReader()
+  const stderrReader = (proc.stderr as ReadableStream<Uint8Array>).getReader()
   const stdoutDecoder = new TextDecoder()
   const stderrDecoder = new TextDecoder()
 

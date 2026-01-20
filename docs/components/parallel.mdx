@@ -114,7 +114,7 @@ The Parallel component wraps children in a `StepRegistryProvider` with `isParall
 
 - Parallel uses a nested step registry; when used directly under a Phase it registers as a single step group
 - Nested Parallel inside a Step remains scoped to that Step
-- Completion still depends on step task tracking; long-running unrelated tasks can delay Parallel completion
+- Children render only while the parallel group is active, matching Step gating semantics
 </Warning>
 
 For reliable phase-based workflows, wrap each Phase's content in explicit Steps:

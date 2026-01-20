@@ -159,7 +159,7 @@ ${clippedContent}`
 async function executeReview(prompt: string, model?: string): Promise<ReviewResult> {
   const result = await executeClaudeCLI({
     prompt,
-    model,
+    ...(model && { model }),
     outputFormat: 'text',
     schema: ReviewResultSchema,
   })

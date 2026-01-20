@@ -34,7 +34,7 @@ function FakeWork(props: { name: string; delay?: number; onStart?: () => void; o
 
   useExecutionEffect(executionScope.enabled, () => {
     props.onStart?.()
-    taskIdRef.current = db.tasks.start('fake-work', props.name)
+    taskIdRef.current = db.tasks.start('fake-work', props.name, { scopeId: executionScope.scopeId })
     
     const timeoutId = setTimeout(() => {
       if (!db.db.isClosed && taskIdRef.current) {

@@ -1,4 +1,5 @@
 import type { KeyEvent } from '@opentui/core'
+import type React from 'react'
 import type { SmithersDB } from '../db/index.js'
 import { ExecutionTimeline } from './components/views/ExecutionTimeline.js'
 import { RenderFrameInspector } from './components/views/RenderFrameInspector.js'
@@ -34,7 +35,7 @@ export type TabViewId =
 
 interface TabViewSpec {
   id: TabViewId
-  render: (db: SmithersDB, height: number) => JSX.Element
+  render: (db: SmithersDB, height: number) => React.ReactElement
 }
 
 const TAB_VIEWS: Record<TabKey, TabViewSpec> = {

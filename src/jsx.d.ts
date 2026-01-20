@@ -270,7 +270,19 @@ interface SmithersIntrinsicElements {
         [key: string]: unknown
       }
 
+      'ci-failure-run': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
       'post-commit-hook': {
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
+      'post-commit-run': {
         children?: React.ReactNode
         key?: string | number
         [key: string]: unknown

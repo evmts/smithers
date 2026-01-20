@@ -164,8 +164,8 @@ export async function executeClaudeCLIOnce(
         const usage = usageTracker?.getUsage()
         const partialResult: Partial<AgentResult> = {
           output: stdout,
-          tokensUsed: usage?.tokensUsed,
-          turnsUsed: usage?.turnsUsed,
+          ...(usage?.tokensUsed && { tokensUsed: usage.tokensUsed }),
+          ...(usage?.turnsUsed !== undefined && { turnsUsed: usage.turnsUsed }),
           durationMs: elapsed,
         }
 
@@ -352,7 +352,7 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
     }
     if (activeSessionId) {
       retryOptions.resume = activeSessionId
-      retryOptions.continue = undefined
+      delete retryOptions.continue
     } else {
       retryOptions.continue = true
     }

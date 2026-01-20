@@ -735,22 +735,25 @@ describe('generateMCPServerConfig', () => {
   test('generates sqlite MCP server config', () => {
     const configs = [{ type: 'sqlite' as const, config: { path: '/test.db' } }]
     const result = generateMCPServerConfig(configs)
-    expect(result.mcpServers.sqlite).toBeDefined()
-    expect(result.mcpServers.sqlite.command).toBe('bunx')
-    expect(result.mcpServers.sqlite.args).toContain('@anthropic/mcp-server-sqlite')
-    expect(result.mcpServers.sqlite.args).toContain('/test.db')
+    const sqliteServer = result.mcpServers['sqlite-test-db']
+    expect(sqliteServer).toBeDefined()
+    expect(sqliteServer.command).toBe('bunx')
+    expect(sqliteServer.args).toContain('@anthropic/mcp-server-sqlite')
+    expect(sqliteServer.args).toContain('/test.db')
   })
 
   test('includes --read-only flag when readOnly is true', () => {
     const configs = [{ type: 'sqlite' as const, config: { path: '/test.db', readOnly: true } }]
     const result = generateMCPServerConfig(configs)
-    expect(result.mcpServers.sqlite.args).toContain('--read-only')
+    const sqliteServer = result.mcpServers['sqlite-test-db']
+    expect(sqliteServer.args).toContain('--read-only')
   })
 
   test('does not include --read-only flag when readOnly is false', () => {
     const configs = [{ type: 'sqlite' as const, config: { path: '/test.db', readOnly: false } }]
     const result = generateMCPServerConfig(configs)
-    expect(result.mcpServers.sqlite.args).not.toContain('--read-only')
+    const sqliteServer = result.mcpServers['sqlite-test-db']
+    expect(sqliteServer.args).not.toContain('--read-only')
   })
 })
 

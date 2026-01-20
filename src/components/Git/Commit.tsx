@@ -63,7 +63,7 @@ ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : 
 
   const result = await executeClaudeCLI({
     prompt,
-    cwd,
+    ...(cwd && { cwd }),
     outputFormat: 'text',
   })
 

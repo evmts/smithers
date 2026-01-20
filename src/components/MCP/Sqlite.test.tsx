@@ -606,10 +606,12 @@ describe('Sqlite e2e', () => {
     expect(configs[0].config.path).toBe(tempDbPath)
 
     const mcpConfig = generateMCPServerConfig(configs)
-    expect(mcpConfig.mcpServers.sqlite).toBeDefined()
-    expect(mcpConfig.mcpServers.sqlite.command).toBe('bunx')
-    expect(mcpConfig.mcpServers.sqlite.args).toContain('@anthropic/mcp-server-sqlite')
-    expect(mcpConfig.mcpServers.sqlite.args).toContain(tempDbPath)
+    const serverName = Object.keys(mcpConfig.mcpServers).find(k => k.startsWith('sqlite-'))!
+    const sqliteServer = mcpConfig.mcpServers[serverName]
+    expect(sqliteServer).toBeDefined()
+    expect(sqliteServer.command).toBe('bunx')
+    expect(sqliteServer.args).toContain('@anthropic/mcp-server-sqlite')
+    expect(sqliteServer.args).toContain(tempDbPath)
 
     root.dispose()
   })
@@ -633,8 +635,10 @@ describe('Sqlite e2e', () => {
 
     const { configs } = extractMCPConfigs(xml)
     const mcpConfig = generateMCPServerConfig(configs)
+    const serverName = Object.keys(mcpConfig.mcpServers).find(k => k.startsWith('sqlite-'))!
+    const sqliteServer = mcpConfig.mcpServers[serverName]
 
-    expect(mcpConfig.mcpServers.sqlite.args).not.toContain('--read-only')
+    expect(sqliteServer.args).not.toContain('--read-only')
 
     const db = new Database(tempDbPath)
     db.run('INSERT INTO users (name, email) VALUES (?, ?)', ['Charlie', 'charlie@example.com'])
@@ -652,8 +656,10 @@ describe('Sqlite e2e', () => {
 
     const { configs } = extractMCPConfigs(xml)
     const mcpConfig = generateMCPServerConfig(configs)
+    const serverName = Object.keys(mcpConfig.mcpServers).find(k => k.startsWith('sqlite-'))!
+    const sqliteServer = mcpConfig.mcpServers[serverName]
 
-    expect(mcpConfig.mcpServers.sqlite.args).toContain('--read-only')
+    expect(sqliteServer.args).toContain('--read-only')
     root.dispose()
   })
 
@@ -702,7 +708,9 @@ describe('Sqlite e2e', () => {
 
     expect(fs.existsSync(tempConfigPath)).toBe(true)
     const configContents = JSON.parse(fs.readFileSync(tempConfigPath, 'utf-8'))
-    expect(configContents.mcpServers.sqlite).toBeDefined()
+    const serverName = Object.keys(configContents.mcpServers).find((k: string) => k.startsWith('sqlite-'))
+    expect(serverName).toBeDefined()
+    expect(configContents.mcpServers[serverName!]).toBeDefined()
 
     root.dispose()
   })
