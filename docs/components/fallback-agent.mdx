@@ -23,10 +23,10 @@ Tries agent children in priority order, falling back to next on error or timeout
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `children` | `ReactNode` | — | Agent components in priority order |
+| `children` | `ReactNode` | - | Agent components in priority order |
 | `maxRetries` | `number` | `2` | Retries per agent before failover |
-| `onFallback` | `(from, to, error) => void` | — | Called when falling back |
-| `onAllFailed` | `(errors: Error[]) => void` | — | Called when all agents fail |
+| `onFallback` | `(from, to, error) => void` | - | Called when falling back |
+| `onAllFailed` | `(errors: Error[]) => void` | - | Called when all agents fail |
 | `retryStrategy` | `'exponential' \| 'linear' \| 'none'` | `'exponential'` | Retry delay strategy |
 | `retryDelayMs` | `number` | `1000` | Initial retry delay |
 

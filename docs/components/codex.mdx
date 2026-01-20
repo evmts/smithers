@@ -21,16 +21,16 @@ Wraps OpenAI Codex CLI for code-focused AI agent tasks. Alternative to Claude wi
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `children` | `ReactNode` | — | Prompt for the agent |
+| `children` | `ReactNode` | - | Prompt for the agent |
 | `model` | `'gpt-4' \| 'gpt-4-turbo' \| 'gpt-3.5-turbo'` | `'gpt-4-turbo'` | Model selection |
 | `temperature` | `number` | `1` | Randomness (0-2) |
-| `systemPrompt` | `string` | — | System-level instructions |
-| `cwd` | `string` | — | Working directory |
-| `env` | `Record<string, string>` | — | Environment variables |
+| `systemPrompt` | `string` | - | System-level instructions |
+| `cwd` | `string` | - | Working directory |
+| `env` | `Record<string, string>` | - | Environment variables |
 | `timeout` | `number` | `300000` | Timeout in ms |
-| `schema` | `ZodType` | — | Structured output schema |
-| `onFinished` | `(result: AgentResult) => void` | — | Success callback |
-| `onError` | `(error: Error) => void` | — | Error callback |
+| `schema` | `ZodType` | - | Structured output schema |
+| `onFinished` | `(result: AgentResult) => void` | - | Success callback |
+| `onError` | `(error: Error) => void` | - | Error callback |
 
 ## With Structured Output
 

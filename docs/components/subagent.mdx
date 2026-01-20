@@ -21,9 +21,9 @@ The `parallel` prop is metadata-only. For actual parallel execution, use `<Paral
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `name` | `string` | — | Name for debugging and logging |
+| `name` | `string` | - | Name for debugging and logging |
 | `parallel` | `boolean` | `false` | Metadata hint (does not enforce parallelism) |
-| `children` | `ReactNode` | — | Components to group |
+| `children` | `ReactNode` | - | Components to group |
 
 ## Named Groups
 
@@ -56,9 +56,9 @@ Use `<Parallel>` inside Subagent for actual parallel execution:
 
 ## Best Practices
 
-- **Use descriptive names** — `security-audit`, `api-integration`, not `step1`
-- **Use Parallel for independent tasks** — wrap truly independent work in `<Parallel>`
-- **Group related operations** — keep logically related Claude calls together
+- **Use descriptive names**: `security-audit`, `api-integration`, not `step1`
+- **Use Parallel for independent tasks**: wrap truly independent work in `<Parallel>`
+- **Group related operations**: keep logically related Claude calls together
 
 ## Related
 

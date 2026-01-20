@@ -47,7 +47,7 @@ You program the **plan**, not the agents.
 | `agent.do_step_2()` | `<Step name="code">` |
 | `if failed: retry()` | `<Claude>Fix it</Claude>` |
 
-The plan is declarative. Like Terraform, not AWS CDK. Plans evolve in an easy-to-understand declarative way over time—and if the plan breaks for any reason, your monitoring agent can edit the code and restart.
+The plan is declarative. Like Terraform, not AWS CDK. Plans evolve in an easy-to-understand declarative way over time, and if the plan breaks for any reason, your monitoring agent can edit the code and restart.
 
 Each iteration:
 1. Render JSX → execution plan
@@ -60,7 +60,7 @@ Each iteration:
 
 ## Why React?
 
-LLMs are trained on XML—the nested tagged structure matches how they think. LLMs are also great at writing React. Claude generates valid Smithers workflows naturally.
+LLMs are trained on XML. The nested tagged structure matches how they think. LLMs are also great at writing React. Claude generates valid Smithers workflows naturally.
 
 React has a rich ecosystem that works well with agents: Zustand, React Query, and reactive versions of most libraries plug directly into React's reactivity system. This lets you compose declarative plans from battle-tested primitives.
 
@@ -176,7 +176,7 @@ Or install the Claude Code plugin:
 
 ## Roadmap
 
-**North Star: SuperSmithers** — A meta-agent that watches your agents and rewrites their code to optimize. The architecture supports it. Not yet implemented.
+**North Star: SuperSmithers**: A meta-agent that watches your agents and rewrites their code to optimize. The architecture supports it. Not yet implemented.
 
 ---
 

@@ -21,17 +21,17 @@ Wraps Google Gemini API for AI agent capabilities with multi-modal input (text, 
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `children` | `ReactNode` | — | Prompt for the agent |
+| `children` | `ReactNode` | - | Prompt for the agent |
 | `model` | `'gemini-2.5-pro' \| 'gemini-2.5-flash' \| 'gemini-1.5-pro'` | `'gemini-2.5-pro'` | Model selection |
 | `temperature` | `number` | `1` | Randomness (0-2) |
-| `systemPrompt` | `string` | — | System-level instructions |
-| `cwd` | `string` | — | Working directory |
-| `env` | `Record<string, string>` | — | Environment variables |
+| `systemPrompt` | `string` | - | System-level instructions |
+| `cwd` | `string` | - | Working directory |
+| `env` | `Record<string, string>` | - | Environment variables |
 | `timeout` | `number` | `300000` | Timeout in ms |
-| `schema` | `ZodType` | — | Structured output schema |
-| `media` | `Array<{type: 'image' \| 'file', path: string}>` | — | Multi-modal inputs |
-| `onFinished` | `(result: AgentResult) => void` | — | Success callback |
-| `onError` | `(error: Error) => void` | — | Error callback |
+| `schema` | `ZodType` | - | Structured output schema |
+| `media` | `Array<{type: 'image' \| 'file', path: string}>` | - | Multi-modal inputs |
+| `onFinished` | `(result: AgentResult) => void` | - | Success callback |
+| `onError` | `(error: Error) => void` | - | Error callback |
 
 ## Multi-Modal Analysis
 
@@ -78,9 +78,9 @@ const analysisSchema = z.object({
 
 ## Why Gemini?
 
-- **2M token context** — analyze entire codebases
-- **Multi-modal** — native image/video/audio understanding
-- **Speed** — Gemini Flash competitive on speed, lower cost
+- **2M token context**: analyze entire codebases
+- **Multi-modal**: native image/video/audio understanding
+- **Speed**: Gemini Flash competitive on speed, lower cost
 
 ## Authentication
 

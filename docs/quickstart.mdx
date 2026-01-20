@@ -5,7 +5,7 @@ description: Install Smithers and run your first workflow in 2 minutes
 
 # Quick Start
 
-## Install
+## 📦 Install
 
 ```bash
 bun add smithers-orchestrator
@@ -13,7 +13,7 @@ bun add smithers-orchestrator
 
 Requires [Bun](https://bun.sh/) 1.0+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic's CLI for agentic coding).
 
-## Initialize
+## ⚙️ Initialize
 
 ```bash
 bun smithers init
@@ -23,7 +23,7 @@ This creates the `.smithers/` directory with the database schema.
 
 ---
 
-## Hello World
+## 👋 Hello World
 
 Create `hello.tsx`:
 
@@ -83,7 +83,7 @@ jsx = "react"
 
 ---
 
-## Multi-Phase Workflow
+## 🔄 Multi-Phase Workflow
 
 Create `workflow.tsx`:
 
@@ -153,29 +153,29 @@ try {
 
 ## What Each Part Does
 
-**`createSmithersDB`** — Creates SQLite database for state persistence.
+**`createSmithersDB`**: Creates SQLite database for state persistence.
 
-**`db.execution.start`** — Starts a new execution. Returns an ID.
+**`db.execution.start`**: Starts a new execution. Returns an ID.
 
-**`db.execution.findIncomplete`** — Finds crashed executions to resume.
+**`db.execution.findIncomplete`**: Finds crashed executions to resume.
 
-**`SmithersProvider`** — Root component. Runs the reactive render loop.
+**`SmithersProvider`**: Root component. Runs the reactive render loop.
 
-**`Phase`** — Sequential stages. Only the active phase executes.
+**`Phase`**: Sequential stages. Only the active phase executes.
 
-**`Step`** — Sequential tasks within a phase.
+**`Step`**: Sequential tasks within a phase.
 
-**`Claude`** — Executes Claude with tool access. Children are the prompt.
+**`Claude`**: Executes Claude with tool access. Children are the prompt.
 
-**`createSmithersRoot`** — Creates the React reconciler.
+**`createSmithersRoot`**: Creates the React reconciler.
 
-**`root.mount`** — Renders and executes the workflow.
+**`root.mount`**: Renders and executes the workflow.
 
-**`db.close`** — Flushes writes. Always call this.
+**`db.close`**: Flushes writes. Always call this.
 
 ---
 
-## Inspect State
+## 🔍 Inspect State
 
 ```bash
 smithers db executions              # List runs
@@ -198,7 +198,7 @@ smithers db stats                   # Statistics
 
 ---
 
-## Next Steps
+## 🚀 Next Steps
 
 <CardGroup cols={2}>
   <Card title="Add to Harness" icon="plug" href="/harness-integration">

@@ -88,12 +88,12 @@ interface CommandResult {
 
 ## Shell vs Direct Execution
 
-**String form** — shell execution with pipes/redirects:
+**String form**: shell execution with pipes/redirects:
 ```tsx
 <Command cmd="bun run typecheck && bun run lint" />
 ```
 
-**Array form** — direct execution, safer for dynamic input:
+**Array form**: direct execution, safer for dynamic input:
 ```tsx
 <Command cmd={["git", "commit", "-m", message]} />
 ```

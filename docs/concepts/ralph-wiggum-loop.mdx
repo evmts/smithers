@@ -7,11 +7,11 @@ description: How the plan evolves over time
 
 [Ralph](https://ghuntley.com/ralph/) is the autonomous agent loop pattern. Each iteration:
 
-1. Render React → execution plan
-2. Execute runnable agents
-3. Agent output updates state
-4. State change triggers re-render
-5. Loop until done
+1. 🎨 Render React → execution plan
+2. ▶️ Execute runnable agents
+3. 📝 Agent output updates state
+4. 🔄 State change triggers re-render
+5. ✅ Loop until done
 
 ```
 Iteration 1: <Phase name="research">...</Phase>
@@ -42,15 +42,15 @@ Smithers uses a reactive render loop powered by React state:
 └─────────────────────────────────────────────────────────┘
 ```
 
-1. **Render**: Your React components render using React's state management
-2. **Execute**: `<Claude>` nodes execute via the Claude CLI
-3. **Update**: `onFinished` callbacks update React state
-4. **Re-render**: State changes trigger reactive updates
-5. **Loop**: Process repeats until no pending agents remain
+1. 🎨 **Render**: Your React components render using React's state management
+2. ▶️ **Execute**: `<Claude>` nodes execute via the Claude CLI
+3. 📝 **Update**: `onFinished` callbacks update React state
+4. 🔄 **Re-render**: State changes trigger reactive updates
+5. ✅ **Loop**: Process repeats until no pending agents remain
 
 ## Why Smithers for Ralphing
 
-You're not programming what agents *do*. You're programming the *plan*—and how it evolves.
+You're not programming what agents *do*. You're programming the *plan*, and how it evolves.
 
 | Other Frameworks | Smithers |
 |------------------|----------|
@@ -130,7 +130,7 @@ Ralph also stops implicitly when nothing renders for an iteration. If no compone
 
 **What this means:**
 - The 500ms is a *detection timeout*, not an execution limit
-- Your agents can run for hours—this only applies to detecting when there's nothing left to do
+- Your agents can run for hours; this only applies to detecting when there's nothing left to do
 - If any component calls `db.tasks.start()`, the loop waits for that task to complete
 
 Using the `stopped` prop is more explicit and recommended.
@@ -159,7 +159,7 @@ db.tasks.complete(taskId);  // Loop can now advance
 
 ## useQueryValue: Reactive SQLite State
 
-`useQueryValue` makes SQLite state reactive—when the database changes, your component re-renders:
+`useQueryValue` makes SQLite state reactive: when the database changes, your component re-renders:
 
 ```tsx
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
