@@ -8,6 +8,17 @@ interface InitOptions {
   skipInstall?: boolean
 }
 
+const BUNFIG_TEMPLATE = `# Bun configuration for Smithers orchestrations
+# https://bun.sh/docs/runtime/bunfig
+
+# JSX configuration - required for running .tsx files directly
+jsx = "react-jsx"
+jsxImportSource = "react"
+
+[install]
+auto = "fallback"
+`
+
 type PackageManager = 'bun' | 'pnpm' | 'yarn' | 'npm'
 
 interface PackageManagerConfig {
@@ -79,6 +90,13 @@ export async function init(options: InitOptions = {}) {
   fs.writeFileSync(mainFile, templateContent)
   fs.chmodSync(mainFile, '755')
 
+  // Create bunfig.toml if it doesn't exist (required for JSX runtime)
+  const bunfigPath = path.join(targetDir, 'bunfig.toml')
+  if (!fs.existsSync(bunfigPath)) {
+    fs.writeFileSync(bunfigPath, BUNFIG_TEMPLATE)
+    console.log('📝 Created bunfig.toml with JSX configuration')
+  }
+
   // Detect package manager and install smithers-orchestrator as dev dependency
   const packageJsonPath = path.join(targetDir, 'package.json')
   const pm = detectPackageManager(targetDir)
@@ -105,6 +123,7 @@ export async function init(options: InitOptions = {}) {
   console.log('✅ Smithers orchestration initialized!')
   console.log('')
   console.log('Created:')
+  console.log(`   ${bunfigPath}         ← JSX configuration (if new)`)
   console.log(`   ${smithersDir}/`)
   console.log(`   ├── main.tsx       ← Your orchestration program`)
   console.log(`   └── logs/          ← Monitor output logs`)
