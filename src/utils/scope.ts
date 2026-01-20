@@ -3,11 +3,13 @@ export function encodeScopeSegment(segment: string): string {
 }
 
 export function makeScopeId(parentScopeId: string, type: string, id: string, suffix?: string): string {
-  const segments = [parentScopeId, type, id]
-  if (suffix !== undefined && suffix !== '') {
-    segments.push(suffix)
-  }
-  return segments.map(encodeScopeSegment).join('.')
+  const child = [type, id]
+  if (suffix) child.push(suffix)
+
+  const encodedChild = child.map(encodeScopeSegment)
+
+  if (!parentScopeId) return encodedChild.join('.')
+  return [parentScopeId, ...encodedChild].join('.')
 }
 
 export function makeStateKey(scopeId: string, domain: string, localId?: string, suffix?: string): string {

@@ -69,18 +69,22 @@ describe('makeScopeId', () => {
     expect(makeScopeId('root', 'task', 't1', undefined)).toBe('root.task.t1')
   })
 
-  test('encodes special characters in segments', () => {
-    expect(makeScopeId('a b', 'c/d', 'e=f')).toBe('a%20b.c%2Fd.e%3Df')
+  test('encodes special characters in child segments only', () => {
+    // Parent is assumed to be already encoded (from previous makeScopeId call)
+    // Only type, id, and suffix are encoded
+    expect(makeScopeId('a%20b', 'c/d', 'e=f')).toBe('a%20b.c%2Fd.e%3Df')
   })
 
-  test('encodes all segments', () => {
-    const result = makeScopeId('parent scope', 'my/type', 'id:1', 'suffix&2')
+  test('encodes type, id, and suffix but not parent', () => {
+    // Parent should already be encoded - we don't re-encode it
+    const result = makeScopeId('parent%20scope', 'my/type', 'id:1', 'suffix&2')
     expect(result).toBe('parent%20scope.my%2Ftype.id%3A1.suffix%262')
   })
 
   test('handles empty parent', () => {
+    // Empty parent means no prefix - just the child segments
     const result = makeScopeId('', 'agent', '123')
-    expect(result).toBe('.agent.123')
+    expect(result).toBe('agent.123')
   })
 
   test('handles numeric-like strings', () => {
@@ -89,8 +93,9 @@ describe('makeScopeId', () => {
   })
 
   test('handles complex nested scope paths', () => {
+    // Parent is already a scope ID (with dots) - we don't re-encode it
     const result = makeScopeId('root.child.grandchild', 'component', 'button')
-    expect(result).toBe('root%2Echild%2Egrandchild.component.button')
+    expect(result).toBe('root.child.grandchild.component.button')
   })
 })
 
@@ -168,10 +173,13 @@ describe('integration: scope key generation', () => {
 
   test('handles deeply nested scopes with state keys', () => {
     const level1 = makeScopeId('app', 'orchestrator', 'main')
+    // level1 = 'app.orchestrator.main'
     const level2 = makeScopeId(level1, 'phase', 'review')
+    // level2 = 'app.orchestrator.main.phase.review'
     const level3 = makeScopeId(level2, 'agent', 'smithers')
+    // level3 = 'app.orchestrator.main.phase.review.agent.smithers'
     const key = makeStateKey(level3, 'result')
-    expect(key).toBe('result_app%252Eorchestrator%252Emain%2Ephase%2Ereview.agent.smithers')
+    expect(key).toBe('result_app.orchestrator.main.phase.review.agent.smithers')
   })
 
   test('special characters remain encoded through the chain', () => {

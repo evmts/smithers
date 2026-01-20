@@ -8,7 +8,7 @@ export class LogWriter {
   private counter: number = 0
   private sessionId: string
   private streams: Map<string, fs.WriteStream> = new Map()
-  private backpressure: Set<string> = new Set()
+  private pending: Map<string, string[]> = new Map()
 
   constructor(logDir: string = '.smithers/logs', executionId?: string, executionBaseDir?: string) {
     if (executionId) {
@@ -155,7 +155,7 @@ export class LogWriter {
         })
       )
       this.streams.delete(filename)
-      this.backpressure.delete(filename)
+      this.pending.delete(filename)
     }
     return Promise.all(promises).then(() => {})
   }
@@ -170,7 +170,7 @@ export class LogWriter {
       return Promise.resolve()
     }
     this.streams.delete(safeFilename)
-    this.backpressure.delete(safeFilename)
+    this.pending.delete(safeFilename)
     return new Promise<void>((resolve, reject) => {
       stream.once('finish', resolve)
       stream.once('error', reject)
@@ -239,7 +239,7 @@ export class LogWriter {
       if (this.streams.get(filename) === stream) {
         this.streams.delete(filename)
       }
-      this.backpressure.delete(filename)
+      this.pending.delete(filename)
       console.warn(
         `[log-writer] Stream error for ${filename}: ${err instanceof Error ? err.message : String(err)}`
       )
@@ -248,27 +248,49 @@ export class LogWriter {
       if (this.streams.get(filename) === stream) {
         this.streams.delete(filename)
       }
-      this.backpressure.delete(filename)
+      this.pending.delete(filename)
     })
   }
 
-  private writeToStream(
-    filename: string,
-    filepath: string,
-    stream: fs.WriteStream,
-    content: string
-  ): void {
-    if (!stream.writable || stream.writableEnded || stream.destroyed || this.backpressure.has(filename)) {
+  private enqueue(filename: string, content: string) {
+    const q = this.pending.get(filename) ?? []
+    q.push(content)
+    this.pending.set(filename, q)
+  }
+
+  private flushQueue(filename: string, stream: fs.WriteStream) {
+    const q = this.pending.get(filename)
+    if (!q || q.length === 0) {
+      this.pending.delete(filename)
+      return
+    }
+
+    while (q.length > 0) {
+      const next = q.shift()!
+      const ok = stream.write(next)
+      if (!ok) {
+        stream.once('drain', () => this.flushQueue(filename, stream))
+        return
+      }
+    }
+    this.pending.delete(filename)
+  }
+
+  private writeToStream(filename: string, filepath: string, stream: fs.WriteStream, content: string): void {
+    if (!stream.writable || stream.writableEnded || stream.destroyed) {
       fs.appendFileSync(filepath, content, 'utf-8')
+      return
+    }
+
+    if (this.pending.has(filename)) {
+      this.enqueue(filename, content)
       return
     }
 
     const ok = stream.write(content)
     if (!ok) {
-      this.backpressure.add(filename)
-      stream.once('drain', () => {
-        this.backpressure.delete(filename)
-      })
+      this.pending.set(filename, [])
+      stream.once('drain', () => this.flushQueue(filename, stream))
     }
   }
 

@@ -108,64 +108,72 @@ export interface JJStateSnapshot {
 
 let cachedSnapshot: JJStateSnapshot | null = null
 let lastFetchTime = 0
+let inFlight: Promise<JJStateSnapshot> | null = null
 const CACHE_TTL_MS = 100
 
 /**
  * Get a point-in-time snapshot of JJ state synchronously.
  * Can be called outside of React component render cycles.
  * 
- * Uses a short-lived cache (100ms) to avoid repeated jj calls
- * within the same synchronous execution context.
- * 
  * @returns Cached JJStateSnapshot or null if no snapshot available yet
  */
-export function useSnapshot(): JJStateSnapshot | null {
-  const now = Date.now()
-  if (cachedSnapshot && (now - lastFetchTime) < CACHE_TTL_MS) {
-    return cachedSnapshot
-  }
+export function getSnapshot(): JJStateSnapshot | null {
   return cachedSnapshot
 }
 
 /**
  * Refresh the JJ state snapshot asynchronously.
- * Call this to update the snapshot that useSnapshot() returns.
+ * Call this to update the snapshot that getSnapshot() returns.
  * 
  * @returns Promise resolving to fresh JJStateSnapshot
  */
 export async function refreshSnapshot(): Promise<JJStateSnapshot> {
-  const isRepo = await isJJRepo()
-  
-  if (!isRepo) {
+  const now = Date.now()
+
+  if (cachedSnapshot && (now - lastFetchTime) < CACHE_TTL_MS) {
+    return cachedSnapshot
+  }
+
+  if (inFlight) return inFlight
+
+  inFlight = (async () => {
+    const isRepo = await isJJRepo()
+    
+    if (!isRepo) {
+      const snapshot: JJStateSnapshot = {
+        changeId: '',
+        description: '',
+        status: { modified: [], added: [], deleted: [] },
+        isJJRepo: false,
+        timestamp: Date.now(),
+      }
+      cachedSnapshot = snapshot
+      lastFetchTime = Date.now()
+      return snapshot
+    }
+
+    const [changeId, description, status] = await Promise.all([
+      getJJChangeId('@'),
+      Bun.$`jj log -r @ --no-graph -T description`.text().then(s => s.trim()),
+      getJJStatus(),
+    ])
+
     const snapshot: JJStateSnapshot = {
-      changeId: '',
-      description: '',
-      status: { modified: [], added: [], deleted: [] },
-      isJJRepo: false,
+      changeId,
+      description,
+      status,
+      isJJRepo: true,
       timestamp: Date.now(),
     }
+    
     cachedSnapshot = snapshot
     lastFetchTime = Date.now()
     return snapshot
-  }
+  })().finally(() => {
+    inFlight = null
+  })
 
-  const [changeId, description, status] = await Promise.all([
-    getJJChangeId('@'),
-    Bun.$`jj log -r @ --no-graph -T description`.text().then(s => s.trim()),
-    getJJStatus(),
-  ])
-
-  const snapshot: JJStateSnapshot = {
-    changeId,
-    description,
-    status,
-    isJJRepo: true,
-    timestamp: Date.now(),
-  }
-  
-  cachedSnapshot = snapshot
-  lastFetchTime = Date.now()
-  return snapshot
+  return inFlight
 }
 
 /**

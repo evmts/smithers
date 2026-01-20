@@ -103,6 +103,7 @@ export class ProgressLogger {
     this.stats.phasesCompleted++
     this.log(`✅ Phase complete: ${name}`)
     this.currentPhase = null
+    this.currentStep = null
   }
 
   /** Log phase skipped */
