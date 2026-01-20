@@ -37,6 +37,28 @@ bun demo.tsx
 
 Smithers is a JSX framework for coding agents. Write the plan in any coding harness, then monitor your agents as they execute it. The plan evolves reactively based on agent output.
 
+<Tip>
+**React Hook Compatibility**: All [TanStack AI](https://tanstack.com/ai/latest/docs) and [Vercel AI SDK](https://ai-sdk.dev/docs) React hooks work in Smithers components. Use `useChat` for streaming chat, `useCompletion` for text completion, and `useObject` for structured generation.
+
+```tsx
+import { useChat } from "@tanstack/ai-react";
+// or
+import { useChat, useCompletion, useObject } from "ai/react";
+
+function MyAgent() {
+  const { messages, sendMessage, isLoading } = useChat({
+    connection: fetchServerSentEvents("/api/chat"),
+  });
+  
+  return (
+    <Claude>
+      {messages.map(m => m.parts.map(p => p.type === 'text' && p.content))}
+    </Claude>
+  );
+}
+```
+</Tip>
+
 ---
 
 ## Core Idea
