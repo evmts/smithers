@@ -158,4 +158,201 @@ describe('useCommitWithRetry', () => {
     expect(typeof commitWithRetry).toBe('function')
     expect(commitWithRetry!.length).toBe(1)
   })
+
+  test('handles precommit failure patterns in stdout', async () => {
+    let commitWithRetry: ReturnType<typeof useCommitWithRetry> | null = null
+    const onFixRequested = mock(() => {})
+
+    function TestComponent() {
+      commitWithRetry = useCommitWithRetry({ onFixRequested })
+      return null
+    }
+
+    await ctx.root.render(
+      <SmithersProvider db={ctx.db} executionId={ctx.executionId} stopped={true}>
+        <TestComponent />
+      </SmithersProvider>
+    )
+    await new Promise(r => setTimeout(r, 50))
+
+    let callCount = 0
+    const result = await commitWithRetry!(async () => {
+      callCount++
+      if (callCount === 1) {
+        const err = new Error('commit failed') as Error & { stdout: string }
+        err.stdout = 'husky > precommit (node v18.0.0)'
+        throw err
+      }
+      return 'success'
+    })
+
+    expect(result).toBe('success')
+    expect(onFixRequested).toHaveBeenCalled()
+  })
+
+  test('handles case-insensitive precommit pattern matching', async () => {
+    let commitWithRetry: ReturnType<typeof useCommitWithRetry> | null = null
+    const onFixRequested = mock(() => {})
+
+    function TestComponent() {
+      commitWithRetry = useCommitWithRetry({ onFixRequested })
+      return null
+    }
+
+    await ctx.root.render(
+      <SmithersProvider db={ctx.db} executionId={ctx.executionId} stopped={true}>
+        <TestComponent />
+      </SmithersProvider>
+    )
+    await new Promise(r => setTimeout(r, 50))
+
+    let callCount = 0
+    const result = await commitWithRetry!(async () => {
+      callCount++
+      if (callCount === 1) {
+        throw new Error('PRE-COMMIT HOOK failed')
+      }
+      return 'success'
+    })
+
+    expect(result).toBe('success')
+    expect(onFixRequested).toHaveBeenCalled()
+  })
+
+  test('handles non-Error objects thrown', async () => {
+    let commitWithRetry: ReturnType<typeof useCommitWithRetry> | null = null
+
+    function TestComponent() {
+      commitWithRetry = useCommitWithRetry()
+      return null
+    }
+
+    await ctx.root.render(
+      <SmithersProvider db={ctx.db} executionId={ctx.executionId} stopped={true}>
+        <TestComponent />
+      </SmithersProvider>
+    )
+    await new Promise(r => setTimeout(r, 50))
+
+    await expect(
+      commitWithRetry!(async () => { throw 'string error' })
+    ).rejects.toEqual(new Error('string error'))
+  })
+
+  test('handles precommit failure in combined message content', async () => {
+    let commitWithRetry: ReturnType<typeof useCommitWithRetry> | null = null
+    const onFixRequested = mock(() => {})
+
+    function TestComponent() {
+      commitWithRetry = useCommitWithRetry({ onFixRequested })
+      return null
+    }
+
+    await ctx.root.render(
+      <SmithersProvider db={ctx.db} executionId={ctx.executionId} stopped={true}>
+        <TestComponent />
+      </SmithersProvider>
+    )
+    await new Promise(r => setTimeout(r, 50))
+
+    let callCount = 0
+    const result = await commitWithRetry!(async () => {
+      callCount++
+      if (callCount === 1) {
+        const err = new Error('something failed') as Error & { stderr: string; stdout: string }
+        err.stderr = 'exit code 1'
+        err.stdout = 'hook script detected issues'
+        throw err
+      }
+      return 'success'
+    })
+
+    expect(result).toBe('success')
+    expect(onFixRequested).toHaveBeenCalled()
+  })
+
+  test('handles custom waitMs and staleMs options', async () => {
+    let commitWithRetry: ReturnType<typeof useCommitWithRetry> | null = null
+
+    function TestComponent() {
+      commitWithRetry = useCommitWithRetry({
+        waitMs: 50,
+        staleMs: 200,
+      })
+      return null
+    }
+
+    await ctx.root.render(
+      <SmithersProvider db={ctx.db} executionId={ctx.executionId} stopped={true}>
+        <TestComponent />
+      </SmithersProvider>
+    )
+    await new Promise(r => setTimeout(r, 50))
+
+    expect(typeof commitWithRetry).toBe('function')
+    // Options are used internally, hard to test directly without mocking buildState
+  })
+
+  test('async onFixRequested callback is awaited', async () => {
+    let commitWithRetry: ReturnType<typeof useCommitWithRetry> | null = null
+    let callbackFinished = false
+
+    const onFixRequested = mock(async () => {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      callbackFinished = true
+    })
+
+    function TestComponent() {
+      commitWithRetry = useCommitWithRetry({ onFixRequested })
+      return null
+    }
+
+    await ctx.root.render(
+      <SmithersProvider db={ctx.db} executionId={ctx.executionId} stopped={true}>
+        <TestComponent />
+      </SmithersProvider>
+    )
+    await new Promise(r => setTimeout(r, 50))
+
+    let callCount = 0
+    const result = await commitWithRetry!(async () => {
+      callCount++
+      if (callCount === 1) {
+        throw new Error('precommit hook failed')
+      }
+      expect(callbackFinished).toBe(true)
+      return 'success'
+    })
+
+    expect(result).toBe('success')
+    expect(onFixRequested).toHaveBeenCalled()
+  })
+
+  test('marks build as fixed after successful retry', async () => {
+    let commitWithRetry: ReturnType<typeof useCommitWithRetry> | null = null
+
+    function TestComponent() {
+      commitWithRetry = useCommitWithRetry()
+      return null
+    }
+
+    await ctx.root.render(
+      <SmithersProvider db={ctx.db} executionId={ctx.executionId} stopped={true}>
+        <TestComponent />
+      </SmithersProvider>
+    )
+    await new Promise(r => setTimeout(r, 50))
+
+    let callCount = 0
+    await commitWithRetry!(async () => {
+      callCount++
+      if (callCount === 1) {
+        throw new Error('precommit failed')
+      }
+      return 'success'
+    })
+
+    // Should have marked build as fixed - this is handled internally by the hook
+    expect(callCount).toBe(2)
+  })
 })

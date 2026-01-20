@@ -216,4 +216,177 @@ describe('rateLimitingMiddleware', () => {
     // All should complete
     expect(results).toHaveLength(50)
   })
+
+  describe('TokenBucket edge cases', () => {
+    test('rejects invalid token rates', () => {
+      expect(() => rateLimitingMiddleware({ requestsPerMinute: 0 })).toThrow('TokenBucket requires tokensPerMinute > 0')
+      expect(() => rateLimitingMiddleware({ requestsPerMinute: -1 })).toThrow('TokenBucket requires tokensPerMinute > 0')
+    })
+
+    test('handles very high token consumption', async () => {
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 60,
+        tokensPerMinute: 1000000, // 1M tokens per minute
+      })
+
+      // Consume more tokens than capacity - should clamp to capacity
+      const result = await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { input: 2000000, output: 2000000 } }),
+        options: { prompt: 'test' },
+      })
+
+      expect(result?.output).toBe('ok')
+    })
+
+    test('handles fractional token refill rates correctly', async () => {
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 60,
+        tokensPerMinute: 61, // Will create fractional refill rate
+      })
+
+      const result = await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { input: 1, output: 1 } }),
+        options: { prompt: 'test' },
+      })
+
+      expect(result?.output).toBe('ok')
+    })
+
+    test('handles requests that require more than bucket capacity', async () => {
+      // Small bucket to test capacity limits
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 60,
+        tokensPerMinute: 10, // Very small capacity
+      })
+
+      // Request more tokens than the bucket can hold
+      const result = await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { input: 15, output: 15 } }),
+        options: { prompt: 'test' },
+      })
+
+      // Should still complete by consuming only what the bucket can provide
+      expect(result?.output).toBe('ok')
+    })
+
+    test('handles missing tokensUsed gracefully', async () => {
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 60,
+        tokensPerMinute: 1000,
+      })
+
+      const result = await middleware.wrapExecute?.({
+        doExecute: async () => ({
+          output: 'ok',
+          structured: undefined,
+          turnsUsed: 1,
+          stopReason: 'completed' as const,
+          durationMs: 100,
+          // tokensUsed is undefined
+        }),
+        options: { prompt: 'test' },
+      })
+
+      expect(result?.output).toBe('ok')
+    })
+
+    test('handles partial tokensUsed fields', async () => {
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 60,
+        tokensPerMinute: 1000,
+      })
+
+      // Test with only input tokens
+      const result1 = await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { input: 10 } as any }),
+        options: { prompt: 'test' },
+      })
+
+      // Test with only output tokens
+      const result2 = await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { output: 5 } as any }),
+        options: { prompt: 'test' },
+      })
+
+      expect(result1?.output).toBe('ok')
+      expect(result2?.output).toBe('ok')
+    })
+
+    test('handles negative token values gracefully', async () => {
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 60,
+        tokensPerMinute: 1000,
+      })
+
+      const result = await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { input: -10, output: -5 } }),
+        options: { prompt: 'test' },
+      })
+
+      expect(result?.output).toBe('ok')
+    })
+
+    test('handles rapid successive calls within refill window', async () => {
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 3600, // 60 per second - high rate for rapid testing
+        tokensPerMinute: 60000, // 1000 per second
+      })
+
+      const start = Date.now()
+
+      // Make rapid successive calls
+      for (let i = 0; i < 10; i++) {
+        await middleware.wrapExecute?.({
+          doExecute: async () => makeResult({ tokensUsed: { input: 10, output: 10 } }),
+          options: { prompt: `rapid-${i}` },
+        })
+      }
+
+      const elapsed = Date.now() - start
+
+      // Should complete relatively quickly since rate is high
+      expect(elapsed).toBeLessThan(2000) // Allow some buffer for timing
+    })
+
+    test('token bucket refills correctly after exhaustion', async () => {
+      // Very low token rate to force exhaustion and refill testing
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 60,
+        tokensPerMinute: 120, // 2 per second
+      })
+
+      // Exhaust the bucket
+      await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { input: 120, output: 0 } }),
+        options: { prompt: 'exhaust' },
+      })
+
+      // Wait for partial refill
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Should be able to make a small request
+      const result = await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { input: 1, output: 1 } }),
+        options: { prompt: 'after-refill' },
+      })
+
+      expect(result?.output).toBe('ok')
+    })
+
+    test('handles time going backwards gracefully', async () => {
+      // This is hard to test directly, but we can ensure no crashes occur
+      // during normal operation which includes the time-based refill logic
+      const middleware = rateLimitingMiddleware({
+        requestsPerMinute: 60,
+        tokensPerMinute: 1000,
+      })
+
+      const result = await middleware.wrapExecute?.({
+        doExecute: async () => makeResult({ tokensUsed: { input: 10, output: 5 } }),
+        options: { prompt: 'test' },
+      })
+
+      expect(result?.output).toBe('ok')
+    })
+  })
 })

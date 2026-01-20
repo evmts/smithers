@@ -140,6 +140,137 @@ End.`
 
       expect(result).toBe('{"codeblock": true}')
     })
+
+    test('handles mismatched brackets in JSON', () => {
+      const text = 'Invalid: {"unclosed": [1, 2, 3} Normal text'
+      const result = extractJson(text)
+
+      expect(result).toBeNull()
+    })
+
+    test('handles unmatched closing brackets', () => {
+      const text = 'Text with extra } bracket'
+      const result = extractJson(text)
+
+      expect(result).toBeNull()
+    })
+
+    test('extracts nested objects with complex escaping', () => {
+      const text = `Complex: {"data": {"path": "C:\\\\Users\\\\test", "message": "Line 1\\nLine 2\\t\\\"Quoted\\\""}}`
+      const result = extractJson(text)
+
+      expect(result).toBe('{"data": {"path": "C:\\\\Users\\\\test", "message": "Line 1\\nLine 2\\t\\\"Quoted\\\""}}')
+    })
+
+    test('handles JSON with escaped quotes in strings', () => {
+      const text = 'Quote test: {"name": "She said \\"Hello\\" to me", "value": 42}'
+      const result = extractJson(text)
+
+      expect(result).toBe('{"name": "She said \\"Hello\\" to me", "value": 42}')
+    })
+
+    test('handles deeply nested arrays and objects', () => {
+      const text = 'Deep: {"a": [{"b": [{"c": "value"}]}, {"d": {"e": {"f": [1, 2, 3]}}}]}'
+      const result = extractJson(text)
+
+      expect(result).toBe('{"a": [{"b": [{"c": "value"}]}, {"d": {"e": {"f": [1, 2, 3]}}}]}')
+    })
+
+    test('handles JSON array at start of text', () => {
+      const text = '[{"item": 1}, {"item": 2}] followed by text'
+      const result = extractJson(text)
+
+      expect(result).toBe('[{"item": 1}, {"item": 2}]')
+    })
+
+    test('handles empty objects and arrays', () => {
+      const text = 'Empty structures: {"empty_obj": {}, "empty_arr": [], "mixed": [{}]}'
+      const result = extractJson(text)
+
+      expect(result).toBe('{"empty_obj": {}, "empty_arr": [], "mixed": [{}]}')
+    })
+
+    test('handles JSON with string containing braces', () => {
+      const text = 'Tricky: {"template": "Hello {name}, welcome to {place}!", "count": 5}'
+      const result = extractJson(text)
+
+      expect(result).toBe('{"template": "Hello {name}, welcome to {place}!", "count": 5}')
+    })
+
+    test('handles unclosed string in JSON', () => {
+      const text = 'Broken: {"message": "unclosed string, "value": 42}'
+      const result = extractJson(text)
+
+      // Should fail to extract due to unbalanced quotes
+      expect(result).toBeNull()
+    })
+
+    test('handles trailing comma in JSON gracefully', () => {
+      const text = 'Comma: {"valid": true,}'
+      const result = extractJson(text)
+
+      // Should extract the malformed JSON - validation will catch it later
+      expect(result).toBe('{"valid": true,}')
+    })
+
+    test('handles JSON with backslash at end of string', () => {
+      const text = 'Backslash: {"path": "C:\\\\temp\\\\"}'
+      const result = extractJson(text)
+
+      expect(result).toBe('{"path": "C:\\\\temp\\\\"}')
+    })
+
+    test('handles multiple consecutive escapes', () => {
+      const text = 'Escapes: {"text": "Multiple\\\\\\\\backslashes\\\\and\\\\\\\"quotes\\\\\\\"here"}'
+      const result = extractJson(text)
+
+      expect(result).toBe('{"text": "Multiple\\\\\\\\backslashes\\\\and\\\\\\\"quotes\\\\\\\"here"}')
+    })
+
+    test('handles array with mixed types', () => {
+      const text = 'Mixed: [true, false, null, "string", 123, {"nested": "object"}, [1, 2, 3]]'
+      const result = extractJson(text)
+
+      expect(result).toBe('[true, false, null, "string", 123, {"nested": "object"}, [1, 2, 3]]')
+    })
+
+    test('extracts JSON when embedded in markdown-like text', () => {
+      const text = `# Header
+Some text here...
+
+**Important data:**
+{"status": "success", "data": {"count": 42}}
+
+More text continues...`
+      const result = extractJson(text)
+
+      expect(result).toBe('{"status": "success", "data": {"count": 42}}')
+    })
+
+    test('handles JSON with unicode characters', () => {
+      const text = 'Unicode: {"message": "Hello 世界! 🌍", "emoji": "😀", "chinese": "你好"}'
+      const result = extractJson(text)
+
+      expect(result).toBe('{"message": "Hello 世界! 🌍", "emoji": "😀", "chinese": "你好"}')
+    })
+
+    test('handles very large JSON object', () => {
+      const items = Array.from({ length: 100 }, (_, i) => `"item${i}": ${i}`)
+      const largeJson = `{"data": {${items.join(', ')}}}`
+      const text = `Large object: ${largeJson}`
+      const result = extractJson(text)
+
+      expect(result).toBe(largeJson)
+      expect(result).toContain('"item0": 0')
+      expect(result).toContain('"item99": 99')
+    })
+
+    test('handles empty nested structures', () => {
+      const text = 'Nested empty: {"outer": {"inner": {"empty": {}}}}'
+      const result = extractJson(text)
+
+      expect(result).toBe('{"outer": {"inner": {"empty": {}}}}')
+    })
   })
 })
 
