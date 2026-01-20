@@ -120,7 +120,7 @@ bun add -g smithers-orchestrator && smithers
 
 6. **Multi-Agent Architecture**: Specialized agents for different tasks
    - **Rationale**: Following oh-my-opencode patterns, different tasks need different models/prompts
-   - **Agents**: Orchestrator (primary), Planner, Explorer, Librarian, Oracle, Monitor
+   - **Agents**: Smithers (primary), Planner, Explorer, Librarian, Oracle, Monitor
    - **Key Principle**: All plans are written via Smithers—no ad-hoc coding
 
 ### Agent Architecture
@@ -133,7 +133,7 @@ Smithers provides 6 specialized agents, each with distinct roles and tool permis
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                      │
-│  │  Planner    │───▶│ Orchestrator│───▶│   Monitor   │                      │
+│  │  Planner    │───▶│  Smithers   │───▶│   Monitor   │                      │
 │  │ (human plan)│    │(writes .tsx)│    │(watches run)│                      │
 │  └─────────────┘    └──────┬──────┘    └─────────────┘                      │
 │                            │                                                 │
@@ -151,7 +151,7 @@ Smithers provides 6 specialized agents, each with distinct roles and tool permis
 
 | Agent | Model | Role | Tool Access |
 |-------|-------|------|-------------|
-| **Orchestrator** | `claude-sonnet-4` | Primary agent. Takes plans and writes `.tsx` Smithers scripts. Delegates to specialists. | Full smithers_* tools |
+| **Smithers** | `claude-sonnet-4` | Primary agent. Takes plans and writes `.tsx` Smithers scripts. Delegates to specialists. | Full smithers_* tools |
 | **Planner** | `claude-sonnet-4` | Creates human-readable plans from user requests. Interviews user, outputs structured plan. | Read-only. Cannot write code. |
 | **Explorer** | `gemini-3-flash` | Fast codebase exploration. Knows Smithers SQLite schema. Contextual grep for internal code. | Read-only: smithers_glob, smithers_grep, read |
 | **Librarian** | `claude-sonnet-4` | Documentation + abstraction extraction. After successful runs, extracts reusable components/hooks to `.smithers/lib/`. | Read-only + `smithers_create` for lib/. Web search allowed. |
@@ -171,7 +171,7 @@ User describes task
          │ outputs: human-readable plan in .smithers/plans/
          ▼
 ┌───────────────────┐
-│   Orchestrator    │  Translates plan → Smithers .tsx script
+│     Smithers      │  Translates plan → Smithers .tsx script
 │ (writes Smithers) │  Delegates exploration to Explorer/Librarian
 └────────┬──────────┘
          │ creates: .smithers/main.tsx
@@ -196,8 +196,8 @@ User describes task
 
 This means:
 - Planner outputs human-readable plans (markdown)
-- Orchestrator translates plans to Smithers `.tsx` code
-- Smithers executes the plan via Claude agents that DO have write access
+- Smithers agent translates plans to `.tsx` code
+- Smithers runtime executes the plan via Claude agents that DO have write access
 - Monitor observes and reports on execution
 
 #### Agent Prompts (Core Sections)
@@ -210,10 +210,10 @@ Each agent prompt includes:
 4. **Delegation Rules**: When to hand off to other agents
 5. **Anti-Patterns**: What they must never do
 
-**Example: Orchestrator Core Prompt**
+**Example: Smithers Agent Core Prompt**
 
 ```markdown
-You are the Smithers Orchestrator—the primary agent for multi-agent AI workflows.
+You are Smithers—the primary agent for multi-agent AI workflows.
 
 ## Your Role
 You translate human-readable plans into executable Smithers scripts (.tsx files).
@@ -933,7 +933,7 @@ Describe what you want to automate—the agent handles the rest.
 - [ ] **AC15**: `smithers_grep` provides text search without enabling built-in grep
 
 ### Agent System
-- [ ] **AC16**: Orchestrator agent is primary—writes Smithers `.tsx` scripts
+- [ ] **AC16**: Smithers agent is primary—writes Smithers `.tsx` scripts
 - [ ] **AC17**: Planner agent creates human-readable plans in `.smithers/plans/`
 - [ ] **AC18**: Explorer agent has SQLite schema knowledge, can query execution data
 - [ ] **AC19**: Librarian agent provides Smithers API documentation
@@ -1029,7 +1029,7 @@ describe("Permission Enforcement", () => {
 | Action | File Path | Description |
 |--------|-----------|-------------|
 | CREATE | `opencode/opencode.json` | Permission config (deny-by-default) |
-| CREATE | `opencode/agents/orchestrator.md` | Primary agent - writes Smithers scripts |
+| CREATE | `opencode/agents/smithers.md` | Primary agent - writes Smithers scripts |
 | CREATE | `opencode/agents/planner.md` | Creates human-readable plans |
 | CREATE | `opencode/agents/explorer.md` | Fast codebase exploration with schema knowledge |
 | CREATE | `opencode/agents/librarian.md` | Documentation lookup, Smithers API reference |
@@ -1142,10 +1142,10 @@ Analysis of oh-my-opencode revealed patterns we're adopting for Smithers:
 
 | Pattern | oh-my-opencode | Smithers Adaptation |
 |---------|----------------|---------------------|
-| **Multi-agent architecture** | Sisyphus, Oracle, Librarian, Explore | Orchestrator, Planner, Explorer, Librarian, Oracle, Monitor |
+| **Multi-agent architecture** | Sisyphus, Oracle, Librarian, Explore | Smithers, Planner, Explorer, Librarian, Oracle, Monitor |
 | **Permission-based restrictions** | Per-agent `permission` objects | Same approach, deny-by-default |
 | **Specialized models per agent** | Different models for different tasks | Explorer=gemini-flash, Oracle=gpt-5.2 |
-| **Planning/execution separation** | Prometheus (plan) → Sisyphus (execute) | Planner (plan) → Orchestrator (write Smithers) |
+| **Planning/execution separation** | Prometheus (plan) → Sisyphus (execute) | Planner (plan) → Smithers (write .tsx) |
 | **Read-only exploration agents** | explore/librarian cannot write | Explorer/Librarian/Oracle read-only |
 | **Background task management** | `delegate_task` with `run_in_background` | Similar via smithers_run with monitoring |
 | **Skill system** | SKILL.md files with MCP embedding | Deferred to P1 |

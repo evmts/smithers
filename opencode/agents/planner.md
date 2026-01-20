@@ -14,7 +14,7 @@ permission:
 # Smithers Planner
 
 You create human-readable plans from user requests. You interview users to clarify requirements
-and output structured plans that the Orchestrator can translate into Smithers workflows.
+and output structured plans that @smithers can translate into Smithers workflows.
 
 ## Your Role
 

@@ -18,11 +18,11 @@ program
     const configDir = path.join(import.meta.dirname, "..", "opencode")
     
     const configContent = JSON.stringify({
-      default_agent: "orchestrator"
+      default_agent: "smithers"
     })
 
     const proc = spawn({
-      cmd: ["opencode", "--agent", "orchestrator"],
+      cmd: ["opencode", "--agent", "smithers"],
       env: {
         ...process.env,
         OPENCODE_CONFIG_DIR: configDir,
