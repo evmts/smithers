@@ -1,31 +1,19 @@
 ---
 title: SmithersProvider
-description: Unified context provider for database, execution state, and task orchestration
+description: Root orchestration context
 ---
 
 # SmithersProvider
 
-The `<SmithersProvider>` component provides unified context to all child components, including database access, execution state, task orchestration, global timeouts, and stop conditions. It's required at the root of every Smithers workflow.
-
-SmithersProvider includes the Ralph loop internally. The `<Ralph>` component is deprecated, but its loop props (`maxIterations`, `onIteration`, `onComplete`) are supported here and documented below.
-
-## Basic Usage
+Root component. Required. Provides database, execution context, and the Ralph loop.
 
 ```tsx
-import { createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
+const db = createSmithersDB({ path: ".smithers/data" });
+const executionId = db.execution.start("Task", "task.tsx");
 
-const db = createSmithersDB({ path: ".smithers/my-workflow" });
-const executionId = db.execution.start("My Workflow", "workflow.tsx");
-
-function Workflow() {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-      <Claude model="sonnet">
-        Do the work.
-      </Claude>
-    </SmithersProvider>
-  );
-}
+<SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+  <Claude>Do the work.</Claude>
+</SmithersProvider>
 ```
 
 ## Props

@@ -1,276 +1,184 @@
 ---
 title: Introduction
-description: JSX workflow engine for coding agents—phases, parallelism, and persistent state
+description: Let your agent write agents
 ---
 
-# Welcome to Smithers
+# Smithers
 
-**JSX workflow engine for coding agents—phases, parallelism, and persistent state for long-running repo automation.**
-
-Run CI recovery, PR finalization, stacked merges, release smoketests, and review processing as resumable workflows—not fragile scripts.
-
-```jsx
-import { SmithersProvider, Phase, Claude, Parallel, createSmithersDB } from 'smithers-orchestrator'
-
-function FeatureWorkflow({ featureSpec }) {
-  const db = createSmithersDB({ path: '.smithers/workflow' })
-  const executionId = db.execution.start('feature-workflow', 'feature.tsx')
-
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={20}>
-      <Phase name="Plan">
-        <Claude model="sonnet">
-          Analyze the codebase and create an implementation plan for: {featureSpec}
-        </Claude>
-      </Phase>
-
-      <Phase name="Implement">
-        <Parallel>
-          <Claude model="sonnet">Implement the backend changes from the plan</Claude>
-          <Claude model="sonnet">Implement the frontend changes from the plan</Claude>
-        </Parallel>
-      </Phase>
-
-      <Phase name="Verify">
-        <Claude
-          model="sonnet"
-          onFinished={(result) => {
-            if (result.output.includes('All tests pass')) {
-              db.state.set('status', 'complete')
-            }
-          }}
-        >
-          Run the test suite. If any tests fail, fix them and re-run.
-        </Claude>
-      </Phase>
-    </SmithersProvider>
-  )
-}
-```
-
-## Why Smithers?
-
-### The Problem
-
-Simple Ralph loops work great for basic iteration. But as workflows grow complex:
-- Multi-phase orchestration becomes hard to manage
-- Parallel agents need coordination
-- Plans live in prompts, not reviewable code
-- Manual orchestration doesn't scale
-
-### The Solution
-
-- **Agent-native syntax** - Easy for Claude Code to generate, easy for humans to review
-- **Sophisticated Ralph loops** - Multi-phase, parallel agents, conditional branches
-- **Composable components** - Build complex workflows from simple pieces
-- **One syntax for humans and agents** - You can read it, Claude can generate it, Git can version it
-
-<CardGroup cols={2}>
-  <Card title="Quick Start" icon="rocket" href="/quickstart">
-    Get up and running in 2 minutes
-  </Card>
-  <Card title="Durable Ralphing" icon="rotate" href="/concepts/ralph-wiggum-loop">
-    Understand the execution model
-  </Card>
-  <Card title="Components" icon="cube" href="/components/claude">
-    Explore the component API
-  </Card>
-  <Card title="Examples" icon="code" href="/examples/hello-world">
-    Copy-paste starter workflows
-  </Card>
-</CardGroup>
-
-## Key Features
-
-### Sophisticated Ralph Loops
-
-Smithers lets you build complex Ralph loops with structure:
+**Let your agent write agents.**
 
 ```tsx
-<SmithersProvider db={db} executionId={executionId} maxIterations={50}>
-  <Phase name="Implement">
-    <Parallel>
-      <Claude model="sonnet">Fix auth module</Claude>
-      <Claude model="sonnet">Fix database module</Claude>
-    </Parallel>
-  </Phase>
+#!/usr/bin/env bun
+import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
 
-  <Phase name="Verify">
-    <Claude
-      model="sonnet"
-      onFinished={(result) => {
-        if (result.output.includes("All tests pass")) {
-          db.state.set("complete", "true");
-        }
-      }}
-    >
-      Run tests. If any fail, go back to Implement phase.
-    </Claude>
+const db = createSmithersDB({ path: ".smithers/demo" });
+const executionId = db.execution.start("Demo", "demo.tsx");
+
+function Demo() {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
+      <Claude model="sonnet" onFinished={(r) => console.log(r.output)}>
+        Fix the failing tests in this repository.
+      </Claude>
+    </SmithersProvider>
+  );
+}
+
+const root = createSmithersRoot();
+await root.mount(Demo);
+await db.close();
+```
+
+Run it:
+
+```bash
+bun demo.tsx
+```
+
+Smithers is a JSX framework for coding agents. You write the plan; Claude executes it. The plan evolves reactively based on agent output.
+
+---
+
+## Core Idea
+
+You program the **plan**, not the agents.
+
+| Other Frameworks | Smithers |
+|------------------|----------|
+| `agent.do_step_1()` | `<Phase name="implement">` |
+| `agent.do_step_2()` | `<Step name="code">` |
+| `if failed: retry()` | `<Claude>Fix it</Claude>` |
+
+The plan is declarative. Like Terraform, not AWS SDK.
+
+Each iteration:
+1. Render JSX → execution plan
+2. Execute runnable agents
+3. Agent output updates state
+4. State change triggers re-render
+5. Loop until done
+
+Ralph is the event loop. React handles the diffing.
+
+---
+
+## Why JSX?
+
+LLMs are trained on XML. The nested tagged structure matches how they think. Claude generates valid Smithers workflows naturally.
+
+JSX gives you:
+- Composition and reuse
+- Version control diffs that make sense
+- Agent-generated code you can review
+
+---
+
+## Quick Examples
+
+### Sequential Phases
+
+```tsx
+<SmithersProvider db={db} executionId={executionId} maxIterations={10}>
+  <Phase name="implement">
+    <Step name="code">
+      <Claude>Implement the feature</Claude>
+    </Step>
+    <Step name="test">
+      <Claude>Write tests</Claude>
+    </Step>
+  </Phase>
+  <Phase name="review">
+    <Claude>Review the changes</Claude>
   </Phase>
 </SmithersProvider>
 ```
 
-**What Smithers adds:**
-- Multi-phase workflows with conditional transitions
-- Parallel agent execution with coordination
-- Composable, reusable components
-- Optional persistence for long-running workflows
-
-### Claude Component
-
-The core agent component that executes Claude with full tool access:
+### Parallel Agents
 
 ```tsx
-<Claude
-  model="sonnet"           // opus | sonnet | haiku
-  maxTurns={10}            // Limit agentic loops
-  permissionMode="acceptEdits"  // Auto-accept file edits
-  onFinished={(result) => handleResult(result)}
->
-  Your prompt here
-</Claude>
+<Parallel>
+  <Claude>Fix auth</Claude>
+  <Claude>Fix database</Claude>
+  <Claude>Fix API</Claude>
+</Parallel>
 ```
 
-### Structured Output with Zod
-
-Get typed, validated responses with automatic retry:
+### Structured Output
 
 ```tsx
-const UserSchema = z.object({
-  name: z.string(),
-  email: z.string().email(),
-})
+const ReviewSchema = z.object({
+  approved: z.boolean(),
+  issues: z.array(z.string()),
+});
 
-<Claude schema={UserSchema} schemaRetries={2}>
-  Extract user info from: John Doe (john@example.com)
+<Claude schema={ReviewSchema}>
+  Review the PR.
 </Claude>
-// result.structured: { name: string, email: string }
+// result.structured: { approved: boolean, issues: string[] }
 ```
 
-### Database Persistence (Flight Recorder)
-
-Every run persists in SQLite - your workflow's audit trail:
+### Worktree Isolation
 
 ```tsx
-// Set state (survives restarts)
+<Worktree branch="feature-auth" cleanup>
+  <Claude>Implement authentication</Claude>
+</Worktree>
+```
+
+---
+
+## Persistence
+
+State lives in SQLite. Survives restarts.
+
+```tsx
+// Set state
 db.state.set("phase", "review");
 
-// Resume incomplete executions
+// Get state
+const phase = db.state.get("phase");
+
+// Resume after crash
 const incomplete = db.execution.findIncomplete();
 if (incomplete) {
-  executionId = incomplete.id; // Pick up where you left off
-}
-
-// Query history - see how state evolved
-const history = db.state.getHistory("phase");
-```
-
-### MCP Tool Integration
-
-Give Claude access to external tools via Model Context Protocol:
-
-```tsx
-<Claude model="sonnet" maxTurns={5}>
-  <Sqlite path="./analytics.db">
-    The database contains user_events and sessions tables.
-  </Sqlite>
-  What are the top 10 most common user actions this week?
-</Claude>
-```
-
-## Component Naming
-
-| Component | Purpose |
-|-----------|---------|
-| `<SmithersProvider>` | Root orchestration context (required) |
-| `<Subagent>` | Named grouping boundary for organizing agent tasks |
-| `<Smithers>` | Nested orchestration - spawns planner + executor |
-
-See component docs for details. `<Smithers>` is the only component that spawns a separate planning model.
-
-## How It Works
-
-```
-┌──────────┐    ┌─────────┐    ┌──────────────────┐
-│  Render  │───▶│ Execute │───▶│ Update State     │
-│   JSX    │    │ Claude  │    │ (onFinished)     │
-└──────────┘    └─────────┘    └──────────────────┘
-     ▲                                   │
-     │                                   │
-     └───────────────────────────────────┘
-              (re-render on state change)
-```
-
-1. **Render**: Your JSX components render
-2. **Execute**: `<Claude>` nodes execute via Claude Code CLI
-3. **Update**: `onFinished` callbacks update state (persisted to SQLite)
-4. **Re-render**: State changes trigger reactive updates
-5. **Loop**: Repeat until no pending agents remain
-
-## Installation
-
-```bash
-bun add smithers-orchestrator
-```
-
-## FAQ
-
-### Is this actually React? Do I need to run a UI?
-
-No UI. React is a component model + markup-like syntax. People already use it to render to non-DOM targets (CLI, PDFs, native). Smithers renders to **execution**, not DOM.
-
-### Why not YAML/JSON for workflows?
-
-Because you want:
-- Composition and reuse
-- Version control diffs that make sense
-- Something your coding agent can generate AND you can review like normal code
-
-### How does this relate to Ralphing?
-
-Ralphing is the outer loop (iterate until verification passes). Smithers gives it structure, persistence, and inspectability.
-
-### Do I have to use Bun?
-
-Yes. Smithers uses Bun-specific features (`bun:sqlite`, `Bun.spawn`). Node.js support is not currently available.
-
-### What do I need for Claude to work?
-
-1. [Claude Code CLI](https://www.npmjs.com/package/@anthropic-ai/claude-code) installed globally
-2. Active Claude subscription (Smithers uses Claude Code's subscription, no separate API key)
-3. `claude` command available in PATH
-
-### Is Ralph deprecated?
-
-The `<Ralph>` component is deprecated. Use `<SmithersProvider>` instead - it includes the Ralph loop internally. Pass `maxIterations`, `onIteration`, and `onComplete` props to SmithersProvider.
-
-### How do I resume a crashed run?
-
-```tsx
-const incomplete = db.execution.findIncomplete();
-if (incomplete) {
-  executionId = incomplete.id; // Resume from here
-} else {
-  executionId = db.execution.start("My Workflow", "workflow.tsx");
+  executionId = incomplete.id;
 }
 ```
 
-State in SQLite survives restarts. State in `useState` does not.
+---
 
-### What's the difference between Task component and db.tasks?
+## Observability
 
-- `<Task>` is a **presentational** component (renders a checkbox-like display)
-- `db.tasks` is the **orchestration API** for tracking async work
+The JSX is the observability. What you write is what gets logged.
 
-Use `db.tasks.start/complete` to coordinate async work with the Ralph loop.
+```tsx
+<Phase name="deploy">
+  <Step name="build" status="complete">...</Step>
+  <Step name="test" status="running">...</Step>
+</Phase>
+```
 
-## Next Steps
+SQLite stores every frame. Use JJ or git to rewind.
+
+---
+
+## Roadmap
+
+**North Star: SuperSmithers** — A meta-agent that watches your agents and rewrites their code to optimize. The architecture supports it. Not yet implemented.
+
+---
 
 <CardGroup cols={2}>
-  <Card title="Quick Start" icon="play" href="/quickstart">
-    Create your first Smithers workflow
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Your first workflow
   </Card>
-  <Card title="Durable Ralphing" icon="rotate" href="/concepts/ralph-wiggum-loop">
-    Understand the core execution model
+  <Card title="Components" icon="cube" href="/components/claude">
+    API reference
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/hello-world">
+    Production workflows
+  </Card>
+  <Card title="Concepts" icon="lightbulb" href="/concepts/ralph-wiggum-loop">
+    How it works
   </Card>
 </CardGroup>

@@ -1,60 +1,60 @@
 ---
 title: Quick Start
-description: Get up and running with durable Ralph loops in 2 minutes
+description: Your first Smithers workflow
 ---
 
 # Quick Start
 
-**Let your agent write agents.** This guide gets you running in 2 minutes.
-
-<Frame>
-  <img src="/images/01_taro_hello.gif" alt="Hello Smithers demo" />
-</Frame>
-
-## Prerequisites
-
-<Info>
-**Bun is required.** Smithers uses Bun-specific features (bun:sqlite, Bun.spawn). Node.js is not currently supported.
-</Info>
-
-| Requirement | Version | Install |
-|-------------|---------|---------|
-| [Bun](https://bun.sh) | 1.0+ | `curl -fsSL https://bun.sh/install \| bash` |
-| [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) | latest | `bun install -g @anthropic-ai/claude-code` |
-| Git | 2.0+ | Pre-installed on most systems |
-
-**Optional:**
-
-| Tool | Purpose |
-|------|---------|
-| [Jujutsu (jj)](https://github.com/martinvonz/jj) | Better VCS snapshot support |
-
-<Note>
-Smithers uses Claude Code's subscription for API access - no separate Anthropic API key needed.
-</Note>
-
-## Installation
+## Install
 
 ```bash
 bun add smithers-orchestrator
 ```
 
-### AI Agent Context
+Requires [Bun](https://bun.sh/) 1.0+ and [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code).
 
-Give your coding agent full Smithers documentation:
+---
 
-| Resource | URL | Use Case |
-|----------|-----|----------|
-| LLMS.txt | https://smithers.sh/llms.txt | Paste into agent context |
-| MCP Server | https://smithers.sh/mcp | Add as MCP server in Claude/Cursor |
+## Hello World
 
-## Canonical Workflow
-
-Create `my-workflow.tsx`:
+Create `hello.tsx`:
 
 ```tsx
 #!/usr/bin/env bun
+import { createSmithersRoot, createSmithersDB, SmithersProvider, Claude } from "smithers-orchestrator";
 
+const db = createSmithersDB({ path: ".smithers/hello" });
+const executionId = db.execution.start("Hello", "hello.tsx");
+
+function Hello() {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Claude model="haiku" maxTurns={1} onFinished={(r) => console.log(r.output)}>
+        Say "Hello from Smithers!"
+      </Claude>
+    </SmithersProvider>
+  );
+}
+
+const root = createSmithersRoot();
+await root.mount(Hello);
+await db.close();
+```
+
+Run it:
+
+```bash
+bun hello.tsx
+```
+
+---
+
+## Multi-Phase Workflow
+
+Create `workflow.tsx`:
+
+```tsx
+#!/usr/bin/env bun
 import {
   createSmithersRoot,
   createSmithersDB,
@@ -64,173 +64,41 @@ import {
   Claude,
 } from "smithers-orchestrator";
 
-// 1. Create database for state persistence
-const db = createSmithersDB({ path: ".smithers/my-workflow" });
+const db = createSmithersDB({ path: ".smithers/workflow" });
 
-// 2. Start or resume execution
+// Resume if incomplete, else start new
 let executionId: string;
 const incomplete = db.execution.findIncomplete();
 if (incomplete) {
   executionId = incomplete.id;
   console.log("Resuming:", executionId);
 } else {
-  executionId = db.execution.start("My Workflow", "my-workflow.tsx");
+  executionId = db.execution.start("Workflow", "workflow.tsx");
 }
 
-// 3. Define workflow with Phase/Step/Claude composition
 function Workflow() {
   return (
     <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-      <Phase name="Research">
-        <Step name="Analyze codebase">
-          <Claude model="sonnet">
-            Analyze this codebase structure and identify patterns.
-          </Claude>
-        </Step>
-        <Step name="Document findings">
-          <Claude model="sonnet">
-            Document the key patterns found in the previous analysis.
-          </Claude>
+      <Phase name="research">
+        <Step name="analyze">
+          <Claude>Analyze the codebase structure.</Claude>
         </Step>
       </Phase>
 
-      <Phase name="Implementation">
-        <Step name="Write code">
-          <Claude model="sonnet">
-            Implement improvements based on the research phase.
-          </Claude>
+      <Phase name="implement">
+        <Step name="code">
+          <Claude>Implement the feature.</Claude>
         </Step>
-        <Step name="Write tests">
-          <Claude model="sonnet">
-            Write tests for the new implementation.
-          </Claude>
+        <Step name="test">
+          <Claude>Write tests.</Claude>
         </Step>
       </Phase>
 
-      <Phase name="Review">
-        <Step name="Review changes">
-          <Claude model="sonnet">
-            Review all changes and ensure quality standards are met.
-          </Claude>
+      <Phase name="review">
+        <Step name="review">
+          <Claude>Review all changes.</Claude>
         </Step>
       </Phase>
-    </SmithersProvider>
-  );
-}
-
-// 4. Mount and run orchestrator
-const root = createSmithersRoot();
-try {
-  await root.mount(Workflow);
-
-  // 5. Complete and close
-  db.execution.complete(executionId, {
-    summary: "My Workflow completed",
-  });
-} catch (err) {
-  const error = err instanceof Error ? err : new Error(String(err));
-  db.execution.fail(executionId, error.message);
-  throw error;
-} finally {
-  db.close();
-}
-```
-
-## Run
-
-```bash
-bun my-workflow.tsx
-```
-
-## Understanding the Code
-
-<Steps>
-  <Step title="Create Database">
-    ```tsx
-    const db = createSmithersDB({ path: ".smithers/my-workflow" });
-    ```
-    SQLite database persists all state, enabling resume on crash/restart.
-  </Step>
-
-  <Step title="Start/Resume Execution">
-    ```tsx
-    const incomplete = db.execution.findIncomplete();
-    if (incomplete) {
-      executionId = incomplete.id;
-    } else {
-      executionId = db.execution.start("My Workflow", "my-workflow.tsx");
-    }
-    ```
-    Automatically resumes incomplete executions.
-  </Step>
-
-  <Step title="SmithersProvider">
-    ```tsx
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-    ```
-    Provides database and orchestration context to all children.
-  </Step>
-
-  <Step title="Phase/Step/Claude Composition">
-    ```tsx
-    <Phase name="Research">
-      <Step name="Analyze">
-        <Claude model="sonnet">Prompt here</Claude>
-      </Step>
-    </Phase>
-    ```
-    - **Phase**: Sequential workflow stages (only active phase executes)
-    - **Step**: Sequential tasks within a phase
-    - **Claude**: AI agent execution
-  </Step>
-
-  <Step title="Mount with createSmithersRoot">
-    ```tsx
-    const root = createSmithersRoot();
-    await root.mount(Workflow);
-    ```
-    React reconciler mounts and executes the component tree.
-  </Step>
-
-  <Step title="Close Database">
-    ```tsx
-    try {
-      db.execution.complete(executionId);
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      db.execution.fail(executionId, error.message);
-      throw error;
-    } finally {
-      db.close();
-    }
-    ```
-    Mark complete and flush writes.
-  </Step>
-</Steps>
-
-## Minimal Example
-
-For simple single-agent tasks:
-
-```tsx
-#!/usr/bin/env bun
-
-import {
-  createSmithersRoot,
-  createSmithersDB,
-  SmithersProvider,
-  Claude,
-} from "smithers-orchestrator";
-
-const db = createSmithersDB({ path: ".smithers/simple" });
-const executionId = db.execution.start("Simple", "simple.tsx");
-
-function Workflow() {
-  return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Claude model="sonnet" onFinished={(r) => console.log(r.output)}>
-        Analyze this codebase and suggest three improvements.
-      </Claude>
     </SmithersProvider>
   );
 }
@@ -238,69 +106,86 @@ function Workflow() {
 const root = createSmithersRoot();
 try {
   await root.mount(Workflow);
-  db.execution.complete(executionId, {
-    summary: "Simple workflow completed",
-  });
+  db.execution.complete(executionId, { summary: "Done" });
 } catch (err) {
-  const error = err instanceof Error ? err : new Error(String(err));
-  db.execution.fail(executionId, error.message);
-  throw error;
+  db.execution.fail(executionId, String(err));
+  throw err;
 } finally {
   db.close();
 }
 ```
+
+---
+
+## What Each Part Does
+
+**`createSmithersDB`** — Creates SQLite database for state persistence.
+
+**`db.execution.start`** — Starts a new execution. Returns an ID.
+
+**`db.execution.findIncomplete`** — Finds crashed executions to resume.
+
+**`SmithersProvider`** — Root component. Runs the Ralph loop.
+
+**`Phase`** — Sequential stages. Only the active phase executes.
+
+**`Step`** — Sequential tasks within a phase.
+
+**`Claude`** — Executes Claude with tool access. Children are the prompt.
+
+**`createSmithersRoot`** — Creates the React reconciler.
+
+**`root.mount`** — Renders and executes the workflow.
+
+**`db.close`** — Flushes writes. Always call this.
+
+---
 
 ## Let Claude Write It
+
+Install the plugin:
+
+```
+/plugin add evmts/smithers
+```
+
+Then describe what you want:
+
+```
+Create a workflow that monitors CI, fixes failures, and escalates after 3 attempts.
+```
+
+Claude generates the `.tsx` file. Review it like any other code.
 
 <Frame>
   <img src="/images/02_matcha_plugin.gif" alt="Plugin demo" />
 </Frame>
 
-The real power: **you don't have to write Smithers yourself**. Describe what you want:
+---
 
-```
-User: "Create a workflow that monitors my CI, fixes failures automatically,
-       and escalates after 3 failed attempts"
-
-Claude: *generates ci-recovery.tsx*
-```
-
-Claude understands the component model and generates working orchestration scripts. This is the "agents write agents" loop:
-
-1. Describe the workflow you want to Claude Code
-2. Claude generates a Smithers plan (TSX)
-3. You review it like any other code
-4. Smithers executes it as a durable workflow
-5. Ralph until it's done
-
-## Inspecting State
-
-View execution history and state with the database:
+## Inspect State
 
 ```bash
-# View execution history
-smithers db executions
-
-# View current state
-smithers db state
-
-# View database statistics
-smithers db stats
+smithers db executions              # List runs
+smithers db state --execution-id X  # View state
+smithers db stats                   # Statistics
 ```
+
+---
 
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Durable Ralphing" icon="rotate" href="/concepts/ralph-wiggum-loop">
-    Understand the execution model
-  </Card>
   <Card title="Claude Component" icon="cube" href="/components/claude">
-    Learn the full Claude API
+    Full API reference
   </Card>
-  <Card title="Database Persistence" icon="database" href="/concepts/database-persistence">
-    Flight recorder for your workflows
+  <Card title="Durable Ralphing" icon="rotate" href="/concepts/ralph-wiggum-loop">
+    How the loop works
   </Card>
   <Card title="Examples" icon="code" href="/examples/hello-world">
-    Copy-paste starter workflows
+    Production workflows
+  </Card>
+  <Card title="Database" icon="database" href="/concepts/database-persistence">
+    State persistence
   </Card>
 </CardGroup>

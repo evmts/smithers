@@ -1,26 +1,27 @@
 ---
-title: Durable Ralphing
-description: The core execution model that powers Smithers orchestration
+title: The Ralph Loop
+description: How the plan evolves over time
 ---
 
-# Durable Ralphing
+# The Ralph Loop
 
-**Ralphing** = continuous agent iteration with verification gates. Run → verify → feedback → run again until done.
+Ralph is the event loop. Each iteration:
 
-**Durable Ralphing** = Smithers' implementation that makes Ralph loops **resumable, inspectable, and controllable**.
+1. Render JSX → execution plan
+2. Execute runnable agents
+3. Agent output updates state
+4. State change triggers re-render
+5. Loop until done
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  RALPH LOOP (the technique)                                                 │
-│  while (!done) { run_agent(); verify(); if (pass) done = true; }            │
-│                                                                             │
-│  DURABLE RALPHING (Smithers' implementation)                                │
-│  + Persists every iteration to SQLite                                       │
-│  + Resumes from crash/restart at exact iteration                            │
-│  + Explicit verification gates and stop conditions                          │
-│  + Audit trail of what happened and why                                     │
-└─────────────────────────────────────────────────────────────────────────────┘
+Iteration 1: <Phase name="research">...</Phase>
+Iteration 2: <Phase name="implement">...</Phase>  ← state changed
+Iteration 3: <Phase name="implement">...</Phase>  ← agent still working
+Iteration 4: <Phase name="test">...</Phase>       ← structured output
+Iteration 5: <Phase name="done" />                ← loop complete
 ```
+
+React handles diffing. Ralph handles iteration. SQLite handles persistence.
 
 ## The Execution Model
 
@@ -49,17 +50,17 @@ Smithers uses a reactive render loop powered by React state:
 
 ## Why Smithers for Ralphing
 
-Traditional Ralph loops work great for simple iteration. Smithers lets you build **sophisticated** Ralph loops while staying reliable:
+You're not programming what agents *do*. You're programming the *plan*—and how it evolves.
 
-| Simple Ralph Loop | Smithers Ralph Loop |
-|-------------------|---------------------|
-| Single agent iterating | Multi-phase workflows with parallel agents |
-| Linear control flow | Conditional branches, phases, steps |
-| Ad-hoc structure | Composable React components |
-| Plans in prompts | Plans as reviewable, versionable code |
-| Manual orchestration | Declarative - Claude can generate it |
+| Other Frameworks | Smithers |
+|------------------|----------|
+| Program the agents (imperative) | Program the plan (declarative) |
+| `agent.do_step_1()` | `<Phase name="implement">` |
+| Plans live in prompts | Plans are reviewable code |
+| Manual orchestration | Claude generates it for you |
+| Static execution | Plan evolves based on agent output |
 
-**Smithers doesn't replace simple Ralph loops. It's for when your Ralph loop needs structure.**
+**Smithers is Terraform for agents.** You declare the desired workflow. The reconciler figures out how to get there.
 
 ## Controlling the Ralph Loop
 

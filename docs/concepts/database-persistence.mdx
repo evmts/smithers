@@ -1,16 +1,28 @@
 ---
-title: Database Persistence
-description: SQLite database for persisting workflow state across sessions
+title: Database
+description: SQLite persistence for state and history
 ---
 
-# Database Persistence
+# Database
 
-Smithers uses **SQLite** (via reactive-sqlite) to persist all workflow state. This enables:
+All state lives in SQLite. Survives restarts. Enables replay.
 
-- **Resume workflows** after restarts or crashes
-- **Inspect execution history** for debugging
-- **Time-travel debugging** by replaying state transitions
-- **Long-running workflows** that span days or weeks
+```tsx
+const db = createSmithersDB({ path: ".smithers/data" });
+
+// State
+db.state.set("phase", "review");
+db.state.get("phase");
+
+// Execution
+db.execution.start("Task", "task.tsx");
+db.execution.findIncomplete();
+
+// Always close
+db.close();
+```
+
+**North Star:** This persistence layer enables SuperSmithers—a future meta-agent that watches execution history and rewrites agent code to optimize.
 
 ## Creating a Database
 

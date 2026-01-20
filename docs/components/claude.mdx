@@ -1,23 +1,15 @@
 ---
 title: Claude
-description: The core agent component for executing Claude with full tool access
+description: Execute Claude with tool access
 ---
 
-# Claude Component
+# Claude
 
-The `<Claude>` component is the core of Smithers. It executes Claude via Claude Code CLI with full tool access, database logging, and structured output support.
-
-## Basic Usage
+Execute Claude via Claude Code CLI. Children are the prompt.
 
 ```tsx
-import { Claude } from "smithers-orchestrator";
-
-<Claude
-  model="sonnet"
-  maxTurns={10}
-  onFinished={(result) => console.log(result.output)}
->
-  Analyze this codebase and suggest improvements.
+<Claude model="sonnet" maxTurns={10} onFinished={(r) => console.log(r.output)}>
+  Fix the failing tests.
 </Claude>
 ```
 
