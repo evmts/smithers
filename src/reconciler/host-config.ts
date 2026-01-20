@@ -1,10 +1,26 @@
 import Reconciler from 'react-reconciler'
 import { DefaultEventPriority } from 'react-reconciler/constants.js'
+import { createContext } from 'react'
 import type { SmithersNode } from './types.js'
 import { rendererMethods } from './methods.js'
 
 // Track current update priority (avoids hardcoded magic numbers)
 let currentUpdatePriority: number = DefaultEventPriority
+
+// Time utilities
+const now = () =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+
+// React 19 required members
+const NotPendingTransition = null
+const HostTransitionContext = createContext(NotPendingTransition)
+
+const schedulePostPaint =
+  typeof queueMicrotask === 'function'
+    ? queueMicrotask
+    : (cb: () => void) => Promise.resolve().then(cb)
 
 // Re-export rendererMethods for backwards compatibility
 export { rendererMethods }
@@ -285,12 +301,22 @@ const hostConfig = {
   },
 
   // Resources (React 19+)
-  NotPendingTransition: null,
+  NotPendingTransition,
+  HostTransitionContext,
   resetFormInstance(): void {
     // No-op
   },
-  requestPostPaintCallback(): void {
+  requestPostPaintCallback(callback: (time: number) => void): void {
+    schedulePostPaint(() => callback(now()))
+  },
+  trackSchedulerEvent(): void {
     // No-op
+  },
+  resolveEventType(): null | string {
+    return null
+  },
+  resolveEventTimeStamp(): number {
+    return now()
   },
   shouldAttemptEagerTransition(): boolean {
     return false
