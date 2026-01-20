@@ -1,6 +1,11 @@
 # Bun configuration for Smithers
 # https://bun.sh/docs/runtime/bunfig
 
+# JSX configuration for running .tsx files directly
+# Uses React's JSX runtime by default
+jsx = "react-jsx"
+jsxImportSource = "react"
+
 [install]
 auto = "fallback"
 
