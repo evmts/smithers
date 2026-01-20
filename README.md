@@ -5,9 +5,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
 
-**JSX workflow engine for coding agents—phases, parallelism, and persistent state for long-running repo automation.**
+**Durable JSX workflows for Claude Code and coding agents.**
 
-Run CI recovery, PR finalization, stacked merges, release smoketests, and review processing as resumable workflows—not fragile scripts.
+Run CI recovery, PR finalization, stacked merges, release smoketests, and review processing as **resumable, inspectable workflows**—not fragile scripts.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -25,35 +25,51 @@ Run CI recovery, PR finalization, stacked merges, release smoketests, and review
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Declarative workflow composition** - JSX syntax readable by humans, writable by Claude
-- **Resumable and observable** - SQLite-backed state, execution history, XML output
-- **Real engineering primitives** - Phases, steps, worktrees, PR tooling, CI polling
+- **Durability** - SQLite-backed state, resume after restarts, full audit trail
+- **Structure** - Phases, steps, parallelism—not a pile of prompts
+- **Repo-native** - Worktrees, commits, review gates, CI polling
+- **Agent-native** - JSX readable by humans, generatable by Claude
 
 ---
 
 ## Table of Contents
 
-- [Quickstart](#quickstart)
+- [Install](#install)
+- [2-Minute Hello Workflow](#2-minute-hello-workflow)
 - [Hero Workflows](#hero-workflows)
 - [Why Smithers](#why-smithers)
+- [Core Primitives](#core-primitives)
 - [Features](#features)
-- [Safety](#safety)
+- [Safety & Trust](#safety--trust)
+- [Debugging & Observability](#debugging--observability)
+- [Roadmap](#roadmap)
 - [FAQ](#faq)
 - [Contributing](#contributing)
 
 ---
 
-## Quickstart
+## Install
+
+### Option A: Claude Code Plugin (recommended)
+
+Install the Smithers plugin so Claude can generate workflows directly:
+
+```
+/plugin add evmts/smithers
+```
+
+Then ask Claude:
+
+```
+"Create a workflow that monitors CI, fixes failures, and escalates after 3 attempts."
+```
+
+![Plugin Demo](tapes/02_matcha_plugin.gif)
+
+### Option B: npm package
 
 ```bash
-# Install
 bun add smithers-orchestrator
-
-# Run the PR finalize workflow (status mode - safe, read-only)
-bun examples/worktree-pr-finalize/index.tsx --worktree my-branch
-
-# Or run the stacked PR merge (status only)
-bun examples/stacked-pr-merge/index.tsx --status
 ```
 
 **Prerequisites:** [Bun](https://bun.sh/) v1.0+ and [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)
@@ -67,12 +83,46 @@ Give your coding agent full Smithers documentation:
 | LLMS.txt | https://smithers.sh/llms.txt | Paste into agent context |
 | MCP Server | https://smithers.sh/mcp | Add as MCP server in Claude/Cursor |
 
-**Let Claude write your workflows.** Describe what you want:
+---
 
+## 2-Minute Hello Workflow
+
+Create `hello.tsx`:
+
+```tsx
+#!/usr/bin/env bun
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Claude,
+} from "smithers-orchestrator";
+
+const db = createSmithersDB({ path: ".smithers/hello" });
+const executionId = db.execution.start("Hello", "hello.tsx");
+
+function Hello() {
+  return (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={3}>
+      <Claude model="haiku" maxTurns={1} onFinished={(r) => console.log(r.output)}>
+        Say "Hello from Smithers!"
+      </Claude>
+    </SmithersProvider>
+  );
+}
+
+const root = createSmithersRoot();
+await root.mount(Hello);
+await db.close();
 ```
-User: "Create a workflow that monitors CI, fixes failures, escalates after 3 attempts"
-Claude: *generates ci-recovery.tsx*
+
+Run:
+
+```bash
+bun hello.tsx
 ```
+
+![Hello Demo](tapes/01_taro_hello.gif)
 
 ---
 
@@ -142,8 +192,11 @@ bun examples/stacked-pr-merge/index.tsx --skip-rebase
 
 | Workflow | Description | Command |
 |----------|-------------|---------|
+| Night Shift | Iterate until tests pass, commit each fix | `bun examples/night-shift/index.tsx` |
 | Review Processor | Parallel processing of review backlogs | `bun examples/review-processor/index.tsx` |
 | Task Audit | Audit task management across codebase | `bun examples/task-management-audit/index.tsx` |
+
+![Gallery](tapes/10_strawberry_gallery.gif)
 
 ---
 
@@ -164,6 +217,23 @@ Smithers uses React's component model to define execution plans as **reviewable 
 - **You can read it** - JSX is familiar, composable, diffable
 - **Claude can generate it** - Agent-native syntax
 - **Git can version it** - Workflows are code, not prompts
+
+![Resume Demo](tapes/03_brown_sugar_resume.gif)
+
+---
+
+## Core Primitives
+
+| Primitive | Purpose |
+|-----------|---------|
+| `<SmithersProvider>` | Root orchestration loop (durable iteration) |
+| `<Phase>` / `<Step>` | Structured execution stages |
+| `<Parallel>` | Concurrent agents with coordination |
+| `<Claude>` | Execute Claude via CLI with tool access + structured output |
+| `<Worktree>` | Isolate repo changes per branch |
+| SQLite DB | Flight recorder: state + history + resumable executions |
+
+![Worktrees Demo](tapes/04_thai_tea_worktrees.gif)
 
 ---
 
@@ -262,130 +332,25 @@ await root.mount(PRDToImplementation);
 await db.close();
 ```
 
-### 3. Refactor with Checkpoints
-
-Goal: Staged refactoring with checkpoints and rollback capability.
-
-```tsx
-#!/usr/bin/env bun
-import { createSmithersRoot, createSmithersDB, SmithersProvider, Phase, Step, Claude, Worktree } from "smithers-orchestrator";
-
-const db = createSmithersDB({ path: ".smithers/refactor" });
-const executionId = db.execution.start("Refactor", "refactor.tsx");
-
-function RefactorWorkflow() {
-  return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={30}>
-      <Worktree branch="smithers/refactor" cleanup>
-        <Phase name="Analyze">
-          <Step name="identify-targets">
-            <Claude model="sonnet">
-              Identify code that needs refactoring. Create a prioritized list.
-            </Claude>
-          </Step>
-        </Phase>
-
-        <Phase name="Refactor">
-          <Step name="refactor-code" snapshotBefore commitAfter>
-            <Claude model="sonnet">
-              Refactor each item. Run tests after each change. Commit if green.
-            </Claude>
-          </Step>
-        </Phase>
-
-        <Phase name="Verify">
-          <Step name="final-check">
-            <Claude model="sonnet">
-              Run full test suite. Document all changes made.
-            </Claude>
-          </Step>
-        </Phase>
-      </Worktree>
-    </SmithersProvider>
-  );
-}
-
-const root = createSmithersRoot();
-await root.mount(RefactorWorkflow);
-await db.close();
-```
-
----
-
-## Features
-
-### Claude Component
-
-The core agent component that executes Claude with full tool access:
-
-```tsx
-<Claude
-  model="sonnet" // opus | sonnet | haiku
-  maxTurns={10} // Limit agentic loops
-  permissionMode="acceptEdits" // Auto-accept file edits
-  systemPrompt="You are a senior engineer..."
-  allowedTools={["Read", "Edit", "Bash"]}
-  stopConditions={[
-    { type: "token_limit", value: 50000 },
-    { type: "pattern", value: /DONE/i },
-  ]}
-  onProgress={(msg) => console.log(msg)}
-  onFinished={(result) => handleResult(result)}
-  onError={(err) => handleError(err)}
->
-  Your prompt here
-</Claude>
-```
-
-### Sophisticated Ralph Loops
-
-Ralphing = continuous agent iteration with verification gates. Smithers lets you build **complex** Ralph loops with structure:
-
-```tsx
-<SmithersProvider db={db} executionId={executionId} maxIterations={50}>
-  <Phase name="Implement">
-    <Parallel>
-      <Claude model="sonnet">Fix auth module</Claude>
-      <Claude model="sonnet">Fix database module</Claude>
-    </Parallel>
-  </Phase>
-
-  <Phase name="Verify">
-    <Claude
-      model="sonnet"
-      onFinished={(result) => {
-        if (result.output.includes("All tests pass")) {
-          db.state.set("complete", "true");
-        }
-      }}
-    >
-      Run tests. If failures, iterate.
-    </Claude>
-  </Phase>
-</SmithersProvider>
-```
-
-**What Smithers adds:**
-- Multi-phase workflows with conditional transitions
-- Parallel agent execution with coordination
-- Composable, reusable components
-- Optional persistence for long-running workflows
-
 ### Structured Output with Zod
 
-Get typed, validated responses with automatic retry:
+Get typed, validated responses:
 
 ```tsx
+import { z } from "zod";
+
 const UserSchema = z.object({
   name: z.string(),
   email: z.string().email(),
-})
+});
 
 <Claude schema={UserSchema} schemaRetries={2}>
   Extract user info from: John Doe (john@example.com)
 </Claude>
 // result.structured: { name: string, email: string }
 ```
+
+![Structured Output](tapes/07_lychee_structured_output.gif)
 
 ### MCP Tool Integration
 
@@ -447,6 +412,8 @@ Spawn a new Smithers instance to plan and execute complex subtasks:
 </Smithers>
 ```
 
+![Subagents](tapes/08_honeydew_subagents.gif)
+
 ### Worktree
 
 Run agents in isolated git worktrees:
@@ -469,6 +436,8 @@ First-class version control support:
 <Snapshot description="Before refactoring" />
 <Commit autoDescribe />
 ```
+
+![VCS Primitives](tapes/05_oolong_vcs_primitives.gif)
 
 ### Orchestration Lifecycle
 
@@ -549,9 +518,9 @@ smithers db stats                         # Database statistics
 
 ---
 
-## Safety
+## Safety & Trust
 
-Smithers workflows can perform destructive operations. Built-in safeguards:
+Repo automation can be destructive. Smithers provides built-in safeguards:
 
 ### Status-Only Mode
 
@@ -559,6 +528,17 @@ Most examples support `--status` flag for safe, read-only inspection:
 
 ```bash
 bun examples/stacked-pr-merge/index.tsx --status  # See what would happen
+```
+
+### Worktree Isolation
+
+Operations run in git worktrees, not your main checkout:
+
+```tsx
+<Worktree branch="feature" cleanup>
+  {/* All changes happen in isolated worktree */}
+  <Claude>Implement feature</Claude>
+</Worktree>
 ```
 
 ### Destructive Operations
@@ -573,25 +553,42 @@ These operations require explicit flags or are gated:
 | Branch delete | `--no-delete` to disable |
 | Merge | Requires CI pass + review |
 
-### Worktree Isolation
-
-Operations run in git worktrees, not your main checkout:
-
-```tsx
-<Worktree branch="feature" cleanup>
-  {/* All changes happen in isolated worktree */}
-  <Claude>Implement feature</Claude>
-</Worktree>
-```
-
 ### Audit Trail
 
-Every execution is logged in SQLite with full history:
+Every execution is logged in SQLite with full history—treat workflows as reviewable code:
 
 ```bash
 smithers db executions                    # What ran
 smithers db state --execution-id abc123   # State at each point
 ```
+
+![Safety](tapes/09_wintermelon_safety.gif)
+
+---
+
+## Debugging & Observability
+
+Smithers persists execution history in SQLite. Use the CLI to inspect runs:
+
+```bash
+smithers db executions                    # List all runs
+smithers db state --execution-id <id>     # See state for a run
+smithers db stats                         # Database statistics
+```
+
+![Observability](tapes/06_jasmine_observability.gif)
+
+---
+
+## Roadmap
+
+These components are documented for design context but are **not yet implemented**:
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| `ClaudeApi` | Planned | Direct Anthropic API execution (no CLI) |
+| `Codex` | Planned | OpenAI Codex CLI wrapper |
+| `Gemini` | Planned | Google Gemini wrapper |
 
 ---
 
@@ -616,6 +613,10 @@ Ralphing is the outer loop (iterate until verification passes). Smithers gives i
 
 From [vercel-labs/ralph-loop-agent](https://github.com/vercel-labs/ralph-loop-agent): continuous autonomy where the agent loops until the task is actually done, with verification gates (tests/linters). Smithers makes these loops durable.
 
+### Do I have to use Bun?
+
+Yes for now. Smithers uses Bun-specific APIs (`bun:sqlite`, `Bun.spawn`).
+
 ---
 
 ## Contributing
@@ -631,3 +632,5 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 ---
 
 **Let your agent write agents. Built with React, powered by Claude.**
+
+Docs: [https://smithers.sh](https://smithers.sh) | GitHub: [https://github.com/evmts/smithers](https://github.com/evmts/smithers)
