@@ -78,7 +78,7 @@ describe('VCSQueueModule', () => {
       const item = db.db.queryOne<{ status: string; started_at: string }>(
         'SELECT status, started_at FROM vcs_queue WHERE id = ?', [id]
       )
-      expect(item!.status).toBe('running')
+      expect(item!.status).toBe('processing')
       expect(item!.started_at).not.toBeNull()
     })
 
