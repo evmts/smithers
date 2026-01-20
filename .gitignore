@@ -6,9 +6,6 @@ dist/
 bun.lockb
 .worktrees/
 PROMPT.md
-State.md
-codebase-export.md
-src_for_llm.md
 src/.smithers/
 .smithers/
 tapes/_vhs_smithers/
