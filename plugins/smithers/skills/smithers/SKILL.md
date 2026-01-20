@@ -1,6 +1,6 @@
 ---
 name: smithers-orchestrator
-description: Create and monitor multi-agent AI orchestrations using Smithers framework. Use when user wants to coordinate multiple AI agents, create complex workflows, build agent pipelines, or mentions "smithers", "multi-agent", "orchestration", "workflow", "agent coordination". Strongly recommends plan mode for orchestrations with 3+ phases.
+description: Author Smithers (smithers-orchestrator) Bun/TSX JSX workflows for Claude Code: durable, resumable, observable orchestration with SQLite state (phases/steps), tool-scoped agents, optional parallelism, and workflow logs.
 allowed-tools:
   - Read
   - Write
@@ -13,464 +13,213 @@ user-invocable: true
 recommend-plan-mode: true
 ---
 
-# Smithers Orchestrator
+# Smithers Orchestrator (smithers-orchestrator)
 
-Create and monitor multi-agent AI workflows using declarative JSX.
+JSX workflow engine for Claude Code: **render → execute active nodes → persist to SQLite → rerender** until stable/stop. Durable by default when you store control-flow in `db.state` (SQLite), not React `useState`. `maxIterations` is mandatory for safety.
 
-## When to Use
+## Use when
+- Multi-step repo automation (PR finalize, CI recovery, release smoke tests, refactors)
+- Needs **resume** after interruption (power/network/tool failures)
+- Needs **observability** (phases/steps/tools/agents logged + NDJSON streams)
+- Needs constrained tool permissions per agent step
 
-Use this skill instead of a traditional TODO list especially when the user wants to:
+## Fast requirements (ask once, then write code)
+- Goal + acceptance checks (tests pass? lint clean? diff reviewed?)
+- Allowed tools per step (Read/Write/Edit/Bash/…)
+- Stop limits: `maxIterations`, optional timeout + stop conditions
+- Branching needs: retries, human checkpoint(s), optional phases (`skipIf`)
 
-- Orchestrate multiple AI agents working together
-- Create complex multi-phase workflows
-- Build agent pipelines with state management
-- Coordinate agents with dependencies between them
+---
 
-**Trigger keywords**: "smithers", "multi-agent", "orchestration", "workflow", "agent pipeline", "coordinate agents"
+# Setup
 
-## Gathering Requirements
+## Claude Code plugin install (optional; for end-users running Smithers inside Claude Code)
+```text
+/plugin marketplace add evmts/smithers
+/plugin install smithers@smithers
+```
 
-Before creating an orchestration, ask the user these questions to understand their needs:
-
-### Essential Questions (Always Ask)
-
-**1. Purpose**: "What are you trying to accomplish with this orchestration?"
-
-- Understand the goal before designing the solution
-- Clarifies scope, success criteria, and constraints
-
-**2. Duration**: "How long do you expect this to run?"
-
-- **Minutes**: Simple one-shot script, no persistence needed
-- **Hours**: May need checkpoints and error recovery
-- **Days/Weeks**: Ralph with persistence, session resumability
-- **Ongoing**: Full Ralph mode, robust monitoring
-
-**3. Model Selection**: "Should I use opus, sonnet, or a mix based on task complexity?"
-
-- **Opus**: Complex reasoning, architecture, critical decisions
-- **Sonnet**: Implementation, straightforward tasks
-- **Haiku**: Summarization, simple validation
-- **Mixed**: Match model to phase complexity (recommended for multi-phase)
-
-### Critical planning
-
-IT IS CRITICAL YOU ALWAYS ERROR ON THE SIDE OF SPENDING TOO MUCH TIME IN PLANMODE AND ASKING TOO MANY QUESTIONS!
-
-These agents run for a very long time thus it's worth the time investment to plan well.
-
-### Situational Questions (Ask Based on Context)
-
-**Parallelism**: "Can some phases run in parallel?"
-
-- Affects use of `<Step>` components for concurrent work
-
-**Error Handling**: "How should failures be handled - retry, fallback, or abort?"
-
-- Determines retry counts, recovery phases, onError callbacks
-
-**Human Checkpoints**: "Should execution pause for your review at certain points?"
-
-- Adds approval gates between phases
-
-**Context Sources**: "Where should agents get information - files, web, APIs?"
-
-- Determines tools to enable and prompt structure
-
-**Output Expectations**: "What should the final output look like?"
-
-- Defines terminal phase and success criteria
-
-## Quick Start
-
-### 1. Install and initialize
+## Project install + TSX config (Bun)
 
 ```bash
 bun add smithers-orchestrator
-bunx smithers-orchestrator init
 ```
 
-Creates `.smithers/main.tsx` with a template.
-
-### 2. Edit the orchestration program
-
-Modify `.smithers/main.tsx` to define your agent workflow.
-
-### 3. Configure bunfig.toml
-
-Add to your project's `bunfig.toml`:
+`bunfig.toml`
 
 ```toml
-preload = ["./node_modules/smithers-orchestrator/preload.ts"]
+[dev]
+jsx = "react"
 ```
 
-This enables React JSX transform.
+`tsconfig.json`
 
-### 4. Monitor execution
-
-```bash
-bunx smithers-orchestrator monitor
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "smithers-orchestrator"
+  }
+}
 ```
 
-Streams LLM-friendly execution updates.
+---
 
-## Plan Mode Recommendation
+# Canonical workflow template (resumable, phases+steps)
 
-**For orchestrations with 3+ phases, recommend plan mode:**
-
-> I recommend using plan mode for this orchestration. This lets us design the
-> workflow carefully before execution. The Smithers JSX program will serve as
-> the executable plan that you review before running.
->
-> Press Shift+Tab twice to enter plan mode.
-
-In plan mode:
-
-1. Research requirements (read-only exploration)
-2. Design the `.smithers/main.tsx` program
-3. User reviews the JSX code (this IS the plan)
-4. Execute with `bunx smithers-orchestrator monitor`
-
-## The Smithers Pattern
-
-Smithers uses declarative phase-based orchestration with automatic state management:
-
-```tsx
-<Ralph maxIterations={5}>
-  <Phase name="Research">
-    <Claude>Research the topic</Claude>
-  </Phase>
-  <Phase name="Implementation">
-    <Claude>Implement the solution</Claude>
-  </Phase>
-  <Phase name="Testing">
-    <Claude>Test the implementation</Claude>
-  </Phase>
-</Ralph>
-```
-
-**How it works:**
-
-1. All `<Phase>` components are rendered unconditionally (visible in plan output)
-2. Only the active phase's children execute
-3. When a phase completes, the next phase automatically becomes active
-4. Phase state is managed by PhaseRegistry (persisted to SQLite)
-5. The plan output shows all phases with their status (pending/active/completed)
-
-**Important:** Always render phases unconditionally. Do NOT use conditional rendering like `{phase === 'xxx' && <Phase>}`. The Phase component handles its own state internally.
-
-## CLI Commands
-
-### `bunx smithers-orchestrator init`
-
-Creates `.smithers/` directory with template:
-
-```
-.smithers/
-├── main.tsx    # Your orchestration program
-└── logs/       # Monitor output logs
-```
-
-### `bunx smithers-orchestrator run [file]`
-
-Simple execution:
-
-```bash
-bunx smithers-orchestrator run .smithers/main.tsx
-```
-
-### `bunx smithers-orchestrator monitor [file]`
-
-**Recommended for execution.** Provides LLM-friendly streaming output:
-
-```bash
-bunx smithers-orchestrator monitor .smithers/main.tsx
-```
-
-Output format:
-
-```
-[10:30:00] ◆ PHASE: Research
-           Status: STARTING
-
-[10:30:01] ● AGENT: Claude (sonnet)
-           Status: RUNNING
-
-[10:30:05] ⚡ TOOL CALL: Read
-           File: src/index.ts
-           SUMMARY: Main entry point with exports...
-           📄 Full: .smithers/logs/tool-001.txt
-
-[10:30:12] ✓ PHASE: Research
-           Status: COMPLETE
-```
-
-## Reading Monitor Output
-
-The monitor output uses these symbols:
-
-- `▶` Orchestration start/end
-- `◆` Phase events
-- `●` Agent status
-- `⚡` Tool calls
-- `↻` Ralph iteration
-- `✓` Success
-- `✗` Error
-
-**Large outputs are summarized.** To see full content:
-
-```bash
-cat .smithers/logs/tool-001.txt
-```
-
-## Creating Orchestrations
-
-### Template Structure
+Create `workflows/smithers-example.tsx`:
 
 ```tsx
 #!/usr/bin/env bun
-import { createSmithersRoot } from "smithers-orchestrator";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider, Ralph, Claude, Phase } from "smithers-orchestrator/components";
+import {
+  createSmithersDB,
+  createSmithersRoot,
+  SmithersProvider,
+  Phase,
+  Step,
+  Claude,
+} from "smithers-orchestrator";
 
-// 1. Initialize database for persistent state
-const db = await createSmithersDB({ path: ".smithers/db" });
-const executionId = await db.execution.start("My Orchestration", "main.tsx");
+const db = createSmithersDB({ path: ".smithers/smithers-example" });
 
-// 2. Define orchestration component
-function App() {
+// Resume if an execution is incomplete; otherwise start a new one.
+const existing = db.execution.findIncomplete();
+const executionId =
+  existing?.id ??
+  db.execution.start({
+    name: "Smithers Example",
+    script: "workflows/smithers-example.tsx",
+  });
+
+function Workflow() {
   return (
     <SmithersProvider
       db={db}
       executionId={executionId}
-      globalTimeout={1800000}
+      maxIterations={25}
+      globalTimeout={30 * 60 * 1000}
     >
-      <Ralph maxIterations={10}>
-        {/* All phases are rendered unconditionally */}
-        {/* Only the active phase executes its children */}
-        <Phase name="Research">
-          <Claude model="sonnet">
-            Research the topic and gather information.
+      <Phase name="Plan">
+        <Step name="scan">
+          <Claude model="sonnet" allowedTools={["Read", "Glob", "Grep"]}>
+            Inspect the repo and produce a short plan:
+            - key files
+            - risks
+            - commands to run
           </Claude>
-        </Phase>
+        </Step>
+      </Phase>
 
-        <Phase name="Implementation">
-          <Claude model="sonnet">
-            Implement the solution based on research.
+      <Phase name="Implement">
+        <Step name="changes">
+          <Claude model="sonnet" allowedTools={["Read", "Edit", "Write"]}>
+            Implement the planned changes.
+            Keep edits minimal and consistent with project style.
           </Claude>
-        </Phase>
+        </Step>
+      </Phase>
 
-        <Phase name="Testing">
-          <Claude model="sonnet">
-            Test the implementation.
+      <Phase name="Verify">
+        <Step name="tests">
+          <Claude model="sonnet" allowedTools={["Bash", "Read"]}>
+            Run the project's tests and fix failures until green.
           </Claude>
-        </Phase>
-      </Ralph>
+        </Step>
+      </Phase>
+
+      <Phase name="Report">
+        <Step name="summary">
+          <Claude model="haiku" allowedTools={["Read"]}>
+            Summarize what changed and how it was verified.
+          </Claude>
+        </Step>
+      </Phase>
     </SmithersProvider>
   );
 }
 
-// 3. Create root and show plan
-const root = createSmithersRoot();
-console.log("=== ORCHESTRATION PLAN ===");
-console.log(root.toXML());
-console.log("===========================\n");
-
-// 4. Execute
-root.mount(() => <App />);
-
-// 5. Keep alive
-await new Promise(() => {});
+const root = createSmithersRoot({ db, executionId });
+await root.mount(Workflow);
+db.close();
 ```
 
-### Best Practices
-
-1. **Render phases unconditionally** - let PhaseRegistry manage active state
-2. **Always set maxIterations** to prevent infinite loops
-3. **Use Phase components** for sequential workflow steps
-4. **Use skipIf for conditional phases** - `<Phase name="Optional" skipIf={() => condition}>`
-5. **Start simple** - 2-3 phases first, add complexity later
-6. **Use callbacks for logging** - `onStart`, `onComplete`, `onFinished` for audit trails
-
-### Error Handling
-
-```tsx
-<Claude
-  onFinished={(result) => setPhase("next")}
-  onError={(error) => {
-    console.error("Agent failed:", error);
-    setPhase("error-recovery");
-  }}
-  validate={async (result) => {
-    // Return false to retry
-    return result.quality > 0.8;
-  }}
->
-  Do work with validation
-</Claude>
-```
-
-## Workflow Example
-
-User: "Create an agent workflow to research a topic and write a summary"
-
-**Step 1**: Initialize
+Run:
 
 ```bash
-bunx smithers-orchestrator init
+bun workflows/smithers-example.tsx
 ```
 
-**Step 2**: Edit `.smithers/main.tsx`
+Notes:
 
-```tsx
-import { createSmithersRoot } from "smithers-orchestrator";
-import { createSmithersDB } from "smithers-orchestrator/db";
-import { SmithersProvider, Ralph, Claude, Phase } from "smithers-orchestrator/components";
+* DB APIs are synchronous; close DB at end.
+* Resume relies on `db.execution.findIncomplete()`.
 
-const db = await createSmithersDB({ path: ".smithers/db" });
-const executionId = await db.execution.start("Research Workflow", "main.tsx");
+---
 
-function ResearchWorkflow() {
-  return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Ralph maxIterations={3}>
-        {/* All phases rendered unconditionally - auto-sequencing */}
-        <Phase name="Research">
-          <Claude model="sonnet">
-            Research the topic and gather key findings.
-            Return structured findings as JSON.
-          </Claude>
-        </Phase>
+# Execution model (what to rely on)
 
-        <Phase name="Summarize">
-          <Claude model="sonnet">
-            Based on the research findings, write a clear, concise summary.
-          </Claude>
-        </Phase>
+## Durable iteration ("Ralphing") rules
 
-        <Phase name="Review">
-          <Claude model="sonnet">
-            Review the summary for accuracy and completeness.
-          </Claude>
-        </Phase>
-      </Ralph>
-    </SmithersProvider>
-  );
-}
+* Workflow progresses via **rerenders**; each rerender is an "iteration".
+* Always set `maxIterations` (default is 100 if you omit it).
+* For durable branching/retry: store state in `db.state` (SQLite); read with reactive queries (`useQueryValue`, etc.) rather than React `useState`.
 
-const root = createSmithersRoot();
-root.mount(() => <ResearchWorkflow />);
-```
+## Phases + Steps (sequential semantics)
 
-**Step 3**: Monitor execution
+* A `<Phase>` **auto-advances when all child `<Step>`s complete**.
+* Phase requires ≥1 Step to auto-advance; otherwise it will not progress without manual logic (`onComplete` + your own state).
+* Only the **active phase renders children** under the registry context (provided by `SmithersProvider`).
 
-```bash
-bunx smithers-orchestrator monitor
-```
+## Parallel (experimental)
 
-**Step 4**: Watch the stream for phase transitions and results
+* `<Parallel>` runs children concurrently inside a Step; semantics are experimental and have known limitations.
 
-## Using This Skill in Claude Code
+## Task (presentational)
 
-When a user asks for multi-agent orchestration:
+* `<Task>` is just a checkbox-like rendering element; it is **not** `db.tasks.*`.
 
-1. **Initialize the project**:
+---
 
-   ```bash
-   bunx smithers-orchestrator init
-   ```
+# SQLite state (db.state): minimal contract
 
-2. **Create the orchestration program**:
+State values are JSON-serialized on write and parsed on read (`get`, `getAll`). History stores old/new as JSON strings; add optional trigger strings for causality/audit.
 
-   - Use Write tool to create `.smithers/main.tsx`
-   - Follow the template structure
-   - Define phases based on user requirements
-   - Use React useState with db.state for persistent phase transitions
+| Method                                                                      | Use                                |
+| --------------------------------------------------------------------------- | ---------------------------------- |
+| `db.state.get<T>(key)`                                                      | read (parsed)                      |
+| `db.state.set(key, value, trigger?)`                                        | write + optional cause             |
+| `db.state.setMany(obj, trigger?)`                                           | atomic multi-write                 |
+| `db.state.getAll()`                                                         | full state object                  |
+| `db.state.history(key?, limit?)`                                            | transitions (old/new JSON strings) |
+| `db.state.has(key)` / `db.state.delete(key, trigger?)` / `db.state.reset()` | utilities                          |
 
-3. **Show the plan to user**:
+---
 
-   - The JSX code IS the plan
-   - Explain what each phase does
-   - Highlight key transitions
+# Logging & monitoring (where to look)
 
-4. **Execute with monitoring**:
+Default log layout: `.smithers/logs/` plus execution-scoped logs under `.smithers/executions/<execution-id>/logs/` including `stream.ndjson` + `stream.summary.json`.
 
-   ```bash
-   bunx smithers-orchestrator monitor
-   ```
+NDJSON event types:
 
-5. **Read monitor output**:
-   - Parse the structured output
-   - Summarize progress for user
-   - If errors occur, read full logs from `.smithers/logs/`
+* `text-end`, `reasoning-end`, `tool-call`, `tool-result`, `error`
 
-## Debugging
+Optional summarization (large outputs) via Haiku:
 
-### If orchestration doesn't start
+* `ANTHROPIC_API_KEY` required
+* Thresholds: `SMITHERS_SUMMARY_THRESHOLD` (default 50 lines), `SMITHERS_SUMMARY_CHAR_THRESHOLD` (default 4000), `SMITHERS_SUMMARY_MAX_CHARS` (default 20000)
+* Model: `SMITHERS_SUMMARY_MODEL` (default `claude-3-haiku-20240307`)
 
-```bash
-# Check for syntax errors
-bun check .smithers/main.tsx
+---
 
-# Run with verbose output
-DEBUG=smithers:* bunx smithers-orchestrator monitor
-```
+# Guardrails for agents generating Smithers code
 
-### If agents aren't executing
+* Prefer **Phase/Step structure** for straight-line workflows; add `skipIf` for optional phases.
+* Use `db.state` for any branching/retry/human checkpoints.
+* Scope tool permissions per `<Claude>` call (`allowedTools`) and choose conservative `permissionMode` by default.
+* Never omit `maxIterations`.
 
-- Check that `<Claude>` components are rendering (phase conditions)
-- Verify React state is updating in `onFinished`
-- Check Ralph `maxIterations` isn't 0
+---
 
-### If infinite loop
+# Pointer files
 
-- Ensure a terminal phase exists (no `<Claude>` components)
-- Check `onFinished` is setting phase correctly
-- Verify `maxIterations` is set
-
-## Monitor Output Integration
-
-When executing orchestrations, the monitor command provides structured output designed for LLM consumption:
-
-**What you'll see:**
-
-- Timestamps on all events
-- Phase transitions with status
-- Agent execution updates
-- Tool call summaries (large outputs auto-summarized)
-- Full output paths for detailed inspection
-
-**How to use it:**
-
-1. Run `bunx smithers-orchestrator monitor`
-2. Read the streaming output
-3. For large tool outputs, check the summary first
-4. If needed, read full output from `.smithers/logs/` directory
-5. Report progress and results back to user
-
-## Advanced: Haiku Summarization
-
-The monitor command uses Claude Haiku to summarize large outputs (> 50 lines). This keeps the stream concise while preserving access to full content.
-
-**Configuration:**
-
-```bash
-# Enable summarization (requires API key)
-export ANTHROPIC_API_KEY=sk-...
-
-# Adjust threshold (default: 50 lines)
-export SMITHERS_SUMMARY_THRESHOLD=100
-
-# Run monitor
-bunx smithers-orchestrator monitor
-```
-
-**Without API key:**
-
-- Large outputs are truncated
-- Full content still saved to `.smithers/logs/`
-
-## Additional Resources
-
-For complete API reference, see [REFERENCE.md](REFERENCE.md)
-For working examples, see [EXAMPLES.md](EXAMPLES.md)
+This plugin is intentionally "single manual": full patterns live in `EXAMPLES.md` (end-to-end runnable scripts).

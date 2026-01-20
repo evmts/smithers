@@ -1,7 +1,7 @@
 {
   "name": "smithers",
   "version": "0.1.0",
-  "description": "Orchestrate AI agents with React - A supercharged plan mode",
+  "description": "Smithers (smithers-orchestrator) — JSX workflow engine for Claude Code: durable, resumable, observable orchestration with SQLite-backed state (phases/steps), tool-scoped agents, and repo automation primitives.",
   "author": {
     "name": "William Cory",
     "email": "will@tevm.tech",
@@ -12,15 +12,15 @@
   "license": "MIT",
   "keywords": [
     "orchestration",
-    "multi-agent",
-    "smithers",
     "workflow",
-    "ai-agents",
-    "claude",
+    "agentic",
+    "smithers",
+    "claude-code",
     "jsx",
-    "reactive",
     "react",
-    "agentic"
+    "sqlite",
+    "resumable",
+    "observability"
   ],
   "skills": "./skills/"
 }

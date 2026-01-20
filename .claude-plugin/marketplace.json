@@ -2,14 +2,12 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "smithers",
   "version": "1.0.0",
-  "description": "Smithers - Declarative JSX framework for AI agent orchestration",
-  "owner": {
-    "name": "William Cory"
-  },
+  "description": "Smithers — JSX workflow engine for Claude Code: durable, resumable orchestration with SQLite state (phases/steps), tool-scoped agents, and observable logs.",
+  "owner": { "name": "William Cory" },
   "plugins": [
     {
       "name": "smithers",
-      "description": "Build AI agents with React JSX - Declarative orchestration for Claude workflows",
+      "description": "Smithers (smithers-orchestrator): write durable JSX workflows for Claude Code (SQLite-backed state, phases/steps, retries, observability).",
       "source": "./plugins/smithers",
       "category": "development"
     }
