@@ -58,6 +58,15 @@ bun examples/stacked-pr-merge/index.tsx --status
 
 **Prerequisites:** [Bun](https://bun.sh/) v1.0+ and [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)
 
+### AI Agent Context
+
+Give your coding agent full Smithers documentation:
+
+| Resource | URL | Use Case |
+|----------|-----|----------|
+| LLMS.txt | https://smithers.sh/llms.txt | Paste into agent context |
+| MCP Server | https://smithers.sh/mcp | Add as MCP server in Claude/Cursor |
+
 **Let Claude write your workflows.** Describe what you want:
 
 ```
