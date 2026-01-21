@@ -27,6 +27,7 @@ from ..serialize.xml import serialize_to_xml
 from ..executors import ClaudeExecutor, RateLimitCoordinator
 from ..executors.base import TaskStatus, StreamEvent, AgentResult
 from .events import EventSystem
+from .node_identity import NodeIdentityTracker, assign_node_ids, PlanLinter
 
 
 @dataclass
@@ -80,9 +81,10 @@ class TickLoop:
         self.last_frame_time = 0.0
         self.last_frame_xml: Optional[str] = None
 
-        # Reconciliation state
+        # Reconciliation state - use deterministic node identity
         self.previous_tree: Optional[Node] = None
-        self.mounted_nodes: Dict[str, Node] = {}  # Track mounted runnable nodes
+        self.identity_tracker = NodeIdentityTracker()
+        self.plan_linter = PlanLinter()
 
         # Configuration
         self.min_frame_interval = 0.25  # 250ms throttle
@@ -217,63 +219,49 @@ class TickLoop:
         """
         Phase 3: Reconcile current tree vs previous by stable node identity.
 
+        Uses deterministic SHA256-based node IDs per PRD section 7.2 and 8.2.
         Returns diff information about what changed.
-        For M0: simple comparison, future versions will do proper reconciliation.
         """
         print("  🔄 Phase 3: Reconcile")
 
+        # Use deterministic identity tracker for reconciliation
+        reconcile_result = self.identity_tracker.update_for_frame(current_tree)
+
+        # Lint the plan tree for warnings
+        lint_warnings = self.plan_linter.lint(self.identity_tracker.current_ids)
+        if lint_warnings:
+            for warning in lint_warnings[:3]:  # Limit to first 3
+                print(f"    ⚠️  Lint: [{warning.rule}] {warning.message}")
+
+        # Convert to legacy format for compatibility with existing code
         changes = {
             "mounted": [],
             "updated": [],
             "unmounted": [],
-            "tree_changed": self.previous_tree != current_tree
+            "tree_changed": self.previous_tree != current_tree,
+            "reconcile_result": reconcile_result,
         }
 
-        # Build current mounted nodes map
-        new_mounted_nodes = {}
-        self._collect_runnable_nodes(current_tree, new_mounted_nodes)
+        # Get actual node objects for mounted/unmounted lists
+        for node_id in reconcile_result.newly_mounted:
+            node_with_id = self.identity_tracker.get_node(node_id)
+            if node_with_id:
+                changes["mounted"].append((node_id, node_with_id.node))
 
-        if self.previous_tree is None:
-            # First render - everything is mounted
-            changes["mounted"] = list(new_mounted_nodes.values())
-        else:
-            # Determine what changed
-            old_node_ids = set(self.mounted_nodes.keys())
-            new_node_ids = set(new_mounted_nodes.keys())
-
-            # Newly mounted
-            for node_id in new_node_ids - old_node_ids:
-                changes["mounted"].append(new_mounted_nodes[node_id])
-
-            # Still mounted (updated)
-            for node_id in new_node_ids & old_node_ids:
-                changes["updated"].append(new_mounted_nodes[node_id])
-
-            # Unmounted
-            for node_id in old_node_ids - new_node_ids:
-                changes["unmounted"].append(self.mounted_nodes[node_id])
+        for node_id in reconcile_result.unmounted:
+            # Note: unmounted nodes are no longer in current_ids,
+            # but we still need their IDs for cancellation
+            changes["unmounted"].append(node_id)
 
         # Update event system with current mounted nodes
-        self.event_system.update_mounted_nodes(new_mounted_nodes)
-        self.mounted_nodes = new_mounted_nodes
+        # Convert to dict format expected by event system
+        mounted_nodes = {
+            nid: nwi.node
+            for nid, nwi in self.identity_tracker.current_ids.items()
+        }
+        self.event_system.update_mounted_nodes(mounted_nodes)
 
         return changes
-
-    def _collect_runnable_nodes(self, node: Node, collected: Dict[str, Node]) -> None:
-        """Recursively collect all runnable nodes with their IDs."""
-        from smithers_py.nodes import ClaudeNode
-
-        # Generate node ID based on path
-        node_id = node.key or f"{node.type}_{id(node)}"
-
-        # Check if this is a runnable node
-        if isinstance(node, ClaudeNode):
-            collected[node_id] = node
-
-        # Recurse into children
-        if hasattr(node, 'children'):
-            for child in node.children:
-                self._collect_runnable_nodes(child, collected)
 
     async def _phase4_commit(self, current_tree: Node, ctx: Context) -> None:
         """
@@ -308,6 +296,7 @@ class TickLoop:
         - Starts execution for newly mounted runnable nodes
         - Processes completed tasks and fires event handlers
         - Applies state changes from event handlers
+        - Uses deterministic node IDs for task tracking
         """
         print("  🚀 Phase 5: Execute")
 
@@ -324,17 +313,24 @@ class TickLoop:
             all_state_changes = []
 
             for task_id in completed_tasks:
+                # Check if node is still mounted (stale result detection per PRD 7.2.4)
+                still_mounted = self.identity_tracker.mark_completed(task_id)
+
                 # Get the result
                 result = self.task_results.get(task_id)
                 if result:
-                    # Execute event handlers and collect state changes
-                    ctx = await self._phase1_state_snapshot(time.time())
-                    state_changes = await self.event_system.handle_agent_completion(
-                        node_id=task_id,
-                        result=result,
-                        ctx=ctx
-                    )
-                    all_state_changes.extend(state_changes)
+                    if still_mounted:
+                        # Execute event handlers and collect state changes
+                        ctx = await self._phase1_state_snapshot(time.time())
+                        state_changes = await self.event_system.handle_agent_completion(
+                            node_id=task_id,
+                            result=result,
+                            ctx=ctx
+                        )
+                        all_state_changes.extend(state_changes)
+                    else:
+                        # Stale result - node unmounted, don't fire handlers
+                        print(f"    ⚠️  Stale result for node {task_id}, not firing handlers")
 
                 # Clean up
                 self.running_tasks.discard(task_id)
@@ -352,13 +348,16 @@ class TickLoop:
                         self.sqlite_state.set(op.key, op.value, op.trigger)
 
         # Find runnable nodes in the mounted set
-        runnable_nodes = self._find_runnable(changes.get("mounted", []))
+        # New format: mounted is list of (node_id, node) tuples
+        mounted_items = changes.get("mounted", [])
+        runnable_nodes = self._find_runnable(mounted_items)
 
         if runnable_nodes:
             print(f"    📋 Starting {len(runnable_nodes)} new runnable tasks")
 
-            for node in runnable_nodes:
-                node_id = node.key or f"{node.type}_{id(node)}"
+            for node_id, node in runnable_nodes:
+                # Mark as running in identity tracker
+                self.identity_tracker.mark_running(node_id)
                 # Start execution for each runnable node
                 task = asyncio.create_task(self._execute_node(node, node_id))
                 self.task_futures[node_id] = task
@@ -395,14 +394,28 @@ class TickLoop:
             self.sqlite_state.commit()
             print("    ✅ Flushed SQLite state updates")
 
-    def _find_runnable(self, nodes: List[Node]) -> List[Node]:
-        """Find all runnable nodes (ClaudeNode) in the given list."""
+    def _find_runnable(self, mounted_items: List) -> List[tuple]:
+        """Find all runnable nodes (ClaudeNode) in the given list.
+
+        Args:
+            mounted_items: List of (node_id, node) tuples
+
+        Returns:
+            List of (node_id, node) tuples for runnable nodes only
+        """
         from smithers_py.nodes import ClaudeNode
 
         runnable = []
-        for node in nodes:
-            if isinstance(node, ClaudeNode):
-                runnable.append(node)
+        for item in mounted_items:
+            if isinstance(item, tuple):
+                node_id, node = item
+                if isinstance(node, ClaudeNode):
+                    runnable.append((node_id, node))
+            elif isinstance(item, ClaudeNode):
+                # Legacy format fallback
+                node = item
+                node_id = node.key or f"{node.type}_{id(node)}"
+                runnable.append((node_id, node))
         return runnable
 
     async def _execute_node(self, node: Node, node_id: str) -> None:

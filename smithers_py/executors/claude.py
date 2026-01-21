@@ -9,6 +9,7 @@ Manages Claude agent execution with:
 """
 
 import asyncio
+import inspect
 import json
 import uuid
 from datetime import datetime
@@ -29,7 +30,7 @@ except ImportError:
     KnownModelName = str  # type: ignore
     FinalResult = None  # type: ignore
     RunUsage = None  # type: ignore
-    ModelMessage = None  # type: ignore
+    ModelMessage = Any  # type: ignore
     PYDANTIC_AI_AVAILABLE = False
 
 from ..db.database import SmithersDB
@@ -143,11 +144,12 @@ class ClaudeExecutor:
 
                 if history_data:
                     message_history = self._deserialize_history(history_data)
-                    # Yield progress event
-                    yield StreamEvent(
-                        kind="resumed",
-                        payload={"run_id": run_id, "messages": len(message_history)},
-                    )
+
+                # Yield resumed event when resuming (even if no history)
+                yield StreamEvent(
+                    kind="resumed",
+                    payload={"run_id": run_id, "messages": len(message_history)},
+                )
 
             # Stream the agent execution
             accumulated_text = []
@@ -164,20 +166,26 @@ class ClaudeExecutor:
                     result = event
 
             # Set final output
-            if accumulated_text and not result.output_text:
+            if accumulated_text:
                 result.output_text = "".join(accumulated_text)
+            elif result.output_text is None:
+                result.output_text = ""
+
+            # Ensure turns_used is at least 1 if we got any output
+            if result.output_text and result.turns_used == 0:
+                result.turns_used = 1
 
             # Mark complete
             result.status = TaskStatus.DONE
             result.ended_at = datetime.now()
 
             # Persist to database
-            await self._persist_result(result, execution_id)
+            await self._persist_result(result, execution_id, prompt)
 
         except asyncio.CancelledError:
             result.status = TaskStatus.CANCELLED
             result.ended_at = datetime.now()
-            await self._persist_result(result, execution_id)
+            await self._persist_result(result, execution_id, prompt)
             raise
 
         except Exception as e:
@@ -186,7 +194,7 @@ class ClaudeExecutor:
             result.error = e
             result.error_message = str(e)
             result.error_type = type(e).__name__
-            await self._persist_result(result, execution_id)
+            await self._persist_result(result, execution_id, prompt)
 
             # Yield error event
             yield StreamEvent(
@@ -204,6 +212,18 @@ class ClaudeExecutor:
         # Yield final result
         yield result
 
+    def _is_tool_call(self, msg: Any) -> bool:
+        """Duck-type check for tool call message."""
+        return hasattr(msg, "tool_name") and hasattr(msg, "args")
+
+    def _is_tool_return(self, msg: Any) -> bool:
+        """Duck-type check for tool return message."""
+        return hasattr(msg, "tool_name") and hasattr(msg, "content") and not hasattr(msg, "args")
+
+    def _is_model_response(self, msg: Any) -> bool:
+        """Duck-type check for model text response."""
+        return hasattr(msg, "content") and not hasattr(msg, "tool_name")
+
     async def _stream_agent(
         self,
         agent: Agent,
@@ -214,13 +234,15 @@ class ClaudeExecutor:
         """Stream agent execution with tool calls and token events."""
         # Run agent with streaming
         try:
-            # Create initial user prompt
-            messages = message_history + [UserPrompt(prompt)]
+            # Get stream - handle both awaitable and async context manager
+            stream_cm = agent.run_stream(prompt, message_history=message_history)
+            if inspect.isawaitable(stream_cm):
+                stream_cm = await stream_cm
 
-            # Run with streaming
-            async with agent.run_stream(prompt, message_history=message_history) as stream:
+            async with stream_cm as stream:
                 # Track current tool call
                 current_tool: Optional[Dict[str, Any]] = None
+                message_count = 0
 
                 async for message in stream:
                     if isinstance(message, str):
@@ -230,15 +252,8 @@ class ClaudeExecutor:
                             payload={"text": message},
                         )
 
-                    elif isinstance(message, ModelTextResponse):
-                        # Complete text response
-                        yield StreamEvent(
-                            kind="model_response",
-                            payload={"text": message.content},
-                        )
-
-                    elif isinstance(message, ToolCall):
-                        # Tool call started
+                    elif self._is_tool_call(message):
+                        # Tool call started (duck-typed)
                         current_tool = {
                             "name": message.tool_name,
                             "input": message.args,
@@ -252,8 +267,8 @@ class ClaudeExecutor:
                             },
                         )
 
-                    elif isinstance(message, ToolReturn):
-                        # Tool call completed
+                    elif self._is_tool_return(message):
+                        # Tool call completed (duck-typed)
                         if current_tool:
                             tool_record = ToolCallRecord(
                                 tool_name=current_tool["name"],
@@ -280,6 +295,14 @@ class ClaudeExecutor:
                             )
                             current_tool = None
 
+                    elif self._is_model_response(message):
+                        # Complete text response (duck-typed)
+                        message_count += 1
+                        yield StreamEvent(
+                            kind="model_response",
+                            payload={"text": message.content},
+                        )
+
                 # Get final result
                 final_result = await stream.get_final_result()
 
@@ -292,17 +315,16 @@ class ClaudeExecutor:
                         total_tokens=usage.total_tokens or 0,
                     )
 
-                # Update turns used
-                result.turns_used = len(
-                    [m for m in messages if isinstance(m, (UserPrompt, ModelTextResponse))]
-                )
+                # Update turns used based on message count
+                result.turns_used = message_count
 
                 # Set structured output if schema was used
                 if hasattr(final_result, "data") and final_result.data is not None:
                     if isinstance(final_result.data, BaseModel):
                         result.output_structured = final_result.data.model_dump()
-                    else:
-                        result.output_text = str(final_result.data)
+                    elif isinstance(final_result.data, str):
+                        # Only overwrite if it's actually a string result
+                        result.output_text = final_result.data
 
         except Exception as e:
             # Let outer handler deal with it
@@ -330,15 +352,12 @@ class ClaudeExecutor:
             return True
         return False
 
-    async def _persist_result(self, result: AgentResult, execution_id: str) -> None:
+    async def _persist_result(self, result: AgentResult, execution_id: str, prompt: str = "") -> None:
         """Persist agent result to database."""
         # The agents table expects different columns based on the schema
-        # Map our fields to the schema columns
-        usage_data = {
-            "prompt_tokens": result.usage.prompt_tokens if result.usage else 0,
-            "completion_tokens": result.usage.completion_tokens if result.usage else 0,
-            "total_tokens": result.usage.total_tokens if result.usage else 0,
-        }
+        # Map our fields to the schema columns - ensure int type for SQLite
+        tokens_input = int(result.usage.prompt_tokens) if result.usage else 0
+        tokens_output = int(result.usage.completion_tokens) if result.usage else 0
 
         error_details = None
         if result.error:
@@ -347,29 +366,29 @@ class ClaudeExecutor:
                 "type": result.error_type,
             })
 
-        # Insert into agents table matching the schema
+        # Insert into agents table matching the schema (phase_id can be NULL)
         if self.db.is_async:
             await self.db.connection.execute(
                 """INSERT OR REPLACE INTO agents
-                   (id, execution_id, node_id, model, status, started_at, completed_at,
+                   (id, execution_id, model, prompt, status, started_at, completed_at,
                     result, result_structured, error, tokens_input, tokens_output)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (result.run_id, execution_id, result.node_id, result.model, result.status.value,
+                (result.run_id, execution_id, result.model, prompt, result.status.value,
                  result.started_at.isoformat(), result.ended_at.isoformat() if result.ended_at else None,
                  result.output_text, json.dumps(result.output_structured) if result.output_structured else None,
-                 error_details, usage_data["prompt_tokens"], usage_data["completion_tokens"])
+                 error_details, tokens_input, tokens_output)
             )
             await self.db.connection.commit()
         else:
             self.db.connection.execute(
                 """INSERT OR REPLACE INTO agents
-                   (id, execution_id, node_id, model, status, started_at, completed_at,
+                   (id, execution_id, model, prompt, status, started_at, completed_at,
                     result, result_structured, error, tokens_input, tokens_output)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (result.run_id, execution_id, result.node_id, result.model, result.status.value,
+                (result.run_id, execution_id, result.model, prompt, result.status.value,
                  result.started_at.isoformat(), result.ended_at.isoformat() if result.ended_at else None,
                  result.output_text, json.dumps(result.output_structured) if result.output_structured else None,
-                 error_details, usage_data["prompt_tokens"], usage_data["completion_tokens"])
+                 error_details, tokens_input, tokens_output)
             )
             self.db.connection.commit()
 

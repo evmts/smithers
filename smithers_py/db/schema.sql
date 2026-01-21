@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS executions (
   -- Identity
   name TEXT,                     -- Human-readable name
   source_file TEXT NOT NULL,     -- Path to source file (Python equivalent of file_path)
+  correlation_id TEXT,           -- Optional correlation ID for linking related executions
 
   -- Status
   status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'running', 'completed', 'failed', 'cancelled'
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS executions (
   started_at TEXT,
   completed_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),  -- Last update timestamp
 
   -- Metrics
   total_iterations INTEGER DEFAULT 0,
@@ -68,8 +70,22 @@ CREATE TABLE IF NOT EXISTS executions (
   total_tokens_used INTEGER DEFAULT 0
 );
 
+-- Alias columns for MCP resource compatibility
+-- Note: updated_at defaults to created_at, correlation_id is nullable
+
 CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
 CREATE INDEX IF NOT EXISTS idx_executions_created ON executions(created_at DESC);
+
+-- EXECUTION_TAGS - Tags for executions (for MCP resources)
+
+CREATE TABLE IF NOT EXISTS execution_tags (
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  tag TEXT NOT NULL,
+  PRIMARY KEY (execution_id, tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_tags_execution ON execution_tags(execution_id);
+CREATE INDEX IF NOT EXISTS idx_execution_tags_tag ON execution_tags(tag);
 
 -- 3. PHASES - Workflow Stages
 
@@ -554,6 +570,148 @@ CREATE TABLE IF NOT EXISTS render_frames (
 CREATE INDEX IF NOT EXISTS idx_render_frames_execution ON render_frames(execution_id);
 CREATE INDEX IF NOT EXISTS idx_render_frames_sequence ON render_frames(execution_id, sequence_number);
 CREATE INDEX IF NOT EXISTS idx_render_frames_timestamp ON render_frames(timestamp DESC);
+
+-- FRAMES - Frame snapshots for MCP resources (separate from render_frames)
+
+CREATE TABLE IF NOT EXISTS frames (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+
+  -- Frame ordering
+  sequence INTEGER NOT NULL,
+
+  -- Status and context
+  status TEXT DEFAULT 'completed',  -- 'pending', 'active', 'completed', 'failed'
+  phase_path TEXT,                   -- Current phase path
+  step_index INTEGER,                -- Current step index
+  error TEXT,                        -- Error message if failed
+
+  -- Content
+  plan_tree TEXT,                    -- JSON: Plan tree snapshot
+  metrics TEXT,                      -- JSON: Metrics at this frame
+
+  -- Timing
+  created_at TEXT DEFAULT (datetime('now')),
+
+  UNIQUE(execution_id, sequence)
+);
+
+CREATE INDEX IF NOT EXISTS idx_frames_execution ON frames(execution_id);
+CREATE INDEX IF NOT EXISTS idx_frames_sequence ON frames(execution_id, sequence);
+
+-- FRAME_NODES - Nodes in a frame snapshot
+
+CREATE TABLE IF NOT EXISTS frame_nodes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  frame_id TEXT NOT NULL REFERENCES frames(id) ON DELETE CASCADE,
+
+  -- Node identity
+  node_id TEXT NOT NULL,
+  node_type TEXT NOT NULL,
+  path TEXT NOT NULL,
+
+  -- Status
+  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'active', 'completed', 'failed'
+  metadata TEXT                             -- JSON: Node-specific metadata
+);
+
+CREATE INDEX IF NOT EXISTS idx_frame_nodes_frame ON frame_nodes(frame_id);
+CREATE INDEX IF NOT EXISTS idx_frame_nodes_node ON frame_nodes(node_id);
+
+-- NODE_INSTANCES - Live node instance tracking
+
+CREATE TABLE IF NOT EXISTS node_instances (
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL,
+
+  -- Node identity
+  node_type TEXT NOT NULL,
+  path TEXT NOT NULL,
+
+  -- Status
+  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'active', 'completed', 'failed'
+  error TEXT,
+  metadata TEXT,                             -- JSON: Node-specific metadata
+
+  -- Timing
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT,
+
+  PRIMARY KEY (execution_id, node_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_instances_execution ON node_instances(execution_id);
+CREATE INDEX IF NOT EXISTS idx_node_instances_status ON node_instances(status);
+
+-- AGENT_RUNS - Agent execution runs (for node run history)
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL,
+
+  -- Run info
+  run_number INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'running',  -- 'running', 'completed', 'failed'
+
+  -- Timing
+  started_at TEXT DEFAULT (datetime('now')),
+  completed_at TEXT,
+
+  -- Results
+  result TEXT,                              -- JSON: Agent result
+  error TEXT,
+  metadata TEXT,                            -- JSON: Run metadata
+  tool_calls_count INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_runs_execution ON agent_runs(execution_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_node ON agent_runs(node_id);
+
+-- ARTIFACTS - Execution artifacts (files, outputs, etc.)
+
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+
+  -- Artifact info
+  type TEXT NOT NULL,                       -- 'file', 'output', 'log', etc.
+  name TEXT NOT NULL,
+  size INTEGER DEFAULT 0,
+  metadata TEXT,                            -- JSON: Artifact metadata
+
+  -- Timing
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_execution ON artifacts(execution_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts(type);
+
+-- APPROVALS - Pending approval requests
+
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL,
+
+  -- Approval request
+  type TEXT DEFAULT 'user_approval',        -- 'user_approval', 'auto_approval', etc.
+  prompt TEXT NOT NULL,
+  options TEXT,                             -- JSON: Array of options
+  metadata TEXT,                            -- JSON: Approval metadata
+
+  -- Status
+  status TEXT NOT NULL DEFAULT 'pending',   -- 'pending', 'approved', 'rejected'
+  response TEXT,                            -- JSON: Response data
+
+  -- Timing
+  created_at TEXT DEFAULT (datetime('now')),
+  resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_execution ON approvals(execution_id);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
 
 -- 17. VCS_QUEUE - VCS Operation Queue for Serialized Git/JJ Operations
 

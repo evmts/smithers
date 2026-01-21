@@ -24,6 +24,18 @@ from .effects import (
     EffectLoopError,
     run_effects_strict_mode,
 )
+from .node_identity import (
+    compute_node_id,
+    compute_execution_signature,
+    assign_node_ids,
+    reconcile_trees,
+    ReconcileResult,
+    NodeIdentityTracker,
+    ResumeContext,
+    validate_resume,
+    PlanLinter,
+    NodeWithId,
+)
 
 __all__ = [
     # Core loop
@@ -51,4 +63,15 @@ __all__ = [
     "EffectLoopDetector",
     "EffectLoopError",
     "run_effects_strict_mode",
+    # Node identity
+    "compute_node_id",
+    "compute_execution_signature",
+    "assign_node_ids",
+    "reconcile_trees",
+    "ReconcileResult",
+    "NodeIdentityTracker",
+    "ResumeContext",
+    "validate_resume",
+    "PlanLinter",
+    "NodeWithId",
 ]

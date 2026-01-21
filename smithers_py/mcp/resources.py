@@ -425,14 +425,14 @@ class MCPResourceProvider:
                     "metadata": json.loads(node['metadata']) if node['metadata'] else None
                 })
 
-            # Get events for this frame
+            # Get events for this execution (frame_seq not tracked in current schema)
             event_rows = conn.execute("""
-                SELECT id, type, created_at, node_id, data
+                SELECT id, event_type as type, timestamp as created_at, node_id, payload as data
                 FROM events
-                WHERE execution_id = ? AND frame_seq = ?
-                ORDER BY created_at
+                WHERE execution_id = ?
+                ORDER BY timestamp
                 LIMIT 100
-            """, (execution_id, frame_seq)).fetchall()
+            """, (execution_id,)).fetchall()
 
             events = []
             for event in event_rows:
@@ -479,13 +479,13 @@ class MCPResourceProvider:
             # Count total
             total = conn.execute("SELECT COUNT(*) FROM events WHERE execution_id = ?", (execution_id,)).fetchone()[0]
 
-            # Get events
+            # Get events (map schema columns to expected format)
             rows = conn.execute("""
                 SELECT
-                    id, type, created_at, frame_seq, node_id, data
+                    id, event_type as type, timestamp as created_at, node_id, payload as data
                 FROM events
                 WHERE execution_id = ?
-                ORDER BY created_at DESC
+                ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
             """, (execution_id, per_page, offset)).fetchall()
 
@@ -495,7 +495,7 @@ class MCPResourceProvider:
                     id=row['id'],
                     type=row['type'],
                     created_at=row['created_at'],
-                    frame_seq=row['frame_seq'],
+                    frame_seq=None,  # Not tracked in current schema
                     node_id=row['node_id'],
                     data=json.loads(row['data']) if row['data'] else None
                 ))

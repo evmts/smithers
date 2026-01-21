@@ -107,18 +107,18 @@ def sample_execution(temp_db):
         datetime.now().isoformat()
     ))
 
-    # Create events
+    # Create events (using actual schema column names)
     for i in range(10):
         conn.execute("""
-            INSERT INTO events (execution_id, type, created_at, frame_seq, node_id, data)
+            INSERT INTO events (execution_id, source, node_id, event_type, payload, timestamp)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             exec_id,
-            f"event_type_{i % 3}",
-            datetime.now().isoformat(),
-            i % 5,
+            "test",
             f"node-{i % 5}-0" if i % 2 == 0 else None,
-            json.dumps({"event_index": i})
+            f"event_type_{i % 3}",
+            json.dumps({"event_index": i}),
+            datetime.now().isoformat()
         ))
 
     conn.commit()
@@ -213,7 +213,7 @@ class TestMCPResourceProvider:
         assert exec_item["status"] == "running"
         assert exec_item["total_frames"] == 5
         assert exec_item["current_frame"] == 4
-        assert exec_item["tags"] == ["test", "sample"]
+        assert set(exec_item["tags"]) == {"test", "sample"}
 
     def test_list_executions_pagination(self, provider, temp_db):
         """Test execution list pagination."""
@@ -270,7 +270,7 @@ class TestMCPResourceProvider:
         assert data["status"] == "running"
         assert data["total_frames"] == 5
         assert data["current_frame"] == 4
-        assert data["tags"] == ["test", "sample"]
+        assert set(data["tags"]) == {"test", "sample"}
         assert data["config"] == {"test": True}
 
         # Check node stats
