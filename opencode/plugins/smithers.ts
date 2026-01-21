@@ -1,11 +1,111 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { createControlPlane } from "../../src/control-plane/index.js"
+import { createControlPlane } from "smithers-orchestrator"
+
+const STARTUP_MESSAGE = `
+# Smithers - Multi-Agent AI Workflow Orchestrator
+
+I help you create and manage multi-agent AI workflows. Here's how I work:
+
+## Core Workflow
+\`\`\`
+Human Request → Plan → Smithers Script → Claude Agents → Code Changes
+\`\`\`
+
+## Basic Commands
+
+### Discovery
+- "What workflows exist?" - Find existing Smithers scripts in .smithers/
+- "What's in this codebase?" - Explore structure and find relevant files
+- "Show execution status" - Check running/incomplete workflows
+
+### Planning & Execution
+- "Create feature X" - I'll create a workflow and run it
+- "Fix bug Y" - I'll analyze, plan, and orchestrate the fix
+- "Refactor Z" - I'll plan the refactoring steps across phases
+
+### Monitoring
+- "What's the status of [execution]?" - Get phase/step progress
+- "Resume incomplete execution" - Continue where we left off
+- "Cancel execution [id]" - Stop a running workflow
+
+## How It Works
+
+1. **I don't write code directly** - I create \`.smithers/*.tsx\` files that orchestrate Claude agents
+2. **Each task becomes a Step** - Claude agents do the actual coding work within steps
+3. **Phases group related steps** - Like: Analysis → Implementation → Testing
+4. **Everything persists** - Plans, executions, and state survive restarts in SQLite
+
+## Workflow Architecture
+\`\`\`
+.smithers/my-feature.tsx
+├─ <SmithersProvider>
+│  ├─ <Phase name="analysis">
+│  │  └─ <Step name="understand-codebase">
+│  │       <Claude prompt="Analyze current implementation..." />
+│  │     </Step>
+│  ├─ <Phase name="implementation">
+│  │  ├─ <Step name="create-components">...</Step>
+│  │  └─ <Step name="wire-up-routes">...</Step>
+│  └─ <Phase name="testing">
+│       └─ <Step name="add-tests">...</Step>
+└─ </SmithersProvider>
+\`\`\`
+
+## Example Interaction
+\`\`\`
+You: "Add user authentication to my app"
+
+Me: 
+├─ Check for existing plans/workflows
+├─ Create .smithers/auth-feature.tsx with:
+│  ├─ Analysis phase (understand current auth state)
+│  ├─ Implementation phase (create auth components, routes, middleware)
+│  └─ Testing phase (add tests, verify integration)
+└─ Run workflow → Claude agents execute each step autonomously
+\`\`\`
+
+## Key Delegations (Specialized Agents)
+- **@planner** - Complex multi-step planning from scratch
+- **@explorer** - Deep codebase analysis and file discovery
+- **@monitor** - Watch running executions and report progress
+- **@oracle** - Architecture advice, code review, debugging help
+
+## Available Tools
+- \`smithers_discover\` - Find workflow scripts
+- \`smithers_create\` - Create new workflow files (with typecheck)
+- \`smithers_run\` - Start workflow execution
+- \`smithers_resume\` - Resume incomplete execution
+- \`smithers_status\` - Get execution phase/step tree
+- \`smithers_frames\` - Get execution output/logs
+- \`smithers_cancel\` - Cancel running execution
+- \`smithers_glob\` - Find files by pattern
+- \`smithers_grep\` - Search file contents
+
+## Persistence Model
+- **Scripts**: \`.smithers/*.tsx\` - Workflow definitions (React TSX)
+- **Executions**: \`.smithers/.runs/\` - SQLite DBs per execution
+- **State**: Phases, steps, agent outputs, errors all tracked
+- **Resume**: Any incomplete execution can be resumed later
+
+---
+
+Just tell me what you want to build, fix, or improve - I'll handle the orchestration!
+`
 
 const SmithersPlugin: Plugin = async (ctx) => {
   const cp = createControlPlane({ cwd: ctx.directory })
 
   return {
+    event: async ({ event }) => {
+      if (event.type === "session.created") {
+        await ctx.client.session.prompt({
+          sessionID: event.properties.id,
+          content: STARTUP_MESSAGE.trim()
+        })
+      }
+    },
+
     tool: {
       smithers_discover: tool({
         description: "Discover Smithers workflow scripts (.tsx files with SmithersProvider) in the repository. Returns list of scripts with their paths, names, and whether they have incomplete executions.",
