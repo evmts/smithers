@@ -36,6 +36,31 @@ from .node_identity import (
     PlanLinter,
     NodeWithId,
 )
+from .artifacts import (
+    ArtifactSystem,
+    ArtifactType,
+    Artifact,
+)
+from .approvals import (
+    ApprovalSystem,
+    ApprovalKind,
+    ApprovalStatus,
+    ApprovalRequest,
+    ApprovalResult,
+    create_file_edit_approval,
+    create_command_exec_approval,
+)
+from .loops import (
+    LoopRegistry,
+    LoopState,
+    compute_iteration_node_id,
+)
+from .phases import (
+    PhaseRegistry,
+    PhaseProgress,
+    StepProgress,
+    PhaseStatus,
+)
 
 __all__ = [
     # Core loop
@@ -74,4 +99,25 @@ __all__ = [
     "validate_resume",
     "PlanLinter",
     "NodeWithId",
+    # Artifacts
+    "ArtifactSystem",
+    "ArtifactType",
+    "Artifact",
+    # Approvals
+    "ApprovalSystem",
+    "ApprovalKind",
+    "ApprovalStatus",
+    "ApprovalRequest",
+    "ApprovalResult",
+    "create_file_edit_approval",
+    "create_command_exec_approval",
+    # Loops
+    "LoopRegistry",
+    "LoopState",
+    "compute_iteration_node_id",
+    # Phases
+    "PhaseRegistry",
+    "PhaseProgress",
+    "StepProgress",
+    "PhaseStatus",
 ]

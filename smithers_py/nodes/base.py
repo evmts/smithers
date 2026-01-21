@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field, field_validator
 class NodeHandlers(BaseModel):
     """Event handlers for node lifecycle events.
 
-    Supports any event handler that starts with 'on' and has uppercase 3rd character.
-    Common handlers include on_finished, on_error, on_progress, but custom handlers
-    like onSuccess, onUpdate, etc. are also supported.
+    Supports both naming conventions:
+    - snake_case: on_finished, on_error, on_progress
+    - camelCase: onFinished, onError, onProgress
     """
 
     model_config = {
@@ -19,12 +19,20 @@ class NodeHandlers(BaseModel):
         "extra": "allow",  # Allow arbitrary event handlers
     }
 
+    # Pre-defined handlers for type safety
+    on_finished: Optional[Callable] = None
+    on_error: Optional[Callable] = None
+    on_progress: Optional[Callable] = None
+
     def __init__(self, **data):
         """Initialize handlers, validating that all fields follow event naming pattern."""
         # Validate all provided handlers follow the pattern
         for key, value in data.items():
-            if not (len(key) > 2 and key.startswith('on') and key[2].isupper()):
-                raise ValueError(f"Handler name '{key}' must start with 'on' followed by uppercase letter")
+            # Accept both 'on_xxx' (snake_case) and 'onXxx' (camelCase)
+            is_snake_case = key.startswith('on_')
+            is_camel_case = len(key) > 2 and key.startswith('on') and key[2].isupper()
+            if not (is_snake_case or is_camel_case):
+                raise ValueError(f"Handler name '{key}' must start with 'on_' (snake_case) or 'on' followed by uppercase (camelCase)")
             if value is not None and not callable(value):
                 raise ValueError(f"Handler '{key}' must be callable or None")
         super().__init__(**data)

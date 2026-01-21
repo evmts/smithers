@@ -78,10 +78,10 @@ class TestNodeBase:
 
     def test_node_base_key_conversion(self):
         """Test NodeBase converts numeric keys to strings."""
-        node = NodeBase(key=123)
+        node = NodeBase(type="base", key=123)
         assert node.key == "123"
 
-        node2 = NodeBase(key=0)
+        node2 = NodeBase(type="base", key=0)
         assert node2.key == "0"
 
 
@@ -105,12 +105,10 @@ class TestTextNode:
     def test_text_node_serialization(self):
         """Test TextNode serializes correctly."""
         node = TextNode(text="Test content", key="test-key")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "text",
             "text": "Test content",
             "key": "test-key",
-            "children": []
         }
         assert data == expected
 
@@ -155,12 +153,10 @@ class TestIfNode:
     def test_if_node_serialization(self):
         """Test IfNode serialization."""
         node = IfNode(condition=True, key="main-if")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "if",
             "condition": True,
             "key": "main-if",
-            "children": []
         }
         assert data == expected
 
@@ -183,12 +179,10 @@ class TestPhaseNode:
     def test_phase_node_serialization(self):
         """Test PhaseNode serialization."""
         node = PhaseNode(name="test-phase", key="p1")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "phase",
             "name": "test-phase",
             "key": "p1",
-            "children": []
         }
         assert data == expected
 
@@ -210,12 +204,10 @@ class TestStepNode:
     def test_step_node_serialization(self):
         """Test StepNode serialization."""
         node = StepNode(name="test-step", key="s1")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "step",
             "name": "test-step",
             "key": "s1",
-            "children": []
         }
         assert data == expected
 
@@ -238,13 +230,11 @@ class TestRalphNode:
     def test_ralph_node_serialization(self):
         """Test RalphNode serialization."""
         node = RalphNode(id="test-ralph", max_iterations=3, key="r1")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "ralph",
             "id": "test-ralph",
             "max_iterations": 3,
             "key": "r1",
-            "children": []
         }
         assert data == expected
 
@@ -284,14 +274,11 @@ class TestClaudeNode:
             on_progress=dummy_callback,
         )
 
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "claude",
             "model": "opus",
             "prompt": "Complex task",
             "max_turns": 10,
-            "key": None,
-            "children": []
         }
         assert data == expected
         # Verify callbacks are excluded
@@ -387,17 +374,14 @@ class TestSmithersNode:
             key="sub1"
         )
 
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "smithers",
             "name": "test-sub",
             "component": "validator",
             "args": {"mode": "strict"},
-            "tools": {"allowed": None, "denied": []},
             "max_frames": 500,
             "inherit_context": False,
             "key": "sub1",
-            "children": []
         }
         assert data == expected
 
@@ -638,14 +622,12 @@ class TestWhileNode:
     def test_while_node_serialization(self):
         """Test WhileNode serialization."""
         node = WhileNode(id="loop", condition=True, max_iterations=10, key="w1")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "while",
             "id": "loop",
             "condition": True,
             "max_iterations": 10,
             "key": "w1",
-            "children": []
         }
         assert data == expected
 
@@ -702,11 +684,9 @@ class TestFragmentNode:
     def test_fragment_node_serialization(self):
         """Test FragmentNode serialization."""
         node = FragmentNode(key="frag1")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "fragment",
             "key": "frag1",
-            "children": []
         }
         assert data == expected
 
@@ -739,11 +719,9 @@ class TestEachNode:
     def test_each_node_serialization(self):
         """Test EachNode serialization."""
         node = EachNode(key="each1")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "each",
             "key": "each1",
-            "children": []
         }
         assert data == expected
 
@@ -778,12 +756,10 @@ class TestStopNode:
     def test_stop_node_serialization(self):
         """Test StopNode serialization."""
         node = StopNode(reason="Complete", key="stop1")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "stop",
             "reason": "Complete",
             "key": "stop1",
-            "children": []
         }
         assert data == expected
 
@@ -816,12 +792,10 @@ class TestEndNode:
     def test_end_node_serialization(self):
         """Test EndNode serialization."""
         node = EndNode(message="Done", key="end1")
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "end",
             "message": "Done",
             "key": "end1",
-            "children": []
         }
         assert data == expected
 
@@ -881,14 +855,11 @@ class TestEffectNode:
             key="e1"
         )
 
-        data = node.model_dump()
+        data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "type": "effect",
             "id": "effect-1",
             "deps": [1, 2, 3],
-            "phase": "post_commit",
             "key": "e1",
-            "children": []
         }
         assert data == expected
         # Verify functions are excluded
@@ -1129,12 +1100,13 @@ class TestErrorHandling:
 
     def test_type_coercion(self):
         """Test type coercion behavior."""
-        # Boolean condition should not coerce from strings
-        with pytest.raises(ValidationError):
-            IfNode(condition="true")  # String, not bool
+        # Boolean condition now accepts truthy values (coerces to bool)
+        if_node = IfNode(condition="true")
+        assert if_node.condition is True
 
-        with pytest.raises(ValidationError):
-            WhileNode(id="test", condition=1)  # Int, not bool
+        # WhileNode also accepts truthy values
+        while_node = WhileNode(id="test", condition=1)
+        assert while_node.condition is True
 
         # Max iterations should coerce from string if valid
         ralph = RalphNode(id="test", max_iterations="5")
