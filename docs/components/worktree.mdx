@@ -39,6 +39,12 @@ All nested components automatically operate in the worktree directory.
 | `onReady` | `(path: string) => void` | - | Called when worktree is ready |
 | `onError` | `(error: Error) => void` | - | Called on setup failure |
 
+## Behavior Details
+
+- **Git requirement**: Worktree requires a Git repository. The command fails if not in a Git repo.
+- **Branch existence**: If `branch` already exists as a local branch, Worktree checks it out in the new worktree. To create from a specific ref, use the `base` prop.
+- **Cleanup warning**: When `cleanup={true}`, the worktree directory is removed on unmount. Do not enable cleanup if you need to inspect output after the workflow completes.
+
 ## Context Propagation
 
 ```

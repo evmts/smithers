@@ -18,7 +18,7 @@ description: Track individual tasks within workflows
 Renders a checkbox-style task item for tracking progress through workflows.
 
 <Note>
-**Not to be confused with `db.tasks.*`**: that's the internal API for tracking async component lifecycle. This `<Task>` component is purely presentational.
+**Naming distinction.** The `<Task>` component is for presentational checklist items. For runtime task tracking (blocking iteration advancement), use `db.tasks.start()` and `db.tasks.complete()`. See [Tasks API](/api-reference/tasks) and [db.state vs db.tasks](/concepts/ralph-wiggum-loop#state-dbstate-vs-dbtasks).
 </Note>
 
 ## Props

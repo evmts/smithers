@@ -92,7 +92,7 @@ Custom React renderer that outputs `SmithersNode` trees instead of DOM elements.
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                      HOST CONFIG (host-config.ts)                               │
-│                            (Smithers-owned)                                          │
+│                                                                                 │
 │                                                                                 │
 │   This is the "bridge" between React and our SmithersNode tree.                 │
 │   React calls these methods; we implement them.                                 │
@@ -117,7 +117,7 @@ Custom React renderer that outputs `SmithersNode` trees instead of DOM elements.
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                       RENDERER METHODS (methods.ts)                             │
-│                            (Smithers-owned)                                          │
+│                                                                                 │
 │                                                                                 │
 │   Low-level operations on SmithersNode trees.                                   │
 │   No React dependency - pure data structure manipulation.                       │
@@ -135,7 +135,7 @@ Custom React renderer that outputs `SmithersNode` trees instead of DOM elements.
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                    SMITHERS NODE TREE (types.ts)                                │
-│                            (Smithers-owned)                                          │
+│                                                                                 │
 │                                                                                 │
 │   interface SmithersNode {             ┌───────────────────────────────────┐    │
 │     type: string                       │  ROOT                             │    │
