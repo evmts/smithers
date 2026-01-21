@@ -16,13 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from db.database import SmithersDB
-from db.migrations import run_migrations
-from state.volatile import VolatileStore
-from nodes.structural import IfNode, PhaseNode
-from nodes.text import TextNode
-from engine.tick_loop import TickLoop, Context
-from serialize.xml import serialize_to_xml
+from smithers_py.db.database import SmithersDB
+from smithers_py.db.migrations import run_migrations
+from smithers_py.state.volatile import VolatileStore
+from smithers_py.nodes.structural import IfNode, PhaseNode
+from smithers_py.nodes.text import TextNode
+from smithers_py.engine.tick_loop import TickLoop, Context
+from smithers_py.serialize.xml import serialize_to_xml
 
 
 # Sample app component for testing (prefixed with _ to avoid pytest collection)

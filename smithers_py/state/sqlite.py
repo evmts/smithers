@@ -9,53 +9,63 @@ from .base import StateStore, WriteOp
 
 
 class SqliteStore:
-    """SQLite-backed state store with batched writes and audit logging."""
+    """Execution-scoped SQLite state store with batched writes and audit logging."""
 
     def __init__(self, db_path: str, execution_id: str) -> None:
+        """Initialize with database path and execution ID.
+
+        Args:
+            db_path: Path to SQLite database file
+            execution_id: Unique ID for this execution scope
+        """
         self.db_path = db_path
-        self.execution_id = execution_id
         self.db = sqlite3.connect(db_path)
-        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.row_factory = sqlite3.Row
+        self.execution_id = execution_id
         self._write_queue: List[WriteOp] = []
         self._init_tables()
 
     def _init_tables(self) -> None:
         """Initialize execution_state and execution_transitions tables."""
-        with self.db:
-            # Execution-scoped state table (separate from global state table)
-            self.db.execute("""
-                CREATE TABLE IF NOT EXISTS execution_state (
-                    execution_id TEXT NOT NULL,
-                    key TEXT NOT NULL,
-                    value TEXT NOT NULL,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (execution_id, key)
-                )
-            """)
+        # These tables are execution-scoped, not global
 
-            # Execution-scoped transitions table for audit log
-            self.db.execute("""
-                CREATE TABLE IF NOT EXISTS execution_transitions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    execution_id TEXT NOT NULL,
-                    key TEXT NOT NULL,
-                    old_value TEXT,
-                    new_value TEXT,
-                    trigger TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+        create_state_table = """
+            CREATE TABLE IF NOT EXISTS execution_state (
+                execution_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (execution_id, key)
+            )
+        """
 
-            # Indexes for performance
-            self.db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_execution_state_exec
-                ON execution_state(execution_id)
-            """)
+        create_transitions_table = """
+            CREATE TABLE IF NOT EXISTS execution_transitions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                execution_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                trigger TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
 
-            self.db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_execution_transitions_exec_time
-                ON execution_transitions(execution_id, timestamp)
-            """)
+        create_state_index = """
+            CREATE INDEX IF NOT EXISTS idx_execution_state_exec
+            ON execution_state(execution_id)
+        """
+
+        create_transitions_index = """
+            CREATE INDEX IF NOT EXISTS idx_execution_transitions_exec_time
+            ON execution_transitions(execution_id, timestamp)
+        """
+
+        self.db.execute(create_state_table)
+        self.db.execute(create_transitions_table)
+        self.db.execute(create_state_index)
+        self.db.execute(create_transitions_index)
+        self.db.commit()
 
     def _serialize_value(self, value: Any) -> str:
         """Serialize value to JSON string."""
@@ -80,6 +90,7 @@ class SqliteStore:
             (self.execution_id, key)
         )
         row = cursor.fetchone()
+
         if row is None:
             return None
         return self._deserialize_value(row[0])

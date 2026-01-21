@@ -18,13 +18,13 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Callable, List, Set
 from dataclasses import dataclass
 
-from db.database import SmithersDB
-from state.volatile import VolatileStore
-from state.sqlite import SqliteStore
-from nodes import Node
-from serialize.xml import serialize_to_xml
-from executors import ClaudeExecutor, RateLimitCoordinator
-from executors.base import TaskStatus, StreamEvent, AgentResult
+from ..db.database import SmithersDB
+from ..state.volatile import VolatileStore
+from ..state.sqlite import SqliteStore
+from ..nodes import Node
+from ..serialize.xml import serialize_to_xml
+from ..executors import ClaudeExecutor, RateLimitCoordinator
+from ..executors.base import TaskStatus, StreamEvent, AgentResult
 from .events import EventSystem
 
 
@@ -249,7 +249,7 @@ class TickLoop:
 
     def _collect_runnable_nodes(self, node: Node, collected: Dict[str, Node]) -> None:
         """Recursively collect all runnable nodes with their IDs."""
-        from ..nodes import ClaudeNode
+        from smithers_py.nodes import ClaudeNode
 
         # Generate node ID based on path
         node_id = node.key or f"{node.type}_{id(node)}"
@@ -381,7 +381,7 @@ class TickLoop:
 
     def _find_runnable(self, nodes: List[Node]) -> List[Node]:
         """Find all runnable nodes (ClaudeNode) in the given list."""
-        from ..nodes import ClaudeNode
+        from smithers_py.nodes import ClaudeNode
 
         runnable = []
         for node in nodes:
@@ -391,7 +391,7 @@ class TickLoop:
 
     async def _execute_node(self, node: Node, node_id: str) -> None:
         """Execute a runnable node and store its result."""
-        from ..nodes import ClaudeNode
+        from smithers_py.nodes import ClaudeNode
 
         if not isinstance(node, ClaudeNode):
             return

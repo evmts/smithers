@@ -2,7 +2,7 @@
 """Simple test script for XML serializer."""
 
 from smithers_py.nodes import TextNode, PhaseNode, StepNode, ClaudeNode
-from serialize.xml import serialize_to_xml
+from smithers_py.serialize.xml import serialize_to_xml
 
 
 def test_basic_functionality():

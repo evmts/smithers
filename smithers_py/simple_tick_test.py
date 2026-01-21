@@ -17,13 +17,13 @@ current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
 # Now import our modules
-from db.database import SmithersDB
-from db.migrations import run_migrations
+from smithers_py.db.database import SmithersDB
+from smithers_py.db.migrations import run_migrations
 from smithers_py.state.volatile import VolatileStore
 from smithers_py.state.sqlite import SqliteStore
 from smithers_py.nodes.structural import IfNode, PhaseNode
 from smithers_py.nodes.text import TextNode
-from serialize.xml import serialize_to_xml
+from smithers_py.serialize.xml import serialize_to_xml
 
 
 class Context:

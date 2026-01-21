@@ -61,10 +61,10 @@ class ExecutionModule:
         self._is_async = isinstance(db_connection, aiosqlite.Connection)
         self._current_execution_id: Optional[str] = None
 
-    async def start(self, name: str, source_file: str, config: Optional[Dict[str, Any]] = None) -> str:
+    async def start(self, name: str, source_file: str, config: Optional[Dict[str, Any]] = None, execution_id: Optional[str] = None) -> str:
         """Start a new execution"""
-        # Use environment variable if set, otherwise generate new UUID
-        execution_id = os.getenv('SMITHERS_EXECUTION_ID', str(uuid.uuid4()))
+        # Use provided execution_id, environment variable, or generate new UUID
+        execution_id = execution_id or os.getenv('SMITHERS_EXECUTION_ID') or str(uuid.uuid4())
 
         # Check if execution already exists (resume case)
         if self._is_async:
@@ -181,22 +181,22 @@ class TasksModule:
         self.db = db_connection
         self._is_async = isinstance(db_connection, aiosqlite.Connection)
 
-    async def start(self, task_id: str, name: str, execution_id: str) -> None:
+    async def start(self, task_id: str, name: str, execution_id: str, component_type: str, component_name: Optional[str] = None) -> None:
         """Start a task"""
         now = datetime.now().isoformat()
 
         if self._is_async:
             await self.db.execute(
-                """INSERT INTO tasks (id, name, execution_id, status, started_at)
-                   VALUES (?, ?, ?, 'running', ?)""",
-                (task_id, name, execution_id, now)
+                """INSERT INTO tasks (id, name, execution_id, status, started_at, component_type, component_name)
+                   VALUES (?, ?, ?, 'running', ?, ?, ?)""",
+                (task_id, name, execution_id, now, component_type, component_name)
             )
             await self.db.commit()
         else:
             self.db.execute(
-                """INSERT INTO tasks (id, name, execution_id, status, started_at)
-                   VALUES (?, ?, ?, 'running', ?)""",
-                (task_id, name, execution_id, now)
+                """INSERT INTO tasks (id, name, execution_id, status, started_at, component_type, component_name)
+                   VALUES (?, ?, ?, 'running', ?, ?, ?)""",
+                (task_id, name, execution_id, now, component_type, component_name)
             )
             self.db.commit()
 
