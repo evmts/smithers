@@ -451,11 +451,17 @@ CREATE TABLE IF NOT EXISTS tasks (
   completed_at TEXT,
   duration_ms INTEGER,
 
-  -- Task management fields
+  -- Task management fields (per PRD section 7.3.1)
   name TEXT,                     -- Human-readable name
   lease_owner TEXT,              -- Who owns the task lease
   lease_expires_at TEXT,         -- When the lease expires
-  heartbeat_at TEXT              -- Last heartbeat timestamp
+  heartbeat_at TEXT,             -- Last heartbeat timestamp
+  
+  -- Retry management
+  retry_count INTEGER DEFAULT 0, -- Number of retry attempts
+  max_retries INTEGER DEFAULT 3, -- Max retries allowed
+  next_retry_at TEXT,            -- When to retry next
+  last_error_json TEXT           -- Last error details (JSON)
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_execution ON tasks(execution_id);
