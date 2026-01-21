@@ -1,12 +1,11 @@
 import { jsx } from 'react/jsx-runtime'
+import { pathToFileURL } from 'node:url'
 import type { ComponentType } from 'react'
-import type { 
-  SupersmithersManagedComponent, 
-  SupersmithersModuleMeta 
+import { 
+  SUPERSMITHERS_BRAND,
+  type SupersmithersManagedComponent, 
+  type SupersmithersModuleMeta 
 } from './types.js'
-
-// Symbol for branding
-const SUPERSMITHERS_BRAND = Symbol.for('supersmithers.managed')
 
 /**
  * Creates a branded proxy component that can load baseline or overlay code
@@ -58,6 +57,25 @@ export function generateModuleHash(absPath: string, content: string): string {
 }
 
 /**
+ * Type-safe wrapper for plugin-managed components.
+ * Validates the component was imported with `with { supersmithers: "scope" }`
+ * and returns it with the correct branded type.
+ * 
+ * @example
+ * import AuthPlan from "./plans/authPlan.tsx" with { supersmithers: "auth" }
+ * const ManagedAuthPlan = supersmithers.managed(AuthPlan)
+ */
+export function managed<P>(plan: ComponentType<P>): SupersmithersManagedComponent<P> {
+  if (!isSupersmithersManaged(plan)) {
+    throw new Error(
+      'supersmithers.managed() requires a component imported with `with { supersmithers: "scope" }` attribute. ' +
+      'The Bun plugin must brand the component before managed() can validate it.'
+    )
+  }
+  return plan as SupersmithersManagedComponent<P>
+}
+
+/**
  * Load overlay code and compile it to a component
  * Used when an active overlay version exists
  */
@@ -65,11 +83,16 @@ export async function loadOverlayComponent<P = {}>(
   overlayCode: string,
   meta: SupersmithersModuleMeta
 ): Promise<ComponentType<P>> {
-  const tempPath = `/tmp/supersmithers-overlay-${meta.moduleHash}-${Date.now()}.tsx`
+  const tempDir = '/tmp/supersmithers-overlays'
+  await Bun.$`mkdir -p ${tempDir}`.quiet()
+  
+  const tempPath = `${tempDir}/${meta.moduleHash}-${Date.now()}.tsx`
   await Bun.write(tempPath, overlayCode)
   
   try {
-    const mod = await import(tempPath)
+    // Use file:// URL for correct resolution
+    const fileUrl = pathToFileURL(tempPath).href
+    const mod = await import(fileUrl)
     const Component = meta.exportName === 'default' 
       ? mod.default 
       : mod[meta.exportName]
@@ -82,4 +105,16 @@ export async function loadOverlayComponent<P = {}>(
   } finally {
     await Bun.$`rm -f ${tempPath}`.quiet()
   }
+}
+
+/** Namespace for SuperSmithers runtime utilities */
+export const supersmithers = {
+  /** Validate and cast a plugin-branded component */
+  managed,
+  /** Create a branded proxy (used by Bun plugin) */
+  createProxy: createSupersmithersProxy,
+  /** Check if component is plugin-managed */
+  isManaged: isSupersmithersManaged,
+  /** Get metadata from managed component */
+  getMeta: getSupersmithersMeta,
 }

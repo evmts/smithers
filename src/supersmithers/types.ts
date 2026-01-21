@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 
-declare const SUPERSMITHERS_BRAND: unique symbol
+export const SUPERSMITHERS_BRAND: unique symbol = Symbol.for('supersmithers.managed') as unknown as typeof SUPERSMITHERS_BRAND
 
 export type SupersmithersManagedComponent<P = {}> =
   ComponentType<P> & {
@@ -91,7 +91,6 @@ export type ClaudeModel = 'haiku' | 'sonnet' | 'opus'
 export interface SuperSmithersProps<P> {
   plan: SupersmithersManagedComponent<P>
   planProps?: P
-  children?: React.ReactNode
   observeOn?: ('iteration' | 'error' | 'stall' | 'complete')[]
   observeInterval?: number
   rewriteOn?: {
