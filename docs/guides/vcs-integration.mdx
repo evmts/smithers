@@ -32,6 +32,30 @@ description: Git and Jujutsu version control integration
 
 Read with `git notes show HEAD`.
 
+## State Serialization
+
+`db.state.get/set` handles primitives directly:
+
+```tsx
+// Strings and numbers work directly
+db.state.set("phase", "implement");
+db.state.set("retryCount", 3);
+
+const phase = db.state.get("phase"); // "implement"
+const count = db.state.get("retryCount"); // "3" (returned as string)
+```
+
+For complex objects, use JSON explicitly:
+
+```tsx
+// Storing objects requires JSON.stringify
+db.state.set("config", JSON.stringify({ timeout: 5000, retries: 3 }));
+
+// Reading objects requires JSON.parse
+const configJson = db.state.get("config");
+const config = configJson ? JSON.parse(configJson) : { timeout: 1000, retries: 1 };
+```
+
 ## Complete Workflow
 
 ```tsx
@@ -39,10 +63,11 @@ import { useQueryValue } from "smithers-orchestrator/db";
 
 function FeatureWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
-  const { data: phaseJson } = useQueryValue<string>(
+  
+  // Phase is a simple string - no JSON parsing needed
+  const phase = useQueryValue<string>(
     reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
-  );
-  const phase = phaseJson ? JSON.parse(phaseJson) : "implement";
+  ) ?? "implement";
 
   return (
     <>
