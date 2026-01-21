@@ -1171,6 +1171,623 @@ Report final test results.`}
 }
 
 // ============================================================================
+// M5: Harness UI (Production-Grade)
+// ============================================================================
+
+function M5_HarnessUI() {
+  const { db, reactiveDb } = useSmithers();
+
+  const { data: phaseData } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'phase'"
+  );
+  const phase = phaseData ?? "research";
+
+  const setPhase = (p: string) => db.state.set("phase", p, `transition_to_${p}`);
+  const setMilestone = (m: string) => {
+    db.state.set("milestone", m, `transition_to_${m}`);
+    db.state.set("phase", "research", "reset_phase");
+  };
+
+  return (
+    <>
+      <If condition={phase === "research"}>
+        <Phase name="M5-Research">
+          <Step name="study-harness-spec">
+            <Claude
+              model="opus"
+              maxTurns={20}
+              allowedTools={["Read", "Grep"]}
+              onFinished={() => setPhase("implement-mcp-resources")}
+            >
+{`Research harness UI requirements from ${SPEC_PATH}:
+
+Read sections 9, 10, 11 covering:
+- Harness UI Specification (nav, execution detail, operator actions)
+- Harness API Specification (MCP resources, tools, streaming)
+- Artifacts System Specification
+
+Study existing MCP implementation in smithers_py/mcp/.
+
+Key requirements:
+- 3-pane execution detail (Plan Tree / Timeline+Frame / Inspector)
+- Operator actions: pause/resume/stop/retry/rerun-from-node/fork-from-frame
+- MCP streaming notifications for live updates
+- Saved views for execution filtering
+
+Output implementation plan for M5.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-mcp-resources"}>
+        <Phase name="M5-MCP-Resources">
+          <Step name="expand-mcp-resources">
+            <Claude
+              model="sonnet"
+              maxTurns={50}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("implement-mcp-tools")}
+            >
+{`Expand MCP resources per spec section 10.3:
+
+Update smithers_py/mcp/resources.py with full resource set:
+- smithers://executions (paginated list)
+- smithers://executions/{id} (ExecutionDetail)
+- smithers://executions/{id}/frames (cursored FrameSummary list)
+- smithers://executions/{id}/frames/{index} (FrameDetail)
+- smithers://executions/{id}/events (cursored EventRecord list)
+- smithers://executions/{id}/nodes/{node_id} (NodeInstanceDetail)
+- smithers://executions/{id}/nodes/{node_id}/runs (AgentRunDetail list)
+- smithers://executions/{id}/artifacts (ArtifactRecord list)
+- smithers://executions/{id}/approvals (ApprovalRequestRecord list)
+- smithers://scripts (available script definitions)
+- smithers://health (provider health, rate limits)
+
+Create Pydantic read models in smithers_py/mcp/models.py:
+- ExecutionSummary, ExecutionDetail
+- FrameSummary, FrameDetail
+- NodeInstanceDetail, AgentRunDetail
+- ArtifactRecord, ApprovalRequestRecord
+
+Implement cursor-based pagination for large lists.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-mcp-tools"}>
+        <Phase name="M5-MCP-Tools">
+          <Step name="expand-mcp-tools">
+            <Claude
+              model="sonnet"
+              maxTurns={50}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("implement-streaming")}
+            >
+{`Expand MCP tools per spec section 10.4:
+
+Update smithers_py/mcp/tools.py with operator actions:
+
+Execution control:
+- execution.start(script, args, name, tags, config, idempotency_key, correlation_id)
+- execution.pause(execution_id)
+- execution.resume(execution_id)
+- execution.stop(execution_id, reason)
+- execution.terminate(execution_id, reason)
+- execution.export(execution_id) -> ExportBundle
+
+Node control:
+- node.cancel(execution_id, node_id)
+- node.retry(execution_id, node_id)
+- node.rerun_from(execution_id, node_id, mode, overrides)
+- execution.fork_from_frame(execution_id, frame_index, new_name)
+
+State control:
+- state.set(execution_id, key, value, trigger)
+- state.update(execution_id, key, op, value, trigger)
+- approval.respond(execution_id, approval_id, decision, comment)
+
+Implement proper audit logging for all state modifications.
+Add confirmation requirements for dangerous actions.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-streaming"}>
+        <Phase name="M5-Streaming">
+          <Step name="implement-mcp-streaming">
+            <Claude
+              model="sonnet"
+              maxTurns={50}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("implement-ui-components")}
+            >
+{`Implement MCP streaming notifications per spec section 10.5:
+
+Create smithers_py/mcp/notifications.py:
+- SmithersNotification base class
+- FrameCreatedNotification
+- NodeUpdatedNotification
+- TaskUpdatedNotification
+- AgentStreamNotification
+- ApprovalRequestedNotification
+- ExecutionStatusNotification
+
+Update smithers_py/mcp/server.py:
+- SSE endpoint for GET requests
+- Event ID generation for resumability
+- Last-Event-ID header handling
+- Bounded event buffer with drop policy
+
+Update engine to emit notifications:
+- After frame commit: smithers.frame.created
+- On node status change: smithers.node.updated
+- On task status change: smithers.task.updated
+- On agent stream chunk: smithers.agent.stream
+- On approval request: smithers.approval.requested
+
+Test SSE stream with curl and verify event replay.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-ui-components"}>
+        <Phase name="M5-UI-Components">
+          <Step name="build-solid-components">
+            <Smithers
+              plannerModel="opus"
+              executionModel="sonnet"
+              timeout={3600000}
+              keepScript
+              context={`Building harness UI components.
+                       Spec at: ${SPEC_PATH} sections 9.2-9.5.
+                       MCP server provides resources/tools/streaming.
+                       Use Solid.js signals for fine-grained reactivity.`}
+              onFinished={() => setPhase("implement-operator-actions")}
+              onError={() => setPhase("implement-streaming")}
+            >
+{`Build Solid.js UI components for harness (smithers_ui/):
+
+1. Navigation Components:
+   - Sidebar with: Dashboard, Executions, Run, Approvals, Artifacts, Settings
+   - Top bar with execution context when viewing detail
+
+2. Dashboard Page (smithers_ui/src/pages/Dashboard.tsx):
+   - RunningNow panel (count + recent updates)
+   - NeedsAttention panel (failed, blocked, repeated retries)
+   - RecentExecutions panel (last 20)
+   - CostOverview panel (by model, by repo)
+   - ProviderHealth panel (rate limits)
+
+3. Executions List Page:
+   - Table: status, name, id, started, duration, model usage, tags
+   - Filters: status, time range, tag, script
+   - Search by id/name
+   - SavedViews component (localStorage persistence)
+
+4. Execution Detail Page (3-pane layout):
+   - PlanTree (left): tree view with status encoding, expand/collapse
+   - FrameTimeline (center top): scrubber/slider
+   - FrameContent (center bottom): tabs for Plan/State/Events/Workspace
+   - Inspector (right): tabs for Summary/Input/Output/Tools/Logs/JSON
+
+5. Run Page:
+   - Script selector
+   - Parameter form
+   - RunHistory panel with restore
+
+6. Approvals Page:
+   - Queue view with diff viewer for file edits
+
+Connect to MCP via fetch() with auth token.
+Use SSE streaming for live updates.`}
+            </Smithers>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-operator-actions"}>
+        <Phase name="M5-Operator-Actions">
+          <Step name="build-action-ui">
+            <Claude
+              model="sonnet"
+              maxTurns={50}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("implement-failure-views")}
+            >
+{`Implement operator action UI components:
+
+1. ExecutionActions (smithers_ui/src/components/ExecutionActions.tsx):
+   - Pause/Resume buttons
+   - Stop button with confirmation
+   - Terminate button (two-step confirmation)
+   - Export button (downloads bundle)
+   - More menu: Replay mode
+
+2. NodeActions (smithers_ui/src/components/NodeActions.tsx):
+   - Cancel button (for running nodes)
+   - Retry button (for failed nodes)
+   - "Rerun from here" with mode selector
+   - Context menu on right-click
+
+3. StateEditor (smithers_ui/src/components/StateEditor.tsx):
+   - Key-value editor with JSON validation
+   - Diff preview before save
+   - Trigger annotation field
+   - Confirmation dialog with "who/why" fields
+
+4. ForkFromFrame (smithers_ui/src/components/ForkFromFrame.tsx):
+   - Frame selector (timeline position)
+   - New execution name input
+   - State preview at that frame
+   - Confirmation showing what will be forked
+
+5. Safety UX:
+   - ConfirmationDialog component
+   - Two-step confirmation for dangerous actions
+   - Audit trail display
+
+All actions call MCP tools and handle responses.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-failure-views"}>
+        <Phase name="M5-Failure-Views">
+          <Step name="build-failure-views">
+            <Claude
+              model="sonnet"
+              maxTurns={40}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("verify-m5")}
+            >
+{`Implement failure views (Temporal-style):
+
+1. FailureDetector (smithers_py/engine/failure_detector.py):
+   - Track consecutive failures per node/execution
+   - Configurable threshold (default: 5)
+   - Group by error type/message
+   - Calculate failure rate over time
+
+2. FailureViews MCP resource:
+   - smithers://failures (executions with repeated failures)
+   - Include: execution_id, failure_count, error_types, trend
+
+3. FailureView UI (smithers_ui/src/pages/FailureView.tsx):
+   - Table: execution, failure count, error type, last failure
+   - Grouped view by error message
+   - Quick actions: retry all, cancel all
+   - Trend chart: failure rate over time
+
+4. Dashboard integration:
+   - NeedsAttention panel queries failure detector
+   - Badge count on sidebar
+
+5. Saved Views:
+   - Store filter configs in localStorage
+   - URL params for sharing views
+   - Preset views: "All Failed", "Blocked", "High Retry Count"`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "verify-m5"}>
+        <Phase name="M5-Verification">
+          <Step name="test-harness">
+            <Claude
+              model="sonnet"
+              maxTurns={30}
+              allowedTools={["Read", "Bash", "Grep"]}
+              onFinished={(r) => {
+                if (r.output.includes("passed") || r.output.includes("OK")) {
+                  setMilestone("M6");
+                } else {
+                  setPhase("implement-mcp-resources");
+                }
+              }}
+            >
+{`Test harness UI implementation:
+
+1. Backend tests:
+   - python -m pytest smithers_py/mcp/ -v
+   - Test all new resources return correct schemas
+   - Test operator actions modify state correctly
+   - Test SSE streaming with mock events
+
+2. UI build:
+   - cd smithers_ui && bun install && bun run build
+
+3. Integration test:
+   - Start MCP server
+   - Connect UI to server
+   - Verify live frame streaming
+   - Test operator actions (pause/resume)
+
+4. Manual verification checklist:
+   - Dashboard shows running executions
+   - Execution list filters work
+   - 3-pane detail layout renders correctly
+   - Inspector shows node details
+   - Actions trigger correctly
+
+Report results.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+    </>
+  );
+}
+
+// ============================================================================
+// M6: Artifacts System
+// ============================================================================
+
+function M6_Artifacts() {
+  const { db, reactiveDb } = useSmithers();
+
+  const { data: phaseData } = useQueryValue<string>(
+    reactiveDb,
+    "SELECT value FROM state WHERE key = 'phase'"
+  );
+  const phase = phaseData ?? "research";
+
+  const setPhase = (p: string) => db.state.set("phase", p, `transition_to_${p}`);
+  const setMilestone = (m: string) => {
+    db.state.set("milestone", m, `transition_to_${m}`);
+    db.state.set("phase", "research", "reset_phase");
+  };
+
+  return (
+    <>
+      <If condition={phase === "research"}>
+        <Phase name="M6-Research">
+          <Step name="study-artifacts-spec">
+            <Claude
+              model="opus"
+              maxTurns={15}
+              allowedTools={["Read", "Grep"]}
+              onFinished={() => setPhase("implement-artifact-types")}
+            >
+{`Research artifacts system from ${SPEC_PATH} section 11:
+
+Key requirements:
+- Artifact types: markdown, table, progress, link, image
+- Key vs keyless semantics (versioned vs one-off)
+- Progress artifacts update in-place
+- Database schema with partial unique constraint
+- UI rendering with live updates
+
+Study Prefect's artifact patterns for reference.
+
+Output implementation plan for M6.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-artifact-types"}>
+        <Phase name="M6-Artifact-Types">
+          <Step name="create-artifact-models">
+            <Claude
+              model="sonnet"
+              maxTurns={40}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("implement-artifact-api")}
+            >
+{`Create artifact type models:
+
+smithers_py/artifacts/__init__.py - exports
+smithers_py/artifacts/types.py:
+  - ArtifactType enum: markdown, table, progress, link, image
+  - MarkdownArtifact(type, content: str)
+  - TableArtifact(type, columns: list[str], rows: list[dict])
+  - ProgressArtifact(type, current: int, total: int, label: str | None)
+  - LinkArtifact(type, url: str, label: str | None)
+  - ImageArtifact(type, url: str, alt: str | None)
+  - Artifact union type
+
+smithers_py/artifacts/models.py:
+  - ArtifactRecord(id, execution_id, node_id, frame_id, key, name, type, content, created_at, updated_at)
+
+Update smithers_py/db/schema.sql:
+  - artifacts table with partial unique constraint
+  - Indexes for execution_id and key
+
+Run migration to add artifacts table.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-artifact-api"}>
+        <Phase name="M6-Artifact-API">
+          <Step name="create-artifact-system">
+            <Claude
+              model="sonnet"
+              maxTurns={50}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("implement-artifact-mcp")}
+            >
+{`Create ArtifactSystem API:
+
+smithers_py/artifacts/system.py:
+
+class ArtifactSystem:
+    def __init__(self, db: SmithersDB, execution_id: str, node_id: str | None = None):
+        self.db = db
+        self.execution_id = execution_id
+        self.node_id = node_id
+        self.frame_id = db.frames.current_frame_id()
+
+    def markdown(self, name: str, content: str, *, key: str | None = None) -> str:
+        # Create/update markdown artifact
+        # Returns artifact_id
+
+    def table(self, name: str, columns: list[str], rows: list[dict], *, key: str | None = None) -> str:
+        # Create/update table artifact
+
+    def progress(self, name: str, current: int, total: int, *, key: str | None = None, label: str | None = None) -> str:
+        # Create/update progress artifact
+        # Same key = in-place update
+
+    def link(self, name: str, url: str, *, key: str | None = None, label: str | None = None) -> str:
+        # Create link artifact
+
+    def image(self, name: str, data: bytes | str, *, key: str | None = None, alt: str | None = None) -> str:
+        # Create image artifact (data URL or file path)
+
+Key semantics:
+- key=None: always creates new artifact (keyless)
+- key="my-key": upserts (updates if exists, creates if not)
+
+Update Context class to include artifact system:
+  ctx.artifact = ArtifactSystem(db, execution_id, node_id)
+
+Write tests for all artifact operations.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-artifact-mcp"}>
+        <Phase name="M6-Artifact-MCP">
+          <Step name="add-artifact-resources">
+            <Claude
+              model="sonnet"
+              maxTurns={40}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("implement-artifact-ui")}
+            >
+{`Add MCP resources for artifacts:
+
+Update smithers_py/mcp/resources.py:
+  - smithers://executions/{id}/artifacts (list)
+  - smithers://artifacts/{id} (single artifact detail)
+  - smithers://artifacts?key=mykey (lookup by key)
+
+Add streaming notifications:
+  - smithers.artifact.created
+  - smithers.artifact.updated (for keyed artifacts)
+
+Update smithers_py/mcp/tools.py:
+  - artifact.list(execution_id, type_filter?)
+  - artifact.get(artifact_id)
+  - artifact.delete(artifact_id) # admin only
+
+Global artifacts resource:
+  - smithers://artifacts (all artifacts, paginated)
+  - Filter by: execution_id, key, type, time_range`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-artifact-ui"}>
+        <Phase name="M6-Artifact-UI">
+          <Step name="build-artifact-components">
+            <Claude
+              model="sonnet"
+              maxTurns={50}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("verify-m6")}
+            >
+{`Build artifact UI components:
+
+smithers_ui/src/components/artifacts/:
+
+1. ArtifactRenderer.tsx:
+   - Switch on artifact.type
+   - MarkdownRenderer: syntax highlighting, code blocks
+   - TableRenderer: sortable, filterable columns
+   - ProgressRenderer: animated progress bar
+   - LinkRenderer: clickable with icon
+   - ImageRenderer: responsive with lightbox
+
+2. ArtifactList.tsx:
+   - Group by type
+   - Sort by created_at
+   - Live updates via SSE
+
+3. ArtifactHistory.tsx (for keyed artifacts):
+   - Version timeline
+   - Diff between versions
+
+4. Add Artifacts tab to Execution Detail:
+   - List artifacts for execution
+   - Click to expand/view
+
+5. Global Artifacts Page (smithers_ui/src/pages/Artifacts.tsx):
+   - Search by key, name, execution
+   - Filter by type, time range
+   - Paginated results
+
+6. Progress artifact live updates:
+   - Subscribe to smithers.artifact.updated
+   - Animate progress bar changes`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "verify-m6"}>
+        <Phase name="M6-Verification">
+          <Step name="test-artifacts">
+            <Claude
+              model="sonnet"
+              maxTurns={30}
+              allowedTools={["Read", "Bash", "Grep"]}
+              onFinished={(r) => {
+                if (r.output.includes("passed") || r.output.includes("OK")) {
+                  setMilestone("COMPLETE");
+                } else {
+                  setPhase("implement-artifact-types");
+                }
+              }}
+            >
+{`Test artifacts system:
+
+1. Unit tests:
+   - python -m pytest smithers_py/artifacts/ -v
+   - Test all artifact type creation
+   - Test key vs keyless semantics
+   - Test progress update in-place
+
+2. Integration test (smithers_py/test_artifacts_integration.py):
+   - Create workflow that produces artifacts
+   - markdown: analysis summary
+   - table: metrics data
+   - progress: step completion
+   - Verify all persisted to DB
+   - Verify MCP resources return correct data
+
+3. UI test:
+   - Build: cd smithers_ui && bun run build
+   - Verify artifact components render
+   - Test live progress updates
+
+4. E2E test:
+   - Run workflow with artifacts
+   - Watch in UI
+   - Verify progress bar animates
+   - Verify markdown renders
+
+Report results.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+    </>
+  );
+}
+
+// ============================================================================
 // Main Workflow
 // ============================================================================
 
@@ -1203,6 +1820,14 @@ function BuildSmithersPy() {
 
       <If condition={milestone === "M4"}>
         <M4_AdvancedConstructs />
+      </If>
+
+      <If condition={milestone === "M5"}>
+        <M5_HarnessUI />
+      </If>
+
+      <If condition={milestone === "M6"}>
+        <M6_Artifacts />
       </If>
 
       <If condition={milestone === "COMPLETE"}>
