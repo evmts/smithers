@@ -73,7 +73,7 @@ Me:
 
 ## Available Tools
 - \`smithers_discover\` - Find workflow scripts
-- \`smithers_create\` - Create new workflow files (with typecheck)
+- \`smithers_create\` - Create new workflow files (with validation)
 - \`smithers_run\` - Start workflow execution
 - \`smithers_resume\` - Resume incomplete execution
 - \`smithers_status\` - Get execution phase/step tree
@@ -124,7 +124,7 @@ const SmithersPlugin: Plugin = async (ctx) => {
       }),
 
       smithers_create: tool({
-        description: "Create a new Smithers workflow file in .smithers/. Typechecks the content before writing. Returns errors if typecheck fails.",
+        description: "Create a new Smithers workflow file in .smithers/. Validates syntax before writing. Returns errors if validation fails.",
         args: {
           name: tool.schema.string().describe("Workflow name (becomes filename without .tsx extension)"),
           content: tool.schema.string().describe("Full TSX content of the workflow"),

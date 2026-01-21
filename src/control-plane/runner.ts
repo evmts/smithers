@@ -1,7 +1,9 @@
 import * as path from 'path'
-import { unlink } from 'fs/promises'
+import { unlink, mkdir } from 'fs/promises'
 import { Database } from 'bun:sqlite'
 import type { RunResult, CreateWorkflowResult } from './types.js'
+
+const runningProcesses = new Map<string, { proc: ReturnType<typeof Bun.spawn>; pid: number }>()
 
 export interface RunOptions {
   script: string
@@ -42,9 +44,10 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const dbPath = deriveDbPath(scriptPath, cwd)
   const executionId = generateExecutionId()
   
-  await Bun.write(path.dirname(dbPath) + '/.gitkeep', '')
+  await mkdir(path.dirname(dbPath), { recursive: true })
+  await Bun.write(path.join(path.dirname(dbPath), '.gitkeep'), '')
   
-  const preloadPath = path.join(cwd, 'preload.ts')
+  const preloadPath = path.join(import.meta.dirname, '..', '..', 'preload.ts')
   
   const proc = Bun.spawn(['bun', '--preload', preloadPath, scriptPath], {
     cwd,
@@ -56,6 +59,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     stdout: 'inherit',
     stderr: 'inherit',
   })
+  
+  runningProcesses.set(executionId, { proc, pid: proc.pid })
+  proc.exited.then(() => runningProcesses.delete(executionId))
   
   return {
     executionId,
@@ -136,6 +142,11 @@ export async function cancel(opts: CancelOptions): Promise<void> {
         ).get(opts.executionId)
         
         if (exec) {
+          const running = runningProcesses.get(opts.executionId)
+          if (running) {
+            running.proc.kill()
+            runningProcesses.delete(opts.executionId)
+          }
           db.run(
             "UPDATE executions SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?",
             [opts.executionId]
@@ -155,6 +166,17 @@ export async function cancel(opts: CancelOptions): Promise<void> {
 
 export async function createWorkflow(opts: CreateWorkflowOptions): Promise<CreateWorkflowResult> {
   const cwd = opts.cwd ?? process.cwd()
+  
+  // Sanitize name to prevent path traversal
+  const safeName = opts.name.replace(/[^a-zA-Z0-9_-]/g, '_')
+  if (safeName !== opts.name) {
+    return {
+      path: '',
+      created: false,
+      errors: ['Workflow name can only contain alphanumeric characters, underscores, and hyphens']
+    }
+  }
+  
   const targetPath = path.join(cwd, '.smithers', `${opts.name}.tsx`)
   
   const file = Bun.file(targetPath)
@@ -190,7 +212,7 @@ export async function createWorkflow(opts: CreateWorkflowOptions): Promise<Creat
       return {
         path: targetPath,
         created: false,
-        errors: errors.length > 0 ? errors : ['Typecheck failed']
+        errors: errors.length > 0 ? errors : ['Validation failed']
       }
     }
     
