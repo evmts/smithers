@@ -16,6 +16,7 @@ from smithers_py.nodes import (
     StepNode,
     RalphNode,
     ClaudeNode,
+    SmithersNode,
     ToolPolicy,
     WhileNode,
     FragmentNode,
@@ -31,7 +32,8 @@ class TestNodeBase:
 
     def test_node_base_defaults(self):
         """Test NodeBase with default values."""
-        node = NodeBase()
+        node = NodeBase(type="base")  # NodeBase now requires type field
+        assert node.type == "base"
         assert node.key is None
         assert node.children == []
         assert node.props == {}
@@ -41,6 +43,7 @@ class TestNodeBase:
     def test_node_base_with_values(self):
         """Test NodeBase with explicit values."""
         node = NodeBase(
+            type="base",
             key="test-key",
             children=[],
             props={"custom": "value"}
@@ -51,9 +54,10 @@ class TestNodeBase:
 
     def test_node_base_serialization(self):
         """Test NodeBase serializes to dict/JSON cleanly."""
-        node = NodeBase(key="test", props={"test": "prop"})
+        node = NodeBase(type="base", key="test", props={"test": "prop"})
         data = node.model_dump()
         expected = {
+            "type": "base",
             "key": "test",
             "children": [],
             "props": {"test": "prop"},
@@ -327,6 +331,141 @@ class TestClaudeNode:
             ClaudeNode(prompt="test")  # missing model
 
 
+class TestSmithersNode:
+    """Test SmithersNode implementation."""
+
+    def test_smithers_node_creation(self):
+        """Test creating a SmithersNode."""
+        node = SmithersNode(name="subagent-test", component="analyze_task")
+        assert node.type == "smithers"
+        assert node.name == "subagent-test"
+        assert node.component == "analyze_task"
+        assert node.args == {}
+        assert node.max_frames == 1000  # default
+        assert node.inherit_context is True  # default
+
+    def test_smithers_node_with_args(self):
+        """Test SmithersNode with custom arguments."""
+        args = {"target": "src/", "depth": 3, "verbose": True}
+        node = SmithersNode(
+            name="explore",
+            component="explore_codebase",
+            args=args
+        )
+        assert node.args == args
+
+    def test_smithers_node_custom_settings(self):
+        """Test SmithersNode with custom settings."""
+        node = SmithersNode(
+            name="limited",
+            component="test_runner",
+            max_frames=100,
+            inherit_context=False
+        )
+        assert node.max_frames == 100
+        assert node.inherit_context is False
+
+    def test_smithers_node_with_tools(self):
+        """Test SmithersNode with tool policy."""
+        policy = ToolPolicy(allowed=["read", "grep"], denied=["write", "delete"])
+        node = SmithersNode(
+            name="restricted",
+            component="code_analyzer",
+            tools=policy
+        )
+        assert node.tools.allowed == ["read", "grep"]
+        assert node.tools.denied == ["write", "delete"]
+
+    def test_smithers_node_serialization(self):
+        """Test SmithersNode serialization."""
+        node = SmithersNode(
+            name="test-sub",
+            component="validator",
+            args={"mode": "strict"},
+            max_frames=500,
+            inherit_context=False,
+            key="sub1"
+        )
+
+        data = node.model_dump()
+        expected = {
+            "type": "smithers",
+            "name": "test-sub",
+            "component": "validator",
+            "args": {"mode": "strict"},
+            "tools": {"allowed": None, "denied": []},
+            "max_frames": 500,
+            "inherit_context": False,
+            "key": "sub1",
+            "children": []
+        }
+        assert data == expected
+
+    def test_smithers_node_json_round_trip(self):
+        """Test SmithersNode JSON round trip."""
+        original = SmithersNode(
+            name="round-trip",
+            component="test_component",
+            args={"nested": {"value": 123}}
+        )
+        json_str = original.model_dump_json()
+        data = json.loads(json_str)
+        recreated = SmithersNode.model_validate(data)
+
+        assert recreated.name == original.name
+        assert recreated.component == original.component
+        assert recreated.args == original.args
+
+    def test_smithers_node_missing_required_fields(self):
+        """Test SmithersNode requires name and component."""
+        with pytest.raises(ValidationError):
+            SmithersNode()  # missing both
+
+        with pytest.raises(ValidationError):
+            SmithersNode(name="test")  # missing component
+
+        with pytest.raises(ValidationError):
+            SmithersNode(component="test")  # missing name
+
+    def test_smithers_node_max_frames_validation(self):
+        """Test SmithersNode max_frames validation."""
+        # Minimum value is 1
+        with pytest.raises(ValidationError):
+            SmithersNode(name="test", component="comp", max_frames=0)
+
+        # Large value should work
+        node = SmithersNode(name="test", component="comp", max_frames=100000)
+        assert node.max_frames == 100000
+
+    def test_smithers_node_edge_cases(self):
+        """Test SmithersNode edge cases."""
+        # Empty strings for name/component
+        node = SmithersNode(name="", component="")
+        assert node.name == ""
+        assert node.component == ""
+
+        # Complex args structure
+        complex_args = {
+            "list": [1, 2, 3],
+            "dict": {"a": 1, "b": 2},
+            "nested": {"deep": {"value": "test"}},
+            "null": None,
+            "bool": True
+        }
+        node = SmithersNode(name="complex", component="handler", args=complex_args)
+        assert node.args == complex_args
+
+        # Test with children (subagents can have children)
+        child = TextNode(text="Child node")
+        node = SmithersNode(
+            name="parent",
+            component="orchestrator",
+            children=[child]
+        )
+        assert len(node.children) == 1
+        assert isinstance(node.children[0], TextNode)
+
+
 class TestDiscriminatedUnion:
     """Test the discriminated union Node type."""
 
@@ -368,6 +507,22 @@ class TestDiscriminatedUnion:
         assert isinstance(node, ClaudeNode)
         assert node.model == "sonnet"
         assert node.prompt == "Test prompt"
+
+    def test_union_smithers_node(self):
+        """Test Node union with SmithersNode."""
+        node_dict = {
+            "type": "smithers",
+            "name": "subagent",
+            "component": "task_handler"
+        }
+
+        from pydantic import TypeAdapter
+        adapter = TypeAdapter(Node)
+        node = adapter.validate_python(node_dict)
+
+        assert isinstance(node, SmithersNode)
+        assert node.name == "subagent"
+        assert node.component == "task_handler"
 
     def test_union_invalid_type(self):
         """Test Node union with invalid type."""
@@ -434,6 +589,7 @@ class TestComplexScenarios:
             StepNode(name="test-step"),
             RalphNode(id="test-ralph"),
             ClaudeNode(model="sonnet", prompt="Test prompt"),
+            SmithersNode(name="test-smithers", component="test_component"),
         ]
 
         for node in nodes:
@@ -998,6 +1154,7 @@ class TestErrorHandling:
             (StopNode, {"halt": "now"}),
             (EndNode, {"finish": "yes"}),
             (EffectNode, {"id": "test", "sideeffect": "data"}),
+            (SmithersNode, {"name": "test", "component": "test", "invalid": "field"}),
         ]
 
         for node_class, data in nodes_to_test:
@@ -1194,20 +1351,22 @@ class TestIntegrationScenarios:
                     children=[TextNode(text="Loop body")]
                 ),
                 ClaudeNode(model="haiku", prompt="Quick task"),
+                SmithersNode(name="subagent", component="validator"),
                 EffectNode(id="cleanup", deps=[]),
                 StopNode(reason="Complete")
             ]
         )
 
-        assert len(fragment.children) == 6
+        assert len(fragment.children) == 7
 
         # Verify each child type
         assert isinstance(fragment.children[0], TextNode)
         assert isinstance(fragment.children[1], IfNode)
         assert isinstance(fragment.children[2], WhileNode)
         assert isinstance(fragment.children[3], ClaudeNode)
-        assert isinstance(fragment.children[4], EffectNode)
-        assert isinstance(fragment.children[5], StopNode)
+        assert isinstance(fragment.children[4], SmithersNode)
+        assert isinstance(fragment.children[5], EffectNode)
+        assert isinstance(fragment.children[6], StopNode)
 
         # Should serialize successfully
         json_str = fragment.model_dump_json()

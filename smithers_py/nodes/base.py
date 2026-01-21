@@ -48,7 +48,7 @@ class NodeBase(BaseModel):
     have a key for identity, props for configuration, and children.
     """
 
-    # Note: type field is defined in subclasses with Literal types
+    type: str
     key: Optional[str] = None
     children: list["Node"] = Field(default_factory=list)
     props: Dict[str, Any] = Field(default_factory=dict)

@@ -12,6 +12,7 @@ from .structural import IfNode, PhaseNode, StepNode, RalphNode
 from .control import WhileNode, FragmentNode, EachNode, StopNode, EndNode
 from .runnable import ClaudeNode, ToolPolicy
 from .effects import EffectNode
+from .agent import SmithersNode
 
 # Define the discriminated union using Pydantic v2 patterns
 Node = Annotated[
@@ -31,6 +32,7 @@ Node = Annotated[
         EndNode,
         # Runnable nodes
         ClaudeNode,
+        SmithersNode,
         # Effect nodes
         EffectNode,
     ],
@@ -50,6 +52,7 @@ EachNode.model_rebuild()
 StopNode.model_rebuild()
 EndNode.model_rebuild()
 ClaudeNode.model_rebuild()
+SmithersNode.model_rebuild()
 EffectNode.model_rebuild()
 
 # Export all node types and the union
@@ -75,6 +78,7 @@ __all__ = [
     "EndNode",
     # Runnable nodes
     "ClaudeNode",
+    "SmithersNode",
     "ToolPolicy",
     # Effect nodes
     "EffectNode",
