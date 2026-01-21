@@ -197,6 +197,34 @@ def executor(test_db):
     return ClaudeExecutor(test_db)
 
 
+# Helper function to parse agent row from query result
+def parse_agent_row(row):
+    """Convert agent query result to dict."""
+    # Based on schema.sql agents table columns
+    return {
+        'id': row[0],
+        'execution_id': row[1],
+        'phase_id': row[2],
+        'model': row[3],
+        'system_prompt': row[4],
+        'prompt': row[5],
+        'status': row[6],
+        'scope_rev': row[7],
+        'result': row[8],  # This is the output_text
+        'result_structured': row[9],
+        'log_path': row[10],
+        'stream_summary': row[11],
+        'error': row[12],
+        'started_at': row[13],
+        'completed_at': row[14],
+        'created_at': row[15],
+        'duration_ms': row[16],
+        'tokens_input': row[17],
+        'tokens_output': row[18],
+        'tool_calls_count': row[19]
+    }
+
+
 @pytest.mark.asyncio
 async def test_basic_text_execution(executor, test_db):
     """Test basic text generation with streaming."""
@@ -205,7 +233,9 @@ async def test_basic_text_execution(executor, test_db):
     test_model.set_stream_text(["Hello", " ", "world", "!"])
 
     # Mock Agent class to return MockAgent with our TestModel
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MockAgent(test_model)
+
         # Mock the model mapping to return test model
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
@@ -226,8 +256,8 @@ async def test_basic_text_execution(executor, test_db):
             else:
                 result = event
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify streaming events
     token_events = [e for e in events if e.kind == "token"]
@@ -246,9 +276,9 @@ async def test_basic_text_execution(executor, test_db):
     # Verify database persistence
     agents = await test_db.query("SELECT * FROM agents WHERE node_id = ?", ["test-node-1"])
     assert len(agents) == 1
-    agent_row = agents[0]
+    agent_row = parse_agent_row(agents[0])
     assert agent_row["status"] == "DONE"
-    assert agent_row["output_text"] == "Hello world!"
+    assert agent_row["result"] == "Hello world!"
     assert agent_row["model"] == "sonnet"
 
 
@@ -265,7 +295,9 @@ async def test_structured_output(executor, test_db):
     test_model.set_result(test_output)
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MockAgent(test_model, result_type=TestOutputSchema)
+
         # Mock the model mapping
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
@@ -282,8 +314,8 @@ async def test_structured_output(executor, test_db):
             if isinstance(event, AgentResult):
                 result = event
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify structured output
     assert result is not None
@@ -296,7 +328,9 @@ async def test_structured_output(executor, test_db):
     # Verify DB persistence
     agents = await test_db.query("SELECT * FROM agents WHERE node_id = ?", ["test-node-2"])
     assert len(agents) == 1
-    structured_json = json.loads(agents[0]["output_structured_json"])
+    agent_row = parse_agent_row(agents[0])
+    assert agent_row["result_structured"] is not None
+    structured_json = json.loads(agent_row["result_structured"])
     assert structured_json["answer"] == "42"
 
 
@@ -332,7 +366,10 @@ async def test_tool_calls(executor, test_db):
     test_model.set_stream_text(["The sum is 8 and weather is sunny!"])
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent = MockAgent(test_model)
+        mock_agent_cls.return_value = mock_agent
+
         # Mock the model mapping
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
@@ -353,8 +390,8 @@ async def test_tool_calls(executor, test_db):
             else:
                 result = event
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify tool events
     tool_starts = [e for e in events if e.kind == "tool_start"]
@@ -390,12 +427,13 @@ async def test_tool_calls(executor, test_db):
 
     # Verify DB persistence
     tool_records = await test_db.query(
-        "SELECT * FROM tool_calls WHERE run_id = ?",
+        "SELECT * FROM tool_calls WHERE agent_id = ?",
         [result.run_id]
     )
     assert len(tool_records) == 2
-    assert tool_records[0]["tool_name"] == "calculator"
-    assert tool_records[1]["tool_name"] == "get_weather"
+    # tool_calls table columns: id, agent_id, execution_id, tool_name, input, output_inline, ...
+    assert tool_records[0][3] == "calculator"  # tool_name
+    assert tool_records[1][3] == "get_weather"  # tool_name
 
 
 @pytest.mark.asyncio
@@ -406,7 +444,9 @@ async def test_error_handling(executor, test_db):
     test_model.set_error("API rate limit exceeded")
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MockAgent(test_model)
+
         # Mock the model mapping
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
@@ -426,8 +466,8 @@ async def test_error_handling(executor, test_db):
             else:
                 result = event
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify error event
     error_events = [e for e in events if e.kind == "error"]
@@ -444,8 +484,10 @@ async def test_error_handling(executor, test_db):
     # Verify DB persistence
     agents = await test_db.query("SELECT * FROM agents WHERE node_id = ?", ["test-node-4"])
     assert len(agents) == 1
-    assert agents[0]["status"] == "ERROR"
-    error_json = json.loads(agents[0]["error_json"])
+    agent_row = parse_agent_row(agents[0])
+    assert agent_row["status"] == "ERROR"
+    assert agent_row["error"] is not None
+    error_json = json.loads(agent_row["error"])
     assert error_json["message"] == "API rate limit exceeded"
 
 
@@ -457,7 +499,9 @@ async def test_cancellation(executor, test_db):
     test_model.set_stream_text(["Starting", " long", " response..."])
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MockAgent(test_model)
+
         # Mock the model mapping
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
@@ -480,8 +524,8 @@ async def test_cancellation(executor, test_db):
         with pytest.raises(asyncio.CancelledError):
             await execution_task
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
 
 @pytest.mark.asyncio
@@ -508,7 +552,9 @@ async def test_token_usage_tracking(executor, test_db):
     test_model.set_usage(request_tokens=100, response_tokens=50, total_tokens=150)
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MockAgent(test_model)
+
         # Mock the model mapping
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
@@ -524,8 +570,8 @@ async def test_token_usage_tracking(executor, test_db):
             if isinstance(event, AgentResult):
                 result = event
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify usage tracking
     assert result is not None
@@ -535,10 +581,9 @@ async def test_token_usage_tracking(executor, test_db):
 
     # Verify DB persistence
     agents = await test_db.query("SELECT * FROM agents WHERE node_id = ?", ["test-node-6"])
-    usage_json = json.loads(agents[0]["usage_json"])
-    assert usage_json["prompt_tokens"] == 100
-    assert usage_json["completion_tokens"] == 50
-    assert usage_json["total_tokens"] == 150
+    agent_row = parse_agent_row(agents[0])
+    assert agent_row["tokens_input"] == 100
+    assert agent_row["tokens_output"] == 50
 
 
 @pytest.mark.asyncio
@@ -551,7 +596,9 @@ async def test_multiple_turns(executor, test_db):
     test_model.set_stream_text(["Turn 3 response"])
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MockAgent(test_model)
+
         # Mock the model mapping
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
@@ -568,8 +615,8 @@ async def test_multiple_turns(executor, test_db):
             if isinstance(event, AgentResult):
                 result = event
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify turns tracking
     assert result is not None
@@ -585,7 +632,9 @@ async def test_empty_response(executor, test_db):
     test_model.set_stream_text([])
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MockAgent(test_model)
+
         # Mock the model mapping
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
@@ -601,8 +650,8 @@ async def test_empty_response(executor, test_db):
             if isinstance(event, AgentResult):
                 result = event
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify empty response handling
     assert result is not None
@@ -613,45 +662,59 @@ async def test_empty_response(executor, test_db):
 @pytest.mark.asyncio
 async def test_concurrent_executions(executor, test_db):
     """Test multiple concurrent executions."""
-    # Configure TestModel
-    test_model = TestModel()
-
-    # Mock the model mapping
-    original_map = executor._map_model_name
-    executor._map_model_name = lambda m: test_model
-
-    # Define execution coroutine
-    async def run_execution(node_id: str, response: str):
-        test_model.set_stream_text([response])
-        result = None
-        async for event in executor.execute(
-            node_id=node_id,
-            prompt=f"Say {response}",
-            model="sonnet",
-            execution_id=test_db.current_execution_id,
-        ):
-            if isinstance(event, AgentResult):
-                result = event
-        return result
+    # Create separate test models for each concurrent execution
+    test_models = []
+    for i in range(3):
+        model = TestModel()
+        model.set_stream_text([f"Response{i}"])
+        test_models.append(model)
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        # Configure mock to return different agents
+        agents = [MockAgent(model) for model in test_models]
+        mock_agent_cls.side_effect = agents
+
+        # Mock the model mapping
+        model_index = 0
+        def get_model(m):
+            nonlocal model_index
+            model = test_models[model_index % len(test_models)]
+            model_index += 1
+            return model
+
+        original_map = executor._map_model_name
+        executor._map_model_name = get_model
+
+        # Define execution coroutine
+        async def run_execution(node_id: str, prompt: str):
+            result = None
+            async for event in executor.execute(
+                node_id=node_id,
+                prompt=prompt,
+                model="sonnet",
+                execution_id=test_db.current_execution_id,
+            ):
+                if isinstance(event, AgentResult):
+                    result = event
+            return result
+
         # Run concurrent executions
         results = await asyncio.gather(
-            run_execution("concurrent-1", "Hello"),
-            run_execution("concurrent-2", "World"),
-            run_execution("concurrent-3", "!"),
+            run_execution("concurrent-1", "Say Response0"),
+            run_execution("concurrent-2", "Say Response1"),
+            run_execution("concurrent-3", "Say Response2"),
         )
 
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify all completed
     assert len(results) == 3
     assert all(r.status == TaskStatus.DONE for r in results)
-    assert results[0].output_text == "Hello"
-    assert results[1].output_text == "World"
-    assert results[2].output_text == "!"
+    assert results[0].output_text == "Response0"
+    assert results[1].output_text == "Response1"
+    assert results[2].output_text == "Response2"
 
 
 @pytest.mark.asyncio
@@ -674,9 +737,10 @@ async def test_database_methods(executor, test_db):
     await executor._persist_result(result, test_db.current_execution_id)
 
     # Verify saved
-    agents = await test_db.query("SELECT * FROM agents WHERE run_id = ?", ["test-run-123"])
+    agents = await test_db.query("SELECT * FROM agents WHERE id = ?", ["test-run-123"])
     assert len(agents) == 1
-    assert agents[0]["output_text"] == "Test output"
+    agent_row = parse_agent_row(agents[0])
+    assert agent_row["result"] == "Test output"
 
 
 @pytest.mark.asyncio
@@ -701,32 +765,30 @@ async def test_resume_from_history(executor, test_db):
     test_model.set_stream_text(["Resumed response"])
 
     # Mock Agent class
-    with patch("smithers_py.executors.claude.Agent", MockAgent):
-        # Mock the model mapping and history loading
+    with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
+        mock_agent_cls.return_value = MockAgent(test_model)
+
+        # Mock the model mapping
         original_map = executor._map_model_name
         executor._map_model_name = lambda m: test_model
 
-        # Mock get_agent_history
-        with patch.object(test_db, 'get_agent_history') as mock_history:
-            mock_history.return_value = "[]"  # Empty history for now
+        # Execute with resume
+        events = []
+        result = None
+        async for event in executor.execute(
+            node_id="resume-node",
+            prompt="Continue conversation",
+            model="sonnet",
+            execution_id=test_db.current_execution_id,
+            resume_from="resume-test-123",
+        ):
+            if isinstance(event, StreamEvent):
+                events.append(event)
+            else:
+                result = event
 
-            # Execute with resume
-            events = []
-            result = None
-            async for event in executor.execute(
-                node_id="resume-node",
-                prompt="Continue conversation",
-                model="sonnet",
-                execution_id=test_db.current_execution_id,
-                resume_from="resume-test-123",
-            ):
-                if isinstance(event, StreamEvent):
-                    events.append(event)
-                else:
-                    result = event
-
-    # Restore
-    executor._map_model_name = original_map
+        # Restore
+        executor._map_model_name = original_map
 
     # Verify resumed event
     resumed_events = [e for e in events if e.kind == "resumed"]

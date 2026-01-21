@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS agents (
   log_path TEXT,                 -- Path to execution log file
   stream_summary TEXT,           -- JSON: Stream summary metrics
   error TEXT,
+  message_history TEXT,          -- JSON: Conversation history for resuming
 
   -- Timing
   started_at TEXT,

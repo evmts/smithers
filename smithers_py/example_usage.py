@@ -59,7 +59,7 @@ async def main():
     print("-" * 30)
 
     task_id = "task-001"
-    await db.tasks.start(task_id, "Process Documents", execution_id)
+    await db.tasks.start(task_id, "Process Documents", execution_id, component_type="example", component_name="DocumentProcessor")
     print(f"Started task: {task_id}")
 
     await db.tasks.heartbeat(task_id, "worker-1")

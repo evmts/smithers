@@ -6,7 +6,10 @@ for state management, execution tracking, and orchestration.
 """
 
 import sqlite3
-import aiosqlite
+try:
+    import aiosqlite
+except ImportError:
+    aiosqlite = None  # For sync-only usage
 import json
 import uuid
 import asyncio
