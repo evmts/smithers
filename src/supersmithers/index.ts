@@ -23,7 +23,7 @@ export type {
   RewriteProposal,
   RewriteResult,
   AnalysisResult,
-  ClaudeModel,
+  // Note: ClaudeModel exported from components/index.js
 } from './types.js'
 
 // Runtime utilities (for plugin and advanced use)

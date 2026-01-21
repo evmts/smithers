@@ -12,9 +12,7 @@ export type {
   ToolSpec,
 } from './types.js'
 
-// Backwards compatibility aliases
-export type { LegacyTool as Tool, SmithersToolContext as ToolContext } from './types.js'
-export type { JSONSchema } from '../components/agents/types/schema.js'
+// Note: Tool, ToolContext, JSONSchema exported from components/index.js
 
 // Registry - constants and functions only
 export {
