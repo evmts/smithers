@@ -1,5 +1,10 @@
 // SuperSmithers - Self-Rewriting Plan Modules
 // Enables orchestration plans to observe execution and rewrite themselves
+//
+// Note: For Bun preload registration, use:
+//   import 'smithers-orchestrator/supersmithers/register'
+// or in bunfig.toml:
+//   preload = ["smithers-orchestrator/supersmithers/register"]
 
 // Main component
 export { SuperSmithers } from './SuperSmithers.js'

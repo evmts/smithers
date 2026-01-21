@@ -59,8 +59,8 @@ Current Smithers orchestrations are static: if a plan encounters repeated errors
 │                                                                       │
 │  import AuthPlan from "./plans/auth.tsx" with { supersmithers: "auth" }│
 │                                                                       │
-│  <SuperSmithers plan={AuthPlan}>                                      │
-│    <AuthPlan />        ← Proxy renders baseline or overlay            │
+│  <SuperSmithers plan={ManagedAuthPlan}>                               │
+│    ↳ Proxy always renders baseline; SuperSmithers handles overlay     │
 │  </SuperSmithers>                                                     │
 │                                                                       │
 └──────────────────────────────────────────────────────────────────────┘
@@ -113,17 +113,22 @@ Current Smithers orchestrations are static: if a plan encounters repeated errors
    - **Rationale**: TypeScript branded types ensure only managed components pass to SuperSmithers
    - **Alternatives Considered**: Runtime checks only (worse DX)
 
-5. **Typing Model (P0: Explicit Wrapper)**
-   - **Rationale**: TypeScript import attributes do NOT automatically change types. Import attributes affect runtime loading, not TS types.
-   - **P0 Decision**: Require explicit `supersmithers.managed()` wrapper for type branding:
+5. **Typing Model (P0: Bun Plugin + Validator)**
+   - **Rationale**: TypeScript import attributes do NOT automatically change types. The Bun plugin brands the component at runtime, but TypeScript doesn't see it.
+   - **P0 Decision**: 
+     - Import with attribute: `import X from "./plan.tsx" with { supersmithers: "scope" }` — Bun plugin brands at runtime
+     - Validate + cast: `supersmithers.managed(X)` — validates the brand exists and returns typed component
      ```tsx
-     import AuthPlanBase from "./plans/authPlan.tsx"
-     const AuthPlan = supersmithers.managed(AuthPlanBase, { scope: "auth" })
+     // Bun plugin brands this at import time
+     import AuthPlan from "./plans/authPlan.tsx" with { supersmithers: "auth" }
+     
+     // Validator confirms brand + provides TypeScript typing
+     const ManagedAuthPlan = supersmithers.managed(AuthPlan)
      ```
    - **Alternatives Considered**: 
      - Runtime-only branding (less typesafe, but simpler)
      - TSServer plugin (heavier, P1 scope)
-   - **Note**: The Bun plugin still processes `with { supersmithers: "scope" }` for runtime behavior, but type safety comes from the explicit wrapper.
+   - **Note**: `managed()` is a validator/cast, NOT a creator. It throws if the component wasn't imported with the attribute. The Bun plugin does the actual branding.
 
 6. **Overlay Import Resolution**
    - **Rationale**: Overlays live in `.smithers/supersmithers/vcs/`. Relative imports would resolve incorrectly.
@@ -199,16 +204,16 @@ export interface SuperSmithersProps<P> {
 
 ```tsx
 #!/usr/bin/env bun
-import { SmithersProvider, SuperSmithers } from 'smithers/orchestrator'
-import { createSmithersDB } from 'smithers/db'
-import { createSmithersRoot } from 'smithers'
-import { supersmithers } from 'smithers-orchestrator/supersmithers'
+import { SmithersProvider } from 'smithers-orchestrator/components'
+import { SuperSmithers, supersmithers } from 'smithers-orchestrator/supersmithers'
+import { createSmithersDB } from 'smithers-orchestrator/db'
+import { createSmithersRoot } from 'smithers-orchestrator'
 
-// Import the base plan
-import AuthPlanBase from "./plans/authPlan.tsx"
+// Must be imported with the attribute so the Bun plugin can brand it
+import AuthPlan from "./plans/authPlan.tsx" with { supersmithers: "auth" }
 
-// Wrap with managed() for type safety
-const AuthPlan = supersmithers.managed(AuthPlanBase, { scope: "auth" })
+// Then validate + cast for TypeScript typing
+const ManagedAuthPlan = supersmithers.managed(AuthPlan)
 
 const db = createSmithersDB({ path: '.smithers/self-heal.db' })
 const executionId = db.execution.start('Self-healing auth', 'workflow.tsx')
@@ -217,7 +222,7 @@ function App() {
   return (
     <SmithersProvider db={db} executionId={executionId} maxIterations={100}>
       <SuperSmithers
-        plan={AuthPlan}
+        plan={ManagedAuthPlan}
         planProps={{}}
         rewriteOn={{ errors: true, stalls: true }}
         rewriteModel="opus"
@@ -1237,7 +1242,7 @@ export async function validateRewrite(
 
 - [ ] **AC1**: Import attribute `with { supersmithers: "scope" }` works and transforms to proxy
 - [ ] **AC2**: `<SuperSmithers plan={X}>` only accepts branded component types
-- [ ] **AC3**: SuperSmithers component loads overlay when active_version_id is set; proxy always renders baseline and carries metadata
+- [ ] **AC3**: Proxy always renders baseline and carries metadata; SuperSmithers component handles overlay switching when active_version_id is set
 - [ ] **AC4**: Rewrites are stored in SQLite and committed to VCS (jj/git)
 - [ ] **AC5**: Original source files are never modified
 - [ ] **AC6**: Subtree remounts correctly on version change (keyed)

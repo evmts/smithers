@@ -7,15 +7,15 @@ description: Inspect, debug, and troubleshoot Smithers workflows
 
 ```bash
 smithers db executions                    # List all
-smithers db execution <id>                # View details
-smithers db state --execution <id>        # View state
+smithers db execution <execution-id>                # View details
+smithers db state --execution-id <execution-id>        # View state
 ```
 
 ## Direct SQLite Inspection
 
 ```bash
-sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM tasks WHERE status = 'running'"
-sqlite3 .smithers/my-workflow/db.sqlite "SELECT * FROM state ORDER BY updated_at DESC LIMIT 5"
+sqlite3 .smithers/my-workflow.db "SELECT * FROM tasks WHERE status = 'running'"
+sqlite3 .smithers/my-workflow.db "SELECT * FROM state ORDER BY updated_at DESC LIMIT 5"
 ```
 
 ## Claude Code Logs
@@ -42,7 +42,7 @@ Debug: `SELECT * FROM tasks WHERE status = 'running'`
 - No Steps in Phase
 - `skipIf` returning wrong value
 
-Debug: `SELECT * FROM steps WHERE phase_id = '<id>'`
+Debug: `SELECT * FROM steps WHERE phase_id = '<phase-id>'`
 
 **Crash Recovery Fails**
 - Using `useState` instead of SQLite

@@ -85,7 +85,7 @@ description: Create and monitor multi-agent AI orchestrations using Smithers fra
 
 # Smithers Orchestrator Skill
 
-[Full skill content - see plugins/skill/SKILL.md for complete version]
+Use `smithers-orchestrator` to create React-based agent workflows with Phase/Step/Claude components. Always use createSmithersDB for persistence.
 ```
 
 Or install from the plugin registry:
@@ -113,7 +113,7 @@ smithers serve --port 3847
   "mcpServers": {
     "smithers": {
       "command": "smithers",
-      "args": ["serve"],
+      "args": ["serve", "--port", "3847"],
       "env": {
         "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
       }
@@ -147,7 +147,7 @@ smithers workflow.tsx --resume --verbose
 
 # Database commands
 smithers db executions
-smithers db state --execution-id <id>
+smithers db state --execution-id <execution-id>
 smithers db stats
 ```
 

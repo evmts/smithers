@@ -21,6 +21,8 @@ CRITICAL CONSTRAINTS:
    - Package imports (e.g., 'react', 'smithers-orchestrator/db')
    - Absolute file:// URLs for local modules
    - In-file code (preferred for small utilities)
+7) Side-effect imports (import "./x" or import '../x') are NOT allowed.
+8) CommonJS require() with relative paths is NOT allowed.
 
 OUTPUT:
 Return JSON ONLY:
@@ -180,6 +182,26 @@ export async function validateRewrite(
     errors.push(
       `Code contains ${dynamicMatches.length} relative dynamic import(s). ` +
         `These must be converted to absolute file:// URLs.`
+    )
+  }
+
+  // Side-effect imports: import "./x" or import '../x'
+  const sideEffectRelativePattern = /import\s+['"]\.\.?\//g
+  const sideEffectMatches = code.match(sideEffectRelativePattern)
+  if (sideEffectMatches && sideEffectMatches.length > 0) {
+    errors.push(
+      `Code contains ${sideEffectMatches.length} side-effect relative import(s) (import "./x"). ` +
+      `These must be converted to package imports or absolute file:// URLs.`
+    )
+  }
+
+  // CommonJS requires
+  const requireRelativePattern = /require\s*\(\s*['"]\.\.?\//g
+  const requireMatches = code.match(requireRelativePattern)
+  if (requireMatches && requireMatches.length > 0) {
+    errors.push(
+      `Code contains ${requireMatches.length} require() relative import(s). ` +
+      `These must be converted to package imports or absolute file:// URLs.`
     )
   }
 

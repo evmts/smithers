@@ -90,6 +90,13 @@ function useWorkflowProgress() {
     [executionId ?? ""],
     { skip: !executionId }
   );
+
+  const { data: completed } = useQueryValue<number>(
+    reactiveDb,
+    "SELECT COUNT(*) FROM phases WHERE execution_id = ? AND status = 'completed'",
+    [executionId ?? ""],
+    { skip: !executionId }
+  );
   
   return { progress: total ? (completed ?? 0) / total : 0 };
 }

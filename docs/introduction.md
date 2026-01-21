@@ -7,12 +7,22 @@ description: Ralph the plan not the agent
 
 **Ralph the plan, not the agent.**
 
-Smithers is a "plan as code" framework.
+Smithers is a "plan as code" framework for AI agents. Write sophisticated plans as React components that spawn and control agents, with SQLite persistence for crash recovery.
 
-The plan mode of traditional agents only allows markdown style plans. Smithers powers your current agent with ability to write more sophisticated plans within ralph loops as a mix of prompts and hardcode.  [Let your agents write agents](/harness-integration#claude-code-plugin).
+## Install
+
+```bash
+bun add -g smithers-orchestrator@latest
+```
+
+<Note>
+If `smithers` is not found, add `~/.bun/bin` to your PATH.
+</Note>
+
+## Your First Workflow
 
 ```tsx
-#!/usr/bin/env bun
+#!/usr/bin/env smithers
 import {
   createSmithersRoot,
   createSmithersDB,
@@ -39,14 +49,10 @@ await root.mount(
 db.close();
 ```
 
-<Note>
-If `smithers` is not found after installing, add `~/.bun/bin` to your PATH.
-</Note>
-
-Run it and monitor the execution frame by frame:
+Run it:
 
 ```bash
-smithers demo.tsx
+smithers coverage.tsx
 ```
 
 Smithers is a React framework for coding agents. Write the plan in any coding harness, then monitor your agents as they execute it. The plan is a mix of hardcoded logic and agent output that evolves reactively.

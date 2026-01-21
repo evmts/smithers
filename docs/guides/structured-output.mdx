@@ -55,7 +55,7 @@ const AnalysisSchema = z.object({
   schema={AnalysisSchema}
   validate={(result) => {
     const data = result.structured;
-    return data && data.issues.length > 0 && data.score >= 0;
+    return data && data.issues.length > 0 && data.confidence >= 0;
   }}
   schemaRetries={2}
 >
@@ -76,9 +76,11 @@ type User = z.infer<typeof UserSchema>;
   schema={UserSchema}
   onFinished={(result) => {
     const user: User = result.structured!;
-    console.log(user.role); // "admin" | "user" | "guest"
+    console.log(user.role);
   }}
 >
+  Extract user information.
+</Claude>
 ```
 
 ## Real-World Example

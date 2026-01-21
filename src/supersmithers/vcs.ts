@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import { mkdir } from 'node:fs/promises'
+import { uuid } from '../db/utils.js'
 
 export interface SuperSmithersVCS {
   kind: 'jj' | 'git'
@@ -98,14 +99,14 @@ export async function writeAndCommit(
       }
 
       const commitId = await Bun.$`jj log -r @- --no-graph -T 'commit_id'`.cwd(vcs.repoPath).text()
-      return commitId.trim() || crypto.randomUUID()
+      return commitId.trim() || uuid()
     }
 
     await Bun.$`git add ${relPath}`.cwd(vcs.repoPath).quiet()
 
     const status = await Bun.$`git status --porcelain`.cwd(vcs.repoPath).text()
     if (!status.trim()) {
-      return crypto.randomUUID()
+      return uuid()
     }
 
     await Bun.$`git commit -m ${message}`.cwd(vcs.repoPath).quiet()

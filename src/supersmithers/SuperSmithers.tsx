@@ -13,6 +13,7 @@ import { runAnalysis } from './analyzer.js'
 import { runRewrite } from './rewriter.js'
 import { initOverlayRepo, writeAndCommit, type SuperSmithersVCS } from './vcs.js'
 import { createSuperSmithersDBHelpers } from './db.js'
+import { uuid } from '../db/utils.js'
 
 interface RenderFrameRow {
   id: string
@@ -46,6 +47,7 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
   // useState allowed for framework internals - ref mutations don't trigger re-renders
   const [overlayComponent, setOverlayComponent] = useState<ComponentType<P> | null>(null)
   const [currentScopeRev, setCurrentScopeRev] = useState<string | null>(null)
+  const overlayLoadSeqRef = useRef(0)
 
   const { data: activeVersionId } = useQueryValue<string>(
     reactiveDb,
@@ -86,24 +88,29 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
   })
 
   useEffectOnValueChange(activeVersionId, () => {
+    overlayLoadSeqRef.current += 1
+    const seq = overlayLoadSeqRef.current
+
     if (!activeVersionId) {
       setOverlayComponent(null)
       setCurrentScopeRev(null)
       return
     }
+
+    setOverlayComponent(null)
     
     const code = dbHelpers.getVersionCode(activeVersionId)
     if (code) {
-      // Generate new scope_rev for task cancellation tracking
-      const newScopeRev = crypto.randomUUID()
+      const newScopeRev = uuid()
       setCurrentScopeRev(newScopeRev)
       
       loadOverlayComponent<P>(code, meta)
         .then(comp => {
+          if (overlayLoadSeqRef.current !== seq) return
           setOverlayComponent(() => comp)
         })
         .catch(err => {
-          // Clear active override on failure and report error
+          if (overlayLoadSeqRef.current !== seq) return
           dbHelpers.clearActiveVersion(meta.moduleHash)
           setOverlayComponent(null)
           setCurrentScopeRev(null)
@@ -198,7 +205,7 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
       const vcs = vcsRef.current
       if (!vcs) return
 
-      const versionId = crypto.randomUUID()
+      const versionId = uuid()
       const relPath = `modules/${live.meta.moduleHash}/${versionId}.tsx`
       const commitId = await writeAndCommit(
         vcs,

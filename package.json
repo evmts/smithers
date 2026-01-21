@@ -27,7 +27,8 @@
     "./reactive-sqlite": "./dist/src/reactive-sqlite/index.js",
     "./hooks": "./dist/src/hooks/index.js",
     "./hooks/ai-sdk": "./dist/src/hooks/ai-sdk.js",
-    "./supersmithers": "./dist/src/supersmithers/index.js"
+    "./supersmithers": "./dist/src/supersmithers/index.js",
+    "./supersmithers/register": "./dist/src/supersmithers/register.js"
   },
   "files": [
     "dist",

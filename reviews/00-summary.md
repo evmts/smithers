@@ -51,3 +51,12 @@ Unused Middleware: 5 files deleted
 - [07-simplify-provider-lifecycle.md](./07-simplify-provider-lifecycle.md) ✅ Accepted
 - [08-consolidate-exports.md](./08-consolidate-exports.md) ✅ Minimal exports
 - [09-code-style-audit.md](./09-code-style-audit.md) ✅ Delete unused, clean comments
+- [10-test-coverage-audit.md](./10-test-coverage-audit.md) 📋 Audit complete
+
+## Test Coverage Issues
+
+- [issues/001-agent-hook-tests.md](../issues/001-agent-hook-tests.md) - HIGH priority
+- [issues/002-control-plane-tests.md](../issues/002-control-plane-tests.md) - HIGH priority
+- [issues/003-e2e-tests-no-mocks.md](../issues/003-e2e-tests-no-mocks.md) - HIGH priority
+- [issues/004-boundary-condition-tests.md](../issues/004-boundary-condition-tests.md) - MEDIUM priority
+- [issues/005-missing-component-tests.md](../issues/005-missing-component-tests.md) - MEDIUM priority
