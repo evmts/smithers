@@ -138,7 +138,7 @@ smithers db transitions
 
 ```tsx
 // Different test runner
-Bun.spawn(["npx", "vitest", "--coverage"]);
+Bun.spawn(["bun", "test", "--coverage"]);
 
 // Target specific files
 const COVERAGE_PROMPT = `Focus on src/auth/*.ts, src/api/*.ts`;

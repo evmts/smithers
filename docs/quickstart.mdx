@@ -13,6 +13,20 @@ bun add -g smithers-orchestrator
 
 This installs the `smithers` CLI globally. Requires [Bun](https://bun.sh/) 1.0+.
 
+<Note>
+If `smithers` is not found, add `~/.bun/bin` to your PATH.
+</Note>
+
+## Upgrade
+
+To upgrade Smithers to the latest version:
+
+```bash
+smithers upgrade
+```
+
+---
+
 ## Run
 
 Just type:
@@ -54,7 +68,7 @@ function Hello() {
 
 const root = createSmithersRoot();
 await root.mount(Hello);
-await db.close();
+db.close();
 ```
 
 Run it:
@@ -150,7 +164,7 @@ try {
   db.execution.fail(executionId, String(err));
   throw err;
 } finally {
-  await db.close();
+  db.close();
 }
 ```
 

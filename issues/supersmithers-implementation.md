@@ -99,6 +99,7 @@ Current Smithers orchestrations are static: if a plan encounters repeated errors
 1. **Import Attribute Marking**
    - **Rationale**: Static imports with `with { supersmithers: "scope" }` attribute provide best DX and type safety
    - **Alternatives Considered**: Dynamic import wrappers (worse ergonomics), HOC wrappers (breaks tree analysis)
+   - **P0 Limitation**: Only default imports are supported. Named imports (`import { X } from ...`) with supersmithers attribute are not yet supported.
 
 2. **Overlay-Only Rewrites**
    - **Rationale**: Never modify original source; store rewrites as versioned overlays
@@ -111,6 +112,34 @@ Current Smithers orchestrations are static: if a plan encounters repeated errors
 4. **Branded Component Types**
    - **Rationale**: TypeScript branded types ensure only managed components pass to SuperSmithers
    - **Alternatives Considered**: Runtime checks only (worse DX)
+
+5. **Typing Model (P0: Explicit Wrapper)**
+   - **Rationale**: TypeScript import attributes do NOT automatically change types. Import attributes affect runtime loading, not TS types.
+   - **P0 Decision**: Require explicit `supersmithers.managed()` wrapper for type branding:
+     ```tsx
+     import AuthPlanBase from "./plans/authPlan.tsx"
+     const AuthPlan = supersmithers.managed(AuthPlanBase, { scope: "auth" })
+     ```
+   - **Alternatives Considered**: 
+     - Runtime-only branding (less typesafe, but simpler)
+     - TSServer plugin (heavier, P1 scope)
+   - **Note**: The Bun plugin still processes `with { supersmithers: "scope" }` for runtime behavior, but type safety comes from the explicit wrapper.
+
+6. **Overlay Import Resolution**
+   - **Rationale**: Overlays live in `.smithers/supersmithers/vcs/`. Relative imports would resolve incorrectly.
+   - **P0 Decision**: 
+     - Overlay modules imported via `file://` URLs using `pathToFileURL(absolutePath).href`
+     - Rewriter MUST convert relative imports to absolute `file://` URLs anchored to original module directory
+     - Validation rejects overlays with unresolved relative imports
+   - **Alternatives Considered**: Virtual module namespaces (Bun support unclear)
+
+7. **Task Cancellation on Boundary Swap**
+   - **Rationale**: When overlay activates, old tasks may still be running.
+   - **P0 Decision**:
+     - Add `scope_rev` column to `tasks` and `agents` tables
+     - On new version activation, cancel tasks with old `scope_rev`
+     - SuperSmithers includes `scope_rev` in execution keys
+   - **Note**: `scope_rev` task cancellation is P1 scope. For P0, the `scope_rev` columns exist but cancellation is not wired end-to-end.
 
 ### API Design
 
@@ -138,6 +167,7 @@ export interface SuperSmithersProps<P> {
   
   /** Props forwarded to plan component */
   planProps?: P
+  // NO children prop - SuperSmithers renders the plan directly
 
   /** Observation triggers */
   observeOn?: ('iteration' | 'error' | 'stall' | 'complete')[]
@@ -157,7 +187,7 @@ export interface SuperSmithersProps<P> {
   maxRewrites?: number
   rewriteCooldown?: number
 
-  /** Approval workflow */
+  /** Approval workflow (P1 scope - for P0, rewrites are applied immediately) */
   requireApproval?: boolean
   onRewriteProposed?: (proposal: RewriteProposal) => void
   onRewriteApplied?: (result: RewriteResult) => void
@@ -172,9 +202,13 @@ export interface SuperSmithersProps<P> {
 import { SmithersProvider, SuperSmithers } from 'smithers/orchestrator'
 import { createSmithersDB } from 'smithers/db'
 import { createSmithersRoot } from 'smithers'
+import { supersmithers } from 'smithers-orchestrator/supersmithers'
 
-// Import attribute marks this as a managed hot boundary
-import AuthPlan from "./plans/authPlan.tsx" with { supersmithers: "auth" }
+// Import the base plan
+import AuthPlanBase from "./plans/authPlan.tsx"
+
+// Wrap with managed() for type safety
+const AuthPlan = supersmithers.managed(AuthPlanBase, { scope: "auth" })
 
 const db = createSmithersDB({ path: '.smithers/self-heal.db' })
 const executionId = db.execution.start('Self-healing auth', 'workflow.tsx')
@@ -184,14 +218,13 @@ function App() {
     <SmithersProvider db={db} executionId={executionId} maxIterations={100}>
       <SuperSmithers
         plan={AuthPlan}
+        planProps={{}}
         rewriteOn={{ errors: true, stalls: true }}
         rewriteModel="opus"
         maxRewrites={3}
         rewriteCooldown={60_000}
         onRewriteApplied={(r) => console.log('[rewrite]', r.summary)}
-      >
-        <AuthPlan />
-      </SuperSmithers>
+      />
     </SmithersProvider>
   )
 }
@@ -541,7 +574,7 @@ export function getSupersmithersMeta(
  jsx = "react-jsx"
  jsxImportSource = "react"
 
-+[run]
++# preload is top-level, NOT under [run]
 +preload = ["smithers-orchestrator/supersmithers/register"]
 
  [install]
@@ -1204,12 +1237,15 @@ export async function validateRewrite(
 
 - [ ] **AC1**: Import attribute `with { supersmithers: "scope" }` works and transforms to proxy
 - [ ] **AC2**: `<SuperSmithers plan={X}>` only accepts branded component types
-- [ ] **AC3**: Proxy loads baseline by default, overlay when active_version_id is set
+- [ ] **AC3**: SuperSmithers component loads overlay when active_version_id is set; proxy always renders baseline and carries metadata
 - [ ] **AC4**: Rewrites are stored in SQLite and committed to VCS (jj/git)
 - [ ] **AC5**: Original source files are never modified
 - [ ] **AC6**: Subtree remounts correctly on version change (keyed)
 - [ ] **AC7**: maxRewrites and rewriteCooldown are enforced
 - [ ] **AC8**: Rollback works by setting active_version_id to previous version
+- [ ] **AC0**: The compiler enforces that plan prop only accepts managed components
+- [ ] **AC9**: Overlay loading works via file:// URLs regardless of caller location
+- [ ] **AC10**: Overlays with unresolved relative imports are rejected by validation
 
 ## Testing Strategy
 

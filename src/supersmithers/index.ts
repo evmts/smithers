@@ -28,6 +28,7 @@ export {
   getSupersmithersMeta,
   generateModuleHash,
   loadOverlayComponent,
+  supersmithers,
 } from './runtime.js'
 
 // Database helpers

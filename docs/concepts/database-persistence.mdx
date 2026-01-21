@@ -19,7 +19,7 @@ db.execution.start("Task", "task.tsx");
 db.execution.findIncomplete();
 
 // Always close
-await db.close();
+db.close();
 ```
 
 ## Creating a Database
@@ -32,7 +32,7 @@ const db = createSmithersDB({
 });
 
 // Always close when done
-await db.close();
+db.close();
 ```
 
 <Note>
@@ -118,7 +118,7 @@ const history = db.state.history("phase", 10);
 // ]
 
 // Time-travel: replay to a previous state
-await db.state.replayTo("t1");
+db.state.replayTo("t1");
 // State is now back to what it was at transition t1
 ```
 
@@ -128,11 +128,11 @@ Save and restore complete state:
 
 ```tsx
 // Take a snapshot
-const snapshot = await db.state.snapshot();
+const snapshot = db.state.snapshot();
 // { phase: "review", data: {...}, attempts: 3 }
 
 // Later, restore the snapshot
-await db.state.restore(snapshot, "rollback");
+db.state.restore(snapshot, "rollback");
 ```
 
 ## Agent Tracking
@@ -141,14 +141,14 @@ Track Claude invocations:
 
 ```tsx
 // Start an agent
-const agentId = await db.agents.start(
+const agentId = db.agents.start(
   "Implement the feature",     // prompt
   "sonnet",                     // model
   "You are a senior engineer"   // system prompt
 );
 
 // Complete with results
-await db.agents.complete(
+db.agents.complete(
   agentId,
   "Feature implemented",        // output
   { success: true },            // structured result
@@ -156,7 +156,7 @@ await db.agents.complete(
 );
 
 // List agents in current execution
-const agents = await db.agents.list(executionId);
+const agents = db.agents.list(executionId);
 ```
 
 ## Tool Call Tracking
@@ -165,21 +165,21 @@ Track tools used by agents:
 
 ```tsx
 // Start a tool call
-const toolId = await db.tools.start(
+const toolId = db.tools.start(
   agentId,
   "Edit",
   { file: "src/main.ts", changes: "..." }
 );
 
 // Complete with output
-await db.tools.complete(
+db.tools.complete(
   toolId,
   "File edited successfully",
   "Edited src/main.ts: added 15 lines"
 );
 
 // List tool calls for an agent
-const tools = await db.tools.list(agentId);
+const tools = db.tools.list(agentId);
 ```
 
 ## Task Tracking
@@ -209,30 +209,30 @@ Store knowledge that persists across workflows:
 
 ```tsx
 // Add a fact
-await db.memories.addFact(
+db.memories.addFact(
   "api-endpoint",
   "The API endpoint is at /api/v2/users",
   "discovered in auth.ts"
 );
 
 // Add a learning
-await db.memories.addLearning(
+db.memories.addLearning(
   "test-pattern",
   "Use vitest for unit tests in this project",
   "package.json"
 );
 
 // Add a preference
-await db.memories.addPreference(
+db.memories.addPreference(
   "commit-style",
   "Use conventional commits with scope"
 );
 
 // Search memories
-const relevant = await db.memories.search("API endpoint");
+const relevant = db.memories.search("API endpoint");
 
 // Get specific memory
-const memory = await db.memories.get("fact", "api-endpoint");
+const memory = db.memories.get("fact", "api-endpoint");
 ```
 
 ### Memory Categories
@@ -259,7 +259,7 @@ Track version control operations:
 
 ```tsx
 // Log a commit
-await db.vcs.logCommit({
+db.vcs.logCommit({
   hash: "abc123",
   message: "feat: Add user auth",
   author: "claude",
@@ -271,14 +271,14 @@ await db.vcs.logCommit({
 });
 
 // Log a snapshot (jj)
-await db.vcs.logSnapshot({
+db.vcs.logSnapshot({
   snapshotId: "xyz789",
   description: "Before refactoring",
   timestamp: new Date(),
 });
 
 // Log a review
-await db.vcs.logReview({
+db.vcs.logReview({
   reviewId: "r1",
   target: "abc123",
   approved: false,
@@ -329,7 +329,7 @@ smithers db current
     try {
       // ... do work
     } finally {
-      await db.close();
+      db.close();
     }
     ```
   </Accordion>

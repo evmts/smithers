@@ -1,77 +1,92 @@
 import { plugin } from 'bun'
-
-/**
- * Bun preload plugin that transforms imports with supersmithers attribute
- * 
- * Example:
- *   import AuthPlan from "./plans/auth.tsx" with { supersmithers: "auth" }
- * 
- * Transforms to a proxy module that:
- * 1. Imports the original component
- * 2. Wraps it with createSupersmithersProxy
- * 3. Exports the branded component
- */
+import { createHash } from 'node:crypto'
 
 const PROXY_NAMESPACE = 'supersmithers-proxy'
 
 plugin({
   name: 'supersmithers',
   setup(build) {
-    // Match imports with supersmithers attribute
-    // Bun doesn't directly expose import attributes in the plugin API yet,
-    // so we use a resolver that creates virtual modules
-    
-    build.onResolve({ filter: /.*/, namespace: 'file' }, (args) => {
-      // Check for special suffix pattern: file.tsx?supersmithers=scope
-      if (args.path.includes('?supersmithers=')) {
-        const parts = args.path.split('?supersmithers=')
-        const realPath = parts[0] ?? ''
-        const scope = parts[1] ?? 'default'
-        
-        return {
-          path: `${realPath}::${scope}`,
-          namespace: PROXY_NAMESPACE,
-        }
+    // Use Bun's transpiler to scan imports
+    build.onLoad({ filter: /\.[cm]?[jt]sx?$/, namespace: 'file' }, async (args) => {
+      const source = await Bun.file(args.path).text()
+      
+      // Quick check before parsing
+      if (!source.includes('supersmithers')) {
+        return undefined
       }
       
+      // Use Bun's transpiler to get import metadata
+      const transpiler = new Bun.Transpiler({ loader: 'tsx' })
+      const imports = transpiler.scanImports(source)
+      
+      // Find supersmithers imports by checking if the source has the attribute pattern
+      // Note: Bun's scanImports doesn't expose attributes yet, so we use a targeted regex
+      // on just the import statements, not the whole file
+      // Note: Only default imports supported currently (named imports not yet implemented)
+      let transformed = source
+      let hasChanges = false
+      
+      for (const imp of imports) {
+        // Build a regex for this specific import
+        // Match: import X from "path" with { supersmithers: "scope" }
+        // or: import X from "path" with { supersmithers: 'scope' }
+        const importPattern = new RegExp(
+          `import\\s+(\\w+)\\s+from\\s+(['"])${escapeRegex(imp.path)}\\2\\s+with\\s*\\{\\s*supersmithers:\\s*(['"])([^'"]+)\\3\\s*\\}`,
+          'g'
+        )
+        
+        transformed = transformed.replace(importPattern, (_match, binding, _q1, _q2, scope) => {
+          const absPath = Bun.resolveSync(imp.path, args.path)
+          const hash = createHash('sha256').update(absPath).digest('hex')
+          hasChanges = true
+          return `import ${binding} from "${PROXY_NAMESPACE}:${absPath}?export=default&scope=${encodeURIComponent(scope)}&hash=${hash}"`
+        })
+      }
+      
+      if (hasChanges) {
+        return { contents: transformed, loader: 'tsx' }
+      }
       return undefined
     })
 
+    build.onResolve({ filter: /^supersmithers-proxy:/ }, (args) => {
+      return {
+        path: args.path.slice('supersmithers-proxy:'.length),
+        namespace: PROXY_NAMESPACE,
+      }
+    })
+
     build.onLoad({ filter: /.*/, namespace: PROXY_NAMESPACE }, async (args) => {
-      const parts = args.path.split('::')
-      const modulePath = parts[0] ?? ''
-      const scope = parts[1] ?? 'default'
-      const absPath = Bun.resolveSync(modulePath, process.cwd())
-      const content = await Bun.file(absPath).text()
-      const moduleHash = Bun.hash(`${absPath}:${content}`).toString(16)
+      const url = new URL(`file://${args.path}`)
+      const absPath = url.pathname
+      const exportName = url.searchParams.get('export') ?? 'default'
+      const scope = url.searchParams.get('scope') ?? 'default'
+      const hash = url.searchParams.get('hash') ?? ''
       
-      // Generate proxy module code
-      const proxyCode = `
+      const contents = `
 import { createSupersmithersProxy } from 'smithers-orchestrator/supersmithers/runtime'
-import OriginalDefault, * as OriginalModule from ${JSON.stringify(absPath)}
+import * as OriginalModule from ${JSON.stringify(absPath)}
+
+const BaseComponent = ${exportName === 'default' ? 'OriginalModule.default' : `OriginalModule["${exportName}"]`}
 
 const meta = {
   scope: ${JSON.stringify(scope)},
   moduleAbsPath: ${JSON.stringify(absPath)},
-  exportName: 'default',
-  moduleHash: ${JSON.stringify(moduleHash)},
+  exportName: ${JSON.stringify(exportName)},
+  moduleHash: ${JSON.stringify(hash)},
 }
 
-export default createSupersmithersProxy(meta, OriginalDefault)
+const Proxy = createSupersmithersProxy(meta, BaseComponent)
 
-// Re-export named exports
-${Object.keys(await import(absPath))
-  .filter(k => k !== 'default')
-  .map(k => `export const ${k} = OriginalModule.${k}`)
-  .join('\n')}
+${exportName === 'default' ? 'export default Proxy' : `export { Proxy as ${exportName} }`}
 `
-
-      return {
-        contents: proxyCode,
-        loader: 'tsx',
-      }
+      return { contents, loader: 'tsx' }
     })
   },
 })
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 export {}

@@ -75,21 +75,21 @@ function FeatureWorkflowBody() {
 
 ```tsx
 // Snapshot before risky operations
-await db.vcs.logSnapshot({
+db.vcs.logSnapshot({
   snapshotId: await jjSnapshot(),
   description: "Before refactoring",
   timestamp: new Date(),
 });
 
 // Rollback if needed
-const snapshots = await db.vcs.getSnapshots(1);
+const snapshots = db.vcs.getSnapshots(1);
 await jjRestore(snapshots[0].snapshotId);
 ```
 
 ## Database Tracking
 
 ```tsx
-await db.vcs.logCommit({
+db.vcs.logCommit({
   hash: "abc123",
   message: "feat: Add feature",
   author: "claude",
@@ -100,7 +100,7 @@ await db.vcs.logCommit({
   vcsType: "git",
 });
 
-const commits = await db.vcs.getCommits(10);
+const commits = db.vcs.getCommits(10);
 ```
 
 ## Related

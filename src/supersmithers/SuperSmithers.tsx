@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, createElement, type ComponentType } from 'react'
+import { type ReactNode, useRef, useState, createElement, type ComponentType } from 'react'
 import { useSmithers } from '../components/SmithersProvider.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { useMount, useEffectOnValueChange } from '../reconciler/hooks.js'
@@ -10,7 +10,7 @@ import {
 import type { SuperSmithersProps, SuperSmithersContext } from './types.js'
 import { collectMetrics, collectErrors } from './observer.js'
 import { runAnalysis } from './analyzer.js'
-import { runRewrite, validateRewrite } from './rewriter.js'
+import { runRewrite } from './rewriter.js'
 import { initOverlayRepo, writeAndCommit, type SuperSmithersVCS } from './vcs.js'
 import { createSuperSmithersDBHelpers } from './db.js'
 
@@ -26,7 +26,7 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
   
   const { data: ralphCountRaw } = useQueryValue<number>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'ralphCount'",
+    "SELECT CAST(value AS INTEGER) as value FROM state WHERE key = 'ralphCount'",
     []
   )
   const ralphCount = ralphCountRaw ?? 0
@@ -42,7 +42,10 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
   const inFlightRef = useRef(false)
   const lastRewriteAtRef = useRef<number>(0)
   const vcsRef = useRef<SuperSmithersVCS | null>(null)
-  const overlayComponentRef = useRef<ComponentType<P> | null>(null)
+  
+  // useState allowed for framework internals - ref mutations don't trigger re-renders
+  const [overlayComponent, setOverlayComponent] = useState<ComponentType<P> | null>(null)
+  const [currentScopeRev, setCurrentScopeRev] = useState<string | null>(null)
 
   const { data: activeVersionId } = useQueryValue<string>(
     reactiveDb,
@@ -57,6 +60,25 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
   )
   const effectiveRewriteCount = rewriteCountData ?? 0
 
+  // Ref to hold live values - fixes stale closure in useEffectOnValueChange
+  const liveRef = useRef({
+    props,
+    meta,
+    activeVersionId,
+    effectiveRewriteCount,
+    currentScopeRev,
+    ralphCount,
+  })
+  // Update ref on every render
+  liveRef.current = {
+    props,
+    meta,
+    activeVersionId,
+    effectiveRewriteCount,
+    currentScopeRev,
+    ralphCount,
+  }
+
   useMount(() => {
     void initOverlayRepo().then(vcs => {
       vcsRef.current = vcs
@@ -65,38 +87,52 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
 
   useEffectOnValueChange(activeVersionId, () => {
     if (!activeVersionId) {
-      overlayComponentRef.current = null
+      setOverlayComponent(null)
+      setCurrentScopeRev(null)
       return
     }
     
     const code = dbHelpers.getVersionCode(activeVersionId)
     if (code) {
-      void loadOverlayComponent<P>(code, meta).then(comp => {
-        overlayComponentRef.current = comp
-      })
+      // Generate new scope_rev for task cancellation tracking
+      const newScopeRev = crypto.randomUUID()
+      setCurrentScopeRev(newScopeRev)
+      
+      loadOverlayComponent<P>(code, meta)
+        .then(comp => {
+          setOverlayComponent(() => comp)
+        })
+        .catch(err => {
+          // Clear active override on failure and report error
+          dbHelpers.clearActiveVersion(meta.moduleHash)
+          setOverlayComponent(null)
+          setCurrentScopeRev(null)
+          liveRef.current.props.onError?.(err instanceof Error ? err : new Error(String(err)))
+        })
     }
   }, [activeVersionId, meta.moduleHash])
 
-  const observeOnRef = useRef(props.observeOn)
-  observeOnRef.current = props.observeOn
-
   useEffectOnValueChange(ralphCount, () => {
-    if (observeOnRef.current?.includes('iteration') ?? true) {
-      void maybeAnalyzeAndRewrite('iteration')
+    if (liveRef.current.props.observeOn?.includes('iteration') ?? true) {
+      void maybeAnalyzeAndRewrite('iteration', liveRef.current)
     }
   }, [])
 
-  async function maybeAnalyzeAndRewrite(trigger: SuperSmithersContext['trigger']) {
+  async function maybeAnalyzeAndRewrite(
+    trigger: SuperSmithersContext['trigger'],
+    live: typeof liveRef.current
+  ) {
     if (inFlightRef.current) return
-    if (effectiveRewriteCount >= (props.maxRewrites ?? 3)) return
+    if (live.effectiveRewriteCount >= (live.props.maxRewrites ?? 3)) return
 
-    const cooldown = props.rewriteCooldown ?? 60_000
+    const cooldown = live.props.rewriteCooldown ?? 60_000
     if (Date.now() - lastRewriteAtRef.current < cooldown) return
 
     inFlightRef.current = true
+    dbHelpers.ensureModule(live.meta)
 
     try {
-      const metrics = collectMetrics(db, executionId, ralphCount)
+      const metrics = collectMetrics(db, executionId, live.ralphCount)
       const errors = collectErrors(db, executionId)
       
       const frames = db.db.query<RenderFrameRow>(
@@ -107,7 +143,7 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
 
       const context: SuperSmithersContext = {
         executionId,
-        iteration: ralphCount,
+        iteration: live.ralphCount,
         treeXml: frames[0]?.tree_xml ?? '',
         recentFrames: frames.map((f: RenderFrameRow) => ({
           id: f.id,
@@ -118,33 +154,33 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
         metrics,
         recentErrors: errors,
         rewriteHistory: {
-          rewriteCount: effectiveRewriteCount,
+          rewriteCount: live.effectiveRewriteCount,
           seenCodeHashes: [],
         },
-        sourceFile: meta.moduleAbsPath,
+        sourceFile: live.meta.moduleAbsPath,
         trigger,
       }
 
-      const shouldRewrite = await checkRewriteConditions(props, context)
+      const shouldRewrite = await checkRewriteConditions(live.props, context)
       if (!shouldRewrite) return
 
-      const baselineCode = await Bun.file(meta.moduleAbsPath).text()
+      const baselineCode = await Bun.file(live.meta.moduleAbsPath).text()
       const analysis = await runAnalysis({
         context,
-        model: props.rewriteModel ?? 'sonnet',
+        model: live.props.rewriteModel ?? 'sonnet',
         baselineCode,
       })
 
       dbHelpers.storeAnalysis({
         executionId,
-        moduleHash: meta.moduleHash,
-        iteration: ralphCount,
+        moduleHash: live.meta.moduleHash,
+        iteration: live.ralphCount,
         trigger,
         treeXml: context.treeXml,
         metrics,
         errors,
         analysis,
-        model: props.rewriteModel ?? 'sonnet',
+        model: live.props.rewriteModel ?? 'sonnet',
       })
 
       if (!analysis.rewrite.recommended) return
@@ -153,33 +189,28 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
         context,
         analysis,
         baselineCode,
-        model: props.rewriteModel ?? 'opus',
-        ...(props.rewriteSystemPrompt !== undefined && { systemPrompt: props.rewriteSystemPrompt }),
+        model: live.props.rewriteModel ?? 'opus',
+        ...(live.props.rewriteSystemPrompt !== undefined && { systemPrompt: live.props.rewriteSystemPrompt }),
       })
 
-      props.onRewriteProposed?.(proposal)
-
-      const validation = await validateRewrite(proposal.newCode, meta.moduleAbsPath)
-      if (!validation.valid) {
-        console.error('[SuperSmithers] Validation failed:', validation.errors)
-        return
-      }
+      live.props.onRewriteProposed?.(proposal)
 
       const vcs = vcsRef.current
       if (!vcs) return
 
       const versionId = crypto.randomUUID()
-      const relPath = `modules/${meta.moduleHash}/${versionId}.tsx`
+      const relPath = `modules/${live.meta.moduleHash}/${versionId}.tsx`
       const commitId = await writeAndCommit(
         vcs,
         relPath,
         proposal.newCode,
-        `supersmithers: ${meta.scope} ${trigger}`
+        `supersmithers: ${live.meta.scope} ${trigger}`
       )
 
       dbHelpers.storeVersion({
-        moduleHash: meta.moduleHash,
-        parentVersionId: activeVersionId ?? null,
+        versionId,
+        moduleHash: live.meta.moduleHash,
+        parentVersionId: live.activeVersionId ?? null,
         code: proposal.newCode,
         overlayRelPath: relPath,
         trigger,
@@ -189,28 +220,23 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
         vcsCommitId: commitId,
       })
 
-      dbHelpers.setActiveVersion(meta.moduleHash, versionId)
+      dbHelpers.setActiveVersion(live.meta.moduleHash, versionId)
 
       lastRewriteAtRef.current = Date.now()
 
-      props.onRewriteApplied?.({
+      live.props.onRewriteApplied?.({
         id: versionId,
         summary: proposal.summary,
         status: 'applied',
       })
     } catch (err) {
-      props.onError?.(err instanceof Error ? err : new Error(String(err)))
+      live.props.onError?.(err instanceof Error ? err : new Error(String(err)))
     } finally {
       inFlightRef.current = false
     }
   }
 
-  const ComponentToRender = overlayComponentRef.current ?? props.plan
-  const planPropsToUse = (props.planProps ?? {}) as P
-  const childElement = props.children ?? createElement(
-    ComponentToRender as unknown as ComponentType<Record<string, unknown>>,
-    planPropsToUse as Record<string, unknown>
-  )
+  const ComponentToRender = overlayComponent ?? props.plan
 
   return createElement(
     'supersmithers',
@@ -219,8 +245,9 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
       moduleHash: meta.moduleHash,
       rewriteCount: effectiveRewriteCount,
       maxRewrites: props.maxRewrites ?? 3,
+      scopeRev: currentScopeRev,
     },
-    childElement
+    createElement(ComponentToRender as unknown as ComponentType<Record<string, unknown>>, (props.planProps ?? {}) as Record<string, unknown>)
   )
 }
 

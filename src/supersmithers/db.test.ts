@@ -108,7 +108,9 @@ describe('SuperSmithers DB Helpers', () => {
 
     test('returns code for existing version', () => {
       const code = 'export default function MyComponent() { return null }'
-      const versionId = helpers.storeVersion({
+      const versionId = crypto.randomUUID()
+      helpers.storeVersion({
+        versionId,
         moduleHash: 'hash123',
         parentVersionId: null,
         code,
@@ -242,8 +244,10 @@ describe('SuperSmithers DB Helpers', () => {
   })
 
   describe('storeVersion', () => {
-    test('returns unique version id', () => {
-      const versionId = helpers.storeVersion({
+    test('stores version with provided id', () => {
+      const versionId = crypto.randomUUID()
+      helpers.storeVersion({
+        versionId,
         moduleHash: 'hash123',
         parentVersionId: null,
         code: 'code',
@@ -255,11 +259,14 @@ describe('SuperSmithers DB Helpers', () => {
         vcsCommitId: 'commit123',
       })
       
-      expect(versionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+      const code = helpers.getVersionCode(versionId)
+      expect(code).toBe('code')
     })
 
     test('stores version with parent', () => {
-      const parentId = helpers.storeVersion({
+      const parentId = crypto.randomUUID()
+      helpers.storeVersion({
+        versionId: parentId,
         moduleHash: 'hash123',
         parentVersionId: null,
         code: 'parent code',
@@ -271,7 +278,9 @@ describe('SuperSmithers DB Helpers', () => {
         vcsCommitId: 'commit1',
       })
       
-      const childId = helpers.storeVersion({
+      const childId = crypto.randomUUID()
+      helpers.storeVersion({
+        versionId: childId,
         moduleHash: 'hash123',
         parentVersionId: parentId,
         code: 'child code',
@@ -293,7 +302,9 @@ describe('SuperSmithers DB Helpers', () => {
 
     test('computes sha256 of code', () => {
       const code = 'export default function() { return null }'
-      const versionId = helpers.storeVersion({
+      const versionId = crypto.randomUUID()
+      helpers.storeVersion({
+        versionId,
         moduleHash: 'hash123',
         parentVersionId: null,
         code,

@@ -4,6 +4,7 @@ import {
   isSupersmithersManaged,
   getSupersmithersMeta,
   generateModuleHash,
+  supersmithers,
 } from './runtime.js'
 
 describe('SuperSmithers Runtime', () => {
@@ -84,5 +85,47 @@ describe('SuperSmithers Runtime', () => {
     const Proxy = createSupersmithersProxy(meta, BaseComponent)
     const result = (Proxy as any)({ value: 42 })
     expect(result.props.value).toBe(42)
+  })
+})
+
+describe('supersmithers.managed()', () => {
+  test('throws for non-plugin-branded component', () => {
+    const Base = () => null
+    expect(() => supersmithers.managed(Base)).toThrow('supersmithers.managed()')
+  })
+
+  test('returns plugin-branded component unchanged', () => {
+    const Base = () => null
+    const meta = {
+      scope: 'test-scope',
+      moduleAbsPath: '/test/path.tsx',
+      exportName: 'default' as const,
+      moduleHash: 'abc123',
+    }
+    // Pre-brand with createSupersmithersProxy (simulating plugin)
+    const PluginBranded = createSupersmithersProxy(meta, Base)
+    
+    // managed() should validate and return it
+    const Managed = supersmithers.managed(PluginBranded)
+    expect(Managed).toBe(PluginBranded)
+    expect(isSupersmithersManaged(Managed)).toBe(true)
+    expect(getSupersmithersMeta(Managed).scope).toBe('test-scope')
+  })
+
+  test('preserves metadata from plugin-branded component', () => {
+    const Base = () => null
+    const meta = {
+      scope: 'auth',
+      moduleAbsPath: '/plans/auth.tsx',
+      exportName: 'AuthComponent' as const,
+      moduleHash: 'xyz789',
+    }
+    const PluginBranded = createSupersmithersProxy(meta, Base)
+    const Managed = supersmithers.managed(PluginBranded)
+    
+    const retrievedMeta = getSupersmithersMeta(Managed)
+    expect(retrievedMeta.exportName).toBe('AuthComponent')
+    expect(retrievedMeta.moduleAbsPath).toBe('/plans/auth.tsx')
+    expect(retrievedMeta.moduleHash).toBe('xyz789')
   })
 })

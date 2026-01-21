@@ -1,6 +1,8 @@
 import type { ComponentType } from 'react'
 
-export const SUPERSMITHERS_BRAND: unique symbol = Symbol.for('supersmithers.managed') as unknown as typeof SUPERSMITHERS_BRAND
+declare const SUPERSMITHERS_BRAND_TYPE: unique symbol
+export const SUPERSMITHERS_BRAND: typeof SUPERSMITHERS_BRAND_TYPE = 
+  Symbol.for('supersmithers.managed') as typeof SUPERSMITHERS_BRAND_TYPE
 
 export type SupersmithersManagedComponent<P = {}> =
   ComponentType<P> & {

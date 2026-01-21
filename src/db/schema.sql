@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS agents (
 
   -- Status
   status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'running', 'completed', 'failed', 'cancelled'
+  scope_rev TEXT,  -- SuperSmithers scope revision for cancellation
 
   -- Output
   result TEXT,                   -- Agent's response
@@ -147,6 +148,7 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE INDEX IF NOT EXISTS idx_agents_execution ON agents(execution_id);
 CREATE INDEX IF NOT EXISTS idx_agents_phase ON agents(phase_id);
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+CREATE INDEX IF NOT EXISTS idx_agents_scope_rev ON agents(scope_rev);
 CREATE INDEX IF NOT EXISTS idx_agents_created ON agents(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agents_execution_tokens ON agents(execution_id, tokens_input, tokens_output);
 
@@ -466,6 +468,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
   iteration INTEGER NOT NULL DEFAULT 0,
   scope_id TEXT,
+  scope_rev TEXT,  -- SuperSmithers scope revision for cancellation
   component_type TEXT NOT NULL,
   component_name TEXT,
   status TEXT NOT NULL DEFAULT 'running',
@@ -477,6 +480,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_execution ON tasks(execution_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_iteration_status ON tasks(iteration, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(scope_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_scope_rev ON tasks(scope_rev);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(started_at DESC);
 
@@ -590,6 +594,16 @@ CREATE INDEX IF NOT EXISTS idx_vcs_queue_status ON vcs_queue(status);
 -- ============================================================================
 -- 18. SUPERSMITHERS - Self-Rewriting Plan Module Storage
 -- ============================================================================
+
+-- Tracks registered modules
+CREATE TABLE IF NOT EXISTS supersmithers_modules (
+  module_hash TEXT PRIMARY KEY,
+  scope TEXT NOT NULL,
+  baseline_abs_path TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_supersmithers_modules_scope ON supersmithers_modules(scope);
 
 -- Stores analysis results from Claude
 CREATE TABLE IF NOT EXISTS supersmithers_analyses (

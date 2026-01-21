@@ -17,6 +17,10 @@ CRITICAL CONSTRAINTS:
 3) Prefer minimal diffs: change only what is necessary.
 4) Ensure the result compiles.
 5) Follow existing code conventions from the codebase.
+6) Do NOT use relative imports (./foo or ../bar). All imports must be:
+   - Package imports (e.g., 'react', 'smithers-orchestrator/db')
+   - Absolute file:// URLs for local modules
+   - In-file code (preferred for small utilities)
 
 OUTPUT:
 Return JSON ONLY:
@@ -29,16 +33,14 @@ Return JSON ONLY:
 
 No markdown, no extra keys.`
 
-export async function runRewrite(opts: {
-  context: SuperSmithersContext
-  analysis: AnalysisResult
-  baselineCode: string
-  model: ClaudeModel
-  systemPrompt?: string
-}): Promise<RewriteProposal> {
-  const { context, analysis, baselineCode, model, systemPrompt } = opts
+function buildRewritePrompt(
+  opts: { context: SuperSmithersContext; analysis: AnalysisResult; baselineCode: string },
+  lastErrors: string[],
+  attempt: number
+): string {
+  const { context, analysis, baselineCode } = opts
 
-  const userPrompt = `## File to Rewrite
+  let prompt = `## File to Rewrite
 Path: ${context.sourceFile}
 
 ## Current Code
@@ -57,18 +59,26 @@ ${analysis.rewrite.goals.map((g, i) => `${i + 1}. ${g}`).join('\n')}
 
 Rewrite the code to fix ALL diagnosed issues while preserving functionality.`
 
-  const client = new Anthropic()
+  if (attempt > 1 && lastErrors.length > 0) {
+    prompt += `\n\n## PREVIOUS ATTEMPT FAILED VALIDATION
+Attempt ${attempt - 1} produced these errors:
+${lastErrors.map((e, i) => `${i + 1}. ${e}`).join('\n')}
 
-  const response = await client.messages.create({
-    model: MODEL_MAP[model],
-    max_tokens: 8192,
-    system: systemPrompt ?? REWRITE_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userPrompt }],
-  })
+Fix these validation errors in your new response.`
+  }
 
-  const textBlock = response.content.find((block) => block.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude')
+  return prompt
+}
+
+function parseRewriteResponse(text: string): {
+  summary: string
+  rationale: string
+  risk: 'low' | 'medium' | 'high'
+  newCode: string
+} {
+  let jsonText = text.trim()
+  if (jsonText.startsWith('```')) {
+    jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   }
 
   let parsed: {
@@ -78,21 +88,66 @@ Rewrite the code to fix ALL diagnosed issues while preserving functionality.`
     newCode: string
   }
   try {
-    parsed = JSON.parse(textBlock.text)
+    parsed = JSON.parse(jsonText)
   } catch (err) {
-    throw new Error(`Failed to parse rewrite response as JSON: ${err instanceof Error ? err.message : String(err)}\nRaw response: ${textBlock.text.slice(0, 500)}`)
+    throw new Error(`Failed to parse rewrite response as JSON: ${err instanceof Error ? err.message : String(err)}\nRaw response: ${jsonText.slice(0, 500)}`)
   }
 
   if (!parsed.summary || !parsed.rationale || !parsed.risk || !parsed.newCode) {
     throw new Error(`Invalid rewrite response structure: missing required fields`)
   }
 
-  return {
-    summary: parsed.summary,
-    rationale: parsed.rationale,
-    risk: parsed.risk,
-    newCode: parsed.newCode,
+  return parsed
+}
+
+export async function runRewrite(opts: {
+  context: SuperSmithersContext
+  analysis: AnalysisResult
+  baselineCode: string
+  model: ClaudeModel
+  systemPrompt?: string
+  maxAttempts?: number
+}): Promise<RewriteProposal> {
+  const { context, analysis, baselineCode, model, systemPrompt } = opts
+  const maxAttempts = opts.maxAttempts ?? 2
+  let lastErrors: string[] = []
+
+  const client = new Anthropic()
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const userPrompt = buildRewritePrompt({ context, analysis, baselineCode }, lastErrors, attempt)
+
+    const response = await client.messages.create({
+      model: MODEL_MAP[model],
+      max_tokens: 8192,
+      system: systemPrompt ?? REWRITE_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
+    })
+
+    const textBlock = response.content.find((block) => block.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('No text response from Claude')
+    }
+
+    const parsed = parseRewriteResponse(textBlock.text)
+
+    const validation = await validateRewrite(parsed.newCode, context.sourceFile)
+    if (validation.valid) {
+      return {
+        summary: parsed.summary,
+        rationale: parsed.rationale,
+        risk: parsed.risk,
+        newCode: parsed.newCode,
+      }
+    }
+
+    lastErrors = validation.errors
+    if (attempt < maxAttempts) {
+      console.log(`[SuperSmithers] Rewrite attempt ${attempt} failed validation, retrying...`)
+    }
   }
+
+  throw new Error(`Rewrite failed validation after ${maxAttempts} attempts: ${lastErrors.join(', ')}`)
 }
 
 export async function validateRewrite(
@@ -106,14 +161,37 @@ export async function validateRewrite(
     errors.push('Code contains useState, which is forbidden in Smithers plans')
   }
 
+  // Check for unresolved relative imports
+  // Overlay code should use absolute file:// URLs or package imports
+  const relativeImportPattern = /from\s+['"]\.\.?\//g
+  const relativeMatches = code.match(relativeImportPattern)
+  if (relativeMatches && relativeMatches.length > 0) {
+    errors.push(
+      `Code contains ${relativeMatches.length} relative import(s). ` +
+        `Overlays must use absolute file:// URLs or package imports. ` +
+        `Relative imports will resolve incorrectly from overlay directory.`
+    )
+  }
+
+  // Also check dynamic imports
+  const dynamicRelativePattern = /import\s*\(\s*['"]\.\.?\//g
+  const dynamicMatches = code.match(dynamicRelativePattern)
+  if (dynamicMatches && dynamicMatches.length > 0) {
+    errors.push(
+      `Code contains ${dynamicMatches.length} relative dynamic import(s). ` +
+        `These must be converted to absolute file:// URLs.`
+    )
+  }
+
   // Try to parse as TSX using Bun's transpiler
+  const tempPath = `/tmp/supersmithers-validate-${Date.now()}.tsx`
   try {
-    const tempPath = `/tmp/supersmithers-validate-${Date.now()}.tsx`
     await Bun.write(tempPath, code)
     await Bun.$`bun build ${tempPath} --no-bundle`.quiet()
-    await Bun.$`rm ${tempPath}`.quiet()
   } catch (err) {
     errors.push(`Syntax error: ${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    await Bun.$`rm -f ${tempPath}`.quiet()
   }
 
   return { valid: errors.length === 0, errors }

@@ -252,7 +252,7 @@ function DatabaseAccessExample() {
     db.state.set("lastAccess", Date.now());
 
     // Log an agent
-    await db.agents.start("Custom agent", "sonnet");
+    db.agents.start("Custom agent", "sonnet");
 
     // Track a task
     const taskId = db.tasks.start("database-example", "Fetching data");

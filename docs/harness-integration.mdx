@@ -103,7 +103,7 @@ Run Smithers as an MCP (Model Context Protocol) server for any compatible client
 **Start the server:**
 
 ```bash
-bunx smithers-orchestrator serve --port 3847
+smithers serve --port 3847
 ```
 
 **Configure your MCP client:**
@@ -112,8 +112,8 @@ bunx smithers-orchestrator serve --port 3847
 {
   "mcpServers": {
     "smithers": {
-      "command": "bunx",
-      "args": ["smithers-orchestrator", "serve"],
+      "command": "smithers",
+      "args": ["serve"],
       "env": {
         "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
       }
@@ -140,15 +140,15 @@ Run workflows directly without any harness:
 
 ```bash
 # Run a workflow
-bunx smithers run workflow.tsx
+smithers workflow.tsx
 
 # With options
-bunx smithers run workflow.tsx --resume --verbose
+smithers workflow.tsx --resume --verbose
 
 # Database commands
-bunx smithers db executions
-bunx smithers db state --execution-id <id>
-bunx smithers db stats
+smithers db executions
+smithers db state --execution-id <id>
+smithers db stats
 ```
 
 ---

@@ -36,13 +36,17 @@ await root.mount(
     </Ralph>
   </SmithersProvider>
 );
-await db.close();
+db.close();
 ```
+
+<Note>
+If `smithers` is not found after installing, add `~/.bun/bin` to your PATH.
+</Note>
 
 Run it and monitor the execution frame by frame:
 
 ```bash
-bunx smithers-orchestrator demo.tsx
+smithers demo.tsx
 ```
 
 Smithers is a React framework for coding agents. Write the plan in any coding harness, then monitor your agents as they execute it. The plan is a mix of hardcoded logic and agent output that evolves reactively.

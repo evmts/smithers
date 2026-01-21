@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
-import type { AnalysisResult, SuperSmithersMetrics, SuperSmithersErrorEvent } from './types.js'
+import type { AnalysisResult, SuperSmithersMetrics, SuperSmithersErrorEvent, SupersmithersModuleMeta } from './types.js'
 import { uuid, now } from '../db/utils.js'
 
 export interface SuperSmithersDBHelpers {
@@ -9,7 +10,8 @@ export interface SuperSmithersDBHelpers {
   getVersionCode(versionId: string): string | null
   getRewriteCount(moduleHash: string): number
   storeAnalysis(params: StoreAnalysisParams): void
-  storeVersion(params: StoreVersionParams): string
+  storeVersion(params: StoreVersionParams): void
+  ensureModule(meta: SupersmithersModuleMeta): void
 }
 
 interface StoreAnalysisParams {
@@ -25,6 +27,7 @@ interface StoreAnalysisParams {
 }
 
 interface StoreVersionParams {
+  versionId: string
   moduleHash: string
   parentVersionId: string | null
   code: string
@@ -37,9 +40,19 @@ interface StoreVersionParams {
 }
 
 function sha256(content: string): string {
-  const hasher = new Bun.CryptoHasher('sha256')
-  hasher.update(content)
-  return hasher.digest('hex')
+  return createHash('sha256').update(content).digest('hex')
+}
+
+export function cancelOldScopeTasks(rdb: ReactiveDatabase, executionId: string, oldScopeRev: string): void {
+  if (rdb.isClosed) return
+  rdb.run(
+    `UPDATE tasks SET status = 'cancelled' WHERE execution_id = ? AND scope_rev = ? AND status = 'running'`,
+    [executionId, oldScopeRev]
+  )
+  rdb.run(
+    `UPDATE agents SET status = 'cancelled' WHERE execution_id = ? AND scope_rev = ? AND status = 'running'`,
+    [executionId, oldScopeRev]
+  )
 }
 
 export function createSuperSmithersDBHelpers(rdb: ReactiveDatabase): SuperSmithersDBHelpers {
@@ -113,9 +126,8 @@ export function createSuperSmithersDBHelpers(rdb: ReactiveDatabase): SuperSmithe
       )
     },
 
-    storeVersion(params: StoreVersionParams): string {
-      if (rdb.isClosed) return uuid()
-      const versionId = uuid()
+    storeVersion(params: StoreVersionParams): void {
+      if (rdb.isClosed) return
       const codeSha256 = sha256(params.code)
       rdb.run(
         `INSERT INTO supersmithers_versions (
@@ -123,7 +135,7 @@ export function createSuperSmithersDBHelpers(rdb: ReactiveDatabase): SuperSmithe
           overlay_rel_path, trigger, analysis_json, metrics_json, vcs_kind, vcs_commit_id, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          versionId,
+          params.versionId,
           params.moduleHash,
           params.parentVersionId,
           params.code,
@@ -137,7 +149,16 @@ export function createSuperSmithersDBHelpers(rdb: ReactiveDatabase): SuperSmithe
           now(),
         ]
       )
-      return versionId
+    },
+
+    ensureModule(meta: SupersmithersModuleMeta): void {
+      if (rdb.isClosed) return
+      rdb.run(
+        `INSERT OR IGNORE INTO supersmithers_modules
+          (module_hash, scope, module_abs_path, export_name)
+         VALUES (?, ?, ?, ?)`,
+        [meta.moduleHash, meta.scope, meta.moduleAbsPath, meta.exportName]
+      )
     },
   }
 }

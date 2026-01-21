@@ -13,6 +13,8 @@ description: How the plan evolves over time
 4. 🔄 State change triggers re-render
 5. ✅ Loop until done
 
+> The Ralph Wiggum loop is Smithers' render–execute–persist cycle: render the React plan, execute runnable agents, persist a frame to SQLite, then re-render until completion.
+
 ```
 Iteration 1: <Phase name="research">...</Phase>
 Iteration 2: <Phase name="implement">...</Phase>  ← state changed
@@ -667,7 +669,7 @@ function App() {
 
 const root = createSmithersRoot();
 await root.mount(App);
-await db.close();
+db.close();
 ```
 
 **What happens:**

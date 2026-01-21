@@ -72,8 +72,8 @@ Requires [Jujutsu](https://github.com/martinvonz/jj): `brew install jj`
 All operations logged automatically:
 
 ```tsx
-const snapshots = await db.vcs.getSnapshots(10);
-const commits = await db.vcs.getCommits(10);
+const snapshots = db.vcs.getSnapshots(10);
+const commits = db.vcs.getCommits(10);
 ```
 
 ## Related

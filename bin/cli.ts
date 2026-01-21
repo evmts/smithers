@@ -141,6 +141,40 @@ program
     }
   });
 
+program
+  .command("upgrade")
+  .description("Upgrade Smithers to the latest version")
+  .action(async () => {
+    const { upgradeCommand } = await import("../src/commands/upgrade.ts");
+    process.exit(upgradeCommand());
+  });
+
+program
+  .command("serve")
+  .description("Start the MCP server")
+  .option("-p, --port <port>", "Server port", "3847")
+  .option("-h, --host <host>", "Server host", "127.0.0.1")
+  .action(async (options: { port: string; host: string }) => {
+    const pkgRoot = new URL("../..", import.meta.url).pathname;
+    const configDir = path.join(pkgRoot, "opencode");
+    
+    const proc = Bun.spawn(["opencode", "mcp"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        OPENCODE_CONFIG_DIR: configDir,
+        OPENCODE_MCP_PORT: options.port,
+        OPENCODE_MCP_HOST: options.host,
+      },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+
+    const exitCode = await proc.exited;
+    process.exit(exitCode);
+  });
+
 const VALID_HOOK_TYPES = ['pre-commit', 'post-commit', 'pre-push', 'post-merge'] as const
 
 program

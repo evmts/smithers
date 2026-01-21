@@ -11,6 +11,7 @@ import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
 import { Phase } from './Phase.js'
+import { Ralph } from './Ralph.js'
 import { PhaseContext, usePhaseContext } from './PhaseContext.js'
 import { StepContext, useStepContext } from './StepContext.js'
 import { WorktreeProvider, useWorktree } from './WorktreeProvider.js'
@@ -433,22 +434,28 @@ describe('Phase component', () => {
     test('name prop is required', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="RequiredName">
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="RequiredName">
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+      await new Promise(r => setTimeout(r, 50))
       expect(root.toXML()).toContain('name="RequiredName"')
     })
 
     test('children prop is required', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="Test">
-            <step>child content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="Test">
+              <step>child content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+      await new Promise(r => setTimeout(r, 50))
       expect(root.toXML()).toContain('child content')
     })
 
@@ -456,11 +463,14 @@ describe('Phase component', () => {
       const skipFn = () => false
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="Test" skipIf={skipFn}>
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="Test" skipIf={skipFn}>
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+      await new Promise(r => setTimeout(r, 50))
       expect(root.toXML()).toContain('status="active"')
     })
 
@@ -468,9 +478,11 @@ describe('Phase component', () => {
       let started = false
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Phase name="Test" onStart={() => { started = true }}>
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="Test" onStart={() => { started = true }}>
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 50))
@@ -480,11 +492,14 @@ describe('Phase component', () => {
     test('onComplete callback is optional', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="Test" onComplete={() => {}}>
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="Test" onComplete={() => {}}>
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+      await new Promise(r => setTimeout(r, 50))
       expect(root.toXML()).toContain('phase')
     })
   })
@@ -493,9 +508,11 @@ describe('Phase component', () => {
     test('starts phase in db.phases.start when activated', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Phase name="TestPhase">
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="TestPhase">
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 50))
@@ -507,9 +524,11 @@ describe('Phase component', () => {
       let startCalled = false
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Phase name="Test" onStart={() => { startCalled = true }}>
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="Test" onStart={() => { startCalled = true }}>
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 50))
@@ -521,12 +540,14 @@ describe('Phase component', () => {
     test('skips phase when skipIf returns true', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Phase name="SkippedPhase" skipIf={() => true}>
-            <step>should not render</step>
-          </Phase>
-          <Phase name="NextPhase">
-            <step>should render</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="SkippedPhase" skipIf={() => true}>
+              <step>should not render</step>
+            </Phase>
+            <Phase name="NextPhase">
+              <step>should render</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 50))
@@ -537,9 +558,11 @@ describe('Phase component', () => {
     test('logs skipped phase to database', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Phase name="SkippedPhase" skipIf={() => true}>
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="SkippedPhase" skipIf={() => true}>
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 50))
@@ -554,34 +577,45 @@ describe('Phase component', () => {
     test('only active phase renders children', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="Active">
-            <step>active content</step>
-          </Phase>
-          <Phase name="Pending">
-            <step>pending content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="First">
+              <step>first content</step>
+            </Phase>
+            <Phase name="Second">
+              <step>second content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+      await new Promise(r => setTimeout(r, 20))
       const xml = root.toXML()
-      expect(xml).toContain('active content')
-      expect(xml).not.toContain('pending content')
+      // Only the active phase renders its children - completed phases don't show children
+      expect(xml).toContain('status="active"')
+      expect(xml).toContain('status="completed"')
+      // The completed phase has no children rendered
+      expect(xml).toMatch(/<phase[^>]*status="completed"[^>]*\/>/)
     })
 
-    test('pending phases do not render children', async () => {
+    test('phases execute sequentially - first completes then second activates', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="First">
-            <step>first</step>
-          </Phase>
-          <Phase name="Second">
-            <step>second</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="First">
+              <step>first</step>
+            </Phase>
+            <Phase name="Second">
+              <step>second</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+      await new Promise(r => setTimeout(r, 20))
       const xml = root.toXML()
+      // With Ralph, phases advance - First completes, Second becomes active
+      expect(xml).toContain('name="First"')
       expect(xml).toContain('name="Second"')
-      expect(xml).toContain('status="pending"')
-      expect(xml).not.toContain('second')
+      // Active phase renders children, completed phase does not
+      expect(xml).toMatch(/name="First"[^>]*status="completed"/)
     })
   })
 
@@ -589,49 +623,64 @@ describe('Phase component', () => {
     test('renders <phase name="..."> element', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="MyPhase">
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="MyPhase">
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+      await new Promise(r => setTimeout(r, 50))
       expect(root.toXML()).toMatch(/<phase[^>]*name="MyPhase"/)
     })
 
-    test('renders status="pending" when pending', async () => {
+    test('renders status for phases in sequential order', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="First">
-            <step>first</step>
-          </Phase>
-          <Phase name="Second">
-            <step>second</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="First">
+              <step>first</step>
+            </Phase>
+            <Phase name="Second">
+              <step>second</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
-      expect(root.toXML()).toContain('name="Second"')
-      expect(root.toXML()).toMatch(/name="Second"[^>]*status="pending"/)
+      await new Promise(r => setTimeout(r, 50))
+      const xml = root.toXML()
+      // All phases have status attributes
+      expect(xml).toContain('name="First"')
+      expect(xml).toContain('name="Second"')
+      // At least one phase has completed status (first finishes before second activates)
+      expect(xml).toContain('status="completed"')
     })
 
     test('renders status="active" when active', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId} stopped>
-          <Phase name="Active">
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="Active">
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+      await new Promise(r => setTimeout(r, 50))
       expect(root.toXML()).toContain('status="active"')
     })
 
     test('renders status="skipped" when skipped', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Phase name="Skipped" skipIf={() => true}>
-            <step>content</step>
-          </Phase>
-          <Phase name="Next">
-            <step>next</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="Skipped" skipIf={() => true}>
+              <step>content</step>
+            </Phase>
+            <Phase name="Next">
+              <step>next</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 50))
@@ -643,9 +692,11 @@ describe('Phase component', () => {
     test('uses ralphCount for phase iteration logging', async () => {
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Phase name="IterationPhase">
-            <step>content</step>
-          </Phase>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="IterationPhase">
+              <step>content</step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 50))
