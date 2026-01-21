@@ -124,7 +124,18 @@ class ClaudeExecutor:
             message_history: List[ModelMessage] = []
             if resume_from:
                 # Load from database
-                history_data = await self.db.get_agent_history(run_id)
+                if self.db.is_async:
+                    async with self.db.connection.execute(
+                        "SELECT message_history FROM agents WHERE id = ?", (run_id,)
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                        history_data = row[0] if row else None
+                else:
+                    row = self.db.connection.execute(
+                        "SELECT message_history FROM agents WHERE id = ?", (run_id,)
+                    ).fetchone()
+                    history_data = row[0] if row else None
+
                 if history_data:
                     message_history = self._deserialize_history(history_data)
                     # Yield progress event
@@ -299,56 +310,95 @@ class ClaudeExecutor:
             # remove it from tracking which will prevent further processing
             self._running_agents.pop(run_id, None)
             # Update database
-            await self.db.update_agent_status(run_id, TaskStatus.CANCELLED)
+            if self.db.is_async:
+                await self.db.connection.execute(
+                    "UPDATE agents SET status = ? WHERE id = ?",
+                    (TaskStatus.CANCELLED.value, run_id)
+                )
+                await self.db.connection.commit()
+            else:
+                self.db.connection.execute(
+                    "UPDATE agents SET status = ? WHERE id = ?",
+                    (TaskStatus.CANCELLED.value, run_id)
+                )
+                self.db.connection.commit()
             return True
         return False
 
     async def _persist_result(self, result: AgentResult, execution_id: str) -> None:
         """Persist agent result to database."""
-        await self.db.save_agent_result(
-            execution_id=execution_id,
-            node_id=result.node_id,
-            run_id=result.run_id,
-            model=result.model,
-            status=result.status.value,
-            started_at=result.started_at,
-            ended_at=result.ended_at,
-            turns_used=result.turns_used,
-            usage_json=json.dumps(
-                {
-                    "prompt_tokens": result.usage.prompt_tokens,
-                    "completion_tokens": result.usage.completion_tokens,
-                    "total_tokens": result.usage.total_tokens,
-                }
-            ),
-            output_text=result.output_text,
-            output_structured_json=json.dumps(result.output_structured)
-            if result.output_structured
-            else None,
-            error_json=json.dumps(
-                {
-                    "message": result.error_message,
-                    "type": result.error_type,
-                }
+        # The agents table expects different columns based on the schema
+        # Map our fields to the schema columns
+        usage_data = {
+            "prompt_tokens": result.usage.prompt_tokens if result.usage else 0,
+            "completion_tokens": result.usage.completion_tokens if result.usage else 0,
+            "total_tokens": result.usage.total_tokens if result.usage else 0,
+        }
+
+        error_details = None
+        if result.error:
+            error_details = json.dumps({
+                "message": result.error_message,
+                "type": result.error_type,
+            })
+
+        # Insert into agents table matching the schema
+        if self.db.is_async:
+            await self.db.connection.execute(
+                """INSERT OR REPLACE INTO agents
+                   (id, execution_id, node_id, model, status, started_at, completed_at,
+                    result, result_structured, error, tokens_input, tokens_output)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (result.run_id, execution_id, result.node_id, result.model, result.status.value,
+                 result.started_at.isoformat(), result.ended_at.isoformat() if result.ended_at else None,
+                 result.output_text, json.dumps(result.output_structured) if result.output_structured else None,
+                 error_details, usage_data["prompt_tokens"], usage_data["completion_tokens"])
             )
-            if result.error
-            else None,
-        )
+            await self.db.connection.commit()
+        else:
+            self.db.connection.execute(
+                """INSERT OR REPLACE INTO agents
+                   (id, execution_id, node_id, model, status, started_at, completed_at,
+                    result, result_structured, error, tokens_input, tokens_output)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (result.run_id, execution_id, result.node_id, result.model, result.status.value,
+                 result.started_at.isoformat(), result.ended_at.isoformat() if result.ended_at else None,
+                 result.output_text, json.dumps(result.output_structured) if result.output_structured else None,
+                 error_details, usage_data["prompt_tokens"], usage_data["completion_tokens"])
+            )
+            self.db.connection.commit()
 
         # Save tool calls
         for tool_call in result.tool_calls:
-            await self.db.save_tool_call(
-                run_id=result.run_id,
-                tool_name=tool_call.tool_name,
-                input_json=json.dumps(tool_call.input_data),
-                output_json=json.dumps(tool_call.output_data)
-                if tool_call.output_data
-                else None,
-                error=tool_call.error,
-                started_at=tool_call.started_at,
-                ended_at=tool_call.ended_at,
-                duration_ms=tool_call.duration_ms,
-            )
+            call_id = str(uuid.uuid4())
+            if self.db.is_async:
+                await self.db.connection.execute(
+                    """INSERT INTO tool_calls
+                       (id, agent_id, execution_id, tool_name, input, output_inline,
+                        status, error, started_at, completed_at, duration_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (call_id, result.run_id, execution_id, tool_call.tool_name,
+                     json.dumps(tool_call.input_data),
+                     json.dumps(tool_call.output_data) if tool_call.output_data else None,
+                     "completed", tool_call.error,
+                     tool_call.started_at.isoformat() if tool_call.started_at else None,
+                     tool_call.ended_at.isoformat() if tool_call.ended_at else None,
+                     tool_call.duration_ms)
+                )
+            else:
+                self.db.connection.execute(
+                    """INSERT INTO tool_calls
+                       (id, agent_id, execution_id, tool_name, input, output_inline,
+                        status, error, started_at, completed_at, duration_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (call_id, result.run_id, execution_id, tool_call.tool_name,
+                     json.dumps(tool_call.input_data),
+                     json.dumps(tool_call.output_data) if tool_call.output_data else None,
+                     "completed", tool_call.error,
+                     tool_call.started_at.isoformat() if tool_call.started_at else None,
+                     tool_call.ended_at.isoformat() if tool_call.ended_at else None,
+                     tool_call.duration_ms)
+                )
 
     def _deserialize_history(self, history_data: str) -> List[ModelMessage]:
         """Deserialize message history from database."""

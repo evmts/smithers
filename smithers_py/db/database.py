@@ -458,6 +458,19 @@ class SmithersDB:
             self._connection = None
         self._initialized = False
 
+    async def initialize_schema(self) -> None:
+        """Initialize database schema from SQL file."""
+        if not self._connection:
+            await self.connect()
+
+        # Read schema file
+        schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+        with open(schema_path, 'r') as f:
+            schema_sql = f.read()
+
+        # Execute schema
+        await self.executescript(schema_sql)
+
     async def execute(self, sql: str, params: Optional[Tuple] = None) -> None:
         """Execute SQL statement"""
         if not self._connection:
