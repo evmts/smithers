@@ -3,30 +3,26 @@ title: Codex
 description: OpenAI Codex CLI agent wrapper
 ---
 
-<Warning>
-**Planned Feature** - Not yet implemented.
-</Warning>
-
 # Codex
 
 ```tsx
-<Codex model="gpt-4-turbo">
+<Codex model="o4-mini" fullAuto>
   Implement user authentication with JWT tokens.
 </Codex>
 ```
 
-Wraps OpenAI Codex CLI for code-focused AI agent tasks. Alternative to Claude with OpenAI's code-specialized models.
+Wraps OpenAI Codex CLI for code-focused AI agent tasks. Alternative to Claude with OpenAI's models.
 
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `children` | `ReactNode` | - | Prompt for the agent |
-| `model` | `'gpt-4' \| 'gpt-4-turbo' \| 'gpt-3.5-turbo'` | `'gpt-4-turbo'` | Model selection |
-| `temperature` | `number` | `1` | Randomness (0-2) |
-| `systemPrompt` | `string` | - | System-level instructions |
+| `model` | `'o3' \| 'o4-mini' \| 'gpt-4o' \| 'gpt-4' \| string` | `'o4-mini'` | Model selection |
+| `fullAuto` | `boolean` | `false` | Enable full-auto mode (approves edits, workspace write) |
+| `sandboxMode` | `'read-only' \| 'workspace-write' \| 'danger-full-access'` | - | Sandbox mode for commands |
+| `approvalPolicy` | `'untrusted' \| 'on-failure' \| 'on-request' \| 'never'` | - | Approval policy |
 | `cwd` | `string` | - | Working directory |
-| `env` | `Record<string, string>` | - | Environment variables |
 | `timeout` | `number` | `300000` | Timeout in ms |
 | `schema` | `ZodType` | - | Structured output schema |
 | `onFinished` | `(result: AgentResult) => void` | - | Success callback |

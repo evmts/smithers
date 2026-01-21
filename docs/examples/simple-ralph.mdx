@@ -1,0 +1,130 @@
+---
+title: Simple Ralph
+description: Minimal iterative workflow with PRD context
+---
+
+# Simple Ralph
+
+The simplest Ralph loop: read a PRD file and iterate with an agent until done.
+
+```tsx
+#!/usr/bin/env smithers
+
+import { readFileSync } from 'node:fs'
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  Ralph,
+  Codex,
+} from "smithers-orchestrator";
+
+const db = createSmithersDB({ path: '.smithers/simple-ralph.db' })
+const executionId = db.execution.start('Simple Ralph', 'simple-ralph.tsx')
+
+// Read PRD for context
+const prd = readFileSync('./prd.md', 'utf-8')
+
+function SimpleRalph() {
+  const done = db.state.get('done') === 'true'
+
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph
+        id="simple-ralph"
+        condition={() => !done}
+        maxIterations={10}
+        onIteration={(i) => console.log(`Iteration ${i}`)}
+        onComplete={(iterations, reason) => 
+          console.log(`Done after ${iterations} iterations (${reason})`)
+        }
+      >
+        <Codex
+          model="o4-mini"
+          fullAuto
+          onFinished={(result) => {
+            if (result.output?.includes('TASK_COMPLETE')) {
+              db.state.set('done', 'true')
+            }
+          }}
+        >
+          {`# Product Requirements Document
+
+${prd}
+
+# Instructions
+
+Implement the requirements above. When finished, output "TASK_COMPLETE".`}
+        </Codex>
+      </Ralph>
+    </SmithersProvider>
+  )
+}
+
+const root = createSmithersRoot()
+try {
+  await root.mount(SimpleRalph)
+  db.execution.complete(executionId)
+} finally {
+  db.close()
+}
+```
+
+## The PRD File
+
+Create `prd.md` in your working directory:
+
+```markdown
+# Feature: User Greeting
+
+## Requirements
+
+1. Create a `greet(name: string): string` function
+2. Add tests
+3. Export from index
+
+## Acceptance Criteria
+
+- Handles empty string input
+- Test covers happy path and edge cases
+```
+
+## Run It
+
+```bash
+smithers simple-ralph.tsx
+```
+
+## What's Happening
+
+1. **Read PRD**: `fs.readFileSync` loads context from disk
+2. **Ralph loop**: Iterates until `done` state is set or max iterations reached
+3. **Codex agent**: Executes with OpenAI's Codex CLI in full-auto mode
+4. **Completion signal**: Agent outputs "TASK_COMPLETE" to exit the loop
+5. **State persistence**: SQLite tracks `done` state across restarts
+
+## Swap Agents
+
+Use Claude instead of Codex:
+
+```tsx
+import { Claude } from "smithers-orchestrator";
+
+<Claude model="sonnet" permissionMode="acceptEdits">
+  {prompt}
+</Claude>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Ralph Component" icon="rotate" href="/components/ralph">
+    Loop configuration options
+  </Card>
+  <Card title="Codex Component" icon="robot" href="/components/codex">
+    OpenAI Codex agent
+  </Card>
+  <Card title="Coverage Loop" icon="flask-vial" href="/examples/coverage-loop">
+    More complex loop example
+  </Card>
+</CardGroup>

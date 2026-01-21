@@ -149,6 +149,7 @@
       "group": "Examples",
       "pages": [
         "examples/hello-world",
+        "examples/simple-ralph",
         "examples/coverage-loop",
         "examples/multi-phase-review",
         "examples/structured-output",
