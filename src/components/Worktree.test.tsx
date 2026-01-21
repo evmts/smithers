@@ -9,7 +9,8 @@ import type { WorktreeProps } from './Worktree.js'
 import type { WorktreeContextValue } from './WorktreeProvider.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
-import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
+import { SmithersProvider } from './SmithersProvider.js'
+import { signalOrchestrationComplete } from './Ralph/utils.js'
 
 describe('WorktreeProps interface', () => {
   test('requires branch', () => {

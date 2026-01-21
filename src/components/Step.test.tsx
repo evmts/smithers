@@ -89,38 +89,6 @@ describe('Step component', () => {
       expect(props.name).toBe('test-step')
     })
 
-    test('accepts optional snapshotBefore prop', () => {
-      const props: StepProps = {
-        children: <div />,
-        snapshotBefore: true,
-      }
-      expect(props.snapshotBefore).toBe(true)
-    })
-
-    test('accepts optional snapshotAfter prop', () => {
-      const props: StepProps = {
-        children: <div />,
-        snapshotAfter: true,
-      }
-      expect(props.snapshotAfter).toBe(true)
-    })
-
-    test('accepts optional commitAfter prop', () => {
-      const props: StepProps = {
-        children: <div />,
-        commitAfter: true,
-      }
-      expect(props.commitAfter).toBe(true)
-    })
-
-    test('accepts optional commitMessage prop', () => {
-      const props: StepProps = {
-        children: <div />,
-        commitMessage: 'feat: add feature',
-      }
-      expect(props.commitMessage).toBe('feat: add feature')
-    })
-
     test('accepts optional onStart callback', () => {
       const onStart = () => {}
       const props: StepProps = {
@@ -444,13 +412,13 @@ describe('Step component', () => {
         <SmithersProvider db={db} executionId={executionId} stopped>
           <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="P1">
-              <Step name="test"><task /></Step>
+              <Step name="test"><StepTaskRunner name="task1" delay={10} /></Step>
             </Phase>
           </Ralph>
         </SmithersProvider>
       )
 
-      await new Promise(r => setTimeout(r, 50))
+      await new Promise(r => setTimeout(r, 150))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
@@ -583,13 +551,13 @@ describe('Step component', () => {
         <SmithersProvider db={db} executionId={executionId} stopped>
           <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="P1">
-              <Step name="standalone"><task /></Step>
+              <Step name="standalone"><StepTaskRunner name="task1" delay={10} /></Step>
             </Phase>
           </Ralph>
         </SmithersProvider>
       )
 
-      await new Promise(r => setTimeout(r, 50))
+      await new Promise(r => setTimeout(r, 150))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')

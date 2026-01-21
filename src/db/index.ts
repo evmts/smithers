@@ -1,6 +1,3 @@
-// Smithers Database - SQLite-based state management
-// Single source of truth for all orchestration state
-
 import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
@@ -242,13 +239,11 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   // Run migrations for existing databases
   runMigrations(rdb)
 
-  // Track current execution context
   let currentExecutionId: string | null = null
   let currentPhaseId: string | null = null
   let currentAgentId: string | null = null
   let currentStepId: string | null = null
 
-  // Context getters and setters for modules
   const getCurrentExecutionId = () => currentExecutionId
   const setCurrentExecutionId = (id: string | null) => { currentExecutionId = id }
   const getCurrentPhaseId = () => currentPhaseId
@@ -258,7 +253,6 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   const getCurrentStepId = () => currentStepId
   const setCurrentStepId = (id: string | null) => { currentStepId = id }
 
-  // Create all modules
   const state = createStateModule({ rdb, getCurrentExecutionId })
   const memories = createMemoriesModule({ rdb, getCurrentExecutionId })
   const execution = createExecutionModule({ rdb, getCurrentExecutionId, setCurrentExecutionId })

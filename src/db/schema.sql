@@ -1,10 +1,6 @@
 -- Smithers Orchestrator Database Schema
 -- SQLite-based state management with full auditability
 
--- ============================================================================
--- 1. MEMORIES - Long-term Agent Knowledge
--- ============================================================================
-
 CREATE TABLE IF NOT EXISTS memories (
   id TEXT PRIMARY KEY,
 
@@ -36,9 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope);
 CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key);
 CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
 
--- ============================================================================
 -- 2. EXECUTIONS - Orchestration Runs
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS executions (
   id TEXT PRIMARY KEY,
@@ -77,9 +71,7 @@ CREATE TABLE IF NOT EXISTS executions (
 CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
 CREATE INDEX IF NOT EXISTS idx_executions_created ON executions(created_at DESC);
 
--- ============================================================================
 -- 3. PHASES - Workflow Stages
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS phases (
   id TEXT PRIMARY KEY,
@@ -106,9 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_phases_execution ON phases(execution_id);
 CREATE INDEX IF NOT EXISTS idx_phases_status ON phases(status);
 CREATE INDEX IF NOT EXISTS idx_phases_created ON phases(created_at DESC);
 
--- ============================================================================
 -- 4. AGENTS - Claude Executions
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
@@ -152,9 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_agents_scope_rev ON agents(scope_rev);
 CREATE INDEX IF NOT EXISTS idx_agents_created ON agents(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agents_execution_tokens ON agents(execution_id, tokens_input, tokens_output);
 
--- ============================================================================
 -- 4b. AGENT_STREAM_EVENTS - Typed Stream Events
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS agent_stream_events (
   id TEXT PRIMARY KEY,
@@ -171,9 +159,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_stream_events_agent ON agent_stream_events(
 CREATE INDEX IF NOT EXISTS idx_agent_stream_events_type ON agent_stream_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_agent_stream_events_created ON agent_stream_events(created_at DESC);
 
--- ============================================================================
 -- 5. TOOL_CALLS - Tool Invocations
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   id TEXT PRIMARY KEY,
@@ -209,9 +195,7 @@ CREATE INDEX IF NOT EXISTS idx_tool_calls_execution ON tool_calls(execution_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON tool_calls(created_at DESC);
 
--- ============================================================================
 -- 6. STATE - Current State (Replaces Zustand)
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS state (
   key TEXT PRIMARY KEY,
@@ -225,9 +209,7 @@ INSERT OR IGNORE INTO state (key, value) VALUES
   ('ralphCount', '0'),
   ('data', 'null');
 
--- ============================================================================
 -- 7. TRANSITIONS - State Audit Log (Flux-like)
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS transitions (
   id TEXT PRIMARY KEY,
@@ -250,9 +232,7 @@ CREATE INDEX IF NOT EXISTS idx_transitions_execution ON transitions(execution_id
 CREATE INDEX IF NOT EXISTS idx_transitions_key ON transitions(key);
 CREATE INDEX IF NOT EXISTS idx_transitions_created ON transitions(created_at DESC);
 
--- ============================================================================
 -- 8. BUILD STATE - Broken Build Orchestration Coordination
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS build_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -265,9 +245,7 @@ CREATE TABLE IF NOT EXISTS build_state (
 CREATE INDEX IF NOT EXISTS idx_build_state_status ON build_state(status);
 CREATE INDEX IF NOT EXISTS idx_build_state_fixer ON build_state(fixer_agent_id);
 
--- ============================================================================
 -- 9. ARTIFACTS - Generated Files/Outputs (Git References)
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY,
@@ -301,9 +279,7 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_path ON artifacts(file_path);
 CREATE INDEX IF NOT EXISTS idx_artifacts_git ON artifacts(git_hash);
 CREATE INDEX IF NOT EXISTS idx_artifacts_created ON artifacts(created_at DESC);
 
--- ============================================================================
 -- 9. REPORTS - Agent-Generated Reports
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY,
@@ -327,9 +303,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_type ON reports(type);
 CREATE INDEX IF NOT EXISTS idx_reports_severity ON reports(severity);
 CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC);
 
--- ============================================================================
 -- 9.5 RATE_LIMIT_SNAPSHOTS - Provider rate limit snapshots
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS rate_limit_snapshots (
   id TEXT PRIMARY KEY,
@@ -351,9 +325,7 @@ CREATE TABLE IF NOT EXISTS rate_limit_snapshots (
 CREATE INDEX IF NOT EXISTS idx_rate_limit_snapshots_provider_model
   ON rate_limit_snapshots(provider, model, captured_at DESC);
 
--- ============================================================================
 -- 10. COMMITS - Version Control Commits
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS commits (
   id TEXT PRIMARY KEY,
@@ -390,9 +362,7 @@ CREATE INDEX IF NOT EXISTS idx_commits_hash ON commits(commit_hash);
 CREATE INDEX IF NOT EXISTS idx_commits_vcs ON commits(vcs_type);
 CREATE INDEX IF NOT EXISTS idx_commits_created ON commits(created_at DESC);
 
--- ============================================================================
 -- 11. SNAPSHOTS - JJ Working Copy Snapshots
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS snapshots (
   id TEXT PRIMARY KEY,
@@ -419,9 +389,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_execution ON snapshots(execution_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_change ON snapshots(change_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at DESC);
 
--- ============================================================================
 -- 12. REVIEWS - Code Reviews
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY,
@@ -459,9 +427,7 @@ CREATE INDEX IF NOT EXISTS idx_reviews_target ON reviews(target_type);
 CREATE INDEX IF NOT EXISTS idx_reviews_blocking ON reviews(blocking);
 CREATE INDEX IF NOT EXISTS idx_reviews_created ON reviews(created_at DESC);
 
--- ============================================================================
 -- 13. TASKS - Ralph iteration task tracking
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
@@ -484,9 +450,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_scope_rev ON tasks(scope_rev);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(started_at DESC);
 
--- ============================================================================
 -- 14. STEPS - Fine-grained step tracking
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS steps (
   id TEXT PRIMARY KEY,
@@ -516,9 +480,7 @@ CREATE INDEX IF NOT EXISTS idx_steps_phase ON steps(phase_id);
 CREATE INDEX IF NOT EXISTS idx_steps_status ON steps(status);
 CREATE INDEX IF NOT EXISTS idx_steps_created ON steps(created_at DESC);
 
--- ============================================================================
 -- 15. HUMAN - Human Interactions
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS human_interactions (
   id TEXT PRIMARY KEY,
@@ -547,9 +509,7 @@ CREATE TABLE IF NOT EXISTS human_interactions (
 CREATE INDEX IF NOT EXISTS idx_human_status ON human_interactions(status);
 CREATE INDEX IF NOT EXISTS idx_human_execution ON human_interactions(execution_id);
 
--- ============================================================================
 -- 16. RENDER_FRAMES - Render frame snapshots for time-travel debugging
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS render_frames (
   id TEXT PRIMARY KEY,
@@ -573,9 +533,7 @@ CREATE INDEX IF NOT EXISTS idx_render_frames_execution ON render_frames(executio
 CREATE INDEX IF NOT EXISTS idx_render_frames_sequence ON render_frames(execution_id, sequence_number);
 CREATE INDEX IF NOT EXISTS idx_render_frames_created ON render_frames(created_at DESC);
 
--- ============================================================================
 -- 17. VCS_QUEUE - VCS Operation Queue for Serialized Git/JJ Operations
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS vcs_queue (
   id INTEGER PRIMARY KEY,
@@ -591,9 +549,7 @@ CREATE TABLE IF NOT EXISTS vcs_queue (
 
 CREATE INDEX IF NOT EXISTS idx_vcs_queue_status ON vcs_queue(status);
 
--- ============================================================================
 -- 18. SUPERSMITHERS - Self-Rewriting Plan Module Storage
--- ============================================================================
 
 -- Tracks registered modules
 CREATE TABLE IF NOT EXISTS supersmithers_modules (

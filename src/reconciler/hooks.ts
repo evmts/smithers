@@ -1,9 +1,3 @@
-/**
- * Mount lifecycle hooks vendored from react-use
- * https://github.com/streamich/react-use
- * License: MIT
- */
-
 import type { ReactNode } from "react";
 import {
   DependencyList,
@@ -31,20 +25,10 @@ export function useExecutionGate(): boolean {
   return useContext(ExecutionGateContext);
 }
 
-/**
- * Runs an effect exactly once when the component mounts.
- * Unlike a raw useEffect with [], this is semantically clear about intent.
- */
 export const useEffectOnce = (effect: EffectCallback) => {
   useEffect(effect, []);
 };
 
-/**
- * Runs a callback when the component mounts.
- * More robust than useEffect(() => fn(), []) because it:
- * - Clearly communicates mount-only intent
- * - Is easier to grep for mount behavior
- */
 export const useMount = (fn: () => void) => {
   const enabled = useExecutionGate();
   const fnRef = useRef(fn);
@@ -61,13 +45,6 @@ export const useMount = (fn: () => void) => {
   }, [enabled]);
 };
 
-/**
- * Runs a callback when the component unmounts.
- * More robust than useEffect cleanup because it:
- * - Always calls the latest version of the callback (via ref)
- * - Avoids stale closure issues that plague normal cleanup functions
- * Note: React strict mode may invoke cleanup during dev-only replays.
- */
 export const useUnmount = (fn: () => void): void => {
   const fnRef = useRef(fn);
   const enabled = useExecutionGate();
@@ -86,10 +63,6 @@ export const useUnmount = (fn: () => void): void => {
   });
 };
 
-/**
- * Returns true only on the first render, false on all subsequent renders.
- * Useful for skipping effects on mount or detecting initial state.
- */
 export function useFirstMountState(): boolean {
   const isFirst = useRef(true);
 
@@ -101,21 +74,6 @@ export function useFirstMountState(): boolean {
   return false;
 }
 
-/**
- * Returns a function that tells you if the component is currently mounted.
- * Essential for avoiding "setState on unmounted component" warnings in async code.
- *
- * @example
- * const isMounted = useMountedState();
- *
- * useEffect(() => {
- *   fetchData().then(data => {
- *     if (isMounted()) {
- *       setData(data);
- *     }
- *   });
- * }, []);
- */
 export function useMountedState(): () => boolean {
   const mountedRef = useRef<boolean>(false);
   const get = useCallback(() => mountedRef.current, []);
@@ -131,16 +89,6 @@ export function useMountedState(): () => boolean {
   return get;
 }
 
-/**
- * Returns the value from the previous render.
- * Returns undefined on the first render.
- *
- * @example
- * const count = useCount();
- * const prevCount = usePrevious(count);
- * // On first render: prevCount is undefined
- * // After count changes: prevCount is the old value
- */
 export function usePrevious<T>(state: T): T | undefined {
   const ref = useRef<T | undefined>(undefined);
 
@@ -153,21 +101,6 @@ export function usePrevious<T>(state: T): T | undefined {
 
 const UNSET = Symbol("unset");
 
-/**
- * Runs an effect when a value changes, with idempotency guarantees.
- * Unlike useEffect with [value], this:
- * - Won't run twice for the same value (handles React strict mode)
- * - Updates the "last seen" value synchronously before running the effect
- * - Runs on first mount (when value first becomes available)
- *
- * @example
- * const ralphCount = ralph?.ralphCount ?? 0;
- *
- * useEffectOnValueChange(ralphCount, () => {
- *   // Runs once when ralphCount changes, idempotent
- *   executeTask();
- * });
- */
 export function useEffectOnValueChange<T>(
   value: T,
   effect: () => void | (() => void),
@@ -191,26 +124,6 @@ export function useEffectOnValueChange<T>(
   }, [enabled, value, ...deps]);
 }
 
-/**
- * Runs a callback once when execution is enabled.
- * Encapsulates the common pattern of:
- * - executionEnabled check from SmithersProvider context
- * - hasStartedRef idempotency guard
- * - Proper dependency handling
- * This is distinct from ExecutionGateProvider, which is a global gate.
- * 
- * @param executionEnabled - Whether execution is enabled (from useSmithers())
- * @param fn - Callback to run once when execution becomes enabled
- * @param deps - Additional dependencies (optional)
- * 
- * @example
- * const { executionEnabled } = useSmithers()
- * 
- * useExecutionMount(executionEnabled, () => {
- *   // Runs once when executionEnabled becomes true
- *   executeTask();
- * }, [someDep]);
- */
 export function useExecutionMount(
   executionEnabled: boolean,
   fn: () => void,

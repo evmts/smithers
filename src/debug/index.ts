@@ -101,10 +101,6 @@ export function createDebugCollector(): DebugCollector {
 
 export { safeStringify }
 
-// ============================================================================
-// STRUCTURED LOGGING
-// ============================================================================
-
 export interface DebugLogEntry {
   level: DebugLogLevel
   component: string
@@ -204,10 +200,6 @@ export function createLogger(component: string, context: Record<string, unknown>
   return logger
 }
 
-// ============================================================================
-// ERROR WRAPPER UTILITIES
-// ============================================================================
-
 /** Wrap an async operation with error logging and optional rethrow */
 export async function withErrorLogging<T>(
   logger: Logger,
@@ -222,23 +214,6 @@ export async function withErrorLogging<T>(
     return result
   } catch (err) {
     endTime()
-    const error = err instanceof Error ? err : new Error(String(err))
-    logger.error(`${operation} failed`, error)
-    if (options.rethrow) throw error
-    return options.defaultValue
-  }
-}
-
-/** Wrap a sync operation with error logging */
-export function withErrorLoggingSync<T>(
-  logger: Logger,
-  operation: string,
-  fn: () => T,
-  options: { rethrow?: boolean; defaultValue?: T } = {}
-): T | undefined {
-  try {
-    return fn()
-  } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))
     logger.error(`${operation} failed`, error)
     if (options.rethrow) throw error

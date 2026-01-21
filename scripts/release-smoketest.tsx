@@ -20,16 +20,9 @@ import { Step } from '../src/components/Step.js'
 import { PhaseRegistryProvider } from '../src/components/PhaseRegistry.js'
 import { createSmithersDB } from '../src/db/index.js'
 import { createSmithersRoot } from '../src/reconciler/index.js'
-import { ProgressLogger } from '../src/utils/progress-logger.js'
 
 const VERSION = process.env['SMITHERS_VERSION'] ?? 'latest'
 const GIT_HISTORY = process.env['GIT_HISTORY'] ?? '[]'
-
-// Progress logger for visibility
-const progress = new ProgressLogger({
-  prefix: '[Smoketest]',
-  heartbeatInterval: 30000, // Log every 30s
-})
 
 // Structured output schemas for phase data passing
 const FeatureAnalysisSchema = z.object({
@@ -92,13 +85,13 @@ function AnalyzeHistoryPhase() {
   return (
     <Phase
       name="analyze-history"
-      onStart={() => progress.phaseStart('analyze-history')}
-      onComplete={() => progress.phaseComplete('analyze-history')}
+      onStart={() => console.log('[Smoketest] Phase started: analyze-history')}
+      onComplete={() => console.log('[Smoketest] Phase complete: analyze-history')}
     >
       <Step
         name="parse-git-history"
-        onStart={() => progress.stepStart('parse-git-history')}
-        onComplete={() => progress.stepComplete('parse-git-history')}
+        onStart={() => console.log('[Smoketest] Step started: parse-git-history')}
+        onComplete={() => console.log('[Smoketest] Step complete: parse-git-history')}
       >
         <Claude
           model="opus"
@@ -106,16 +99,16 @@ function AnalyzeHistoryPhase() {
           maxTurns={10}
           schema={FeatureAnalysisSchema}
           schemaRetries={3}
-          onProgress={(msg) => progress.agentProgress(msg)}
+          onProgress={(msg) => console.log('[Smoketest]', msg)}
           onFinished={(result) => {
             if (result.structured) {
               phaseData.featureAnalysis = result.structured as FeatureAnalysis
-              progress.agentComplete('opus', phaseData.featureAnalysis.summary)
+              console.log('[Smoketest] Agent complete:', phaseData.featureAnalysis.summary)
               console.log('[Result] Features found:', phaseData.featureAnalysis.newFeatures.length)
             }
           }}
           onError={(err) => {
-            progress.error('Feature analysis failed', err)
+            console.error('[Smoketest] Error: Feature analysis failed', err)
           }}
         >
           {`Analyze the git history to understand what new features were added since the last release.
@@ -147,13 +140,13 @@ function SetupProjectPhase() {
   return (
     <Phase
       name="setup-project"
-      onStart={() => progress.phaseStart('setup-project')}
-      onComplete={() => progress.phaseComplete('setup-project')}
+      onStart={() => console.log('[Smoketest] Phase started: setup-project')}
+      onComplete={() => console.log('[Smoketest] Phase complete: setup-project')}
     >
       <Step
         name="create-test-project"
-        onStart={() => progress.stepStart('create-test-project')}
-        onComplete={() => progress.stepComplete('create-test-project')}
+        onStart={() => console.log('[Smoketest] Step started: create-test-project')}
+        onComplete={() => console.log('[Smoketest] Step complete: create-test-project')}
       >
         <Claude
           model="opus"
@@ -161,16 +154,16 @@ function SetupProjectPhase() {
           maxTurns={15}
           schema={ProjectSetupSchema}
           schemaRetries={3}
-          onProgress={(msg) => progress.agentProgress(msg)}
+          onProgress={(msg) => console.log('[Smoketest]', msg)}
           onFinished={(result) => {
             if (result.structured) {
               phaseData.projectSetup = result.structured as ProjectSetup
-              progress.agentComplete('opus', `Project at ${phaseData.projectSetup.projectPath}`)
+              console.log('[Smoketest] Agent complete: Project at', phaseData.projectSetup.projectPath)
               console.log('[Result] Dependencies installed:', phaseData.projectSetup.dependenciesInstalled)
             }
           }}
           onError={(err) => {
-            progress.error('Project setup failed', err)
+            console.error('[Smoketest] Error: Project setup failed', err)
           }}
         >
           {`Create a fresh test project that installs smithers from npm.
@@ -202,18 +195,18 @@ function RunSmoketestsPhase() {
       name="run-smoketests"
       skipIf={() => {
         if (!setup?.dependenciesInstalled) {
-          progress.phaseSkipped('run-smoketests', 'dependencies not installed')
+          console.log('[Smoketest] Phase skipped: run-smoketests (dependencies not installed)')
           return true
         }
         return false
       }}
-      onStart={() => progress.phaseStart('run-smoketests')}
-      onComplete={() => progress.phaseComplete('run-smoketests')}
+      onStart={() => console.log('[Smoketest] Phase started: run-smoketests')}
+      onComplete={() => console.log('[Smoketest] Phase complete: run-smoketests')}
     >
       <Step
         name="execute-tests"
-        onStart={() => progress.stepStart('execute-tests')}
-        onComplete={() => progress.stepComplete('execute-tests')}
+        onStart={() => console.log('[Smoketest] Step started: execute-tests')}
+        onComplete={() => console.log('[Smoketest] Step complete: execute-tests')}
       >
         <Claude
           model="opus"
@@ -222,23 +215,23 @@ function RunSmoketestsPhase() {
           timeout={600000}
           schema={SmoketestResultSchema}
           schemaRetries={3}
-          onProgress={(msg) => progress.agentProgress(msg)}
+          onProgress={(msg) => console.log('[Smoketest]', msg)}
           onFinished={(result) => {
             if (result.structured) {
               phaseData.smoketestResult = result.structured as SmoketestResult
               const passed = phaseData.smoketestResult.basicTests.filter(t => t.passed).length
               const total = phaseData.smoketestResult.basicTests.length
-              progress.agentComplete('opus', `${passed}/${total} tests passed`)
+              console.log('[Smoketest] Agent complete:', `${passed}/${total} tests passed`)
               console.log('[Result] Overall success:', phaseData.smoketestResult.overallSuccess)
 
               if (!phaseData.smoketestResult.overallSuccess) {
-                progress.error('SMOKETEST FAILED')
+                console.error('[Smoketest] Error: SMOKETEST FAILED')
                 process.exitCode = 1
               }
             }
           }}
           onError={(err) => {
-            progress.error('Smoketest execution failed', err)
+            console.error('[Smoketest] Error: Smoketest execution failed', err)
             process.exitCode = 1
           }}
         >
@@ -293,21 +286,21 @@ function ReportPhase() {
   return (
     <Phase
       name="report"
-      onStart={() => progress.phaseStart('report')}
-      onComplete={() => progress.phaseComplete('report')}
+      onStart={() => console.log('[Smoketest] Phase started: report')}
+      onComplete={() => console.log('[Smoketest] Phase complete: report')}
     >
       <Step
         name="generate-report"
-        onStart={() => progress.stepStart('generate-report')}
-        onComplete={() => progress.stepComplete('generate-report')}
+        onStart={() => console.log('[Smoketest] Step started: generate-report')}
+        onComplete={() => console.log('[Smoketest] Step complete: generate-report')}
       >
         <Claude
           model="sonnet"
           permissionMode="default"
           maxTurns={5}
-          onProgress={(msg) => progress.agentProgress(msg)}
+          onProgress={(msg) => console.log('[Smoketest]', msg)}
           onFinished={(result) => {
-            progress.agentComplete('sonnet', 'Report generated')
+            console.log('[Smoketest] Agent complete: Report generated')
             console.log('\n' + '='.repeat(60))
             console.log('SMOKETEST REPORT')
             console.log('='.repeat(60) + '\n')
@@ -373,23 +366,15 @@ async function main() {
   const db = createSmithersDB({ path: path.join(dbDir, 'smoketest.db') })
   const executionId = db.execution.start('release-smoketest', 'scripts/release-smoketest.tsx')
 
-  // Start heartbeat for visibility
-  progress.startHeartbeat()
-
   const root = createSmithersRoot()
 
-  try {
-    await root.mount(() => (
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <orchestration name="release-smoketest" version={VERSION}>
-          <ReleaseSmoketestOrchestration />
-        </orchestration>
-      </SmithersProvider>
-    ))
-  } finally {
-    // Always show summary and stop heartbeat
-    progress.summary()
-  }
+  await root.mount(() => (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+      <orchestration name="release-smoketest" version={VERSION}>
+        <ReleaseSmoketestOrchestration />
+      </orchestration>
+    </SmithersProvider>
+  ))
 
   console.log('\n' + '='.repeat(60))
   console.log('ORCHESTRATION XML OUTPUT')
@@ -404,7 +389,6 @@ async function main() {
 }
 
 main().catch(err => {
-  progress.error('Release smoketest failed', err)
-  progress.summary()
+  console.error('[Smoketest] Error: Release smoketest failed', err)
   process.exit(1)
 })

@@ -9,7 +9,8 @@ import type { ReviewTarget, ReviewResult, ReviewIssue, ReviewProps } from './typ
 import { Review } from './Review.js'
 import { createSmithersDB, type SmithersDB } from '../../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../../reconciler/root.js'
-import { SmithersProvider, signalOrchestrationComplete } from '../SmithersProvider.js'
+import { SmithersProvider } from '../SmithersProvider.js'
+import { signalOrchestrationComplete } from '../Ralph/utils.js'
 import { ExecutionScopeProvider } from '../ExecutionScope.js'
 import * as executor from '../agents/claude-cli/executor.js'
 

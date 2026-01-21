@@ -18,18 +18,11 @@ import { Step } from '../src/components/Step.js'
 import { PhaseRegistryProvider } from '../src/components/PhaseRegistry.js'
 import { createSmithersDB } from '../src/db/index.js'
 import { createSmithersRoot } from '../src/reconciler/index.js'
-import { ProgressLogger } from '../src/utils/progress-logger.js'
 
 const BRANCH_NAME = `docs/auto-review-${new Date().toISOString().slice(0, 10)}`
 const OUTPUT_DIR = '.smithers'
 const RESULT_PATH = `${OUTPUT_DIR}/docs-review-result.json`
 const ALLOW_GITHUB_WRITE = process.env['ALLOW_GITHUB_WRITE'] === 'true'
-
-// Progress logger for visibility
-const progress = new ProgressLogger({
-  prefix: '[DocsReview]',
-  heartbeatInterval: 30000, // Log every 30s
-})
 
 interface ReviewResult {
   needsChanges: boolean
@@ -49,25 +42,25 @@ function DocsReviewOrchestration() {
       {/* Phase 1: Analyze docs for correctness */}
       <Phase
         name="analyze"
-        onStart={() => progress.phaseStart('analyze')}
-        onComplete={() => progress.phaseComplete('analyze')}
+        onStart={() => console.log('[DocsReview] Phase started: analyze')}
+        onComplete={() => console.log('[DocsReview] Phase complete: analyze')}
       >
         <Step
           name="review-docs"
-          onStart={() => progress.stepStart('review-docs')}
-          onComplete={() => progress.stepComplete('review-docs')}
+          onStart={() => console.log('[DocsReview] Step started: review-docs')}
+          onComplete={() => console.log('[DocsReview] Step complete: review-docs')}
         >
           <Claude
             model="opus"
             permissionMode="bypassPermissions"
             maxTurns={50}
             timeout={1800000}
-            onProgress={(msg) => progress.agentProgress(msg)}
+            onProgress={(msg) => console.log('[DocsReview]', msg)}
             onFinished={(result) => {
               try {
                 const parsed = JSON.parse(result.output)
                 reviewResult = parsed
-                progress.agentComplete('opus', reviewResult.summary)
+                console.log('[DocsReview] Agent complete:', reviewResult.summary)
                 console.log('[Result] Needs changes:', reviewResult.needsChanges)
                 console.log('[Result] Files changed:', reviewResult.filesChanged.length)
               } catch {
@@ -76,11 +69,11 @@ function DocsReviewOrchestration() {
                   filesChanged: [],
                   summary: result.output.slice(0, 500),
                 }
-                progress.agentComplete('opus', 'Completed (non-JSON output)')
+                console.log('[DocsReview] Agent complete (non-JSON output)')
               }
             }}
             onError={(err) => {
-              progress.error('Docs review failed', err)
+              console.error('[DocsReview] Error: Docs review failed', err)
             }}
           >
             {`## Task
@@ -123,26 +116,26 @@ Skip internal design docs (tui-*.md, refactor-*.md) as they're for dev notes.`}
         name="create-pr"
         skipIf={() => {
           if (!ALLOW_GITHUB_WRITE) {
-            progress.phaseSkipped('create-pr', 'ALLOW_GITHUB_WRITE not set')
+            console.log('[DocsReview] Phase skipped: create-pr (ALLOW_GITHUB_WRITE not set)')
             return true
           }
           return false
         }}
-        onStart={() => progress.phaseStart('create-pr')}
-        onComplete={() => progress.phaseComplete('create-pr')}
+        onStart={() => console.log('[DocsReview] Phase started: create-pr')}
+        onComplete={() => console.log('[DocsReview] Phase complete: create-pr')}
       >
         <Step
           name="git-pr"
-          onStart={() => progress.stepStart('git-pr')}
-          onComplete={() => progress.stepComplete('git-pr')}
+          onStart={() => console.log('[DocsReview] Step started: git-pr')}
+          onComplete={() => console.log('[DocsReview] Step complete: git-pr')}
         >
           <Claude
             model="sonnet"
             permissionMode="bypassPermissions"
             maxTurns={10}
-            onProgress={(msg) => progress.agentProgress(msg)}
+            onProgress={(msg) => console.log('[DocsReview]', msg)}
             onFinished={async (result) => {
-              progress.agentComplete('sonnet', 'PR step complete')
+              console.log('[DocsReview] Agent complete: PR step')
               console.log('[PR] Result:', result.output.slice(0, 200))
             }}
           >
@@ -202,23 +195,15 @@ async function main() {
   const db = createSmithersDB({ path: ':memory:' })
   const executionId = db.execution.start('docs-review', 'scripts/docs-review.tsx')
 
-  // Start heartbeat for visibility
-  progress.startHeartbeat()
-
   const root = createSmithersRoot()
 
-  try {
-    await root.mount(() => (
-      <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <orchestration name="docs-review">
-          <DocsReviewOrchestration />
-        </orchestration>
-      </SmithersProvider>
-    ))
-  } finally {
-    // Always show summary and stop heartbeat
-    progress.summary()
-  }
+  await root.mount(() => (
+    <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
+      <orchestration name="docs-review">
+        <DocsReviewOrchestration />
+      </orchestration>
+    </SmithersProvider>
+  ))
 
   console.log('\n' + '='.repeat(60))
   console.log('FINAL RESULT')
@@ -241,7 +226,6 @@ async function main() {
 }
 
 main().catch(err => {
-  progress.error('Docs review failed', err)
-  progress.summary()
+  console.error('[DocsReview] Error: Docs review failed', err)
   process.exit(1)
 })

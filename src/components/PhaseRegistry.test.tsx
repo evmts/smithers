@@ -2,7 +2,8 @@ import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
 import React from 'react'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
-import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
+import { SmithersProvider } from './SmithersProvider.js'
+import { signalOrchestrationComplete } from './Ralph/utils.js'
 import {
   PhaseRegistryProvider,
   usePhaseRegistry,

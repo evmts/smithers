@@ -60,11 +60,8 @@ export {
   ExecutionBoundary,
   useSmithers,
   createOrchestrationPromise,
-  signalOrchestrationComplete,
-  signalOrchestrationError,
   signalOrchestrationCompleteByToken,
   signalOrchestrationErrorByToken,
-  setActiveOrchestrationToken,
   useOrchestrationToken,
 } from './SmithersProvider.js'
 export type {

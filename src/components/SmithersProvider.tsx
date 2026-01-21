@@ -1,7 +1,3 @@
-// SmithersProvider - Unified context provider for Smithers orchestration
-// Consolidates SmithersProvider, RalphContext, and DatabaseProvider into one
-// Gives all child components access to database, executionId, Ralph loop, and global controls
-
 import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react'
 import type { SmithersDB } from '../db/index.js'
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
@@ -14,10 +10,6 @@ import { jjSnapshot } from '../utils/vcs.js'
 import { makeStateKey } from '../utils/scope.js'
 import type { SmithersMiddleware } from '../middleware/types.js'
 
-// ============================================================================
-// ORCHESTRATION COMPLETION SIGNALS (per-root via token)
-// ============================================================================
-
 type OrchestrationController = {
   resolve: () => void
   reject: (err: Error) => void
@@ -25,28 +17,6 @@ type OrchestrationController = {
 
 // Tokenized map for per-root orchestration - concurrency-safe
 const orchestrationControllers = new Map<string, OrchestrationController>()
-
-// Cleanup stale entries after 1 hour (prevents memory leak if orchestration errors without cleanup)
-const ORCHESTRATION_CLEANUP_TIMEOUT_MS = 3600000
-
-// Track cleanup timeouts for each token
-const cleanupTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
-
-function scheduleOrchestrationCleanup(token: string): void {
-  const timeoutId = setTimeout(() => {
-    orchestrationControllers.delete(token)
-    cleanupTimeouts.delete(token)
-  }, ORCHESTRATION_CLEANUP_TIMEOUT_MS)
-  cleanupTimeouts.set(token, timeoutId)
-}
-
-function cancelOrchestrationCleanup(token: string): void {
-  const timeoutId = cleanupTimeouts.get(token)
-  if (timeoutId) {
-    clearTimeout(timeoutId)
-    cleanupTimeouts.delete(token)
-  }
-}
 
 // Context for per-provider orchestration token (replaces global _activeOrchestrationToken)
 const OrchestrationTokenContext = createContext<string | null>(null)
@@ -60,7 +30,6 @@ export function createOrchestrationPromise(): { promise: Promise<void>; token: s
   const token = crypto.randomUUID()
   const promise = new Promise<void>((resolve, reject) => {
     orchestrationControllers.set(token, { resolve, reject })
-    scheduleOrchestrationCleanup(token)
   })
   return { promise, token }
 }
@@ -72,7 +41,6 @@ export function createOrchestrationPromise(): { promise: Promise<void>; token: s
  * Used by reconciler root.ts for direct control.
  */
 export function signalOrchestrationCompleteByToken(token: string): void {
-  cancelOrchestrationCleanup(token)
   const controller = orchestrationControllers.get(token)
   if (controller) {
     controller.resolve()
@@ -85,7 +53,6 @@ export function signalOrchestrationCompleteByToken(token: string): void {
  * Used by reconciler root.ts for direct control.
  */
 export function signalOrchestrationErrorByToken(token: string, err: Error): void {
-  cancelOrchestrationCleanup(token)
   const controller = orchestrationControllers.get(token)
   if (controller) {
     controller.reject(err)
@@ -101,35 +68,7 @@ export function useOrchestrationToken(): string | null {
   return useContext(OrchestrationTokenContext)
 }
 
-/**
- * Signal that orchestration is complete.
- * Use within a SmithersProvider context - reads token from context.
- * @deprecated Use signalOrchestrationCompleteByToken with an explicit token for concurrency safety.
- */
-export function signalOrchestrationComplete(): void {
-  console.warn('[SmithersProvider] signalOrchestrationComplete() without token is deprecated. Use signalOrchestrationCompleteByToken(token) for concurrency safety.')
-}
 
-/**
- * Signal that orchestration failed.
- * @deprecated Use signalOrchestrationErrorByToken with an explicit token for concurrency safety.
- */
-export function signalOrchestrationError(err: Error): void {
-  console.warn('[SmithersProvider] signalOrchestrationError() without token is deprecated. Use signalOrchestrationErrorByToken(token, err) for concurrency safety.')
-  void err
-}
-
-/**
- * Set the active orchestration token.
- * @deprecated No longer needed - tokens are managed via React context.
- */
-export function setActiveOrchestrationToken(_token: string | null): void {
-  // No-op for backwards compatibility - token is now stored in React context
-}
-
-// ============================================================================
-// TYPES
-// ============================================================================
 
 export interface GlobalStopCondition {
   type: 'total_tokens' | 'total_agents' | 'total_time' | 'report_severity' | 'ci_failure' | 'custom'
@@ -153,6 +92,52 @@ export interface OrchestrationResult {
   totalToolCalls: number
   totalTokens: number
   durationMs: number
+}
+
+// Table-driven stop condition evaluators
+type StopEvaluatorContext = {
+  ctx: OrchestrationContext
+  condition: GlobalStopCondition
+  db: import('../db/index.js').SmithersDB
+  executionId: string
+}
+
+type StopEvaluatorResult = { shouldStop: boolean; message: string }
+
+const STOP_EVALUATORS: Record<GlobalStopCondition['type'], (args: StopEvaluatorContext) => Promise<StopEvaluatorResult>> = {
+  total_tokens: async ({ ctx, condition }) => ({
+    shouldStop: typeof condition.value === 'number' && ctx.totalTokens >= condition.value,
+    message: condition.message ?? `Token limit ${condition.value} exceeded`,
+  }),
+  total_agents: async ({ ctx, condition }) => ({
+    shouldStop: typeof condition.value === 'number' && ctx.totalAgents >= condition.value,
+    message: condition.message ?? `Agent limit ${condition.value} exceeded`,
+  }),
+  total_time: async ({ ctx, condition }) => ({
+    shouldStop: typeof condition.value === 'number' && ctx.elapsedTimeMs >= condition.value,
+    message: condition.message ?? `Time limit ${condition.value}ms exceeded`,
+  }),
+  report_severity: async ({ db, condition }) => {
+    const criticalReports = await db.vcs.getCriticalReports()
+    return {
+      shouldStop: criticalReports.length > 0,
+      message: condition.message ?? `Critical report(s) found: ${criticalReports.length}`,
+    }
+  },
+  ci_failure: async ({ db, executionId, condition }) => {
+    const ciFailureKey = makeStateKey(executionId, 'hook', 'lastCIFailure')
+    const ciFailure =
+      await db.state.get<{ message?: string }>(ciFailureKey) ??
+      await db.state.get<{ message?: string }>('last_ci_failure')
+    return {
+      shouldStop: ciFailure !== null,
+      message: condition.message ?? `CI failure detected: ${ciFailure?.message ?? 'unknown'}`,
+    }
+  },
+  custom: async ({ ctx, condition }) => ({
+    shouldStop: condition.fn ? await condition.fn(ctx) : false,
+    message: condition.message ?? 'Custom stop condition met',
+  }),
 }
 
 export interface SmithersConfig {
@@ -235,10 +220,6 @@ export interface SmithersContextValue {
    */
   executionEnabled: boolean
 }
-
-// ============================================================================
-// CONTEXT
-// ============================================================================
 
 const SmithersContext = createContext<SmithersContextValue | undefined>(undefined)
 
@@ -389,7 +370,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   // Orchestration refs for timers and start time
   const startTimeRef = useRef(Date.now())
   const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const checkIntervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Read stop/rebase signals from database reactively
   const { data: stopRequested } = useQueryValue<boolean>(
@@ -422,9 +402,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   // Track if we've already completed to avoid double-completion
   const hasCompletedRef = useRef(false)
-  
-  // Track stable state for debouncing completion checks
-  const stableCountRef = useRef(0)
+  const hasStartedTasksRef = useRef(false)
   const completionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Get orchestration token from props for signaling completion
@@ -437,10 +415,45 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     }
   }, [orchestrationToken])
 
-  // Orchestration setup (timeout, snapshots, stop conditions)
-  useMount(() => {
-    const startTime = startTimeRef.current
+  // Helper to check stop conditions (called on task completion)
+  const checkStopConditions = useMemo(() => async () => {
+    if (!props.stopConditions?.length) return
+    const currentStopRequested = props.db.state.get('stop_requested')
+    if (currentStopRequested) return
 
+    const execution = await props.db.execution.current()
+    if (!execution) return
+
+    const ctx: OrchestrationContext = {
+      executionId: props.executionId,
+      totalTokens: execution.total_tokens_used,
+      totalAgents: execution.total_agents,
+      totalToolCalls: execution.total_tool_calls,
+      elapsedTimeMs: Date.now() - startTimeRef.current,
+    }
+
+    for (const condition of props.stopConditions) {
+      const result = await STOP_EVALUATORS[condition.type]({
+        ctx,
+        condition,
+        db: props.db,
+        executionId: props.executionId,
+      })
+      if (result.shouldStop) {
+        console.log(`[SmithersProvider] Stop condition met: ${result.message}`)
+        props.db.state.set('stop_requested', {
+          reason: result.message,
+          timestamp: Date.now(),
+          executionId: props.executionId,
+        })
+        props.onStopRequested?.(result.message)
+        break
+      }
+    }
+  }, [props.stopConditions, props.db, props.executionId, props.onStopRequested])
+
+  // Orchestration setup (timeout, snapshots)
+  useMount(() => {
     ;(async () => {
       try {
         // Create snapshot if requested
@@ -474,89 +487,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
           }, props.globalTimeout)
         }
 
-        // Set up stop condition checking
-        if (props.stopConditions && props.stopConditions.length > 0) {
-          checkIntervalIdRef.current = setInterval(async () => {
-            const currentStopRequested = props.db.state.get('stop_requested')
-            if (currentStopRequested) {
-              if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
-              return
-            }
-
-            const execution = await props.db.execution.current()
-            if (!execution) return
-
-            const context: OrchestrationContext = {
-              executionId: props.executionId,
-              totalTokens: execution.total_tokens_used,
-              totalAgents: execution.total_agents,
-              totalToolCalls: execution.total_tool_calls,
-              elapsedTimeMs: Date.now() - startTime,
-            }
-
-            for (const condition of props.stopConditions!) {
-              let shouldStop = false
-              let message = condition.message ?? 'Stop condition met'
-
-              switch (condition.type) {
-                case 'total_tokens':
-                  if (typeof condition.value === 'number') {
-                    shouldStop = context.totalTokens >= condition.value
-                    message = message || `Token limit ${condition.value} exceeded`
-                  }
-                  break
-
-                case 'total_agents':
-                  if (typeof condition.value === 'number') {
-                    shouldStop = context.totalAgents >= condition.value
-                    message = message || `Agent limit ${condition.value} exceeded`
-                  }
-                  break
-
-                case 'total_time':
-                  if (typeof condition.value === 'number') {
-                    shouldStop = context.elapsedTimeMs >= condition.value
-                    message = message || `Time limit ${condition.value}ms exceeded`
-                  }
-                  break
-
-                case 'report_severity':
-                  const criticalReports = await props.db.vcs.getCriticalReports()
-                  shouldStop = criticalReports.length > 0
-                  message = message || `Critical report(s) found: ${criticalReports.length}`
-                  break
-
-                case 'ci_failure':
-                  const ciFailureKey = makeStateKey(props.executionId, 'hook', 'lastCIFailure')
-                  const ciFailure =
-                    await props.db.state.get<{ message?: string }>(ciFailureKey) ??
-                    await props.db.state.get<{ message?: string }>('last_ci_failure')
-                  shouldStop = ciFailure !== null
-                  message = message || `CI failure detected: ${ciFailure?.message ?? 'unknown'}`
-                  break
-
-                case 'custom':
-                  if (condition.fn) {
-                    shouldStop = await condition.fn(context)
-                  }
-                  break
-              }
-
-              if (shouldStop) {
-                console.log(`[SmithersProvider] Stop condition met: ${message}`)
-                props.db.state.set('stop_requested', {
-                  reason: message,
-                  timestamp: Date.now(),
-                  executionId: props.executionId,
-                })
-                props.onStopRequested?.(message)
-
-                if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
-                break
-              }
-            }
-          }, 1000) // Check every second
-        }
+        // Stop conditions are now checked reactively on task completion (see checkStopConditions)
       } catch (error) {
         console.error('[SmithersProvider] Setup error:', error)
         props.onError?.(error as Error)
@@ -567,6 +498,11 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   // Capture render frame (iteration 0 for single-run)
   useCaptureRenderFrame(props.db, 0, props.getTreeXML)
 
+  // Track when tasks start
+  if (hasStartedTasks && !hasStartedTasksRef.current) {
+    hasStartedTasksRef.current = true
+  }
+
   // React to task count changes for completion detection
   useEffectOnValueChange(pendingTasks, () => {
     // Clear any pending completion check
@@ -575,18 +511,17 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       completionCheckTimeoutRef.current = null
     }
 
-    // If tasks are running, reset stable counter
-    if (pendingTasks > 0) {
-      stableCountRef.current = 0
-      return
-    }
+    // Check stop conditions on task completion
+    checkStopConditions()
 
-    // If no tasks have ever started, wait a bit then complete
-    if (!hasStartedTasks) {
-      stableCountRef.current++
-      // Debounce - wait 500ms before declaring no work
+    // If tasks are running, wait for them to complete
+    if (pendingTasks > 0) return
+
+    // Simple rule: complete when pendingTasks === 0 && hasStartedTasksRef.current
+    if (!hasStartedTasksRef.current) {
+      // Wait a bit for tasks to start (render settling)
       completionCheckTimeoutRef.current = setTimeout(() => {
-        if (!hasCompletedRef.current && stableCountRef.current > 0) {
+        if (!hasCompletedRef.current && !hasStartedTasksRef.current) {
           hasCompletedRef.current = true
           signalComplete()
           props.onComplete?.()
@@ -595,42 +530,14 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       return
     }
 
-    // All tasks have completed - signal completion
-    stableCountRef.current++
+    // All tasks have completed - small debounce for render settling
     completionCheckTimeoutRef.current = setTimeout(() => {
-      if (reactiveDb.isClosed) return
-
-      // Check if stop was requested
-      if (stopRequested && !hasCompletedRef.current) {
-        hasCompletedRef.current = true
-        signalComplete()
-        props.onComplete?.()
-        return
-      }
-
-      // Signal orchestration complete
-      if (!hasCompletedRef.current) {
-        hasCompletedRef.current = true
-        signalComplete()
-        props.onComplete?.()
-      }
-    }, 100) // 100ms debounce
-
-    // Cleanup timeout on effect re-run
-    return () => {
-      if (completionCheckTimeoutRef.current) {
-        clearTimeout(completionCheckTimeoutRef.current)
-        completionCheckTimeoutRef.current = null
-      }
-    }
-  }, [hasStartedTasks, props, stopRequested, reactiveDb, signalComplete])
-
-  // Cleanup on unmount
-  useUnmount(() => {
-    if (completionCheckTimeoutRef.current) {
-      clearTimeout(completionCheckTimeoutRef.current)
-    }
-  })
+      if (reactiveDb.isClosed || hasCompletedRef.current) return
+      hasCompletedRef.current = true
+      signalComplete()
+      props.onComplete?.()
+    }, 50)
+  }, [hasStartedTasks, props, reactiveDb, signalComplete, checkStopConditions])
 
   const value: SmithersContextValue = useMemo(() => ({
     db: props.db,
@@ -667,7 +574,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   useUnmount(() => {
     // Clear timers
     if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current)
-    if (checkIntervalIdRef.current) clearInterval(checkIntervalIdRef.current)
+    if (completionCheckTimeoutRef.current) clearTimeout(completionCheckTimeoutRef.current)
 
     // Generate completion result
     ;(async () => {

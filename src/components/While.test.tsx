@@ -6,7 +6,8 @@ import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { While, useWhileIteration, type WhileProps, type WhileIterationContextValue } from './While.js'
-import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
+import { SmithersProvider } from './SmithersProvider.js'
+import { signalOrchestrationComplete } from './Ralph/utils.js'
 import { useMount } from '../reconciler/hooks.js'
 
 // ============================================================================

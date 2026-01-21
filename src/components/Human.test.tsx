@@ -5,7 +5,8 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
-import { SmithersProvider, signalOrchestrationComplete } from './SmithersProvider.js'
+import { SmithersProvider } from './SmithersProvider.js'
+import { signalOrchestrationComplete } from './Ralph/utils.js'
 import { Human, type HumanProps } from './Human.js'
 
 // ============================================================================

@@ -3,15 +3,12 @@ import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import {
   SmithersProvider,
   useSmithers,
-  useRalph,
   createOrchestrationPromise,
-  signalOrchestrationComplete,
-  signalOrchestrationError,
   signalOrchestrationCompleteByToken,
   signalOrchestrationErrorByToken,
   type SmithersContextValue,
-  type RalphContextType,
 } from './SmithersProvider.js'
+import { useRalphContext as useRalph, type WhileIterationContextValue as RalphContextType } from './While.js'
 
 describe('SmithersProvider', () => {
   let db: SmithersDB
@@ -99,20 +96,6 @@ describe('SmithersProvider', () => {
         isRebaseRequested: () => false,
       }
       expect(typeof ctx.isRebaseRequested).toBe('function')
-    })
-
-    test('includes registerTask function (deprecated)', () => {
-      const ctx: Partial<SmithersContextValue> = {
-        registerTask: () => {},
-      }
-      expect(typeof ctx.registerTask).toBe('function')
-    })
-
-    test('includes completeTask function (deprecated)', () => {
-      const ctx: Partial<SmithersContextValue> = {
-        completeTask: () => {},
-      }
-      expect(typeof ctx.completeTask).toBe('function')
     })
 
     test('includes ralphCount property', () => {
@@ -345,15 +328,6 @@ describe('SmithersProvider', () => {
       expect(typeof createOrchestrationPromise).toBe('function')
     })
 
-    test('exports signalOrchestrationComplete', () => {
-      expect(signalOrchestrationComplete).toBeDefined()
-      expect(typeof signalOrchestrationComplete).toBe('function')
-    })
-
-    test('exports signalOrchestrationError', () => {
-      expect(signalOrchestrationError).toBeDefined()
-      expect(typeof signalOrchestrationError).toBe('function')
-    })
   })
 })
 
@@ -387,9 +361,9 @@ describe('Index exports', () => {
     expect(index.useSmithers).toBeDefined()
   })
 
-  test('exports useRalph from index', async () => {
+  test('exports useRalphContext from index', async () => {
     const index = await import('./index.js')
-    expect(index.useRalph).toBeDefined()
+    expect(index.useRalphContext).toBeDefined()
   })
 
   test('exports Ralph from index (backwards compatibility)', async () => {
@@ -405,7 +379,7 @@ describe('Index exports', () => {
   test('exports orchestration signals from index', async () => {
     const index = await import('./index.js')
     expect(index.createOrchestrationPromise).toBeDefined()
-    expect(index.signalOrchestrationComplete).toBeDefined()
-    expect(index.signalOrchestrationError).toBeDefined()
+    expect(index.signalOrchestrationCompleteByToken).toBeDefined()
+    expect(index.signalOrchestrationErrorByToken).toBeDefined()
   })
 })
