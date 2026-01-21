@@ -24,6 +24,14 @@ export async function grep(opts: GrepOptions): Promise<GrepMatch[]> {
   const regex = new RegExp(opts.pattern, flags)
   
   const searchPath = opts.path ? nodePath.join(cwd, opts.path) : cwd
+  
+  // Validate searchPath stays within cwd
+  const resolvedSearch = nodePath.resolve(searchPath)
+  const resolvedCwd = nodePath.resolve(cwd)
+  if (!resolvedSearch.startsWith(resolvedCwd + nodePath.sep) && resolvedSearch !== resolvedCwd) {
+    throw new Error('Search path must be within workspace')
+  }
+  
   const globPattern = opts.glob ?? '**/*'
   
   const globInstance = new Bun.Glob(globPattern)
