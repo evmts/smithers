@@ -800,4 +800,100 @@ describe('ExecutionModule', () => {
       expect(found!.result).toBeUndefined()
     })
   })
+
+  describe('resume semantics', () => {
+    test('start is idempotent when SMITHERS_EXECUTION_ID is set for existing execution', () => {
+      const execution = createExecution()
+
+      // Simulate an incomplete execution that was previously started
+      db.run(
+        `INSERT INTO executions (id, name, file_path, status, config, created_at) 
+         VALUES (?, ?, ?, ?, ?, datetime('now', '-1 hour'))`,
+        ['existing-exec-id', 'original-name', '/path/script.tsx', 'pending', '{}']
+      )
+
+      // Set env var to simulate control plane passing the ID
+      const originalEnv = process.env['SMITHERS_EXECUTION_ID']
+      process.env['SMITHERS_EXECUTION_ID'] = 'existing-exec-id'
+
+      try {
+        const id = execution.start('new-name', '/path/script.tsx')
+
+        expect(id).toBe('existing-exec-id')
+
+        // Should have updated, not inserted
+        const count = db.queryOne<{ c: number }>('SELECT COUNT(*) as c FROM executions WHERE id = ?', ['existing-exec-id'])
+        expect(count!.c).toBe(1)
+
+        // Status should be updated to running
+        const row = db.queryOne<{ status: string; error: string | null }>('SELECT status, error FROM executions WHERE id = ?', ['existing-exec-id'])
+        expect(row!.status).toBe('running')
+        expect(row!.error).toBeNull()
+      } finally {
+        if (originalEnv === undefined) {
+          delete process.env['SMITHERS_EXECUTION_ID']
+        } else {
+          process.env['SMITHERS_EXECUTION_ID'] = originalEnv
+        }
+      }
+    })
+
+    test('start with env ID creates new execution if ID does not exist', () => {
+      const execution = createExecution()
+
+      const originalEnv = process.env['SMITHERS_EXECUTION_ID']
+      process.env['SMITHERS_EXECUTION_ID'] = 'new-exec-id-from-env'
+
+      try {
+        const id = execution.start('test-name', '/path/script.tsx')
+
+        expect(id).toBe('new-exec-id-from-env')
+
+        const row = db.queryOne<{ status: string; name: string }>('SELECT status, name FROM executions WHERE id = ?', ['new-exec-id-from-env'])
+        expect(row).not.toBeNull()
+        expect(row!.status).toBe('running')
+        expect(row!.name).toBe('test-name')
+      } finally {
+        if (originalEnv === undefined) {
+          delete process.env['SMITHERS_EXECUTION_ID']
+        } else {
+          process.env['SMITHERS_EXECUTION_ID'] = originalEnv
+        }
+      }
+    })
+
+    test('resume clears previous error and completed_at', () => {
+      const execution = createExecution()
+
+      // Simulate a failed execution
+      db.run(
+        `INSERT INTO executions (id, name, file_path, status, error, completed_at, created_at) 
+         VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now', '-1 hour'))`,
+        ['failed-exec-id', 'failed-exec', '/path/script.tsx', 'failed', 'Previous error message']
+      )
+
+      const originalEnv = process.env['SMITHERS_EXECUTION_ID']
+      process.env['SMITHERS_EXECUTION_ID'] = 'failed-exec-id'
+
+      try {
+        const id = execution.start('resumed', '/path/script.tsx')
+
+        expect(id).toBe('failed-exec-id')
+
+        const row = db.queryOne<{ status: string; error: string | null; completed_at: string | null }>(
+          'SELECT status, error, completed_at FROM executions WHERE id = ?',
+          ['failed-exec-id']
+        )
+        expect(row!.status).toBe('running')
+        expect(row!.error).toBeNull()
+        expect(row!.completed_at).toBeNull()
+      } finally {
+        if (originalEnv === undefined) {
+          delete process.env['SMITHERS_EXECUTION_ID']
+        } else {
+          process.env['SMITHERS_EXECUTION_ID'] = originalEnv
+        }
+      }
+    })
+  })
 })
