@@ -13,9 +13,31 @@ import { SmithersProvider } from './SmithersProvider.js'
 import { signalOrchestrationComplete } from './Ralph/utils.js'
 import { Phase } from './Phase.js'
 import { Ralph } from './Ralph.js'
+import { Step } from './Step.js'
 import { PhaseContext, usePhaseContext } from './PhaseContext.js'
 import { StepContext, useStepContext } from './StepContext.js'
 import { WorktreeProvider, useWorktree } from './WorktreeProvider.js'
+import { useSmithers } from './SmithersProvider.js'
+import { useExecutionEffect, useExecutionScope } from './ExecutionScope.js'
+import { useRef } from 'react'
+
+function PhaseTaskRunner(props: { name: string; delay?: number }) {
+  const { db } = useSmithers()
+  const executionScope = useExecutionScope()
+  const taskIdRef = useRef<string | null>(null)
+
+  useExecutionEffect(executionScope.enabled, () => {
+    taskIdRef.current = db.tasks.start('test-task', props.name, { scopeId: executionScope.scopeId })
+    const timeoutId = setTimeout(() => {
+      if (!db.db.isClosed && taskIdRef.current) {
+        db.tasks.complete(taskIdRef.current)
+      }
+    }, props.delay ?? 10)
+    return () => clearTimeout(timeoutId)
+  }, [db, executionScope.enabled, props.delay, props.name])
+
+  return <task name={props.name} />
+}
 
 function createNode(
   type: string,
@@ -580,15 +602,15 @@ describe('Phase component', () => {
         <SmithersProvider db={db} executionId={executionId} stopped>
           <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="First">
-              <step>first content</step>
+              <Step name="s1"><PhaseTaskRunner name="t1" /></Step>
             </Phase>
             <Phase name="Second">
-              <step>second content</step>
+              <Step name="s2"><PhaseTaskRunner name="t2" /></Step>
             </Phase>
           </Ralph>
         </SmithersProvider>
       )
-      await new Promise(r => setTimeout(r, 20))
+      await new Promise(r => setTimeout(r, 200))
       const xml = root.toXML()
       // Only the active phase renders its children - completed phases don't show children
       expect(xml).toContain('status="active"')
@@ -602,15 +624,15 @@ describe('Phase component', () => {
         <SmithersProvider db={db} executionId={executionId} stopped>
           <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="First">
-              <step>first</step>
+              <Step name="s1"><PhaseTaskRunner name="t1" /></Step>
             </Phase>
             <Phase name="Second">
-              <step>second</step>
+              <Step name="s2"><PhaseTaskRunner name="t2" /></Step>
             </Phase>
           </Ralph>
         </SmithersProvider>
       )
-      await new Promise(r => setTimeout(r, 20))
+      await new Promise(r => setTimeout(r, 200))
       const xml = root.toXML()
       // With Ralph, phases advance - First completes, Second becomes active
       expect(xml).toContain('name="First"')
@@ -640,15 +662,15 @@ describe('Phase component', () => {
         <SmithersProvider db={db} executionId={executionId} stopped>
           <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="First">
-              <step>first</step>
+              <Step name="s1"><PhaseTaskRunner name="t1" /></Step>
             </Phase>
             <Phase name="Second">
-              <step>second</step>
+              <Step name="s2"><PhaseTaskRunner name="t2" /></Step>
             </Phase>
           </Ralph>
         </SmithersProvider>
       )
-      await new Promise(r => setTimeout(r, 50))
+      await new Promise(r => setTimeout(r, 200))
       const xml = root.toXML()
       // All phases have status attributes
       expect(xml).toContain('name="First"')
