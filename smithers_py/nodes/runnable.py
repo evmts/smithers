@@ -1,6 +1,6 @@
 """Runnable node implementations for Smithers."""
 
-from typing import Any, Callable, List, Literal, Optional
+from typing import Any, Callable, List, Literal, Optional, Type
 from pydantic import BaseModel, Field, model_validator
 
 from .base import NodeBase, Node
@@ -41,7 +41,7 @@ class ClaudeNode(NodeBase):
         default_factory=ToolPolicy,
         description="Tool access policy for this agent"
     )
-    schema: Optional[type[BaseModel]] = Field(
+    schema: Optional[Type[BaseModel]] = Field(
         default=None,
         exclude=True,  # Type objects can't be serialized
         description="Optional Pydantic model for structured output validation"

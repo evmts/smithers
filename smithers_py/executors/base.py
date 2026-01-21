@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, List, Optional, Protocol
+from typing import Any, AsyncIterator, Dict, List, Optional, Protocol, Type, Union
 from pydantic import BaseModel
 
 
@@ -118,9 +118,9 @@ class ExecutorProtocol(Protocol):
         model: str,
         max_turns: int = 50,
         tools: Optional[Dict[str, Any]] = None,
-        schema: Optional[type[BaseModel]] = None,
+        schema: Optional[Type[BaseModel]] = None,
         resume_from: Optional[str] = None,
-    ) -> AsyncIterator[StreamEvent | AgentResult]:
+    ) -> AsyncIterator[Union[StreamEvent, AgentResult]]:
         """Execute an agent node.
 
         Args:
