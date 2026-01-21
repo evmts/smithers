@@ -5,6 +5,10 @@ import { executeClaudeCLI } from '../../components/agents/ClaudeCodeCLI.js'
 import { extractMCPConfigs, generateMCPServerConfig, writeMCPConfigFile } from '../../utils/mcp-config.js'
 import { MessageParser } from '../../components/agents/claude-cli/message-parser.js'
 import { ClaudeStreamParser } from '../../streaming/claude-parser.js'
+import { parseToolSpecs } from '../../tools/registry.js'
+import { createSmithersToolServer } from '../../tools/tool-to-mcp.js'
+import type { MCPServer } from '../../tools/types.js'
+import * as path from 'path'
 
 class ClaudeMessageParserWrapper implements MessageParserInterface {
   private parser: MessageParser
@@ -19,16 +23,55 @@ export const ClaudeAdapter: AgentAdapter<ClaudeProps, CLIExecutionOptions> = {
   getAgentLabel(options) { return options.model ?? 'sonnet' },
   getLoggerName() { return 'Claude' },
   getLoggerContext(props) { return { model: props.model ?? 'sonnet' } },
-  async extractPrompt(childrenString, props): Promise<{ prompt: string; mcpConfigPath: string | undefined }> {
+  async extractPrompt(childrenString, props): Promise<{ prompt: string; mcpConfigPath: string | undefined; builtinTools?: string[] }> {
     const { configs: mcpConfigs, cleanPrompt, toolInstructions } = extractMCPConfigs(childrenString)
     let prompt = cleanPrompt
     if (toolInstructions) prompt = `${toolInstructions}\n\n---\n\n${cleanPrompt}`
+    
+    // Parse tools prop to categorize tools
+    const toolsFromProp = props.tools ?? []
+    const { builtinTools, mcpServers, smithersTools } = parseToolSpecs(toolsFromProp)
+    
+    // Collect all MCP servers: from extractMCPConfigs + tools prop MCPServers + SmithersTools
+    const allMcpServers: MCPServer[] = [...mcpServers]
+    
+    // Convert SmithersTools to MCP server if any exist
+    if (smithersTools.length > 0) {
+      const toolsRecord: Record<string, typeof smithersTools[number]> = {}
+      for (const tool of smithersTools) {
+        toolsRecord[tool.name] = tool
+      }
+      const serverPath = path.resolve(import.meta.dirname, '../../tools/smithers-mcp-server.ts')
+      try {
+        const smithersMcpServer = createSmithersToolServer(toolsRecord, serverPath)
+        allMcpServers.push(smithersMcpServer)
+      } catch {
+        // createSmithersToolServer throws if SMITHERS_MCP_ENABLED !== '1', silently skip
+      }
+    }
+    
+    // Generate MCP config file if needed
     let mcpConfigPath: string | undefined = props.mcpConfig
-    if (mcpConfigs.length > 0) {
-      const mcpConfig = generateMCPServerConfig(mcpConfigs)
+    if (mcpConfigs.length > 0 || allMcpServers.length > 0) {
+      // Start with config from extractMCPConfigs
+      const mcpConfig = mcpConfigs.length > 0 ? generateMCPServerConfig(mcpConfigs) : { mcpServers: {} }
+      
+      // Add MCPServers from tools prop
+      for (const server of allMcpServers) {
+        const serverConfig: Record<string, unknown> = {
+          command: server.command,
+        }
+        if (server.args) serverConfig['args'] = server.args
+        if (server.env) serverConfig['env'] = server.env
+        mcpConfig['mcpServers'][server.name] = serverConfig
+      }
+      
       mcpConfigPath = await writeMCPConfigFile(mcpConfig)
     }
-    return { prompt, mcpConfigPath }
+    
+    const result: { prompt: string; mcpConfigPath: string | undefined; builtinTools?: string[] } = { prompt, mcpConfigPath }
+    if (builtinTools.length > 0) result.builtinTools = builtinTools
+    return result
   },
   buildOptions(props, ctx) {
     const options: CLIExecutionOptions = { prompt: ctx.prompt }
@@ -38,7 +81,16 @@ export const ClaudeAdapter: AgentAdapter<ClaudeProps, CLIExecutionOptions> = {
     if (props.systemPrompt !== undefined) options.systemPrompt = props.systemPrompt
     if (props.outputFormat !== undefined) options.outputFormat = props.outputFormat
     if (ctx.mcpConfigPath !== undefined) options.mcpConfig = ctx.mcpConfigPath
-    if (props.allowedTools !== undefined) options.allowedTools = props.allowedTools
+    
+    // Merge allowedTools: props.allowedTools + builtinTools from tools prop
+    const mergedAllowedTools = [
+      ...(props.allowedTools ?? []),
+      ...(ctx.builtinTools ?? []),
+    ]
+    if (mergedAllowedTools.length > 0) {
+      options.allowedTools = [...new Set(mergedAllowedTools)] // dedupe
+    }
+    
     if (props.disallowedTools !== undefined) options.disallowedTools = props.disallowedTools
     if (ctx.cwd !== undefined) options.cwd = ctx.cwd
     if (props.timeout !== undefined) options.timeout = props.timeout

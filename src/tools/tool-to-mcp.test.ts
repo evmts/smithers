@@ -1,7 +1,7 @@
 /**
  * Unit tests for tool-to-mcp.ts - MCP definition conversion
  */
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 import { z } from 'zod'
 import { toolToMCPDefinition, createSmithersToolServer } from './tool-to-mcp.js'
 import { createSmithersTool } from './createSmithersTool.js'
@@ -155,20 +155,6 @@ describe('toolToMCPDefinition', () => {
 })
 
 describe('createSmithersToolServer', () => {
-  const originalMcpEnabled = process.env['SMITHERS_MCP_ENABLED']
-
-  beforeEach(() => {
-    process.env['SMITHERS_MCP_ENABLED'] = '1'
-  })
-
-  afterEach(() => {
-    if (originalMcpEnabled === undefined) {
-      delete process.env['SMITHERS_MCP_ENABLED']
-    } else {
-      process.env['SMITHERS_MCP_ENABLED'] = originalMcpEnabled
-    }
-  })
-
   test('creates MCPServer with correct structure', () => {
     const tools = {
       echo: createSmithersTool({
@@ -188,12 +174,21 @@ describe('createSmithersToolServer', () => {
     expect(server.env!.SMITHERS_TOOLS).toBeDefined()
   })
 
-  test('throws when MCP server is not enabled', () => {
-    delete process.env['SMITHERS_MCP_ENABLED']
+  test('includes toolModulePath in env when provided', () => {
+    const tools = {
+      echo: createSmithersTool({
+        name: 'echo',
+        description: 'Echo',
+        inputSchema: z.object({ msg: z.string() }),
+        execute: async ({ msg }) => ({ msg }),
+      }),
+    }
 
-    expect(() => createSmithersToolServer({}, './server.ts')).toThrow(
-      'Smithers MCP server is unimplemented. Set SMITHERS_MCP_ENABLED=1 to enable.'
-    )
+    const server = createSmithersToolServer(tools, '/path/to/server.ts', {
+      toolModulePath: '/path/to/tools.ts',
+    })
+
+    expect(server.env!['SMITHERS_TOOL_MODULE']).toBe('/path/to/tools.ts')
   })
 
   test('serializes multiple tools to env', () => {

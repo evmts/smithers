@@ -24,23 +24,31 @@ export function toolToMCPDefinition(name: string, tool: SmithersTool): MCPToolDe
   }
 }
 
+export interface CreateSmithersToolServerOptions {
+  toolModulePath?: string
+}
+
 export function createSmithersToolServer(
   tools: Record<string, SmithersTool>,
-  serverPath: string
+  serverPath: string,
+  options: CreateSmithersToolServerOptions = {}
 ): MCPServer {
-  if (process.env['SMITHERS_MCP_ENABLED'] !== '1') {
-    throw new Error(
-      'Smithers MCP server is unimplemented. Set SMITHERS_MCP_ENABLED=1 to enable.'
-    )
+  const { toolModulePath } = options
+  
+  const env: Record<string, string> = {
+    SMITHERS_TOOLS: JSON.stringify(
+      Object.entries(tools).map(([name, tool]) => toolToMCPDefinition(name, tool))
+    ),
   }
+  
+  if (toolModulePath) {
+    env['SMITHERS_TOOL_MODULE'] = toolModulePath
+  }
+  
   return {
     name: 'smithers-tools',
     command: 'bun',
     args: ['run', serverPath],
-    env: {
-      SMITHERS_TOOLS: JSON.stringify(
-        Object.entries(tools).map(([name, tool]) => toolToMCPDefinition(name, tool))
-      ),
-    },
+    env,
   }
 }

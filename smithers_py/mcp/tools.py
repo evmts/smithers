@@ -303,6 +303,7 @@ class MCPToolProvider:
 
             # Create database and stores
             db = SmithersDB(self.db_path)
+            self._run_async(db.connect())  # Must connect before using
 
             # Initialize volatile state
             volatile_state = VolatileStore()

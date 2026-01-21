@@ -156,21 +156,27 @@ class ExecutionModule:
 
     async def find_incomplete(self) -> Optional[Dict[str, Any]]:
         """Find most recent incomplete execution"""
+        query = """
+            SELECT id, name, source_file, correlation_id, status, config, result, error,
+                   end_summary, end_reason, exit_code, started_at, completed_at,
+                   created_at, updated_at, total_iterations, total_agents, 
+                   total_tool_calls, total_tokens_used
+            FROM executions 
+            WHERE status IN ('pending', 'running') 
+            ORDER BY created_at DESC LIMIT 1
+        """
         if self._is_async:
-            async with self.db.execute(
-                "SELECT * FROM executions WHERE status IN ('pending', 'running') ORDER BY created_at DESC LIMIT 1"
-            ) as cursor:
+            async with self.db.execute(query) as cursor:
                 row = await cursor.fetchone()
         else:
-            row = self.db.execute(
-                "SELECT * FROM executions WHERE status IN ('pending', 'running') ORDER BY created_at DESC LIMIT 1"
-            ).fetchone()
+            row = self.db.execute(query).fetchone()
 
         if row:
-            # Convert row to dict (assuming columns match order)
-            columns = ['id', 'name', 'source_file', 'status', 'config', 'result', 'error',
-                      'end_summary', 'end_reason', 'exit_code', 'started_at', 'completed_at',
-                      'created_at', 'total_iterations', 'total_agents', 'total_tool_calls', 'total_tokens_used']
+            # Convert row to dict using explicit column names to match schema
+            columns = ['id', 'name', 'source_file', 'correlation_id', 'status', 'config', 
+                      'result', 'error', 'end_summary', 'end_reason', 'exit_code', 
+                      'started_at', 'completed_at', 'created_at', 'updated_at',
+                      'total_iterations', 'total_agents', 'total_tool_calls', 'total_tokens_used']
             exec_dict = dict(zip(columns, row))
             self._current_execution_id = exec_dict['id']
             return exec_dict

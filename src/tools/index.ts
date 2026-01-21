@@ -30,5 +30,10 @@ export {
 } from './registry.js'
 
 export { createSmithersTool } from './createSmithersTool.js'
-export { toolToMCPDefinition, createSmithersToolServer } from './tool-to-mcp.js'
+export { 
+  toolToMCPDefinition, 
+  createSmithersToolServer,
+  type MCPToolDefinition,
+  type CreateSmithersToolServerOptions,
+} from './tool-to-mcp.js'
 export { createReportTool, getReportToolDescription } from './ReportTool.js'

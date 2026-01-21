@@ -20,6 +20,8 @@ export interface AdapterBuildContext {
   prompt: string
   cwd: string | undefined
   mcpConfigPath: string | undefined
+  /** Built-in tools extracted from tools prop (added to allowedTools) */
+  builtinTools?: string[]
 }
 
 export interface ExtractPromptResult {
