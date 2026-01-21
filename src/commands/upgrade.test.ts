@@ -1,5 +1,5 @@
 import { test, expect, mock } from "bun:test";
-import { runUpgrade, computeUpgradePlan, resolveSmithersPath } from "./upgrade";
+import { runUpgrade, computeUpgradePlan } from "./upgrade";
 
 test("smithers upgrade runs bun add -g smithers-orchestrator@latest", () => {
   const runner = mock((_cmd: string, _args: string[]) => ({ exitCode: 0, stdout: "", stderr: "" }));

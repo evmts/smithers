@@ -7,20 +7,14 @@ import sys
 import uuid
 from pathlib import Path
 
-# Test imports to verify P0.1
-print("Testing imports (P0.1)...")
-try:
-    from smithers_py.db.database import SmithersDB, ExecutionModule, TasksModule, SqliteStore
-    from smithers_py.state.sqlite import SqliteStore as StateSqliteStore
-    from smithers_py.state.base import WriteOp, StoreTarget
-    from smithers_py.executors.claude import ClaudeExecutor
-    from smithers_py.engine.tick_loop import TickLoop, Context
-    from smithers_py.state.volatile import VolatileStore
-    from smithers_py.nodes.text import TextNode
-    print("✅ P0.1: All imports are package-relative and working")
-except Exception as e:
-    print(f"❌ P0.1: Import error: {e}")
-    sys.exit(1)
+# Imports - errors will be caught during test execution
+from smithers_py.db.database import SmithersDB, ExecutionModule, TasksModule, SqliteStore
+from smithers_py.state.sqlite import SqliteStore as StateSqliteStore
+from smithers_py.state.base import WriteOp, StoreTarget
+from smithers_py.executors.claude import ClaudeExecutor
+from smithers_py.engine.tick_loop import TickLoop, Context
+from smithers_py.state.volatile import VolatileStore
+from smithers_py.nodes.text import TextNode
 
 async def test_p0_fixes():
     """Test all P0 fixes in an integrated way."""

@@ -2,8 +2,8 @@
  * Unit tests for Ralph.tsx - Ralph is an alias for While.
  */
 import { describe, test, expect } from 'bun:test'
-import { Ralph, RalphProps, useRalphIteration } from './Ralph.js'
-import { While, useWhileIteration } from './While.js'
+import { Ralph, useRalphIteration } from './Ralph.js'
+import { useWhileIteration } from './While.js'
 
 describe('Ralph', () => {
   test('Ralph is exported', () => {
