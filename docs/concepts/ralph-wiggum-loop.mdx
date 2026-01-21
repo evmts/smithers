@@ -7,11 +7,11 @@ description: How the plan evolves over time
 
 [Ralph](https://ghuntley.com/ralph/) is the autonomous agent loop pattern. Each iteration:
 
-1. 🎨 Render React → execution plan
-2. ▶️ Execute runnable agents
-3. 📝 Agent output updates state
-4. 🔄 State change triggers re-render
-5. ✅ Loop until done
+1. **Render** - React components render the execution plan
+2. **Execute** - Runnable agents execute
+3. **Update** - Agent output updates state
+4. **Re-render** - State change triggers re-render
+5. **Loop** - Repeat until done
 
 > The Ralph Wiggum loop is Smithers' render–execute–persist cycle: render the React plan, execute runnable agents, persist a frame to SQLite, then re-render until completion.
 
@@ -44,11 +44,11 @@ Smithers uses a reactive render loop powered by React state:
 └─────────────────────────────────────────────────────────┘
 ```
 
-1. 🎨 **Render**: Your React components render using React's state management
-2. ▶️ **Execute**: `<Claude>` nodes execute via the Claude CLI
-3. 📝 **Update**: `onFinished` callbacks update React state
-4. 🔄 **Re-render**: State changes trigger reactive updates
-5. ✅ **Loop**: Process repeats until no pending agents remain
+1. **Render**: Your React components render using React's state management
+2. **Execute**: `<Claude>` nodes execute via the Claude CLI
+3. **Update**: `onFinished` callbacks update React state
+4. **Re-render**: State changes trigger reactive updates
+5. **Loop**: Process repeats until no pending agents remain
 
 ## Why Smithers for Ralphing
 
@@ -100,13 +100,13 @@ function IterativeWorkflowBody({ attempts, testsPassing }) {
 export function IterativeWorkflow({ db, executionId }) {
   // State in SQLite, not useState (see State Management docs)
   const { data: attemptsVal } = useQueryValue<number>(
-    db.db,
+    db.reactive,
     "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'attempts'"
   );
   const attempts = attemptsVal ?? 0;
 
   const { data: testsPassingVal } = useQueryValue<number>(
-    db.db,
+    db.reactive,
     "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'tests_passing'"
   );
   const testsPassing = Boolean(testsPassingVal);
@@ -226,7 +226,7 @@ function PhaseWorkflowBody({ phase, setPhase }) {
 export function PhaseWorkflow({ db, executionId }) {
   // State in SQLite, not useState
   const { data: phaseVal } = useQueryValue<string>(
-    db.db,
+    db.reactive,
     "SELECT value FROM state WHERE key = 'phase'"
   );
   const phase = phaseVal ?? "research";
@@ -299,8 +299,10 @@ Smithers uses React as a workflow DSL. Understanding these rules prevents common
   <Accordion title="✅ DO: Store state in SQLite">
     ```tsx
     // Good - durable
-    const { data: phaseVal } = useQueryValue<string>(db.db,
-      "SELECT value FROM state WHERE key = 'phase'");
+    const { reactiveDb } = useSmithers();
+    const { data: phaseVal } = useQueryValue<string>(
+      reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
+    );
     const phase = phaseVal ?? "start";
     const setPhase = (p: string) => db.state.set('phase', p);
     ```
@@ -402,14 +404,20 @@ The orchestration context tracks:
 ## Best Practices for Durable Ralphing
 
 <AccordionGroup>
-  <Accordion title="Always set maxIterations">
+  <Accordion title="Always set maxIterations on Ralph/While">
     Without a limit, a bug in your state logic could cause infinite loops:
     ```tsx
-    // Good - explicit limit
-    <SmithersProvider maxIterations={50}>...</SmithersProvider>
+    // Good - explicit limit on Ralph
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph id="main" condition={() => !done} maxIterations={50}>
+        ...
+      </Ralph>
+    </SmithersProvider>
 
     // Risky - could run forever
-    <SmithersProvider maxIterations={Infinity}>...</SmithersProvider>
+    <Ralph id="main" condition={() => !done} maxIterations={Infinity}>
+      ...
+    </Ralph>
     ```
   </Accordion>
 

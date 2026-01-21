@@ -12,6 +12,7 @@ import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
+  Ralph,
   Phase,
   Step,
   Claude,
@@ -88,8 +89,17 @@ async function main() {
 
   function App() {
     return (
-      <SmithersProvider db={db} executionId={executionId} maxIterations={10} globalTimeout={3600000}>
-        <ReviewWorkflow />
+      <SmithersProvider db={db} executionId={executionId} globalTimeout={3600000}>
+        <Ralph
+          id="review-loop"
+          condition={() => {
+            const phase = db.state.get<string>("phase");
+            return phase !== "complete";
+          }}
+          maxIterations={10}
+        >
+          <ReviewWorkflow />
+        </Ralph>
       </SmithersProvider>
     );
   }

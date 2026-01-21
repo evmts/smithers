@@ -70,9 +70,6 @@
       "pages": [
         "components/smithers-provider",
         "components/claude",
-        "components/claude-api",
-        "components/codex",
-        "components/gemini",
         "components/smithers",
         "components/phase",
         "components/phase-registry",
@@ -100,6 +97,14 @@
         "components/constraints",
         "components/sqlite",
         "components/ralph"
+      ]
+    },
+    {
+      "group": "Planned Components",
+      "pages": [
+        "components/claude-api",
+        "components/codex",
+        "components/gemini"
       ]
     },
     {

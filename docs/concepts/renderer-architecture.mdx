@@ -56,7 +56,7 @@ Custom React renderer that outputs `SmithersNode` trees instead of DOM elements.
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                         REACT INTERNALS (Fiber Tree)                            │
-│                              WE DON'T OWN THIS                                  │
+│                              (React-managed)                                    │
 │                                                                                 │
 │   React builds an internal "fiber" tree that tracks:                            │
 │   - Component instances and their state (useState, useEffect, etc.)             │
@@ -92,7 +92,7 @@ Custom React renderer that outputs `SmithersNode` trees instead of DOM elements.
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                      HOST CONFIG (host-config.ts)                               │
-│                            WE OWN THIS                                          │
+│                            (Smithers-owned)                                          │
 │                                                                                 │
 │   This is the "bridge" between React and our SmithersNode tree.                 │
 │   React calls these methods; we implement them.                                 │
@@ -117,7 +117,7 @@ Custom React renderer that outputs `SmithersNode` trees instead of DOM elements.
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                       RENDERER METHODS (methods.ts)                             │
-│                            WE OWN THIS                                          │
+│                            (Smithers-owned)                                          │
 │                                                                                 │
 │   Low-level operations on SmithersNode trees.                                   │
 │   No React dependency - pure data structure manipulation.                       │
@@ -135,7 +135,7 @@ Custom React renderer that outputs `SmithersNode` trees instead of DOM elements.
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                    SMITHERS NODE TREE (types.ts)                                │
-│                            WE OWN THIS                                          │
+│                            (Smithers-owned)                                          │
 │                                                                                 │
 │   interface SmithersNode {             ┌───────────────────────────────────┐    │
 │     type: string                       │  ROOT                             │    │

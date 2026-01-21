@@ -46,9 +46,10 @@ const COVERAGE_PROMPT = `Improve test coverage:
 
 function CoverageLoop({ targetCoverage = 98, maxIterations = 20 }) {
   const { db, reactiveDb } = useSmithers();
-  const checkCount = useQueryValue<number>(
-    reactiveDb, "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'coverage.checkCount'"
-  ) ?? 0;
+  const { data: checkCountVal } = useQueryValue<number>(
+    reactiveDb, "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'coverage.checkCount'"
+  );
+  const checkCount = checkCountVal ?? 0;
 
   const checkCoverage = async (): Promise<boolean> => {
     const proc = Bun.spawn(["bun", "test", "--coverage"], { stdout: "pipe", stderr: "pipe" });
@@ -102,7 +103,7 @@ async function main() {
   const root = createSmithersRoot();
 
   await root.mount(() => (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={20}>
+    <SmithersProvider db={db} executionId={executionId}>
       <CoverageLoop targetCoverage={98} maxIterations={20} />
     </SmithersProvider>
   ));

@@ -47,8 +47,8 @@ import { LogWriter } from 'smithers-orchestrator/monitor'
 
 const logger = new LogWriter('.smithers/logs', executionId)
 logger.writeLog('agent-output', content, { agent: 'claude' })
-logger.appendStreamPart('events.ndjson', { type: 'tool-call', name: 'Read' })
-logger.writeStreamSummary('events', parts)
+logger.appendStreamPart('stream.ndjson', { type: 'tool-call', name: 'Read' })
+logger.writeStreamSummary('stream', parts)
 await logger.flushAllStreams()
 ```
 

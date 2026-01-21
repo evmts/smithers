@@ -32,8 +32,10 @@ Renders a checkbox-style task item for tracking progress through workflows.
 
 ```tsx
 function TaskTracker() {
-  const { db } = useSmithers()
-  const tasks = useQueryValue<string>(db.db, "SELECT value FROM state WHERE key = 'tasks'")
+  const { reactiveDb } = useSmithers()
+  const { data: tasks } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'tasks'"
+  )
   const parsed = tasks ? JSON.parse(tasks) : []
 
   return (
@@ -52,8 +54,10 @@ function TaskTracker() {
 const tasks = ["Analyze", "Refactor", "Test", "Document"]
 
 function TaskDrivenWorkflow() {
-  const { db } = useSmithers()
-  const indexVal = useQueryValue<string>(db.db, "SELECT value FROM state WHERE key = 'idx'")
+  const { db, reactiveDb } = useSmithers()
+  const { data: indexVal } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'idx'"
+  )
   const idx = indexVal ? JSON.parse(indexVal) : 0
 
   return (
