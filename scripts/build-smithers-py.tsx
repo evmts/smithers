@@ -2,7 +2,7 @@
 /** @jsxImportSource smithers-orchestrator */
 /**
  * Build Smithers-Py E2E
- * 
+ *
  * This workflow implements the smithers-py Python library based on the spec in issues/smithers-py.md
  * Uses a Ralph loop to iteratively build each milestone:
  * - M0: Core runtime skeleton (Plan IR, JSX runtime, XML serializer, state stores, tick loop)
@@ -23,8 +23,18 @@ import {
   If,
   useSmithers,
   Smithers,
+  createOrchestrationPromise,
+  signalOrchestrationCompleteByToken,
 } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/db";
+
+// Create orchestration promise externally so we can pass token to SmithersProvider
+const { promise: orchestrationPromise, token: orchestrationToken } = createOrchestrationPromise();
+
+// Function to manually signal completion (called by Ralph onComplete)
+function signalComplete() {
+  signalOrchestrationCompleteByToken(orchestrationToken);
+}
 
 const db = createSmithersDB({ path: ".smithers/build-smithers-py.db" });
 
@@ -48,12 +58,13 @@ const SPEC_PATH = "issues/smithers-py.md";
 
 function M0_CoreRuntime() {
   const { db, reactiveDb } = useSmithers();
-  
-  const phase = useQueryValue<string>(
+
+  const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
-  
+  );
+  const phase = phaseData ?? "research";
+
   const setPhase = (p: string) => db.state.set("phase", p, `transition_to_${p}`);
   const setMilestone = (m: string) => {
     db.state.set("milestone", m, `transition_to_${m}`);
@@ -73,7 +84,7 @@ function M0_CoreRuntime() {
             >
 {`Read the full spec at ${SPEC_PATH} focusing on M0 requirements:
 - Plan IR (Pydantic models for nodes)
-- JSX runtime (jsx() function)  
+- JSX runtime (jsx() function)
 - XML serializer
 - Volatile + SQLite state with snapshot/write-queue/commit
 - Simple tick loop with no runnable nodes
@@ -207,7 +218,7 @@ Reference python-jsx docs for how jsx() is called by the transpiler.`}
    - Children become nested elements
    - TextNode becomes text content
 
-2. For event fields, optionally include: events="onFinished,onError" 
+2. For event fields, optionally include: events="onFinished,onError"
 
 3. Output should match Smithers TS format for parity
 
@@ -279,15 +290,16 @@ smithers_py/db/schema.sql:
   - state: key (PK), value (JSON text), updated_at
   - transitions: id, key, old_value, new_value, trigger, agent_id, timestamp
   - render_frames: id, execution_id, sequence_number, xml_content, timestamp
-  - tasks: id, name, status, started_at, completed_at
+  - tasks: id, name, status, started_at, completed_at, lease_owner, lease_expires_at, heartbeat_at
   - agents: id, execution_id, node_path, model, status, prompt, output
   - tool_calls: id, agent_id, tool_name, input, output, timestamp
+  - agent_stream_events: task_id, ts, kind, payload (for streaming tokens)
 
 smithers_py/db/database.py:
   - SmithersDB class wrapping sqlite3/aiosqlite
   - db.execution.start(), .complete(), .findIncomplete()
   - db.state (SqliteStore instance)
-  - db.tasks.start(), .complete()
+  - db.tasks.start(), .complete(), .heartbeat()
   - db.frames.save(), .list()
 
 smithers_py/db/migrations.py:
@@ -310,32 +322,33 @@ Reference src/db/schema.ts for exact schema.`}
             >
 {`Create the tick loop engine in smithers_py/engine/tick_loop.py:
 
-The loop implements: Snapshot → Render → Persist → Execute → Commit → Effects
+The loop implements strict phases from the spec:
+1. State Snapshot Phase - freeze db_state + v_state + tasks + frame_clock
+2. Render Phase (pure) - produce Plan Tree, no side effects, track deps
+3. Reconcile Phase - diff vs previous frame by stable node identity
+4. Commit Phase - persist frame to SQLite
+5. Execute Phase - start runnable tasks for newly mounted nodes
+6. Post-Commit Effects Phase - run effects whose deps changed
+7. State Update Flush - apply all queued updates atomically
 
-1. TickLoop class:
-   - __init__(db, volatile_state, app_component)
-   - async run() - main loop
-   
-2. Each tick:
-   a. snapshot(): freeze both volatile and sqlite state
-   b. render(): evaluate app component with frozen state -> Node tree
-   c. persist(): serialize to XML, save to render_frames
-   d. find_runnable(): traverse tree for runnable nodes (skip for M0)
-   e. execute(): run runnable nodes (no-op for M0)
-   f. commit(): apply queued state writes
-   g. Check stop condition (no runnable nodes + no pending writes)
+class TickLoop:
+   __init__(db, volatile_state, app_component)
+   async run() - main loop with frame coalescing (throttle to 250ms min)
 
-3. Context object (ctx):
-   - ctx.v: VolatileStore
+Context object (ctx):
+   - ctx.v: VolatileStore (snapshot view)
    - ctx.state: SqliteStore (snapshot view)
    - ctx.db: SmithersDB handle
+   - ctx.now(): deterministic frame time
+   - ctx.frame_id: current frame number
 
-4. For M0, the loop just renders and exits since no runnable nodes.
+For M0, the loop just renders and exits since no runnable nodes.
 
 Write integration test that:
 - Creates app with IfNode + PhaseNode
 - Runs tick loop
-- Verifies XML frame saved to DB`}
+- Verifies XML frame saved to DB
+- Verifies state snapshot isolation (writes don't affect current render)`}
             </Claude>
           </Step>
         </Phase>
@@ -383,12 +396,13 @@ If tests pass, we move to M1. If not, identify failures.`}
 
 function M1_RunnableNodes() {
   const { db, reactiveDb } = useSmithers();
-  
-  const phase = useQueryValue<string>(
+
+  const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
-  
+  );
+  const phase = phaseData ?? "research";
+
   const setPhase = (p: string) => db.state.set("phase", p, `transition_to_${p}`);
   const setMilestone = (m: string) => {
     db.state.set("milestone", m, `transition_to_${m}`);
@@ -412,11 +426,13 @@ function M1_RunnableNodes() {
 2. Understand Agent class and how to run Claude
 3. Study how to get structured output with Pydantic schemas
 4. Check tool/function calling patterns
+5. Study retry functionality and tenacity integration
 
 Also read ${SPEC_PATH} sections on:
-- FR5: Runnable nodes & agent execution
+- Agent runtime requirements
 - Executors using PydanticAI
 - Event enforcement + onFinished state transitions
+- Task leases and heartbeats for crash safety
 
 Output implementation plan for ClaudeNode executor.`}
             </Claude>
@@ -446,13 +462,21 @@ smithers_py/executors/claude.py:
   - Handles model selection (opus/sonnet/haiku)
   - Captures output, token usage, duration
   - Persists to db.agents table
+  - Task leases: set lease_owner, heartbeat during execution
+  - Streaming: write chunks to agent_stream_events table
+
+smithers_py/executors/retry.py:
+  - Global rate-limit coordinator
+  - Shared backoff window per provider/model
+  - Classify errors: retryable (429, 5xx, timeout) vs non-retryable
+  - Persist retry state for crash recovery
 
 Update tick_loop.py:
   - find_runnable() returns ClaudeNode instances
   - execute() calls ClaudeExecutor for each
   - Store results in DB
 
-Write test with mocked Claude responses.`}
+Write test with mocked Claude responses using PydanticAI TestModel.`}
             </Claude>
           </Step>
         </Phase>
@@ -473,20 +497,28 @@ Write test with mocked Claude responses.`}
    - After agent completes, call node.onFinished(result) if defined
    - Wrap in try/except, call node.onError(e) on failure
    - Event handlers can call ctx.state.set() to queue updates
+   - If node disappeared from plan (stale result), skip event handlers
 
 2. Enforce events only on observable nodes:
    - ClaudeNode, SmithersNode, ReviewNode can have events
    - IfNode, PhaseNode, StepNode cannot
    - Validation in jsx_runtime.py
 
-3. Update commit phase:
-   - All queued state writes from event handlers applied here
+3. State actions model:
+   - All writes become Actions queued during frame
+   - Actions: set(key, value), delete(key), update(key, reducer_fn)
+   - Flush applies deterministically: (frame_id, task_id, action_index)
+
+4. Update commit phase:
+   - All queued state writes from event handlers applied atomically
+   - Record transitions: old_value, new_value, trigger, node_id, frame_id
    - This triggers re-render on next tick if state changed
 
-4. Test: 
+5. Test:
    - ClaudeNode with onFinished that sets state
    - Verify state updated after tick
-   - Verify re-render with new state`}
+   - Verify re-render with new state
+   - Verify stale results don't trigger handlers`}
             </Claude>
           </Step>
         </Phase>
@@ -535,12 +567,13 @@ Report test results.`}
 
 function M2_MCPServer() {
   const { db, reactiveDb } = useSmithers();
-  
-  const phase = useQueryValue<string>(
+
+  const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
-  
+  );
+  const phase = phaseData ?? "research";
+
   const setPhase = (p: string) => db.state.set("phase", p, `transition_to_${p}`);
   const setMilestone = (m: string) => {
     db.state.set("milestone", m, `transition_to_${m}`);
@@ -564,11 +597,17 @@ function M2_MCPServer() {
 2. Read MCP Python SDK docs
 3. Understand resources and tools patterns
 4. Study stdio and Streamable HTTP transports
+5. Review MCP spec security requirements:
+   - Origin validation for HTTP
+   - localhost binding
+   - DNS rebinding protection
+   - Session model and reconnection
 
-Read ${SPEC_PATH} section on FR8:
+Read ${SPEC_PATH} section on MCP requirements:
 - MCP resources: executions, frames, state
 - MCP tools: start/run/tick/stop, set_state
 - Both transports required
+- Auth model for localhost
 
 Output implementation plan for MCP server.`}
             </Claude>
@@ -594,7 +633,7 @@ Using the MCP Python SDK:
    - Get specific execution by ID
    - URI: smithers://executions/{id}
 
-2. Resource: frames  
+2. Resource: frames
    - List frames for execution
    - Get specific frame XML
    - URI: smithers://executions/{id}/frames/{seq}
@@ -605,8 +644,13 @@ Using the MCP Python SDK:
 
 4. Resource: agents
    - List agent runs
-   - Get agent details + output
+   - Get agent details + output + stream events
    - URI: smithers://agents/{id}
+
+5. Resource: stream (SSE-style)
+   - Subscribe to live frame/event stream
+   - Session IDs for reconnection
+   - Event cursors for resumability
 
 Follow MCP resource patterns from SDK examples.`}
             </Claude>
@@ -641,12 +685,20 @@ Follow MCP resource patterns from SDK examples.`}
    - Request graceful stop
    - Returns confirmation
 
-5. Tool: set_state
+5. Tool: pause / resume
+   - Pause execution, resume from pause
+   - Returns status
+
+6. Tool: set_state
    - Set a state key
    - Params: key, value, trigger
    - Returns updated state
 
-6. Tool: get_frame
+7. Tool: restart_from_frame
+   - Restart execution from specific frame
+   - Returns new execution_id
+
+8. Tool: get_frame
    - Get specific frame by sequence number
    - Returns XML content`}
             </Claude>
@@ -665,23 +717,27 @@ Follow MCP resource patterns from SDK examples.`}
             >
 {`Create MCP server with transports in smithers_py/mcp/server.py:
 
-1. SmithersMCPServer class:
+1. McpCore class:
+   - handle(json_rpc_msg) -> responses/events
    - Composes resources and tools
-   - Configurable transport
+   - Session management (persistent session IDs)
 
-2. stdio transport:
+2. StdioTransport:
    - Newline-delimited JSON-RPC
    - For CLI integration
 
-3. Streamable HTTP transport:
+3. HttpTransport (Streamable HTTP):
    - For browser/GUI clients
-   - Bind to localhost only
-   - Validate Origin header (security)
+   - MUST bind to localhost only
+   - MUST validate Origin header
+   - Auth: random bearer token printed at startup
+   - Backpressure: bounded buffers, dropping policies
 
 4. CLI entry point:
    smithers_py/cli.py or __main__.py:
    - python -m smithers_py serve --transport stdio
    - python -m smithers_py serve --transport http --port 8080
+   - Print auth token on HTTP startup
 
 Test with MCP inspector if available.`}
             </Claude>
@@ -715,6 +771,8 @@ Verify:
 - Tools list correctly
 - Can start execution via tool
 - Can get frames via resource
+- Origin validation works for HTTP
+- Auth token required for HTTP
 
 Report results.`}
             </Claude>
@@ -731,12 +789,13 @@ Report results.`}
 
 function M3_GUI() {
   const { db, reactiveDb } = useSmithers();
-  
-  const phase = useQueryValue<string>(
+
+  const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
-  
+  );
+  const phase = phaseData ?? "research";
+
   const setPhase = (p: string) => db.state.set("phase", p, `transition_to_${p}`);
   const setMilestone = (m: string) => {
     db.state.set("milestone", m, `transition_to_${m}`);
@@ -757,18 +816,23 @@ function M3_GUI() {
 {`Research GUI implementation for M3:
 
 Read ${SPEC_PATH} sections on:
-- FR9: Desktop GUI
+- Desktop GUI requirements
 - Zig-webui for native shell
 - Solid.js for frontend
 
+Architecture decision needed:
+A) Zig launches browser + embeds HTTP server (serves assets + proxies MCP)
+B) Zig is only launcher, Python serves everything
+
 Research:
-1. zig-webui: https://github.com/nicbarker/zig-webui
-2. Solid.js basics
+1. zig-webui: https://github.com/webui-dev/zig-webui
+2. Solid.js signals for fine-grained reactivity
 3. How to connect to MCP Streamable HTTP from browser
 
 Output implementation plan for:
 - Zig host that spawns Python MCP server
-- Solid.js UI with frame timeline, plan viewer, state inspector`}
+- Solid.js UI with frame timeline, plan viewer, state inspector
+- Auth token handoff from Python to UI`}
             </Claude>
           </Step>
         </Phase>
@@ -782,8 +846,8 @@ Output implementation plan for:
               executionModel="sonnet"
               timeout={3600000}
               keepScript
-              context={`Building GUI for smithers-py. 
-                       MCP server runs on localhost. 
+              context={`Building GUI for smithers-py.
+                       MCP server runs on localhost.
                        Use Zig-webui for native shell.
                        Use Solid.js for frontend.
                        Spec at: ${SPEC_PATH}`}
@@ -795,18 +859,21 @@ Output implementation plan for:
 1. Create smithers_gui/ directory for Zig project
 2. Set up Zig build with webui dependency
 3. Create main.zig that:
-   - Spawns Python MCP server
+   - Spawns Python MCP server (capture auth token from stdout)
    - Opens webview with Solid.js app
+   - Pass auth token to UI via query param or localStorage
 
 4. Create smithers_ui/ directory for Solid.js
 5. Set up with: bunx degit solidjs/templates/ts smithers_ui
-6. Build Solid.js components:
+6. Build Solid.js components using signals:
    - ExecutionList: shows all executions
    - FrameTimeline: scrubber through frames
    - PlanViewer: renders XML frame as tree
    - StateInspector: shows state diffs
+   - AgentPanel: shows agent output + streaming
+   - ControlPanel: pause/resume/stop/restart
 
-7. Connect to MCP via fetch to localhost
+7. Connect to MCP via fetch to localhost with auth token
 
 8. Bundle and integrate with Zig host`}
             </Smithers>
@@ -850,12 +917,13 @@ GUI can be completed later, move to M4.`}
 
 function M4_AdvancedConstructs() {
   const { db, reactiveDb } = useSmithers();
-  
-  const phase = useQueryValue<string>(
+
+  const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "research";
-  
+  );
+  const phase = phaseData ?? "research";
+
   const setPhase = (p: string) => db.state.set("phase", p, `transition_to_${p}`);
   const setMilestone = (m: string) => {
     db.state.set("milestone", m, `transition_to_${m}`);
@@ -871,7 +939,7 @@ function M4_AdvancedConstructs() {
               model="opus"
               maxTurns={20}
               allowedTools={["Read", "Grep"]}
-              onFinished={() => setPhase("implement-ralph")}
+              onFinished={() => setPhase("implement-identity")}
             >
 {`Research advanced constructs for M4:
 
@@ -883,9 +951,48 @@ Study TypeScript implementations in src/components/:
 Read ${SPEC_PATH} on:
 - Ralph/While loop semantics
 - Phase/Step gating
-- Effects system
+- Effects system (first-class EffectNode)
+- Node identity and reconciliation
 
 Plan implementation for Python equivalents.`}
+            </Claude>
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={phase === "implement-identity"}>
+        <Phase name="M4-Node-Identity">
+          <Step name="create-identity-system">
+            <Claude
+              model="sonnet"
+              maxTurns={40}
+              permissionMode="acceptEdits"
+              onFinished={() => setPhase("implement-ralph")}
+            >
+{`Implement stable node identity system:
+
+smithers_py/engine/identity.py:
+  - compute_node_id(parent_id, key_or_index, node_type) -> str
+  - Uses hash of path for stability
+  - Explicit id prop takes precedence
+  - For loops: require explicit keys or stable IDs
+
+smithers_py/engine/reconciler.py:
+  - diff_trees(old_tree, new_tree) -> ReconcileResult
+  - Determine: newly mounted, still-running, unmounted nodes
+  - Match by stable node_id
+  - Cancellation semantics: send cancel signal for unmounted running nodes
+
+smithers_py/lint/identity_lint.py:
+  - Warn if runnable node lacks explicit id
+  - Warn if list items lack keys
+  - Error if duplicate ids in same scope
+
+Persist for resume:
+  - script_hash
+  - git_commit (if in repo)
+  - engine_version, schema_version
+  - Warn loudly on mismatch during resume`}
             </Claude>
           </Step>
         </Phase>
@@ -903,7 +1010,7 @@ Plan implementation for Python equivalents.`}
 {`Implement Ralph/While loop in smithers_py:
 
 smithers_py/nodes/ralph.py:
-- RalphNode with condition, max_iterations, id
+- RalphNode with condition, max_iterations, id (REQUIRED)
 - Condition can be callable or state expression
 
 smithers_py/engine/ralph_loop.py:
@@ -990,27 +1097,36 @@ Test concurrent execution with multiple ClaudeNodes.`}
           <Step name="create-effects">
             <Claude
               model="sonnet"
-              maxTurns={40}
+              maxTurns={50}
               permissionMode="acceptEdits"
               onFinished={() => setPhase("verify-m4")}
             >
-{`Implement effects system:
+{`Implement effects as first-class observable nodes:
+
+smithers_py/nodes/effect.py:
+- EffectNode(id, deps, run, cleanup=None, phase="post_commit")
+- Visible in plan tree, diffable, auditable
+- Shows "effect ran because deps changed"
 
 smithers_py/engine/effects.py:
-- EffectRegistry keyed by component path
-- use_effect(fn, deps) registration
-- Track previous deps for comparison
-- Run effects post-commit if deps changed
+- EffectRegistry keyed by node_id
+- Track previous deps with stable hashing (JSON canonicalization)
+- Run cleanup before next effect with changed deps
+- Max effect runs per frame (prevent infinite loops)
+- Effect stability detector (same deps causing same writes)
+
+smithers_py/context.py:
+- ctx.use_effect(id, fn, deps, cleanup=None)
+- Component identity from node path
 
 Update tick loop:
 - After commit, run registered effects
 - Effects can schedule state updates for next tick
+- Optionally: --strict-effects mode to double-invoke for idempotence testing
 
-smithers_py/context.py:
-- ctx.use_effect(fn, deps)
-- Component identity from node path
-
-Test effect runs on dep change.`}
+Test effect runs on dep change.
+Test effect cleanup on unmount.
+Test effect loop detection.`}
             </Claude>
           </Step>
         </Phase>
@@ -1027,7 +1143,7 @@ Test effect runs on dep change.`}
                 if (r.output.includes("passed")) {
                   setMilestone("COMPLETE");
                 } else {
-                  setPhase("implement-ralph");
+                  setPhase("implement-identity");
                 }
               }}
             >
@@ -1042,6 +1158,8 @@ smithers_py/test_e2e.py:
 - Run to completion
 - Verify all frames persisted
 - Verify state transitions correct
+- Verify node identity stable across restarts
+- Verify effect lifecycle correct
 
 Report final test results.`}
             </Claude>
@@ -1058,34 +1176,35 @@ Report final test results.`}
 
 function BuildSmithersPy() {
   const { db, reactiveDb } = useSmithers();
-  
-  const milestone = useQueryValue<string>(
+
+  const { data: milestoneData } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'milestone'"
-  ) ?? "M0";
+  );
+  const milestone = milestoneData ?? "M0";
 
   return (
     <>
       <If condition={milestone === "M0"}>
         <M0_CoreRuntime />
       </If>
-      
+
       <If condition={milestone === "M1"}>
         <M1_RunnableNodes />
       </If>
-      
+
       <If condition={milestone === "M2"}>
         <M2_MCPServer />
       </If>
-      
+
       <If condition={milestone === "M3"}>
         <M3_GUI />
       </If>
-      
+
       <If condition={milestone === "M4"}>
         <M4_AdvancedConstructs />
       </If>
-      
+
       <If condition={milestone === "COMPLETE"}>
         <Phase name="Complete">
           <Step name="summary">
@@ -1113,16 +1232,18 @@ Output final summary for the user.`}
 
 function AppContent() {
   const { db, reactiveDb } = useSmithers();
-  
-  const milestone = useQueryValue<string>(
+
+  const { data: milestoneData } = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'milestone'"
-  ) ?? "M0";
+  );
+  const milestone = milestoneData ?? "M0";
 
-  const phase = useQueryValue<string>(
+  const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"  
-  ) ?? "research";
+    "SELECT value FROM state WHERE key = 'phase'"
+  );
+  const phase = phaseData ?? "research";
 
   console.log(`\n=== Smithers-Py Builder ===`);
   console.log(`Milestone: ${milestone}`);
@@ -1142,6 +1263,7 @@ function AppContent() {
         console.log(`\n=== Build Complete ===`);
         console.log(`Iterations: ${iterations}`);
         console.log(`Reason: ${reason}`);
+        signalComplete();
       }}
     >
       <BuildSmithersPy />
@@ -1151,7 +1273,11 @@ function AppContent() {
 
 function App() {
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={200}>
+    <SmithersProvider
+      db={db}
+      executionId={executionId}
+      maxIterations={200}
+    >
       <AppContent />
     </SmithersProvider>
   );
@@ -1163,12 +1289,19 @@ function App() {
 
 const root = createSmithersRoot();
 
+// Render the app (this starts the React reconciler)
+await root.render(<App />);
+
+// Wait for effects to execute (useMount in While component)
+await new Promise(r => setTimeout(r, 200));
+
 console.log("=== ORCHESTRATION PLAN ===");
 console.log(root.toXML());
 console.log("===========================\n");
 
 try {
-  await root.mount(App);
+  // Wait for orchestration to complete via the external promise
+  await orchestrationPromise;
   db.execution.complete(executionId, { summary: "smithers-py built successfully" });
 } catch (err) {
   const error = err instanceof Error ? err : new Error(String(err));
@@ -1176,5 +1309,6 @@ try {
   db.execution.fail(executionId, error.message);
   throw error;
 } finally {
+  root.dispose();
   db.close();
 }

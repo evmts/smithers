@@ -662,3 +662,807 @@ def implement(ctx):
 4. **Agent nodes are resumable** by persisting run history and node status.
 5. **MCP transport support**: stdio + Streamable HTTP; secure defaults.
 6. **UI is a first-class consumer** of the frame stream, not an afterthought.
+
+---
+
+# 7) Hardening Specifications (Production Robustness)
+
+This section codifies the detailed requirements for making the system reliable in production. These specifications close the gap between "works" and "works reliably."
+
+## 7.1 Frame & Scheduling Specification
+
+### 7.1.1 Strict Frame Phases
+
+Each frame executes in **7 sequential phases**. Violations are runtime errors.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Phase 1: STATE SNAPSHOT                                             │
+│   - Freeze: db_state, v_state, tasks table, frame_clock            │
+│   - Immutable for duration of frame                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│ Phase 2: RENDER (pure)                                              │
+│   - Execute components → Plan Tree (Pydantic nodes)                 │
+│   - NO side effects allowed (no DB writes, no task starts)          │
+│   - Track dependency reads for invalidation                         │
+├─────────────────────────────────────────────────────────────────────┤
+│ Phase 3: RECONCILE                                                  │
+│   - Diff Plan Tree vs previous frame by stable node_id              │
+│   - Categorize: newly_mounted, still_running, unmounted             │
+│   - Unmounted running nodes: send cancel signal                     │
+├─────────────────────────────────────────────────────────────────────┤
+│ Phase 4: COMMIT                                                     │
+│   - Persist frame (plan + statuses) to SQLite                       │
+│   - Single atomic transaction                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│ Phase 5: EXECUTE                                                    │
+│   - Start tasks for newly_mounted runnable nodes                    │
+│   - Update tasks table immediately as tasks start                   │
+├─────────────────────────────────────────────────────────────────────┤
+│ Phase 6: POST-COMMIT EFFECTS                                        │
+│   - Run effects whose deps changed since last frame                 │
+│   - Effects may enqueue state updates (queued, not applied)         │
+├─────────────────────────────────────────────────────────────────────┤
+│ Phase 7: STATE UPDATE FLUSH                                         │
+│   - Apply all queued updates as ONE atomic transaction              │
+│   - Schedule next frame if anything changed                         │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.1.2 Render Purity Enforcement
+
+During Phase 2 (Render), the following are **errors**:
+- `ctx.state.set()` → raises `RenderPhaseWriteError`
+- `ctx.db.execute()` (write) → raises `RenderPhaseWriteError`
+- Starting async tasks → raises `RenderPhaseTaskError`
+
+**Allowed**: `ctx.state.get()`, `ctx.v.get()`, pure computations.
+
+### 7.1.3 Frame Coalescing (Throttling)
+
+To prevent frame explosion during streaming/events:
+
+```python
+class FrameScheduler:
+    min_frame_interval_ms: int = 250  # configurable
+    immediate_triggers: set = {"task_finished", "state_flush", "stop_requested"}
+
+    def should_render(self, event_type: str, last_frame_time: float) -> bool:
+        if event_type in self.immediate_triggers:
+            return True
+        return (now() - last_frame_time) >= self.min_frame_interval_ms
+```
+
+**Frame triggers:**
+- task started → coalesced (throttled)
+- task progressed (stream chunk) → coalesced
+- task finished → **immediate**
+- state flush → **immediate**
+- explicit timer tick → coalesced
+- stop requested → **immediate**
+
+---
+
+## 7.2 Node Identity & Reconciliation Specification
+
+### 7.2.1 Identity Algorithm
+
+```python
+def compute_node_id(parent_id: str | None, key_or_index: str | int, node_type: str) -> str:
+    """
+    Priority:
+    1. Explicit `id` prop on node (highest precedence)
+    2. Deterministic path: parent_id + "/" + (key or index) + ":" + node_type
+    """
+    if node.props.get("id"):
+        return node.props["id"]
+
+    path = f"{parent_id or 'root'}/{key_or_index}:{node_type}"
+    return hashlib.sha256(path.encode()).hexdigest()[:16]
+```
+
+### 7.2.2 List Rendering Keys
+
+For `<Each>` components, **explicit keys are required**:
+
+```python
+# ❌ WRONG - will remount on reorder
+<Each items={tasks}>
+    {task => <Claude prompt={task.prompt} />}
+</Each>
+
+# ✅ CORRECT - stable identity
+<Each items={tasks}>
+    {task => <Claude key={task.id} prompt={task.prompt} />}
+</Each>
+```
+
+### 7.2.3 Reconciliation Result
+
+```python
+@dataclass
+class ReconcileResult:
+    newly_mounted: list[NodeId]      # should start execution
+    still_running: list[NodeId]      # no restart
+    unmounted: list[NodeId]          # send cancel, ignore results
+    stale_results: list[TaskId]      # completed but node gone
+```
+
+### 7.2.4 Stale Result Handling
+
+When a task completes but its node is no longer in the plan tree:
+- Record completion in DB (for audit)
+- **DO NOT** fire `on_finished` handler
+- Log warning: `"Stale result for node {node_id}, task {task_id}"`
+
+### 7.2.5 Resume Identity Validation
+
+On execution resume, validate:
+
+```python
+@dataclass
+class ResumeContext:
+    script_hash: str          # SHA256 of script file
+    git_commit: str | None    # If in git repo
+    engine_version: str       # e.g., "0.1.0"
+    schema_version: int       # DB schema version
+
+def validate_resume(saved: ResumeContext, current: ResumeContext) -> list[Warning]:
+    warnings = []
+    if saved.script_hash != current.script_hash:
+        warnings.append(Warning("Script changed since last run - identity may not match"))
+    if saved.engine_version != current.engine_version:
+        warnings.append(Warning(f"Engine version mismatch: {saved} vs {current}"))
+    return warnings
+```
+
+---
+
+## 7.3 Task Lifecycle Specification
+
+### 7.3.1 Task Table Schema (Extended)
+
+```sql
+CREATE TABLE tasks (
+    task_id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    status TEXT NOT NULL,  -- pending|running|done|error|cancelled|orphaned
+
+    -- Lease management (for crash safety)
+    lease_owner TEXT,           -- process ID owning this task
+    lease_expires_at TIMESTAMP, -- when lease expires
+    heartbeat_at TIMESTAMP,     -- last heartbeat
+
+    -- Retry management
+    retry_count INTEGER DEFAULT 0,
+    max_retries INTEGER DEFAULT 3,
+    next_retry_at TIMESTAMP,
+    last_error_json TEXT,
+
+    -- Timing
+    started_at TIMESTAMP,
+    ended_at TIMESTAMP,
+
+    FOREIGN KEY (execution_id) REFERENCES executions(id)
+);
+```
+
+### 7.3.2 Lease Protocol
+
+```python
+class TaskLeaseManager:
+    lease_duration_ms: int = 30_000  # 30 seconds
+    heartbeat_interval_ms: int = 10_000  # 10 seconds
+
+    async def acquire_lease(self, task_id: str) -> bool:
+        """Attempt to acquire lease. Returns False if already leased."""
+
+    async def heartbeat(self, task_id: str) -> None:
+        """Extend lease. Called periodically during execution."""
+
+    async def release_lease(self, task_id: str) -> None:
+        """Release lease on completion."""
+```
+
+### 7.3.3 Orphan Recovery (On Startup)
+
+```python
+async def recover_orphans(db: SmithersDB, policy: OrphanPolicy) -> list[TaskAction]:
+    """Called on engine startup to handle tasks from crashed processes."""
+
+    orphans = db.query("""
+        SELECT * FROM tasks
+        WHERE status = 'running'
+        AND lease_expires_at < ?
+    """, [now()])
+
+    actions = []
+    for task in orphans:
+        if policy.should_retry(task):
+            actions.append(RetryTask(task.task_id))
+            db.update_task(task.task_id, status="pending", retry_count=task.retry_count + 1)
+        else:
+            actions.append(MarkFailed(task.task_id))
+            db.update_task(task.task_id, status="orphaned")
+
+    return actions
+```
+
+### 7.3.4 Cancellation Semantics
+
+When a node disappears from the plan tree:
+
+```python
+class CancellationHandler:
+    async def cancel_task(self, task_id: str) -> None:
+        """
+        1. Set status to 'cancelling'
+        2. Send cancel signal to executor
+        3. If task completes anyway:
+           - Record completion (for audit)
+           - Do NOT fire event handlers (node is gone)
+           - Set status to 'cancelled'
+        """
+```
+
+---
+
+## 7.4 State Model Specification
+
+### 7.4.1 State Actions
+
+All state modifications are **actions** queued during a frame:
+
+```python
+@dataclass
+class StateAction:
+    key: str
+    action_type: Literal["set", "delete", "update"]
+    value: Any | None = None
+    reducer: Callable[[Any], Any] | None = None  # For "update" type
+    trigger: str | None = None
+    frame_id: int = 0
+    task_id: str | None = None
+    action_index: int = 0  # For ordering
+
+# Deterministic ordering for flush:
+# sorted by (frame_id, task_id, action_index)
+```
+
+### 7.4.2 Conflict Resolution
+
+When multiple actions target the same key in one flush:
+
+```python
+def resolve_conflicts(actions: list[StateAction]) -> StateAction:
+    """
+    Apply in order. Last write wins for 'set'.
+    'update' runs reducer against latest value.
+    """
+    current = db.state.get(actions[0].key)
+    for action in sorted(actions, key=lambda a: (a.frame_id, a.task_id, a.action_index)):
+        if action.action_type == "set":
+            current = action.value
+        elif action.action_type == "delete":
+            current = None
+        elif action.action_type == "update":
+            current = action.reducer(current)
+    return current
+```
+
+### 7.4.3 Transition Audit Log
+
+Every state change is logged:
+
+```sql
+CREATE TABLE transitions (
+    id INTEGER PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    old_value_json TEXT,
+    new_value_json TEXT,
+    trigger TEXT,           -- e.g., "claude.finished", "user.set"
+    node_id TEXT,
+    frame_id INTEGER,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 7.4.4 Reactive Reads (v1 Strategy)
+
+**Level 1 (MVP)**: Key-based invalidation only.
+
+```python
+class DependencyTracker:
+    def __init__(self):
+        self.current_frame_deps: set[str] = set()
+
+    def track_read(self, key: str) -> None:
+        """Called when ctx.state.get(key) is invoked during render."""
+        self.current_frame_deps.add(key)
+
+    def should_rerender(self, changed_keys: set[str]) -> bool:
+        return bool(self.current_frame_deps & changed_keys)
+```
+
+For raw SQL queries, require explicit invalidation hints:
+```python
+# Explicit invalidation for complex queries
+result = ctx.db.query("SELECT ...", invalidate_on=["tasks", "agents"])
+```
+
+---
+
+## 7.5 Effects Specification
+
+### 7.5.1 EffectNode (First-Class Observable)
+
+Effects are **visible in the plan tree**, not hidden callbacks:
+
+```python
+class EffectNode(BaseNode):
+    type: Literal["effect"] = "effect"
+    id: str                          # REQUIRED for identity
+    deps: list[Any]                  # Dependency values
+    run: Callable[[], None]          # Effect function (excluded from serialization)
+    cleanup: Callable[[], None] | None = None
+    phase: Literal["post_commit"] = "post_commit"
+
+    class Config:
+        arbitrary_types_allowed = True
+```
+
+### 7.5.2 Effect Registry
+
+```python
+class EffectRegistry:
+    def __init__(self):
+        self.previous_deps: dict[str, list[Any]] = {}
+        self.cleanups: dict[str, Callable] = {}
+        self.run_count_this_frame: dict[str, int] = {}
+        self.max_runs_per_frame: int = 10  # Prevent infinite loops
+
+    def should_run(self, effect_id: str, current_deps: list[Any]) -> bool:
+        prev = self.previous_deps.get(effect_id)
+        if prev is None:
+            return True  # First run
+        return not self._deps_equal(prev, current_deps)
+
+    def _deps_equal(self, a: list[Any], b: list[Any]) -> bool:
+        """Use stable JSON canonicalization for comparison."""
+        return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+```
+
+### 7.5.3 Effect Loop Detection
+
+```python
+class EffectLoopDetector:
+    def __init__(self, threshold: int = 3):
+        self.history: deque[tuple[str, list[Any]]] = deque(maxlen=10)
+        self.threshold = threshold
+
+    def check(self, effect_id: str, deps: list[Any]) -> bool:
+        """Returns True if likely in an infinite loop."""
+        signature = (effect_id, json.dumps(deps, sort_keys=True))
+        count = sum(1 for s in self.history if s == signature)
+        self.history.append(signature)
+
+        if count >= self.threshold:
+            raise EffectLoopError(
+                f"Effect {effect_id} triggered {count} times with same deps. "
+                "Possible infinite loop."
+            )
+```
+
+### 7.5.4 Strict Effects Mode (Dev/Test)
+
+Optional mode that double-invokes effects to catch non-idempotent code:
+
+```python
+if config.strict_effects:
+    # Run setup twice
+    effect.run()
+    if effect.cleanup:
+        effect.cleanup()
+    effect.run()
+```
+
+---
+
+## 7.6 Retry & Rate Limit Specification
+
+### 7.6.1 Error Classification
+
+```python
+class ErrorClassifier:
+    RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+    RETRYABLE_EXCEPTIONS = (TimeoutError, ConnectionError)
+
+    def classify(self, error: Exception) -> ErrorClass:
+        if isinstance(error, httpx.HTTPStatusError):
+            if error.response.status_code in self.RETRYABLE_STATUS_CODES:
+                return ErrorClass.RETRYABLE
+            return ErrorClass.NON_RETRYABLE
+        if isinstance(error, self.RETRYABLE_EXCEPTIONS):
+            return ErrorClass.RETRYABLE
+        return ErrorClass.NON_RETRYABLE
+```
+
+### 7.6.2 Global Rate Limit Coordinator
+
+Prevents retry amplification when multiple agents hit limits:
+
+```python
+class RateLimitCoordinator:
+    def __init__(self):
+        self.backoff_windows: dict[str, BackoffWindow] = {}  # keyed by provider/model
+        self.global_concurrency: Semaphore = Semaphore(10)
+
+    async def acquire(self, provider: str, model: str) -> None:
+        """Wait for rate limit window and acquire slot."""
+        key = f"{provider}:{model}"
+        if key in self.backoff_windows:
+            await self.backoff_windows[key].wait()
+        await self.global_concurrency.acquire()
+
+    def report_rate_limit(self, provider: str, model: str, retry_after: float) -> None:
+        """Called when 429 received. Sets backoff for all requests to this endpoint."""
+        key = f"{provider}:{model}"
+        self.backoff_windows[key] = BackoffWindow(
+            until=now() + retry_after,
+            jitter=random.uniform(0, retry_after * 0.1)
+        )
+```
+
+### 7.6.3 Persisted Retry State
+
+```sql
+-- Part of tasks table (see 7.3.1)
+retry_count INTEGER DEFAULT 0,
+max_retries INTEGER DEFAULT 3,
+next_retry_at TIMESTAMP,
+last_error_json TEXT,
+backoff_ms INTEGER DEFAULT 1000,
+```
+
+### 7.6.4 Global Stop Conditions
+
+```python
+@dataclass
+class StopConditions:
+    max_wall_clock_ms: int | None = None
+    max_total_tokens: int | None = None
+    max_tool_calls: int | None = None
+    max_retries_per_task: int = 3
+    max_cost_usd: float | None = None
+    stop_requested: bool = False  # UI can toggle
+```
+
+---
+
+## 7.7 Streaming Storage Specification
+
+### 7.7.1 Stream Events Table
+
+Streaming tokens stored separately from frames (prevents frame explosion):
+
+```sql
+CREATE TABLE agent_stream_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    kind TEXT NOT NULL,  -- 'token', 'tool_start', 'tool_end', 'thinking'
+    payload_json TEXT,
+
+    FOREIGN KEY (task_id) REFERENCES tasks(task_id)
+);
+
+CREATE INDEX idx_stream_events_task ON agent_stream_events(task_id, timestamp);
+```
+
+### 7.7.2 Streaming Protocol
+
+```python
+async def stream_agent_output(task_id: str, stream: AsyncIterator[StreamEvent]) -> None:
+    """Write stream events to DB as they arrive."""
+    async for event in stream:
+        db.execute("""
+            INSERT INTO agent_stream_events (task_id, kind, payload_json)
+            VALUES (?, ?, ?)
+        """, [task_id, event.kind, json.dumps(event.payload)])
+
+        # UI can tail this table for live updates
+```
+
+### 7.7.3 Node Status During Streaming
+
+```python
+class StreamingNodeStatus:
+    status: Literal["running"]
+    last_token_at: datetime
+    partial_text: str  # Last N characters for preview
+    tokens_received: int
+```
+
+---
+
+## 7.8 MCP Server Specification
+
+### 7.8.1 Transport Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         McpCore                                     │
+│   handle(json_rpc_msg) -> list[Response | Event]                   │
+│   - Composes resources and tools                                    │
+│   - Session management                                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                    Transport Adapters                               │
+│  ┌─────────────────────┐    ┌─────────────────────┐                │
+│  │   StdioTransport    │    │   HttpTransport     │                │
+│  │   - NDJSON on stdio │    │   - Streamable HTTP │                │
+│  │   - For CLI         │    │   - localhost only  │                │
+│  └─────────────────────┘    │   - Origin validate │                │
+│                              │   - Auth required   │                │
+│                              └─────────────────────┘                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.8.2 Security Requirements (HTTP Transport)
+
+```python
+class HttpTransportSecurity:
+    # MUST bind to localhost only
+    bind_address: str = "127.0.0.1"
+
+    # MUST validate Origin header
+    allowed_origins: list[str] = ["http://localhost:*", "http://127.0.0.1:*"]
+
+    # Auth: random bearer token printed at startup
+    auth_token: str = secrets.token_urlsafe(32)
+
+    def validate_request(self, request: Request) -> bool:
+        # Check Origin header
+        origin = request.headers.get("Origin")
+        if origin and not self._origin_allowed(origin):
+            raise SecurityError(f"Origin {origin} not allowed")
+
+        # Check auth token
+        auth = request.headers.get("Authorization")
+        if auth != f"Bearer {self.auth_token}":
+            raise AuthError("Invalid or missing auth token")
+
+        return True
+```
+
+### 7.8.3 Session Management
+
+```python
+@dataclass
+class McpSession:
+    session_id: str
+    created_at: datetime
+    last_seen_at: datetime
+    event_cursor: int  # For resuming event streams
+
+class SessionManager:
+    sessions: dict[str, McpSession] = {}
+    session_timeout_ms: int = 300_000  # 5 minutes
+
+    def get_or_create(self, session_id: str | None) -> McpSession:
+        """Get existing session or create new one."""
+```
+
+### 7.8.4 Backpressure
+
+```python
+class EventBuffer:
+    max_size: int = 1000
+    drop_policy: Literal["oldest", "newest"] = "oldest"
+
+    def push(self, event: Event) -> None:
+        if len(self.buffer) >= self.max_size:
+            if self.drop_policy == "oldest":
+                self.buffer.popleft()
+            else:
+                return  # Drop newest
+        self.buffer.append(event)
+```
+
+---
+
+## 7.9 Framework Constraints (Auditability)
+
+### 7.9.1 No Hidden State
+
+```python
+# Runtime warning for workflow-critical state in locals
+@component
+def MyComponent(ctx):
+    phase = "init"  # WARNING: Local state won't persist across restarts
+
+    # Use ctx.state instead:
+    phase = ctx.state.get("phase") or "init"
+```
+
+### 7.9.2 Explicit Phase Transitions
+
+```python
+# Encouraged pattern: explicit trigger annotation
+ctx.state.set("phase", "implement", trigger="claude.finished")
+
+# Transition logged as:
+# {key: "phase", old: "research", new: "implement", trigger: "claude.finished", node_id: "...", frame_id: 42}
+```
+
+### 7.9.3 Plan Linting Rules
+
+```python
+class PlanLinter:
+    rules = [
+        # Every runnable node should have explicit id
+        Rule("runnable-needs-id",
+             check=lambda n: n.is_runnable and not n.props.get("id"),
+             severity="warning",
+             message="Runnable node {node_type} at {path} lacks explicit id"),
+
+        # Every list item needs key
+        Rule("list-needs-key",
+             check=lambda n: n.parent_type == "each" and not n.props.get("key"),
+             severity="warning",
+             message="List item at {path} lacks key - may cause remounts"),
+
+        # While/Ralph must have max_iterations
+        Rule("loop-needs-max",
+             check=lambda n: n.type in ("while", "ralph") and not n.props.get("max_iterations"),
+             severity="warning",
+             message="Loop at {path} lacks max_iterations"),
+
+        # ClaudeNode should specify max_turns
+        Rule("agent-needs-max-turns",
+             check=lambda n: n.type == "claude" and not n.props.get("max_turns"),
+             severity="info",
+             message="Agent at {path} using default max_turns"),
+    ]
+```
+
+### 7.9.4 Deterministic Randomness/Time
+
+```python
+class DeterministicContext:
+    def __init__(self, frame_id: int, seed: int | None = None):
+        self._frame_id = frame_id
+        self._rng = random.Random(seed or frame_id)
+        self._frame_time = datetime.now()  # Frozen for frame duration
+
+    def now(self) -> datetime:
+        """Returns frozen time for this frame."""
+        return self._frame_time
+
+    def rand(self) -> float:
+        """Deterministic random based on frame seed."""
+        return self._rng.random()
+```
+
+---
+
+## 7.10 JSX in Python: Operational Details
+
+### 7.10.1 File Extension Convention
+
+- Use `.px` extension for Smithers plan files
+- Clear signal that file contains Python JSX
+
+### 7.10.2 CLI Integration
+
+```bash
+# Auto-registers import hook for .px files
+smithers_py run script.px
+
+# Equivalent to:
+python -c "import pyjsx.auto_setup" && python script.px
+```
+
+### 7.10.3 Source Map Support
+
+```python
+class SourceMapper:
+    def __init__(self, px_file: str):
+        self.mappings: dict[int, int] = {}  # transpiled_line -> original_line
+
+    def map_traceback(self, tb: traceback) -> traceback:
+        """Map transpiled line numbers back to .px source."""
+```
+
+---
+
+## 7.11 VCS/Worktree Integration
+
+### 7.11.1 Workspace Abstraction
+
+```python
+@dataclass
+class Workspace:
+    base_repo_path: Path
+    execution_worktree: Path  # Isolated per-execution
+    vcs_type: Literal["git", "jj", "none"]
+
+    async def snapshot(self, message: str) -> str:
+        """Create snapshot/commit. Returns ref."""
+
+    async def rollback(self, ref: str) -> None:
+        """Rollback to snapshot."""
+
+    async def diff(self, from_ref: str, to_ref: str) -> str:
+        """Get diff between refs."""
+```
+
+### 7.11.2 Graceful Degradation
+
+```python
+class VCSOperations:
+    def __init__(self, workspace: Workspace):
+        self.workspace = workspace
+        self.available = self._check_availability()
+
+    def _check_availability(self) -> bool:
+        """Return False if VCS not available (no git/jj installed)."""
+
+    async def snapshot(self, message: str) -> str | None:
+        if not self.available:
+            logger.warning("VCS not available, skipping snapshot")
+            return None
+        return await self.workspace.snapshot(message)
+```
+
+---
+
+## 7.12 Zig-WebUI Architecture Decision
+
+**Chosen: Option A - Zig launches browser + embeds HTTP server**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Zig WebUI App                                │
+│  1. Spawns Python MCP server (child process)                        │
+│  2. Captures auth token from stdout                                 │
+│  3. Opens webview with Solid.js app                                 │
+│  4. Passes auth token via query param / localStorage                │
+├─────────────────────────────────────────────────────────────────────┤
+│                     Python MCP Server                               │
+│  - Serves Solid.js static assets                                    │
+│  - Provides MCP Streamable HTTP endpoint                            │
+│  - Single port for both                                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                      Solid.js Frontend                              │
+│  - Connects to MCP endpoint with auth token                         │
+│  - Streams frames/events via SSE                                    │
+│  - Sends commands via JSON-RPC                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Auth Token Handoff:**
+```python
+# Python prints token on startup
+print(f"AUTH_TOKEN={auth_token}", file=sys.stderr)
+
+# Zig captures and passes to webview
+webui.eval(f"window.SMITHERS_AUTH_TOKEN = '{auth_token}';")
+```
+
+---
+
+## 7.13 Revised Design Decisions Summary
+
+Based on this hardening review, the following decisions are **revised** or **added**:
+
+1. **Effects are first-class observable nodes** (EffectNode), not hidden callbacks
+2. **Task leases + orphan handling** from day one (crash safety)
+3. **Frame coalescing with throttling** (250ms default, immediate for task completion)
+4. **Render purity enforced** at runtime (errors on writes during render)
+5. **Node identity explicit and stable** with linter warnings
+6. **Retries as coordinated subsystem** (global rate limit coordinator)
+7. **Streaming stored separately** from frames (agent_stream_events table)
+8. **MCP security enforced** (Origin validation, localhost bind, auth token)
+9. **Stale result handling** (no event handlers for unmounted nodes)

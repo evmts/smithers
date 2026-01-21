@@ -3,7 +3,8 @@
 import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
-import { useMount } from '../reconciler/hooks.js'
+import { useMount, useEffectOnValueChange } from '../reconciler/hooks.js'
+import { useRalphContext } from './While.js'
 
 export interface PhaseRegistryContextValue {
   // Registration - returns the index assigned to this phase
@@ -51,6 +52,7 @@ export interface PhaseRegistryProviderProps {
 
 export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactNode {
   const { db, reactiveDb } = useSmithers()
+  const ralphCtx = useRalphContext()
 
   // Track registered phases in order (ref for synchronous registration)
   const phasesRef = useRef<string[]>([])
@@ -63,6 +65,13 @@ export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactN
 
   const currentPhaseIndex = dbPhaseIndex ?? 0
 
+  // Track Ralph iteration to reset phase index on new iteration
+  const ralphIteration = ralphCtx?.iteration ?? 0
+  const prevIterationRef = useRef(ralphIteration)
+
+  // Track if we've already signaled completion to avoid double-signaling
+  const hasSignaledCompleteRef = useRef(false)
+
   // Initialize currentPhaseIndex in DB only if not present (preserves resume)
   useMount(() => {
     const existing = db.state.get<number>('currentPhaseIndex')
@@ -70,6 +79,18 @@ export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactN
       db.state.set('currentPhaseIndex', 0, 'phase_registry_init')
     }
   })
+
+  // Reset phase index when Ralph iteration changes (new iteration starting)
+  useEffectOnValueChange(ralphIteration, () => {
+    if (ralphIteration !== prevIterationRef.current) {
+      prevIterationRef.current = ralphIteration
+      hasSignaledCompleteRef.current = false
+      // Only reset if not already at 0 to avoid unnecessary state changes
+      if (currentPhaseIndex !== 0) {
+        db.state.set('currentPhaseIndex', 0, 'phase_reset_for_new_iteration')
+      }
+    }
+  }, [ralphIteration, currentPhaseIndex, db])
 
   // Register a phase and return its index
   const registerPhase = useCallback((name: string): number => {
@@ -82,13 +103,22 @@ export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactN
     return index
   }, [])
 
-  // Advance to next phase
+  // Advance to next phase (or signal Ralph iteration complete if all phases done)
   const advancePhase = useCallback(() => {
     const nextIndex = currentPhaseIndex + 1
     if (nextIndex < phasesRef.current.length) {
       db.state.set('currentPhaseIndex', nextIndex, 'phase_advance')
+      hasSignaledCompleteRef.current = false
+    } else if (!hasSignaledCompleteRef.current) {
+      // All phases complete - signal Ralph to re-evaluate condition
+      // Note: We don't reset currentPhaseIndex here as that causes infinite loops.
+      // The Ralph iteration mechanism will handle the reset via useMount on next iteration.
+      hasSignaledCompleteRef.current = true
+      if (ralphCtx) {
+        ralphCtx.signalComplete()
+      }
     }
-  }, [db, currentPhaseIndex])
+  }, [db, currentPhaseIndex, ralphCtx])
 
   // Check if phase is active
   const isPhaseActive = useCallback((index: number): boolean => {
