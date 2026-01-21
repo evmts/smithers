@@ -7,9 +7,9 @@ description: Ralph the plan not the agent
 
 **Ralph the plan, not the agent.**
 
-Your orchestrating agent writes React code that spawns and controls other agents. [Let your agents write agents](/harness-integration#claude-code-plugin).
+Smithers is a "plan as code" framework.
 
-Used to orchestrate coding agents that run for days, ship PRs autonomously, and self-heal when they fail.
+The plan mode of traditional agents only allows markdown style plans. Smithers powers your current agent with ability to write more sophisticated plans within ralph loops as a mix of prompts and hardcode.  [Let your agents write agents](/harness-integration#claude-code-plugin).
 
 ```tsx
 #!/usr/bin/env bun
@@ -17,25 +17,26 @@ import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
+  Ralph,
   Claude,
 } from "smithers-orchestrator";
 
-const sqliteDb = createSmithersDB({ path: ".smithers/demo.db" });
-const executionId = sqliteDb.execution.start("Demo", "demo.tsx");
-
-function Demo() {
-  return (
-    <SmithersProvider db={sqliteDb} executionId={executionId} maxIterations={5}>
-      <Claude model="sonnet" onFinished={(r) => console.log(r.output)}>
-        Fix the failing tests in this repository.
-      </Claude>
-    </SmithersProvider>
-  );
-}
+const db = createSmithersDB({ path: ".smithers/coverage.db" });
+const executionId = db.execution.start("CoverageLoop", "coverage.tsx");
 
 const root = createSmithersRoot();
-await root.mount(Demo);
-await sqliteDb.close();
+await root.mount(
+  <SmithersProvider db={db} executionId={executionId}>
+    <Ralph
+      id="coverage-loop"
+      condition={async () => (await getCoverage()) < 80}
+      maxIterations={20}
+    >
+      <Claude>Add tests to increase coverage to 80%.</Claude>
+    </Ralph>
+  </SmithersProvider>
+);
+await db.close();
 ```
 
 Run it and monitor the execution frame by frame:

@@ -1,5 +1,6 @@
 // Step component with automatic sequential execution within phases
 // Steps execute one after another unless wrapped in <Parallel>
+// REQUIRES: Must be used inside a <Ralph> or <While> loop (typically via Phase)
 
 import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
@@ -9,6 +10,7 @@ import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
 import { StepContext } from './StepContext.js'
 import { useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { createLogger, withErrorLogging, type Logger } from '../debug/index.js'
+import { useRequireRalph } from './While.js'
 
 // ============================================================================
 // STEP REGISTRY CONTEXT (for sequential execution within a phase)
@@ -56,7 +58,9 @@ export interface StepRegistryProviderProps {
 }
 
 export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
-  const { db, reactiveDb, executionEnabled, executionId, ralphCount } = useSmithers()
+  const ralphCtx = useRequireRalph('StepRegistryProvider')
+  const { db, reactiveDb, executionEnabled, executionId } = useSmithers()
+  const ralphCount = ralphCtx.iteration
   const isParallel = props.isParallel ?? false
   const registryEnabled = props.enabled ?? true
   const completionEnabled = executionEnabled && registryEnabled
@@ -330,7 +334,10 @@ export interface StepProps {
  * ```
  */
 export function Step(props: StepProps): ReactNode {
-  const { db, reactiveDb, executionId, ralphCount } = useSmithers()
+  // Step requires Ralph/While for iteration-based scoping
+  const ralphCtx = useRequireRalph('Step')
+  const { db, reactiveDb, executionId } = useSmithers()
+  const ralphCount = ralphCtx.iteration
   const registry = useStepRegistry()
   const myIndex = useStepIndex(props.name)
   const executionScope = useExecutionScope()

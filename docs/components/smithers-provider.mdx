@@ -1,18 +1,33 @@
 ---
 title: SmithersProvider
-description: Root orchestration context
+description: Root orchestration context provider. Provides database, execution context, and global controls.
 ---
 
 # SmithersProvider
 
-Root component. Required. Provides database, execution context, and the Ralph loop.
+Root component. Required. Provides database, execution context, and global controls.
 
 ```tsx
 const db = createSmithersDB({ path: ".smithers/data" });
 const executionId = db.execution.start("Task", "task.tsx");
 
-<SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-  <Claude>Do the work.</Claude>
+<SmithersProvider db={db} executionId={executionId}>
+  <Claude>Do the work once.</Claude>
+</SmithersProvider>
+```
+
+<Note>
+**Phased workflows require Ralph/While** - Phase and Step components work by re-rendering on each iteration. Without a loop wrapper, they run once and stop.
+</Note>
+
+For iterative workflows, wrap with `<Ralph>` or `<While>` - see [Ralph](/components/ralph):
+
+```tsx
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph id="workflow" condition={() => phase !== 'done'} maxIterations={10}>
+    <Phase name="research">...</Phase>
+    <Phase name="implement">...</Phase>
+  </Ralph>
 </SmithersProvider>
 ```
 
@@ -47,40 +62,6 @@ const executionId = db.execution.start("Task", "task.tsx");
       defaultModel: "sonnet",
       verbose: true,
     }}
-  >
-  ```
-</ParamField>
-
-<ParamField path="maxIterations" type="number" default="100">
-  Maximum number of iteration loops before stopping.
-
-  ```tsx
-  <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-    {/* Will stop after 10 iterations */}
-  </SmithersProvider>
-  ```
-</ParamField>
-
-<ParamField path="onIteration" type="(iteration: number) => void">
-  Called at the start of each iteration. Useful for logging or progress tracking.
-
-  ```tsx
-  <SmithersProvider
-    db={db}
-    executionId={executionId}
-    onIteration={(i) => console.log(`Starting iteration ${i}`)}
-  >
-  ```
-</ParamField>
-
-<ParamField path="onComplete" type="() => void">
-  Called when orchestration completes (all tasks finished or max iterations reached).
-
-  ```tsx
-  <SmithersProvider
-    db={db}
-    executionId={executionId}
-    onComplete={() => console.log("Workflow finished")}
   >
   ```
 </ParamField>
@@ -150,6 +131,18 @@ const executionId = db.execution.start("Task", "task.tsx");
   ```
 </ParamField>
 
+<ParamField path="middleware" type="SmithersMiddleware[]">
+  Array of middleware functions for request/response processing.
+
+  ```tsx
+  <SmithersProvider
+    db={db}
+    executionId={executionId}
+    middleware={[loggingMiddleware, retryMiddleware]}
+  >
+  ```
+</ParamField>
+
 ## Context Values
 
 Child components can access the context using the `useSmithers` hook:
@@ -166,13 +159,12 @@ function MyComponent() {
     requestRebase,     // Request rebase operation
     isStopRequested,   // Check if stop was requested
     isRebaseRequested, // Check if rebase was requested
-    ralphCount,        // Current iteration count
     reactiveDb,        // Raw ReactiveDatabase for useQuery
   } = useSmithers();
 
   return (
     <Claude model={config?.defaultModel}>
-      Current iteration: {ralphCount}. Work with context access.
+      Work with context access.
     </Claude>
   );
 }
@@ -207,7 +199,7 @@ function CustomAsyncStep() {
 }
 ```
 
-The orchestration loop monitors the tasks table and automatically advances to the next iteration when all running tasks complete.
+When using Ralph/While, the loop monitors the tasks table and automatically advances to the next iteration when all running tasks complete.
 
 ## Request Stop
 
@@ -300,7 +292,7 @@ function TaskMonitor() {
 
 ```tsx
 import { createSmithersRoot, createSmithersDB } from "smithers-orchestrator";
-import { SmithersProvider, Claude, useSmithers, If, Stop } from "smithers-orchestrator";
+import { SmithersProvider, Claude, Ralph, Phase, useSmithers, If, Stop } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 async function main() {
@@ -322,13 +314,10 @@ async function main() {
       <SmithersProvider
         db={db}
         executionId={executionId}
-        maxIterations={10}
         globalTimeout={3600000}
         stopConditions={[
           { type: "total_tokens", value: 100000 }
         ]}
-        onIteration={(i) => console.log(`Iteration ${i}`)}
-        onComplete={() => console.log("Workflow complete")}
       >
         <WorkflowContent />
       </SmithersProvider>
@@ -345,11 +334,11 @@ async function main() {
 function WorkflowContent() {
   const { db, reactiveDb, requestStop, isStopRequested } = useSmithers();
   
-  const { data: phaseVal } = useQueryValue<string>(
+  const phase = useQueryValue<string>(
     reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
   );
-  const phase = phaseVal ? JSON.parse(phaseVal) : "start";
+  const currentPhase = phase ? JSON.parse(phase) : "research";
   
   const setPhase = (p: string) => db.state.set('phase', p);
 
@@ -358,13 +347,23 @@ function WorkflowContent() {
   }
 
   return (
-    <>
-      <If condition={phase === "start"}>
-        <Claude onFinished={() => setPhase("done")}>
-          Complete the task.
+    <Ralph 
+      id="workflow" 
+      condition={() => currentPhase !== 'done'} 
+      maxIterations={10}
+    >
+      <Phase name="research" active={currentPhase === "research"}>
+        <Claude onFinished={() => setPhase("implement")}>
+          Research the problem space.
         </Claude>
-      </If>
-    </>
+      </Phase>
+
+      <Phase name="implement" active={currentPhase === "implement"}>
+        <Claude onFinished={() => setPhase("done")}>
+          Implement the solution.
+        </Claude>
+      </Phase>
+    </Ralph>
   );
 }
 
@@ -387,14 +386,14 @@ main();
     ```
   </Accordion>
 
-  <Accordion title="Set maxIterations to prevent runaway loops">
-    Always set a reasonable iteration limit:
+  <Accordion title="Use Ralph/While for iterative workflows">
+    SmithersProvider doesn't loop - wrap with Ralph for iterations:
     ```tsx
-    <SmithersProvider
-      db={db}
-      executionId={executionId}
-      maxIterations={10}  // Prevents infinite loops
-    >
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph id="main" maxIterations={10}>
+        <Phase name="work">...</Phase>
+      </Ralph>
+    </SmithersProvider>
     ```
   </Accordion>
 

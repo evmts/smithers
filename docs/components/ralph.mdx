@@ -1,47 +1,81 @@
 ---
 title: Ralph
-description: Loop controller component for iteration-based workflows
+description: Iterative loop component - THE way to get iteration in Smithers
 ---
 
 # Ralph
 
-<Warning>
-**Deprecated.** Use `<SmithersProvider>` which handles Ralph internally. This page is for advanced users.
-</Warning>
+Ralph provides iteration in Smithers workflows. It's an alias for [While](/components/while)—use either interchangeably.
+
+<Note>
+Without Ralph or While, your workflow runs exactly once. Use Ralph for iterative workflows like fix loops, phased plans, or retry patterns.
+</Note>
 
 ```tsx
 <SmithersProvider db={db} executionId={executionId}>
-  <Ralph>
-    <Claude>Your prompt here</Claude>
+  <Ralph
+    id="fix-loop"
+    condition={async () => !(await testsPass())}
+    maxIterations={10}
+  >
+    <Claude>Fix the failing tests</Claude>
+  </Ralph>
+</SmithersProvider>
+```
+
+## Wrapping Phased Workflows
+
+Ralph works with any child components—wrap entire phased workflows for iterative execution:
+
+```tsx
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph
+    id="implement-loop"
+    condition={async () => !(await allTestsPass())}
+    maxIterations={5}
+  >
+    <Phase name="Analyze">
+      <Step name="diagnose"><Claude>Analyze test failures</Claude></Step>
+    </Phase>
+    <Phase name="Fix">
+      <Step name="implement"><Claude>Fix the issues</Claude></Step>
+      <Step name="verify"><Claude>Run tests again</Claude></Step>
+    </Phase>
   </Ralph>
 </SmithersProvider>
 ```
 
 ## Props
 
-| Prop | Type | Description |
-|------|------|-------------|
-| `maxIterations` | `number` | Deprecated. Use `SmithersProvider` prop |
-| `onIteration` | `(n: number) => void` | Deprecated. Use `SmithersProvider` prop |
-| `onComplete` | `() => void` | Deprecated. Use `SmithersProvider` prop |
-| `onMaxIterations` | `() => void` | Called when max iterations reached |
+Same as [While](/components/while):
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `id` | `string` | required | Stable identifier for resumability |
+| `condition` | `() => boolean \| Promise<boolean>` | required | Loop continues while true |
+| `maxIterations` | `number` | `10` | Maximum iterations to prevent infinite loops |
+| `children` | `ReactNode` | required | Components executed each iteration |
+| `onIteration` | `(iteration: number) => void` | - | Callback at start of each iteration |
+| `onComplete` | `(iterations, reason) => void` | - | Callback when loop completes (`reason: 'condition' | 'max'`) |
 
 ## Accessing Iteration Count
 
 ```tsx
+import { useRalphIteration } from "smithers-orchestrator";
+
 function MyComponent() {
-  const { ralphCount } = useSmithers();
-  return <div>Iteration: {ralphCount}</div>;
+  const ctx = useRalphIteration();
+  return <div>Iteration: {ctx?.iteration}</div>;
 }
 ```
 
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="SmithersProvider" icon="cube" href="/components/smithers-provider">
-    Canonical orchestrator for most workflows
+  <Card title="While" icon="rotate" href="/components/while">
+    The underlying component
   </Card>
   <Card title="Ralph Wiggum Loop" icon="sitemap" href="/concepts/ralph-wiggum-loop">
-    Execution loop internals
+    Execution loop concept
   </Card>
 </CardGroup>

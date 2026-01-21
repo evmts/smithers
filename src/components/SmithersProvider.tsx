@@ -182,18 +182,7 @@ export interface SmithersConfig {
   extra?: Record<string, unknown>
 }
 
-/**
- * Ralph context type for backwards compatibility
- * @deprecated Use db.tasks.start() and db.tasks.complete() instead
- */
-export interface RalphContextType {
-  /** @deprecated Use db.tasks.start() instead */
-  registerTask: () => void
-  /** @deprecated Use db.tasks.complete() instead */
-  completeTask: () => void
-  ralphCount: number
-  db: ReactiveDatabase | null
-}
+
 
 export interface SmithersContextValue {
   /**
@@ -235,23 +224,6 @@ export interface SmithersContextValue {
    * Check if rebase has been requested
    */
   isRebaseRequested: () => boolean
-
-  // ---- Ralph loop fields ----
-
-  /**
-   * @deprecated Use db.tasks.start() instead. This is a no-op.
-   */
-  registerTask: () => void
-
-  /**
-   * @deprecated Use db.tasks.complete() instead. This is a no-op.
-   */
-  completeTask: () => void
-
-  /**
-   * Current Ralph iteration count
-   */
-  ralphCount: number
 
   /**
    * Raw ReactiveDatabase instance (for useQuery hooks)
@@ -339,16 +311,6 @@ export interface SmithersProviderProps {
   middleware?: SmithersMiddleware[]
 
   /**
-   * Maximum number of Ralph iterations (default: 100)
-   */
-  maxIterations?: number
-
-  /**
-   * Callback fired on each Ralph iteration
-   */
-  onIteration?: (iteration: number) => void
-
-  /**
    * Callback fired when orchestration completes
    */
   onComplete?: () => void
@@ -384,12 +346,6 @@ export interface SmithersProviderProps {
   cleanupOnComplete?: boolean
 
   /**
-   * Explicitly stop the Ralph loop when true.
-   * Use this to control orchestration flow declaratively.
-   */
-  stopped?: boolean
-
-  /**
    * Orchestration token for signaling completion.
    * Created by createOrchestrationPromise() in root.ts.
    * Required for concurrency-safe multi-root execution.
@@ -403,33 +359,31 @@ export interface SmithersProviderProps {
 }
 
 /**
- * SmithersProvider - Unified root context provider
+ * SmithersProvider - Root context provider for Smithers orchestration
  *
- * Consolidates SmithersProvider, RalphContext, DatabaseProvider, and Orchestration into one.
- * Task tracking is fully database-backed via the tasks table.
- * Provides global timeouts, stop conditions, VCS snapshots, and cleanup.
+ * Provides database, execution context, and global controls to child components.
+ * Does NOT provide iteration - use <Ralph> or <While> for iterative workflows.
  *
- * Usage:
+ * For single-run workflows (no iteration):
  * ```tsx
- * const db = await createSmithersDB({ path: '.smithers/data' })
- * const executionId = await db.execution.start('My Orchestration', './main.tsx')
- *
- * <SmithersProvider
- *   db={db}
- *   executionId={executionId}
- *   maxIterations={10}
- *   globalTimeout={3600000}
- *   stopConditions={[
- *     { type: 'total_tokens', value: 500000, message: 'Token budget exceeded' }
- *   ]}
- *   snapshotBeforeStart
- * >
- *   <Claude>Do something</Claude>
+ * <SmithersProvider db={db} executionId={executionId}>
+ *   <Claude>Do something once</Claude>
  * </SmithersProvider>
  * ```
+ *
+ * For iterative/phased workflows:
+ * ```tsx
+ * <SmithersProvider db={db} executionId={executionId}>
+ *   <Ralph id="main" condition={() => !done} maxIterations={10}>
+ *     <Phase name="research">...</Phase>
+ *     <Phase name="implement">...</Phase>
+ *   </Ralph>
+ * </SmithersProvider>
+ * ```
+ *
+ * Note: Phase and Step components REQUIRE being inside a Ralph/While loop.
  */
 export function SmithersProvider(props: SmithersProviderProps): ReactNode {
-  const maxIterations = props.maxIterations ?? props.config?.maxIterations ?? 100
   const reactiveDb = props.db.db
 
   // Orchestration refs for timers and start time
@@ -448,27 +402,18 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     "SELECT CASE WHEN value IS NOT NULL THEN 1 ELSE 0 END as requested FROM state WHERE key = 'rebase_requested'"
   )
 
-  // Read ralphCount from database reactively
-  const { data: dbRalphCount } = useQueryValue<number>(
-    reactiveDb,
-    "SELECT CAST(value AS INTEGER) as count FROM state WHERE key = 'ralphCount'"
-  )
-
-  // Use DB value if available, otherwise default to 0
-  const ralphCount = dbRalphCount ?? 0
-
-  // Read running task count from database reactively
+  // Read running task count from database reactively (for completion detection)
   const { data: runningTaskCount } = useQueryValue<number>(
     reactiveDb,
-    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND iteration = ? AND status = 'running'`,
-    [props.executionId, ralphCount]
+    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND status = 'running'`,
+    [props.executionId]
   )
 
-  // Read total task count for this iteration (to know if tasks have started)
+  // Read total task count (to know if tasks have started)
   const { data: totalTaskCount } = useQueryValue<number>(
     reactiveDb,
-    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND iteration = ?`,
-    [props.executionId, ralphCount]
+    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ?`,
+    [props.executionId]
   )
 
   // Derive state from DB queries
@@ -491,15 +436,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       signalOrchestrationCompleteByToken(orchestrationToken)
     }
   }, [orchestrationToken])
-
-  // Initialize ralphCount in DB if needed
-  useMount(() => {
-    if (dbRalphCount == null && !reactiveDb.isClosed) {
-      reactiveDb.run(
-        "INSERT OR IGNORE INTO state (key, value, updated_at) VALUES ('ralphCount', '0', datetime('now'))"
-      )
-    }
-  })
 
   // Orchestration setup (timeout, snapshots, stop conditions)
   useMount(() => {
@@ -628,43 +564,15 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     })()
   })
 
-  // Increment ralphCount in DB
-  const incrementRalphCount = useMemo(() => () => {
-    if (reactiveDb.isClosed) return ralphCount  // Guard against closed DB
-    const nextCount = ralphCount + 1
-    reactiveDb.run(
-      "UPDATE state SET value = ?, updated_at = datetime('now') WHERE key = 'ralphCount'",
-      [String(nextCount)]
-    )
-    return nextCount
-  }, [reactiveDb, ralphCount])
+  // Capture render frame (iteration 0 for single-run)
+  useCaptureRenderFrame(props.db, 0, props.getTreeXML)
 
-  // Deprecated no-op functions for backwards compatibility
-  const registerTask = useMemo(() => () => {
-    console.warn('[SmithersProvider] registerTask is deprecated. Use db.tasks.start() instead.')
-  }, [])
-
-  const completeTask = useMemo(() => () => {
-    console.warn('[SmithersProvider] completeTask is deprecated. Use db.tasks.complete() instead.')
-  }, [])
-
-  // Capture render frame on each Ralph iteration
-  useCaptureRenderFrame(props.db, ralphCount, props.getTreeXML)
-
-  // React to task count changes instead of polling
+  // React to task count changes for completion detection
   useEffectOnValueChange(pendingTasks, () => {
     // Clear any pending completion check
     if (completionCheckTimeoutRef.current) {
       clearTimeout(completionCheckTimeoutRef.current)
       completionCheckTimeoutRef.current = null
-    }
-
-    // Check if explicitly stopped via prop
-    if (props.stopped && !hasCompletedRef.current) {
-      hasCompletedRef.current = true
-      signalComplete()
-      props.onComplete?.()
-      return
     }
 
     // If tasks are running, reset stable counter
@@ -687,7 +595,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       return
     }
 
-    // Tasks have completed - debounce before advancing
+    // All tasks have completed - signal completion
     stableCountRef.current++
     completionCheckTimeoutRef.current = setTimeout(() => {
       if (reactiveDb.isClosed) return
@@ -700,20 +608,12 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
         return
       }
 
-      // Check max iterations
-      if (ralphCount >= maxIterations - 1) {
-        if (!hasCompletedRef.current) {
-          hasCompletedRef.current = true
-          signalComplete()
-          props.onComplete?.()
-        }
-        return
+      // Signal orchestration complete
+      if (!hasCompletedRef.current) {
+        hasCompletedRef.current = true
+        signalComplete()
+        props.onComplete?.()
       }
-
-      // Trigger next iteration
-      const nextIteration = incrementRalphCount()
-      stableCountRef.current = 0
-      props.onIteration?.(nextIteration)
     }, 100) // 100ms debounce
 
     // Cleanup timeout on effect re-run
@@ -723,7 +623,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
         completionCheckTimeoutRef.current = null
       }
     }
-  }, [hasStartedTasks, ralphCount, maxIterations, props, incrementRalphCount, stopRequested, reactiveDb, signalComplete])
+  }, [hasStartedTasks, props, stopRequested, reactiveDb, signalComplete])
 
   // Cleanup on unmount
   useUnmount(() => {
@@ -759,13 +659,9 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     isStopRequested: () => !!stopRequested,
     isRebaseRequested: () => !!rebaseRequested,
 
-    // Ralph fields (registerTask/completeTask are deprecated no-ops)
-    registerTask,
-    completeTask,
-    ralphCount,
     reactiveDb,
     executionEnabled: true,
-  }), [props.db, props.executionId, props.config, props.middleware, stopRequested, rebaseRequested, registerTask, completeTask, ralphCount, reactiveDb])
+  }), [props.db, props.executionId, props.config, props.middleware, stopRequested, rebaseRequested, reactiveDb])
 
   // Cleanup orchestration on unmount
   useUnmount(() => {
@@ -808,17 +704,4 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   )
 }
 
-/**
- * Hook for backwards-compatible Ralph context access
- * Returns the same interface as the original RalphContext
- * @deprecated Use useSmithers() and db.tasks instead
- */
-export function useRalph(): RalphContextType {
-  const ctx = useSmithers()
-  return {
-    registerTask: ctx.registerTask,
-    completeTask: ctx.completeTask,
-    ralphCount: ctx.ralphCount,
-    db: ctx.reactiveDb,
-  }
-}
+

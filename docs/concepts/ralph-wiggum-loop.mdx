@@ -64,10 +64,10 @@ You're not programming what agents *do*. You're programming the *plan*, and how 
 
 ## Controlling the Ralph Loop
 
-You can control the Ralph loop using the `stopped` prop. This is the idiomatic way to stop iteration:
+You control iteration using the `<Ralph>` component inside `<SmithersProvider>`. The `condition` prop determines when to stop:
 
 ```tsx
-import { SmithersProvider, useSmithers, Claude, If } from "smithers-orchestrator";
+import { SmithersProvider, Ralph, useSmithers, Claude, If } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function IterativeWorkflowBody({ attempts, testsPassing }) {
@@ -110,15 +110,16 @@ export function IterativeWorkflow({ db, executionId }) {
   const testsPassing = Boolean(testsPassingVal);
 
   return (
-    <SmithersProvider
-      db={db}
-      executionId={executionId}
-      maxIterations={5}
-      stopped={testsPassing}
-      onIteration={(i) => console.log(`Iteration ${i}`)}
-      onComplete={() => console.log("Workflow complete")}
-    >
-      <IterativeWorkflowBody attempts={attempts} testsPassing={testsPassing} />
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph
+        id="main"
+        condition={() => !testsPassing}
+        maxIterations={5}
+        onIteration={(i) => console.log(`Iteration ${i}`)}
+        onComplete={() => console.log("Workflow complete")}
+      >
+        <IterativeWorkflowBody attempts={attempts} testsPassing={testsPassing} />
+      </Ralph>
     </SmithersProvider>
   );
 }
@@ -133,7 +134,7 @@ Ralph also stops implicitly when nothing renders for an iteration. If no compone
 - Your agents can run for hours; this only applies to detecting when there's nothing left to do
 - If any component calls `db.tasks.start()`, the loop waits for that task to complete
 
-Using the `stopped` prop is more explicit and recommended.
+Using the `condition` prop is more explicit and recommended.
 
 ## State: db.state vs db.tasks
 
@@ -187,7 +188,7 @@ function MyComponent() {
 The power of the Ralph Loop comes from React reactivity:
 
 ```tsx
-import { SmithersProvider, Claude, If } from "smithers-orchestrator";
+import { SmithersProvider, Ralph, Claude, If } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
 
 function PhaseWorkflowBody({ phase, setPhase }) {
@@ -231,14 +232,11 @@ export function PhaseWorkflow({ db, executionId }) {
   const setPhase = (newPhase: string) => db.state.set('phase', newPhase);
 
   return (
-    <SmithersProvider
-      db={db}
-      executionId={executionId}
-      maxIterations={10}
-      stopped={phase === "done"}
-    >
-      {/* This block re-renders when phase changes */}
-      <PhaseWorkflowBody phase={phase} setPhase={setPhase} />
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph id="main" condition={() => phase !== "done"} maxIterations={10}>
+        {/* This block re-renders when phase changes */}
+        <PhaseWorkflowBody phase={phase} setPhase={setPhase} />
+      </Ralph>
     </SmithersProvider>
   );
 }
@@ -428,7 +426,9 @@ The orchestration context tracks:
   <Accordion title="Handle iteration limits gracefully">
     Know when you've hit the limit:
     ```tsx
-    <SmithersProvider
+    <Ralph
+      id="main"
+      condition={() => !done}
       maxIterations={50}
       onMaxIterations={() => {
         console.error("Workflow did not complete in 50 iterations");
@@ -540,48 +540,59 @@ import { Subagent, Claude } from "smithers-orchestrator";
 
 ---
 
-## SmithersProvider: The Root Ralph Loop
+## Ralph/While: The Iteration Loop
 
-`<SmithersProvider>` is the root orchestration wrapper that manages the Ralph loop for your entire workflow.
+`<SmithersProvider>` provides context (database, execution ID) but does **not** run the Ralph loop itself. Use `<Ralph>` or `<While>` inside to provide iteration:
 
-**Default Behavior:**
-By default, `<SmithersProvider>` runs the Ralph loop for up to **100 iterations**. This is sufficient for most workflows.
+```
+┌──────────────────────────────────────────────────────────┐
+│ SmithersProvider           │ Context only (db, execution)│
+│   └─ Ralph / While         │ Provides the iteration loop │
+│        └─ Your components  │ Execute within the loop     │
+└──────────────────────────────────────────────────────────┘
+```
 
-**Infinite Loops:**
-For long-running orchestrations that need to continue indefinitely (like CI/CD monitors, autonomous agents, or server processes), you can configure it to run forever:
+**Basic Pattern:**
 
 ```tsx
-import { SmithersProvider } from "smithers-orchestrator";
+import { SmithersProvider, Ralph } from "smithers-orchestrator";
 
-<SmithersProvider
-  db={db}
-  executionId={executionId}
-  maxIterations={Infinity}
-  onIteration={(i) => console.log(`Iteration ${i}`)}
->
-  <Claude>
-    Monitor the repository and respond to changes
-  </Claude>
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph
+    id="main"
+    condition={() => !done}
+    maxIterations={100}
+    onIteration={(i) => console.log(`Iteration ${i}`)}
+  >
+    <Claude>
+      Monitor the repository and respond to changes
+    </Claude>
+  </Ralph>
 </SmithersProvider>
 ```
 
 **Custom Iteration Limits:**
-You can also set custom limits based on your workflow needs:
 
 ```tsx
 // Quick task - only needs a few iterations
-<SmithersProvider maxIterations={5}>
-  <Claude>Fix the linting errors</Claude>
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph id="main" condition={() => !done} maxIterations={5}>
+    <Claude>Fix the linting errors</Claude>
+  </Ralph>
 </SmithersProvider>
 
 // Complex multi-phase workflow
-<SmithersProvider maxIterations={50}>
-  <MultiPhaseOrchestration />
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph id="main" condition={() => phase !== "complete"} maxIterations={50}>
+    <MultiPhaseOrchestration />
+  </Ralph>
 </SmithersProvider>
 
 // Long-running agent
-<SmithersProvider maxIterations={Infinity}>
-  <AutonomousAgent />
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph id="main" condition={() => true} maxIterations={Infinity}>
+    <AutonomousAgent />
+  </Ralph>
 </SmithersProvider>
 ```
 
@@ -595,6 +606,7 @@ import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
+  Ralph,
   Claude,
   If,
   useSmithers,
@@ -645,13 +657,10 @@ function App() {
   const done = Boolean(doneRaw);
 
   return (
-    <SmithersProvider
-      db={db}
-      executionId={executionId}
-      maxIterations={10}
-      stopped={done}  // Explicit stop condition
-    >
-      <RetryWorkflow />
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph id="main" condition={() => !done} maxIterations={10}>
+        <RetryWorkflow />
+      </Ralph>
     </SmithersProvider>
   );
 }
@@ -667,7 +676,7 @@ await db.close();
 3. `db.state.set("attempts", 1)` triggers re-render
 4. Loop iterates, Claude runs again
 5. Tests pass → `db.state.set("done", 1)`
-6. `stopped={done}` becomes `true`, loop exits
+6. `condition={() => !done}` returns `false`, loop exits
 
 ## Next Steps
 

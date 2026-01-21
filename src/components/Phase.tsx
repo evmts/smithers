@@ -1,5 +1,6 @@
 // Phase component with automatic SQLite-backed state management
 // Phases are always rendered in output, but only active phase renders children
+// REQUIRES: Must be used inside a <Ralph> or <While> loop
 
 import { useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers, ExecutionBoundary } from './SmithersProvider.js'
@@ -7,6 +8,7 @@ import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'
 import { StepRegistryProvider } from './Step.js'
 import { createLogger, type Logger } from '../debug/index.js'
 import { useEffectOnValueChange } from '../reconciler/hooks.js'
+import { useRequireRalph } from './While.js'
 
 type PhaseStatus = 'pending' | 'active' | 'completed' | 'skipped' | 'error'
 
@@ -69,7 +71,11 @@ export interface PhaseProps {
  * ```
  */
 export function Phase(props: PhaseProps): ReactNode {
-  const { db, ralphCount, executionEnabled } = useSmithers()
+  // Phase requires Ralph/While for iteration-based progression
+  const ralphCtx = useRequireRalph('Phase')
+  
+  const { db, executionEnabled } = useSmithers()
+  const ralphCount = ralphCtx.iteration
   const registry = usePhaseRegistry()
   const myIndex = usePhaseIndex(props.name)
 

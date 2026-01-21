@@ -586,3 +586,53 @@ CREATE TABLE IF NOT EXISTS vcs_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vcs_queue_status ON vcs_queue(status);
+
+-- ============================================================================
+-- 18. SUPERSMITHERS - Self-Rewriting Plan Module Storage
+-- ============================================================================
+
+-- Stores analysis results from Claude
+CREATE TABLE IF NOT EXISTS supersmithers_analyses (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  module_hash TEXT NOT NULL,
+  iteration INTEGER NOT NULL,
+  trigger TEXT NOT NULL,
+  tree_xml TEXT,
+  metrics_json TEXT,
+  errors_json TEXT,
+  analysis_result_json TEXT,
+  rewrite_recommended INTEGER NOT NULL DEFAULT 0,
+  recommendation TEXT,
+  model TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_supersmithers_analyses_module ON supersmithers_analyses(module_hash);
+CREATE INDEX IF NOT EXISTS idx_supersmithers_analyses_execution ON supersmithers_analyses(execution_id);
+
+-- Stores rewritten plan versions
+CREATE TABLE IF NOT EXISTS supersmithers_versions (
+  version_id TEXT PRIMARY KEY,
+  module_hash TEXT NOT NULL,
+  parent_version_id TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  code_tsx TEXT NOT NULL,
+  code_sha256 TEXT NOT NULL,
+  overlay_rel_path TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  analysis_json TEXT,
+  metrics_json TEXT,
+  vcs_kind TEXT,
+  vcs_commit_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_supersmithers_versions_module ON supersmithers_versions(module_hash);
+CREATE INDEX IF NOT EXISTS idx_supersmithers_versions_parent ON supersmithers_versions(parent_version_id);
+
+-- Tracks which overlay version is active per module
+CREATE TABLE IF NOT EXISTS supersmithers_active_overrides (
+  module_hash TEXT PRIMARY KEY,
+  active_version_id TEXT REFERENCES supersmithers_versions(version_id),
+  updated_at TEXT DEFAULT (datetime('now'))
+);

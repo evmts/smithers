@@ -8,8 +8,8 @@ export { ClaudeApi, type ClaudeApiProps } from './ClaudeApi.js'
 export { Amp, type AmpProps, executeAmpCLI } from './Amp.js'
 export { Codex, type CodexProps, executeCodexCLI } from './Codex.js'
 
-// Ralph - Loop controller (backwards compatibility)
-export { Ralph, type RalphProps, RalphContext } from './Ralph.js'
+// Ralph - Alias for While (backwards compatibility)
+export { Ralph, type RalphProps, useRalphIteration } from './Ralph.js'
 
 // Phase and Step - Workflow structure
 export { Phase, type PhaseProps } from './Phase.js'
@@ -59,7 +59,6 @@ export {
   SmithersProvider,
   ExecutionBoundary,
   useSmithers,
-  useRalph,
   createOrchestrationPromise,
   signalOrchestrationComplete,
   signalOrchestrationError,
@@ -72,11 +71,13 @@ export type {
   SmithersConfig,
   SmithersContextValue,
   SmithersProviderProps,
-  RalphContextType,
   GlobalStopCondition,
   OrchestrationContext,
   OrchestrationResult,
 } from './SmithersProvider.js'
+
+// Ralph/While loop utilities
+export { useRequireRalph, useRalphContext } from './While.js'
 
 // Smithers subagent component
 export { Smithers, executeSmithers } from './Smithers.js'

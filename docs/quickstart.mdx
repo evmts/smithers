@@ -95,6 +95,7 @@ import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
+  Ralph,
   Phase,
   Step,
   Claude,
@@ -114,27 +115,29 @@ if (incomplete) {
 
 function Workflow() {
   return (
-    <SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-      <Phase name="research">
-        <Step name="analyze">
-          <Claude>Analyze the codebase structure.</Claude>
-        </Step>
-      </Phase>
+    <SmithersProvider db={db} executionId={executionId}>
+      <Ralph id="workflow" condition={() => true} maxIterations={10}>
+        <Phase name="research">
+          <Step name="analyze">
+            <Claude>Analyze the codebase structure.</Claude>
+          </Step>
+        </Phase>
 
-      <Phase name="implement">
-        <Step name="code">
-          <Claude>Implement the feature.</Claude>
-        </Step>
-        <Step name="test">
-          <Claude>Write tests.</Claude>
-        </Step>
-      </Phase>
+        <Phase name="implement">
+          <Step name="code">
+            <Claude>Implement the feature.</Claude>
+          </Step>
+          <Step name="test">
+            <Claude>Write tests.</Claude>
+          </Step>
+        </Phase>
 
-      <Phase name="review">
-        <Step name="review">
-          <Claude>Review all changes.</Claude>
-        </Step>
-      </Phase>
+        <Phase name="review">
+          <Step name="review">
+            <Claude>Review all changes.</Claude>
+          </Step>
+        </Phase>
+      </Ralph>
     </SmithersProvider>
   );
 }
@@ -161,7 +164,9 @@ try {
 
 **`db.execution.findIncomplete`**: Finds crashed executions to resume.
 
-**`SmithersProvider`**: Root component. Runs the reactive render loop.
+**`SmithersProvider`**: Root component. Provides database and execution context.
+
+**`Ralph`**: Runs the reactive render loop for iterative workflows.
 
 **`Phase`**: Sequential stages. Only the active phase executes.
 

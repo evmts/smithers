@@ -364,26 +364,15 @@ describe('Ralph backwards compatibility', () => {
     expect(typeof Ralph).toBe('function')
   })
 
-  test('RalphContext is exported from Ralph.tsx', async () => {
-    const { RalphContext } = await import('./Ralph.js')
-    expect(RalphContext).toBeDefined()
+  test('useRalphIteration is exported from Ralph.tsx', async () => {
+    const { useRalphIteration } = await import('./Ralph.js')
+    expect(useRalphIteration).toBeDefined()
+    expect(typeof useRalphIteration).toBe('function')
   })
 
-  test('RalphContextType is re-exported from Ralph.tsx', async () => {
+  test('RalphProps type is exported from Ralph.tsx', async () => {
     const module = await import('./Ralph.js')
     expect(module).toBeDefined()
-  })
-
-  test('orchestration signals are re-exported from Ralph.tsx', async () => {
-    const {
-      createOrchestrationPromise: cop,
-      signalOrchestrationComplete: soc,
-      signalOrchestrationError: soe,
-    } = await import('./Ralph.js')
-
-    expect(cop).toBeDefined()
-    expect(soc).toBeDefined()
-    expect(soe).toBeDefined()
   })
 })
 
@@ -408,9 +397,9 @@ describe('Index exports', () => {
     expect(index.Ralph).toBeDefined()
   })
 
-  test('exports RalphContext from index (backwards compatibility)', async () => {
+  test('exports useRalphIteration from index (backwards compatibility)', async () => {
     const index = await import('./index.js')
-    expect(index.RalphContext).toBeDefined()
+    expect(index.useRalphIteration).toBeDefined()
   })
 
   test('exports orchestration signals from index', async () => {

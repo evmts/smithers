@@ -16,11 +16,37 @@ interface WhileProps {
 interface WhileIterationContextValue {
   iteration: number
   signalComplete: () => void
+  whileId: string
 }
 
 const WhileIterationContext = createContext<WhileIterationContextValue | null>(null)
 
 export function useWhileIteration() {
+  return useContext(WhileIterationContext)
+}
+
+/**
+ * Hook that throws if not inside a Ralph or While loop.
+ * Use in components that require iterative execution (Phase, Step, etc.)
+ * @param componentName - Name of the component for error message
+ */
+export function useRequireRalph(componentName: string): WhileIterationContextValue {
+  const ctx = useContext(WhileIterationContext)
+  if (!ctx) {
+    throw new Error(
+      `<${componentName}> must be used inside a <Ralph> or <While> loop. ` +
+      `Phased workflows require iteration to advance through phases. ` +
+      `Wrap your workflow with <Ralph id="..." condition={() => true} maxIterations={10}>.`
+    )
+  }
+  return ctx
+}
+
+/**
+ * Hook to check if inside a Ralph/While loop without throwing.
+ * Returns the context if inside a loop, null otherwise.
+ */
+export function useRalphContext(): WhileIterationContextValue | null {
   return useContext(WhileIterationContext)
 }
 
@@ -96,10 +122,11 @@ export function While(props: WhileProps): ReactNode {
     }
   }
 
-  const contextValue = useMemo(() => ({
+  const contextValue = useMemo((): WhileIterationContextValue => ({
     iteration: iterationValue,
-    signalComplete: handleIterationComplete
-  }), [iterationValue])
+    signalComplete: handleIterationComplete,
+    whileId,
+  }), [iterationValue, whileId])
 
   const isRunning = statusValue === 'running'
 

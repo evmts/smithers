@@ -1,9 +1,15 @@
 ---
 title: While
-description: Iterative loop with crash-resume support
+description: Iterative loop component - provides iteration in Smithers workflows
 ---
 
 # While
+
+While provides iteration in Smithers workflows. Use it (or its alias [Ralph](/components/ralph)) to loop until a condition is met.
+
+<Note>
+Without While or Ralph, your workflow runs exactly once. Use While for iterative workflows like fix loops, phased plans, or retry patterns.
+</Note>
 
 ```tsx
 <While
