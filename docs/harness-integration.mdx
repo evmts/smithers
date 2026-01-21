@@ -51,7 +51,7 @@ When asked to create multi-agent workflows, orchestrations, or pipelines:
 
 Example structure:
 \`\`\`tsx
-import { createSmithersRoot, createSmithersDB, SmithersProvider, Phase, Step, Claude } from "smithers-orchestrator";
+import { createSmithersRoot, createSmithersDB, SmithersProvider, Ralph, Phase, Step, Claude } from "smithers-orchestrator";
 
 const db = createSmithersDB({ path: ".smithers/workflow" });
 const executionId = db.execution.start("Name", "file.tsx");
@@ -59,11 +59,13 @@ const executionId = db.execution.start("Name", "file.tsx");
 function Workflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Phase name="phase1">
-        <Step name="step1">
-          <Claude>Task description</Claude>
-        </Step>
-      </Phase>
+      <Ralph id="workflow" condition={() => !isDone} maxIterations={10}>
+        <Phase name="phase1">
+          <Step name="step1">
+            <Claude>Task description</Claude>
+          </Step>
+        </Phase>
+      </Ralph>
     </SmithersProvider>
   );
 }

@@ -76,18 +76,22 @@ By evolving a declarative plan rather than wiring up every agent interaction, Sm
 ### Sequential Phases
 
 ```tsx
-<SmithersProvider db={db} executionId={executionId} maxIterations={10}>
-  <Phase name="implement">
-    <Step name="code">
-      <Claude>Implement the feature</Claude>
-    </Step>
-    <Step name="test">
-      <Claude>Write tests</Claude>
-    </Step>
-  </Phase>
-  <Phase name="review">
-    <Claude>Review the changes</Claude>
-  </Phase>
+import { SmithersProvider, Ralph, Phase, Step, Claude } from "smithers-orchestrator";
+
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph id="workflow" condition={() => phase !== 'done'} maxIterations={10}>
+    <Phase name="implement">
+      <Step name="code">
+        <Claude>Implement the feature</Claude>
+      </Step>
+      <Step name="test">
+        <Claude>Write tests</Claude>
+      </Step>
+    </Phase>
+    <Phase name="review">
+      <Claude>Review the changes</Claude>
+    </Phase>
+  </Ralph>
 </SmithersProvider>
 ```
 

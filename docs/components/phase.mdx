@@ -17,6 +17,10 @@ Group related steps into sequential workflow phases.
 
 Phases advance when all Steps complete. Only the active phase renders children.
 
+<Note>
+Phase and Step components require `<Ralph>` or `<While>` for multi-iteration workflows. Without a loop wrapper, they execute once and stop. See [Ralph](/components/ralph).
+</Note>
+
 ## Props
 
 <ParamField path="name" type="string" required>

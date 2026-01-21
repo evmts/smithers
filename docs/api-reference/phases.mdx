@@ -30,30 +30,34 @@ db.phases.complete(phaseId);
 
 ```tsx
 <SmithersProvider db={db} executionId={executionId}>
-  <Phase name="research">
-    <Step name="research">
-      <Claude>Research the topic.</Claude>
-    </Step>
-  </Phase>
+  <Ralph id="workflow" condition={() => !isDone} maxIterations={5}>
+    <Phase name="research">
+      <Step name="research">
+        <Claude>Research the topic.</Claude>
+      </Step>
+    </Phase>
 
-  <Phase name="implementation">
-    <Step name="implement">
-      <Claude>Implement the feature.</Claude>
-    </Step>
-  </Phase>
+    <Phase name="implementation">
+      <Step name="implement">
+        <Claude>Implement the feature.</Claude>
+      </Step>
+    </Phase>
+  </Ralph>
 </SmithersProvider>
 ```
 
 ## Multi-Iteration
 
-Phases track iteration numbers for looping workflows:
+Phases track iteration numbers for looping workflows. Use `<Ralph>` or `<While>` for iteration:
 
 ```tsx
-<SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-  <Phase name="implement">
-    {/* Tracked with iteration 0, 1, 2, etc. */}
-    <Claude>Implement the feature.</Claude>
-  </Phase>
+<SmithersProvider db={db} executionId={executionId}>
+  <Ralph id="workflow" condition={() => !isDone} maxIterations={5}>
+    <Phase name="implement">
+      {/* Tracked with iteration 0, 1, 2, etc. */}
+      <Claude>Implement the feature.</Claude>
+    </Phase>
+  </Ralph>
 </SmithersProvider>
 ```
 
