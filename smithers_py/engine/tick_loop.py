@@ -28,6 +28,7 @@ from ..executors import ClaudeExecutor, RateLimitCoordinator
 from ..executors.base import TaskStatus, StreamEvent, AgentResult
 from .events import EventSystem
 from .node_identity import NodeIdentityTracker, assign_node_ids, PlanLinter
+from .task_lease import TaskLeaseManager, CancellationHandler, recover_orphans, OrphanPolicy
 
 
 @dataclass
@@ -96,10 +97,14 @@ class TickLoop:
         # Event system
         self.event_system = EventSystem(db)
 
-        # Task tracking
+        # Task tracking with lease management for crash safety (PRD 7.3)
         self.running_tasks: Set[str] = set()
         self.task_futures: Dict[str, asyncio.Task] = {}
         self.task_results: Dict[str, AgentResult] = {}  # Store results for event handling
+        
+        # Task lease manager for crash-safe execution
+        self.lease_manager = TaskLeaseManager(db)
+        self.cancellation_handler = CancellationHandler(db)
 
     async def run(self) -> None:
         """
@@ -111,6 +116,13 @@ class TickLoop:
         print(f"🎬 Starting tick loop for execution {self.execution_id}")
 
         try:
+            # Recover orphaned tasks on startup (PRD 7.3.3)
+            orphan_actions = await recover_orphans(self.db, OrphanPolicy.RETRY, max_retries=3)
+            if orphan_actions:
+                print(f"⚠️  Recovered {len(orphan_actions)} orphaned tasks from previous run")
+                for action in orphan_actions:
+                    print(f"    - {action.task_id}: {action.action}")
+
             while True:
                 await self._run_single_frame()
 
@@ -252,6 +264,11 @@ class TickLoop:
             # Note: unmounted nodes are no longer in current_ids,
             # but we still need their IDs for cancellation
             changes["unmounted"].append(node_id)
+            
+            # Request cancellation for unmounted nodes with running tasks (PRD 7.3.4)
+            if node_id in self.running_tasks:
+                print(f"    🛑 Requesting cancellation for unmounted node: {node_id}")
+                self.cancellation_handler.request_cancel(node_id)
 
         # Update event system with current mounted nodes
         # Convert to dict format expected by event system
@@ -358,8 +375,9 @@ class TickLoop:
             for node_id, node in runnable_nodes:
                 # Mark as running in identity tracker
                 self.identity_tracker.mark_running(node_id)
-                # Start execution for each runnable node
-                task = asyncio.create_task(self._execute_node(node, node_id))
+                
+                # Start execution with lease management for each runnable node
+                task = asyncio.create_task(self._execute_node_with_lease(node, node_id))
                 self.task_futures[node_id] = task
                 self.running_tasks.add(node_id)
         elif not completed_tasks:
@@ -418,8 +436,15 @@ class TickLoop:
                 runnable.append((node_id, node))
         return runnable
 
-    async def _execute_node(self, node: Node, node_id: str) -> None:
-        """Execute a runnable node and store its result."""
+    async def _execute_node_with_lease(self, node: Node, node_id: str) -> None:
+        """Execute a runnable node with lease management for crash safety.
+        
+        Per PRD section 7.3.2:
+        - Acquires lease before starting execution
+        - Starts heartbeat loop while running
+        - Releases lease on completion
+        - Checks for cancellation signals
+        """
         from smithers_py.nodes import ClaudeNode
 
         if not isinstance(node, ClaudeNode):
@@ -427,6 +452,12 @@ class TickLoop:
 
         try:
             print(f"    🤖 Executing Claude node {node_id}")
+            
+            # Start heartbeat for this task (extends lease periodically)
+            self.lease_manager.start_heartbeat(node_id)
+
+            # Get cancellation event to check during execution
+            cancel_event = self.cancellation_handler.get_cancellation_event(node_id)
 
             # Execute through the Claude executor
             result = None
@@ -437,6 +468,12 @@ class TickLoop:
                 execution_id=self.execution_id,
                 max_turns=node.max_turns
             ):
+                # Check for cancellation signal
+                if cancel_event.is_set():
+                    print(f"    🛑 Claude node {node_id} cancelled")
+                    await self.cancellation_handler.mark_cancelled(node_id)
+                    return  # Exit without storing result
+                    
                 if isinstance(event, StreamEvent):
                     # Handle streaming events
                     if node.on_progress and event.kind == "token":
@@ -454,6 +491,11 @@ class TickLoop:
                 self.task_results[node_id] = result
                 print(f"    ✅ Claude node {node_id} completed with status: {result.status}")
 
+        except asyncio.CancelledError:
+            print(f"    🛑 Claude node {node_id} cancelled (asyncio)")
+            await self.cancellation_handler.mark_cancelled(node_id)
+            raise
+            
         except Exception as e:
             print(f"    ❌ Claude node {node_id} failed: {e}")
             # Create error result for event handling
@@ -468,6 +510,15 @@ class TickLoop:
                 error_message=str(e),
                 error_type=type(e).__name__
             )
+            
+        finally:
+            # Always stop heartbeat and release lease
+            self.lease_manager.stop_heartbeat(node_id)
+            await self.lease_manager.release_lease(node_id)
+
+    async def _execute_node(self, node: Node, node_id: str) -> None:
+        """Legacy execute method - redirects to lease-aware version."""
+        await self._execute_node_with_lease(node, node_id)
 
     def _is_quiescent(self) -> bool:
         """
