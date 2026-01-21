@@ -14,7 +14,14 @@ program
     "AI orchestration framework - launches OpenCode with Smithers tools",
   )
   .version(pkg.version)
-  .action(async () => {
+  .argument("[file]", "Optional .tsx workflow file to run directly")
+  .action(async (file?: string) => {
+    // If file provided, run it directly
+    if (file && file.endsWith('.tsx')) {
+      const { run } = await import("../src/commands/run.ts");
+      return run(file);
+    }
+    
     const configDir = path.join(import.meta.dirname, "..", "opencode")
     
     const configContent = JSON.stringify({
