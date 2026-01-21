@@ -12,7 +12,7 @@ import asyncio
 import json
 import uuid
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, Optional, List, type
+from typing import Any, AsyncIterator, Dict, Optional, List, Type
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
@@ -71,9 +71,10 @@ class ClaudeExecutor:
         node_id: str,
         prompt: str,
         model: str,
+        execution_id: str,
         max_turns: int = 50,
         tools: Optional[Dict[str, Any]] = None,
-        schema: Optional[type[BaseModel]] = None,
+        schema: Optional[Type[BaseModel]] = None,
         resume_from: Optional[str] = None,
     ) -> AsyncIterator[StreamEvent | AgentResult]:
         """Execute a Claude agent with streaming support.
@@ -305,7 +306,7 @@ class ClaudeExecutor:
     async def _persist_result(self, result: AgentResult) -> None:
         """Persist agent result to database."""
         await self.db.save_agent_result(
-            execution_id=result.run_id,  # Using run_id as execution_id for now
+            execution_id=execution_id,
             node_id=result.node_id,
             run_id=result.run_id,
             model=result.model,

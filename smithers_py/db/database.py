@@ -235,6 +235,118 @@ class TasksModule:
             self.db.commit()
 
 
+class ArtifactsModule:
+    """Artifacts storage module for the spec-required artifacts system"""
+
+    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection]):
+        self.db = db_connection
+        self._is_async = isinstance(db_connection, aiosqlite.Connection)
+
+    async def create(self, execution_id: str, node_id: Optional[str], frame_id: Optional[int],
+                     key: Optional[str], name: str, artifact_type: str, content: Dict[str, Any]) -> str:
+        """Create a new artifact"""
+        artifact_id = str(uuid.uuid4())
+        content_json = json.dumps(content)
+        now = datetime.now().isoformat()
+
+        if self._is_async:
+            await self.db.execute(
+                """INSERT INTO artifacts (id, execution_id, node_id, frame_id, key, name, type, content_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (artifact_id, execution_id, node_id, frame_id, key, name, artifact_type, content_json, now, now)
+            )
+            await self.db.commit()
+        else:
+            self.db.execute(
+                """INSERT INTO artifacts (id, execution_id, node_id, frame_id, key, name, type, content_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (artifact_id, execution_id, node_id, frame_id, key, name, artifact_type, content_json, now, now)
+            )
+            self.db.commit()
+
+        return artifact_id
+
+    async def update(self, execution_id: str, key: str, content: Dict[str, Any]) -> bool:
+        """Update an existing keyed artifact"""
+        if not key:
+            raise ValueError("Key is required for updating artifacts")
+
+        content_json = json.dumps(content)
+        now = datetime.now().isoformat()
+
+        if self._is_async:
+            cursor = await self.db.execute(
+                "UPDATE artifacts SET content_json = ?, updated_at = ? WHERE execution_id = ? AND key = ?",
+                (content_json, now, execution_id, key)
+            )
+            await self.db.commit()
+            return cursor.rowcount > 0
+        else:
+            cursor = self.db.execute(
+                "UPDATE artifacts SET content_json = ?, updated_at = ? WHERE execution_id = ? AND key = ?",
+                (content_json, now, execution_id, key)
+            )
+            self.db.commit()
+            return cursor.rowcount > 0
+
+    async def get(self, execution_id: str, key: str) -> Optional[Dict[str, Any]]:
+        """Get a keyed artifact"""
+        if self._is_async:
+            async with self.db.execute(
+                "SELECT id, name, type, content_json, created_at, updated_at FROM artifacts WHERE execution_id = ? AND key = ?",
+                (execution_id, key)
+            ) as cursor:
+                row = await cursor.fetchone()
+        else:
+            row = self.db.execute(
+                "SELECT id, name, type, content_json, created_at, updated_at FROM artifacts WHERE execution_id = ? AND key = ?",
+                (execution_id, key)
+            ).fetchone()
+
+        if row:
+            return {
+                'id': row[0],
+                'name': row[1],
+                'type': row[2],
+                'content': json.loads(row[3]),
+                'created_at': row[4],
+                'updated_at': row[5]
+            }
+        return None
+
+    async def list(self, execution_id: str, artifact_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List artifacts for an execution, optionally filtered by type"""
+        query = "SELECT id, node_id, frame_id, key, name, type, content_json, created_at, updated_at FROM artifacts WHERE execution_id = ?"
+        params = [execution_id]
+
+        if artifact_type:
+            query += " AND type = ?"
+            params.append(artifact_type)
+
+        query += " ORDER BY created_at DESC"
+
+        if self._is_async:
+            async with self.db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+        else:
+            rows = self.db.execute(query, params).fetchall()
+
+        return [
+            {
+                'id': row[0],
+                'node_id': row[1],
+                'frame_id': row[2],
+                'key': row[3],
+                'name': row[4],
+                'type': row[5],
+                'content': json.loads(row[6]),
+                'created_at': row[7],
+                'updated_at': row[8]
+            }
+            for row in rows
+        ]
+
+
 class RenderFramesModule:
     """Render frame storage for time-travel debugging"""
 
@@ -313,6 +425,7 @@ class SmithersDB:
         self.state: Optional[SqliteStore] = None
         self.tasks: Optional[TasksModule] = None
         self.frames: Optional[RenderFramesModule] = None
+        self.artifacts: Optional[ArtifactsModule] = None
 
     async def connect(self) -> None:
         """Initialize database connection and modules"""
@@ -331,6 +444,7 @@ class SmithersDB:
         self.state = SqliteStore(self._connection)
         self.tasks = TasksModule(self._connection)
         self.frames = RenderFramesModule(self._connection)
+        self.artifacts = ArtifactsModule(self._connection)
 
         self._initialized = True
 
@@ -394,6 +508,116 @@ class SmithersDB:
         if not self._connection:
             raise RuntimeError("Database not connected. Call connect() first.")
         return self._connection
+
+    @property
+    def current_execution_id(self) -> Optional[str]:
+        """Get current execution ID from ExecutionModule"""
+        if self.execution:
+            return self.execution._current_execution_id
+        return None
+
+    async def record_event(self, execution_id: str, source: str, node_id: str, event_type: str, payload_json: Dict[str, Any]) -> None:
+        """Record an event for audit trail"""
+        timestamp = datetime.now().isoformat()
+        payload_str = json.dumps(payload_json)
+
+        if self.is_async:
+            await self._connection.execute(
+                """INSERT INTO events (execution_id, source, node_id, event_type, payload, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (execution_id, source, node_id, event_type, payload_str, timestamp)
+            )
+            await self._connection.commit()
+        else:
+            self._connection.execute(
+                """INSERT INTO events (execution_id, source, node_id, event_type, payload, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (execution_id, source, node_id, event_type, payload_str, timestamp)
+            )
+            self._connection.commit()
+
+    async def get_agent_history(self, run_id: str) -> Optional[str]:
+        """Get agent message history for resuming"""
+        if self.is_async:
+            async with self._connection.execute(
+                "SELECT message_history FROM agents WHERE run_id = ?", (run_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+        else:
+            row = self._connection.execute(
+                "SELECT message_history FROM agents WHERE run_id = ?", (run_id,)
+            ).fetchone()
+
+        return row[0] if row else None
+
+    async def save_agent_result(self, execution_id: str, node_id: str, run_id: str, model: str,
+                               status: str, started_at: datetime, ended_at: Optional[datetime],
+                               turns_used: int, usage_json: str, output_text: Optional[str],
+                               output_structured_json: Optional[str], error_json: Optional[str]) -> None:
+        """Save agent execution result"""
+        if self.is_async:
+            await self._connection.execute(
+                """INSERT OR REPLACE INTO agents
+                   (run_id, execution_id, node_id, model, status, started_at, ended_at,
+                    turns_used, usage, output_text, output_structured, error_details)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (run_id, execution_id, node_id, model, status, started_at.isoformat(),
+                 ended_at.isoformat() if ended_at else None, turns_used, usage_json,
+                 output_text, output_structured_json, error_json)
+            )
+            await self._connection.commit()
+        else:
+            self._connection.execute(
+                """INSERT OR REPLACE INTO agents
+                   (run_id, execution_id, node_id, model, status, started_at, ended_at,
+                    turns_used, usage, output_text, output_structured, error_details)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (run_id, execution_id, node_id, model, status, started_at.isoformat(),
+                 ended_at.isoformat() if ended_at else None, turns_used, usage_json,
+                 output_text, output_structured_json, error_json)
+            )
+            self._connection.commit()
+
+    async def save_tool_call(self, run_id: str, tool_name: str, input_json: str,
+                           output_json: Optional[str], error: Optional[str],
+                           started_at: datetime, ended_at: Optional[datetime],
+                           duration_ms: int) -> None:
+        """Save tool call record"""
+        call_id = str(uuid.uuid4())
+
+        if self.is_async:
+            await self._connection.execute(
+                """INSERT INTO tool_calls
+                   (id, run_id, tool_name, input, output, error, started_at, ended_at, duration_ms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (call_id, run_id, tool_name, input_json, output_json, error,
+                 started_at.isoformat(), ended_at.isoformat() if ended_at else None, duration_ms)
+            )
+            await self._connection.commit()
+        else:
+            self._connection.execute(
+                """INSERT INTO tool_calls
+                   (id, run_id, tool_name, input, output, error, started_at, ended_at, duration_ms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (call_id, run_id, tool_name, input_json, output_json, error,
+                 started_at.isoformat(), ended_at.isoformat() if ended_at else None, duration_ms)
+            )
+            self._connection.commit()
+
+    async def update_agent_status(self, run_id: str, status: str) -> None:
+        """Update agent execution status"""
+        if self.is_async:
+            await self._connection.execute(
+                "UPDATE agents SET status = ? WHERE run_id = ?",
+                (status, run_id)
+            )
+            await self._connection.commit()
+        else:
+            self._connection.execute(
+                "UPDATE agents SET status = ? WHERE run_id = ?",
+                (status, run_id)
+            )
+            self._connection.commit()
 
 
 # Convenience functions for common patterns

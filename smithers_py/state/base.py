@@ -3,6 +3,13 @@
 from typing import Protocol, Any, Optional, Dict, List
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+
+
+class StoreTarget(Enum):
+    """Target store for write operations."""
+    VOLATILE = "volatile"
+    SQLITE = "sqlite"
 
 
 @dataclass
@@ -12,6 +19,7 @@ class WriteOp:
     value: Any
     trigger: Optional[str] = None
     timestamp: datetime = None
+    target: StoreTarget = StoreTarget.SQLITE  # Default to SQLite for backward compat
 
     def __post_init__(self):
         if self.timestamp is None:

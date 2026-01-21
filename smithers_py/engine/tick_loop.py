@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from ..db.database import SmithersDB
 from ..state.volatile import VolatileStore
 from ..state.sqlite import SqliteStore
+from ..state.base import StoreTarget
 from ..nodes import Node
 from ..serialize.xml import serialize_to_xml
 from ..executors import ClaudeExecutor, RateLimitCoordinator
@@ -71,8 +72,8 @@ class TickLoop:
         self.app_component = app_component
         self.execution_id = execution_id
 
-        # State management
-        self.sqlite_state = SqliteStore(db.db_path, execution_id)
+        # State management - use shared DB connection
+        self.sqlite_state = SqliteStore(db.connection, execution_id)
 
         # Frame tracking
         self.frame_id = 0
@@ -102,15 +103,26 @@ class TickLoop:
         """
         Main tick loop with frame coalescing.
 
-        For M0: renders once and exits since no runnable nodes exist yet.
-        Future versions will loop until no pending work remains.
+        Loops until quiescence: no running tasks, no pending state writes,
+        and no effects that require rerender.
         """
         print(f"🎬 Starting tick loop for execution {self.execution_id}")
 
         try:
-            # M0: Single frame render and exit
-            await self._run_single_frame()
-            print("✅ M0 tick loop completed successfully")
+            while True:
+                await self._run_single_frame()
+
+                # Check for quiescence
+                if self._is_quiescent():
+                    print("🏁 Reached quiescence - no more work to do")
+                    break
+
+                # Calculate next tick delay
+                delay = self._next_tick_delay()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+
+            print("✅ Tick loop completed successfully")
 
         except Exception as e:
             print(f"❌ Tick loop failed: {e}")
@@ -332,8 +344,12 @@ class TickLoop:
             # Apply all state changes from event handlers
             if all_state_changes:
                 print(f"    💾 Applying {len(all_state_changes)} state changes from event handlers")
-                # Queue changes to be applied in Phase 7
-                self.sqlite_state.enqueue(all_state_changes)
+                # Route changes to appropriate store based on target
+                for op in all_state_changes:
+                    if op.target == StoreTarget.VOLATILE:
+                        self.volatile_state.set(op.key, op.value, op.trigger)
+                    else:  # StoreTarget.SQLITE
+                        self.sqlite_state.set(op.key, op.value, op.trigger)
 
         # Find runnable nodes in the mounted set
         runnable_nodes = self._find_runnable(changes.get("mounted", []))
@@ -405,6 +421,7 @@ class TickLoop:
                 node_id=node_id,
                 prompt=node.prompt,
                 model=node.model,
+                execution_id=self.execution_id,
                 max_turns=node.max_turns
             ):
                 if isinstance(event, StreamEvent):
@@ -438,3 +455,41 @@ class TickLoop:
                 error_message=str(e),
                 error_type=type(e).__name__
             )
+
+    def _is_quiescent(self) -> bool:
+        """
+        Check if the system has reached quiescence.
+
+        Returns True when:
+        - No tasks are running
+        - No state writes are pending
+        - No effects requested rerender
+        """
+        has_running_tasks = bool(self.running_tasks)
+        has_pending_writes = (
+            self.volatile_state.has_pending_writes() or
+            self.sqlite_state.has_pending_writes()
+        )
+
+        if has_running_tasks:
+            print(f"    ⏳ Still running {len(self.running_tasks)} tasks")
+        if has_pending_writes:
+            print("    ⏳ Pending state writes need to be flushed")
+
+        return not has_running_tasks and not has_pending_writes
+
+    def _next_tick_delay(self) -> float:
+        """
+        Calculate delay before next tick.
+
+        Returns time to wait in seconds, accounting for frame throttling.
+        """
+        now = time.time()
+        elapsed = now - self.last_frame_time
+
+        if elapsed < self.min_frame_interval:
+            # Need to wait before next frame
+            return self.min_frame_interval - elapsed
+        else:
+            # Can run immediately
+            return 0

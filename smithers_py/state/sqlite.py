@@ -11,16 +11,14 @@ from .base import StateStore, WriteOp
 class SqliteStore:
     """Execution-scoped SQLite state store with batched writes and audit logging."""
 
-    def __init__(self, db_path: str, execution_id: str) -> None:
-        """Initialize with database path and execution ID.
+    def __init__(self, db_connection: sqlite3.Connection, execution_id: str) -> None:
+        """Initialize with database connection and execution ID.
 
         Args:
-            db_path: Path to SQLite database file
+            db_connection: Existing SQLite database connection
             execution_id: Unique ID for this execution scope
         """
-        self.db_path = db_path
-        self.db = sqlite3.connect(db_path)
-        self.db.row_factory = sqlite3.Row
+        self.db = db_connection
         self.execution_id = execution_id
         self._write_queue: List[WriteOp] = []
         self._init_tables()
@@ -192,10 +190,9 @@ class SqliteStore:
         return transitions
 
     def close(self) -> None:
-        """Close the database connection."""
-        if self.db:
-            self.db.close()
-            self.db = None
+        """Clear references but don't close the shared connection."""
+        # Don't close the connection as it's shared/managed externally
+        self.db = None
 
     def __enter__(self):
         return self

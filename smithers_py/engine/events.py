@@ -13,7 +13,7 @@ import traceback
 
 from ..nodes import Node, ClaudeNode
 from ..executors.base import AgentResult, TaskStatus
-from ..state.base import WriteOp
+from ..state.base import WriteOp, StoreTarget
 from .handler_transaction import HandlerTransaction
 
 
@@ -142,7 +142,8 @@ class EventSystem:
                         op = WriteOp(
                             key=key,
                             value=value,
-                            trigger=trigger or f"{handler_name}:{node_id}"
+                            trigger=trigger or f"{handler_name}:{node_id}",
+                            target=StoreTarget.SQLITE
                         )
                         self._tx.add_action(op)
 
@@ -162,9 +163,10 @@ class EventSystem:
                     def set(self, key: str, value: Any):
                         # Queue in transaction
                         op = WriteOp(
-                            key=f"v:{key}",  # Prefix for volatile
+                            key=key,  # No prefix needed, StoreTarget handles routing
                             value=value,
-                            trigger=f"{handler_name}:{node_id}"
+                            trigger=f"{handler_name}:{node_id}",
+                            target=StoreTarget.VOLATILE
                         )
                         self._tx.add_action(op)
 
