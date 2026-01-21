@@ -67,6 +67,26 @@ from .frame_storm import (
     compute_plan_hash,
     compute_state_hash,
 )
+from .fs_watcher import (
+    FileWatcher,
+    FileSystemContext,
+    FileRecord,
+)
+from .render_purity import (
+    FramePhase,
+    RenderPhaseWriteError,
+    RenderPhaseTaskError,
+    RenderPhaseDbWriteError,
+    get_current_phase,
+    set_current_phase,
+    is_render_phase,
+    phase_context,
+    enforce_purity,
+    check_write_allowed,
+    check_task_allowed,
+    PurityGuardedState,
+    PurityAuditor,
+)
 
 __all__ = [
     # Core loop
@@ -131,4 +151,22 @@ __all__ = [
     "FrameStormError",
     "compute_plan_hash",
     "compute_state_hash",
+    # File system watcher (PRD 2.2.3, 8.12)
+    "FileWatcher",
+    "FileSystemContext",
+    "FileRecord",
+    # Render purity (PRD 7.1.2)
+    "FramePhase",
+    "RenderPhaseWriteError",
+    "RenderPhaseTaskError",
+    "RenderPhaseDbWriteError",
+    "get_current_phase",
+    "set_current_phase",
+    "is_render_phase",
+    "phase_context",
+    "enforce_purity",
+    "check_write_allowed",
+    "check_task_allowed",
+    "PurityGuardedState",
+    "PurityAuditor",
 ]
