@@ -1158,15 +1158,15 @@ describe('Claude callbacks', () => {
     db.close()
   })
 
-  test('onProgress is called with CLI output chunks', async () => {
-    const progressChunks: string[] = []
+  test('onStreamPart is called with parsed stream events', async () => {
+    const streamParts: unknown[] = []
     
     executeClaudeCLISpy = spyOn(executor, 'executeClaudeCLI').mockImplementation(async (options) => {
-      options.onProgress?.('Chunk 1')
-      options.onProgress?.('Chunk 2')
-      options.onProgress?.('Chunk 3')
+      options.onProgress?.('{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}\n')
+      options.onProgress?.('{"type":"content_block_delta","delta":{"type":"text_delta","text":" World"}}\n')
+      options.onProgress?.('{"type":"content_block_stop"}\n')
       return {
-        output: 'Complete',
+        output: 'Hello World',
         tokensUsed: { input: 100, output: 50 },
         turnsUsed: 1,
         stopReason: 'completed',
@@ -1179,15 +1179,15 @@ describe('Claude callbacks', () => {
     
     await root.render(
       <SmithersProvider db={db} executionId={executionId} maxIterations={1}>
-        <Claude model="sonnet" onProgress={(chunk) => progressChunks.push(chunk)}>
+        <Claude model="sonnet" onStreamPart={(part) => streamParts.push(part)}>
           Test prompt
         </Claude>
       </SmithersProvider>
     )
     
-    await waitForCondition(() => progressChunks.length >= 3, 1000, 10, 'onProgress')
+    await waitForCondition(() => streamParts.length >= 2, 1000, 10, 'onStreamPart')
     
-    expect(progressChunks.length).toBeGreaterThanOrEqual(1)
+    expect(streamParts.length).toBeGreaterThanOrEqual(2)
     
     root.dispose()
   })
