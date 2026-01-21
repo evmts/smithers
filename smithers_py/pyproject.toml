@@ -9,6 +9,9 @@ dependencies = [
     "aiosqlite",
 ]
 
+[project.scripts]
+smithers_py = "smithers_py.__main__:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest",
