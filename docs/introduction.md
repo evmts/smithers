@@ -149,7 +149,7 @@ The React tree is the observability. What you write is what gets logged.
 
 ```tsx
 <Phase name="deploy">
-  <Step name="build" status="complete">
+  <Step name="build" status="completed">
     ...
   </Step>
   <Step name="test" status="running">

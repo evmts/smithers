@@ -128,16 +128,18 @@ if (incomplete) {
 }
 
 function Workflow() {
+  const phase = db.state.get('phase') ?? 'research';
+  
   return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Ralph id="workflow" condition={() => true} maxIterations={10}>
-        <Phase name="research">
+      <Ralph id="workflow" condition={() => phase !== 'done'} maxIterations={10}>
+        <Phase name="research" onComplete={() => db.state.set('phase', 'implement')}>
           <Step name="analyze">
             <Claude>Analyze the codebase structure.</Claude>
           </Step>
         </Phase>
 
-        <Phase name="implement">
+        <Phase name="implement" onComplete={() => db.state.set('phase', 'review')}>
           <Step name="code">
             <Claude>Implement the feature.</Claude>
           </Step>
@@ -146,7 +148,7 @@ function Workflow() {
           </Step>
         </Phase>
 
-        <Phase name="review">
+        <Phase name="review" onComplete={() => db.state.set('phase', 'done')}>
           <Step name="review">
             <Claude>Review all changes.</Claude>
           </Step>
