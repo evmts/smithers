@@ -42,12 +42,8 @@ export const ClaudeAdapter: AgentAdapter<ClaudeProps, CLIExecutionOptions> = {
         toolsRecord[tool.name] = tool
       }
       const serverPath = path.resolve(import.meta.dirname, '../../tools/smithers-mcp-server.ts')
-      try {
-        const smithersMcpServer = createSmithersToolServer(toolsRecord, serverPath)
-        allMcpServers.push(smithersMcpServer)
-      } catch {
-        // createSmithersToolServer throws if SMITHERS_MCP_ENABLED !== '1', silently skip
-      }
+      const smithersMcpServer = createSmithersToolServer(toolsRecord, serverPath)
+      allMcpServers.push(smithersMcpServer)
     }
     
     // Generate MCP config file if needed
