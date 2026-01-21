@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 
 import { Command } from "commander";
-import { spawn } from "bun";
 import path from "path";
 import { DEFAULT_DB_DIR, DEFAULT_MAIN_FILE, resolveDbPaths } from "../src/commands/cli-utils.ts";
 import pkg from "../package.json";
@@ -22,20 +21,64 @@ program
       return run(file);
     }
     
-    const configDir = path.join(import.meta.dirname, "..", "opencode")
+    // Use URL-based resolution that works regardless of build location
+    const pkgRoot = new URL("../..", import.meta.url).pathname
+    const configDir = path.join(pkgRoot, "opencode")
+    const configFile = path.join(configDir, "opencode.json")
     
+    // Include permissions in OPENCODE_CONFIG_CONTENT for strict enforcement
+    // Project config loads before inline config, so inline takes precedence
     const configContent = JSON.stringify({
-      default_agent: "smithers"
+      default_agent: "smithers",
+      permission: {
+        "*": "deny",
+        "read": {
+          "*": "allow",
+          "*.env": "deny",
+          "*.env.*": "deny",
+          ".env": "deny",
+          "*.env.example": "allow"
+        },
+        "smithers_discover": "allow",
+        "smithers_create": "allow",
+        "smithers_run": "allow",
+        "smithers_resume": "allow",
+        "smithers_status": "allow",
+        "smithers_frames": "allow",
+        "smithers_cancel": "allow",
+        "smithers_glob": "allow",
+        "smithers_grep": "allow",
+        "task": {
+          "*": "deny",
+          "planner": "allow",
+          "explorer": "allow",
+          "librarian": "allow",
+          "oracle": "allow",
+          "monitor": "allow"
+        },
+        "edit": "deny",
+        "write": "deny",
+        "bash": "deny",
+        "websearch": "deny",
+        "webfetch": "deny",
+        "codesearch": "deny",
+        "glob": "deny",
+        "grep": "deny",
+        "list": "deny"
+      }
     })
 
-    const proc = spawn({
-      cmd: ["opencode", "--agent", "smithers"],
+    const proc = Bun.spawn(["opencode", "--agent", "smithers"], {
+      cwd: process.cwd(),
       env: {
         ...process.env,
         OPENCODE_CONFIG_DIR: configDir,
+        OPENCODE_CONFIG: configFile,
         OPENCODE_CONFIG_CONTENT: configContent
       },
-      stdio: ["inherit", "inherit", "inherit"]
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit"
     })
 
     const exitCode = await proc.exited
