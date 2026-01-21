@@ -16,6 +16,13 @@ from smithers_py.nodes import (
     StepNode,
     RalphNode,
     ClaudeNode,
+    WhileNode,
+    FragmentNode,
+    EachNode,
+    StopNode,
+    EndNode,
+    SmithersNode,
+    EffectNode,
 )
 
 
@@ -39,10 +46,17 @@ INTRINSICS: Dict[str, Callable[..., Node]] = {
     "step": StepNode,
     "ralph": RalphNode,
     "claude": ClaudeNode,
+    "while": WhileNode,
+    "fragment": FragmentNode,
+    "each": EachNode,
+    "stop": StopNode,
+    "end": EndNode,
+    "smithers": SmithersNode,
+    "effect": EffectNode,
 }
 
 # Observable nodes that support event callbacks
-OBSERVABLE_NODES = {ClaudeNode}
+OBSERVABLE_NODES = {ClaudeNode, SmithersNode}
 
 # Valid event prop names for observable nodes
 EVENT_PROPS = {"on_finished", "on_error", "on_progress"}
@@ -76,6 +90,32 @@ def _normalize_children(children: Any) -> List[Node]:
     return [TextNode(text=str(children))]
 
 
+def _extract_event_handlers(props: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract event handler props into a separate dict for the handlers field.
+
+    Args:
+        props: The props dictionary to process
+
+    Returns:
+        Dictionary with event handlers extracted
+    """
+    handlers = {}
+    # Extract any prop that starts with 'on' and has uppercase 3rd character
+    props_to_remove = []
+    for prop_name, prop_value in props.items():
+        if (len(prop_name) > 2 and
+            prop_name.startswith('on') and
+            prop_name[2].isupper()):
+            handlers[prop_name] = prop_value
+            props_to_remove.append(prop_name)
+
+    # Remove event props from original props dict
+    for prop_name in props_to_remove:
+        props.pop(prop_name)
+
+    return handlers
+
+
 def _validate_event_props(node_class: type, props: Dict[str, Any]) -> None:
     """Validate that event props are only used on observable nodes.
 
@@ -90,8 +130,11 @@ def _validate_event_props(node_class: type, props: Dict[str, Any]) -> None:
         return  # Event props are allowed on observable nodes
 
     # Check for any event props on non-observable nodes
+    # Event props are those starting with 'on' and having uppercase 3rd character
     for prop_name in props.keys():
-        if prop_name in EVENT_PROPS:
+        if (len(prop_name) > 2 and
+            prop_name.startswith('on') and
+            prop_name[2].isupper()):
             raise EventValidationError(node_class.__name__, prop_name)
 
 
@@ -125,11 +168,29 @@ def jsx(type_: Union[str, Callable], props: Dict[str, Any] = None, *children: An
 
         node_class = INTRINSICS[type_]
 
-        # Validate event props before creating the node
-        _validate_event_props(node_class, props)
+        # Make a copy of props to avoid mutating the original
+        node_props = props.copy()
 
-        # Create the node with normalized children
-        return node_class(children=normalized_children, **props)
+        # Validate event props before creating the node
+        _validate_event_props(node_class, node_props)
+
+        # Extract event handlers for observable nodes
+        handlers = {}
+        if node_class in OBSERVABLE_NODES:
+            handlers = _extract_event_handlers(node_props)
+
+        # Create the node with normalized children and handlers
+        if handlers:
+            from smithers_py.nodes import NodeHandlers
+            node = node_class(
+                children=normalized_children,
+                handlers=NodeHandlers(**handlers),
+                **node_props
+            )
+        else:
+            node = node_class(children=normalized_children, **node_props)
+
+        return node
 
     # Handle callable types (component functions)
     if callable(type_):

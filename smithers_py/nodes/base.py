@@ -7,24 +7,33 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class NodeHandlers(BaseModel):
-    """Event handlers for node lifecycle events."""
+    """Event handlers for node lifecycle events.
 
-    on_finished: Optional[Callable[[Any], None]] = Field(
-        default=None,
-        description="Callback fired when node execution completes successfully"
-    )
-    on_error: Optional[Callable[[Exception], None]] = Field(
-        default=None,
-        description="Callback fired when node execution fails with an error"
-    )
-    on_progress: Optional[Callable[[str], None]] = Field(
-        default=None,
-        description="Callback fired during streaming output for progress updates"
-    )
+    Supports any event handler that starts with 'on' and has uppercase 3rd character.
+    Common handlers include on_finished, on_error, on_progress, but custom handlers
+    like onSuccess, onUpdate, etc. are also supported.
+    """
 
     model_config = {
         "arbitrary_types_allowed": True,
+        "extra": "allow",  # Allow arbitrary event handlers
     }
+
+    def __init__(self, **data):
+        """Initialize handlers, validating that all fields follow event naming pattern."""
+        # Validate all provided handlers follow the pattern
+        for key, value in data.items():
+            if not (len(key) > 2 and key.startswith('on') and key[2].isupper()):
+                raise ValueError(f"Handler name '{key}' must start with 'on' followed by uppercase letter")
+            if value is not None and not callable(value):
+                raise ValueError(f"Handler '{key}' must be callable or None")
+        super().__init__(**data)
+
+    def __getattr__(self, name: str) -> Optional[Callable]:
+        """Access handler by name, returning None if not set."""
+        if name.startswith('_'):
+            raise AttributeError(name)
+        return self.__dict__.get(name)
 
 
 class NodeMeta(BaseModel):
