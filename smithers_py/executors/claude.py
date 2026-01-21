@@ -12,20 +12,25 @@ import asyncio
 import json
 import uuid
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, Optional, List, Type
+from typing import Any, AsyncIterator, Dict, Optional, List, Type, Union
 
 from pydantic import BaseModel
-from pydantic_ai import Agent
-from pydantic_ai.models import KnownModelName
-from pydantic_ai.result import RunResult, Usage
-from pydantic_ai.messages import (
-    ModelMessage,
-    UserPrompt,
-    ModelTextResponse,
-    ToolCall,
-    ToolReturn,
-    ModelStructuredResponse,
-)
+
+# PydanticAI imports - may need adjustment based on version
+try:
+    from pydantic_ai import Agent
+    from pydantic_ai.models import KnownModelName
+    from pydantic_ai.result import FinalResult, RunUsage
+    from pydantic_ai.messages import ModelMessage
+    PYDANTIC_AI_AVAILABLE = True
+except ImportError:
+    # Stub types for when pydantic_ai is not available or API changed
+    Agent = None  # type: ignore
+    KnownModelName = str  # type: ignore
+    FinalResult = None  # type: ignore
+    RunUsage = None  # type: ignore
+    ModelMessage = None  # type: ignore
+    PYDANTIC_AI_AVAILABLE = False
 
 from ..db.database import SmithersDB
 from .base import (
@@ -76,7 +81,7 @@ class ClaudeExecutor:
         tools: Optional[Dict[str, Any]] = None,
         schema: Optional[Type[BaseModel]] = None,
         resume_from: Optional[str] = None,
-    ) -> AsyncIterator[StreamEvent | AgentResult]:
+    ) -> AsyncIterator[Union[StreamEvent, AgentResult]]:
         """Execute a Claude agent with streaming support.
 
         Yields StreamEvents during execution and AgentResult at the end.
@@ -205,7 +210,7 @@ class ClaudeExecutor:
         prompt: str,
         message_history: List[ModelMessage],
         result: AgentResult,
-    ) -> AsyncIterator[StreamEvent | AgentResult]:
+    ) -> AsyncIterator[Union[StreamEvent, AgentResult]]:
         """Stream agent execution with tool calls and token events."""
         # Run agent with streaming
         try:
