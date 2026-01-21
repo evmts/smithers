@@ -269,7 +269,7 @@ function DatabaseAccessExample() {
 Use reactive database queries with the `useQuery` hook:
 
 ```tsx
-import { useQuery } from "smithers-orchestrator/reactive-sqlite";
+import { useQuery } from "smithers-orchestrator/db";
 
 function TaskMonitor() {
   const { reactiveDb } = useSmithers();
@@ -293,7 +293,7 @@ function TaskMonitor() {
 ```tsx
 import { createSmithersRoot, createSmithersDB } from "smithers-orchestrator";
 import { SmithersProvider, Claude, Ralph, Phase, useSmithers, If, Stop } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 async function main() {
   const db = createSmithersDB({ path: ".smithers/example" });

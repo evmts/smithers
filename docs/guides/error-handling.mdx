@@ -18,7 +18,7 @@ description: Handle errors gracefully in Smithers workflows
 
 ```tsx
 import { useSmithers, If, Stop } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 function RetryWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
@@ -70,7 +70,7 @@ function RetryWorkflowBody() {
 
 ```tsx
 import { useSmithers, If, Claude, Human } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 function ResilientWorkflowBody() {
   const { db, reactiveDb } = useSmithers();

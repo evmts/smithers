@@ -70,7 +70,7 @@ You control iteration using the `<Ralph>` component inside `<SmithersProvider>`.
 
 ```tsx
 import { SmithersProvider, Ralph, useSmithers, Claude, If } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 function IterativeWorkflowBody({ attempts, testsPassing }) {
   const { db } = useSmithers();
@@ -165,7 +165,7 @@ db.tasks.complete(taskId);  // Loop can now advance
 `useQueryValue` makes SQLite state reactive: when the database changes, your component re-renders:
 
 ```tsx
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 function MyComponent() {
   const { db, reactiveDb } = useSmithers();
@@ -191,7 +191,7 @@ The power of the Ralph Loop comes from React reactivity:
 
 ```tsx
 import { SmithersProvider, Ralph, Claude, If } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 function PhaseWorkflowBody({ phase, setPhase }) {
   return (
@@ -613,7 +613,7 @@ import {
   If,
   useSmithers,
 } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 const db = createSmithersDB({ path: ".smithers/retry-tests.db" });
 const executionId = db.execution.start("Retry Tests", "retry.tsx");

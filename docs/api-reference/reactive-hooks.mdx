@@ -6,7 +6,7 @@ description: React hooks for reactive SQLite queries
 # Reactive Hooks
 
 ```tsx
-import { useQuery, useQueryOne, useQueryValue, useMutation } from "smithers-orchestrator/reactive-sqlite";
+import { useQuery, useQueryOne, useQueryValue, useMutation } from "smithers-orchestrator/db";
 
 function UserList() {
   const { data: users } = useQuery(db, "SELECT * FROM users WHERE active = ?", [true]);

@@ -46,8 +46,6 @@ export interface BaseAgentHookProps {
   maxRetries?: number
   tailLogCount?: number
   middleware?: SmithersMiddleware[]
-  experimentalTypedStreaming?: boolean
-  legacyLogFormat?: boolean
   recordStreamEvents?: boolean
 }
 
@@ -101,10 +99,8 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
       const logId = uuid()
       const typedStreamingEnabled = adapter.supportsTypedStreaming(props)
       const baseProps = props as BaseAgentHookProps
-      const useLegacyLogFormat = typedStreamingEnabled && (baseProps.legacyLogFormat ?? false)
       const recordStreamEvents = baseProps.recordStreamEvents ?? baseProps.reportingEnabled !== false
       const streamLogFilename = typedStreamingEnabled ? `agent-${logId}.ndjson` : `agent-${logId}.log`
-      const legacyLogFilename = useLegacyLogFormat ? `agent-${logId}.log.legacy.txt` : null
       const streamParser: StreamParserInterface | null = typedStreamingEnabled ? (adapter.createStreamParser?.() ?? null) : null
       const streamSummary: StreamSummary = { textBlocks: 0, reasoningBlocks: 0, toolCalls: 0, toolResults: 0, errors: 0 }
       const logFilename = streamLogFilename
@@ -133,7 +129,6 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
 
         if (props.reportingEnabled !== false) {
           logPath = logWriter.appendLog(logFilename, '')
-          if (legacyLogFilename) logWriter.appendLog(legacyLogFilename, '')
           currentAgentId = await db.agents.start(promptForDb, adapter.getAgentLabel(executionOptions as TOptions), systemPromptForDb, logPath)
           agentIdRef.current = currentAgentId
           log.info('Agent started', { agentId: currentAgentId, logPath })
@@ -169,7 +164,6 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
         const onProgress = (chunk: string) => {
           if (typedStreamingEnabled && streamParser) {
             const parts = streamParser.parse(chunk)
-            if (useLegacyLogFormat && legacyLogFilename) logWriter.appendLog(legacyLogFilename, chunk)
             for (const part of parts) {
               handleStreamPart(part)
               if (part.type === 'text-delta' && messageParserRef.current) { messageParserRef.current.parseChunk(part.delta); handleTailLogUpdate() }
@@ -229,7 +223,6 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
         if (isMounted()) props.onError?.(errorObj)
       } finally {
         await logWriter.flushStream(logFilename)
-        if (legacyLogFilename) await logWriter.flushStream(legacyLogFilename)
         if (taskIdRef.current) db.tasks.complete(taskIdRef.current)
       }
     })().catch(err => { const errorObj = err instanceof Error ? err : new Error(String(err)); log.error('Unhandled agent execution error', errorObj); props.onError?.(errorObj) })

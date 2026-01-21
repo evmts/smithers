@@ -6,10 +6,6 @@
 import * as path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 
-// ============================================================================
-// Types
-// ============================================================================
-
 export type CaptureType = 'review' | 'issue' | 'todo' | 'prompt'
 
 export interface ClassificationResult {
@@ -33,10 +29,6 @@ export interface GeneratedCapture {
   content: string
   isAppend: boolean
 }
-
-// ============================================================================
-// Pattern Matching Constants
-// ============================================================================
 
 // Note: Do NOT use /g flag with patterns used in .test() to avoid lastIndex issues
 const PATTERNS = {
@@ -63,10 +55,6 @@ const PATTERNS = {
     promptMention: /\bprompt\.md\b/i,
   },
 } as const
-
-// ============================================================================
-// Classification Logic
-// ============================================================================
 
 function countMatches(text: string, pattern: RegExp): number {
   // Create global version for counting
@@ -173,10 +161,6 @@ export function classifyContent(ctx: CaptureContext): ClassificationResult {
   }
 }
 
-// ============================================================================
-// Content Extraction Helpers
-// ============================================================================
-
 export function extractCommitHash(text: string): string | undefined {
   const match = text.match(/\b[0-9a-f]{7,40}\b/i)
   return match?.[0]
@@ -244,10 +228,6 @@ export function toKebabCase(str: string): string {
     .replace(/-+/g, '-')
     .slice(0, 50)
 }
-
-// ============================================================================
-// Template Generation
-// ============================================================================
 
 export function generateReviewTemplate(ctx: CaptureContext): string {
   const date = new Date().toISOString().replace('T', ' ').slice(0, 19)
@@ -339,10 +319,6 @@ export function generatePromptMd(ctx: CaptureContext): string {
   return ctx.content.trim() + '\n'
 }
 
-// ============================================================================
-// File Path Generation
-// ============================================================================
-
 function formatTimestamp(): string {
   const now = new Date()
   const pad = (n: number) => n.toString().padStart(2, '0')
@@ -380,10 +356,6 @@ export async function generateFilePath(
   }
 }
 
-// ============================================================================
-// File Writing
-// ============================================================================
-
 export async function writeCapture(generated: GeneratedCapture): Promise<void> {
   await mkdir(path.dirname(generated.filePath), { recursive: true })
   if (generated.isAppend) {
@@ -400,10 +372,6 @@ export async function writeCapture(generated: GeneratedCapture): Promise<void> {
     await Bun.write(generated.filePath, generated.content)
   }
 }
-
-// ============================================================================
-// Main Capture Function
-// ============================================================================
 
 export async function capture(ctx: CaptureContext): Promise<GeneratedCapture> {
   const cwd = ctx.cwd ?? process.cwd()

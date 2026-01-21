@@ -19,7 +19,7 @@ import {
   If,
   useSmithers,
 } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/reactive-sqlite";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 async function main() {
   const db = createSmithersDB({ path: ".smithers/feature-dev" });

@@ -232,18 +232,6 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
   middleware?: SmithersMiddleware[]
 
   /**
-   * Enable typed stream parts for Claude CLI output.
-   * @default false
-   */
-  experimentalTypedStreaming?: boolean
-
-  /**
-   * Write legacy raw text logs alongside NDJSON logs.
-   * @default false
-   */
-  legacyLogFormat?: boolean
-
-  /**
    * Record stream events to the database.
    * @default true when reportingEnabled is true
    */
