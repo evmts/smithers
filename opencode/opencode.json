@@ -1,9 +1,15 @@
 {
-  "$schema": "https://opencode.ai/config.schema.json",
+  "$schema": "https://opencode.ai/config.json",
   "permission": {
     "*": "deny",
     
-    "read": "allow",
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      ".env": "deny",
+      "*.env.example": "allow"
+    },
     
     "smithers_discover": "allow",
     "smithers_create": "allow",
@@ -15,7 +21,14 @@
     "smithers_glob": "allow",
     "smithers_grep": "allow",
     
-    "task": "deny",
+    "task": {
+      "*": "deny",
+      "planner": "allow",
+      "explorer": "allow",
+      "librarian": "allow",
+      "oracle": "allow",
+      "monitor": "allow"
+    },
     "edit": "deny",
     "write": "deny",
     "bash": "deny",
