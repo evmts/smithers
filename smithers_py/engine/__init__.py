@@ -61,6 +61,12 @@ from .phases import (
     StepProgress,
     PhaseStatus,
 )
+from .frame_storm import (
+    FrameStormGuard as FrameStormGuardNew,
+    FrameStormError,
+    compute_plan_hash,
+    compute_state_hash,
+)
 
 __all__ = [
     # Core loop
@@ -120,4 +126,9 @@ __all__ = [
     "PhaseProgress",
     "StepProgress",
     "PhaseStatus",
+    # Frame storm guard
+    "FrameStormGuardNew",
+    "FrameStormError",
+    "compute_plan_hash",
+    "compute_state_hash",
 ]
