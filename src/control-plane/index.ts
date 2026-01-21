@@ -11,7 +11,7 @@ export interface SmithersControlPlane {
   run(opts: { script: string; name?: string }): Promise<RunResult>
   resume(opts?: { executionId?: string }): Promise<RunResult>
   status(executionId: string): Promise<ExecutionStatus>
-  frames(executionId: string, opts?: { since?: number; limit?: number }): Promise<{ frames: Frame[]; cursor: number }>
+  frames(executionId: string, opts?: { since?: number; limit?: number; maxChars?: number }): Promise<{ frames: Frame[]; cursor: number }>
   cancel(executionId: string): Promise<void>
   glob(opts: { pattern: string; limit?: number }): Promise<string[]>
   grep(opts: { pattern: string; path?: string; glob?: string; caseSensitive?: boolean }): Promise<GrepMatch[]>

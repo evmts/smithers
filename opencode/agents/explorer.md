@@ -37,18 +37,28 @@ You are read-only. You observe and report.
 
 ## Smithers SQLite Schema Knowledge
 
-Smithers stores data in `.smithers/data/*.db`. Here's the schema:
+Smithers stores data in `.smithers/data/<script-name>.db`. Here's the schema:
 
 ### executions
 ```sql
 CREATE TABLE executions (
   id TEXT PRIMARY KEY,
-  file_path TEXT NOT NULL,
-  status TEXT DEFAULT 'pending',  -- pending|running|completed|failed|cancelled
-  created_at TEXT DEFAULT (datetime('now')),
+  name TEXT,                     -- Human-readable name
+  file_path TEXT NOT NULL,       -- Path to .smithers/main.tsx
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending|running|completed|failed|cancelled
+  config TEXT DEFAULT '{}',      -- JSON configuration
+  result TEXT,                   -- JSON result
+  error TEXT,
+  end_summary TEXT,              -- JSON: EndSummary from <End> component
+  end_reason TEXT,               -- Reason for ending
+  exit_code INTEGER DEFAULT 0,
+  started_at TEXT,
   completed_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
   total_iterations INTEGER DEFAULT 0,
-  error TEXT
+  total_agents INTEGER DEFAULT 0,
+  total_tool_calls INTEGER DEFAULT 0,
+  total_tokens_used INTEGER DEFAULT 0
 );
 ```
 
@@ -56,12 +66,15 @@ CREATE TABLE executions (
 ```sql
 CREATE TABLE phases (
   id TEXT PRIMARY KEY,
-  execution_id TEXT NOT NULL,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  status TEXT DEFAULT 'pending',
-  created_at TEXT DEFAULT (datetime('now')),
+  iteration INTEGER NOT NULL DEFAULT 0,  -- Ralph iteration
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending|running|completed|skipped|failed
+  started_at TEXT,
   completed_at TEXT,
-  FOREIGN KEY (execution_id) REFERENCES executions(id)
+  created_at TEXT DEFAULT (datetime('now')),
+  duration_ms INTEGER,
+  agents_count INTEGER DEFAULT 0
 );
 ```
 
@@ -69,14 +82,17 @@ CREATE TABLE phases (
 ```sql
 CREATE TABLE steps (
   id TEXT PRIMARY KEY,
-  phase_id TEXT NOT NULL,
-  execution_id TEXT NOT NULL,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  phase_id TEXT REFERENCES phases(id) ON DELETE SET NULL,
   name TEXT,
-  status TEXT DEFAULT 'pending',
-  created_at TEXT DEFAULT (datetime('now')),
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending|running|completed|failed|skipped
+  started_at TEXT,
   completed_at TEXT,
-  FOREIGN KEY (phase_id) REFERENCES phases(id),
-  FOREIGN KEY (execution_id) REFERENCES executions(id)
+  created_at TEXT DEFAULT (datetime('now')),
+  duration_ms INTEGER,
+  snapshot_before TEXT,  -- JJ commit ID before step
+  snapshot_after TEXT,   -- JJ commit ID after step
+  commit_created TEXT    -- Commit hash if commitAfter was used
 );
 ```
 
@@ -84,19 +100,24 @@ CREATE TABLE steps (
 ```sql
 CREATE TABLE agents (
   id TEXT PRIMARY KEY,
-  step_id TEXT NOT NULL,
-  execution_id TEXT NOT NULL,
-  model TEXT,
-  status TEXT DEFAULT 'pending',
-  prompt TEXT,
-  result TEXT,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  phase_id TEXT REFERENCES phases(id) ON DELETE SET NULL,
+  model TEXT NOT NULL DEFAULT 'sonnet',
+  system_prompt TEXT,
+  prompt TEXT NOT NULL,          -- The children content
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending|running|completed|failed|cancelled
+  result TEXT,                   -- Agent's response
+  result_structured TEXT,        -- JSON: Parsed/structured result
+  log_path TEXT,                 -- Path to execution log file
+  stream_summary TEXT,           -- JSON: Stream summary metrics
   error TEXT,
-  tokens_in INTEGER,
-  tokens_out INTEGER,
-  created_at TEXT DEFAULT (datetime('now')),
+  started_at TEXT,
   completed_at TEXT,
-  FOREIGN KEY (step_id) REFERENCES steps(id),
-  FOREIGN KEY (execution_id) REFERENCES executions(id)
+  created_at TEXT DEFAULT (datetime('now')),
+  duration_ms INTEGER,
+  tokens_input INTEGER,
+  tokens_output INTEGER,
+  tool_calls_count INTEGER DEFAULT 0
 );
 ```
 
@@ -104,11 +125,12 @@ CREATE TABLE agents (
 ```sql
 CREATE TABLE render_frames (
   id TEXT PRIMARY KEY,
-  execution_id TEXT NOT NULL,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
   sequence_number INTEGER NOT NULL,
-  tree_xml TEXT NOT NULL,
+  tree_xml TEXT NOT NULL,        -- Serialized SmithersNode tree as XML
+  ralph_count INTEGER NOT NULL DEFAULT 0,  -- Current Ralph iteration
   created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (execution_id) REFERENCES executions(id)
+  UNIQUE(execution_id, sequence_number)
 );
 ```
 
@@ -116,8 +138,7 @@ CREATE TABLE render_frames (
 ```sql
 CREATE TABLE state (
   key TEXT PRIMARY KEY,
-  value TEXT,
-  source TEXT,
+  value TEXT NOT NULL,           -- JSON string
   updated_at TEXT DEFAULT (datetime('now'))
 );
 ```

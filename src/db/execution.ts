@@ -66,11 +66,23 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
       if (rdb.isClosed) return uuid()
       // Use SMITHERS_EXECUTION_ID from control plane if set, otherwise generate new UUID
       const id = process.env['SMITHERS_EXECUTION_ID'] ?? uuid()
-      rdb.run(
-        `INSERT INTO executions (id, name, file_path, status, config, started_at, created_at)
-         VALUES (?, ?, ?, 'running', ?, ?, ?)`,
-        [id, name, filePath, JSON.stringify(config ?? {}), now(), now()]
-      )
+      
+      // Check if execution already exists (resume case)
+      const existing = rdb.queryOne<{ id: string }>('SELECT id FROM executions WHERE id = ?', [id])
+      if (existing) {
+        // Resume: update status to running
+        rdb.run(
+          `UPDATE executions SET status = 'running', started_at = ?, error = NULL, completed_at = NULL WHERE id = ?`,
+          [now(), id]
+        )
+      } else {
+        // New execution: insert
+        rdb.run(
+          `INSERT INTO executions (id, name, file_path, status, config, started_at, created_at)
+           VALUES (?, ?, ?, 'running', ?, ?, ?)`,
+          [id, name, filePath, JSON.stringify(config ?? {}), now(), now()]
+        )
+      }
       setCurrentExecutionId(id)
       return id
     },

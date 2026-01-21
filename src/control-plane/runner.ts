@@ -8,6 +8,7 @@ const runningProcesses = new Map<string, { proc: ReturnType<typeof Bun.spawn>; p
 export interface RunOptions {
   script: string
   name?: string
+  executionId?: string
   cwd?: string
 }
 
@@ -42,7 +43,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const cwd = opts.cwd ?? process.cwd()
   const scriptPath = path.isAbsolute(opts.script) ? opts.script : path.join(cwd, opts.script)
   const dbPath = deriveDbPath(scriptPath, cwd)
-  const executionId = generateExecutionId()
+  const executionId = opts.executionId ?? generateExecutionId()
   
   await mkdir(path.dirname(dbPath), { recursive: true })
   await Bun.write(path.join(path.dirname(dbPath), '.gitkeep'), '')
@@ -86,7 +87,7 @@ export async function resume(opts: ResumeOptions = {}): Promise<RunResult> {
           ).get(opts.executionId)
           
           if (exec) {
-            return run({ script: exec.file_path, cwd })
+            return run({ script: exec.file_path, executionId: opts.executionId, cwd })
           }
         } finally {
           db.close()
@@ -125,7 +126,7 @@ export async function resume(opts: ResumeOptions = {}): Promise<RunResult> {
     throw new Error('No incomplete executions found')
   }
   
-  return run({ script: latestExec.filePath, cwd })
+  return run({ script: latestExec.filePath, executionId: latestExec.id, cwd })
 }
 
 export async function cancel(opts: CancelOptions): Promise<void> {

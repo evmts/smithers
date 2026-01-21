@@ -84,7 +84,7 @@ Me:
 
 ## Persistence Model
 - **Scripts**: \`.smithers/*.tsx\` - Workflow definitions (React TSX)
-- **Executions**: \`.smithers/.runs/\` - SQLite DBs per execution
+- **Database**: \`.smithers/data/<script-name>.db\` - SQLite per workflow
 - **State**: Phases, steps, agent outputs, errors all tracked
 - **Resume**: Any incomplete execution can be resumed later
 
@@ -200,6 +200,18 @@ const SmithersPlugin: Plugin = async (ctx) => {
               output += `\n\nError: ${status.error}`
             }
             
+            if (status.lastOutput) {
+              let lastOutput = status.lastOutput
+              if (lastOutput.length > 5000) {
+                lastOutput = lastOutput.slice(0, 5000) + "\n\n... (truncated, " + (status.lastOutput.length - 5000) + " more chars)"
+              }
+              output += `\n\nLast Output:\n${lastOutput}`
+            }
+            
+            if (output.length > 10000) {
+              output = output.slice(0, 10000) + "\n\n... (output truncated)"
+            }
+            
             return output
           } catch (err) {
             return `Failed to get status: ${err instanceof Error ? err.message : String(err)}`
@@ -212,13 +224,15 @@ const SmithersPlugin: Plugin = async (ctx) => {
         args: {
           executionId: tool.schema.string().describe("Execution ID"),
           since: tool.schema.number().optional().describe("Cursor position to get frames after"),
-          limit: tool.schema.number().optional().describe("Maximum frames to return (default: 100)")
+          limit: tool.schema.number().optional().describe("Maximum frames to return (default: 100)"),
+          maxChars: tool.schema.number().optional().describe("Maximum characters per frame (default: 5000, prevents terminal corruption)")
         },
         async execute(args) {
           try {
             const result = await cp.frames(args.executionId, {
               since: args.since,
-              limit: args.limit
+              limit: args.limit,
+              maxChars: args.maxChars ?? 5000
             })
             
             if (result.frames.length === 0) {

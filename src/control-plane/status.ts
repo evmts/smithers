@@ -9,6 +9,7 @@ export interface StatusOptions {
 export interface FramesOptions {
   since?: number
   limit?: number
+  maxChars?: number
   cwd?: string
 }
 
@@ -149,6 +150,7 @@ export function frames(
   const cwd = opts.cwd ?? process.cwd()
   const since = opts.since ?? 0
   const limit = opts.limit ?? 100
+  const maxChars = opts.maxChars ?? 5000
   
   const db = findDbForExecution(executionId, cwd)
   
@@ -165,12 +167,18 @@ export function frames(
        LIMIT ?`
     ).all(executionId, since, limit)
     
-    const resultFrames: Frame[] = dbFrames.map(f => ({
-      id: f.id,
-      timestamp: new Date(f.created_at).getTime(),
-      type: 'render',
-      data: f.tree_xml
-    }))
+    const resultFrames: Frame[] = dbFrames.map(f => {
+      let data = f.tree_xml
+      if (data.length > maxChars) {
+        data = data.slice(0, maxChars) + "\n\n... (truncated, " + (f.tree_xml.length - maxChars) + " more chars)"
+      }
+      return {
+        id: f.id,
+        timestamp: new Date(f.created_at).getTime(),
+        type: 'render',
+        data
+      }
+    })
     
     const lastFrame = dbFrames[dbFrames.length - 1]
     const maxSeq = lastFrame ? lastFrame.sequence_number : since

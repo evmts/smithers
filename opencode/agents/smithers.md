@@ -24,7 +24,7 @@ delegate work to Claude agents.
 
 - Scripts live in `.smithers/` directory
 - Main entry point: `.smithers/main.tsx`
-- Database at `.smithers/data/smithers.db`
+- Database at `.smithers/data/<script-name>.db` (derived from script path)
 - Plans at `.smithers/plans/`
 
 ## Available Components

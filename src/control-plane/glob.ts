@@ -1,7 +1,27 @@
+import * as path from 'path'
+
 export interface GlobOptions {
   pattern: string
   limit?: number
   cwd?: string
+}
+
+const SENSITIVE_PATTERNS = [
+  /^\.env$/,
+  /^\.env\..+$/,
+  /\.pem$/,
+  /\.key$/,
+  /^\.npmrc$/,
+  /^id_rsa/,
+  /\.p12$/,
+  /\.pfx$/,
+  /^\.git-credentials$/,
+  /^\.netrc$/,
+]
+
+export function isSensitiveFile(filePath: string): boolean {
+  const basename = path.basename(filePath)
+  return SENSITIVE_PATTERNS.some(pattern => pattern.test(basename))
 }
 
 export async function glob(opts: GlobOptions): Promise<string[]> {
@@ -20,6 +40,7 @@ export async function glob(opts: GlobOptions): Promise<string[]> {
   for await (const file of globInstance.scan({ cwd, absolute: false })) {
     if (file.includes('node_modules')) continue
     if (file.includes('.git/')) continue
+    if (isSensitiveFile(file)) continue
     
     results.push(file)
     

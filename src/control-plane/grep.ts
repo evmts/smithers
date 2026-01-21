@@ -15,6 +15,24 @@ export interface GrepMatch {
   content: string
 }
 
+const SENSITIVE_PATTERNS = [
+  /^\.env$/,
+  /^\.env\..+$/,
+  /\.pem$/,
+  /\.key$/,
+  /^\.npmrc$/,
+  /^id_rsa/,
+  /\.p12$/,
+  /\.pfx$/,
+  /^\.git-credentials$/,
+  /^\.netrc$/,
+]
+
+export function isSensitiveFile(filePath: string): boolean {
+  const basename = nodePath.basename(filePath)
+  return SENSITIVE_PATTERNS.some(pattern => pattern.test(basename))
+}
+
 export async function grep(opts: GrepOptions): Promise<GrepMatch[]> {
   const cwd = opts.cwd ?? process.cwd()
   const limit = opts.limit ?? 100
@@ -39,6 +57,7 @@ export async function grep(opts: GrepOptions): Promise<GrepMatch[]> {
   for await (const filePath of globInstance.scan({ cwd: searchPath, absolute: true })) {
     if (filePath.includes('node_modules')) continue
     if (filePath.includes('.git/')) continue
+    if (isSensitiveFile(filePath)) continue
     
     try {
       const file = Bun.file(filePath)
