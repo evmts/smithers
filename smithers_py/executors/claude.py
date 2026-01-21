@@ -156,12 +156,12 @@ class ClaudeExecutor:
             result.ended_at = datetime.now()
 
             # Persist to database
-            await self._persist_result(result)
+            await self._persist_result(result, execution_id)
 
         except asyncio.CancelledError:
             result.status = TaskStatus.CANCELLED
             result.ended_at = datetime.now()
-            await self._persist_result(result)
+            await self._persist_result(result, execution_id)
             raise
 
         except Exception as e:
@@ -170,7 +170,7 @@ class ClaudeExecutor:
             result.error = e
             result.error_message = str(e)
             result.error_type = type(e).__name__
-            await self._persist_result(result)
+            await self._persist_result(result, execution_id)
 
             # Yield error event
             yield StreamEvent(
@@ -303,7 +303,7 @@ class ClaudeExecutor:
             return True
         return False
 
-    async def _persist_result(self, result: AgentResult) -> None:
+    async def _persist_result(self, result: AgentResult, execution_id: str) -> None:
         """Persist agent result to database."""
         await self.db.save_agent_result(
             execution_id=execution_id,
