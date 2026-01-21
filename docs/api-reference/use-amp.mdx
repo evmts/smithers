@@ -1,0 +1,61 @@
+---
+title: useAmp Hook
+description: Run Amp with DB-backed state for custom UI
+---
+
+# useAmp Hook
+
+Runs the same execution pipeline as `<Amp>`, but returns state for custom rendering. The source of truth is the Smithers DB (agents table).
+
+```tsx
+import { useAmp } from "smithers-orchestrator";
+
+function AmpPanel() {
+  const { status, result, error, mode } = useAmp({
+    mode: "smart",
+    children: "Refactor the module for clarity.",
+  });
+
+  return (
+    <panel>
+      <text>Mode: {mode}</text>
+      <text>Status: {status}</text>
+      {error && <text>Error: {error.message}</text>}
+      {result && <text>Output: {result.output}</text>}
+    </panel>
+  );
+}
+```
+
+## API
+
+```tsx
+function useAmp(props: AmpProps): UseAmpResult
+
+interface UseAmpResult {
+  status: "pending" | "running" | "complete" | "error"
+  agentId: string | null
+  executionId: string | null
+  mode: string
+  result: AgentResult | null
+  error: Error | null
+  tailLog: TailLogEntry[]
+}
+```
+
+## Notes
+
+- Requires `SmithersProvider` context.
+- Respects `ExecutionScope` and `executionEnabled`.
+- `tailLog` is in-memory; status/result come from the DB.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Amp Component" icon="bolt" href="/components/amp">
+    JSX wrapper around the same execution
+  </Card>
+  <Card title="Agents API" icon="database" href="/api-reference/agents">
+    DB schema and methods
+  </Card>
+</CardGroup>

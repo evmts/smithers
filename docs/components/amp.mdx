@@ -1,0 +1,50 @@
+---
+title: Amp
+description: Amp CLI agent wrapper
+---
+
+# Amp
+
+```tsx
+<Amp mode="smart" onFinished={(result) => console.log(result.output)}>
+  Refactor the module for clarity.
+</Amp>
+```
+
+Runs the Amp CLI as a Smithers agent with DB-backed reporting and retry logic.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | - | Prompt for the agent |
+| `mode` | `'smart' \| 'rush'` | `'smart'` | Agent mode |
+| `maxTurns` | `number` | - | Max turns |
+| `systemPrompt` | `string` | - | System instructions |
+| `permissionMode` | `'default' \| 'acceptEdits' \| 'bypassPermissions'` | `'default'` | File permission policy |
+| `cwd` | `string` | - | Working directory |
+| `timeout` | `number` | - | Timeout in ms |
+| `continueThread` | `boolean` | - | Continue previous thread |
+| `resumeThread` | `string` | - | Resume thread by id |
+| `labels` | `string[]` | - | Thread labels |
+| `onFinished` | `(result: AgentResult) => void` | - | Success callback |
+| `onError` | `(error: Error) => void` | - | Error callback |
+| `onProgress` | `(message: string) => void` | - | Progress callback |
+| `onToolCall` | `(tool: string, input: any) => void` | - | Tool call callback |
+| `onStreamPart` | `(part: SmithersStreamPart) => void` | - | Typed stream events |
+| `reportingEnabled` | `boolean` | `true` | DB reporting |
+| `maxRetries` | `number` | `3` | Retry attempts |
+| `retryOnValidationFailure` | `boolean` | `false` | Retry on validation failure |
+| `tailLogCount` | `number` | `10` | Tail log entries |
+| `tailLogLines` | `number` | `10` | Lines per entry |
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="useAmp Hook" icon="bolt" href="/api-reference/use-amp">
+    Custom rendering with the same execution
+  </Card>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    Alternative agent
+  </Card>
+</CardGroup>

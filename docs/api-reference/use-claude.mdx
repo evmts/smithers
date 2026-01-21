@@ -1,0 +1,62 @@
+---
+title: useClaude Hook
+description: Run Claude with DB-backed state for custom UI
+---
+
+# useClaude Hook
+
+Runs the same execution pipeline as `<Claude>`, but returns state for custom rendering. The source of truth is the Smithers DB (agents table), not React state.
+
+```tsx
+import { useClaude } from "smithers-orchestrator";
+
+function ClaudePanel() {
+  const { status, result, error, tailLog, agentId } = useClaude({
+    model: "sonnet",
+    children: "Review the diff and suggest fixes.",
+  });
+
+  return (
+    <panel>
+      <text>Status: {status}</text>
+      {agentId && <text>Agent: {agentId}</text>}
+      {error && <text>Error: {error.message}</text>}
+      {result && <text>Output: {result.output}</text>}
+      {tailLog.length > 0 && <text>Tail: {tailLog.at(-1)?.content}</text>}
+    </panel>
+  );
+}
+```
+
+## API
+
+```tsx
+function useClaude(props: ClaudeProps): UseClaudeResult
+
+interface UseClaudeResult {
+  status: "pending" | "running" | "complete" | "error"
+  agentId: string | null
+  executionId: string | null
+  model: string
+  result: AgentResult | null
+  error: Error | null
+  tailLog: TailLogEntry[]
+}
+```
+
+## Notes
+
+- Requires `SmithersProvider` context.
+- Respects `ExecutionScope` and `executionEnabled`.
+- `tailLog` is in-memory; status/result come from the DB.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    JSX wrapper around the same execution
+  </Card>
+  <Card title="Agents API" icon="database" href="/api-reference/agents">
+    DB schema and methods
+  </Card>
+</CardGroup>

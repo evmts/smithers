@@ -156,7 +156,7 @@ End.`
     })
 
     test('extracts nested objects with complex escaping', () => {
-      const text = `Complex: {"data": {"path": "C:\\\\Users\\\\test", "message": "Line 1\\nLine 2\\t\\\"Quoted\\\""}}`
+      const text = `Complex: {"data": {"path": "C:\\\\Users\\\\test", "message": "Line 1\\nLine 2\\t\\"Quoted\\""}}`
       const result = extractJson(text)
 
       expect(result).toBe('{"data": {"path": "C:\\\\Users\\\\test", "message": "Line 1\\nLine 2\\t\\\"Quoted\\\""}}')

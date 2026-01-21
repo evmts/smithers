@@ -95,6 +95,18 @@ function useWorkflowProgress() {
 }
 ```
 
+## Agent Hooks
+
+Use hooks to render custom UIs while keeping the DB as the source of truth.
+
+| Hook | Purpose |
+|------|---------|
+| [`useClaude`](/api-reference/use-claude) | Claude execution + status |
+| [`useCodex`](/api-reference/use-codex) | Codex execution + status |
+| [`useAmp`](/api-reference/use-amp) | Amp execution + status |
+| [`useSmithersSubagent`](/api-reference/use-smithers-subagent) | Nested Smithers execution + status |
+| [`useReview`](/api-reference/use-review) | Review execution + status |
+
 ## Related
 
 <CardGroup cols={2}>

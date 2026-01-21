@@ -1,0 +1,61 @@
+---
+title: useCodex Hook
+description: Run Codex with DB-backed state for custom UI
+---
+
+# useCodex Hook
+
+Runs the same execution pipeline as `<Codex>`, but returns state for custom rendering. The source of truth is the Smithers DB (agents table).
+
+```tsx
+import { useCodex } from "smithers-orchestrator";
+
+function CodexPanel() {
+  const { status, result, error, model } = useCodex({
+    model: "o4-mini",
+    children: "Implement the missing tests.",
+  });
+
+  return (
+    <panel>
+      <text>Model: {model}</text>
+      <text>Status: {status}</text>
+      {error && <text>Error: {error.message}</text>}
+      {result && <text>Output: {result.output}</text>}
+    </panel>
+  );
+}
+```
+
+## API
+
+```tsx
+function useCodex(props: CodexProps): UseCodexResult
+
+interface UseCodexResult {
+  status: "pending" | "running" | "complete" | "error"
+  agentId: string | null
+  executionId: string | null
+  model: string
+  result: AgentResult | null
+  error: Error | null
+  tailLog: TailLogEntry[]
+}
+```
+
+## Notes
+
+- Requires `SmithersProvider` context.
+- Respects `ExecutionScope` and `executionEnabled`.
+- `tailLog` is in-memory; status/result come from the DB.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Codex Component" icon="code" href="/components/codex">
+    JSX wrapper around the same execution
+  </Card>
+  <Card title="Agents API" icon="database" href="/api-reference/agents">
+    DB schema and methods
+  </Card>
+</CardGroup>

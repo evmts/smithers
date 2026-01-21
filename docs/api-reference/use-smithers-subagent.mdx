@@ -1,0 +1,60 @@
+---
+title: useSmithersSubagent Hook
+description: Run nested Smithers subagents with DB-backed state
+---
+
+# useSmithersSubagent Hook
+
+Runs the same execution pipeline as `<Smithers>`, but returns state for custom rendering. The source of truth is the Smithers DB (agents + state tables).
+
+```tsx
+import { useSmithersSubagent } from "smithers-orchestrator";
+
+function SubagentPanel() {
+  const { status, result, error } = useSmithersSubagent({
+    plannerModel: "opus",
+    executionModel: "sonnet",
+    children: "Plan + implement the migration.",
+  });
+
+  return (
+    <panel>
+      <text>Status: {status}</text>
+      {error && <text>Error: {error.message}</text>}
+      {result && <text>Output: {result.output}</text>}
+    </panel>
+  );
+}
+```
+
+## API
+
+```tsx
+function useSmithersSubagent(props: SmithersProps): UseSmithersSubagentResult
+
+interface UseSmithersSubagentResult {
+  status: "pending" | "planning" | "executing" | "complete" | "error"
+  subagentId: string | null
+  executionId: string | null
+  plannerModel: string
+  executionModel: string
+  result: SmithersResult | null
+  error: Error | null
+}
+```
+
+## Notes
+
+- Requires `SmithersProvider` context.
+- Uses DB state for resumability (subagent id + substatus).
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Smithers Component" icon="sitemap" href="/components/smithers">
+    JSX wrapper around the same execution
+  </Card>
+  <Card title="Agents API" icon="database" href="/api-reference/agents">
+    DB schema and methods
+  </Card>
+</CardGroup>

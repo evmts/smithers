@@ -6,6 +6,11 @@ import { useHuman, type UseHumanResult, type AskOptions } from './useHuman.js'
 import { useCaptureRenderFrame } from './useCaptureRenderFrame.js'
 import { useCommitWithRetry } from './useCommitWithRetry.js'
 import { useHumanInteractive } from './useHumanInteractive.js'
+import { useClaude } from './useClaude.js'
+import { useCodex } from './useCodex.js'
+import { useAmp } from './useAmp.js'
+import { useSmithersSubagent } from './useSmithersSubagent.js'
+import { useReview } from './useReview.js'
 
 describe('hooks/index exports', () => {
   describe('named exports', () => {
@@ -32,6 +37,31 @@ describe('hooks/index exports', () => {
     test('exports useHumanInteractive', () => {
       expect(hooksIndex.useHumanInteractive).toBeDefined()
       expect(typeof hooksIndex.useHumanInteractive).toBe('function')
+    })
+
+    test('exports useClaude', () => {
+      expect(hooksIndex.useClaude).toBeDefined()
+      expect(typeof hooksIndex.useClaude).toBe('function')
+    })
+
+    test('exports useCodex', () => {
+      expect(hooksIndex.useCodex).toBeDefined()
+      expect(typeof hooksIndex.useCodex).toBe('function')
+    })
+
+    test('exports useAmp', () => {
+      expect(hooksIndex.useAmp).toBeDefined()
+      expect(typeof hooksIndex.useAmp).toBe('function')
+    })
+
+    test('exports useSmithersSubagent', () => {
+      expect(hooksIndex.useSmithersSubagent).toBeDefined()
+      expect(typeof hooksIndex.useSmithersSubagent).toBe('function')
+    })
+
+    test('exports useReview', () => {
+      expect(hooksIndex.useReview).toBeDefined()
+      expect(typeof hooksIndex.useReview).toBe('function')
     })
 
     test('exports UseHumanResult type (type-only, verify via import)', () => {
@@ -68,6 +98,26 @@ describe('hooks/index exports', () => {
 
     test('useHumanInteractive matches ./useHumanInteractive export', () => {
       expect(hooksIndex.useHumanInteractive).toBe(useHumanInteractive)
+    })
+
+    test('useClaude matches ./useClaude export', () => {
+      expect(hooksIndex.useClaude).toBe(useClaude)
+    })
+
+    test('useCodex matches ./useCodex export', () => {
+      expect(hooksIndex.useCodex).toBe(useCodex)
+    })
+
+    test('useAmp matches ./useAmp export', () => {
+      expect(hooksIndex.useAmp).toBe(useAmp)
+    })
+
+    test('useSmithersSubagent matches ./useSmithersSubagent export', () => {
+      expect(hooksIndex.useSmithersSubagent).toBe(useSmithersSubagent)
+    })
+
+    test('useReview matches ./useReview export', () => {
+      expect(hooksIndex.useReview).toBe(useReview)
     })
   })
 
