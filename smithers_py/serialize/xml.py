@@ -55,7 +55,7 @@ def _serialize_node(node: Node, indent_level: int = 0) -> str:
     has_text_child = False
 
     for child in node.children:
-        if isinstance(child, TextNode) and child.text.strip():
+        if isinstance(child, TextNode):
             has_text_child = True
         child_xml = _serialize_node(child, indent_level + 1)
         if child_xml:
@@ -91,6 +91,8 @@ def _serialize_props(node: NodeBase) -> str:
         'children', 'type', 'key',  # Handled separately
         'on_finished', 'on_error', 'on_progress',  # Callbacks
         'onFinished', 'onError', 'onProgress',  # Alternative naming
+        'run', 'cleanup',  # EffectNode callbacks
+        'handlers', 'meta', 'props',  # Base node fields that are handled specially
     }
 
     attrs = []
@@ -140,6 +142,7 @@ def _get_events_attribute(node: Node) -> str:
     events = []
 
     # Check for callback fields that exist on the node
+    # First check direct attributes (for backward compatibility)
     callback_fields = ['on_finished', 'on_error', 'on_progress']
 
     for field in callback_fields:
@@ -147,6 +150,15 @@ def _get_events_attribute(node: Node) -> str:
             # Convert snake_case to camelCase for events attribute
             event_name = _snake_to_camel(field)
             events.append(event_name)
+
+    # Also check handlers object if it exists
+    if hasattr(node, 'handlers'):
+        handlers = node.handlers
+        for field in callback_fields:
+            # Skip if already found on direct attribute
+            event_name = _snake_to_camel(field)
+            if event_name not in events and hasattr(handlers, field) and getattr(handlers, field) is not None:
+                events.append(event_name)
 
     return ",".join(events)
 

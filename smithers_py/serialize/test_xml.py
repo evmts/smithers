@@ -4,9 +4,11 @@ import pytest
 from unittest.mock import Mock
 
 from smithers_py.nodes import (
-    TextNode, PhaseNode, StepNode, ClaudeNode, RalphNode, IfNode
+    TextNode, PhaseNode, StepNode, ClaudeNode, RalphNode, IfNode,
+    WhileNode, FragmentNode, EachNode, StopNode, EndNode, SmithersNode,
+    EffectNode
 )
-from .xml import serialize_to_xml
+from .xml import serialize_to_xml, _serialize_prop_value
 
 
 class TestXMLSerialization:
@@ -265,6 +267,212 @@ class TestXMLSerialization:
         assert 'model="sonnet"' in xml
         assert 'events="onFinished"' in xml
         assert xml.endswith('</phase>')
+
+
+    def test_while_node(self):
+        """While node with condition and max_iterations."""
+        step = StepNode(name="work")
+        while_node = WhileNode(id="loop1", condition=True, max_iterations=50, children=[step])
+        xml = serialize_to_xml(while_node)
+
+        expected = '''<while id="loop1" condition="True" max_iterations="50">
+  <step name="work" />
+</while>'''
+        assert xml == expected
+
+    def test_fragment_node(self):
+        """Fragment node acts as a wrapper without attributes."""
+        step1 = StepNode(name="step1")
+        step2 = StepNode(name="step2")
+        fragment = FragmentNode(children=[step1, step2])
+        xml = serialize_to_xml(fragment)
+
+        expected = '''<fragment>
+  <step name="step1" />
+  <step name="step2" />
+</fragment>'''
+        assert xml == expected
+
+    def test_each_node(self):
+        """Each node for list rendering."""
+        step = StepNode(name="item", key="item-1")
+        each_node = EachNode(children=[step])
+        xml = serialize_to_xml(each_node)
+
+        expected = '''<each>
+  <step key="item-1" name="item" />
+</each>'''
+        assert xml == expected
+
+    def test_stop_node(self):
+        """Stop node with optional reason."""
+        stop_node = StopNode(reason="Task completed")
+        xml = serialize_to_xml(stop_node)
+        assert xml == '<stop reason="Task completed" />'
+
+    def test_stop_node_without_reason(self):
+        """Stop node without reason."""
+        stop_node = StopNode()
+        xml = serialize_to_xml(stop_node)
+        assert xml == '<stop />'
+
+    def test_end_node(self):
+        """End node with optional message."""
+        end_node = EndNode(message="Process complete")
+        xml = serialize_to_xml(end_node)
+        assert xml == '<end message="Process complete" />'
+
+    def test_end_node_without_message(self):
+        """End node without message."""
+        end_node = EndNode()
+        xml = serialize_to_xml(end_node)
+        assert xml == '<end />'
+
+    def test_dict_prop_serialization(self):
+        """Dict properties are serialized as JSON."""
+        # Create a node with dict props using the ToolPolicy from ClaudeNode
+        from smithers_py.nodes import ToolPolicy
+        policy = ToolPolicy(
+            allowed=["bash", "read"],
+            denied=["write"]
+        )
+        node = ClaudeNode(
+            model="sonnet",
+            prompt="Test with tools",
+            tools=policy
+        )
+        xml = serialize_to_xml(node)
+
+        # Should serialize tools as JSON
+        assert 'tools=' in xml
+        assert 'allowed' in xml
+        assert 'denied' in xml
+
+    def test_list_prop_serialization(self):
+        """List properties are serialized as JSON."""
+        # Use a custom test node to verify list serialization
+        class TestListNode(PhaseNode):
+            tags: list[str] = []
+
+        node = TestListNode(name="test", tags=["tag1", "tag2"])
+        xml = serialize_to_xml(node)
+
+        # Should contain serialized list
+        assert 'tags="[&quot;tag1&quot;, &quot;tag2&quot;]"' in xml
+
+    def test_circular_reference_handling(self):
+        """Circular references are handled gracefully."""
+        # Create a complex object that might cause circular references
+        class ComplexObject:
+            def __init__(self):
+                self.circular = self
+
+        # This should not crash but show a placeholder
+        try:
+            obj = ComplexObject()
+            value = _serialize_prop_value(obj)
+            assert "[Object" in value and "circular" in value.lower()
+        except Exception as e:
+            # Should handle any serialization error
+            assert False, f"Should handle circular reference, but got: {e}"
+
+    def test_empty_children_list(self):
+        """Empty children list results in self-closing tag."""
+        node = PhaseNode(name="empty", children=[])
+        xml = serialize_to_xml(node)
+        assert xml == '<phase name="empty" />'
+
+    def test_whitespace_only_text_node(self):
+        """Text nodes with only whitespace are included."""
+        node = StepNode(name="test", children=[TextNode(text="   ")])
+        xml = serialize_to_xml(node)
+        # Whitespace-only text should be preserved
+        assert xml == '<step name="test">   </step>'
+
+    def test_mixed_whitespace_text_node(self):
+        """Text nodes with mixed content and whitespace."""
+        node = StepNode(name="test", children=[
+            TextNode(text="\n  Hello\n  World\n")
+        ])
+        xml = serialize_to_xml(node)
+        assert "\n  Hello\n  World\n" in xml
+
+    def test_all_special_chars_together(self):
+        """All special XML characters in one string."""
+        node = TextNode(text='& < > " \' &amp; &lt;')
+        xml = serialize_to_xml(node)
+        assert xml == '&amp; &lt; &gt; &quot; &apos; &amp;amp; &amp;lt;'
+
+    def test_unicode_characters(self):
+        """Unicode characters are preserved."""
+        node = PhaseNode(name="测试 🚀")
+        xml = serialize_to_xml(node)
+        assert '测试 🚀' in xml
+
+    def test_very_deep_nesting(self):
+        """Very deep nesting maintains structure."""
+        # Create 5 levels deep
+        current = TextNode(text="Deep content")
+        for i in range(5, 0, -1):
+            current = StepNode(name=f"level{i}", children=[current])
+
+        xml = serialize_to_xml(current)
+        assert "Deep content" in xml
+        assert xml.count("<step") == 5
+        assert xml.count("</step>") == 5
+
+    def test_smithers_node(self):
+        """SmithersNode with component and args."""
+        node = SmithersNode(
+            name="sub-orchestration",
+            component="AnalyzeCode",
+            args={"path": "/src", "depth": 2}
+        )
+        xml = serialize_to_xml(node)
+
+        assert '<smithers' in xml
+        assert 'name="sub-orchestration"' in xml
+        assert 'component="AnalyzeCode"' in xml
+        assert 'args=' in xml
+        # Args should be serialized as JSON
+        assert '"path"' in xml and '"/src"' in xml
+
+    def test_smithers_node_with_tools(self):
+        """SmithersNode with tool policy."""
+        from smithers_py.nodes import ToolPolicy
+        tools = ToolPolicy(allowed=["bash"], denied=["write"])
+        node = SmithersNode(
+            name="restricted-sub",
+            component="Deploy",
+            tools=tools
+        )
+        xml = serialize_to_xml(node)
+
+        assert 'tools=' in xml
+        # Should contain serialized tool policy
+        assert 'allowed' in xml and 'bash' in xml
+
+    def test_effect_node(self):
+        """EffectNode with deps and excluded callbacks."""
+        def my_effect():
+            pass
+
+        node = EffectNode(
+            id="sync-state",
+            deps=["phase", "step"],
+            run=my_effect,
+            cleanup=lambda: None
+        )
+        xml = serialize_to_xml(node)
+
+        assert '<effect' in xml
+        assert 'id="sync-state"' in xml
+        assert 'deps=' in xml
+        assert '"phase"' in xml and '"step"' in xml
+        assert 'phase="post_commit"' in xml
+        # run and cleanup should be excluded
+        assert 'run=' not in xml
+        assert 'cleanup=' not in xml
 
 
 if __name__ == "__main__":
