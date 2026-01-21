@@ -247,6 +247,8 @@ function ImplementPhase({ id, name, prompt }: ImplementPhaseProps) {
 
 Review the implementation for ${name} thoroughly.
 
+**CRITICAL: You MUST run tests and they MUST pass before saying LGTM.**
+
 **Review Checklist:**
 1. Does the implementation match the spec in ${SPEC_PATH}?
 2. Are ALL code paths tested (happy path, edge cases, errors)?
@@ -256,14 +258,22 @@ Review the implementation for ${name} thoroughly.
 6. Are there any unhandled exceptions possible?
 
 **Your task:**
-1. Run tests: python3 -m pytest smithers_py/ -v --tb=short
-2. If tests fail or coverage is incomplete:
-   - FIX the issues
-   - ADD missing tests
-   - Re-run tests until they pass
-3. If ALL tests pass and code is production-ready, output "LGTM"
+1. Run tests: python3 -m pytest smithers_py/ -v --tb=short 2>&1 | tail -50
+2. If ANY tests fail:
+   - READ the failing test and relevant code
+   - FIX the issue (not just the test - fix the actual bug)
+   - Re-run tests
+3. If tests have import errors or can't collect:
+   - FIX the import errors first
+   - Re-run tests
+4. Keep fixing until you see "X passed" with 0 failures
+5. ONLY after tests pass: Output "LGTM - all tests passed"
 
-DO NOT say LGTM unless ALL tests pass. Fix issues first.`;
+**BLOCKING REQUIREMENT:**
+- Your output MUST contain BOTH "LGTM" AND "passed" for approval
+- DO NOT say LGTM if any tests are failing
+- DO NOT say LGTM if there are import/collection errors
+- Show the final pytest output as proof tests passed`;
 
   return (
     <>
@@ -299,7 +309,10 @@ ${PRODUCTION_REQUIREMENTS}`}
               maxTurns={60}
               permissionMode="acceptEdits"
               onFinished={(r) => {
-                if (r.output.includes("LGTM") || r.output.includes("lgtm") || r.output.includes("looks good")) {
+                // Must have BOTH "LGTM" AND "passed" to approve
+                const hasLGTM = r.output.includes("LGTM") || r.output.includes("lgtm");
+                const hasPassed = r.output.includes("passed") || r.output.includes("PASSED");
+                if (hasLGTM && hasPassed) {
                   db.state.set(approvedKey, true, `review_passed_${id}`);
                 }
               }}
@@ -350,6 +363,7 @@ interface VerifyPhaseProps {
 
 /**
  * Verification phase - run tests, fix issues, advance milestone
+ * Only advances if ALL tests pass (0 failures, 0 errors)
  */
 function VerifyPhase({ id, name, nextMilestone, testPath = "smithers_py/" }: VerifyPhaseProps) {
   const setMilestone = useSetMilestone();
@@ -362,7 +376,11 @@ function VerifyPhase({ id, name, nextMilestone, testPath = "smithers_py/" }: Ver
           maxTurns={80}
           permissionMode="acceptEdits"
           onFinished={(r) => {
-            if (r.output.includes("passed") || r.output.includes("PASSED")) {
+            // Must have "passed" AND NOT have "failed" or "error" to advance
+            const hasPassed = r.output.includes("passed") || r.output.includes("PASSED");
+            const hasFailed = r.output.includes("failed") || r.output.includes("FAILED");
+            const hasError = r.output.includes("error") && r.output.includes("collection");
+            if (hasPassed && !hasFailed && !hasError) {
               setMilestone(nextMilestone);
             }
           }}
@@ -371,19 +389,23 @@ function VerifyPhase({ id, name, nextMilestone, testPath = "smithers_py/" }: Ver
 
 ## VERIFICATION: ${name}
 
-Run ALL tests and ensure everything passes.
+**CRITICAL: ALL tests must pass before milestone advances.**
 
-1. Run: python3 -m pytest ${testPath} -v --tb=short
-2. If ANY tests fail:
-   - Read the failing test and relevant code
-   - FIX the issue
+1. Run: python3 -m pytest ${testPath} -v --tb=short 2>&1 | tail -80
+2. If ANY tests fail OR there are collection errors:
+   - READ the failing test and relevant code
+   - FIX the actual bug (not just the test)
    - Re-run tests
-3. If tests pass but coverage seems incomplete:
-   - ADD missing tests for edge cases
+3. If tests have import errors:
+   - FIX the import errors first
    - Re-run tests
-4. Keep fixing until ALL tests pass
+4. Keep fixing until you see "X passed" with 0 failures and 0 errors
+5. Show the final pytest summary line as proof
 
-The output MUST contain "passed" for the milestone to advance.
+**BLOCKING REQUIREMENT:**
+- Milestone will NOT advance if output contains "failed" or "error"
+- You MUST show pytest output with "passed" and no failures
+- DO NOT proceed until ALL tests pass
 DO NOT proceed until all tests pass.`}
         </Claude>
       </Step>
