@@ -65,10 +65,10 @@ describe('buildClaudeArgs', () => {
     expect(args[0]).toBe('--print')
   })
 
-  test('adds prompt as last argument', () => {
+  test('does not include prompt in args (passed via stdin)', () => {
     const args = buildClaudeArgs({ prompt: 'hello world' })
 
-    expect(args[args.length - 1]).toBe('hello world')
+    expect(args).not.toContain('hello world')
   })
 
   describe('model handling', () => {
@@ -314,13 +314,14 @@ describe('buildClaudeArgs', () => {
       expect(args).toContain('Bash')
       expect(args).toContain('--resume')
       expect(args).toContain('session-1')
-      expect(args[args.length - 1]).toBe('write a test')
+      // Prompt is passed via stdin, not in args
+      expect(args).not.toContain('write a test')
     })
 
-    test('minimal options only includes print and prompt', () => {
+    test('minimal options only includes print flag', () => {
       const args = buildClaudeArgs({ prompt: 'hello' })
 
-      expect(args).toEqual(['--print', 'hello'])
+      expect(args).toEqual(['--print'])
     })
   })
 })

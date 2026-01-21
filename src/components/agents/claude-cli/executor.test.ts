@@ -34,7 +34,8 @@ describe('executeClaudeCLIOnce', () => {
 
       const args = buildClaudeArgs(options)
       expect(args[0]).toBe('--print')
-      expect(args[args.length - 1]).toBe('Hello')
+      // Prompt is passed via stdin, not in args
+      expect(args).not.toContain('Hello')
     })
 
     test('buildClaudeArgs includes model when specified', () => {
@@ -179,7 +180,8 @@ describe('executeClaudeShell', () => {
 
       expect(args).toContain('--system-prompt')
       expect(args).toContain('system prompt with spaces')
-      expect(args[args.length - 1]).toBe('prompt with spaces')
+      // Prompt is passed via stdin, not in args
+      expect(args).not.toContain('prompt with spaces')
     })
 
     test('builds minimal args', () => {
@@ -187,7 +189,8 @@ describe('executeClaudeShell', () => {
         prompt: 'minimal',
       })
 
-      expect(args).toEqual(['--print', 'minimal'])
+      // Only --print flag, prompt is passed via stdin
+      expect(args).toEqual(['--print'])
     })
   })
 })
@@ -272,7 +275,8 @@ describe('arg-builder integration', () => {
     expect(args).toContain('claude-sonnet-4-20250514')
     expect(args).toContain('--max-turns')
     expect(args).toContain('5')
-    expect(args[args.length - 1]).toBe('test')
+    // Prompt is passed via stdin, not in args
+    expect(args).not.toContain('test')
   })
 
   test('builds args with all options', () => {
@@ -310,7 +314,8 @@ describe('arg-builder integration', () => {
     expect(args).toContain('--disallowedTools')
     expect(args).toContain('Bash')
     expect(args).toContain('--continue')
-    expect(args[args.length - 1]).toBe('test prompt')
+    // Prompt is passed via stdin, not in args
+    expect(args).not.toContain('test prompt')
   })
 })
 

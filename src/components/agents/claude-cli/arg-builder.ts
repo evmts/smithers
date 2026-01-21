@@ -98,8 +98,9 @@ export function buildClaudeArgs(options: CLIExecutionOptions): string[] {
     args.push('--resume', options.resume)
   }
 
-  // Add the prompt last
-  args.push(options.prompt)
+  // Prompt is passed via stdin, not as a command-line argument
+  // This handles multi-line prompts correctly
+  // (Claude CLI doesn't accept newlines in command-line arguments)
 
   return args
 }

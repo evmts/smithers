@@ -61,7 +61,7 @@ function M0_CoreRuntime() {
 
   const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'phase'"
   );
   const phase = phaseData ?? "research";
 
@@ -399,7 +399,7 @@ function M1_RunnableNodes() {
 
   const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'phase'"
   );
   const phase = phaseData ?? "research";
 
@@ -570,7 +570,7 @@ function M2_MCPServer() {
 
   const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'phase'"
   );
   const phase = phaseData ?? "research";
 
@@ -792,7 +792,7 @@ function M3_GUI() {
 
   const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'phase'"
   );
   const phase = phaseData ?? "research";
 
@@ -920,7 +920,7 @@ function M4_AdvancedConstructs() {
 
   const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'phase'"
   );
   const phase = phaseData ?? "research";
 
@@ -1179,7 +1179,7 @@ function M5_HarnessUI() {
 
   const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'phase'"
   );
   const phase = phaseData ?? "research";
 
@@ -1534,7 +1534,7 @@ function M6_Artifacts() {
 
   const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'phase'"
   );
   const phase = phaseData ?? "research";
 
@@ -1796,7 +1796,7 @@ function BuildSmithersPy() {
 
   const { data: milestoneData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'milestone'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'milestone'"
   );
   const milestone = milestoneData ?? "M0";
 
@@ -1860,13 +1860,13 @@ function AppContent() {
 
   const { data: milestoneData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'milestone'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'milestone'"
   );
   const milestone = milestoneData ?? "M0";
 
   const { data: phaseData } = useQueryValue<string>(
     reactiveDb,
-    "SELECT value FROM state WHERE key = 'phase'"
+    "SELECT json_extract(value, '$') as v FROM state WHERE key = 'phase'"
   );
   const phase = phaseData ?? "research";
 

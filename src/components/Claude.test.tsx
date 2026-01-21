@@ -506,9 +506,10 @@ describe('buildClaudeArgs', () => {
     expect(args).toContain('session-123')
   })
 
-  test('prompt is always last argument', () => {
+  test('prompt is passed via stdin, not in args', () => {
     const args = buildClaudeArgs({ prompt: 'my prompt text', model: 'sonnet' })
-    expect(args[args.length - 1]).toBe('my prompt text')
+    // Prompt is passed via stdin to handle multi-line prompts
+    expect(args).not.toContain('my prompt text')
   })
 })
 

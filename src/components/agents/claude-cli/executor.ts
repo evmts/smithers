@@ -39,15 +39,11 @@ function shouldFallbackToApiKey(stdout: string, stderr: string, exitCode: number
 }
 
 /**
- * Format command for logging, redacting the prompt (always last arg)
+ * Format command for logging (prompt is via stdin, not in args)
  */
 function formatCommandForLogs(args: string[]): string {
-  if (args.length === 0) return 'claude'
-  const safe = [...args]
-  if (safe.length > 0) {
-    safe[safe.length - 1] = '[prompt redacted]'
-  }
-  return `claude ${safe.join(' ')}`
+  if (args.length === 0) return 'claude [prompt via stdin]'
+  return `claude ${args.join(' ')} [prompt via stdin]`
 }
 
 type StreamUsage = {
@@ -130,8 +126,10 @@ export async function executeClaudeCLIOnce(
       : Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ANTHROPIC_API_KEY'))
 
     // Execute using Bun.spawn for streaming output
+    // Pass prompt via stdin to handle multi-line prompts correctly
     proc = Bun.spawn(command, {
       cwd: options.cwd ?? process.cwd(),
+      stdin: new TextEncoder().encode(options.prompt),
       stdout: 'pipe',
       stderr: 'pipe',
       env,
