@@ -21,7 +21,7 @@ from smithers_py.db.database import (
     create_smithers_db,
     create_async_smithers_db
 )
-from smithers_py.db.migrations import run_migrations
+from smithers_py.db.migrations import run_migrations, run_migrations_sync
 
 
 class TestSqliteStore:
@@ -36,7 +36,7 @@ class TestSqliteStore:
         try:
             # Create sync database
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
             store = SqliteStore(conn)
 
             # Test set and get
@@ -96,7 +96,7 @@ class TestSqliteStore:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
             store = SqliteStore(conn)
 
             # Test None value
@@ -136,7 +136,7 @@ class TestExecutionModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
             execution_module = ExecutionModule(conn)
 
             # Start new execution
@@ -167,7 +167,7 @@ class TestExecutionModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
             execution_module = ExecutionModule(conn)
 
             # Start and fail execution
@@ -192,7 +192,7 @@ class TestExecutionModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
             execution_module = ExecutionModule(conn)
 
             # Start execution
@@ -218,7 +218,7 @@ class TestExecutionModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
             execution_module = ExecutionModule(conn)
 
             # No incomplete executions initially
@@ -254,7 +254,7 @@ class TestExecutionModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
             execution_module = ExecutionModule(conn)
 
             # Set environment variable
@@ -284,7 +284,7 @@ class TestTasksModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             # Need an execution first
             exec_module = ExecutionModule(conn)
@@ -322,7 +322,7 @@ class TestTasksModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             exec_module = ExecutionModule(conn)
             exec_id = await exec_module.start("heartbeat_test", "heartbeat.py")
@@ -357,7 +357,7 @@ class TestArtifactsModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             exec_module = ExecutionModule(conn)
             exec_id = await exec_module.start("artifact_test", "artifact.py")
@@ -396,7 +396,7 @@ class TestArtifactsModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             exec_module = ExecutionModule(conn)
             exec_id = await exec_module.start("update_test", "update.py")
@@ -434,7 +434,7 @@ class TestArtifactsModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             exec_module = ExecutionModule(conn)
             exec_id = await exec_module.start("list_test", "list.py")
@@ -473,7 +473,7 @@ class TestArtifactsModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             exec_module = ExecutionModule(conn)
             exec_id = await exec_module.start("unique_test", "unique.py")
@@ -504,7 +504,7 @@ class TestArtifactsModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             artifacts_module = ArtifactsModule(conn)
 
@@ -528,7 +528,7 @@ class TestRenderFramesModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             exec_module = ExecutionModule(conn)
             exec_id = await exec_module.start("frame_test", "frame.py")
@@ -563,7 +563,7 @@ class TestRenderFramesModule:
 
         try:
             conn = sqlite3.connect(db_path)
-            run_migrations(conn)
+            run_migrations_sync(conn)
 
             exec_module = ExecutionModule(conn)
             exec_id = await exec_module.start("seq_test", "seq.py")
@@ -723,29 +723,35 @@ class TestSmithersDB:
 
             exec_id = await db.execution.start("agent_test", "agent.py")
 
-            # Save agent result
-            run_id = "agent-run-123"
-            node_id = "node-456"
+            # Save agent result (matches new schema)
+            agent_id = "agent-run-123"
             started_at = datetime.now()
             ended_at = datetime.now()
-            usage_json = json.dumps({"tokens": 100})
 
             await db.save_agent_result(
-                exec_id, node_id, run_id, "claude-3",
-                "completed", started_at, ended_at,
-                5, usage_json, "Agent output text",
-                json.dumps({"result": "success"}), None
+                execution_id=exec_id,
+                agent_id=agent_id,
+                model="claude-3",
+                prompt="Test prompt",
+                status="completed",
+                started_at=started_at,
+                ended_at=ended_at,
+                result="Agent output text",
+                result_structured=json.dumps({"result": "success"}),
+                error=None,
+                tokens_input=50,
+                tokens_output=100
             )
 
             # Get agent history
-            history = await db.get_agent_history(run_id)
+            history = await db.get_agent_history(agent_id)
             assert history is None  # No message history saved yet
 
             # Update agent status
-            await db.update_agent_status(run_id, "failed")
+            await db.update_agent_status(agent_id, "failed")
 
             # Verify status update
-            result = await db.query_one("SELECT status FROM agents WHERE run_id = ?", (run_id,))
+            result = await db.query_one("SELECT status FROM agents WHERE id = ?", (agent_id,))
             assert result[0] == "failed"
 
             await db.close()
@@ -763,24 +769,46 @@ class TestSmithersDB:
             await db.connect()
             await db.executescript(open(Path(__file__).parent / 'schema.sql').read())
 
-            # Save tool call
-            run_id = "run-789"
+            exec_id = await db.execution.start("tool_test", "tool.py")
+
+            # First create an agent (required for foreign key)
+            agent_id = "agent-for-tool"
+            await db.save_agent_result(
+                execution_id=exec_id,
+                agent_id=agent_id,
+                model="claude-3",
+                prompt="Test prompt",
+                status="running",
+                started_at=datetime.now(),
+                ended_at=None,
+                result=None,
+                result_structured=None,
+                error=None
+            )
+
+            # Save tool call (matches new schema)
             tool_name = "search"
             input_json = json.dumps({"query": "test"})
-            output_json = json.dumps({"results": ["item1", "item2"]})
+            output_inline = json.dumps({"results": ["item1", "item2"]})
             started_at = datetime.now()
             ended_at = datetime.now()
 
             await db.save_tool_call(
-                run_id, tool_name, input_json,
-                output_json, None,
-                started_at, ended_at, 150
+                agent_id=agent_id,
+                execution_id=exec_id,
+                tool_name=tool_name,
+                input_json=input_json,
+                output_inline=output_inline,
+                error=None,
+                started_at=started_at,
+                ended_at=ended_at,
+                duration_ms=150
             )
 
             # Verify tool call was saved
             result = await db.query_one(
-                "SELECT tool_name, duration_ms FROM tool_calls WHERE run_id = ?",
-                (run_id,)
+                "SELECT tool_name, duration_ms FROM tool_calls WHERE agent_id = ?",
+                (agent_id,)
             )
             assert result[0] == "search"
             assert result[1] == 150

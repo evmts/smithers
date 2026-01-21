@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from smithers_py.mcp.resources import MCPResourceProvider, MCPResource
-from smithers_py.db.database import Database
+from smithers_py.db.database import SmithersDB
 
 
 @pytest.fixture

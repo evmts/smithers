@@ -552,86 +552,88 @@ class SmithersDB:
             )
             self._connection.commit()
 
-    async def get_agent_history(self, run_id: str) -> Optional[str]:
+    async def get_agent_history(self, agent_id: str) -> Optional[str]:
         """Get agent message history for resuming"""
         if self.is_async:
             async with self._connection.execute(
-                "SELECT message_history FROM agents WHERE run_id = ?", (run_id,)
+                "SELECT message_history FROM agents WHERE id = ?", (agent_id,)
             ) as cursor:
                 row = await cursor.fetchone()
         else:
             row = self._connection.execute(
-                "SELECT message_history FROM agents WHERE run_id = ?", (run_id,)
+                "SELECT message_history FROM agents WHERE id = ?", (agent_id,)
             ).fetchone()
 
         return row[0] if row else None
 
-    async def save_agent_result(self, execution_id: str, node_id: str, run_id: str, model: str,
-                               status: str, started_at: datetime, ended_at: Optional[datetime],
-                               turns_used: int, usage_json: str, output_text: Optional[str],
-                               output_structured_json: Optional[str], error_json: Optional[str]) -> None:
-        """Save agent execution result"""
+    async def save_agent_result(self, execution_id: str, agent_id: str, model: str,
+                               prompt: str, status: str, started_at: datetime, ended_at: Optional[datetime],
+                               result: Optional[str], result_structured: Optional[str],
+                               error: Optional[str], tokens_input: int = 0, tokens_output: int = 0) -> None:
+        """Save agent execution result (matches schema)"""
         if self.is_async:
             await self._connection.execute(
                 """INSERT OR REPLACE INTO agents
-                   (run_id, execution_id, node_id, model, status, started_at, ended_at,
-                    turns_used, usage, output_text, output_structured, error_details)
+                   (id, execution_id, model, prompt, status, started_at, completed_at,
+                    result, result_structured, error, tokens_input, tokens_output)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (run_id, execution_id, node_id, model, status, started_at.isoformat(),
-                 ended_at.isoformat() if ended_at else None, turns_used, usage_json,
-                 output_text, output_structured_json, error_json)
+                (agent_id, execution_id, model, prompt, status, started_at.isoformat(),
+                 ended_at.isoformat() if ended_at else None, result, result_structured,
+                 error, tokens_input, tokens_output)
             )
             await self._connection.commit()
         else:
             self._connection.execute(
                 """INSERT OR REPLACE INTO agents
-                   (run_id, execution_id, node_id, model, status, started_at, ended_at,
-                    turns_used, usage, output_text, output_structured, error_details)
+                   (id, execution_id, model, prompt, status, started_at, completed_at,
+                    result, result_structured, error, tokens_input, tokens_output)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (run_id, execution_id, node_id, model, status, started_at.isoformat(),
-                 ended_at.isoformat() if ended_at else None, turns_used, usage_json,
-                 output_text, output_structured_json, error_json)
+                (agent_id, execution_id, model, prompt, status, started_at.isoformat(),
+                 ended_at.isoformat() if ended_at else None, result, result_structured,
+                 error, tokens_input, tokens_output)
             )
             self._connection.commit()
 
-    async def save_tool_call(self, run_id: str, tool_name: str, input_json: str,
-                           output_json: Optional[str], error: Optional[str],
+    async def save_tool_call(self, agent_id: str, execution_id: str, tool_name: str, input_json: str,
+                           output_inline: Optional[str], error: Optional[str],
                            started_at: datetime, ended_at: Optional[datetime],
-                           duration_ms: int) -> None:
-        """Save tool call record"""
+                           duration_ms: int, status: str = 'completed') -> None:
+        """Save tool call record (matches schema)"""
         call_id = str(uuid.uuid4())
 
         if self.is_async:
             await self._connection.execute(
                 """INSERT INTO tool_calls
-                   (id, run_id, tool_name, input, output, error, started_at, ended_at, duration_ms)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (call_id, run_id, tool_name, input_json, output_json, error,
-                 started_at.isoformat(), ended_at.isoformat() if ended_at else None, duration_ms)
+                   (id, agent_id, execution_id, tool_name, input, output_inline, error, 
+                    status, started_at, completed_at, duration_ms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (call_id, agent_id, execution_id, tool_name, input_json, output_inline, error,
+                 status, started_at.isoformat(), ended_at.isoformat() if ended_at else None, duration_ms)
             )
             await self._connection.commit()
         else:
             self._connection.execute(
                 """INSERT INTO tool_calls
-                   (id, run_id, tool_name, input, output, error, started_at, ended_at, duration_ms)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (call_id, run_id, tool_name, input_json, output_json, error,
-                 started_at.isoformat(), ended_at.isoformat() if ended_at else None, duration_ms)
+                   (id, agent_id, execution_id, tool_name, input, output_inline, error, 
+                    status, started_at, completed_at, duration_ms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (call_id, agent_id, execution_id, tool_name, input_json, output_inline, error,
+                 status, started_at.isoformat(), ended_at.isoformat() if ended_at else None, duration_ms)
             )
             self._connection.commit()
 
-    async def update_agent_status(self, run_id: str, status: str) -> None:
+    async def update_agent_status(self, agent_id: str, status: str) -> None:
         """Update agent execution status"""
         if self.is_async:
             await self._connection.execute(
-                "UPDATE agents SET status = ? WHERE run_id = ?",
-                (status, run_id)
+                "UPDATE agents SET status = ? WHERE id = ?",
+                (status, agent_id)
             )
             await self._connection.commit()
         else:
             self._connection.execute(
-                "UPDATE agents SET status = ? WHERE run_id = ?",
-                (status, run_id)
+                "UPDATE agents SET status = ? WHERE id = ?",
+                (status, agent_id)
             )
             self._connection.commit()
 

@@ -196,6 +196,23 @@ CREATE INDEX IF NOT EXISTS idx_tool_calls_execution ON tool_calls(execution_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON tool_calls(created_at DESC);
 
+-- 5b. EVENTS - Audit Trail for System Events
+
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,          -- 'node', 'runtime', 'tool', 'mcp'
+  node_id TEXT,                  -- The node that generated this event (nullable)
+  event_type TEXT NOT NULL,      -- Event type (e.g., 'state_change', 'handler_invoked')
+  payload TEXT,                  -- JSON payload
+  timestamp TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_execution ON events(execution_id);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
+CREATE INDEX IF NOT EXISTS idx_events_node ON events(node_id);
+CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp DESC);
+
 -- 6. STATE - Current State (Replaces global state stores)
 
 CREATE TABLE IF NOT EXISTS state (
@@ -246,39 +263,30 @@ CREATE TABLE IF NOT EXISTS build_state (
 CREATE INDEX IF NOT EXISTS idx_build_state_status ON build_state(status);
 CREATE INDEX IF NOT EXISTS idx_build_state_fixer ON build_state(fixer_agent_id);
 
--- 9. ARTIFACTS - Generated Files/Outputs (Git References)
+-- 9. ARTIFACTS - Spec-compliant artifacts system (from smithers-py.md section 11.4)
 
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY,
   execution_id TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
-  agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
-
-  -- Identity
-  name TEXT NOT NULL,
-  type TEXT NOT NULL,            -- 'file', 'code', 'document', 'image', 'data'
-
-  -- Git reference (PRIMARY - content lives in git)
-  file_path TEXT NOT NULL,       -- Path relative to repo root
-  git_hash TEXT,                 -- Git blob hash (after commit)
-  git_commit TEXT,               -- Commit that introduced this artifact
-
-  -- Summary (for quick reference without git lookup)
-  summary TEXT,                  -- Brief description of content
-  line_count INTEGER,
-  byte_size INTEGER,
-
-  -- Metadata (JSON string)
-  metadata TEXT DEFAULT '{}',
+  node_id TEXT,                  -- The node that created this artifact (nullable)
+  frame_id INTEGER,              -- The frame when created (nullable)
+  key TEXT,                      -- Artifact key (NULL for keyless artifacts)
+  name TEXT NOT NULL,            -- Human-readable name
+  type TEXT NOT NULL,            -- 'markdown', 'table', 'progress', 'link', 'image', 'data'
+  content_json TEXT NOT NULL,    -- JSON content
 
   -- Timing
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_execution ON artifacts(execution_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts(type);
-CREATE INDEX IF NOT EXISTS idx_artifacts_path ON artifacts(file_path);
-CREATE INDEX IF NOT EXISTS idx_artifacts_git ON artifacts(git_hash);
+CREATE INDEX IF NOT EXISTS idx_artifacts_key ON artifacts(execution_id, key);
 CREATE INDEX IF NOT EXISTS idx_artifacts_created ON artifacts(created_at DESC);
+
+-- Partial unique constraint: keyed artifacts must be unique per execution
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_unique_key ON artifacts(execution_id, key) WHERE key IS NOT NULL;
 
 -- 9. REPORTS - Agent-Generated Reports
 

@@ -23,7 +23,9 @@ from .database import (
 
 from .migrations import (
     run_migrations,
+    run_migrations_sync,
     create_fresh_database,
+    create_fresh_database_sync,
 )
 
 __all__ = [
@@ -40,7 +42,9 @@ __all__ = [
 
     # Migration functions
     'run_migrations',
+    'run_migrations_sync',
     'create_fresh_database',
+    'create_fresh_database_sync',
 ]
 
 __version__ = '1.0.0'
