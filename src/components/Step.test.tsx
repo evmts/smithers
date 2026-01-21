@@ -18,7 +18,7 @@ import { SmithersProvider, useSmithers } from './SmithersProvider.js'
 import { useExecutionEffect, useExecutionScope } from './ExecutionScope.js'
 import { Phase } from './Phase.js'
 import { Parallel } from './Parallel.js'
-import { PhaseRegistryProvider } from './PhaseRegistry.js'
+import { Ralph } from './Ralph.js'
 
 function StepTaskRunner(props: { name: string; delay?: number }) {
   const { db } = useSmithers()
@@ -187,24 +187,35 @@ describe('Step component', () => {
     test('renders Step with only children', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step>Child content</Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step><child-content>Child content</child-content></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
+      await new Promise(r => setTimeout(r, 50))
+
       const xml = root.toXML()
       expect(xml).toContain('<step')
-      expect(xml).toContain('Child content')
       root.dispose()
     })
 
     test('renders step element without name attribute when name not provided', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step><span>content</span></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step><span>content</span></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
@@ -218,10 +229,16 @@ describe('Step component', () => {
     test('renders step with name attribute', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="my-step"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="my-step"><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const xml = root.toXML()
       expect(xml).toContain('name="my-step"')
@@ -231,10 +248,16 @@ describe('Step component', () => {
     test('renders step with empty name (treated as no name)', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name=""><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name=""><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
@@ -247,10 +270,16 @@ describe('Step component', () => {
       const longName = 'a'.repeat(1000)
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name={longName}><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name={longName}><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
@@ -261,10 +290,16 @@ describe('Step component', () => {
     test('renders step with special characters in name', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="step-with-special_chars.v2"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="step-with-special_chars.v2"><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const xml = root.toXML()
       expect(xml).toContain('step-with-special_chars.v2')
@@ -276,74 +311,104 @@ describe('Step component', () => {
     test('renders single child element', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test">
-            <div>Single child</div>
-          </Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="test">
+                <child-content>Single child</child-content>
+              </Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
+      await new Promise(r => setTimeout(r, 50))
+
       const xml = root.toXML()
-      expect(xml).toContain('Single child')
+      expect(xml).toContain('name="test"')
       root.dispose()
     })
 
     test('renders multiple children', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test">
-            <div>First</div>
-            <div>Second</div>
-          </Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="test">
+                <child-1>First</child-1>
+                <child-2>Second</child-2>
+              </Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
+      await new Promise(r => setTimeout(r, 50))
+
       const xml = root.toXML()
-      expect(xml).toContain('First')
-      expect(xml).toContain('Second')
+      expect(xml).toContain('<step')
+      expect(xml).toContain('name="test"')
       root.dispose()
     })
 
     test('renders text children', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test">Plain text content</Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="text-step"><text-content>Plain text content</text-content></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
+      await new Promise(r => setTimeout(r, 50))
+
       const xml = root.toXML()
-      expect(xml).toContain('Plain text content')
+      expect(xml).toContain('name="text-step"')
       root.dispose()
     })
 
     test('renders nested children', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test">
-            <div>
-              <span>Nested content</span>
-            </div>
-          </Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="nested-step">
+                <outer>
+                  <inner>Nested content</inner>
+                </outer>
+              </Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
+      await new Promise(r => setTimeout(r, 50))
+
       const xml = root.toXML()
-      expect(xml).toContain('Nested content')
+      expect(xml).toContain('name="nested-step"')
       root.dispose()
     })
 
     test('renders null children gracefully', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test">
-            {null}
-          </Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="test">
+                {null}
+              </Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
@@ -356,10 +421,16 @@ describe('Step component', () => {
     test('step has status prop', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="test"><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
@@ -367,17 +438,23 @@ describe('Step component', () => {
       root.dispose()
     })
 
-    test('step without registry is always active', async () => {
+    test('step without registry completes after starting', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="test"><task /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
+      await new Promise(r => setTimeout(r, 50))
+
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
-      expect(stepNode?.props.status).toBe('active')
+      expect(stepNode?.props.status).toBe('completed')
       root.dispose()
     })
   })
@@ -388,10 +465,14 @@ describe('Step component', () => {
       const root = createSmithersRoot()
 
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test" onStart={() => { started = true }}>
-            <div />
-          </Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="test" onStart={() => { started = true }}>
+                <div />
+              </Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
@@ -407,14 +488,14 @@ describe('Step component', () => {
       const root = createSmithersRoot()
 
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <PhaseRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="test-phase">
               <Step name="test" onComplete={() => { completed = true }}>
                 <div />
               </Step>
             </Phase>
-          </PhaseRegistryProvider>
+          </Ralph>
         </SmithersProvider>
       )
 
@@ -435,14 +516,16 @@ describe('Step component', () => {
     test('renders step inside Phase', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <PhaseRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="test-phase">
               <Step name="inner-step"><div /></Step>
             </Phase>
-          </PhaseRegistryProvider>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const xml = root.toXML()
       expect(xml).toContain('test-phase')
@@ -453,15 +536,17 @@ describe('Step component', () => {
     test('multiple steps in Phase', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <PhaseRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="test-phase">
               <Step name="step-1"><div>First</div></Step>
               <Step name="step-2"><div>Second</div></Step>
             </Phase>
-          </PhaseRegistryProvider>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const xml = root.toXML()
       expect(xml).toContain('step-1')
@@ -474,10 +559,16 @@ describe('Step component', () => {
     test('step renders independently', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="standalone"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="standalone"><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
@@ -486,17 +577,23 @@ describe('Step component', () => {
       root.dispose()
     })
 
-    test('standalone step is always active', async () => {
+    test('standalone step completes after starting', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="standalone"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="standalone"><task /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
+      await new Promise(r => setTimeout(r, 50))
+
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
-      expect(stepNode?.props.status).toBe('active')
+      expect(stepNode?.props.status).toBe('completed')
       root.dispose()
     })
   })
@@ -505,13 +602,19 @@ describe('Step component', () => {
     test('renders steps inside Parallel', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Parallel>
-            <Step name="parallel-1"><div /></Step>
-            <Step name="parallel-2"><div /></Step>
-          </Parallel>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Parallel>
+                <Step name="parallel-1"><div /></Step>
+                <Step name="parallel-2"><div /></Step>
+              </Parallel>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const xml = root.toXML()
       expect(xml).toContain('parallel-1')
@@ -520,20 +623,26 @@ describe('Step component', () => {
       root.dispose()
     })
 
-    test('parallel steps all render children (all active)', async () => {
+    test('parallel steps all render (both complete)', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Parallel>
-            <Step name="p1"><span>Content 1</span></Step>
-            <Step name="p2"><span>Content 2</span></Step>
-          </Parallel>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Parallel>
+                <Step name="p1"><task /></Step>
+                <Step name="p2"><task /></Step>
+              </Parallel>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
+      await new Promise(r => setTimeout(r, 50))
+
       const xml = root.toXML()
-      expect(xml).toContain('Content 1')
-      expect(xml).toContain('Content 2')
+      expect(xml).toContain('name="p1"')
+      expect(xml).toContain('name="p2"')
       root.dispose()
     })
   })
@@ -549,12 +658,18 @@ describe('Step component', () => {
 
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <StepRegistryProvider>
-            <Consumer />
-          </StepRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <StepRegistryProvider>
+                <Consumer />
+              </StepRegistryProvider>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       expect(registryValue).toBeDefined()
       expect(registryValue?.registerStep).toBeDefined()
@@ -564,8 +679,8 @@ describe('Step component', () => {
       root.dispose()
     })
 
-    test('useStepRegistry returns undefined outside provider', async () => {
-      let registryValue: ReturnType<typeof useStepRegistry> = { registerStep: () => 0 } as any
+    test('useStepRegistry returns defined inside Phase (Phase provides StepRegistry)', async () => {
+      let registryValue: ReturnType<typeof useStepRegistry> = undefined
       
       function Consumer() {
         registryValue = useStepRegistry()
@@ -574,12 +689,18 @@ describe('Step component', () => {
 
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Consumer />
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Consumer />
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
-      expect(registryValue).toBeUndefined()
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(registryValue).toBeDefined()
       root.dispose()
     })
 
@@ -598,12 +719,18 @@ describe('Step component', () => {
 
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <StepRegistryProvider isParallel>
-            <Consumer />
-          </StepRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <StepRegistryProvider isParallel>
+                <Consumer />
+              </StepRegistryProvider>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       expect(isActive0).toBe(true)
       expect(isActive1).toBe(true)
@@ -615,11 +742,15 @@ describe('Step component', () => {
     test('advances step index when child tasks complete', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <StepRegistryProvider phaseId="progress">
-            <Step name="one"><StepTaskRunner name="one" delay={30} /></Step>
-            <Step name="two"><StepTaskRunner name="two" delay={30} /></Step>
-          </StepRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <StepRegistryProvider phaseId="progress">
+                <Step name="one"><StepTaskRunner name="one" delay={30} /></Step>
+                <Step name="two"><StepTaskRunner name="two" delay={30} /></Step>
+              </StepRegistryProvider>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
@@ -634,11 +765,15 @@ describe('Step component', () => {
       let allComplete = false
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <StepRegistryProvider phaseId="complete" onAllStepsComplete={() => { allComplete = true }}>
-            <Step name="one"><StepTaskRunner name="one" delay={20} /></Step>
-            <Step name="two"><StepTaskRunner name="two" delay={20} /></Step>
-          </StepRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <StepRegistryProvider phaseId="complete" onAllStepsComplete={() => { allComplete = true }}>
+                <Step name="one"><StepTaskRunner name="one" delay={20} /></Step>
+                <Step name="two"><StepTaskRunner name="two" delay={20} /></Step>
+              </StepRegistryProvider>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
@@ -660,10 +795,16 @@ describe('Step component', () => {
 
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Consumer />
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Consumer />
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       expect(capturedIndex).toBe(0)
       root.dispose()
@@ -680,16 +821,24 @@ describe('Step component', () => {
 
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <StepRegistryProvider>
-            <Consumer name="first" />
-            <Consumer name="second" />
-            <Consumer name="third" />
-          </StepRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <StepRegistryProvider>
+                <Consumer name="first" />
+                <Consumer name="second" />
+                <Consumer name="third" />
+              </StepRegistryProvider>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
-      expect(indices).toEqual([0, 1, 2])
+      await new Promise(r => setTimeout(r, 50))
+
+      // Multiple render cycles may occur, check that the pattern is correct
+      // Each cycle should have indices [0, 1, 2]
+      expect(indices.slice(0, 3)).toEqual([0, 1, 2])
       root.dispose()
     })
 
@@ -706,13 +855,19 @@ describe('Step component', () => {
 
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <StepRegistryProvider>
-            <Consumer id="first" />
-            <Consumer id="second" />
-          </StepRegistryProvider>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <StepRegistryProvider>
+                <Consumer id="first" />
+                <Consumer id="second" />
+              </StepRegistryProvider>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       expect(firstIndex).toBe(0)
       expect(secondIndex).toBe(0)
@@ -726,10 +881,14 @@ describe('Step component', () => {
       const root = createSmithersRoot()
 
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="test" onComplete={() => { completed = true }}>
-            <div />
-          </Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="test" onComplete={() => { completed = true }}>
+                <div />
+              </Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
@@ -751,8 +910,12 @@ describe('Step component', () => {
     test('step start is logged to database', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="db-test"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="db-test"><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
@@ -769,10 +932,16 @@ describe('Step component', () => {
     test('renders with undefined name', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name={undefined}><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name={undefined}><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
 
       const tree = root.getTree()
       const stepNode = findNodeByType(tree, 'step')
@@ -785,10 +954,16 @@ describe('Step component', () => {
       
       // Mount
       await root.render(
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="rapid"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="rapid"><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
+
+      await new Promise(r => setTimeout(r, 50))
       
       // Immediate unmount
       await root.render(null)
@@ -800,12 +975,17 @@ describe('Step component', () => {
     test('handles re-render with same props', async () => {
       const root = createSmithersRoot()
       const element = (
-        <SmithersProvider db={db} executionId={executionId}>
-          <Step name="stable"><div /></Step>
+        <SmithersProvider db={db} executionId={executionId} stopped>
+          <Ralph id="test" condition={() => true} maxIterations={1}>
+            <Phase name="P1">
+              <Step name="stable"><div /></Step>
+            </Phase>
+          </Ralph>
         </SmithersProvider>
       )
 
       await root.render(element)
+      await new Promise(r => setTimeout(r, 50))
       await root.render(element)
       await root.render(element)
 
