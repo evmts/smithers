@@ -84,9 +84,10 @@ pub const StdinBuffer = struct {
 
         // === PASTE START DETECTION ===
         if (std.mem.indexOf(u8, self.buffer.items, ansi.PASTE_START)) |start_idx| {
-            // Emit sequences before paste marker
-            if (start_idx > 0) {
-                try self.extractAndEmit(self.buffer.items[0..start_idx], emit);
+            // Emit sequences before paste marker as individual chars
+            var i: usize = 0;
+            while (i < start_idx) : (i += 1) {
+                emit(.{ .data = self.buffer.items[i .. i + 1] });
             }
 
             // Enter paste mode
