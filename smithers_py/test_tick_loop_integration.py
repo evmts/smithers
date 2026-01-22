@@ -162,12 +162,13 @@ class TestTickLoopIntegration:
 
         app = StateTestApp()
 
-        # Create tick loop
+        # Create tick loop (disable idle timeout for test determinism)
         tick_loop = TickLoop(
             db=db,
             volatile_state=volatile_state,
             app_component=app,
-            execution_id=execution_id
+            execution_id=execution_id,
+            idle_timeout=0
         )
 
         # Run single frame
@@ -224,12 +225,13 @@ class TestTickLoopIntegration:
 
         app = ContextTestApp()
 
-        # Create tick loop
+        # Create tick loop (disable idle timeout for test determinism)
         tick_loop = TickLoop(
             db=db,
             volatile_state=volatile_state,
             app_component=app,
-            execution_id=execution_id
+            execution_id=execution_id,
+            idle_timeout=0
         )
 
         # Set some SQLite state

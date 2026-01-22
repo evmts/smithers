@@ -1,15 +1,10 @@
 import * as path from 'path'
 import { Database } from 'bun:sqlite'
 import type { ScriptInfo } from './types.js'
+import { deriveDbPath } from './utils.js'
 
 export interface DiscoverOptions {
   cwd?: string
-}
-
-function deriveDbPath(scriptPath: string, cwd: string): string {
-  const relativePath = path.relative(cwd, scriptPath)
-  const baseName = relativePath.replace(/\.tsx$/, '.db').replace(/[/\\]/g, '-')
-  return path.join(cwd, '.smithers', 'data', baseName)
 }
 
 function checkHasIncomplete(dbPath: string): boolean {

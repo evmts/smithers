@@ -3,7 +3,6 @@ import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot } from '../reconciler/root.js'
 import { Parallel, type ParallelProps } from './Parallel.js'
 import { SmithersProvider, useSmithers } from './SmithersProvider.js'
-import { signalOrchestrationComplete } from './Ralph/utils.js'
 import { Phase } from './Phase.js'
 import { Step, useStepRegistry } from './Step.js'
 import { Ralph } from './Ralph.js'
@@ -20,7 +19,6 @@ describe('Parallel component', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
     db.close()
   })
 

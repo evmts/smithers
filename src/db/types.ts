@@ -247,16 +247,3 @@ export interface Step {
   snapshot_after?: string
   commit_created?: string
 }
-
-export interface Task {
-  id: string
-  execution_id: string
-  iteration: number
-  scope_id: string | null
-  component_type: string
-  component_name: string | null
-  status: 'running' | 'completed' | 'failed'
-  started_at: string
-  completed_at: string | null
-  duration_ms: number | null
-}

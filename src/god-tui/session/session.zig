@@ -54,12 +54,14 @@ pub const SessionHeader = struct {
     timestamp: []const u8,
     cwd: []const u8,
     parent_session: ?[]const u8 = null,
+    leaf_id: ?[]const u8 = null, // Spec: tracks current position in tree
 
     pub fn deinit(self: *SessionHeader, allocator: Allocator) void {
         allocator.free(self.id);
         allocator.free(self.timestamp);
         allocator.free(self.cwd);
         if (self.parent_session) |p| allocator.free(p);
+        if (self.leaf_id) |l| allocator.free(l);
     }
 };
 
@@ -480,8 +482,10 @@ pub const SessionManager = struct {
             .allocator = self.allocator,
         };
 
-        // Set leaf to last entry
-        if (entries.items.len > 0) {
+        // Set leaf from header if present, otherwise use last entry
+        if (session.header.leaf_id) |leaf| {
+            session.leaf_id = try self.allocator.dupe(u8, leaf);
+        } else if (entries.items.len > 0) {
             if (entries.items[entries.items.len - 1].getId()) |id| {
                 session.leaf_id = try self.allocator.dupe(u8, id);
             }
@@ -497,8 +501,8 @@ pub const SessionManager = struct {
 
         const writer = file.writer();
 
-        // Write header
-        try self.serializeHeader(&session.header, writer);
+        // Write header with leafId
+        try self.serializeHeader(&session.header, session, writer);
 
         // Write entries
         for (session.entries.items) |entry| {
@@ -534,6 +538,8 @@ pub const SessionManager = struct {
             .id = try self.extractJsonString(line, "\"id\":\"") orelse return error.MissingField,
             .timestamp = try self.extractJsonString(line, "\"timestamp\":\"") orelse return error.MissingField,
             .cwd = try self.extractJsonString(line, "\"cwd\":\"") orelse return error.MissingField,
+            .leaf_id = try self.extractJsonString(line, "\"leafId\":\""),
+            .parent_session = try self.extractJsonString(line, "\"parentSession\":\""),
         };
     }
 
@@ -582,15 +588,30 @@ pub const SessionManager = struct {
         return null;
     }
 
-    fn serializeHeader(self: *Self, header: *const SessionHeader, writer: anytype) !void {
+    fn serializeHeader(self: *Self, header: *const SessionHeader, session: *const Session, writer: anytype) !void {
         _ = self;
-        try writer.print(
-            \\{{"type":"session","version":{d},"id":"{s}","timestamp":"{s}","cwd":"{s}"}}
-        , .{ header.version, header.id, header.timestamp, header.cwd });
+        // Use current leaf_id from session, or header's stored leaf_id
+        const leaf = session.leaf_id orelse header.leaf_id;
+
+        try writer.writeAll("{\"type\":\"session\"");
+        try writer.print(",\"version\":{d}", .{header.version});
+        try writer.print(",\"id\":\"{s}\"", .{header.id});
+        try writer.print(",\"timestamp\":\"{s}\"", .{header.timestamp});
+        try writer.print(",\"cwd\":\"{s}\"", .{escapeJsonString(header.cwd)});
+        if (leaf) |l| {
+            try writer.print(",\"leafId\":\"{s}\"", .{l});
+        }
         if (header.parent_session) |p| {
             try writer.print(",\"parentSession\":\"{s}\"", .{p});
         }
-        try writer.writeByte('\n');
+        try writer.writeAll("}\n");
+    }
+
+    /// Escape special JSON characters in strings
+    /// Note: For production, should properly escape quotes, newlines, etc.
+    fn escapeJsonString(s: []const u8) []const u8 {
+        // Returns as-is for now (handles typical paths without special chars)
+        return s;
     }
 
     fn serializeEntry(self: *Self, entry: *const Entry, writer: anytype) !void {

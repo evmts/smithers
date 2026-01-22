@@ -1,36 +1,9 @@
-let orchestrationResolve: (() => void) | null = null
-let orchestrationReject: ((err: Error) => void) | null = null
-
-/**
- * Create a promise that resolves when orchestration completes.
- * Called by createSmithersRoot before mounting.
- */
-export function createOrchestrationPromise(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    orchestrationResolve = resolve
-    orchestrationReject = reject
-  })
-}
-
-/**
- * Signal that orchestration is complete (called internally).
- */
-export function signalOrchestrationComplete(): void {
-  if (orchestrationResolve) {
-    orchestrationResolve()
-    orchestrationResolve = null
-    orchestrationReject = null
-  }
-}
-
-/**
- * Signal that orchestration failed (called internally).
- * @deprecated Use signalOrchestrationErrorByToken from SmithersProvider instead
- */
-export function signalOrchestrationError(err: Error): void {
-  if (orchestrationReject) {
-    orchestrationReject(err)
-    orchestrationResolve = null
-    orchestrationReject = null
-  }
-}
+// Legacy global orchestration state has been removed.
+// Use token-based orchestration from SmithersProvider instead:
+// - createOrchestrationPromise() returns { promise, token }
+// - signalOrchestrationCompleteByToken(token)
+// - signalOrchestrationErrorByToken(token, err)
+//
+// This file is kept empty for backwards compatibility with test imports.
+// Tests that previously called signalOrchestrationComplete() in afterEach
+// can safely remove those calls - the token-based system auto-cleans up.

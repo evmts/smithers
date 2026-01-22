@@ -17,12 +17,22 @@ class SqliteStore:
         Args:
             db_connection_or_path: Existing SQLite database connection or path string
             execution_id: Unique ID for this execution scope
+        
+        Raises:
+            TypeError: If an aiosqlite connection is passed (use sync sqlite3.Connection)
         """
         if isinstance(db_connection_or_path, str):
             # Path was passed - create our own connection
             self.db = sqlite3.connect(db_connection_or_path, check_same_thread=False)
             self._owns_connection = True
         else:
+            # Validate it's a sync connection, not aiosqlite
+            conn_type = type(db_connection_or_path)
+            if 'aiosqlite' in str(conn_type.__module__ if hasattr(conn_type, '__module__') else conn_type):
+                raise TypeError(
+                    "SqliteStore requires sync sqlite3.Connection, got aiosqlite connection. "
+                    "Use SmithersDB(is_async=False) with TickLoop."
+                )
             # Connection was passed - use it directly
             self.db = db_connection_or_path
             self._owns_connection = False

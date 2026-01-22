@@ -12,7 +12,7 @@ Smithers is a "plan as code" framework for AI agents. Write sophisticated plans 
 ## Install
 
 ```bash
-bun add -g smithers-orchestrator@latest
+bun add -g smithers-orchestrator
 ```
 
 <Note>

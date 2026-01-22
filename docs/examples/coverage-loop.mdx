@@ -47,7 +47,7 @@ const COVERAGE_PROMPT = `Improve test coverage:
 function CoverageLoop({ targetCoverage = 98, maxIterations = 20 }) {
   const { db, reactiveDb } = useSmithers();
   const { data: checkCountVal } = useQueryValue<number>(
-    reactiveDb, "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'coverage.checkCount'"
+    reactiveDb, "SELECT json_extract(value, '$') as v FROM state WHERE key = 'coverage.checkCount'"
   );
   const checkCount = checkCountVal ?? 0;
 

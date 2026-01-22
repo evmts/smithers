@@ -1,0 +1,139 @@
+---
+title: Group Chat
+description: Multi-agent collaboration via reactive SQLite
+---
+
+# Group Chat
+
+Multiple Claude agents collaborate to solve a problem, sharing insights via a reactive SQLite messages table.
+
+```tsx
+#!/usr/bin/env smithers
+
+import {
+  createSmithersRoot,
+  createSmithersDB,
+  SmithersProvider,
+  useSmithers,
+  useQueryValue,
+  Ralph,
+  Claude,
+  Phase,
+  Parallel,
+} from 'smithers-orchestrator'
+
+interface Message { id: number; agent: string; content: string }
+
+function GroupChat({ problem }: { problem: string }) {
+  const { db } = useSmithers()
+  
+  // Create messages table on first run
+  db.db.run(`CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY, agent TEXT, content TEXT, ts DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`)
+  
+  // Reactive query - re-renders when messages change
+  const { data: messages } = useQueryValue<Message[]>(
+    db.db,
+    'SELECT * FROM messages ORDER BY ts',
+    []
+  )
+  const { data: done } = useQueryValue<boolean>(
+    db.db,
+    "SELECT EXISTS(SELECT 1 FROM messages WHERE content LIKE '%SOLVED:%')",
+    []
+  )
+  
+  const transcript = (messages ?? []).map(m => `[${m.agent}]: ${m.content}`).join('\n')
+  const addMessage = (agent: string, content: string) =>
+    db.db.run('INSERT INTO messages (agent, content) VALUES (?, ?)', [agent, content])
+
+  return (
+    <Ralph maxIterations={10}>
+      {!done && (
+        <Phase name="Collaboration">
+          <Parallel>
+            <Claude 
+              model="sonnet" 
+              onFinished={(r) => addMessage('Claude Sonnet', r.output)}
+            >
+              You are Claude Sonnet in a group chat solving: {problem}
+              
+              Chat history:
+              {transcript || '(empty - you speak first)'}
+              
+              Respond with your insight. Say "SOLVED:" when consensus reached.
+            </Claude>
+            
+            <Claude 
+              model="haiku" 
+              onFinished={(r) => addMessage('Claude Haiku', r.output)}
+            >
+              You are Claude Haiku in a group chat solving: {problem}
+              
+              Chat history:
+              {transcript}
+              
+              Add your perspective. Say "SOLVED:" when consensus reached.
+            </Claude>
+            
+            <Claude 
+              model="opus" 
+              onFinished={(r) => addMessage('Claude Opus', r.output)}
+            >
+              You are Claude Opus in a group chat solving: {problem}
+              
+              Chat history:
+              {transcript}
+              
+              Synthesize insights. Say "SOLVED:" with final answer when ready.
+            </Claude>
+          </Parallel>
+        </Phase>
+      )}
+      
+      {done && <Phase name="Done">✅ Solved via collaboration</Phase>}
+    </Ralph>
+  )
+}
+
+async function main() {
+  const db = createSmithersDB({ path: '.smithers/group-chat' })
+  const executionId = db.execution.start('Group Chat', 'group-chat.tsx')
+
+  function App() {
+    return (
+      <SmithersProvider db={db} executionId={executionId}>
+        <GroupChat problem="Fix the React hydration mismatch in Header.tsx" />
+      </SmithersProvider>
+    )
+  }
+
+  try {
+    const root = createSmithersRoot()
+    await root.mount(App)
+    db.execution.complete(executionId, { summary: 'Group chat collaboration completed' })
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err))
+    db.execution.fail(executionId, error.message)
+    throw error
+  } finally {
+    db.close()
+  }
+}
+
+main()
+```
+
+## Run It
+
+```bash
+bun group-chat.tsx
+```
+
+## What's Happening
+
+- **Reactive SQLite**: Messages table triggers re-renders when agents post
+- **Ralph Loop**: Iterates until "SOLVED:" appears or max 10 iterations
+- **Parallel Agents**: All three Claude models run simultaneously each iteration
+- **Shared Context**: Each agent sees the full transcript from previous rounds

@@ -58,7 +58,14 @@ export class RateLimitMonitor {
     }
 
     const agents = this.config.db.agents.list(executionId)
-    // TODO: Populate byIteration once iteration tracking is added to agent records
+    const phases = this.config.db.phases.list(executionId)
+
+    // Build phase_id -> iteration map for iteration tracking
+    const phaseIterationMap = new Map<string, number>()
+    for (const phase of phases) {
+      phaseIterationMap.set(phase.id, phase.iteration)
+    }
+
     const byIteration = new Map<number, { input: number; output: number }>()
     const byModel = new Map<string, { input: number; output: number; requests: number }>()
 
@@ -76,6 +83,17 @@ export class RateLimitMonitor {
       modelStats.output += output
       modelStats.requests += 1
       byModel.set(agent.model, modelStats)
+
+      // Populate byIteration using agent's phase_id to look up iteration
+      if (agent.phase_id) {
+        const iteration = phaseIterationMap.get(agent.phase_id)
+        if (iteration !== undefined) {
+          const iterStats = byIteration.get(iteration) ?? { input: 0, output: 0 }
+          iterStats.input += input
+          iterStats.output += output
+          byIteration.set(iteration, iterStats)
+        }
+      }
     }
 
     const costEstimate = { input: 0, output: 0, total: 0 }

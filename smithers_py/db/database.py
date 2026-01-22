@@ -250,6 +250,23 @@ class TasksModule:
             )
             self.db.commit()
 
+    async def fail(self, task_id: str, error: str) -> None:
+        """Mark task as failed"""
+        now = datetime.now().isoformat()
+
+        if self._is_async:
+            await self.db.execute(
+                "UPDATE tasks SET status = 'failed', completed_at = ?, error = ? WHERE id = ?",
+                (now, error, task_id)
+            )
+            await self.db.commit()
+        else:
+            self.db.execute(
+                "UPDATE tasks SET status = 'failed', completed_at = ?, error = ? WHERE id = ?",
+                (now, error, task_id)
+            )
+            self.db.commit()
+
 
 class ArtifactsModule:
     """Artifacts storage module for the spec-required artifacts system"""
@@ -444,16 +461,24 @@ class SmithersDB:
         self.artifacts: Optional[ArtifactsModule] = None
 
     async def connect(self) -> None:
-        """Initialize database connection and modules"""
+        """Initialize database connection and modules with production defaults."""
         if self._connection is not None:
             return
 
         if self.is_async:
             self._connection = await aiosqlite.connect(self.db_path)
-            await self._connection.execute("PRAGMA foreign_keys = ON")
+            # Production defaults (PRD 8.11)
+            await self._connection.execute("PRAGMA journal_mode=WAL")
+            await self._connection.execute("PRAGMA busy_timeout=5000")
+            await self._connection.execute("PRAGMA synchronous=NORMAL")
+            await self._connection.execute("PRAGMA foreign_keys=ON")
         else:
             self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
-            self._connection.execute("PRAGMA foreign_keys = ON")
+            # Production defaults (PRD 8.11)
+            self._connection.execute("PRAGMA journal_mode=WAL")
+            self._connection.execute("PRAGMA busy_timeout=5000")
+            self._connection.execute("PRAGMA synchronous=NORMAL")
+            self._connection.execute("PRAGMA foreign_keys=ON")
 
         # Initialize modules
         self.execution = ExecutionModule(self._connection)

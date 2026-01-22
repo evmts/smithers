@@ -90,6 +90,12 @@ export interface AnalysisResult {
 
 export type ClaudeModel = 'haiku' | 'sonnet' | 'opus'
 
+export const MODEL_MAP: Record<ClaudeModel, string> = {
+  haiku: 'claude-3-haiku-20240307',
+  sonnet: 'claude-sonnet-4-20250514',
+  opus: 'claude-opus-4-20250514',
+}
+
 export interface SuperSmithersProps<P> {
   plan: SupersmithersManagedComponent<P>
   planProps?: P

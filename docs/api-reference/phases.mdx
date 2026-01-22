@@ -77,11 +77,11 @@ interface Phase {
   name: string;
   iteration: number;
   status: 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
-  started_at: string | null;
-  completed_at: string | null;
-  duration_ms: number | null;
+  started_at?: Date;
+  completed_at?: Date;
+  duration_ms?: number;
   agents_count: number;
-  created_at: string;
+  created_at: Date;
 }
 ```
 

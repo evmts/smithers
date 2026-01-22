@@ -99,17 +99,19 @@ function FeatureWorkflowBody() {
 ## Jujutsu Snapshots
 
 ```tsx
-// Snapshot before risky operations
-db.vcs.logSnapshot({
-  snapshotId: await jjSnapshot(),
-  description: "Before refactoring",
-  timestamp: new Date(),
-});
+import { Snapshot } from 'smithers/components/JJ'
 
-// Rollback if needed
-const snapshots = db.vcs.getSnapshots(1);
-await jjRestore(snapshots[0].snapshotId);
+// Create snapshot before risky operations
+<Snapshot message="Before refactoring" />
 ```
+
+The `<Snapshot>` component automatically:
+- Creates a JJ snapshot via `jj new`
+- Logs snapshot metadata to `db.vcs`
+- Tracks file status (modified/added/deleted)
+
+> **Note:** Snapshot restore functionality is planned but not yet implemented.
+> For now, restore manually via `jj edit <change-id>`.
 
 ## Database Tracking
 

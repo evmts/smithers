@@ -3,7 +3,6 @@ import React from 'react'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { SmithersProvider, useSmithers } from './SmithersProvider.js'
-import { signalOrchestrationComplete } from './Ralph/utils.js'
 import { Phase, type PhaseProps } from './Phase.js'
 import { PhaseRegistryProvider, usePhaseRegistry } from './PhaseRegistry.js'
 import { Step } from './Step.js'
@@ -111,7 +110,7 @@ describe('Phase rendering', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -232,7 +231,7 @@ describe('Phase status transitions', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -311,7 +310,7 @@ describe('Phase skipIf functionality', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -389,7 +388,7 @@ describe('Phase callbacks', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -465,7 +464,7 @@ describe('Phase database integration', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -531,7 +530,7 @@ describe('Phase with StepRegistry', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -597,7 +596,7 @@ describe('Phase boundary conditions', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -726,7 +725,7 @@ describe('Nested phases', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -797,7 +796,7 @@ describe('Concurrent phase registration', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -842,7 +841,7 @@ describe('Phase context propagation', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -928,7 +927,7 @@ describe('Phase cleanup on unmount', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })

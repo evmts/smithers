@@ -2,6 +2,7 @@ import * as path from 'path'
 import { unlink, mkdir } from 'fs/promises'
 import { Database } from 'bun:sqlite'
 import type { RunResult, CreateWorkflowResult } from './types.js'
+import { deriveDbPath } from './utils.js'
 
 const runningProcesses = new Map<string, { proc: ReturnType<typeof Bun.spawn>; pid: number }>()
 
@@ -31,12 +32,6 @@ export interface CreateWorkflowOptions {
 
 function generateExecutionId(): string {
   return `exec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function deriveDbPath(scriptPath: string, cwd: string): string {
-  const relativePath = path.relative(cwd, scriptPath)
-  const baseName = relativePath.replace(/\.tsx$/, '.db').replace(/[/\\]/g, '-')
-  return path.join(cwd, '.smithers', 'data', baseName)
 }
 
 export async function run(opts: RunOptions): Promise<RunResult> {

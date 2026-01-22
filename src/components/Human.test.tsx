@@ -6,7 +6,6 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { SmithersProvider } from './SmithersProvider.js'
-import { signalOrchestrationComplete } from './Ralph/utils.js'
 import { Human, type HumanProps } from './Human.js'
 
 // ============================================================================
@@ -142,7 +141,7 @@ describe('Human component rendering', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -218,7 +217,7 @@ describe('Human ID generation', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -338,7 +337,7 @@ describe('Human task registration', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -408,7 +407,7 @@ describe('Human interaction request', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -478,7 +477,7 @@ describe('Human resumability', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -576,7 +575,7 @@ describe('Human resolution callbacks', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -698,7 +697,7 @@ describe('Human component lifecycle', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -787,7 +786,7 @@ describe('Human edge cases', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -904,7 +903,7 @@ describe('Multiple Human components', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -989,7 +988,7 @@ describe('Human with stopped provider', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })

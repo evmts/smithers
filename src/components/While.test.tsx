@@ -7,7 +7,6 @@ import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { While, useWhileIteration, type WhileProps, type WhileIterationContextValue } from './While.js'
 import { SmithersProvider } from './SmithersProvider.js'
-import { signalOrchestrationComplete } from './Ralph/utils.js'
 import { useMount } from '../reconciler/hooks.js'
 
 // ============================================================================
@@ -112,7 +111,7 @@ describe('While rendering', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -187,7 +186,7 @@ describe('While loop execution', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -304,7 +303,7 @@ describe('While iteration counting', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -392,7 +391,7 @@ describe('While loop termination', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -505,7 +504,7 @@ describe('While zero iterations', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -592,7 +591,7 @@ describe('While maxIterations edge cases', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -696,7 +695,7 @@ describe('useWhileIteration context', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -813,7 +812,7 @@ describe('While database integration', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -904,7 +903,7 @@ describe('Multiple While loops', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -969,7 +968,7 @@ describe('While boundary conditions', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1072,7 +1071,7 @@ describe('While cleanup on unmount', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1148,7 +1147,7 @@ describe('While signalComplete behavior', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1258,7 +1257,7 @@ describe('While async condition handling', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1350,7 +1349,7 @@ describe('While tree structure', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1463,7 +1462,7 @@ describe('While config.maxIterations fallback', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })

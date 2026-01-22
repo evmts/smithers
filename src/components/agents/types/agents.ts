@@ -122,6 +122,12 @@ export interface BaseAgentProps {
   maxRetries?: number
 
   /**
+   * Base delay in milliseconds for retry backoff.
+   * @default 250
+   */
+  retryDelayMs?: number
+
+  /**
    * System prompt for the agent
    */
   systemPrompt?: string

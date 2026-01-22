@@ -10,7 +10,6 @@ import { Review } from './Review.js'
 import { createSmithersDB, type SmithersDB } from '../../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../../reconciler/root.js'
 import { SmithersProvider } from '../SmithersProvider.js'
-import { signalOrchestrationComplete } from '../Ralph/utils.js'
 import { ExecutionScopeProvider } from '../ExecutionScope.js'
 import * as executor from '../agents/claude-cli/executor.js'
 
@@ -842,7 +841,7 @@ describe('Review component rendering', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -970,7 +969,7 @@ describe('Review component lifecycle', () => {
     await flushMicrotasks()
     restoreBunShell()
     executeClaudeCLISpy?.mockRestore()
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1126,7 +1125,7 @@ describe('Review database integration', () => {
     await flushMicrotasks()
     restoreBunShell()
     executeClaudeCLISpy?.mockRestore()
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1276,7 +1275,7 @@ describe('Review error handling', () => {
     await flushMicrotasks()
     restoreBunShell()
     executeClaudeCLISpy?.mockRestore()
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1403,7 +1402,7 @@ describe('Review execution scope', () => {
     await flushMicrotasks()
     restoreBunShell()
     executeClaudeCLISpy?.mockRestore()
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1491,7 +1490,7 @@ describe('Review edge cases', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -1588,7 +1587,7 @@ describe('Review callback guards', () => {
     await flushMicrotasks()
     restoreBunShell()
     executeClaudeCLISpy?.mockRestore()
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })

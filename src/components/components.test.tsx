@@ -10,7 +10,6 @@ import type { SmithersNode } from '../reconciler/types.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { SmithersProvider } from './SmithersProvider.js'
-import { signalOrchestrationComplete } from './Ralph/utils.js'
 import { Phase } from './Phase.js'
 import { Ralph } from './Ralph.js'
 import { Step } from './Step.js'
@@ -448,7 +447,7 @@ describe('Phase component', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })

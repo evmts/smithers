@@ -69,6 +69,7 @@
       "group": "Components",
       "pages": [
         "components/smithers-provider",
+        "components/amp",
         "components/claude",
         "components/smithers",
         "components/phase",
@@ -151,6 +152,7 @@
         "examples/hello-world",
         "examples/simple-ralph",
         "examples/coverage-loop",
+        "examples/group-chat",
         "examples/multi-phase-review",
         "examples/structured-output",
         "examples/mcp-database",

@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState, createElement, type ComponentType } from 'react'
+import { type ReactNode, useRef, createElement, type ComponentType, useReducer } from 'react'
 import { useSmithers } from '../components/SmithersProvider.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { useMount, useEffectOnValueChange } from '../reconciler/hooks.js'
@@ -44,10 +44,10 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
   const lastRewriteAtRef = useRef<number>(0)
   const vcsRef = useRef<SuperSmithersVCS | null>(null)
   
-  // useState allowed for framework internals - ref mutations don't trigger re-renders
-  const [overlayComponent, setOverlayComponent] = useState<ComponentType<P> | null>(null)
-  const [currentScopeRev, setCurrentScopeRev] = useState<string | null>(null)
+  const overlayComponentRef = useRef<ComponentType<P> | null>(null)
+  const currentScopeRevRef = useRef<string | null>(null)
   const overlayLoadSeqRef = useRef(0)
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
 
   const { data: activeVersionId } = useQueryValue<string>(
     reactiveDb,
@@ -68,16 +68,15 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
     meta,
     activeVersionId,
     effectiveRewriteCount,
-    currentScopeRev,
+    currentScopeRev: currentScopeRevRef.current,
     ralphCount,
   })
-  // Update ref on every render
   liveRef.current = {
     props,
     meta,
     activeVersionId,
     effectiveRewriteCount,
-    currentScopeRev,
+    currentScopeRev: currentScopeRevRef.current,
     ralphCount,
   }
 
@@ -92,28 +91,31 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
     const seq = overlayLoadSeqRef.current
 
     if (!activeVersionId) {
-      setOverlayComponent(null)
-      setCurrentScopeRev(null)
+      overlayComponentRef.current = null
+      currentScopeRevRef.current = null
+      forceUpdate()
       return
     }
 
-    setOverlayComponent(null)
+    overlayComponentRef.current = null
     
     const code = dbHelpers.getVersionCode(activeVersionId)
     if (code) {
       const newScopeRev = uuid()
-      setCurrentScopeRev(newScopeRev)
+      currentScopeRevRef.current = newScopeRev
       
       loadOverlayComponent<P>(code, meta)
         .then(comp => {
           if (overlayLoadSeqRef.current !== seq) return
-          setOverlayComponent(() => comp)
+          overlayComponentRef.current = comp
+          forceUpdate()
         })
         .catch(err => {
           if (overlayLoadSeqRef.current !== seq) return
           dbHelpers.clearActiveVersion(meta.moduleHash)
-          setOverlayComponent(null)
-          setCurrentScopeRev(null)
+          overlayComponentRef.current = null
+          currentScopeRevRef.current = null
+          forceUpdate()
           liveRef.current.props.onError?.(err instanceof Error ? err : new Error(String(err)))
         })
     }
@@ -243,7 +245,7 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
     }
   }
 
-  const ComponentToRender = overlayComponent ?? props.plan
+  const ComponentToRender = overlayComponentRef.current ?? props.plan
 
   return createElement(
     'supersmithers',
@@ -252,7 +254,7 @@ export function SuperSmithers<P>(props: SuperSmithersProps<P>): ReactNode {
       moduleHash: meta.moduleHash,
       rewriteCount: effectiveRewriteCount,
       maxRewrites: props.maxRewrites ?? 3,
-      scopeRev: currentScopeRev,
+      scopeRev: currentScopeRevRef.current,
     },
     createElement(ComponentToRender as unknown as ComponentType<Record<string, unknown>>, (props.planProps ?? {}) as Record<string, unknown>)
   )

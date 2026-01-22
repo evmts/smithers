@@ -58,10 +58,10 @@ interface Agent {
   tokens_input?: number;
   tokens_output?: number;
   tool_calls_count: number;
-  started_at?: string;
-  completed_at?: string;
+  started_at?: Date;
+  completed_at?: Date;
   duration_ms?: number;
-  created_at: string;
+  created_at: Date;
 }
 
 interface ToolCall {
@@ -72,10 +72,10 @@ interface ToolCall {
   output_inline?: string;
   output_summary?: string;
   status: "pending" | "running" | "completed" | "failed";
-  started_at?: string;
-  completed_at?: string;
+  started_at?: Date;
+  completed_at?: Date;
   duration_ms?: number;
-  created_at: string;
+  created_at: Date;
 }
 ```
 

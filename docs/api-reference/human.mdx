@@ -31,6 +31,7 @@ All methods sync. Status: `pending | approved | rejected | timeout | cancelled |
 ```tsx
 interface HumanInteraction {
   id: string;
+  execution_id: string;
   type: 'confirmation' | 'select' | 'input' | 'text' | 'interactive_session';
   prompt: string;
   options: string[] | null;
@@ -38,6 +39,10 @@ interface HumanInteraction {
   response: any | null;
   created_at: string;
   resolved_at: string | null;
+  session_config?: InteractiveSessionConfig | null;
+  session_transcript?: string | null;
+  session_duration?: number | null;
+  error?: string | null;
 }
 ```
 

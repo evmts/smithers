@@ -12,6 +12,7 @@ import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
+  Ralph,
   Phase,
   Step,
   Claude,
@@ -25,49 +26,56 @@ async function main() {
   const executionId = db.execution.start("Kitchen Sink Demo", "kitchen-sink.tsx");
 
   function KitchenSinkWorkflow() {
+    const isComplete = () => {
+      const phases = db.phases.list(executionId);
+      return phases.every(p => p.status === 'complete');
+    };
+
     return (
       <SmithersProvider db={db} executionId={executionId}>
-        {/* PHASE 1: Research */}
-        <Phase name="Research">
-          <Step name="gather">
-            <Claude model="sonnet">Research the codebase and identify key files</Claude>
-          </Step>
-          <Parallel>
-            <Step name="analyze-frontend">
-              <Claude model="haiku">Analyze frontend architecture</Claude>
+        <Ralph id="kitchen-sink-loop" condition={() => !isComplete()} maxIterations={20}>
+          {/* PHASE 1: Research */}
+          <Phase name="Research">
+            <Step name="gather">
+              <Claude model="sonnet">Research the codebase and identify key files</Claude>
             </Step>
-            <Step name="analyze-backend">
-              <Claude model="haiku">Analyze backend services</Claude>
-            </Step>
-          </Parallel>
-        </Phase>
+            <Parallel>
+              <Step name="analyze-frontend">
+                <Claude model="haiku">Analyze frontend architecture</Claude>
+              </Step>
+              <Step name="analyze-backend">
+                <Claude model="haiku">Analyze backend services</Claude>
+              </Step>
+            </Parallel>
+          </Phase>
 
-        {/* PHASE 2: Planning */}
-        <Phase name="Planning">
-          <Step name="review">
-            <Human message="Review the research findings and approve the plan?" />
-          </Step>
-          <Step name="create-plan">
-            <Claude model="sonnet">Create detailed implementation plan based on research</Claude>
-          </Step>
-          <Task done={false}>Define acceptance criteria</Task>
-          <Task done={false}>Identify potential risks</Task>
-        </Phase>
+          {/* PHASE 2: Planning */}
+          <Phase name="Planning">
+            <Step name="review">
+              <Human message="Review the research findings and approve the plan?" />
+            </Step>
+            <Step name="create-plan">
+              <Claude model="sonnet">Create detailed implementation plan based on research</Claude>
+            </Step>
+            <Task done={false}>Define acceptance criteria</Task>
+            <Task done={false}>Identify potential risks</Task>
+          </Phase>
 
-        {/* PHASE 3: Implementation */}
-        <Phase name="Implementation">
-          <Step name="implement">
-            <Claude model="opus">Implement the planned changes with high quality</Claude>
-          </Step>
-          <Parallel>
-            <Step name="write-tests">
-              <Claude model="sonnet">Write comprehensive test suite</Claude>
+          {/* PHASE 3: Implementation */}
+          <Phase name="Implementation">
+            <Step name="implement">
+              <Claude model="opus">Implement the planned changes with high quality</Claude>
             </Step>
-            <Step name="update-docs">
-              <Claude model="haiku">Update documentation</Claude>
-            </Step>
-          </Parallel>
-        </Phase>
+            <Parallel>
+              <Step name="write-tests">
+                <Claude model="sonnet">Write comprehensive test suite</Claude>
+              </Step>
+              <Step name="update-docs">
+                <Claude model="haiku">Update documentation</Claude>
+              </Step>
+            </Parallel>
+          </Phase>
+        </Ralph>
       </SmithersProvider>
     );
   }
@@ -90,6 +98,7 @@ main();
 
 ## What's Happening
 
+- **Ralph**: Iteration loop that drives phase progression (required for Phase/Step/Parallel)
 - **Phase**: Sequential stages; only active phase executes
 - **Parallel**: Steps inside run concurrently
 - **Human**: Pauses for approval before proceeding

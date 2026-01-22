@@ -334,3 +334,20 @@ test "Container render concatenation" {
     try std.testing.expectEqualStrings("Line 1", lines[0]);
     try std.testing.expectEqualStrings("Line 2", lines[1]);
 }
+
+test "Container cache invalidates on width change" {
+    const allocator = std.testing.allocator;
+    var container = Container.init(allocator);
+    defer container.deinit();
+
+    // First render at width 80
+    const lines = try container.render(80, allocator);
+    defer allocator.free(lines);
+    try std.testing.expect(container.valid);
+    try std.testing.expectEqual(@as(u16, 80), container.cached_width);
+
+    // Render at different width should invalidate cache
+    const lines2 = try container.render(100, allocator);
+    defer allocator.free(lines2);
+    try std.testing.expectEqual(@as(u16, 100), container.cached_width);
+}

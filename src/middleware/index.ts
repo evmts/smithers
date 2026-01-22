@@ -1,4 +1,4 @@
-export { composeMiddleware, applyMiddleware } from './compose.js'
+export { composeMiddleware } from './compose.js'
 export type { SmithersMiddleware, ClaudeExecutionParams } from './types.js'
 
 export { extractReasoningMiddleware } from './extract-reasoning.js'
@@ -12,6 +12,3 @@ export type { RetryBackoff, RetryMiddlewareOptions } from './retry.js'
 
 export { validationMiddleware, ValidationError } from './validation.js'
 export type { ValidationMiddlewareOptions } from './validation.js'
-
-export { rateLimitingMiddleware as simpleRateLimitingMiddleware } from './rate-limiting.js'
-export type { RateLimitingOptions as SimpleRateLimitingOptions } from './rate-limiting.js'

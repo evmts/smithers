@@ -67,8 +67,16 @@ class TickLoop:
         db: SmithersDB,
         volatile_state: VolatileStore,
         app_component: Callable[[Context], Node],
-        execution_id: str
+        execution_id: str,
+        idle_timeout: float = 0.5  # 500ms per PRD, 0 to disable
     ):
+        # Validate sync DB - async would cause "coroutine never awaited" errors
+        if db.is_async:
+            raise ValueError(
+                "TickLoop requires sync SmithersDB (is_async=False). "
+                "Async DB operations would cause 'coroutine never awaited' errors."
+            )
+        
         self.db = db
         self.volatile_state = volatile_state
         self.app_component = app_component
@@ -105,6 +113,11 @@ class TickLoop:
         # Task lease manager for crash-safe execution
         self.lease_manager = TaskLeaseManager(db)
         self.cancellation_handler = CancellationHandler(db)
+        
+        # State change tracking for re-render and idle timeout
+        self.state_modified_this_frame = False
+        self.idle_timeout = idle_timeout
+        self.last_activity_time = 0.0
 
     async def run(self) -> None:
         """
@@ -114,6 +127,7 @@ class TickLoop:
         and no effects that require rerender.
         """
         print(f"🎬 Starting tick loop for execution {self.execution_id}")
+        self.last_activity_time = time.time()  # Initialize activity timer
 
         try:
             # Recover orphaned tasks on startup (PRD 7.3.3)
@@ -412,15 +426,22 @@ class TickLoop:
         Commits any pending writes to both volatile and SQLite stores.
         """
         print("  🔄 Phase 7: State Update Flush")
+        flushed_any = False
 
         # Commit any pending writes
         if self.volatile_state.has_pending_writes():
             self.volatile_state.commit()
+            flushed_any = True
             print("    ✅ Flushed volatile state updates")
 
         if self.sqlite_state.has_pending_writes():
             self.sqlite_state.commit()
+            flushed_any = True
             print("    ✅ Flushed SQLite state updates")
+        
+        if flushed_any:
+            self.state_modified_this_frame = True
+            self.last_activity_time = time.time()
 
     def _find_runnable(self, mounted_items: List) -> List[tuple]:
         """Find all runnable nodes (ClaudeNode) in the given list.
@@ -450,6 +471,7 @@ class TickLoop:
         """Execute a runnable node with lease management for crash safety.
         
         Per PRD section 7.3.2:
+        - Registers task in DB for crash recovery
         - Acquires lease before starting execution
         - Starts heartbeat loop while running
         - Releases lease on completion
@@ -462,6 +484,21 @@ class TickLoop:
 
         try:
             print(f"    🤖 Executing Claude node {node_id}")
+            
+            # Register task in DB for crash recovery
+            await self.db.tasks.start(
+                task_id=node_id,
+                name=f"claude:{node.model}",
+                execution_id=self.execution_id,
+                component_type="claude",
+                component_name=node_id
+            )
+            
+            # Acquire lease before starting (PRD 7.3.2)
+            lease_acquired = await self.lease_manager.acquire_lease(node_id)
+            if not lease_acquired:
+                print(f"    ⚠️  Failed to acquire lease for {node_id}")
+                return
             
             # Start heartbeat for this task (extends lease periodically)
             self.lease_manager.start_heartbeat(node_id)
@@ -499,6 +536,7 @@ class TickLoop:
             # Store result for event handling in next frame
             if result:
                 self.task_results[node_id] = result
+                await self.db.tasks.complete(node_id)
                 print(f"    ✅ Claude node {node_id} completed with status: {result.status}")
 
         except asyncio.CancelledError:
@@ -508,6 +546,12 @@ class TickLoop:
             
         except Exception as e:
             print(f"    ❌ Claude node {node_id} failed: {e}")
+            # Mark task as failed in DB
+            try:
+                await self.db.tasks.fail(node_id, str(e))
+            except Exception:
+                pass  # Don't let DB error mask original error
+            
             # Create error result for event handling
             self.task_results[node_id] = AgentResult(
                 run_id=str(uuid.uuid4()),
@@ -538,12 +582,27 @@ class TickLoop:
         - No tasks are running
         - No state writes are pending
         - No effects requested rerender
+        - State was not modified this frame
+        - Idle timeout has elapsed
         """
         has_running_tasks = bool(self.running_tasks)
         has_pending_writes = (
             self.volatile_state.has_pending_writes() or
             self.sqlite_state.has_pending_writes()
         )
+
+        # If state was modified, we need another frame to reflect changes
+        if self.state_modified_this_frame:
+            self.state_modified_this_frame = False
+            print("    ⏳ State modified, scheduling re-render")
+            return False
+
+        # Idle timeout: don't stop until idle for configured duration
+        if time.time() - self.last_activity_time < self.idle_timeout:
+            # Still within grace period
+            if not has_running_tasks and not has_pending_writes:
+                print(f"    ⏳ Idle grace period ({self.idle_timeout}s)")
+                return False
 
         if has_running_tasks:
             print(f"    ⏳ Still running {len(self.running_tasks)} tasks")

@@ -1,11 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { SuperSmithersContext, ClaudeModel, AnalysisResult, RewriteProposal } from './types.js'
-
-const MODEL_MAP: Record<ClaudeModel, string> = {
-  haiku: 'claude-3-haiku-20240307',
-  sonnet: 'claude-sonnet-4-20250514',
-  opus: 'claude-opus-4-20250514',
-}
+import { MODEL_MAP } from './types.js'
 
 const REWRITE_SYSTEM_PROMPT = `You are SuperSmithers, an expert engineer for the Smithers React/JSX orchestration framework.
 

@@ -842,6 +842,28 @@ class TestSmithersDB:
             os.unlink(db_path)
 
 
+class TestSqlitePragmas:
+    """Test SQLite production pragmas (PRD 8.11)"""
+
+    @pytest.mark.asyncio
+    async def test_sqlite_production_pragmas(self):
+        """Test that production SQLite pragmas are applied."""
+        db = SmithersDB(":memory:", is_async=False)
+        await db.connect()
+
+        # Check pragmas
+        result = await db.query_one("PRAGMA journal_mode")
+        assert result[0] in ('wal', 'memory')  # memory mode for :memory: DBs
+
+        result = await db.query_one("PRAGMA busy_timeout")
+        assert result[0] == 5000
+
+        result = await db.query_one("PRAGMA synchronous")
+        assert result[0] in (1, 'normal', 'NORMAL')  # SQLite returns numeric
+
+        await db.close()
+
+
 class TestDatabaseValidation:
     """Test database schema validation and edge cases"""
 

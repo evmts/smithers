@@ -3,7 +3,6 @@ import React from 'react'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { SmithersProvider } from './SmithersProvider.js'
-import { signalOrchestrationComplete } from './Ralph/utils.js'
 import {
   PhaseRegistryProvider,
   usePhaseRegistry,
@@ -158,7 +157,7 @@ describe('PhaseRegistry registration', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -261,7 +260,7 @@ describe('Phase active/completed state', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
@@ -348,7 +347,7 @@ describe('advancePhase functionality', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })

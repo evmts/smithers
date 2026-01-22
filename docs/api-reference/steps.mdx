@@ -85,13 +85,13 @@ interface Step {
   phase_id?: string;
   name?: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-  started_at?: string;
-  completed_at: string | null;
-  duration_ms?: number | null;
-  snapshot_before?: string | null;
-  snapshot_after?: string | null;
-  commit_created?: string | null;
-  created_at: string;
+  started_at?: Date;
+  completed_at?: Date;
+  created_at: Date;
+  duration_ms?: number;
+  snapshot_before?: string;
+  snapshot_after?: string;
+  commit_created?: string;
 }
 ```
 

@@ -1,11 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { SuperSmithersContext, AnalysisResult, ClaudeModel } from './types.js'
-
-const MODEL_MAP: Record<ClaudeModel, string> = {
-  haiku: 'claude-3-haiku-20240307',
-  sonnet: 'claude-sonnet-4-20250514',
-  opus: 'claude-opus-4-20250514',
-}
+import { MODEL_MAP } from './types.js'
 
 const ANALYSIS_SYSTEM_PROMPT = `You are SuperSmithers Analyzer, an expert at diagnosing issues in Smithers orchestration plans.
 

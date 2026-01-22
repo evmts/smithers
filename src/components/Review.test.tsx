@@ -8,7 +8,6 @@ import { Review } from './Review.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { SmithersProvider } from './SmithersProvider.js'
-import { signalOrchestrationComplete } from './Ralph/utils.js'
 
 describe('ReviewTarget interface', () => {
   test('commit target with optional ref', () => {
@@ -445,7 +444,7 @@ describe('Review component rendering', () => {
   })
 
   afterEach(() => {
-    signalOrchestrationComplete()
+    
     root.dispose()
     db.close()
   })
