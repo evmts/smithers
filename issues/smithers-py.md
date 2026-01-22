@@ -568,6 +568,48 @@ def implement(ctx):
 
 # 5) Engineering milestones with verification
 
+## Testing Philosophy
+
+**All milestones require extensive end-to-end (E2E) tests** in addition to unit tests. E2E tests should:
+
+1. **Test complete workflows** - from script execution through state changes to final output
+2. **Use real (or TestModel) agent execution** - verify the full tick loop with actual node mounting/unmounting
+3. **Verify crash recovery** - kill process mid-execution, restart, confirm resumption
+4. **Test MCP integration** - client connects, subscribes, receives frames, sends commands
+5. **Cover edge cases** - rate limits, network failures, concurrent operations, frame storms
+
+E2E tests live in `smithers_py/e2e/` and use pytest fixtures that spin up real databases and executors.
+
+```python
+# Example E2E test structure
+@pytest.fixture
+def execution_harness():
+    """Full execution environment with DB, tick loop, and MCP server."""
+    db = create_smithers_db(":memory:")
+    yield ExecutionHarness(db)
+    db.close()
+
+async def test_multi_phase_workflow_with_crash_recovery(execution_harness):
+    """E2E: Run 3-phase workflow, crash at phase 2, resume, verify completion."""
+    # Start execution
+    exec_id = await execution_harness.start("multi_phase.py")
+    
+    # Wait for phase 2
+    await execution_harness.wait_for_state("phase", "implement")
+    
+    # Simulate crash
+    execution_harness.force_kill()
+    
+    # Resume
+    await execution_harness.resume(exec_id)
+    
+    # Verify completion
+    assert await execution_harness.wait_for_status("completed")
+    assert execution_harness.db.state.get("phase") == "done"
+```
+
+---
+
 ## Milestone 0: Repo scaffold + DB schema + CLI skeleton
 
 **Deliverables**
@@ -578,6 +620,7 @@ def implement(ctx):
 **Verification**
 - Unit test: creates db, writes/reads `state_kv`
 - Manual: run CLI creates execution row and frame 0
+- **E2E: CLI executes minimal script, produces correct DB state, exits cleanly**
 
 ## Milestone 1: Node models + JSX runtime (python-jsx)
 
@@ -588,6 +631,7 @@ def implement(ctx):
 **Verification**
 - Unit: render simple JSX tree → JSON
 - Manual: print tree in CLI
+- **E2E: Complex nested tree with conditionals renders correctly across multiple frames**
 
 ## Milestone 2: Engine loop v1 (render/commit/effects) with batching
 
@@ -599,6 +643,9 @@ def implement(ctx):
 **Verification**
 - Unit: three `ctx.state.set` calls in one handler produce one DB transaction
 - Manual: simple script toggles state and shows multiple frames
+- **E2E: Multi-step workflow with state dependencies executes in correct order**
+- **E2E: Frame storm prevention triggers and halts runaway execution**
+- **E2E: Quiescence detection stops loop when no work remains**
 
 ## Milestone 3: Agent node using PydanticAI (with TestModel)
 
@@ -610,6 +657,9 @@ def implement(ctx):
 **Verification**
 - CI uses `TestModel`/`FunctionModel` to simulate responses
 - Manual: "Hello agent" script runs once and transitions state
+- **E2E: Agent executes, streams tokens, calls tools, persists result**
+- **E2E: Agent failure triggers on_error handler, state updates correctly**
+- **E2E: Rate limit simulation with backoff and retry**
 
 ## Milestone 4: While/Ralph + Phase/Step progression
 
@@ -620,6 +670,9 @@ def implement(ctx):
 **Verification**
 - Unit: resume from DB and continue iteration
 - Manual: fix-tests loop that stops after condition or maxIterations
+- **E2E: While loop runs 5 iterations, crash at iteration 3, resume continues from 3**
+- **E2E: Phase progression with nested steps and parallel agents**
+- **E2E: Max iterations limit enforced, loop terminates gracefully**
 
 ## Milestone 5: Logging/monitoring parity
 
@@ -629,6 +682,8 @@ def implement(ctx):
 **Verification**
 - Manual: tail logs and correlate node IDs
 - Unit: event writer produces correct summary counts
+- **E2E: Full execution produces parseable NDJSON with all event types**
+- **E2E: Log truncation at threshold produces valid summary**
 
 ## Milestone 6: MCP server (stdio + Streamable HTTP)
 
@@ -640,6 +695,10 @@ def implement(ctx):
 - Unit: JSON-RPC request/response tests
 - Manual: `curl`/client connects to Streamable HTTP on localhost
 - Security: Origin validation and auth enforced
+- **E2E: Client subscribes, execution runs, client receives all frame events**
+- **E2E: Client sends pause command, execution halts, resume continues**
+- **E2E: Reconnection with Last-Event-ID replays missed events**
+- **E2E: Invalid origin rejected, invalid auth rejected**
 
 ## Milestone 7: Desktop UI (Zig WebUI + Solid)
 
@@ -651,6 +710,8 @@ def implement(ctx):
 **Verification**
 - Manual: run a workflow and watch frames stream
 - Regression test: recorded run replay
+- **E2E: Zig app launches, connects to MCP, displays live execution**
+- **E2E: UI controls (pause/resume/stop) affect running execution**
 
 ## Milestone 8: Harness UI (Production-Grade)
 
@@ -667,6 +728,9 @@ def implement(ctx):
 - Artifact display: markdown, tables, progress bars render correctly
 - Approval queue: file edit approval with diff viewer
 - Export/replay: download execution bundle, replay without model calls
+- **E2E: Fork-from-frame creates new execution with correct state snapshot**
+- **E2E: Retry-node re-executes failed agent with same signature**
+- **E2E: State edit via UI triggers re-render and audit log entry**
 
 ## Milestone 9: Artifacts System
 
@@ -681,6 +745,9 @@ def implement(ctx):
 - Unit: artifact CRUD operations
 - Integration: agent creates progress artifact, updates in-place
 - UI: artifacts display correctly with live updates
+- **E2E: Agent creates keyed progress artifact, updates 10x, UI shows latest**
+- **E2E: Keyless artifacts append correctly, history preserved**
+- **E2E: Image artifact with data URL displays in UI**
 
 ---
 

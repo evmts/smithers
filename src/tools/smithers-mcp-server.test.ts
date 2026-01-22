@@ -6,6 +6,9 @@ import { writeFileSync, unlinkSync } from 'fs'
 
 const serverPath = new URL('./smithers-mcp-server.ts', import.meta.url).pathname
 
+// Use --config=/dev/null to bypass bunfig.toml preload which causes mock issues
+const spawnCmd = ['bun', '--config=/dev/null', 'run', serverPath]
+
 function sendRequest(proc: Subprocess<'ignore', 'pipe', 'pipe'>, request: object): void {
   proc.stdin?.write(JSON.stringify(request) + '\n')
 }
@@ -39,7 +42,7 @@ describe('smithers-mcp-server', () => {
     ]
 
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { ...process.env, SMITHERS_TOOLS: JSON.stringify(tools) },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -63,7 +66,7 @@ describe('smithers-mcp-server', () => {
     ]
 
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { ...process.env, SMITHERS_TOOLS: JSON.stringify(tools) },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -91,7 +94,7 @@ describe('smithers-mcp-server', () => {
     ]
 
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { ...process.env, SMITHERS_TOOLS: JSON.stringify(tools) },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -115,7 +118,7 @@ describe('smithers-mcp-server', () => {
 
   test('returns error for tools/list before initialize', async () => {
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { ...process.env, SMITHERS_TOOLS: '[]' },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -135,7 +138,7 @@ describe('smithers-mcp-server', () => {
 
   test('returns error for unknown method', async () => {
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { ...process.env, SMITHERS_TOOLS: '[]' },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -159,7 +162,7 @@ describe('smithers-mcp-server', () => {
 
   test('handles invalid JSON gracefully', async () => {
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { ...process.env, SMITHERS_TOOLS: '[]' },
       stdin: 'pipe',
       stdout: 'pipe',
@@ -179,7 +182,7 @@ describe('smithers-mcp-server', () => {
 
   test('reports parse error for invalid SMITHERS_TOOLS JSON', async () => {
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { ...process.env, SMITHERS_TOOLS: '{invalid json}' },
       stdout: 'pipe',
       stderr: 'pipe',
@@ -229,7 +232,7 @@ export const tools = {
     ]
 
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { 
         ...process.env, 
         SMITHERS_TOOLS: JSON.stringify(tools),
@@ -266,7 +269,7 @@ export const tools = {
     ]
 
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { 
         ...process.env, 
         SMITHERS_TOOLS: JSON.stringify(tools),
@@ -314,7 +317,7 @@ export const tools = {
     ]
 
     const proc = spawn({
-      cmd: ['bun', 'run', serverPath],
+      cmd: spawnCmd,
       env: { 
         ...process.env, 
         SMITHERS_TOOLS: JSON.stringify(tools),

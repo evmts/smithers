@@ -75,8 +75,8 @@ console.log('Hello from test script')
         await fs.writeFile(scriptPath, testScript)
         await fs.chmod(scriptPath, '755')
 
-        // Execute with bun
-        const proc = Bun.spawn(['bun', scriptPath], {
+        // Execute with bun (use --config=/dev/null to bypass bunfig.toml preload)
+        const proc = Bun.spawn(['bun', '--config=/dev/null', scriptPath], {
           stdout: 'pipe',
           stderr: 'pipe',
         })
@@ -217,7 +217,7 @@ console.log('SmithersCLI test output')
         await fs.writeFile(scriptPath, testScript)
         await fs.chmod(scriptPath, '755')
 
-        const proc = Bun.spawn(['bun', scriptPath], {
+        const proc = Bun.spawn(['bun', '--config=/dev/null', scriptPath], {
           stdout: 'pipe',
           stderr: 'pipe',
         })
