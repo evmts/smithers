@@ -255,6 +255,84 @@ Minimum "must have" UI features:
 
 # 3) Engineering Design Document
 
+## 3.0 Toolchain Requirements
+
+### 3.0.1 Package Manager: uv (Required)
+
+**All development and deployment uses [uv](https://docs.astral.sh/uv/)** - the fast Python package manager from Astral.
+
+**Why uv:**
+- 10-100x faster than pip/poetry
+- Built-in virtual environment management
+- Lockfile support for reproducible builds
+- Native PyPI publishing support
+- Written in Rust, single binary install
+
+**Required Commands:**
+
+```bash
+# Install uv (if not present)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Development setup
+cd smithers_py
+uv sync                    # Install all deps from lockfile
+uv sync --all-extras       # Install with jsx + dev extras
+
+# Running
+uv run smithers-py run script.py
+uv run pytest              # Run tests
+
+# Adding dependencies
+uv add pydantic-ai         # Add to dependencies
+uv add --dev pytest        # Add to dev dependencies
+
+# Building & Publishing
+uv build                   # Build wheel + sdist
+uv publish                 # Publish to PyPI
+uv publish --token $PYPI_TOKEN  # With explicit token
+```
+
+### 3.0.2 Project Structure for uv
+
+```
+smithers_py/
+├── pyproject.toml         # Single source of truth (PEP 621)
+├── uv.lock                # Lockfile (committed to git)
+├── .python-version        # Pin Python version (e.g., "3.12")
+├── README.md
+├── CHANGELOG.md
+├── py.typed               # PEP 561 marker
+└── smithers_py/           # Package source
+    └── ...
+```
+
+### 3.0.3 CI/CD with uv
+
+```yaml
+# .github/workflows/ci.yml
+- uses: astral-sh/setup-uv@v4
+  with:
+    version: "latest"
+- run: uv sync --all-extras
+- run: uv run pytest
+- run: uv run ruff check .
+- run: uv run mypy .
+
+# Publishing (on release tag)
+- run: uv build
+- run: uv publish --token ${{ secrets.PYPI_TOKEN }}
+```
+
+### 3.0.4 Version Management
+
+- Version in `pyproject.toml` is the single source of truth
+- Use `uv version` to bump (or manual edit)
+- Tag releases: `git tag v1.0.0 && git push --tags`
+- CI publishes on tag push
+
+---
+
 ## 3.1 High-level architecture
 
 ### 3.1.1 Processes
@@ -579,6 +657,70 @@ def implement(ctx):
 5. **Cover edge cases** - rate limits, network failures, concurrent operations, frame storms
 
 E2E tests live in `smithers_py/e2e/` and use pytest fixtures that spin up real databases and executors.
+
+---
+
+## Observability & Debugging Requirements
+
+**Every component must be observable and debuggable.** When something goes wrong, operators must be able to answer "what happened?" within 30 seconds.
+
+### Required Observability Features
+
+1. **Structured Logging**
+   - All events emit structured NDJSON with `timestamp`, `level`, `component`, `execution_id`, `node_id`
+   - Log levels: `debug`, `info`, `warn`, `error`, `fatal`
+   - Correlation IDs propagate through async boundaries
+
+2. **State Introspection**
+   - `smithers-py db state <execution_id>` - dump current state snapshot
+   - `smithers-py db transitions <execution_id>` - show state change history with triggers
+   - `smithers-py db frames <execution_id>` - list frames with plan tree diffs
+
+3. **Execution Tracing**
+   - Every frame records: trigger reason, nodes mounted/unmounted, state keys read/written
+   - Agent runs record: prompt, model, tokens, duration, tool calls, output
+   - Tool calls record: name, input, output, duration, errors
+
+4. **Debug Mode**
+   - `SMITHERS_DEBUG=1` enables verbose logging (all phases, all state reads)
+   - `SMITHERS_TRACE=1` enables frame-by-frame plan tree dumps
+   - `--dry-run` validates plan without executing agents
+
+5. **Error Context**
+   - Exceptions include: node_id, frame_id, execution_id, last 3 state changes
+   - Stack traces map back to user script line numbers (source maps for .px files)
+   - Retryable vs non-retryable errors clearly distinguished
+
+6. **Time-Travel Debugging**
+   - Any frame can be inspected: plan tree, state snapshot, events
+   - Fork-from-frame creates new execution with historical state
+   - Replay mode re-executes with recorded agent responses
+
+### CLI Debug Commands
+
+```bash
+# Inspect execution state
+smithers-py db state <exec-id>
+smithers-py db transitions <exec-id> --last 20
+smithers-py db frames <exec-id> --from 5 --to 10
+
+# Live tail logs
+smithers-py logs <exec-id> --follow --level debug
+
+# Dump execution for offline analysis
+smithers-py export <exec-id> --output bundle.zip
+
+# Replay execution without model calls
+smithers-py replay bundle.zip --verify-determinism
+```
+
+### Metrics (Future)
+
+- Frame rate, frame duration histogram
+- Agent latency by model
+- Token usage by execution/phase
+- Error rate by type
+- Queue depth for pending tasks
 
 ```python
 # Example E2E test structure

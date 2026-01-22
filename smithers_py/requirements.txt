@@ -1,4 +1,8 @@
+# DEPRECATED: Use `uv sync` instead of `pip install -r requirements.txt`
+# See pyproject.toml for dependencies
+#
+# For legacy pip users:
 pydantic>=2.0
-aiosqlite
-anthropic
+pydantic-ai>=0.1.0
+aiosqlite>=0.20.0
 pyjsx  # optional, for JSX transpilation
