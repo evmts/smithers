@@ -3,11 +3,11 @@ import type { SmithersMiddleware } from './types.js'
 export type RetryBackoff = 'exponential' | 'linear'
 
 export interface RetryMiddlewareOptions {
-  maxRetries?: number
-  retryOn?: (error: Error) => boolean
-  backoff?: RetryBackoff
-  baseDelayMs?: number
-  onRetry?: (attempt: number, error: Error, delayMs: number) => void | Promise<void>
+  maxRetries?: number | undefined
+  retryOn?: ((error: Error) => boolean) | undefined
+  backoff?: RetryBackoff | undefined
+  baseDelayMs?: number | undefined
+  onRetry?: ((attempt: number, error: Error, delayMs: number) => void | Promise<void>) | undefined
 }
 
 function calculateBackoff(attempt: number, backoff: RetryBackoff, baseDelayMs: number): number {

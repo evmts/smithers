@@ -119,7 +119,7 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
         const retryOnValidationFailure = props.retryOnValidationFailure === true
         const middlewareStack = [...(providerMiddleware ?? []), ...(props.middleware ?? [])]
         const internalMiddlewares = [
-          retryMiddleware({ maxRetries: props.maxRetries ?? 3, baseDelayMs: props.retryDelayMs, retryOn: (e) => e instanceof ValidationError ? retryOnValidationFailure : true, onRetry: (attempt, e) => { const max = props.maxRetries ?? 3; const isVal = e instanceof ValidationError; log.warn('Retrying', { attempt, max, isVal, error: e instanceof Error ? e.message : String(e) }); props.onProgress?.(isVal ? `Validation failed, retrying (${attempt}/${max})...` : `Error occurred, retrying (${attempt}/${max})...`) } }),
+          retryMiddleware({ maxRetries: props.maxRetries ?? 3, ...(props.retryDelayMs !== undefined ? { baseDelayMs: props.retryDelayMs } : {}), retryOn: (e) => e instanceof ValidationError ? retryOnValidationFailure : true, onRetry: (attempt, e) => { const max = props.maxRetries ?? 3; const isVal = e instanceof ValidationError; log.warn('Retrying', { attempt, max, isVal, error: e instanceof Error ? e.message : String(e) }); props.onProgress?.(isVal ? `Validation failed, retrying (${attempt}/${max})...` : `Error occurred, retrying (${attempt}/${max})...`) } }),
         ]
         if (props.validate) internalMiddlewares.push(validationMiddleware({ validate: props.validate }))
         const middlewares = [...middlewareStack, ...internalMiddlewares]
