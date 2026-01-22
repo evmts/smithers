@@ -1,12 +1,8 @@
-import { useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider.js'
+import type { ReactNode } from 'react'
 import { addGitNotes, getCommitHash, getDiffStats } from '../../utils/vcs.js'
-import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
-import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { extractText } from '../../utils/extract-text.js'
-import { useExecutionScope } from '../ExecutionScope.js'
 import { executeClaudeCLI } from '../agents/ClaudeCodeCLI.js'
-import { makeStateKey } from '../../utils/scope.js'
+import { useGitOperation } from './useGitOperation.js'
 
 interface CommitState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -72,36 +68,13 @@ ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : 
 }
 
 export function Commit(props: CommitProps): ReactNode {
-  const smithers = useSmithers()
-  const opIdRef = useRef(props.id ?? crypto.randomUUID())
-  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'git-commit', opIdRef.current)
-
-  const { data: opState } = useQueryValue<string>(
-    smithers.db.db,
-    "SELECT value FROM state WHERE key = ?",
-    [stateKey]
-  )
-  const defaultState = { status: 'pending' as const, result: null, error: null }
-  const { status, result, error }: CommitState = (() => {
-    if (!opState) return defaultState
-    try { return JSON.parse(opState) }
-    catch { return defaultState }
-  })()
-
-  const taskIdRef = useRef<string | null>(null)
-  const isMounted = useMountedState()
-  const executionScope = useExecutionScope()
-  const shouldExecute = smithers.executionEnabled && executionScope.enabled
-
-  const setState = (newState: CommitState) => {
-    smithers.db.state.set(stateKey, newState, 'git-commit')
-  }
-
-  useExecutionMount(shouldExecute, () => {
-    ;(async () => {
-      if (status !== 'pending') return
-      taskIdRef.current = smithers.db.tasks.start('git-commit', undefined, { scopeId: executionScope.scopeId })
-
+  const defaultState: CommitState = { status: 'pending', result: null, error: null }
+  const { state } = useGitOperation<CommitState>({
+    ...(props.id ? { id: props.id } : {}),
+    operationType: 'git-commit',
+    defaultState,
+    deps: [props.all, props.autoGenerate, props.children, props.cwd, props.files, props.message, props.notes, props.onError, props.onFinished],
+    execute: async ({ smithers, setState, isMounted }) => {
       try {
         setState({ status: 'running', result: null, error: null })
 
@@ -183,13 +156,10 @@ export function Commit(props: CommitProps): ReactNode {
         if (isMounted()) {
           props.onError?.(errorObj)
         }
-      } finally {
-        if (taskIdRef.current) {
-          smithers.db.tasks.complete(taskIdRef.current)
-        }
       }
-    })()
-  }, [shouldExecute, status, props.all, props.autoGenerate, props.children, props.cwd, props.files, props.message, props.notes, props.onError, props.onFinished, smithers])
+    },
+  })
+  const { status, result, error } = state
 
   return (
     <git-commit

@@ -4,8 +4,8 @@ import { useReportGenerator, type UseReportGeneratorResult } from '../../hooks/u
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { truncate, formatTimestamp } from '../../utils/format.js'
 import { getSeverityColor, colors } from '../../utils/colors.js'
-import { useEffectOnValueChange } from '../../../reconciler/hooks.js'
 import { useTuiState } from '../../state.js'
+import { ScrollableList, clampSelectedIndex } from '../shared/ScrollableList.js'
 
 export interface ReportViewerProps {
   db?: SmithersDB
@@ -13,9 +13,9 @@ export interface ReportViewerProps {
   reportState?: UseReportGeneratorResult
 }
 
-export function ReportViewer({ db, reportState }: ReportViewerProps) {
+export function ReportViewer({ db, reportState, height }: ReportViewerProps) {
   if (reportState) {
-    return <ReportViewerContent reportState={reportState} />
+    return <ReportViewerContent reportState={reportState} height={height} />
   }
 
   if (!db) {
@@ -26,41 +26,34 @@ export function ReportViewer({ db, reportState }: ReportViewerProps) {
     )
   }
 
-  return <ReportViewerWithData db={db} />
+  return <ReportViewerWithData db={db} height={height} />
 }
 
-function ReportViewerWithData({ db }: { db: SmithersDB }) {
+function ReportViewerWithData({ db, height }: { db: SmithersDB; height?: number }) {
   const reportState = useReportGenerator(db)
-  return <ReportViewerContent reportState={reportState} />
+  return <ReportViewerContent reportState={reportState} height={height} />
 }
 
 function ReportViewerContent({
-  reportState
+  reportState,
+  height
 }: {
   reportState: UseReportGeneratorResult
+  height?: number
 }) {
   const { reports, isGenerating, generateNow } = reportState
-  const [selectedIndex, setSelectedIndex] = useTuiState<number>('tui:reports:selectedIndex', 0)
-
-  useEffectOnValueChange(reports.length, () => {
-    const maxIndex = Math.max(0, reports.length - 1)
-    if (selectedIndex > maxIndex) {
-      setSelectedIndex(maxIndex)
-    }
-  }, [reports.length, selectedIndex, setSelectedIndex])
+  const [selectedIndex] = useTuiState<number>('tui:reports:selectedIndex', 0)
 
   useKeyboard((key: KeyEvent) => {
-    if (key.name === 'j' || key.name === 'down') {
-      setSelectedIndex(prev => Math.min(prev + 1, Math.max(0, reports.length - 1)))
-    } else if (key.name === 'k' || key.name === 'up') {
-      setSelectedIndex(prev => Math.max(prev - 1, 0))
-    } else if (key.name === 'r') {
+    if (key.name === 'r') {
       generateNow()
     }
   })
 
-  const selectedReport = reports[selectedIndex]
+  const clampedIndex = clampSelectedIndex(selectedIndex, reports.length)
+  const selectedReport = reports[clampedIndex]
   const hasApiKey = !!process.env['ANTHROPIC_API_KEY']
+  const listHeight = Math.max(3, (height ?? 14) - (hasApiKey ? 4 : 5))
 
   return (
     <box style={{ flexDirection: 'column', width: '100%', height: '100%' }}>
@@ -95,28 +88,25 @@ function ReportViewerContent({
             content={`Reports (${reports.length})`}
             style={{ fg: '#bb9af7', marginBottom: 1 }}
           />
-          <scrollbox focused style={{ flexGrow: 1 }}>
-            {reports.length === 0 ? (
-              <text content="No reports yet" style={{ fg: '#565f89' }} />
-            ) : (
-              reports.map((report, index) => (
-                <box
-                  key={report.id}
-                  style={{
-                    backgroundColor: index === selectedIndex ? '#24283b' : undefined,
-                    paddingLeft: 1
-                  }}
-                >
-                  <text
-                    content={truncate(report.title, 30)}
-                    style={{
-                      fg: getSeverityColor(report.severity),
-                    }}
-                  />
-                </box>
-              ))
+          <ScrollableList
+            stateKey="tui:reports"
+            items={reports}
+            height={listHeight}
+            renderItem={(report, index, isSelected) => (
+              <box
+                key={report.id}
+                style={{
+                  backgroundColor: isSelected ? '#24283b' : undefined,
+                  paddingLeft: 1
+                }}
+              >
+                <text
+                  content={truncate(report.title, 30)}
+                  style={{ fg: getSeverityColor(report.severity) }}
+                />
+              </box>
             )}
-          </scrollbox>
+          />
         </box>
 
         <box style={{ flexGrow: 1, flexDirection: 'column', paddingLeft: 1 }}>

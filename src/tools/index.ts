@@ -17,6 +17,7 @@ export {
   isCustomTool,
   isLegacyTool,
   isSmithersTool,
+  classifyTool,
   isMCPServer,
   isToolName,
   parseToolSpecs,

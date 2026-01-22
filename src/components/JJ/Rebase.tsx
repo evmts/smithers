@@ -1,9 +1,5 @@
-import { useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider.js'
-import { useExecutionScope } from '../ExecutionScope.js'
-import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
-import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { makeStateKey } from '../../utils/scope.js'
+import type { ReactNode } from 'react'
+import { useJJOperation } from './useJJOperation.js'
 
 export interface RebaseProps {
   id?: string
@@ -41,36 +37,13 @@ interface RebaseState {
 }
 
 export function Rebase(props: RebaseProps): ReactNode {
-  const smithers = useSmithers()
-  const executionScope = useExecutionScope()
-  const opIdRef = useRef(props.id ?? crypto.randomUUID())
-  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'jj-rebase', opIdRef.current)
-
-  const { data: opState } = useQueryValue<string>(
-    smithers.db.db,
-    'SELECT value FROM state WHERE key = ?',
-    [stateKey]
-  )
   const defaultState: RebaseState = { status: 'pending', conflicts: [], error: null }
-  const { status, conflicts, error } = (() => {
-    if (!opState) return defaultState
-    try { return JSON.parse(opState) as RebaseState }
-    catch { return defaultState }
-  })()
-
-  const taskIdRef = useRef<string | null>(null)
-  const isMounted = useMountedState()
-  const shouldExecute = smithers.executionEnabled && executionScope.enabled
-
-  const setState = (newState: RebaseState) => {
-    smithers.db.state.set(stateKey, newState, 'jj-rebase')
-  }
-
-  useExecutionMount(shouldExecute, () => {
-    ;(async () => {
-      if (status !== 'pending') return
-      taskIdRef.current = smithers.db.tasks.start('jj-rebase', undefined, { scopeId: executionScope.scopeId })
-
+  const { state } = useJJOperation<RebaseState>({
+    ...(props.id ? { id: props.id } : {}),
+    operationType: 'jj-rebase',
+    defaultState,
+    deps: [props.destination, props.onConflict, props.source],
+    execute: async ({ smithers, setState, isMounted }) => {
       try {
         setState({ status: 'running', conflicts: [], error: null })
 
@@ -145,13 +118,10 @@ export function Rebase(props: RebaseProps): ReactNode {
             source: props.source,
           },
         })
-      } finally {
-        if (taskIdRef.current) {
-          smithers.db.tasks.complete(taskIdRef.current)
-        }
       }
-    })()
-  }, [props.destination, props.onConflict, props.source, smithers, status, shouldExecute])
+    },
+  })
+  const { status, conflicts, error } = state
 
   return (
     <jj-rebase

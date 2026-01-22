@@ -1,10 +1,6 @@
-import { useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider.js'
-import { useExecutionScope } from '../ExecutionScope.js'
+import type { ReactNode } from 'react'
 import { jjCommit, addGitNotes, getJJDiffStats } from '../../utils/vcs.js'
-import { useExecutionMount } from '../../reconciler/hooks.js'
-import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { makeStateKey } from '../../utils/scope.js'
+import { useJJOperation } from './useJJOperation.js'
 
 export interface CommitProps {
   id?: string
@@ -21,35 +17,13 @@ interface CommitState {
 }
 
 export function Commit(props: CommitProps): ReactNode {
-  const smithers = useSmithers()
-  const executionScope = useExecutionScope()
-  const opIdRef = useRef(props.id ?? crypto.randomUUID())
-  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'jj-commit', opIdRef.current)
-
-  const { data: opState } = useQueryValue<string>(
-    smithers.db.db,
-    'SELECT value FROM state WHERE key = ?',
-    [stateKey]
-  )
   const defaultState: CommitState = { status: 'pending', result: null, error: null }
-  const { status, result, error } = (() => {
-    if (!opState) return defaultState
-    try { return JSON.parse(opState) as CommitState }
-    catch { return defaultState }
-  })()
-
-  const taskIdRef = useRef<string | null>(null)
-  const shouldExecute = smithers.executionEnabled && executionScope.enabled
-
-  const setState = (newState: CommitState) => {
-    smithers.db.state.set(stateKey, newState, 'jj-commit')
-  }
-
-  useExecutionMount(shouldExecute, () => {
-    ;(async () => {
-      if (status !== 'pending') return
-      taskIdRef.current = smithers.db.tasks.start('jj-commit', undefined, { scopeId: executionScope.scopeId })
-
+  const { state } = useJJOperation<CommitState>({
+    ...(props.id ? { id: props.id } : {}),
+    operationType: 'jj-commit',
+    defaultState,
+    deps: [props.autoDescribe, props.message, props.notes],
+    execute: async ({ smithers, setState }) => {
       try {
         setState({ status: 'running', result: null, error: null })
 
@@ -88,13 +62,10 @@ export function Commit(props: CommitProps): ReactNode {
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err))
         setState({ status: 'error', result: null, error: errorObj.message })
-      } finally {
-        if (taskIdRef.current) {
-          smithers.db.tasks.complete(taskIdRef.current)
-        }
       }
-    })()
-  }, [props.autoDescribe, props.message, props.notes, smithers, status, shouldExecute])
+    },
+  })
+  const { status, result, error } = state
 
   return (
     <jj-commit

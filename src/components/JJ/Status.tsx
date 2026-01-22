@@ -1,10 +1,6 @@
-import { useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider.js'
-import { useExecutionScope } from '../ExecutionScope.js'
+import type { ReactNode } from 'react'
 import { getJJStatus } from '../../utils/vcs.js'
-import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
-import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { makeStateKey } from '../../utils/scope.js'
+import { useJJOperation } from './useJJOperation.js'
 
 export interface StatusProps {
   id?: string
@@ -21,36 +17,13 @@ interface StatusState {
 }
 
 export function Status(props: StatusProps): ReactNode {
-  const smithers = useSmithers()
-  const executionScope = useExecutionScope()
-  const opIdRef = useRef(props.id ?? crypto.randomUUID())
-  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'jj-status', opIdRef.current)
-
-  const { data: opState } = useQueryValue<string>(
-    smithers.db.db,
-    'SELECT value FROM state WHERE key = ?',
-    [stateKey]
-  )
   const defaultState: StatusState = { status: 'pending', fileStatus: null, isDirty: null, error: null }
-  const { status, fileStatus, isDirty, error } = (() => {
-    if (!opState) return defaultState
-    try { return JSON.parse(opState) as StatusState }
-    catch { return defaultState }
-  })()
-
-  const taskIdRef = useRef<string | null>(null)
-  const isMounted = useMountedState()
-  const shouldExecute = smithers.executionEnabled && executionScope.enabled
-
-  const setState = (newState: StatusState) => {
-    smithers.db.state.set(stateKey, newState, 'jj-status')
-  }
-
-  useExecutionMount(shouldExecute, () => {
-    ;(async () => {
-      if (status !== 'pending') return
-      taskIdRef.current = smithers.db.tasks.start('jj-status', undefined, { scopeId: executionScope.scopeId })
-
+  const { state } = useJJOperation<StatusState>({
+    ...(props.id ? { id: props.id } : {}),
+    operationType: 'jj-status',
+    defaultState,
+    deps: [props.onClean, props.onDirty],
+    execute: async ({ smithers, setState, isMounted }) => {
       try {
         setState({ status: 'running', fileStatus: null, isDirty: null, error: null })
 
@@ -85,13 +58,10 @@ export function Status(props: StatusProps): ReactNode {
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err))
         setState({ status: 'error', fileStatus: null, isDirty: null, error: errorObj.message })
-      } finally {
-        if (taskIdRef.current) {
-          smithers.db.tasks.complete(taskIdRef.current)
-        }
       }
-    })()
-  }, [props.onClean, props.onDirty, smithers, status, shouldExecute])
+    },
+  })
+  const { status, fileStatus, isDirty, error } = state
 
   return (
     <jj-status

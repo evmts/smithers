@@ -1,9 +1,5 @@
-import { useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider.js'
-import { useExecutionScope } from '../ExecutionScope.js'
-import { useExecutionMount } from '../../reconciler/hooks.js'
-import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { makeStateKey } from '../../utils/scope.js'
+import type { ReactNode } from 'react'
+import { useJJOperation } from './useJJOperation.js'
 
 export interface DescribeProps {
   id?: string
@@ -19,35 +15,13 @@ interface DescribeState {
 }
 
 export function Describe(props: DescribeProps): ReactNode {
-  const smithers = useSmithers()
-  const executionScope = useExecutionScope()
-  const opIdRef = useRef(props.id ?? crypto.randomUUID())
-  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'jj-describe', opIdRef.current)
-
-  const { data: opState } = useQueryValue<string>(
-    smithers.db.db,
-    'SELECT value FROM state WHERE key = ?',
-    [stateKey]
-  )
   const defaultState: DescribeState = { status: 'pending', description: null, error: null }
-  const { status, description, error } = (() => {
-    if (!opState) return defaultState
-    try { return JSON.parse(opState) as DescribeState }
-    catch { return defaultState }
-  })()
-
-  const taskIdRef = useRef<string | null>(null)
-  const shouldExecute = smithers.executionEnabled && executionScope.enabled
-
-  const setState = (newState: DescribeState) => {
-    smithers.db.state.set(stateKey, newState, 'jj-describe')
-  }
-
-  useExecutionMount(shouldExecute, () => {
-    ;(async () => {
-      if (status !== 'pending') return
-      taskIdRef.current = smithers.db.tasks.start('jj-describe', undefined, { scopeId: executionScope.scopeId })
-
+  const { state } = useJJOperation<DescribeState>({
+    ...(props.id ? { id: props.id } : {}),
+    operationType: 'jj-describe',
+    defaultState,
+    deps: [props.template, props.useAgent],
+    execute: async ({ smithers, setState }) => {
       try {
         setState({ status: 'running', description: null, error: null })
 
@@ -71,13 +45,10 @@ export function Describe(props: DescribeProps): ReactNode {
       } catch (err) {
         const errorObj = err instanceof Error ? err : new Error(String(err))
         setState({ status: 'error', description: null, error: errorObj.message })
-      } finally {
-        if (taskIdRef.current) {
-          smithers.db.tasks.complete(taskIdRef.current)
-        }
       }
-    })()
-  }, [props.template, props.useAgent, smithers, status, shouldExecute])
+    },
+  })
+  const { status, description, error } = state
 
   return (
     <jj-describe

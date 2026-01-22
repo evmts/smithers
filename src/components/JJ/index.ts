@@ -3,6 +3,7 @@ export { Commit, type CommitProps } from './Commit.js'
 export { Describe, type DescribeProps } from './Describe.js'
 export { Status, type StatusProps } from './Status.js'
 export { Rebase, type RebaseProps } from './Rebase.js'
+export { useJJOperation, type UseJJOperationOptions, type JJOperationContext } from './useJJOperation.js'
 
 export {
   getSnapshot,

@@ -27,41 +27,96 @@ export function getToolInfo(name: string): (typeof BUILTIN_TOOLS)[BuiltinToolNam
   return null
 }
 
-export function isCustomTool(spec: ToolSpec): spec is LegacyTool {
-  return (
-    typeof spec === 'object' &&
-    spec !== null &&
-    'execute' in spec &&
-    typeof spec.execute === 'function'
-  )
+export type ToolClassification =
+  | { kind: 'builtin'; name: BuiltinToolName }
+  | { kind: 'tool-name'; name: string }
+  | { kind: 'mcp-server'; server: MCPServer }
+  | { kind: 'smithers'; tool: SmithersTool }
+  | { kind: 'legacy'; tool: LegacyTool }
+  | { kind: 'custom'; tool: LegacyTool }
+  | { kind: 'unknown'; spec: ToolSpec }
+
+function isToolObject(spec: ToolSpec): spec is Exclude<ToolSpec, string> {
+  return typeof spec === 'object' && spec !== null
 }
 
-export function isLegacyTool(spec: ToolSpec): spec is LegacyTool {
+function isSmithersToolSpec(spec: ToolSpec): spec is SmithersTool {
   return (
-    typeof spec === 'object' &&
-    spec !== null &&
-    'execute' in spec &&
-    'inputSchema' in spec &&
-    typeof (spec as any).inputSchema?.type === 'string'
-  )
-}
-
-export function isSmithersTool(spec: ToolSpec): spec is SmithersTool {
-  return (
-    typeof spec === 'object' &&
-    spec !== null &&
+    isToolObject(spec) &&
     'execute' in spec &&
     'inputSchema' in spec &&
     typeof (spec as any).inputSchema?.safeParse === 'function'
   )
 }
 
+function isLegacyToolSpec(spec: ToolSpec): spec is LegacyTool {
+  return (
+    isToolObject(spec) &&
+    'execute' in spec &&
+    'inputSchema' in spec &&
+    typeof (spec as any).inputSchema?.type === 'string'
+  )
+}
+
+function isCustomToolSpec(spec: ToolSpec): spec is LegacyTool {
+  return (
+    isToolObject(spec) &&
+    'execute' in spec &&
+    typeof (spec as any).execute === 'function'
+  )
+}
+
+function isMCPServerSpec(spec: ToolSpec): spec is MCPServer {
+  return isToolObject(spec) && 'command' in spec && !('execute' in spec)
+}
+
+export function classifyTool(spec: ToolSpec): ToolClassification {
+  if (typeof spec === 'string') {
+    if (isBuiltinTool(spec)) {
+      return { kind: 'builtin', name: spec }
+    }
+    return { kind: 'tool-name', name: spec }
+  }
+
+  if (isSmithersToolSpec(spec)) {
+    return { kind: 'smithers', tool: spec }
+  }
+
+  if (isLegacyToolSpec(spec)) {
+    return { kind: 'legacy', tool: spec }
+  }
+
+  if (isCustomToolSpec(spec)) {
+    return { kind: 'custom', tool: spec }
+  }
+
+  if (isMCPServerSpec(spec)) {
+    return { kind: 'mcp-server', server: spec }
+  }
+
+  return { kind: 'unknown', spec }
+}
+
+export function isCustomTool(spec: ToolSpec): spec is LegacyTool {
+  const kind = classifyTool(spec).kind
+  return kind === 'custom' || kind === 'legacy' || kind === 'smithers'
+}
+
+export function isLegacyTool(spec: ToolSpec): spec is LegacyTool {
+  return classifyTool(spec).kind === 'legacy'
+}
+
+export function isSmithersTool(spec: ToolSpec): spec is SmithersTool {
+  return classifyTool(spec).kind === 'smithers'
+}
+
 export function isMCPServer(spec: ToolSpec): spec is MCPServer {
-  return typeof spec === 'object' && spec !== null && 'command' in spec && !('execute' in spec)
+  return classifyTool(spec).kind === 'mcp-server'
 }
 
 export function isToolName(spec: ToolSpec): spec is string {
-  return typeof spec === 'string'
+  const kind = classifyTool(spec).kind
+  return kind === 'tool-name' || kind === 'builtin'
 }
 
 export function parseToolSpecs(specs: ToolSpec[]): {
@@ -78,17 +133,18 @@ export function parseToolSpecs(specs: ToolSpec[]): {
   const mcpServers: MCPServer[] = []
 
   for (const spec of specs) {
-    if (isToolName(spec)) {
-      builtinTools.push(spec)
-    } else if (isMCPServer(spec)) {
-      mcpServers.push(spec)
-    } else if (isSmithersTool(spec)) {
-      smithersTools.push(spec)
-    } else if (isLegacyTool(spec)) {
-      customTools.push(spec)
-      legacyTools.push(spec)
-    } else if (isCustomTool(spec)) {
-      customTools.push(spec)
+    const classified = classifyTool(spec)
+    if (classified.kind === 'builtin' || classified.kind === 'tool-name') {
+      builtinTools.push(classified.name)
+    } else if (classified.kind === 'mcp-server') {
+      mcpServers.push(classified.server)
+    } else if (classified.kind === 'smithers') {
+      smithersTools.push(classified.tool)
+    } else if (classified.kind === 'legacy') {
+      customTools.push(classified.tool)
+      legacyTools.push(classified.tool)
+    } else if (classified.kind === 'custom') {
+      customTools.push(classified.tool)
     }
   }
 

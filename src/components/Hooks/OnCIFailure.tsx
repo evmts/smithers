@@ -1,9 +1,9 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
-import { useUnmount, useExecutionMount, useEffectOnValueChange } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { useExecutionScope } from '../ExecutionScope.js'
 import { makeStateKey } from '../../utils/scope.js'
+import { usePollingHook } from './usePollingHook.js'
 
 export interface CIFailure {
   failed: boolean
@@ -141,133 +141,94 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
   const { ciStatus, currentFailure, triggered, error } = state
 
   const taskIdRef = useRef<string | null>(null)
-  const inFlightRef = useRef(false)
   const branchRef = useRef<string | null>(props.branch ?? null)
 
   const intervalMs = props.pollInterval ?? 30000
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
   const shouldExecute = executionEnabled && executionScope.enabled
-  useExecutionMount(shouldExecute, () => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-      pollIntervalRef.current = null
-    }
 
-    // Initialize state if not present
-    const currentState = db.state.get<CIFailureState>(stateKey)
-    if (!currentState) {
-      db.state.set(stateKey, DEFAULT_CI_STATE, 'ci-failure-init')
-    }
+  usePollingHook({
+    shouldExecute,
+    intervalMs,
+    immediate: true,
+    deps: [props.branch, props.onFailure, props.provider],
+    onStart: async () => {
+      const currentState = db.state.get<CIFailureState>(stateKey)
+      if (!currentState) {
+        db.state.set(stateKey, DEFAULT_CI_STATE, 'ci-failure-init')
+      }
 
-    // Fire-and-forget async IIFE pattern
-    ;(async () => {
       const resolvedBranch = props.branch ?? await resolveDefaultBranch()
       branchRef.current = resolvedBranch ?? 'main'
 
       const s = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
       db.state.set(stateKey, { ...s, ciStatus: 'polling' }, 'ci-failure-polling')
-
-      // Define the polling function
-      const checkCI = async () => {
-        if (inFlightRef.current) return
-        inFlightRef.current = true
-
-        try {
-          if (props.provider !== 'github-actions') {
-            const currentS = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
-            db.state.set(stateKey, {
-              ...currentS,
-              error: `Unsupported CI provider: ${props.provider}`,
-              ciStatus: 'error',
-            }, 'ci-failure-error')
-            return
-          }
-
-          const branch = branchRef.current ?? 'main'
-          const run = await fetchLatestGitHubActionsRun(branch)
-
-          if (!run) {
-            return
-          }
-
-          const currentS = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
-          const processedSet = new Set(currentS.processedRunIds)
-
-          // Check if this is a new failure
-          if (
-            run.status === 'completed' &&
-            run.conclusion === 'failure' &&
-            !processedSet.has(run.databaseId)
-          ) {
-            // Fetch additional failure details
-            const failedJobs = await fetchFailedJobs(run.databaseId)
-            const logs = await fetchRunLogs(run.databaseId)
-
-            const failure: CIFailure = {
-              failed: true,
-              runId: String(run.databaseId),
-              workflowName: run.name,
-              failedJobs,
-              logs,
-            }
-
-            const nextRunIds = [...currentS.processedRunIds, run.databaseId].slice(-MAX_PROCESSED_RUNS)
-
-            // Update state with new failure and processed ID
-            db.state.set(stateKey, {
-              ...currentS,
-              ciStatus: 'failed',
-              currentFailure: failure,
-              triggered: true,
-              processedRunIds: nextRunIds,
-            }, 'ci-failure-triggered')
-
-            // Call onFailure callback
-            props.onFailure?.(failure)
-
-            // Register task for tracking - children will handle completion
-            taskIdRef.current = db.tasks.start('ci-failure-hook', undefined, { scopeId: executionScope.scopeId })
-            // Complete immediately as children handle their own task registration
-            db.tasks.complete(taskIdRef.current)
-
-            // Log to db state
-            db.state.set(lastFailureKey, failure, 'ci-failure-hook')
-          }
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err)
+    },
+    onTick: async () => {
+      try {
+        if (props.provider !== 'github-actions') {
           const currentS = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
           db.state.set(stateKey, {
             ...currentS,
-            error: errorMsg,
+            error: `Unsupported CI provider: ${props.provider}`,
             ciStatus: 'error',
           }, 'ci-failure-error')
-          console.error('[OnCIFailure] Polling error:', errorMsg)
-        } finally {
-          inFlightRef.current = false
+          return
         }
+
+        const branch = branchRef.current ?? 'main'
+        const run = await fetchLatestGitHubActionsRun(branch)
+
+        if (!run) {
+          return
+        }
+
+        const currentS = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
+        const processedSet = new Set(currentS.processedRunIds)
+
+        if (
+          run.status === 'completed' &&
+          run.conclusion === 'failure' &&
+          !processedSet.has(run.databaseId)
+        ) {
+          const failedJobs = await fetchFailedJobs(run.databaseId)
+          const logs = await fetchRunLogs(run.databaseId)
+
+          const failure: CIFailure = {
+            failed: true,
+            runId: String(run.databaseId),
+            workflowName: run.name,
+            failedJobs,
+            logs,
+          }
+
+          const nextRunIds = [...currentS.processedRunIds, run.databaseId].slice(-MAX_PROCESSED_RUNS)
+
+          db.state.set(stateKey, {
+            ...currentS,
+            ciStatus: 'failed',
+            currentFailure: failure,
+            triggered: true,
+            processedRunIds: nextRunIds,
+          }, 'ci-failure-triggered')
+
+          props.onFailure?.(failure)
+
+          taskIdRef.current = db.tasks.start('ci-failure-hook', undefined, { scopeId: executionScope.scopeId })
+          db.tasks.complete(taskIdRef.current)
+
+          db.state.set(lastFailureKey, failure, 'ci-failure-hook')
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        const currentS = db.state.get<CIFailureState>(stateKey) ?? DEFAULT_CI_STATE
+        db.state.set(stateKey, {
+          ...currentS,
+          error: errorMsg,
+          ciStatus: 'error',
+        }, 'ci-failure-error')
+        console.error('[OnCIFailure] Polling error:', errorMsg)
       }
-
-      // Initial check
-      await checkCI()
-
-      // Start polling
-      pollIntervalRef.current = setInterval(checkCI, intervalMs)
-    })()
-  }, [db, executionEnabled, intervalMs, props.branch, props.onFailure, props.provider])
-
-  useUnmount(() => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-    }
-  })
-
-  useEffectOnValueChange(shouldExecute, () => {
-    if (shouldExecute) return
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-      pollIntervalRef.current = null
-    }
+    },
   })
 
   // Resolve children - support render prop pattern

@@ -2,11 +2,11 @@ import * as path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
-import { useUnmount, useExecutionMount, useEffectOnValueChange } from '../../reconciler/hooks.js'
 import { useQueryValue } from '../../reactive-sqlite/index.js'
 import { useExecutionScope } from '../ExecutionScope.js'
 import { makeStateKey } from '../../utils/scope.js'
 import { SMITHERS_NOTES_REF } from '../../utils/vcs.js'
+import { usePollingHook } from './usePollingHook.js'
 
 export interface PostCommitProps {
   children: ReactNode
@@ -117,104 +117,75 @@ export function PostCommit(props: PostCommitProps): ReactNode {
   })()
   const { triggered, currentTrigger, hookInstalled, error } = state
 
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const taskIdRef = useRef<string | null>(null)
-  const inFlightRef = useRef(false)
+  const shouldExecute = executionEnabled && executionScope.enabled && !!db && !!reactiveDb
 
-  const shouldExecute = executionEnabled && executionScope.enabled
-  useExecutionMount(shouldExecute, () => {
-    if (!db || !reactiveDb) return
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-      pollIntervalRef.current = null
-    }
+  usePollingHook({
+    shouldExecute,
+    intervalMs: 1000,
+    immediate: false,
+    deps: [props.async, props.runOn],
+    onStart: async () => {
+      if (!db || !reactiveDb) return
 
-    // Initialize state if not present
-    const currentState = db.state.get<PostCommitState>(stateKey)
-    if (!currentState) {
-      db.state.set(stateKey, DEFAULT_STATE, 'post-commit-init')
-    }
+      const currentState = db.state.get<PostCommitState>(stateKey)
+      if (!currentState) {
+        db.state.set(stateKey, DEFAULT_STATE, 'post-commit-init')
+      }
 
-    // Fire-and-forget async IIFE pattern
-    ;(async () => {
       try {
-        // Install the git hook
         await installPostCommitHook()
         const s = db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
         db.state.set(stateKey, { ...s, hookInstalled: true }, 'post-commit-hook-installed')
-
-        // Start polling for triggers
-        pollIntervalRef.current = setInterval(async () => {
-          if (inFlightRef.current) return
-          inFlightRef.current = true
-          try {
-            const namespacedTrigger = db.state.get<HookTrigger>(lastTriggerKey)
-            const legacyTrigger = namespacedTrigger
-              ? null
-              : db.state.get<HookTrigger>('last_hook_trigger')
-            const trigger = namespacedTrigger ?? legacyTrigger
-            const triggerKey = namespacedTrigger ? lastTriggerKey : 'last_hook_trigger'
-            const currentS = db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
-
-            if (trigger && trigger.type === 'post-commit' && trigger.timestamp > currentS.lastProcessedTimestamp) {
-              // Check filter conditions
-              let shouldTrigger = true
-
-              if (props.runOn === 'smithers-only') {
-                shouldTrigger = await hasSmithersMetadata(trigger.commitHash)
-              }
-
-              if (shouldTrigger) {
-                db.state.set(stateKey, {
-                  ...currentS,
-                  triggered: true,
-                  currentTrigger: trigger,
-                  lastProcessedTimestamp: trigger.timestamp,
-                }, 'post-commit-triggered')
-
-                // Mark as processed in db
-                db.state.set(triggerKey, {
-                  ...trigger,
-                  processed: true,
-                }, 'post-commit-hook')
-
-                // If running in background (async), register task
-                if (props.async) {
-                  taskIdRef.current = db.tasks.start('post-commit-hook', undefined, { scopeId: executionScope.scopeId })
-                  // Task will be completed when children finish
-                  // For now, we complete immediately as children handle their own task registration
-                  db.tasks.complete(taskIdRef.current)
-                }
-              }
-            }
-          } catch (pollError) {
-            console.error('[PostCommit] Polling error:', pollError)
-          } finally {
-            inFlightRef.current = false
-          }
-        }, 1000) // Poll every 1 second
-
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         const s = db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
         db.state.set(stateKey, { ...s, error: errorMsg }, 'post-commit-error')
         console.error('[PostCommit] Failed to install hook:', errorMsg)
+        throw err
       }
-    })()
-  }, [db, reactiveDb, executionEnabled, props.async, props.runOn])
+    },
+    onTick: async () => {
+      if (!db || !reactiveDb) return
+      try {
+        const namespacedTrigger = db.state.get<HookTrigger>(lastTriggerKey)
+        const legacyTrigger = namespacedTrigger
+          ? null
+          : db.state.get<HookTrigger>('last_hook_trigger')
+        const trigger = namespacedTrigger ?? legacyTrigger
+        const triggerKey = namespacedTrigger ? lastTriggerKey : 'last_hook_trigger'
+        const currentS = db.state.get<PostCommitState>(stateKey) ?? DEFAULT_STATE
 
-  useUnmount(() => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-    }
-  })
+        if (trigger && trigger.type === 'post-commit' && trigger.timestamp > currentS.lastProcessedTimestamp) {
+          let shouldTrigger = true
 
-  useEffectOnValueChange(shouldExecute, () => {
-    if (shouldExecute) return
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-      pollIntervalRef.current = null
-    }
+          if (props.runOn === 'smithers-only') {
+            shouldTrigger = await hasSmithersMetadata(trigger.commitHash)
+          }
+
+          if (shouldTrigger) {
+            db.state.set(stateKey, {
+              ...currentS,
+              triggered: true,
+              currentTrigger: trigger,
+              lastProcessedTimestamp: trigger.timestamp,
+            }, 'post-commit-triggered')
+
+            db.state.set(triggerKey, {
+              ...trigger,
+              processed: true,
+            }, 'post-commit-hook')
+
+            if (props.async) {
+              taskIdRef.current = db.tasks.start('post-commit-hook', undefined, { scopeId: executionScope.scopeId })
+              db.tasks.complete(taskIdRef.current)
+            }
+          }
+        }
+      } catch (pollError) {
+        console.error('[PostCommit] Polling error:', pollError)
+      }
+    },
   })
 
   return (

@@ -7,6 +7,7 @@ import {
   isCustomTool,
   isLegacyTool,
   isSmithersTool,
+  classifyTool,
   isMCPServer,
   isToolName,
   parseToolSpecs,
@@ -151,6 +152,52 @@ describe('isCustomTool', () => {
 
     expect(isCustomTool(server)).toBe(false)
     expect(isLegacyTool(server)).toBe(false)
+  })
+})
+
+describe('classifyTool', () => {
+  test('classifies builtin tool names', () => {
+    const result = classifyTool('Read')
+    expect(result.kind).toBe('builtin')
+  })
+
+  test('classifies non-builtin tool names', () => {
+    const result = classifyTool('CustomTool')
+    expect(result.kind).toBe('tool-name')
+  })
+
+  test('classifies MCP servers', () => {
+    const server: MCPServer = { name: 'mcp', command: 'node', args: ['server.js'] }
+    const result = classifyTool(server)
+    expect(result.kind).toBe('mcp-server')
+  })
+
+  test('classifies legacy tools', () => {
+    const tool: LegacyTool = {
+      name: 'legacy',
+      description: 'legacy',
+      inputSchema: { type: 'object' },
+      execute: async () => {},
+    }
+    const result = classifyTool(tool)
+    expect(result.kind).toBe('legacy')
+  })
+
+  test('classifies smithers tools', () => {
+    const tool = createSmithersTool({
+      name: 'smithers',
+      description: 'smithers',
+      inputSchema: z.object({ value: z.string() }),
+      execute: async ({ value }) => ({ result: value }),
+    })
+    const result = classifyTool(tool)
+    expect(result.kind).toBe('smithers')
+  })
+
+  test('classifies custom tools', () => {
+    const tool = { name: 'custom', description: 'custom', execute: async () => {} }
+    const result = classifyTool(tool as any)
+    expect(result.kind).toBe('custom')
   })
 })
 

@@ -1,10 +1,6 @@
-import { useRef, type ReactNode } from 'react'
-import { useSmithers } from '../SmithersProvider.js'
-import { useExecutionScope } from '../ExecutionScope.js'
+import type { ReactNode } from 'react'
 import { addGitNotes, getGitNotes } from '../../utils/vcs.js'
-import { useMountedState, useExecutionMount } from '../../reconciler/hooks.js'
-import { useQueryValue } from '../../reactive-sqlite/index.js'
-import { makeStateKey } from '../../utils/scope.js'
+import { useGitOperation } from './useGitOperation.js'
 
 interface NotesState {
   status: 'pending' | 'running' | 'complete' | 'error'
@@ -36,36 +32,13 @@ export interface NotesResult {
 }
 
 export function Notes(props: NotesProps): ReactNode {
-  const smithers = useSmithers()
-  const executionScope = useExecutionScope()
-  const opIdRef = useRef(props.id ?? crypto.randomUUID())
-  const stateKey = makeStateKey(smithers.executionId ?? 'execution', 'git-notes', opIdRef.current)
-
-  const { data: opState } = useQueryValue<string>(
-    smithers.db.db,
-    "SELECT value FROM state WHERE key = ?",
-    [stateKey]
-  )
-  const defaultState = { status: 'pending' as const, result: null, error: null }
-  const { status, result, error }: NotesState = (() => {
-    if (!opState) return defaultState
-    try { return JSON.parse(opState) }
-    catch { return defaultState }
-  })()
-
-  const taskIdRef = useRef<string | null>(null)
-  const isMounted = useMountedState()
-
-  const setState = (newState: NotesState) => {
-    smithers.db.state.set(stateKey, newState, 'git-notes')
-  }
-
-  const shouldExecute = smithers.executionEnabled && executionScope.enabled
-  useExecutionMount(shouldExecute, () => {
-    ;(async () => {
-      if (status !== 'pending') return
-      taskIdRef.current = smithers.db.tasks.start('git-notes', undefined, { scopeId: executionScope.scopeId })
-
+  const defaultState: NotesState = { status: 'pending', result: null, error: null }
+  const { state } = useGitOperation<NotesState>({
+    ...(props.id ? { id: props.id } : {}),
+    operationType: 'git-notes',
+    defaultState,
+    deps: [props.append, props.commitRef, props.cwd, props.data, props.onError, props.onFinished],
+    execute: async ({ smithers, setState, isMounted }) => {
       try {
         setState({ status: 'running', result: null, error: null })
 
@@ -99,13 +72,10 @@ export function Notes(props: NotesProps): ReactNode {
         if (isMounted()) {
           props.onError?.(errorObj)
         }
-      } finally {
-        if (taskIdRef.current) {
-          smithers.db.tasks.complete(taskIdRef.current)
-        }
       }
-    })()
-  }, [props.append, props.commitRef, props.cwd, props.data, props.onError, props.onFinished, smithers])
+    },
+  })
+  const { status, result, error } = state
 
   return (
     <git-notes
