@@ -279,4 +279,39 @@ pub fn build(b: *std.Build) void {
     const modes_test_step = b.step("test-modes", "Run modes module tests");
     modes_test_step.dependOn(&run_modes_tests.step);
     test_step.dependOn(&run_modes_tests.step);
+
+    // Config module for E2E tests
+    const config_e2e_mod = b.createModule(.{
+        .root_source_file = b.path("config.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Print mode module for E2E tests
+    const print_mode_e2e_mod = b.createModule(.{
+        .root_source_file = b.path("modes/print.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "agent", .module = agent_mod },
+        },
+    });
+
+    // E2E integration tests
+    const e2e_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/e2e.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "agent", .module = agent_mod },
+                .{ .name = "config", .module = config_e2e_mod },
+                .{ .name = "print_mode", .module = print_mode_e2e_mod },
+            },
+        }),
+    });
+    const run_e2e_tests = b.addRunArtifact(e2e_tests);
+    const e2e_test_step = b.step("test-e2e", "Run E2E integration tests");
+    e2e_test_step.dependOn(&run_e2e_tests.step);
+    test_step.dependOn(&run_e2e_tests.step);
 }
