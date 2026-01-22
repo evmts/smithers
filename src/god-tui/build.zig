@@ -25,6 +25,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Components module
+    const components_mod = b.createModule(.{
+        .root_source_file = b.path("components/test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Unit tests for lib
     const lib_unit_tests = b.addTest(.{
         .root_module = lib_mod,
@@ -43,8 +50,15 @@ pub fn build(b: *std.Build) void {
     });
     const run_rendering_tests = b.addRunArtifact(rendering_tests);
 
+    // Components module tests
+    const components_tests = b.addTest(.{
+        .root_module = components_mod,
+    });
+    const run_components_tests = b.addRunArtifact(components_tests);
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_terminal_tests.step);
     test_step.dependOn(&run_rendering_tests.step);
+    test_step.dependOn(&run_components_tests.step);
 }
