@@ -68,7 +68,7 @@ export function Command(props: CommandProps): ReactNode {
   }
 
   // Resolve cwd: props.cwd takes priority, then worktree context
-  const effectiveCwd = props.cwd ?? worktree?.path ?? process.cwd()
+  const effectiveCwd = props.cwd ?? worktree?.cwd ?? process.cwd()
 
   useExecutionMount(shouldExecute, () => {
     ;(async () => {
@@ -136,8 +136,8 @@ export function Command(props: CommandProps): ReactNode {
         }
 
         const exitCode = raceResult
-        const stdout = await new Response(proc.stdout).text()
-        const stderr = await new Response(proc.stderr).text()
+        const stdout = proc.stdout ? await new Response(proc.stdout as ReadableStream).text() : ''
+        const stderr = proc.stderr ? await new Response(proc.stderr as ReadableStream).text() : ''
         const durationMs = Date.now() - startTime
         const success = exitCode === 0
 
@@ -184,12 +184,12 @@ export function Command(props: CommandProps): ReactNode {
   // Render children function if result is available
   const childContent = result && props.children ? props.children(result) : null
 
+  const attrs: Record<string, unknown> = { status }
+  if (result?.exitCode !== undefined) attrs['exit-code'] = result.exitCode
+  if (result?.durationMs !== undefined) attrs['duration-ms'] = result.durationMs
+
   return (
-    <command
-      status={status}
-      exit-code={result?.exitCode}
-      duration-ms={result?.durationMs}
-    >
+    <command {...attrs}>
       {childContent}
     </command>
   )

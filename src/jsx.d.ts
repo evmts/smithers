@@ -172,6 +172,16 @@ interface SmithersIntrinsicElements {
         [key: string]: unknown
       }
 
+      // Command execution element
+      command: {
+        status?: string
+        'exit-code'?: number
+        'duration-ms'?: number
+        children?: React.ReactNode
+        key?: string | number
+        [key: string]: unknown
+      }
+
       // Generic elements for tests
       task: {
         children?: React.ReactNode

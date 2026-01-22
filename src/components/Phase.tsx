@@ -15,6 +15,7 @@ function getPhaseStatus(isSkipped: boolean, isActive: boolean, isCompleted: bool
   if (isCompleted) return 'completed'
   return 'pending'
 }
+
 export interface PhaseProps {
   name: string
   children: ReactNode
@@ -24,7 +25,6 @@ export interface PhaseProps {
 }
 
 export function Phase(props: PhaseProps): ReactNode {
-  // Phase requires Ralph/While for iteration-based progression
   const ralphCtx = useRequireRalph('Phase')
   
   const { db, executionEnabled } = useSmithers()
@@ -38,7 +38,6 @@ export function Phase(props: PhaseProps): ReactNode {
   const prevIsActiveRef = useRef(false)
   const skipIfErrorRef = useRef<Error | null>(null)
 
-  // Create logger with phase context
   const log: Logger = useMemo(() => createLogger('Phase', { name: props.name }), [props.name])
 
   skipIfErrorRef.current = null

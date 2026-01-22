@@ -1,5 +1,5 @@
-import { type ReactNode, type ReactElement, Children, isValidElement, useRef, useState, useEffect } from 'react'
-import { useMountedState } from '../reconciler/hooks.js'
+import { type ReactNode, type ReactElement, Children, isValidElement, useRef, useState } from 'react'
+import { useMountedState, useMount } from '../reconciler/hooks.js'
 
 export interface SwitchProps<T = unknown> {
   id?: string
@@ -36,7 +36,7 @@ export function Switch<T>({ value, children }: SwitchProps<T>): ReactNode {
   const resolvedRef = useRef<ResolvedState<T>>({ resolved: false })
   const [, forceUpdate] = useState(0)
 
-  useEffect(() => {
+  useMount(() => {
     const resolveValue = async () => {
       let val: T
       if (typeof value === 'function') {
@@ -50,7 +50,7 @@ export function Switch<T>({ value, children }: SwitchProps<T>): ReactNode {
       }
     }
     resolveValue()
-  }, [value, isMounted])
+  })
 
   if (!resolvedRef.current.resolved) {
     return null
