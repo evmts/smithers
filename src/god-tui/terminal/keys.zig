@@ -148,19 +148,20 @@ pub fn parseLegacyKey(data: []const u8) KeyEvent {
     // Control characters
     if (data.len == 1) {
         const c = data[0];
+        // Special keys first (before ctrl-letter range check)
+        if (c == 27) return .{ .key = .escape, .modifiers = .{}, .raw = data };
+        if (c == 13) return .{ .key = .enter, .modifiers = .{}, .raw = data };
+        if (c == 9) return .{ .key = .tab, .modifiers = .{}, .raw = data };
+        if (c == 127) return .{ .key = .backspace, .modifiers = .{}, .raw = data };
+        if (c == 32) return .{ .key = .space, .modifiers = .{}, .raw = data };
+        // Ctrl+A through Ctrl+Z (excluding tab=9, enter=13)
         if (c >= 1 and c <= 26) {
-            // Ctrl+A through Ctrl+Z
             return .{
                 .key = @enumFromInt(@as(u8, c - 1)),
                 .modifiers = .{ .ctrl = true },
                 .raw = data,
             };
         }
-        if (c == 27) return .{ .key = .escape, .modifiers = .{}, .raw = data };
-        if (c == 13) return .{ .key = .enter, .modifiers = .{}, .raw = data };
-        if (c == 9) return .{ .key = .tab, .modifiers = .{}, .raw = data };
-        if (c == 127) return .{ .key = .backspace, .modifiers = .{}, .raw = data };
-        if (c == 32) return .{ .key = .space, .modifiers = .{}, .raw = data };
         if (c >= 'a' and c <= 'z') return .{ .key = @enumFromInt(@as(u8, c - 'a')), .modifiers = .{}, .raw = data };
         if (c >= 'A' and c <= 'Z') return .{ .key = @enumFromInt(@as(u8, c - 'A')), .modifiers = .{ .shift = true }, .raw = data };
         if (c >= '0' and c <= '9') return .{ .key = @enumFromInt(@as(u8, c - '0' + 26)), .modifiers = .{}, .raw = data };
