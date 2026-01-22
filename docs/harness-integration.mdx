@@ -32,6 +32,76 @@ Claude generates the `.tsx` file. Review it like any other code.
 
 ---
 
+## OpenCode
+
+The OpenCode plugin gives you a Smithers orchestration agent with dedicated tools for workflow management.
+
+### Installation
+
+```bash
+# From OpenCode CLI
+opencode plugin add evmts/smithers
+```
+
+Or manually add to your `opencode.json`:
+
+```json
+{
+  "plugins": ["evmts/smithers"]
+}
+```
+
+### What You Get
+
+The plugin provides:
+
+| Tool | Description |
+|------|-------------|
+| `smithers_discover` | Find workflow scripts in `.smithers/` |
+| `smithers_create` | Create new workflow files (validates syntax) |
+| `smithers_run` | Start workflow execution |
+| `smithers_resume` | Resume incomplete execution |
+| `smithers_status` | Get execution phase/step tree |
+| `smithers_frames` | Get execution output/logs |
+| `smithers_cancel` | Cancel running execution |
+| `smithers_glob` | Find files by pattern |
+| `smithers_grep` | Search file contents |
+
+### Included Agents
+
+The plugin includes specialized agents:
+
+- **@smithers** - Primary agent that creates `.tsx` workflows from plans
+- **@planner** - Creates detailed plans for complex tasks
+- **@explorer** - Explores codebase structure
+- **@librarian** - Smithers API documentation expert
+- **@oracle** - Architecture advice and debugging
+- **@monitor** - Watches running executions
+
+### Usage
+
+```
+> Create a workflow that fixes failing tests and opens a PR
+
+[smithers_discover] Checking for existing workflows...
+[smithers_create] Creating .smithers/fix-tests.tsx...
+[smithers_run] Started execution: exec_abc123
+```
+
+The agent creates React TSX workflows, never writes application code directly.
+
+### Permissions
+
+The plugin uses a restrictive permission model by default:
+
+- ✅ Read files (except `.env`)
+- ✅ All smithers_* tools
+- ✅ Delegation to specialized agents
+- ❌ Direct file edits (handled by Claude agents in workflows)
+- ❌ Bash commands (handled by Claude agents in workflows)
+
+---
+
 ## Cursor
 
 Add the Smithers skill to your project:

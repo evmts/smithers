@@ -199,10 +199,14 @@ bun add -g smithers-orchestrator
 
 This installs the `smithers` CLI globally. Requires [Bun](https://bun.sh/) 1.0+.
 
-Or install the Claude Code plugin:
+Or install as a plugin:
 
-```
+```bash
+# Claude Code
 /plugin add evmts/smithers
+
+# OpenCode
+opencode plugin add evmts/smithers
 ```
 
 ---
