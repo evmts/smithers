@@ -68,15 +68,18 @@ Changelog = "https://github.com/evmts/smithers/blob/main/smithers_py/CHANGELOG.m
 "state" = "smithers_py/state"
 "vcs" = "smithers_py/vcs"
 
+[tool.hatch.build.targets.wheel]
+exclude = ["**/test_*.py", "**/*.backup"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
 testpaths = ["."]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 
-# uv configuration
-[tool.uv]
-dev-dependencies = [
+# Dev dependency group (replaces deprecated tool.uv.dev-dependencies)
+[dependency-groups]
+dev = [
     "pytest>=8.0",
     "pytest-asyncio>=1.0",
     "ruff>=0.4.0",

@@ -37,7 +37,7 @@ class TestGlobalStateStore:
             # Create sync database
             conn = sqlite3.connect(db_path)
             run_migrations_sync(conn)
-            store = GlobalStateStore(conn)
+            store = GlobalStateStore(conn, is_async=False)
 
             # Test set and get
             await store.set("test_key", {"value": 42})
@@ -67,7 +67,7 @@ class TestGlobalStateStore:
             # Create async database
             conn = await aiosqlite.connect(db_path)
             await conn.executescript(open(Path(__file__).parent / 'schema.sql').read())
-            store = GlobalStateStore(conn)
+            store = GlobalStateStore(conn, is_async=True)
 
             # Test set and get
             await store.set("async_key", [1, 2, 3])
@@ -97,7 +97,7 @@ class TestGlobalStateStore:
         try:
             conn = sqlite3.connect(db_path)
             run_migrations_sync(conn)
-            store = GlobalStateStore(conn)
+            store = GlobalStateStore(conn, is_async=False)
 
             # Test None value
             await store.set("null_key", None)
