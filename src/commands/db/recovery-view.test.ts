@@ -48,8 +48,8 @@ describe('showRecovery', () => {
         findIncomplete: async () => options.incomplete ?? null
       },
       state: {
-        getAll: async () => options.state ?? {},
-        history: async () => options.transitions ?? []
+        getAll: () => options.state ?? {},
+        history: () => options.transitions ?? []
       }
     }
   }
