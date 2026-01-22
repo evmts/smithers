@@ -15,8 +15,8 @@ Unit tests added for agent hooks and adapters:
 | `src/hooks/useAmp.ts` | 20 | ✅ 21 tests |
 | `src/hooks/useCodex.ts` | 20 | ✅ 37 tests |
 | `src/hooks/useAgentRunner.ts` | 240 | ✅ 32 tests |
-| `src/hooks/useReview.ts` | ~100 | ❌ None |
-| `src/hooks/useSmithersSubagent.ts` | ~150 | ❌ None |
+| `src/hooks/useReview.ts` | ~100 | ✅ 37 tests |
+| `src/hooks/useSmithersSubagent.ts` | ~150 | ✅ 39 tests |
 
 Adapter tests (already existed):
 - `src/hooks/adapters/claude.test.ts` - ✅ 
@@ -26,7 +26,7 @@ Adapter tests (already existed):
 ## Remaining Work
 
 - [ ] E2E tests with real CLI (requires mocking or API key)
-- [ ] Tests for useReview and useSmithersSubagent
+- [x] Tests for useReview and useSmithersSubagent
 - [ ] Full integration tests with SmithersProvider context
 
 ## Original Problem
