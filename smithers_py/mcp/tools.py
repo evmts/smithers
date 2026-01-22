@@ -190,7 +190,7 @@ class ExecutionSummary(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     execution_id: str
-    status: Literal["pending", "running", "paused", "completed", "failed", "cancelled"]
+    status: Literal["pending", "running", "paused", "completed", "failed", "cancelled", "stopped"]
     name: Optional[str] = None
     source_file: str
     started_at: Optional[str] = None
@@ -316,8 +316,8 @@ class MCPToolProvider:
                 # In a real implementation, we'd compile the script to a component
                 # For now, create a dummy component
                 def app_component(ctx: Context):
-                    from smithers_py.nodes import Text
-                    return Text(f"Execution {execution_id} running")
+                    from smithers_py.nodes import TextNode
+                    return TextNode(text=f"Execution {execution_id} running")
 
                 # Create tick loop
                 tick_loop = TickLoop(
@@ -563,19 +563,17 @@ class MCPToolProvider:
             ctx = self._executions[params.execution_id]
 
             try:
-                # Get old value
-                old_value = self._run_async(
-                    ctx.tick_loop.sqlite_state.get(params.key)
-                )
+                # Get old value (sync method)
+                old_value = ctx.tick_loop.sqlite_state.get(params.key)
 
-                # Set new value
-                self._run_async(
-                    ctx.tick_loop.sqlite_state.set(
-                        params.key,
-                        params.value,
-                        params.trigger
-                    )
+                # Set new value (sync method - queues the write)
+                ctx.tick_loop.sqlite_state.set(
+                    params.key,
+                    params.value,
+                    params.trigger
                 )
+                # Commit the queued write
+                ctx.tick_loop.sqlite_state.commit()
 
                 return StateChangeResult(
                     key=params.key,
@@ -611,7 +609,7 @@ class MCPToolProvider:
             try:
                 # Get frame data
                 cursor = ctx.db.connection.execute(
-                    """SELECT xml_content, created_at FROM render_frames
+                    """SELECT xml_content, timestamp FROM render_frames
                        WHERE execution_id = ? AND sequence_number = ?""",
                     (params.execution_id, params.frame_index)
                 )
@@ -651,7 +649,7 @@ class MCPToolProvider:
             ctx = self._executions[params.execution_id]
 
             cursor = ctx.db.connection.execute(
-                """SELECT xml_content, created_at FROM render_frames
+                """SELECT xml_content, timestamp FROM render_frames
                    WHERE execution_id = ? AND sequence_number = ?""",
                 (params.execution_id, params.frame_index)
             )
@@ -702,14 +700,17 @@ class MCPToolProvider:
 
     def cleanup(self):
         """Cleanup resources."""
-        with self._lock:
-            # Stop all executions
-            for exec_id in list(self._executions.keys()):
-                try:
-                    self.stop(StopParams(execution_id=exec_id, reason="Provider cleanup"))
-                except:
-                    pass
+        # Collect execution IDs without lock to avoid deadlock with stop()
+        exec_ids = list(self._executions.keys())
+        
+        # Stop all executions (stop() acquires its own lock)
+        for exec_id in exec_ids:
+            try:
+                self.stop(StopParams(execution_id=exec_id, reason="Provider cleanup"))
+            except:
+                pass
 
+        with self._lock:
             self._executions.clear()
 
         # Stop event loop

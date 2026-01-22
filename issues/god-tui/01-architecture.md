@@ -208,95 +208,231 @@ tui/src/
 
 ### Component Interface
 
-```pseudocode
+```typescript
 interface Component {
-    // Render to array of strings for given viewport width
-    render(width: number) -> string[]
+    // Core rendering - returns lines for given viewport width
+    // Lines may contain ANSI escape sequences
+    // Must respect width constraint (truncate/wrap as needed)
+    render(width: number): string[]
 
-    // Handle keyboard input when focused
-    handleInput?(data: string) -> void
+    // Keyboard/paste input handler (when focused or overlay)
+    // data is raw terminal input (may be escape sequence)
+    handleInput?(data: string): void
 
-    // Opt-in for key release events (Kitty protocol)
+    // Kitty protocol: opt-in for key release events
+    // Default false - only receives key press
     wantsKeyRelease?: boolean
 
-    // Invalidate cached state (theme change, etc.)
-    invalidate() -> void
+    // Clear cached render output
+    // Called on: theme change, explicit invalidation, width change
+    invalidate(): void
 }
 
 interface Focusable extends Component {
-    focused: boolean  // Set by TUI when focus changes
+    // Set by TUI.setFocus() - component should:
+    // 1. Render differently when focused (cursor, highlight)
+    // 2. Emit CURSOR_MARKER at cursor position for hardware cursor/IME
+    focused: boolean
 }
+
+// CURSOR_MARKER: APC sequence stripped before terminal write
+// Used to position hardware cursor for IME input
+const CURSOR_MARKER = "\x1b_pi:c\x07"
 ```
 
 ### TUI Class Hierarchy
 
 ```
-Container
-    |
-    +-- Component[]  (children)
-    |
-    +-- render(width) -> concatenates child renders
-    |
-    +-- invalidate() -> propagates to children
+Container {
+    children: Component[]
 
-TUI extends Container
-    |
-    +-- terminal: Terminal
-    |
-    +-- previousLines: string[]   (diff cache)
-    |
-    +-- focusedComponent: Component | null
-    |
-    +-- overlayStack: OverlayEntry[]
-    |
-    +-- start() / stop()
-    |
-    +-- requestRender(force?)
-    |
-    +-- showOverlay() / hideOverlay()
+    addChild(component, index?) → insert at position
+    removeChild(component) → remove from children
+    clear() → remove all children
+
+    render(width):
+        return children.flatMap(c => c.render(width))
+
+    handleInput(data):
+        // Default: no-op (override in subclasses)
+
+    invalidate():
+        children.forEach(c => c.invalidate())
+}
+
+TUI extends Container {
+    terminal: Terminal              // I/O abstraction
+
+    // Rendering state
+    previousLines: string[]         // Last rendered output (for diff)
+    previousWidth: number           // Last terminal width
+    maxLinesRendered: number        // High-water mark (for scrollback)
+    pendingRender: boolean          // Coalescing flag
+
+    // Focus management
+    focusedComponent: Component | null
+    preFocusStack: Component[]      // Restore chain for overlays
+
+    // Overlay system
+    overlayStack: OverlayEntry[]    // Z-ordered, last = top
+
+    // Cell dimensions (for image rendering)
+    cellPixelWidth: number | null
+    cellPixelHeight: number | null
+
+    // Lifecycle
+    start():
+        terminal.start(this.handleInput, this.handleResize)
+        queryCellSize()
+        requestRender()
+
+    stop():
+        terminal.stop()
+
+    // Rendering
+    requestRender(force = false):
+        if force: previousLines = []
+        if !pendingRender:
+            pendingRender = true
+            process.nextTick(() => doRender())
+
+    // Focus
+    setFocus(component):
+        if focusedComponent != component:
+            if focusedComponent?.focused: focusedComponent.focused = false
+            focusedComponent = component
+            if component?.focused !== undefined: component.focused = true
+            requestRender()
+
+    // Overlays
+    showOverlay(component, options?) → OverlayHandle
+    hideOverlay(handle) → void
+}
+```
+
+### OverlayEntry Structure
+
+```typescript
+interface OverlayEntry {
+    component: Component
+    options: OverlayOptions
+    preFocus: Component | null   // Restore focus when hidden
+    hidden: boolean              // Temporarily invisible
+}
+
+interface OverlayHandle {
+    hide(): void                 // Permanent removal
+    setHidden(hidden: boolean)   // Temporary toggle
+    isHidden(): boolean
+}
 ```
 
 ### Rendering Pipeline
 
 ```
-                        +-------------------+
-                        |   requestRender() |
-                        +---------+---------+
-                                  |
-                                  v
-                        +-------------------+
-                        | process.nextTick  |
-                        | (coalesce calls)  |
-                        +---------+---------+
-                                  |
-                                  v
-+----------------------------------------------------------------------+
-|                           doRender()                                 |
-+----------------------------------------------------------------------+
-|                                                                      |
-|  1. Render all children -> newLines[]                                |
-|                                                                      |
-|  2. Composite overlays (if any)                                      |
-|     - Calculate overlay position from OverlayOptions                 |
-|     - Blend overlay lines into content                               |
-|                                                                      |
-|  3. Extract cursor position (CURSOR_MARKER)                          |
-|                                                                      |
-|  4. Apply line resets (ANSI cleanup)                                 |
-|                                                                      |
-|  5. Differential compare with previousLines                          |
-|     - Find firstChanged, lastChanged indices                         |
-|     - Handle width changes (full re-render)                          |
-|     - Handle viewport scroll (check bounds)                          |
-|                                                                      |
-|  6. Build terminal output buffer                                     |
-|     - Synchronized output mode (\x1b[?2026h ... \x1b[?2026l)         |
-|     - Cursor movement sequences                                      |
-|     - Line clear + content write                                     |
-|                                                                      |
-|  7. Position hardware cursor (IME support)                           |
-|                                                                      |
-+----------------------------------------------------------------------+
+requestRender(force?)
+    │
+    │  if force: previousLines = []
+    │  if !pendingRender: schedule nextTick
+    │
+    ▼
+process.nextTick (coalesces multiple requestRender calls)
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              doRender()                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  1. RENDER COMPONENTS                                                       │
+│     newLines = this.render(terminal.columns)                                │
+│     // Recursively calls render() on all children                           │
+│     // Each component returns string[] respecting width                     │
+│                                                                             │
+│  2. COMPOSITE OVERLAYS                                                      │
+│     for overlay in overlayStack (bottom to top):                            │
+│         if overlay.hidden or !overlay.options.visible?.(w, h): continue     │
+│         layout = resolveLayout(overlay.options, w, h)                       │
+│         overlayLines = overlay.component.render(layout.width)               │
+│         if layout.maxHeight: overlayLines = overlayLines.slice(0, max)      │
+│         // Extend newLines if overlay extends past content                  │
+│         for i, line in overlayLines:                                        │
+│             newLines[layout.row + i] = compositeLineAt(...)                 │
+│                                                                             │
+│  3. EXTRACT CURSOR POSITION                                                 │
+│     cursorPos = null                                                        │
+│     for i, line in newLines:                                                │
+│         if (idx = line.indexOf(CURSOR_MARKER)) != -1:                       │
+│             cursorPos = { row: i, col: visibleWidth(line.slice(0, idx)) }   │
+│             newLines[i] = line.replace(CURSOR_MARKER, "")                   │
+│             break                                                           │
+│                                                                             │
+│  4. APPLY LINE RESETS                                                       │
+│     LINE_RESET = "\x1b[0m\x1b]8;;\x07"  // SGR + hyperlink reset            │
+│     for i, line in newLines:                                                │
+│         if !containsImageSequence(line):  // Skip Kitty/iTerm2 images       │
+│             newLines[i] = line + LINE_RESET                                 │
+│                                                                             │
+│  5. DIFFERENTIAL COMPARE                                                    │
+│     if !previousLines.length or widthChanged:                               │
+│         fullRender(newLines)                                                │
+│         return                                                              │
+│                                                                             │
+│     firstChanged = lastChanged = -1                                         │
+│     for i in 0..max(newLines.length, previousLines.length):                 │
+│         if newLines[i] != previousLines[i]:                                 │
+│             if firstChanged == -1: firstChanged = i                         │
+│             lastChanged = i                                                 │
+│                                                                             │
+│     if firstChanged == -1:                                                  │
+│         positionHardwareCursor(cursorPos)                                   │
+│         return  // No changes                                               │
+│                                                                             │
+│     // Check if changes outside viewport (scrollback)                       │
+│     viewportTop = max(0, maxLinesRendered - terminal.rows)                  │
+│     if firstChanged < viewportTop:                                          │
+│         fullRender(newLines)                                                │
+│         return                                                              │
+│                                                                             │
+│  6. BUILD OUTPUT BUFFER                                                     │
+│     buf = "\x1b[?2026h"  // Begin synchronized output                       │
+│     buf += moveCursorToLine(firstChanged)                                   │
+│                                                                             │
+│     for i in firstChanged..lastChanged+1:                                   │
+│         if i > firstChanged: buf += "\r\n"                                  │
+│         buf += "\x1b[2K"  // Clear entire line                              │
+│         buf += newLines[i] ?? ""                                            │
+│                                                                             │
+│     // Clear removed lines if content shrunk                                │
+│     for i in newLines.length..previousLines.length:                         │
+│         buf += "\r\n\x1b[2K"                                                │
+│     if previousLines.length > newLines.length:                              │
+│         buf += "\x1b[" + (previousLines.length - newLines.length) + "A"     │
+│                                                                             │
+│     buf += "\x1b[?2026l"  // End synchronized output                        │
+│     terminal.write(buf)                                                     │
+│                                                                             │
+│     previousLines = newLines                                                │
+│     maxLinesRendered = max(maxLinesRendered, newLines.length)               │
+│                                                                             │
+│  7. POSITION HARDWARE CURSOR                                                │
+│     if cursorPos:                                                           │
+│         terminal.write("\x1b[" + (cursorPos.row+1) + ";" +                   │
+│                        (cursorPos.col+1) + "H")                             │
+│         terminal.showCursor()                                               │
+│     else:                                                                   │
+│         terminal.hideCursor()                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Image Sequence Detection
+
+```typescript
+function containsImageSequence(line: string): boolean {
+    // Kitty graphics protocol
+    if (line.includes("\x1b_G")) return true
+    // iTerm2 inline images
+    if (line.includes("\x1b]1337;File=")) return true
+    return false
+}
 ```
 
 ### Differential Rendering Algorithm
@@ -370,89 +506,261 @@ function doRender():
 
 ### Terminal Interface
 
-```pseudocode
+```typescript
 interface Terminal {
-    start(onInput: fn, onResize: fn) -> void
-    stop() -> void
-    write(data: string) -> void
+    // Lifecycle
+    start(onInput: (data: string) => void, onResize: () => void): void
+    stop(): void
 
-    columns: number  // Current width
-    rows: number     // Current height
+    // Output
+    write(data: string): void
 
-    kittyProtocolActive: boolean
+    // Dimensions (updated on SIGWINCH)
+    readonly columns: number
+    readonly rows: number
+
+    // Protocol state
+    readonly kittyProtocolActive: boolean
 
     // Cursor control
-    moveBy(lines: number) -> void
-    hideCursor() -> void
-    showCursor() -> void
+    moveBy(lines: number): void    // negative = up, positive = down
+    hideCursor(): void             // \x1b[?25l
+    showCursor(): void             // \x1b[?25h
 
     // Clear operations
-    clearLine() -> void
-    clearFromCursor() -> void
-    clearScreen() -> void
+    clearLine(): void              // \x1b[2K
+    clearFromCursor(): void        // \x1b[J
+    clearScreen(): void            // \x1b[2J\x1b[3J\x1b[H
 
-    setTitle(title: string) -> void
+    // Window
+    setTitle(title: string): void  // \x1b]0;{title}\x07
 }
 ```
 
 ### ProcessTerminal Implementation
 
+```typescript
+class ProcessTerminal implements Terminal {
+    private stdinBuffer: StdinBuffer
+    private savedRawMode: boolean
+    private kittyEnabled: boolean = false
+
+    start(onInput, onResize):
+        // 1. Save and enable raw mode
+        savedRawMode = process.stdin.isRaw
+        process.stdin.setRawMode(true)
+        process.stdin.setEncoding("utf8")
+
+        // 2. Enable bracketed paste
+        process.stdout.write("\x1b[?2004h")
+
+        // 3. Query Kitty keyboard protocol
+        //    Send: \x1b[?u
+        //    If supported, terminal responds: \x1b[?{flags}u
+        process.stdout.write("\x1b[?u")
+
+        // 4. Enable Kitty with flags 7 (1+2+4)
+        //    1 = disambiguate escape codes
+        //    2 = report event types (press/repeat/release)
+        //    4 = report alternate keys
+        process.stdout.write("\x1b[>7u")
+
+        // 5. Query cell pixel size for images
+        //    Send: \x1b[16t
+        //    Response: \x1b[6;{height};{width}t
+        process.stdout.write("\x1b[16t")
+
+        // 6. Setup input handling
+        stdinBuffer = new StdinBuffer()
+        stdinBuffer.on("data", onInput)
+        stdinBuffer.on("paste", (content) => onInput(content))
+        process.stdin.on("data", (data) => stdinBuffer.process(data))
+
+        // 7. Handle resize
+        process.stdout.on("resize", () => {
+            // Force terminal to update dimensions
+            process.kill(process.pid, "SIGWINCH")
+            onResize()
+        })
+        process.on("SIGWINCH", onResize)
+
+    stop():
+        // Disable Kitty
+        process.stdout.write("\x1b[<u")
+
+        // Disable bracketed paste
+        process.stdout.write("\x1b[?2004l")
+
+        // Show cursor (may have been hidden)
+        process.stdout.write("\x1b[?25h")
+
+        // Restore raw mode
+        process.stdin.setRawMode(savedRawMode)
+
+    get columns(): number { return process.stdout.columns || 80 }
+    get rows(): number { return process.stdout.rows || 24 }
+}
 ```
-ProcessTerminal
-    |
-    +-- stdin/stdout management
-    |
-    +-- Raw mode handling
-    |
-    +-- Kitty keyboard protocol
-    |       - Query: \x1b[?u
-    |       - Enable: \x1b[>7u (flags 1+2+4)
-    |       - Disable: \x1b[<u
-    |
-    +-- Bracketed paste mode
-    |       - Enable: \x1b[?2004h
-    |       - Disable: \x1b[?2004l
-    |
-    +-- StdinBuffer for input parsing
-            - Splits batched sequences
-            - Handles paste content
-            - Timeout-based sequence completion
+
+### StdinBuffer State Machine
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           StdinBuffer                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  buffer: string = ""           // Accumulated input                         │
+│  inPaste: boolean = false      // Inside bracketed paste                    │
+│  timeout: Timer | null         // Sequence completion timeout               │
+│                                                                             │
+│  process(data: string):                                                     │
+│      buffer += convertHighBytes(data)  // 0x80-0x9F → ESC sequences         │
+│                                                                             │
+│      // Handle bracketed paste                                              │
+│      if inPaste or buffer.includes("\x1b[200~"):                            │
+│          startIdx = buffer.indexOf("\x1b[200~")                             │
+│          endIdx = buffer.indexOf("\x1b[201~")                               │
+│          if endIdx != -1:                                                   │
+│              paste = buffer.slice(startIdx + 6, endIdx)                     │
+│              emit("paste", paste)                                           │
+│              buffer = buffer.slice(endIdx + 6)                              │
+│              inPaste = false                                                │
+│          else:                                                              │
+│              inPaste = true                                                 │
+│              return                                                         │
+│                                                                             │
+│      // Parse sequences                                                     │
+│      while buffer.length > 0:                                               │
+│          seq = tryParseSequence(buffer)                                     │
+│          if seq:                                                            │
+│              emit("data", seq.value)                                        │
+│              buffer = buffer.slice(seq.length)                              │
+│          else if buffer[0] == "\x1b":                                       │
+│              // Incomplete escape - wait or timeout                         │
+│              if timeout expired (10ms):                                     │
+│                  emit("data", "\x1b")  // Just ESC key                      │
+│                  buffer = buffer.slice(1)                                   │
+│              else:                                                          │
+│                  scheduleTimeout(10ms)                                      │
+│                  break                                                      │
+│          else:                                                              │
+│              emit("data", buffer[0])                                        │
+│              buffer = buffer.slice(1)                                       │
+│                                                                             │
+│  tryParseSequence(buf) -> { value, length } | null:                         │
+│      // CSI: \x1b[ ... ends at byte in @-~                                  │
+│      // OSC: \x1b] ... ends at \x07 or \x1b\\                               │
+│      // DCS: \x1bP ... ends at \x1b\\                                       │
+│      // APC: \x1b_ ... ends at \x07 or \x1b\\                               │
+│      // SS3: \x1bO + single char                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### High-Byte Conversion
+
+Some legacy terminals send C1 control codes (0x80-0x9F) instead of ESC sequences:
+
+```typescript
+function convertHighBytes(data: string): string {
+    // 0x9B → \x1b[  (CSI)
+    // 0x90 → \x1bP  (DCS)
+    // 0x9D → \x1b]  (OSC)
+    // 0x9F → \x1b_  (APC)
+    return data.replace(/[\x80-\x9f]/g, (c) => {
+        return "\x1b" + String.fromCharCode(c.charCodeAt(0) - 0x40)
+    })
+}
 ```
 
 ### Input Flow
 
 ```
 stdin (raw bytes)
-       |
-       v
-+-------------------+
-|   StdinBuffer     |
-|                   |
-| - Sequence split  |
-| - Paste detection |
-| - Timeout flush   |
-+--------+----------+
-         |
-         v
-+-------------------+
-|  Kitty Protocol   |
-|  Detection        |
-|                   |
-| - Response parse  |
-| - Protocol enable |
-+--------+----------+
-         |
-         v
-+-------------------+
-|  TUI.handleInput  |
-|                   |
-| - Debug key check |
-| - Overlay focus   |
-| - Key release     |
-|   filtering       |
-| - Forward to      |
-|   focused comp    |
-+-------------------+
+       │
+       │  May arrive chunked (partial sequences)
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           StdinBuffer                                       │
+│  - Buffers until sequence complete                                          │
+│  - Handles bracketed paste (\x1b[200~ ... \x1b[201~)                         │
+│  - Converts C1 high bytes (0x80-0x9F → ESC sequences)                       │
+│  - 10ms timeout for incomplete escape sequences                             │
+│  - Emits: "data" (single sequence) or "paste" (paste content)               │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Terminal Protocol Detection                            │
+│  - Kitty query response: \x1b[?{flags}u → set kittyProtocolActive           │
+│  - Cell size response: \x1b[6;{h};{w}t → set cellPixelWidth/Height          │
+│  - XTVersion response: \x1bP>|{name}\x1b\\ → detect terminal type           │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          TUI.handleInput(data)                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  1. Check for debug key (Ctrl+Shift+D → dump state)                         │
+│                                                                             │
+│  2. Check key release events                                                │
+│     if isKeyRelease(data):                                                  │
+│         // Kitty format: \x1b[{code};{mods}:3u                              │
+│         if !focusedComponent?.wantsKeyRelease: return                       │
+│                                                                             │
+│  3. Route to overlay (if any visible)                                       │
+│     for overlay in overlayStack.reverse():  // Top to bottom                │
+│         if !overlay.hidden:                                                 │
+│             overlay.component.handleInput?.(data)                           │
+│             return                                                          │
+│                                                                             │
+│  4. Route to focused component                                              │
+│     focusedComponent?.handleInput?.(data)                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Parsing (keys.ts)
+
+```typescript
+// Type-safe key identifiers
+type KeyId =
+    | "enter" | "tab" | "escape" | "backspace" | "delete"
+    | "up" | "down" | "left" | "right"
+    | "home" | "end" | "pageup" | "pagedown"
+    | "f1" | "f2" | ... | "f12"
+    | "ctrl+a" | "ctrl+b" | ... | "ctrl+z"
+    | "alt+a" | "alt+b" | ... | "alt+z"
+    | "shift+enter" | "shift+tab" | ...
+    | "ctrl+shift+a" | ...
+
+// Match input data against key identifier
+function matchesKey(data: string, keyId: KeyId): boolean {
+    // Try Kitty CSI-u format first
+    if (kittyMatch = tryParseKitty(data)) {
+        return kittyMatch.keyId === keyId
+    }
+
+    // Fall back to legacy sequences
+    return LEGACY_SEQUENCES[keyId]?.includes(data) ?? false
+}
+
+// Kitty CSI-u format: \x1b[{codepoint};{modifiers}u
+//                  or \x1b[{codepoint};{modifiers}:{eventType}u
+// Modifiers: 1-indexed (1=shift, 2=alt, 4=ctrl, 8=super, 16=hyper, 32=meta)
+// Event types: 1=press, 2=repeat, 3=release
+
+// Legacy sequence examples:
+const LEGACY_SEQUENCES = {
+    "up":     ["\x1b[A", "\x1bOA"],
+    "down":   ["\x1b[B", "\x1bOB"],
+    "right":  ["\x1b[C", "\x1bOC"],
+    "left":   ["\x1b[D", "\x1bOD"],
+    "ctrl+a": ["\x01"],
+    "ctrl+c": ["\x03"],
+    "enter":  ["\r", "\n"],
+    "tab":    ["\t"],
+    "escape": ["\x1b"],
+    "backspace": ["\x7f", "\x08"],
+    // ...
+}
 ```
 
 ---
@@ -461,93 +769,353 @@ stdin (raw bytes)
 
 ### Overlay Stack
 
-```pseudocode
-overlayStack: Array<{
+```typescript
+overlayStack: OverlayEntry[] = []
+
+interface OverlayEntry {
     component: Component
-    options?: OverlayOptions
-    preFocus: Component | null  // Restore on hide
-    hidden: boolean
-}>
+    options: OverlayOptions
+    preFocus: Component | null  // Restore focus when hidden/removed
+    hidden: boolean             // Temporarily invisible
+}
 
 interface OverlayOptions {
     // Sizing
-    width?: number | "50%"
-    minWidth?: number
-    maxHeight?: number | "50%"
+    width?: number | `${number}%`     // Absolute pixels or percentage
+    minWidth?: number                  // Minimum width constraint
+    maxHeight?: number | `${number}%` // Truncate if taller
 
-    // Positioning (anchor-based)
-    anchor?: "center" | "top-left" | "top-right" |
-             "bottom-left" | "bottom-right" |
-             "top-center" | "bottom-center" |
-             "left-center" | "right-center"
-    offsetX?: number
+    // Anchor-based positioning (mutually exclusive with row/col)
+    anchor?: "center"
+           | "top-left" | "top-center" | "top-right"
+           | "left-center" | "right-center"
+           | "bottom-left" | "bottom-center" | "bottom-right"
+    offsetX?: number  // Offset from anchor position
     offsetY?: number
 
-    // Positioning (absolute/percentage)
-    row?: number | "25%"
-    col?: number | "50%"
+    // Absolute positioning (percentage of terminal)
+    row?: number | `${number}%`
+    col?: number | `${number}%`
 
-    // Margins from terminal edges
-    margin?: number | { top, right, bottom, left }
+    // Margins (constrains positioning within terminal)
+    margin?: number | { top: number, right: number, bottom: number, left: number }
 
     // Dynamic visibility
-    visible?: (width, height) => boolean
+    visible?: (termWidth: number, termHeight: number) => boolean
 }
 ```
 
-### Overlay Compositing
+### Anchor Position Resolution
+
+```typescript
+function resolveLayout(options: OverlayOptions, termW: number, termH: number): ResolvedLayout {
+    // 1. Resolve width
+    let width = options.width
+        ? (typeof options.width === "string"
+            ? Math.floor(termW * parseFloat(options.width) / 100)
+            : options.width)
+        : termW
+
+    if (options.minWidth) width = Math.max(width, options.minWidth)
+    width = Math.min(width, termW)
+
+    // 2. Resolve margins
+    const margin = normalizeMargin(options.margin)  // { top, right, bottom, left }
+
+    // 3. Calculate position based on anchor
+    let row: number, col: number
+
+    if (options.row !== undefined) {
+        row = resolvePercentage(options.row, termH)
+    } else {
+        // Anchor-based positioning
+        switch (options.anchor ?? "center") {
+            case "top-left":     row = margin.top; break
+            case "top-center":   row = margin.top; break
+            case "top-right":    row = margin.top; break
+            case "left-center":  row = Math.floor((termH - estimatedHeight) / 2); break
+            case "center":       row = Math.floor((termH - estimatedHeight) / 2); break
+            case "right-center": row = Math.floor((termH - estimatedHeight) / 2); break
+            case "bottom-left":  row = termH - estimatedHeight - margin.bottom; break
+            case "bottom-center":row = termH - estimatedHeight - margin.bottom; break
+            case "bottom-right": row = termH - estimatedHeight - margin.bottom; break
+        }
+    }
+
+    if (options.col !== undefined) {
+        col = resolvePercentage(options.col, termW)
+    } else {
+        switch (options.anchor ?? "center") {
+            case "top-left":     col = margin.left; break
+            case "left-center":  col = margin.left; break
+            case "bottom-left":  col = margin.left; break
+            case "top-center":   col = Math.floor((termW - width) / 2); break
+            case "center":       col = Math.floor((termW - width) / 2); break
+            case "bottom-center":col = Math.floor((termW - width) / 2); break
+            case "top-right":    col = termW - width - margin.right; break
+            case "right-center": col = termW - width - margin.right; break
+            case "bottom-right": col = termW - width - margin.right; break
+        }
+    }
+
+    // Apply offsets
+    row += options.offsetY ?? 0
+    col += options.offsetX ?? 0
+
+    // Clamp to terminal bounds
+    row = Math.max(0, Math.min(row, termH - 1))
+    col = Math.max(0, Math.min(col, termW - width))
+
+    return { row, col, width, maxHeight: resolvePercentage(options.maxHeight, termH) }
+}
+```
+
+### Overlay Compositing Algorithm
 
 ```
-+---------------------------------------+
-|            Base Content               |
-|                                       |
-|   Line 0: "Hello world..."            |
-|   Line 1: "Some text here..."         |
-|   Line 2: "More content..."           |
-|   ...                                 |
-+---------------------------------------+
-              |
-              v
-+---------------------------------------+
-|    For each visible overlay:          |
-|                                       |
-|    1. Calculate layout (row, col, w)  |
-|    2. Render at calculated width      |
-|    3. Apply maxHeight truncation      |
-|    4. Composite into base:            |
-|       - Extract before segment        |
-|       - Insert overlay content        |
-|       - Extract after segment         |
-|       - Handle ANSI resets            |
-+---------------------------------------+
-              |
-              v
-+---------------------------------------+
-|   Line 0: "Hello world..."            |
-|   Line 1: "Som+--------+here..."      |
-|   Line 2: "Mor| Overlay|ent..."       |
-|   Line 3: "   | Dialog |   ..."       |
-|   Line 4: "   +--------+   ..."       |
-+---------------------------------------+
+Base content (newLines[]):
+┌─────────────────────────────────────────────────────────────────────┐
+│ Line 0: "Hello world, this is some content..."                      │
+│ Line 1: "More text here with ANSI \x1b[1mbold\x1b[0m styling..."    │
+│ Line 2: "And another line of content..."                            │
+│ Line 3: "Final line..."                                             │
+└─────────────────────────────────────────────────────────────────────┘
+
+Overlay at (row=1, col=10, width=20):
+┌────────────────────┐
+│ Overlay Line 0     │
+│ Overlay Line 1     │
+└────────────────────┘
+
+Compositing:
+┌─────────────────────────────────────────────────────────────────────┐
+│ Line 0: "Hello world, this is some content..."         (unchanged)  │
+│ Line 1: "More text ┌────────────────────┐styling..."                │
+│ Line 2: "And anothe│ Overlay Line 1     │ent..."                    │
+│ Line 3: "Final line└────────────────────┘"             (extended)   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+```typescript
+function compositeLineAt(
+    baseLine: string,
+    overlayLine: string,
+    col: number,
+    overlayWidth: number,
+    termWidth: number
+): string {
+    // Extract segments preserving ANSI codes
+    const before = sliceByColumn(baseLine, 0, col, /* strict */ true)
+    const after = sliceByColumn(baseLine, col + overlayWidth, termWidth - col - overlayWidth, true)
+
+    // Pad to exact widths
+    const beforePad = " ".repeat(Math.max(0, col - visibleWidth(before)))
+    const overlayPad = " ".repeat(Math.max(0, overlayWidth - visibleWidth(overlayLine)))
+
+    // Reset ANSI state between segments
+    const RESET = "\x1b[0m"
+
+    return before + beforePad + RESET + overlayLine + overlayPad + RESET + after
+}
+
+// strict=true: If wide character straddles boundary, replace with space
+// Prevents half-character rendering artifacts
+function sliceByColumn(line: string, startCol: number, length: number, strict: boolean): string
+```
+
+### Focus Management with Overlays
+
+```typescript
+showOverlay(component: Component, options?: OverlayOptions): OverlayHandle {
+    const entry: OverlayEntry = {
+        component,
+        options: options ?? {},
+        preFocus: this.focusedComponent,  // Save current focus
+        hidden: false
+    }
+
+    this.overlayStack.push(entry)
+    this.setFocus(component)  // Overlay captures focus
+    this.requestRender()
+
+    return {
+        hide: () => {
+            const idx = this.overlayStack.indexOf(entry)
+            if (idx !== -1) {
+                this.overlayStack.splice(idx, 1)
+                // Restore focus to previous, or next visible overlay, or preFocus
+                const topVisible = this.overlayStack.findLast(o => !o.hidden)
+                this.setFocus(topVisible?.component ?? entry.preFocus)
+                this.requestRender()
+            }
+        },
+
+        setHidden: (hidden: boolean) => {
+            entry.hidden = hidden
+            if (hidden && this.focusedComponent === component) {
+                // Focus moves to next visible overlay or preFocus
+                const topVisible = this.overlayStack.findLast(o => !o.hidden && o !== entry)
+                this.setFocus(topVisible?.component ?? entry.preFocus)
+            } else if (!hidden) {
+                // Restoring visibility - recapture focus
+                this.setFocus(component)
+            }
+            this.requestRender()
+        },
+
+        isHidden: () => entry.hidden
+    }
+}
+```
+
+---
+
+## Theme System
+
+### Theme Structure
+
+```typescript
+interface Theme {
+    // Colors (ANSI 256 or RGB)
+    colors: {
+        primary: string        // Main accent color
+        secondary: string      // Secondary accent
+        success: string        // Green for success states
+        warning: string        // Yellow for warnings
+        error: string          // Red for errors
+        muted: string          // Dim text
+        background: string     // Background color (if supported)
+    }
+
+    // Component-specific styling
+    editor: {
+        border: string         // Border characters
+        borderColor: string
+        cursorColor: string
+        placeholder: string    // Placeholder text color
+    }
+
+    markdown: {
+        heading: { h1: string, h2: string, h3: string }  // Colors
+        code: { fg: string, bg: string }
+        codeBlock: { fg: string, bg: string, border: string }
+        link: string
+        emphasis: string
+        strong: string
+        listMarker: string
+    }
+
+    messages: {
+        user: { prefix: string, color: string }
+        assistant: { prefix: string, color: string }
+        tool: { prefix: string, color: string }
+        error: { prefix: string, color: string }
+    }
+
+    selectList: {
+        selected: { fg: string, bg: string }
+        unselected: { fg: string }
+    }
+}
+```
+
+### Theme Loading
+
+```typescript
+// Theme search order:
+// 1. --theme CLI argument
+// 2. $PI_THEME environment variable
+// 3. ~/.config/pi/theme.json
+// 4. Built-in default theme
+
+function loadTheme(): Theme {
+    const paths = [
+        process.env.PI_THEME,
+        path.join(os.homedir(), ".config", "pi", "theme.json"),
+    ].filter(Boolean)
+
+    for (const p of paths) {
+        if (fs.existsSync(p)) {
+            const custom = JSON.parse(fs.readFileSync(p, "utf8"))
+            return deepMerge(DEFAULT_THEME, custom)
+        }
+    }
+
+    return DEFAULT_THEME
+}
+
+// Watch for theme file changes (hot reload)
+function watchTheme(themePath: string, onUpdate: (theme: Theme) => void) {
+    fs.watch(themePath, () => {
+        const theme = loadTheme()
+        onUpdate(theme)
+    })
+}
+```
+
+### Theme Application
+
+```typescript
+// Components receive theme in constructor
+class Editor {
+    constructor(private tui: TUI, private theme: Theme) {}
+
+    render(width: number): string[] {
+        const borderColor = this.theme.editor.borderColor
+        // Apply theme colors using ANSI codes
+        return [
+            `\x1b[${borderColor}m┌${"─".repeat(width-2)}┐\x1b[0m`,
+            // ...
+        ]
+    }
+}
+
+// Theme invalidation
+function onThemeChange(theme: Theme) {
+    // Update theme reference
+    currentTheme = theme
+    // Invalidate all components to force re-render with new theme
+    tui.invalidate()
+    tui.requestRender()
+}
 ```
 
 ---
 
 ## Event System
 
-### Agent Events
+### Agent Events (Complete)
 
-```pseudocode
+```typescript
 type AgentEvent =
+    // Lifecycle
     | { type: "agent_start" }
-    | { type: "agent_end", messages: AgentMessage[] }
+    | { type: "agent_end", messages: AgentMessage[], usage: Usage }
+
+    // Turn-level
     | { type: "turn_start" }
     | { type: "turn_end", message: AssistantMessage, toolResults: ToolResultMessage[] }
+
+    // Message streaming
     | { type: "message_start", message: AgentMessage }
-    | { type: "message_update", message: AgentMessage }
+    | { type: "message_update", message: AgentMessage }  // Streaming delta
     | { type: "message_end", message: AgentMessage }
+
+    // Tool execution
     | { type: "tool_execution_start", toolCallId: string, name: string, args: object }
-    | { type: "tool_execution_end", toolCallId: string, result: any }
+    | { type: "tool_execution_update", toolCallId: string, update: ToolUpdate }
+    | { type: "tool_execution_end", toolCallId: string, result: ToolResult }
+
+    // Session events (from AgentSession)
+    | { type: "model_select", model: Model, previous: Model | null }
+    | { type: "auto_retry_start", attempt: number, delay: number, reason: string }
+    | { type: "auto_retry_end", success: boolean }
+    | { type: "auto_compaction_start", reason: "overflow" | "threshold" }
+    | { type: "auto_compaction_end", result: CompactionResult }
+    | { type: "context_usage", usage: ContextUsage }
+
+    // Extension events
+    | { type: "custom", customType: string, data: unknown }
 ```
 
 ### Event Flow
@@ -1064,6 +1632,192 @@ test "Full interaction flow":
 
 ---
 
+## Image Rendering
+
+### Terminal Image Protocols
+
+```typescript
+// Detect terminal image support
+function detectImageSupport(): "kitty" | "iterm2" | "sixel" | null {
+    const term = process.env.TERM_PROGRAM ?? ""
+    const termEnv = process.env.TERM ?? ""
+
+    // Kitty graphics protocol
+    if (term === "kitty" || process.env.KITTY_WINDOW_ID) return "kitty"
+
+    // iTerm2 inline images
+    if (term === "iTerm.app" || process.env.ITERM_SESSION_ID) return "iterm2"
+
+    // WezTerm supports both
+    if (term === "WezTerm") return "kitty"
+
+    // Ghostty supports Kitty
+    if (term === "ghostty") return "kitty"
+
+    // Sixel (older protocol, not commonly used)
+    if (termEnv.includes("xterm") && process.env.COLORTERM === "truecolor") {
+        // Query for sixel support: \x1b[c
+        // Response contains ;4; if sixel supported
+    }
+
+    return null
+}
+```
+
+### Kitty Graphics Protocol
+
+```typescript
+// Kitty image transmission
+// Format: \x1b_G<key>=<value>,...;<base64>\x1b\\
+
+function encodeKitty(imageData: Buffer, options: ImageOptions): string {
+    const { width, height, id } = options
+
+    // Transmission keys:
+    // a=T    → transmit and display
+    // f=100  → format: PNG (also 24=RGB, 32=RGBA)
+    // s=W    → width in pixels
+    // v=H    → height in pixels
+    // i=ID   → image ID for later reference
+    // m=0/1  → 0=last chunk, 1=more chunks follow
+
+    const base64 = imageData.toString("base64")
+
+    // Split into 4096-byte chunks (terminal limit)
+    const chunks: string[] = []
+    for (let i = 0; i < base64.length; i += 4096) {
+        const chunk = base64.slice(i, i + 4096)
+        const isLast = i + 4096 >= base64.length
+        const m = isLast ? 0 : 1
+
+        if (i === 0) {
+            // First chunk includes all metadata
+            chunks.push(`\x1b_Ga=T,f=100,s=${width},v=${height},m=${m};${chunk}\x1b\\`)
+        } else {
+            // Continuation chunks
+            chunks.push(`\x1b_Gm=${m};${chunk}\x1b\\`)
+        }
+    }
+
+    return chunks.join("")
+}
+```
+
+### iTerm2 Inline Images
+
+```typescript
+// iTerm2 image format
+// \x1b]1337;File=<args>:<base64>\x07
+
+function encodeITerm2(imageData: Buffer, options: ImageOptions): string {
+    const { width, height, preserveAspectRatio = true } = options
+
+    const params = [
+        "inline=1",                              // Display inline
+        width ? `width=${width}` : "",           // Width (cells, pixels, %, or auto)
+        height ? `height=${height}` : "",        // Height
+        `preserveAspectRatio=${preserveAspectRatio ? 1 : 0}`,
+    ].filter(Boolean).join(";")
+
+    const base64 = imageData.toString("base64")
+
+    return `\x1b]1337;File=${params}:${base64}\x07`
+}
+```
+
+### Image Dimension Calculation
+
+```typescript
+// Calculate terminal rows needed for image
+function calculateImageRows(
+    imageWidth: number,
+    imageHeight: number,
+    cellPixelWidth: number,
+    cellPixelHeight: number,
+    maxWidthCells: number
+): { widthCells: number, heightCells: number } {
+    // Scale to fit within maxWidthCells
+    const scaleFactor = Math.min(1, (maxWidthCells * cellPixelWidth) / imageWidth)
+    const scaledWidth = Math.floor(imageWidth * scaleFactor)
+    const scaledHeight = Math.floor(imageHeight * scaleFactor)
+
+    // Convert to cell dimensions
+    const widthCells = Math.ceil(scaledWidth / cellPixelWidth)
+    const heightCells = Math.ceil(scaledHeight / cellPixelHeight)
+
+    return { widthCells, heightCells }
+}
+
+// Extract dimensions from image data
+function getImageDimensions(data: Buffer): { width: number, height: number } | null {
+    // PNG: bytes 16-23 contain width/height (big-endian)
+    if (data[0] === 0x89 && data[1] === 0x50) {  // PNG signature
+        const width = data.readUInt32BE(16)
+        const height = data.readUInt32BE(20)
+        return { width, height }
+    }
+
+    // JPEG: scan for SOF0/SOF2 marker
+    if (data[0] === 0xFF && data[1] === 0xD8) {
+        // ... JPEG parsing
+    }
+
+    // GIF: bytes 6-9 contain width/height (little-endian)
+    if (data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) {
+        const width = data.readUInt16LE(6)
+        const height = data.readUInt16LE(8)
+        return { width, height }
+    }
+
+    return null
+}
+```
+
+### Image Component
+
+```typescript
+class Image implements Component {
+    constructor(
+        private imageData: Buffer,
+        private options: { maxWidth?: number, fallbackText?: string }
+    ) {}
+
+    render(width: number): string[] {
+        const protocol = detectImageSupport()
+        if (!protocol) {
+            // Fallback for unsupported terminals
+            return [this.options.fallbackText ?? "[Image]"]
+        }
+
+        const dims = getImageDimensions(this.imageData)
+        if (!dims) return ["[Invalid image]"]
+
+        const maxWidth = Math.min(width, this.options.maxWidth ?? width)
+        const { widthCells, heightCells } = calculateImageRows(
+            dims.width, dims.height,
+            cellPixelWidth, cellPixelHeight,
+            maxWidth
+        )
+
+        // Generate protocol-specific output
+        const encoded = protocol === "kitty"
+            ? encodeKitty(this.imageData, dims)
+            : encodeITerm2(this.imageData, { width: widthCells })
+
+        // Image takes heightCells rows
+        // First row contains the image sequence, rest are empty (image spans them)
+        const lines = [encoded]
+        for (let i = 1; i < heightCells; i++) {
+            lines.push("")
+        }
+
+        return lines
+    }
+}
+```
+
+---
+
 ## Design Principles
 
 1. **Separation of Concerns**: TUI knows nothing about AI/agents. Agent knows nothing about display.
@@ -1078,10 +1832,14 @@ test "Full interaction flow":
 
 6. **Terminal Agnostic**: Terminal interface allows mock implementations for testing.
 
-7. **Graceful Degradation**: Works without Kitty protocol. Bracketed paste optional.
+7. **Graceful Degradation**: Works without Kitty protocol. Bracketed paste optional. Images have text fallback.
 
 8. **State Persistence**: Session state survives process restart. JSONL for append-only.
 
 9. **Interruptibility**: Steering queue allows user to interrupt mid-response.
 
 10. **Error Recovery**: Auto-retry for transient errors. Auto-compaction for overflow.
+
+11. **Unicode Correctness**: Grapheme-aware width calculation. Proper emoji/CJK handling.
+
+12. **ANSI Preservation**: Text operations preserve escape codes through wrap/truncate/slice.

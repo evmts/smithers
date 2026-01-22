@@ -445,7 +445,7 @@ class SmithersDB:
             self._connection = await aiosqlite.connect(self.db_path)
             await self._connection.execute("PRAGMA foreign_keys = ON")
         else:
-            self._connection = sqlite3.connect(self.db_path)
+            self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
             self._connection.execute("PRAGMA foreign_keys = ON")
 
         # Initialize modules

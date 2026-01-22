@@ -20,7 +20,7 @@ class SqliteStore:
         """
         if isinstance(db_connection_or_path, str):
             # Path was passed - create our own connection
-            self.db = sqlite3.connect(db_connection_or_path)
+            self.db = sqlite3.connect(db_connection_or_path, check_same_thread=False)
             self._owns_connection = True
         else:
             # Connection was passed - use it directly

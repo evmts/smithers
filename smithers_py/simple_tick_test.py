@@ -11,6 +11,7 @@ import os
 import uuid
 import sys
 from pathlib import Path
+import pytest
 
 # Add the current directory to Python path for imports
 current_dir = Path(__file__).parent
@@ -60,6 +61,7 @@ def _app_component(ctx):
     )
 
 
+@pytest.mark.asyncio
 async def test_basic_tick():
     """Test basic tick loop functionality."""
     print("🧪 Testing basic tick loop functionality...")
@@ -191,6 +193,7 @@ async def test_basic_tick():
         Path(temp_path).unlink(missing_ok=True)
 
 
+@pytest.mark.asyncio
 async def test_frame_coalescing():
     """Test that identical frames are coalesced."""
     print("\n🧪 Testing frame coalescing...")

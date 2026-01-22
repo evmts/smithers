@@ -392,10 +392,11 @@ class TestMCPToolProvider:
 
         # Add a dummy frame to database
         ctx = provider._executions[start_result.execution_id]
+        import uuid
         ctx.db.connection.execute(
-            """INSERT INTO render_frames (execution_id, sequence_number, xml_content, created_at)
-               VALUES (?, ?, ?, ?)""",
-            (start_result.execution_id, 0, "<frame>test</frame>", datetime.now().isoformat())
+            """INSERT INTO render_frames (id, execution_id, sequence_number, xml_content, timestamp)
+               VALUES (?, ?, ?, ?, ?)""",
+            (str(uuid.uuid4()), start_result.execution_id, 0, "<frame>test</frame>", datetime.now().isoformat())
         )
         ctx.db.connection.commit()
 

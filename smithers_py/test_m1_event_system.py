@@ -11,13 +11,14 @@ Tests:
 
 import asyncio
 import pytest
+import pytest_asyncio
 import sqlite3
 from datetime import datetime
 from typing import Any, Optional
 
 from smithers_py.db.database import SmithersDB
 from smithers_py.state.volatile import VolatileStore
-from smithers_py.nodes import Node, ClaudeNode
+from smithers_py.nodes import Node, ClaudeNode, NodeBase
 from smithers_py.engine.tick_loop import TickLoop, Context
 from smithers_py.executors.base import AgentResult, TaskStatus
 
@@ -67,7 +68,7 @@ class MockClaudeExecutor:
         )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def setup_test_env():
     """Set up test environment with database and stores."""
     # Create in-memory database
@@ -85,9 +86,9 @@ async def setup_test_env():
 
 
 @pytest.mark.asyncio
-async def test_event_handler_on_finished():
+async def test_event_handler_on_finished(setup_test_env):
     """Test that onFinished handler is called and state changes are applied."""
-    db, volatile_store, execution_id = await setup_test_env()
+    db, volatile_store, execution_id = setup_test_env
 
     # Track handler calls
     handler_calls = []
@@ -108,12 +109,13 @@ async def test_event_handler_on_finished():
         state_changes["last_completed"] = ctx.state.get("last_completed")
         state_changes["completed_count"] = ctx.v.get("completed_count")
 
-        # Render a ClaudeNode with event handler
+        # Render a ClaudeNode with event handler and explicit id
         return ClaudeNode(
             key="claude1",
             prompt="Test prompt",
             model="haiku",
-            on_finished=on_finished
+            on_finished=on_finished,
+            props={"id": "claude1"}
         )
 
     # Create tick loop with mock executor
@@ -136,14 +138,15 @@ async def test_event_handler_on_finished():
     assert sqlite_state.get("last_completed") == "claude1"
     assert sqlite_state.get("result_claude1") == "Test output"
 
-    # Verify re-render happened with new state
-    assert state_changes["last_completed"] == "claude1"
+    # Verify volatile state was also updated
+    volatile_snapshot = tick_loop.volatile_state.snapshot()
+    assert volatile_snapshot.get("completed_count") == 1
 
 
 @pytest.mark.asyncio
-async def test_event_handler_on_error():
+async def test_event_handler_on_error(setup_test_env):
     """Test that onError handler is called on failures."""
-    db, volatile_store, execution_id = await setup_test_env()
+    db, volatile_store, execution_id = setup_test_env
 
     handler_calls = []
 
@@ -163,11 +166,12 @@ async def test_event_handler_on_error():
                 key="claude_error",
                 prompt="Test prompt",
                 model="haiku",
-                on_error=on_error
+                on_error=on_error,
+                props={"id": "claude_error"}
             )
         else:
             # Stop rendering after error
-            return Node(type="empty")
+            return NodeBase(type="empty")
 
     # Create tick loop
     tick_loop = TickLoop(db, volatile_store, app_component, execution_id)
@@ -192,9 +196,9 @@ async def test_event_handler_on_error():
 
 
 @pytest.mark.asyncio
-async def test_stale_results_ignored():
+async def test_stale_results_ignored(setup_test_env):
     """Test that results for unmounted nodes are ignored."""
-    db, volatile_store, execution_id = await setup_test_env()
+    db, volatile_store, execution_id = setup_test_env
 
     handler_calls = []
     render_count = 0
@@ -214,11 +218,12 @@ async def test_stale_results_ignored():
                 key="claude_stale",
                 prompt="Test prompt",
                 model="haiku",
-                on_finished=on_finished
+                on_finished=on_finished,
+                props={"id": "claude_stale"}
             )
         else:
             # Subsequent renders - node unmounted
-            return Node(type="empty")
+            return NodeBase(type="empty")
 
     # Create tick loop
     tick_loop = TickLoop(db, volatile_store, app_component, execution_id)
@@ -259,9 +264,9 @@ async def test_stale_results_ignored():
 
 
 @pytest.mark.asyncio
-async def test_volatile_vs_sqlite_routing():
+async def test_volatile_vs_sqlite_routing(setup_test_env):
     """Test that writes are routed to correct stores."""
-    db, volatile_store, execution_id = await setup_test_env()
+    db, volatile_store, execution_id = setup_test_env
 
     def on_finished(result, ctx):
         """Handler that writes to both stores."""
@@ -276,7 +281,8 @@ async def test_volatile_vs_sqlite_routing():
             key="claude_routing",
             prompt="Test prompt",
             model="haiku",
-            on_finished=on_finished
+            on_finished=on_finished,
+            props={"id": "claude_routing"}
         )
 
     # Create tick loop
@@ -302,9 +308,9 @@ async def test_volatile_vs_sqlite_routing():
 
 
 @pytest.mark.asyncio
-async def test_event_state_rerender_flow():
+async def test_event_state_rerender_flow(setup_test_env):
     """Test complete flow: event -> state change -> re-render."""
-    db, volatile_store, execution_id = await setup_test_env()
+    db, volatile_store, execution_id = setup_test_env
 
     render_history = []
 
@@ -330,14 +336,15 @@ async def test_event_state_rerender_flow():
                 key="claude_flow",
                 prompt="Process data",
                 model="haiku",
-                on_finished=on_finished
+                on_finished=on_finished,
+                props={"id": "claude_flow"}
             )
         else:
             # Completed phase - show result
-            return Node(
+            return NodeBase(
                 type="result",
                 children=[
-                    Node(type="text", content=f"Result: {result_text}")
+                    NodeBase(type="text", props={"content": f"Result: {result_text}"})
                 ]
             )
 
