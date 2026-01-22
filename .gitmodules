@@ -13,3 +13,6 @@
 [submodule "reference/opencode"]
 	path = reference/opencode
 	url = https://github.com/anomalyco/opencode.git
+[submodule "reference/pi-mono"]
+	path = reference/pi-mono
+	url = git@github.com:badlogic/pi-mono.git
