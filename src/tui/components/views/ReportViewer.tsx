@@ -15,7 +15,7 @@ export interface ReportViewerProps {
 
 export function ReportViewer({ db, reportState, height }: ReportViewerProps) {
   if (reportState) {
-    return <ReportViewerContent reportState={reportState} height={height} />
+    return <ReportViewerContent reportState={reportState} {...(height !== undefined && { height })} />
   }
 
   if (!db) {
@@ -26,12 +26,12 @@ export function ReportViewer({ db, reportState, height }: ReportViewerProps) {
     )
   }
 
-  return <ReportViewerWithData db={db} height={height} />
+  return <ReportViewerWithData db={db} {...(height !== undefined && { height })} />
 }
 
 function ReportViewerWithData({ db, height }: { db: SmithersDB; height?: number }) {
   const reportState = useReportGenerator(db)
-  return <ReportViewerContent reportState={reportState} height={height} />
+  return <ReportViewerContent reportState={reportState} {...(height !== undefined && { height })} />
 }
 
 function ReportViewerContent({
@@ -92,7 +92,7 @@ function ReportViewerContent({
             stateKey="tui:reports"
             items={reports}
             height={listHeight}
-            renderItem={(report, index, isSelected) => (
+            renderItem={(report, _index, isSelected) => (
               <box
                 key={report.id}
                 style={{
