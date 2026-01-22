@@ -1,7 +1,7 @@
 # Review: type mismatches between docs and implementation
 
 ## Status
-Open
+Closed
 
 ## Description
 - `paths` vs `files` field name
@@ -13,4 +13,4 @@ Open
 - src/components/Review/types.ts
 
 ## Tasks
-- [ ] Align docs and implementation
+- [x] Align docs and implementation

@@ -36,7 +36,7 @@ description: AI-powered code review with configurable criteria
 { type: "diff", ref: "main" }       // Diff against branch
 { type: "commit", ref: "abc123" }   // Specific commit
 { type: "pr", ref: "123" }          // Pull request
-{ type: "files", paths: [...] }     // Specific files
+{ type: "files", files: [...] }     // Specific files
 ```
 
 ### ReviewResult
@@ -46,10 +46,10 @@ interface ReviewResult {
   approved: boolean;
   summary: string;
   issues: Array<{
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    file: string;
+    severity: 'critical' | 'major' | 'minor';
+    file?: string;
     line?: number;
-    description: string;
+    message: string;
     suggestion?: string;
   }>;
 }
