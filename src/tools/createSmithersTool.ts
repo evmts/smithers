@@ -8,7 +8,7 @@ import type {
 
 /**
  * Create a SmithersTool from options.
- * 
+ *
  * When used within the Smithers orchestrator, tools receive full context including
  * database access, agent/execution IDs, and proper logging. When used standalone
  * (e.g., MCP server, direct invocation, testing), a stub context is created with:
@@ -16,14 +16,18 @@ import type {
  * - 'stub' agentId/executionId
  * - process.cwd() and process.env
  * - console.log for logging
- * 
+ *
  * This intentional fallback enables tools to work in MCP/standalone contexts
  * where full Smithers orchestration isn't available. Tools can opt out by
  * setting requiresSmithersContext: true.
- * 
+ *
  * @param options - Tool configuration including name, schema, and execute function
  * @returns A SmithersTool compatible with both Smithers orchestration and standalone use
- * 
+ *
+ * @throws {Error} When `requiresSmithersContext: true` and no Smithers context provided
+ * @throws {Error} When accessing `context.db` in standalone mode (db unavailable)
+ * @throws {Error} When input fails Zod schema validation
+ *
  * @example
  * ```ts
  * const myTool = createSmithersTool({

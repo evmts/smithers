@@ -122,8 +122,8 @@ export function createSmithersRoot(): SmithersRoot {
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
         handleFatalError(err)
-        void completionPromise.catch(() => {})
-        return Promise.reject(err)
+        void completionPromise.catch((err) => console.debug('Completion promise rejected:', err))
+        return Promise.reject(new Error('Render failed', { cause: err }))
       }
 
       // Create the fiber root container

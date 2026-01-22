@@ -78,6 +78,12 @@ ${baselineCode}
 Analyze the execution state and source code. Identify any issues and recommend whether a rewrite is needed.`
 }
 
+/**
+ * Run analysis on a SuperSmithers execution context to diagnose issues.
+ * @throws {Error} No text response from Claude - when API returns no text content block
+ * @throws {Error} Failed to parse analysis response as JSON - when Claude returns malformed JSON
+ * @throws {Error} Invalid analysis response structure - when JSON is missing required fields (summary, issues array, rewrite)
+ */
 export async function runAnalysis(opts: {
   context: SuperSmithersContext
   model: ClaudeModel
@@ -97,18 +103,24 @@ export async function runAnalysis(opts: {
 
   const textBlock = response.content.find((block) => block.type === 'text')
   if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude')
+    const blockTypes = response.content.map((b) => b.type).join(', ')
+    throw new Error(`No text response from Claude, got block types: [${blockTypes}]`)
   }
 
   let parsed: AnalysisResult
   try {
     parsed = JSON.parse(textBlock.text)
   } catch (err) {
-    throw new Error(`Failed to parse analysis response as JSON: ${err instanceof Error ? err.message : String(err)}\nRaw response: ${textBlock.text.slice(0, 500)}`)
+    throw new Error(`Failed to parse analysis response as JSON. Raw response: ${textBlock.text.slice(0, 500)}`, { cause: err })
   }
 
   if (!parsed.summary || !Array.isArray(parsed.issues) || !parsed.rewrite) {
-    throw new Error('Invalid analysis response structure')
+    const missing = [
+      !parsed.summary && 'summary',
+      !Array.isArray(parsed.issues) && 'issues (array)',
+      !parsed.rewrite && 'rewrite',
+    ].filter(Boolean)
+    throw new Error(`Invalid analysis response structure, missing: ${missing.join(', ')}`)
   }
 
   return {

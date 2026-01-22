@@ -7,6 +7,11 @@ export interface MCPToolDefinition {
   inputSchema: Record<string, unknown>
 }
 
+/**
+ * Convert a SmithersTool to MCP tool definition format.
+ *
+ * @throws {Error} If input schema is not an object type (MCP requires object schemas)
+ */
 export function toolToMCPDefinition(name: string, tool: SmithersTool): MCPToolDefinition {
   const jsonSchema = zodToJsonSchema(tool.inputSchema)
   const isObjectSchema =

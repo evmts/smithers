@@ -128,7 +128,7 @@ export async function startWatcher(): Promise<void> {
           }
           
           // Clean up request file
-          await fs.promises.unlink(reqPath).catch(() => {})
+          await fs.promises.unlink(reqPath).catch((err) => console.debug('Cleanup failed:', err))
         } catch (err) {
           console.error(`[legacy-tool-ipc] Error processing ${reqFile}:`, err)
         }
@@ -157,11 +157,11 @@ export async function cleanupIpcDir(): Promise<void> {
   try {
     const files = await fs.promises.readdir(IPC_DIR)
     await Promise.all(
-      files.map(f => fs.promises.unlink(path.join(IPC_DIR, f)).catch(() => {}))
+      files.map(f => fs.promises.unlink(path.join(IPC_DIR, f)).catch((err) => console.debug('Cleanup failed:', err)))
     )
-    await fs.promises.rmdir(IPC_DIR).catch(() => {})
-  } catch {
-    // Ignore errors during cleanup
+    await fs.promises.rmdir(IPC_DIR).catch((err) => console.debug('Cleanup failed:', err))
+  } catch (err) {
+    console.debug('Cleanup error:', err)
   }
 }
 

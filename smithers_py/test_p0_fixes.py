@@ -21,9 +21,9 @@ import pytest
 async def test_p0_fixes():
     """Test all P0 fixes in an integrated way."""
 
-    # Create in-memory database
+    # Create in-memory database (sync mode for TickLoop compatibility)
     print("\nCreating test database...")
-    db = SmithersDB(":memory:", is_async=True)
+    db = SmithersDB(":memory:", is_async=False)
     await db.connect()
 
     # Run migrations to create schema

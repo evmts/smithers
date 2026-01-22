@@ -13,6 +13,11 @@ export interface ValidationMiddlewareOptions {
   errorMessage?: string
 }
 
+/**
+ * Middleware that validates agent results against a custom predicate.
+ *
+ * @throws {ValidationError} When validation fails (result doesn't pass validate predicate)
+ */
 export function validationMiddleware(options: ValidationMiddlewareOptions): SmithersMiddleware {
   return {
     name: 'validation',

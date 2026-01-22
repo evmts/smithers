@@ -173,7 +173,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
         return result
       } catch (error) {
         tasks.fail(taskId)
-        throw error
+        throw new Error(`Task ${taskId} failed`, { cause: error })
       }
     },
   }

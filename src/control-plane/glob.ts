@@ -6,6 +6,10 @@ export interface GlobOptions {
   cwd?: string
 }
 
+/**
+ * Search for files matching a glob pattern
+ * @throws {Error} If pattern contains absolute paths or parent traversal (..)
+ */
 export async function glob(opts: GlobOptions): Promise<string[]> {
   const cwd = opts.cwd ?? process.cwd()
   

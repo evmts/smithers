@@ -356,20 +356,41 @@ export async function generateFilePath(
   }
 }
 
+/**
+ * Write a generated capture to disk.
+ * @throws {Error} Failed to create directory - when mkdir fails
+ * @throws {Error} Failed to read existing file - when file.text() fails on append
+ * @throws {Error} Failed to write file - when Bun.write fails
+ */
 export async function writeCapture(generated: GeneratedCapture): Promise<void> {
-  await mkdir(path.dirname(generated.filePath), { recursive: true })
-  if (generated.isAppend) {
-    // Read existing content and append
-    const file = Bun.file(generated.filePath)
-    const existing = await file.exists()
-      ? await file.text()
-      : ''
-    const trimmedExisting = existing.trimEnd()
-    const separator = trimmedExisting.length > 0 ? '\n' : ''
-    const newContent = trimmedExisting + separator + generated.content
-    await Bun.write(generated.filePath, newContent)
-  } else {
-    await Bun.write(generated.filePath, generated.content)
+  try {
+    await mkdir(path.dirname(generated.filePath), { recursive: true })
+  } catch (err) {
+    throw new Error(`Failed to create directory ${path.dirname(generated.filePath)}: ${err instanceof Error ? err.message : String(err)}`, { cause: err })
+  }
+
+  try {
+    if (generated.isAppend) {
+      // Read existing content and append
+      const file = Bun.file(generated.filePath)
+      let existing = ''
+      try {
+        existing = await file.exists() ? await file.text() : ''
+      } catch (readErr) {
+        throw new Error(`Failed to read existing file ${generated.filePath}: ${readErr instanceof Error ? readErr.message : String(readErr)}`, { cause: readErr })
+      }
+      const trimmedExisting = existing.trimEnd()
+      const separator = trimmedExisting.length > 0 ? '\n' : ''
+      const newContent = trimmedExisting + separator + generated.content
+      await Bun.write(generated.filePath, newContent)
+    } else {
+      await Bun.write(generated.filePath, generated.content)
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Failed to read')) {
+      throw err
+    }
+    throw new Error(`Failed to write file ${generated.filePath}: ${err instanceof Error ? err.message : String(err)}`, { cause: err })
   }
 }
 

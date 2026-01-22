@@ -23,6 +23,7 @@ function withCwd<T extends { cwd: (dir: string) => T }>(command: T, cwd?: string
 
 /**
  * Execute a git command
+ * @throws {Error} If git command fails, includes stderr
  */
 export async function git(...args: Array<string | GitOptions>): Promise<CommandResult> {
   let options: GitOptions | undefined
@@ -49,19 +50,20 @@ export async function git(...args: Array<string | GitOptions>): Promise<CommandR
 
 /**
  * Get current commit hash
+ * @throws {Error} If ref cannot be resolved
  */
 export async function getCommitHash(ref: string = 'HEAD', cwd?: string): Promise<string> {
   try {
     const result = await withCwd(Bun.$`git rev-parse ${ref}`, cwd).text()
     return result.trim()
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to resolve ref '${ref}': ${msg}`)
+    throw new Error(`Failed to resolve ref '${ref}'`, { cause: error })
   }
 }
 
 /**
  * Get commit information
+ * @throws {Error} If commit info cannot be retrieved for ref
  */
 export async function getCommitInfo(ref: string = 'HEAD', cwd?: string): Promise<CommitInfo> {
   try {
@@ -74,13 +76,13 @@ export async function getCommitInfo(ref: string = 'HEAD', cwd?: string): Promise
       message: message.trim(),
     }
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to get commit info for '${ref}': ${msg}`)
+    throw new Error(`Failed to get commit info for '${ref}'`, { cause: error })
   }
 }
 
 /**
  * Get diff statistics
+ * @throws {Error} If diff stats cannot be retrieved
  */
 export async function getDiffStats(ref?: string, cwd?: string): Promise<DiffStats> {
   const args = ref ? `${ref}..HEAD` : 'HEAD~1..HEAD'
@@ -88,8 +90,7 @@ export async function getDiffStats(ref?: string, cwd?: string): Promise<DiffStat
   try {
     result = await withCwd(Bun.$`git diff --numstat ${args}`, cwd).text()
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to get diff stats for '${args}': ${msg}`)
+    throw new Error(`Failed to get diff stats for '${args}'`, { cause: error })
   }
 
   const files: string[] = []
@@ -120,6 +121,7 @@ export async function getGitStatus(cwd?: string): Promise<VCSStatus> {
 
 /**
  * Add git notes with smithers metadata
+ * @throws {Error} If git notes operation fails
  */
 export async function addGitNotes(
   content: string,
@@ -140,8 +142,7 @@ export async function addGitNotes(
     args.push('-F', tempPath, ref)
     await withCwd(Bun.$`git ${args}`, cwd).quiet()
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to ${append ? 'append' : 'add'} git notes: ${msg}`)
+    throw new Error(`Failed to ${append ? 'append' : 'add'} git notes`, { cause: error })
   } finally {
     await unlink(tempPath).catch((err) => console.debug('Cleanup failed:', err))
   }

@@ -143,31 +143,46 @@ export async function runMCPServer(config: MCPServerConfig): Promise<void> {
 
   const decoder = new TextDecoder()
   let buffer = ''
+
+  // Handle stdin errors gracefully (e.g., broken pipe, unexpected close)
+  process.stdin.on('error', (err) => {
+    log(`Stdin error: ${err.message}`)
+    // Exit gracefully on stdin errors
+    process.exit(1)
+  })
+
   const stream = Bun.stdin.stream()
   const reader = stream.getReader()
 
-  while (true) {
-    const { value: chunk, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(chunk, { stream: true })
+  try {
+    while (true) {
+      const { value: chunk, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(chunk, { stream: true })
 
-    let newlineIndex: number
-    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, newlineIndex).trim()
-      buffer = buffer.slice(newlineIndex + 1)
-      if (!line) continue
+      let newlineIndex: number
+      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim()
+        buffer = buffer.slice(newlineIndex + 1)
+        if (!line) continue
 
-      try {
-        const request = JSON.parse(line) as JSONRPCRequest
-        if (request.jsonrpc !== '2.0') {
-          log(`Invalid JSON-RPC version: ${request.jsonrpc}`)
-          continue
+        try {
+          const request = JSON.parse(line) as JSONRPCRequest
+          if (request.jsonrpc !== '2.0') {
+            log(`Invalid JSON-RPC version: ${request.jsonrpc}`)
+            continue
+          }
+          await handleRequest(request)
+        } catch (error) {
+          log(`Failed to parse request: ${error}`)
+          sendError(null, -32700, 'Parse error')
         }
-        await handleRequest(request)
-      } catch (error) {
-        log(`Failed to parse request: ${error}`)
-        sendError(null, -32700, 'Parse error')
       }
     }
+  } catch (err) {
+    log(`Stream read error: ${err instanceof Error ? err.message : String(err)}`)
+    process.exit(1)
+  } finally {
+    reader.releaseLock()
   }
 }

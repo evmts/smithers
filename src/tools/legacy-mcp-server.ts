@@ -47,7 +47,7 @@ async function executeViaIPC(toolName: string, input: unknown): Promise<unknown>
     try {
       const content = await fs.promises.readFile(respPath, 'utf-8')
       const response: IPCResponse = JSON.parse(content)
-      await fs.promises.unlink(respPath).catch(() => {})
+      await fs.promises.unlink(respPath).catch((err) => console.debug('Cleanup failed:', err))
       if (!response.success) throw new Error(response.error ?? 'Unknown error')
       return response.result
     } catch (err) {
@@ -58,7 +58,7 @@ async function executeViaIPC(toolName: string, input: unknown): Promise<unknown>
     }
   }
 
-  await fs.promises.unlink(reqPath).catch(() => {})
+  await fs.promises.unlink(reqPath).catch((err) => console.debug('Cleanup failed:', err))
   throw new Error(`IPC timeout waiting for response from tool: ${toolName}`)
 }
 

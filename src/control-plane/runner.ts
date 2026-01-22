@@ -40,8 +40,12 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const dbPath = deriveDbPath(scriptPath, cwd)
   const executionId = opts.executionId ?? generateExecutionId()
   
-  await mkdir(path.dirname(dbPath), { recursive: true })
-  await Bun.write(path.join(path.dirname(dbPath), '.gitkeep'), '')
+  try {
+    await mkdir(path.dirname(dbPath), { recursive: true })
+    await Bun.write(path.join(path.dirname(dbPath), '.gitkeep'), '')
+  } catch (err) {
+    console.debug('Failed to initialize data directory:', err)
+  }
   
   const preloadPath = path.join(import.meta.dirname, '..', '..', 'preload.ts')
   
@@ -57,7 +61,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   })
   
   runningProcesses.set(executionId, { proc, pid: proc.pid })
-  proc.exited.then(() => runningProcesses.delete(executionId))
+  proc.exited
+    .then(() => runningProcesses.delete(executionId))
+    .catch((err) => console.debug('Process exit handler failed:', err))
   
   return {
     executionId,
@@ -66,6 +72,10 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   }
 }
 
+/**
+ * Resume an execution
+ * @throws {Error} If execution not found (when executionId provided) or no incomplete executions exist
+ */
 export async function resume(opts: ResumeOptions = {}): Promise<RunResult> {
   const cwd = opts.cwd ?? process.cwd()
   
@@ -124,6 +134,10 @@ export async function resume(opts: ResumeOptions = {}): Promise<RunResult> {
   return run({ script: latestExec.filePath, executionId: latestExec.id, cwd })
 }
 
+/**
+ * Cancel an execution
+ * @throws {Error} If execution not found
+ */
 export async function cancel(opts: CancelOptions): Promise<void> {
   const cwd = opts.cwd ?? process.cwd()
   const dataDir = path.join(cwd, '.smithers', 'data')
@@ -195,8 +209,8 @@ export async function createWorkflow(opts: CreateWorkflowOptions): Promise<Creat
     })
     
     const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text()
+      new Response(proc.stdout).text().catch(() => ''),
+      new Response(proc.stderr).text().catch(() => '')
     ])
     
     await proc.exited
@@ -213,14 +227,14 @@ export async function createWorkflow(opts: CreateWorkflowOptions): Promise<Creat
     }
     
     await Bun.write(targetPath, opts.content)
-    await unlink(tempPath).catch(() => {})
-    
+    await unlink(tempPath).catch((err) => console.debug('Cleanup failed:', err))
+
     return {
       path: targetPath,
       created: true
     }
   } catch (err) {
-    await unlink(tempPath).catch(() => {})
+    await unlink(tempPath).catch((e) => console.debug('Cleanup failed:', e))
     return {
       path: targetPath,
       created: false,

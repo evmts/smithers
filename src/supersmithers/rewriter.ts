@@ -67,7 +67,12 @@ Fix these validation errors in your new response.`
   return prompt
 }
 
-function parseRewriteResponse(text: string): {
+/**
+ * Parse Claude's rewrite response JSON.
+ * @throws {Error} Failed to parse rewrite response as JSON - when response is malformed JSON
+ * @throws {Error} Invalid rewrite response structure - when JSON is missing required fields (summary, rationale, risk, newCode)
+ */
+export function parseRewriteResponse(text: string): {
   summary: string
   rationale: string
   risk: 'low' | 'medium' | 'high'
@@ -87,16 +92,29 @@ function parseRewriteResponse(text: string): {
   try {
     parsed = JSON.parse(jsonText)
   } catch (err) {
-    throw new Error(`Failed to parse rewrite response as JSON: ${err instanceof Error ? err.message : String(err)}\nRaw response: ${jsonText.slice(0, 500)}`)
+    throw new Error(`Failed to parse rewrite response as JSON. Raw response: ${jsonText.slice(0, 500)}`, { cause: err })
   }
 
   if (!parsed.summary || !parsed.rationale || !parsed.risk || !parsed.newCode) {
-    throw new Error(`Invalid rewrite response structure: missing required fields`)
+    const missing = [
+      !parsed.summary && 'summary',
+      !parsed.rationale && 'rationale',
+      !parsed.risk && 'risk',
+      !parsed.newCode && 'newCode',
+    ].filter(Boolean)
+    throw new Error(`Invalid rewrite response structure, missing: ${missing.join(', ')}`)
   }
 
   return parsed
 }
 
+/**
+ * Run rewrite operation to fix diagnosed issues in a Smithers plan.
+ * @throws {Error} No text response from Claude - when API returns no text content block
+ * @throws {Error} Failed to parse rewrite response as JSON - when Claude returns malformed JSON
+ * @throws {Error} Invalid rewrite response structure - when JSON is missing required fields
+ * @throws {Error} Rewrite failed validation after N attempts - when code fails validation checks (useState, relative imports, syntax) after all retry attempts exhausted
+ */
 export async function runRewrite(opts: {
   context: SuperSmithersContext
   analysis: AnalysisResult
@@ -123,7 +141,8 @@ export async function runRewrite(opts: {
 
     const textBlock = response.content.find((block) => block.type === 'text')
     if (!textBlock || textBlock.type !== 'text') {
-      throw new Error('No text response from Claude')
+      const blockTypes = response.content.map((b) => b.type).join(', ')
+      throw new Error(`No text response from Claude, got block types: [${blockTypes}]`)
     }
 
     const parsed = parseRewriteResponse(textBlock.text)
@@ -144,7 +163,7 @@ export async function runRewrite(opts: {
     }
   }
 
-  throw new Error(`Rewrite failed validation after ${maxAttempts} attempts: ${lastErrors.join(', ')}`)
+  throw new Error(`Rewrite failed validation after ${maxAttempts} attempts`, { cause: new Error(lastErrors.join('; ')) })
 }
 
 export async function validateRewrite(
@@ -204,11 +223,19 @@ export async function validateRewrite(
   const tempPath = `/tmp/supersmithers-validate-${Date.now()}.tsx`
   try {
     await Bun.write(tempPath, code)
-    await Bun.$`bun build ${tempPath} --no-bundle`.quiet()
-  } catch (err) {
-    errors.push(`Syntax error: ${err instanceof Error ? err.message : String(err)}`)
+    try {
+      await Bun.$`bun build ${tempPath} --no-bundle`.quiet()
+    } catch (buildErr) {
+      errors.push(`Syntax error: ${buildErr instanceof Error ? buildErr.message : String(buildErr)}`)
+    }
+  } catch (writeErr) {
+    errors.push(`Failed to write temp file: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`)
   } finally {
-    await Bun.$`rm -f ${tempPath}`.quiet()
+    try {
+      await Bun.$`rm -f ${tempPath}`.quiet()
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 
   return { valid: errors.length === 0, errors }

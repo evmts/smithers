@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 from smithers_py.db.database import SmithersDB
 from smithers_py.state.volatile import VolatileStore
-from smithers_py.nodes import Node, ClaudeNode, NodeBase
+from smithers_py.nodes import Node, ClaudeNode, NodeBase, TextNode
 from smithers_py.engine.tick_loop import TickLoop, Context
 from smithers_py.executors.base import AgentResult, TaskStatus
 

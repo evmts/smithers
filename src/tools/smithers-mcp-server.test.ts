@@ -293,8 +293,10 @@ export const tools = {
     })
     const response = await readResponse(reader)
     
-    expect((response as any).error).toBeDefined()
-    expect((response as any).error.message).toContain('Tool not found')
+    // MCP spec: tool failures return result with isError, not JSON-RPC error
+    expect((response as any).result).toBeDefined()
+    expect((response as any).result.isError).toBe(true)
+    expect((response as any).result.content[0].text).toContain('Tool not found')
     
     proc.kill()
   })

@@ -6,6 +6,7 @@ import type { CommandResult, VCSStatus, DiffStats, JJSnapshotResult, JJCommitRes
 
 /**
  * Execute a jj command
+ * @throws {Error} If jj command fails, includes stderr
  */
 export async function jj(...args: string[]): Promise<CommandResult> {
   try {
@@ -28,14 +29,14 @@ export async function jj(...args: string[]): Promise<CommandResult> {
 
 /**
  * Get JJ change ID for current working copy
+ * @throws {Error} If change ID cannot be retrieved for ref
  */
 export async function getJJChangeId(ref: string = '@'): Promise<string> {
   try {
     const result = await Bun.$`jj log -r ${ref} --no-graph -T change_id`.text()
     return result.trim()
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to get JJ change ID for '${ref}': ${msg}`)
+    throw new Error(`Failed to get JJ change ID for '${ref}'`, { cause: error })
   }
 }
 
