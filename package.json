@@ -1,6 +1,6 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.2.13",
+  "version": "0.3.0",
   "description": "Build AI agents with React - Declarative JSX for Claude orchestration",
   "license": "MIT",
   "type": "module",
