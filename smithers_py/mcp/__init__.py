@@ -18,6 +18,15 @@ from smithers_py.mcp.tools import MCPToolProvider, TOOL_DEFINITIONS
 from smithers_py.mcp.server import McpCore, McpSession, EventBuffer, JsonRpcError, ErrorCode
 from smithers_py.mcp.stdio import StdioTransport, run_stdio_server
 from smithers_py.mcp.http import HttpTransport, HttpTransportSecurity, run_http_server
+from smithers_py.mcp.notifications import (
+    NotificationEmitter,
+    FrameCreatedEvent,
+    NodeUpdatedEvent,
+    TaskUpdatedEvent,
+    AgentStreamEvent,
+    ApprovalRequestedEvent,
+    ExecutionStatusEvent,
+)
 
 __all__ = [
     # Resources & Tools
@@ -34,6 +43,14 @@ __all__ = [
     "StdioTransport",
     "HttpTransport",
     "HttpTransportSecurity",
+    # Notifications
+    "NotificationEmitter",
+    "FrameCreatedEvent",
+    "NodeUpdatedEvent",
+    "TaskUpdatedEvent",
+    "AgentStreamEvent",
+    "ApprovalRequestedEvent",
+    "ExecutionStatusEvent",
     # Run functions
     "run_stdio_server",
     "run_http_server",
