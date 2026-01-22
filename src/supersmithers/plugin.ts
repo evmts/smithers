@@ -9,10 +9,12 @@ plugin({
     // Use Bun's transpiler to scan imports
     build.onLoad({ filter: /\.[cm]?[jt]sx?$/, namespace: 'file' }, async (args) => {
       const source = await Bun.file(args.path).text()
+      const loader = args.path.endsWith('.tsx') || args.path.endsWith('.jsx') ? 'tsx' : 
+                     args.path.endsWith('.ts') ? 'ts' : 'js'
       
       // Quick check before parsing
       if (!source.includes('supersmithers')) {
-        return undefined
+        return { contents: source, loader }
       }
       
       // Use Bun's transpiler to get import metadata
@@ -24,7 +26,6 @@ plugin({
       // on just the import statements, not the whole file
       // Note: Only default imports supported currently (named imports not yet implemented)
       let transformed = source
-      let hasChanges = false
       
       for (const imp of imports) {
         // Build a regex for this specific import
@@ -38,15 +39,11 @@ plugin({
         transformed = transformed.replace(importPattern, (_match, binding, _q1, _q2, scope) => {
           const absPath = Bun.resolveSync(imp.path, args.path)
           const hash = createHash('sha256').update(absPath).digest('hex')
-          hasChanges = true
           return `import ${binding} from "${PROXY_NAMESPACE}:${absPath}?export=default&scope=${encodeURIComponent(scope)}&hash=${hash}"`
         })
       }
       
-      if (hasChanges) {
-        return { contents: transformed, loader: 'tsx' }
-      }
-      return undefined
+      return { contents: transformed, loader }
     })
 
     build.onResolve({ filter: /^supersmithers-proxy:/ }, (args) => {
