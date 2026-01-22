@@ -14,7 +14,6 @@ import {
   cleanupIpcDir,
 } from '../../tools/legacy-tool-ipc.js'
 
-// Track if legacy tools are in use for current execution
 let hasLegacyToolsInExecution = false
 import type { MCPServer } from '../../tools/types.js'
 import * as path from 'path'

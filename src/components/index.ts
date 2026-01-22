@@ -41,6 +41,7 @@ export {
 // Basic workflow components
 export { Each, type EachProps } from './Each.js'
 export { If, type IfProps } from './If.js'
+export { Switch, Case, Default, type SwitchProps, type CaseProps, type DefaultProps } from './Switch.js'
 export { While, useWhileIteration, type WhileProps, type WhileIterationContextValue } from './While.js'
 export { Stop, type StopProps } from './Stop.js'
 export { End, type EndProps, type EndSummary } from './End.js'
@@ -48,6 +49,7 @@ export { Subagent, type SubagentProps } from './Subagent.js'
 export { Persona, type PersonaProps } from './Persona.js'
 export { Constraints, type ConstraintsProps } from './Constraints.js'
 export { Task, type TaskProps } from './Task.js'
+export { Command, type CommandProps, type CommandResult } from './Command.js'
 export { Human, type HumanProps } from './Human.js'
 
 // Smithers Provider (database-integrated, includes orchestration)

@@ -37,6 +37,7 @@ All nested components automatically operate in the worktree directory.
 | `base` | `string` | `"HEAD"` | Base ref when creating new branch |
 | `path` | `string` | `.worktrees/${branch}` | Worktree directory path |
 | `cleanup` | `boolean` | `false` | Remove worktree on unmount |
+| `children` | `ReactNode` | required | Content rendered in worktree |
 | `onReady` | `(path: string) => void` | - | Called when worktree is ready |
 | `onError` | `(error: Error) => void` | - | Called on setup failure |
 

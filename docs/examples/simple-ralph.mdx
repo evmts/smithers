@@ -78,7 +78,7 @@ function App() {
 
 const root = createSmithersRoot()
 try {
-  await root.mount(App)
+  await root.mount(<App />)
   db.execution.complete(executionId)
 } finally {
   db.close()

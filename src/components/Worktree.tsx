@@ -31,7 +31,6 @@ interface WorktreeState {
 export function Worktree(props: WorktreeProps): ReactNode {
   const smithers = useSmithers()
   const executionScope = useExecutionScope()
-  // Use stable id for resumability (defaults to branch name if not provided)
   const worktreeId = props.id ?? props.branch
   const stateKey = `worktree:${worktreeId}`
   const isMounted = useMountedState()
@@ -79,7 +78,6 @@ export function Worktree(props: WorktreeProps): ReactNode {
         if (!isMounted()) return
         setState({ status: 'ready', path: worktreePath, error: null })
 
-        // Complete setup task - worktree is ready
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
           taskIdRef.current = null
@@ -92,7 +90,6 @@ export function Worktree(props: WorktreeProps): ReactNode {
         if (!isMounted()) return
         setState({ status: 'error', path: null, error: errorObj.message })
 
-        // Complete setup task with error
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
           taskIdRef.current = null
@@ -113,7 +110,6 @@ export function Worktree(props: WorktreeProps): ReactNode {
           console.warn('[Worktree] Could not remove worktree:', err)
         }
       }
-      // Task is already completed in mount - no need to complete here
     })()
   })
 

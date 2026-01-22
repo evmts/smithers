@@ -6,6 +6,10 @@ description: Signal workflow termination
 # Stop
 
 ```tsx
+import { Stop } from "smithers-orchestrator";
+```
+
+```tsx
 <Stop reason="Task completed successfully" />
 ```
 
@@ -20,9 +24,9 @@ description: Signal workflow termination
 
 ```tsx
 function ConditionalWorkflowBody() {
-  const { db, reactiveDb } = useSmithers()
+  const { db } = useSmithers()
   const { data: statusVal } = useQueryValue<string>(
-    reactiveDb, "SELECT value FROM state WHERE key = 'status'"
+    db.db, "SELECT value FROM state WHERE key = 'status'"
   )
   const status = statusVal ?? "running"
   const setStatus = (s: string) => db.state.set('status', s)

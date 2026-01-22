@@ -1,0 +1,63 @@
+---
+title: useHuman Hook
+description: Request human input during orchestration execution
+---
+
+# useHuman Hook
+
+Pauses execution to request human input. Returns a promise that resolves when the human responds.
+
+```tsx
+import { useHuman } from "smithers-orchestrator";
+
+function ConfirmDeploy() {
+  const { ask, status, requestId } = useHuman();
+
+  useMount(async () => {
+    const confirmed = await ask<boolean>("Deploy to production?");
+    if (confirmed) {
+      // proceed with deploy
+    }
+  });
+
+  return <text>Status: {status}</text>;
+}
+```
+
+## API
+
+```tsx
+function useHuman(): UseHumanResult
+
+interface UseHumanResult {
+  ask: <T = unknown>(prompt: string, options?: AskOptions) => Promise<T>
+  status: "idle" | "pending" | "resolved"
+  requestId: string | null
+}
+
+interface AskOptions {
+  options?: string[]  // For multi-choice selection
+}
+```
+
+## Return Values
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ask` | `<T>(prompt: string, options?: AskOptions) => Promise<T>` | Request human input; resolves when answered |
+| `status` | `'idle' \| 'pending' \| 'resolved'` | Current state of the request |
+| `requestId` | `string \| null` | ID of the current request in `human_interactions` table |
+
+## Notes
+
+- Requires `SmithersProvider` context.
+- Creates a `confirmation` request by default; pass `options` for multi-choice `select`.
+- Response is stored in `human_interactions` table.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="SmithersProvider" icon="box" href="/components/smithers-provider">
+    Required context provider
+  </Card>
+</CardGroup>

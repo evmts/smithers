@@ -62,11 +62,11 @@ const config = configJson ? JSON.parse(configJson) : { timeout: 1000, retries: 1
 import { useSmithers, If, Claude, Review, Commit, useQueryValue } from "smithers-orchestrator";
 
 function FeatureWorkflowBody() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
   
   // Phase is a simple string - no JSON parsing needed
   const { data: phaseVal } = useQueryValue<string>(
-    reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
+    db.db, "SELECT value FROM state WHERE key = 'phase'"
   );
   const phase = phaseVal ?? "implement";
 

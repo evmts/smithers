@@ -37,7 +37,7 @@ async function main() {
 
   try {
     const root = createSmithersRoot();
-    await root.mount(HelloWorld);
+    await root.mount(<HelloWorld />);
     db.execution.complete(executionId, { summary: "Hello World workflow completed" });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));

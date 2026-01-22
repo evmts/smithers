@@ -101,6 +101,8 @@ import { PostCommit } from "smithers-orchestrator/components/Hooks";
 ## Example: CI Recovery Workflow
 
 ```tsx
+import { Git } from "smithers-orchestrator/components/Git";
+
 function CIRecoveryWorkflow() {
   return (
         <SmithersProvider db={db} executionId={executionId} maxIterations={3}>
@@ -140,7 +142,7 @@ function CIRecoveryWorkflow() {
 
                 <Phase name="Commit">
                   <Step name="commit">
-                    <Commit
+                    <Git.Commit
                       autoGenerate
                       all
                       notes={{ smithers: true, ciRecovery: true }}

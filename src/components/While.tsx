@@ -78,7 +78,6 @@ export function While(props: WhileProps): ReactNode {
           if (conditionResult && iterationValue < maxIterations) {
             db.state.set(iterationKey, 0, 'while_init')
             db.state.set(statusKey, 'running', 'while_start')
-            // Sync ralphCount for agent execution triggers
             db.state.set('ralphCount', 0, 'while_init_ralph')
             props.onIteration?.(0)
           } else {
@@ -86,7 +85,6 @@ export function While(props: WhileProps): ReactNode {
             props.onComplete?.(0, 'condition')
           }
         } else if (db.state.get(statusKey) === 'running') {
-          // Resuming from a previous run - sync ralphCount with current iteration
           const currentIteration = db.state.get<number>(iterationKey) ?? 0
           db.state.set('ralphCount', currentIteration, 'while_resume_ralph')
         }
@@ -115,7 +113,6 @@ export function While(props: WhileProps): ReactNode {
       }
 
       db.state.set(iterationKey, nextIteration, 'while_advance')
-      // Sync ralphCount for agent execution triggers
       db.state.set('ralphCount', nextIteration, 'while_advance_ralph')
       props.onIteration?.(nextIteration)
     } finally {

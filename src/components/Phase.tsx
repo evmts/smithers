@@ -41,7 +41,6 @@ export function Phase(props: PhaseProps): ReactNode {
   // Create logger with phase context
   const log: Logger = useMemo(() => createLogger('Phase', { name: props.name }), [props.name])
 
-  // Evaluate skipIf with error handling
   skipIfErrorRef.current = null
   let isSkipped = false
   if (props.skipIf) {
@@ -51,7 +50,7 @@ export function Phase(props: PhaseProps): ReactNode {
       const error = err instanceof Error ? err : new Error(String(err))
       skipIfErrorRef.current = error
       log.error('skipIf evaluation failed', error, { phase: props.name })
-      isSkipped = false // Don't skip if we can't evaluate the condition
+      isSkipped = false
     }
   }
 
@@ -60,7 +59,6 @@ export function Phase(props: PhaseProps): ReactNode {
   const isCompleted = !isSkipped && !hasError && (registry ? registry.isPhaseCompleted(myIndex) : false)
   const currentPhaseIndex = registry?.currentPhaseIndex ?? null
 
-  // Compute status string for output
   const status = getPhaseStatus(isSkipped, isActive, isCompleted, hasError)
 
   const hasSkippedRef = useRef(false)
@@ -70,7 +68,6 @@ export function Phase(props: PhaseProps): ReactNode {
     [currentPhaseIndex, isSkipped]
   )
 
-  // Handle skipped phases only when they become active (not on mount)
   useEffectOnValueChange(skipKey, () => {
     if (!executionEnabled) return
     if (registry?.isPhaseActive(myIndex) && isSkipped && !hasSkippedRef.current) {
@@ -88,7 +85,6 @@ export function Phase(props: PhaseProps): ReactNode {
     }
   }, [currentPhaseIndex, isSkipped, myIndex, db, props.name, ralphCount, registry, executionEnabled, log])
 
-  // Handle phase lifecycle transitions
   const lifecycleKey = useMemo(
     () => ({ isActive, isSkipped, hasError, executionEnabled }),
     [isActive, isSkipped, hasError, executionEnabled]
@@ -97,7 +93,6 @@ export function Phase(props: PhaseProps): ReactNode {
   useEffectOnValueChange(lifecycleKey, () => {
     if (isSkipped || hasError || !executionEnabled) return
 
-    // Activation: transition from inactive to active
     if (!prevIsActiveRef.current && isActive && !hasStartedRef.current) {
       hasStartedRef.current = true
       const endTiming = log.time('phase_start')
@@ -110,7 +105,6 @@ export function Phase(props: PhaseProps): ReactNode {
       props.onStart?.()
     }
 
-    // Completion: transition from active to inactive
     if (prevIsActiveRef.current && !isActive) {
       const id = phaseIdRef.current
       if (id && !hasCompletedRef.current && hasStartedRef.current) {
@@ -126,16 +120,12 @@ export function Phase(props: PhaseProps): ReactNode {
     prevIsActiveRef.current = isActive
   }, [isActive, isSkipped, hasError, executionEnabled, props.name, ralphCount, db, props.onStart, props.onComplete, log])
 
-  // Handler for when all steps in this phase complete
   const handleAllStepsComplete = useCallback(() => {
     if (registry?.isPhaseActive(myIndex)) {
       registry?.advancePhase()
     }
   }, [registry, myIndex])
 
-  // Always render the phase element (visible in plan output)
-  // Only render children when active (executes work)
-  // Skipped and non-active phases show only the phase tag without children
   const shouldRenderChildren = isActive && !isSkipped
 
   return (

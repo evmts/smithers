@@ -98,25 +98,19 @@ export function Commit(props: CommitProps): ReactNode {
   }
 
   useExecutionMount(shouldExecute, () => {
-    // Fire-and-forget async IIFE
     ;(async () => {
       if (status !== 'pending') return
-
-      // Register task with database
       taskIdRef.current = smithers.db.tasks.start('git-commit', undefined, { scopeId: executionScope.scopeId })
 
       try {
         setState({ status: 'running', result: null, error: null })
 
-        // Stage files
         if (props.files && props.files.length > 0) {
-          // Stage specific files
           for (const file of props.files) {
             const addCmd = Bun.$`git add ${file}`
             await (props.cwd ? addCmd.cwd(props.cwd) : addCmd).quiet()
           }
         } else {
-          // Stage all files with -A
           const addCmd = Bun.$`git add -A`
           await (props.cwd ? addCmd.cwd(props.cwd) : addCmd).quiet()
         }
@@ -126,11 +120,8 @@ export function Commit(props: CommitProps): ReactNode {
           throw new Error('No staged changes to commit')
         }
 
-        // Get or generate commit message
         let message = props.message
-
         if (!message && props.children) {
-          // Use children content as message
           message = extractText(props.children)
         }
 
@@ -142,7 +133,6 @@ export function Commit(props: CommitProps): ReactNode {
           throw new Error('No commit message provided and autoGenerate is false')
         }
 
-        // Create commit
         const commitFlag = props.all ? '-a' : ''
         if (commitFlag) {
           const commitCmd = Bun.$`git commit -a -m ${message}`
@@ -152,11 +142,9 @@ export function Commit(props: CommitProps): ReactNode {
           await (props.cwd ? commitCmd.cwd(props.cwd) : commitCmd).quiet()
         }
 
-        // Get commit info
         const commitHash = await getCommitHash('HEAD', props.cwd)
         const diffStats = await getDiffStats('HEAD~1', props.cwd)
 
-        // Add git notes with smithers metadata
         const notesData = {
           smithers: true,
           executionId: smithers.executionId,

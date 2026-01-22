@@ -20,13 +20,13 @@ description: Handle errors gracefully in Smithers workflows
 import { useSmithers, If, Stop, Claude, useQueryValue } from "smithers-orchestrator";
 
 function RetryWorkflowBody() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
   const { data: attemptsVal } = useQueryValue<number>(
-    reactiveDb, "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
+    db.db, "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
   );
   const attempts = attemptsVal ?? 0;
   const { data: lastError } = useQueryValue<string>(
-    reactiveDb, "SELECT value FROM state WHERE key = 'lastError'"
+    db.db, "SELECT value FROM state WHERE key = 'lastError'"
   );
 
   return (
@@ -59,8 +59,8 @@ function RetryWorkflowBody() {
   executionId={executionId}
   stopConditions={[
     { type: "total_tokens", value: 50000 },
-    { type: "report_severity", value: "critical" },
-    { type: "custom", fn: (r) => r.output.includes("FATAL"), message: "Fatal error" },
+    { type: "report_severity", message: "Critical report found" },
+    { type: "custom", fn: (ctx) => ctx.totalTokens > 40000 && ctx.elapsedTimeMs > 60000, message: "Budget exceeded" },
   ]}
 />
 ```
@@ -71,9 +71,9 @@ function RetryWorkflowBody() {
 import { useSmithers, If, Claude, Human, useQueryValue } from "smithers-orchestrator";
 
 function ResilientWorkflowBody() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
   const { data: approach } = useQueryValue<string>(
-    reactiveDb, "SELECT value FROM state WHERE key = 'approach'"
+    db.db, "SELECT value FROM state WHERE key = 'approach'"
   );
 
   return (

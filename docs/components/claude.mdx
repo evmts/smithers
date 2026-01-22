@@ -8,6 +8,10 @@ description: Execute Claude with tool access
 Execute Claude via Claude Code CLI. Children are the prompt.
 
 ```tsx
+import { Claude } from "smithers-orchestrator"
+```
+
+```tsx
 <Claude model="sonnet" maxTurns={10} onFinished={(r) => console.log(r.output)}>
   Fix the failing tests.
 </Claude>
@@ -465,10 +469,10 @@ Use state to control when Claude runs:
 
 ```tsx
 function ConditionalClaudeBody() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
 
   const { data: phaseJson } = useQueryValue<string>(
-    reactiveDb,
+    db.db,
     "SELECT value FROM state WHERE key = 'phase'"
   );
   const phase = phaseJson ? JSON.parse(phaseJson) : "research";
@@ -525,16 +529,16 @@ Compose prompts with child components:
 
 ```tsx
 function ResilientClaudeBody() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
 
   const { data: attemptsJson } = useQueryValue<string>(
-    reactiveDb,
+    db.db,
     "SELECT value FROM state WHERE key = 'attempts'"
   );
   const attempts = attemptsJson ? JSON.parse(attemptsJson) : 0;
 
   const { data: errorJson } = useQueryValue<string>(
-    reactiveDb,
+    db.db,
     "SELECT value FROM state WHERE key = 'error'"
   );
   const error = errorJson ? JSON.parse(errorJson) : null;

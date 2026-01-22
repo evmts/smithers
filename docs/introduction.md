@@ -57,7 +57,7 @@ smithers coverage.tsx
 
 Smithers is a React framework for coding agents. Write the plan in any coding harness, then monitor your agents as they execute it. The plan is a mix of hardcoded logic and agent output that evolves reactively.
 
-By evolving a declarative plan rather than wiring up every agent interaction, Smithers excels at:
+By evolving a declarative plan rather than wiring up every agent interaction, Smithers handles:
 
 1. **One-time agents** that accomplish a task and discard
 2. **Long-running agents** that run for days or weeks

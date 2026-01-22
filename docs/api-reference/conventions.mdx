@@ -31,11 +31,15 @@ All `db.*` methods are synchronous. Exceptions documented explicitly.
 
 ## Timestamps
 
-ISO 8601 strings in SQLite. Some modules map to `Date`:
+All timestamp fields are **ISO 8601 strings** (e.g., `"2025-01-21T12:00:00.000Z"`).
 
-| `Date` objects | ISO strings |
-|----------------|-------------|
-| `db.execution`, `db.agents`, `db.artifacts`, `db.vcs` | `db.state`, `db.memories`, `db.phases`, `db.steps`, `db.tasks`, `db.tools`, `db.human` |
+Some modules internally map to `Date` objects for convenience:
+- `db.execution`, `db.agents`, `db.artifacts`, `db.vcs`
+
+All other modules return raw ISO strings:
+- `db.state`, `db.memories`, `db.phases`, `db.steps`, `db.tasks`, `db.tools`, `db.human`
+
+To convert: `new Date(record.created_at)`
 
 ## Status Vocabulary
 

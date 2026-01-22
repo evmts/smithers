@@ -9,10 +9,10 @@ export interface Memory {
   confidence: number
   source?: string
   source_execution_id?: string
-  created_at: Date
-  updated_at: Date
-  accessed_at: Date
-  expires_at?: Date
+  created_at: string
+  updated_at: string
+  accessed_at: string
+  expires_at?: string
 }
 
 export interface MemoryInput {
@@ -22,7 +22,7 @@ export interface MemoryInput {
   scope?: Memory['scope']
   confidence?: number
   source?: string
-  expires_at?: Date
+  expires_at?: string | Date
 }
 
 export interface Execution {
@@ -48,9 +48,9 @@ export interface Phase {
   name: string
   iteration: number
   status: 'pending' | 'running' | 'completed' | 'skipped' | 'failed'
-  started_at?: Date
-  completed_at?: Date
-  created_at: Date
+  started_at?: string
+  completed_at?: string
+  created_at: string
   duration_ms?: number
   agents_count: number
 }
@@ -93,7 +93,7 @@ export interface AgentStreamEvent {
   tool_name?: string
   content?: string
   timestamp: number
-  created_at: Date
+  created_at: string
 }
 
 export interface ToolCall {
@@ -109,16 +109,16 @@ export interface ToolCall {
   output_size_bytes?: number
   status: 'pending' | 'running' | 'completed' | 'failed'
   error?: string
-  started_at?: Date
-  completed_at?: Date
-  created_at: Date
+  started_at?: string
+  completed_at?: string
+  created_at: string
   duration_ms?: number
 }
 
 export interface StateEntry {
   key: string
   value: any
-  updated_at: Date
+  updated_at: string
 }
 
 export interface Transition {
@@ -129,7 +129,7 @@ export interface Transition {
   new_value: any
   trigger?: string
   trigger_agent_id?: string
-  created_at: Date
+  created_at: string
 }
 
 export type BuildStatus = 'passing' | 'broken' | 'fixing'
@@ -235,9 +235,9 @@ export interface Step {
   phase_id?: string
   name?: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
-  started_at?: Date
-  completed_at?: Date
-  created_at: Date
+  started_at?: string
+  completed_at?: string
+  created_at: string
   duration_ms?: number
   snapshot_before?: string
   snapshot_after?: string

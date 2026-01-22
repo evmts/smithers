@@ -39,9 +39,9 @@ Phase and Step components require `<Ralph>` or `<While>` for multi-iteration wor
   Skip this phase if condition returns truthy. Takes precedence over automatic state management.
 
   ```tsx
-  const { reactiveDb } = useSmithers()
+  const { db } = useSmithers()
   const { data: hasTests } = useQueryValue<string>(
-    reactiveDb, "SELECT value FROM state WHERE key = 'has_tests'"
+    db.db, "SELECT value FROM state WHERE key = 'has_tests'"
   )
 
   <Phase name="WriteTests" skipIf={() => hasTests}>

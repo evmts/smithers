@@ -73,26 +73,31 @@ Access Smithers context.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `db` | `SmithersDB` | Database with all modules |
-| `reactiveDb` | `ReactiveDatabase` | For custom reactive queries |
-| `executionId` | `string \| null` | Current execution |
+| `db` | `SmithersDB` | Database with all modules. Use `db.db` for raw queries |
+| `executionId` | `string` | Current execution ID |
+| `config` | `SmithersConfig` | Provider configuration (maxIterations, defaultModel, etc.) |
+| `middleware` | `SmithersMiddleware[] \| undefined` | Optional middleware array |
+| `requestStop` | `(reason: string) => void` | Request graceful stop |
+| `requestRebase` | `(reason: string) => void` | Request rebase operation |
 | `isStopRequested` | `() => boolean` | Check if stop requested |
+| `isRebaseRequested` | `() => boolean` | Check if rebase requested |
+| `executionEnabled` | `boolean` | Whether execution is enabled (respects ExecutionBoundary) |
 
 ## Custom Hooks
 
 ```tsx
 function useWorkflowProgress() {
-  const { reactiveDb, executionId } = useSmithers();
+  const { db, executionId } = useSmithers();
   
   const { data: total } = useQueryValue<number>(
-    reactiveDb,
+    db.db,
     "SELECT COUNT(*) FROM phases WHERE execution_id = ?",
     [executionId ?? ""],
     { skip: !executionId }
   );
 
   const { data: completed } = useQueryValue<number>(
-    reactiveDb,
+    db.db,
     "SELECT COUNT(*) FROM phases WHERE execution_id = ? AND status = 'completed'",
     [executionId ?? ""],
     { skip: !executionId }

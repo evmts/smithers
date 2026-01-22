@@ -1,0 +1,46 @@
+---
+title: useRalphCount Hook
+description: Subscribe to the global execution counter
+---
+
+# useRalphCount Hook
+
+Returns the current `ralphCount` from state. Used internally to trigger agent executions.
+
+```tsx
+import { useRalphCount } from "smithers-orchestrator";
+
+function ExecutionTrigger() {
+  const count = useRalphCount();
+  return <text>Execution count: {count}</text>;
+}
+```
+
+## API
+
+```tsx
+function useRalphCount(): number
+```
+
+## Return Value
+
+| Type | Description |
+|------|-------------|
+| `number` | Current ralph count (defaults to 0) |
+
+## Notes
+
+- Requires `SmithersProvider` context.
+- Reactively updates when `ralphCount` changes in state table.
+- Used by `useAgentRunner` to detect when to start execution.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="useAgentRunner" icon="play" href="/api-reference/use-agent-runner">
+    Uses ralphCount for execution triggering
+  </Card>
+  <Card title="SmithersProvider" icon="box" href="/components/smithers-provider">
+    Sets and increments ralphCount
+  </Card>
+</CardGroup>

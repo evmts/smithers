@@ -6,7 +6,7 @@ description: Python orchestration library with React-like semantics
 # Smithers-Py
 
 <Warning>
-**🚧 WORK IN PROGRESS 🚧**
+**WORK IN PROGRESS**
 
 Smithers-Py is under active development. APIs may change. Not production-ready.
 </Warning>

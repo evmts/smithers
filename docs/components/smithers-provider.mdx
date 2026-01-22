@@ -172,14 +172,13 @@ import { useSmithers } from "smithers-orchestrator";
 
 function MyComponent() {
   const {
-    db,                // Database instance (SmithersDB)
+    db,                // Database instance (SmithersDB) - use db.db for raw queries
     executionId,       // Current execution ID
     config,            // Configuration
     requestStop,       // Request workflow stop
     requestRebase,     // Request rebase operation
     isStopRequested,   // Check if stop was requested
     isRebaseRequested, // Check if rebase was requested
-    reactiveDb,        // Raw ReactiveDatabase for useQuery
     middleware,        // Middleware array from props
   } = useSmithers();
 
@@ -346,17 +345,17 @@ async function main() {
   }
 
   const root = createSmithersRoot();
-  await root.mount(Workflow);
+  await root.mount(<Workflow />);
 
   db.execution.complete(executionId);
   db.close();
 }
 
 function WorkflowContent() {
-  const { db, reactiveDb, requestStop, isStopRequested } = useSmithers();
+  const { db, requestStop, isStopRequested } = useSmithers();
   
   const phase = useQueryValue<string>(
-    reactiveDb,
+    db.db,
     "SELECT value FROM state WHERE key = 'phase'"
   );
   const currentPhase = phase ? JSON.parse(phase) : "research";
@@ -434,7 +433,7 @@ main();
     Ensure writes are flushed:
     ```tsx
     const root = createSmithersRoot();
-    await root.mount(Workflow);
+    await root.mount(<Workflow />);
     db.close();  // Always close
     ```
   </Accordion>

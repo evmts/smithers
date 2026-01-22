@@ -64,7 +64,7 @@ You're not programming what agents *do*. You're programming the *plan*, and how 
 
 **Smithers is Terraform for agents.** You declare the desired workflow. The reconciler figures out how to get there.
 
-## Controlling the Ralph Loop
+## Controlling the Ralph loop
 
 You control iteration using the `<Ralph>` component inside `<SmithersProvider>`. The `condition` prop determines when to stop:
 
@@ -197,7 +197,7 @@ function MyComponent() {
 
 ## Reactive Updates
 
-The power of the Ralph Loop comes from React reactivity:
+State changes trigger re-renders via `useQueryValue`:
 
 ```tsx
 import { SmithersProvider, Ralph, Claude, If } from "smithers-orchestrator";
@@ -318,9 +318,9 @@ Smithers uses React as a workflow DSL. Understanding these rules prevents common
   <Accordion title="✅ DO: Store state in SQLite">
     ```tsx
     // Good - durable
-    const { reactiveDb } = useSmithers();
+    const { db } = useSmithers();
     const { data: phaseVal } = useQueryValue<string>(
-      reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
+      db.db, "SELECT value FROM state WHERE key = 'phase'"
     );
     const phase = phaseVal ?? "start";
     const setPhase = (p: string) => db.state.set('phase', p);
@@ -705,7 +705,7 @@ function App() {
 }
 
 const root = createSmithersRoot();
-await root.mount(App);
+await root.mount(<App />);
 db.close();
 ```
 

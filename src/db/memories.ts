@@ -7,7 +7,7 @@ export interface MemoriesModule {
   get: (category: string, key: string, scope?: string) => Memory | null
   list: (category?: string, scope?: string, limit?: number) => Memory[]
   search: (query: string, category?: string, limit?: number) => Memory[]
-  update: (id: string, updates: Partial<Pick<Memory, 'content' | 'confidence' | 'expires_at'>>) => void
+  update: (id: string, updates: Partial<Pick<Memory, 'content' | 'confidence'> & { expires_at?: string | Date }>) => void
   delete: (id: string) => void
   addFact: (key: string, content: string, source?: string) => string
   addLearning: (key: string, content: string, source?: string) => string
@@ -32,7 +32,7 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, memory.category, memory.scope ?? 'global', memory.key, memory.content,
          memory.confidence ?? 1.0, memory.source ?? null, getCurrentExecutionId(),
-         now(), now(), now(), memory.expires_at?.toISOString() ?? null]
+         now(), now(), now(), memory.expires_at instanceof Date ? memory.expires_at.toISOString() : memory.expires_at ?? null]
       )
       return id
     },
@@ -71,13 +71,13 @@ export function createMemoriesModule(ctx: MemoriesModuleContext): MemoriesModule
       return rdb.query<Memory>(sql, params)
     },
 
-    update: (id: string, updates: Partial<Pick<Memory, 'content' | 'confidence' | 'expires_at'>>) => {
+    update: (id: string, updates: Partial<Pick<Memory, 'content' | 'confidence'> & { expires_at?: string | Date }>) => {
       if (rdb.isClosed) return
       const sets: string[] = ['updated_at = ?']
       const params: SqlParam[] = [now()]
       if (updates.content !== undefined) { sets.push('content = ?'); params.push(updates.content) }
       if (updates.confidence !== undefined) { sets.push('confidence = ?'); params.push(updates.confidence) }
-      if (updates.expires_at !== undefined) { sets.push('expires_at = ?'); params.push(updates.expires_at?.toISOString() ?? null) }
+      if (updates.expires_at !== undefined) { sets.push('expires_at = ?'); params.push(updates.expires_at instanceof Date ? updates.expires_at.toISOString() : updates.expires_at ?? null) }
       params.push(id)
       rdb.run(`UPDATE memories SET ${sets.join(', ')} WHERE id = ?`, params)
     },

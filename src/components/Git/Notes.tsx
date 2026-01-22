@@ -62,21 +62,16 @@ export function Notes(props: NotesProps): ReactNode {
 
   const shouldExecute = smithers.executionEnabled && executionScope.enabled
   useExecutionMount(shouldExecute, () => {
-    // Fire-and-forget async IIFE
     ;(async () => {
       if (status !== 'pending') return
-      // Register task with database
       taskIdRef.current = smithers.db.tasks.start('git-notes', undefined, { scopeId: executionScope.scopeId })
 
       try {
         setState({ status: 'running', result: null, error: null })
 
         const commitRef = props.commitRef ?? 'HEAD'
-
-        // Get existing notes if appending
         const previousNotes = props.append ? await getGitNotes(commitRef, props.cwd) : null
 
-        // Prepare notes content with smithers metadata
         const notesData = {
           smithers: true,
           executionId: smithers.executionId,
@@ -85,8 +80,6 @@ export function Notes(props: NotesProps): ReactNode {
         }
 
         const notesContent = JSON.stringify(notesData, null, 2)
-
-        // Add or append notes
         await addGitNotes(notesContent, commitRef, props.append ?? false, props.cwd)
 
         const notesResult: NotesResult = {
@@ -107,7 +100,6 @@ export function Notes(props: NotesProps): ReactNode {
           props.onError?.(errorObj)
         }
       } finally {
-        // Complete task
         if (taskIdRef.current) {
           smithers.db.tasks.complete(taskIdRef.current)
         }

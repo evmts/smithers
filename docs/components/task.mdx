@@ -6,6 +6,10 @@ description: Track individual tasks within workflows
 # Task
 
 ```tsx
+import { Task } from "smithers-orchestrator";
+```
+
+```tsx
 <Phase name="implementation">
   <Step name="tasks">
     <Task done={false}>Research existing patterns</Task>
@@ -32,9 +36,9 @@ Renders a checkbox-style task item for tracking progress through workflows.
 
 ```tsx
 function TaskTracker() {
-  const { reactiveDb } = useSmithers()
+  const { db } = useSmithers()
   const { data: tasks } = useQueryValue<string>(
-    reactiveDb, "SELECT value FROM state WHERE key = 'tasks'"
+    db.db, "SELECT value FROM state WHERE key = 'tasks'"
   )
   const parsed = tasks ? JSON.parse(tasks) : []
 
@@ -54,9 +58,9 @@ function TaskTracker() {
 const tasks = ["Analyze", "Refactor", "Test", "Document"]
 
 function TaskDrivenWorkflow() {
-  const { db, reactiveDb } = useSmithers()
+  const { db } = useSmithers()
   const { data: indexVal } = useQueryValue<string>(
-    reactiveDb, "SELECT value FROM state WHERE key = 'idx'"
+    db.db, "SELECT value FROM state WHERE key = 'idx'"
   )
   const idx = indexVal ? JSON.parse(indexVal) : 0
 

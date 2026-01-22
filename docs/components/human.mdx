@@ -6,6 +6,10 @@ description: Pause workflow for human input or approval
 # Human
 
 ```tsx
+import { Human } from "smithers-orchestrator";
+```
+
+```tsx
 <Human
   message="Review the implementation"
   onApprove={() => db.state.set("phase", "continue")}
@@ -30,9 +34,9 @@ description: Pause workflow for human input or approval
 
 ```tsx
 function ApprovalWorkflowBody() {
-  const { db, reactiveDb } = useSmithers()
+  const { db } = useSmithers()
   const { data: phaseVal } = useQueryValue<string>(
-    reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
+    db.db, "SELECT value FROM state WHERE key = 'phase'"
   )
   const phase = phaseVal ?? "implement"
   const setPhase = (p: string) => db.state.set('phase', p)

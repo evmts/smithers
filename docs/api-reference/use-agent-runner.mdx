@@ -1,0 +1,93 @@
+---
+title: useAgentRunner Hook
+description: Low-level hook for building custom agent adapters
+---
+
+# useAgentRunner Hook
+
+Internal hook that powers `useClaude`, `useAmp`, etc. Use this to build custom agent hooks with adapter pattern.
+
+```tsx
+import { useAgentRunner, type AgentAdapter } from "smithers-orchestrator";
+
+function useCustomAgent(props: CustomAgentProps) {
+  return useAgentRunner(props, customAdapter);
+}
+```
+
+## API
+
+```tsx
+function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
+  props: TProps,
+  adapter: AgentAdapter<TProps, TOptions>
+): UseAgentResult
+
+interface UseAgentResult {
+  status: "pending" | "running" | "complete" | "error"
+  agentId: string | null
+  executionId: string | null
+  result: AgentResult | null
+  error: Error | null
+  tailLog: TailLogEntry[]
+}
+```
+
+## BaseAgentHookProps
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | — | Prompt content |
+| `cwd` | `string` | — | Working directory |
+| `onFinished` | `(result: AgentResult) => void` | — | Success callback |
+| `onError` | `(error: Error) => void` | — | Error callback |
+| `onProgress` | `(message: string) => void` | — | Progress callback |
+| `onStreamPart` | `(part: SmithersStreamPart) => void` | — | Stream event callback |
+| `onToolCall` | `(tool: string, input: unknown) => void` | — | Tool call callback |
+| `reportingEnabled` | `boolean` | — | Enable DB reporting |
+| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Result validator |
+| `retryOnValidationFailure` | `boolean` | — | Retry on validation failure |
+| `maxRetries` | `number` | `3` | Max retry attempts |
+| `retryDelayMs` | `number` | `250` | Base retry delay (ms) |
+| `tailLogCount` | `number` | `10` | Tail log entries to keep |
+| `middleware` | `SmithersMiddleware[]` | — | Execution middleware |
+| `recordStreamEvents` | `boolean` | — | Record stream events to DB |
+| `legacyLogFormat` | `boolean` | `false` | Write legacy text logs |
+
+## AgentAdapter Interface
+
+Adapters must implement:
+
+```tsx
+interface AgentAdapter<TProps, TOptions> {
+  name: string
+  getLoggerName(): string
+  getLoggerContext(props: TProps): Record<string, unknown>
+  getAgentLabel(options: TOptions): string
+  getDefaultOutputFormat?(props: TProps): string | undefined
+  supportsTypedStreaming(props: TProps): boolean
+  createMessageParser(maxEntries: number, onToolCall?: Function): MessageParserInterface
+  createStreamParser?(): StreamParserInterface
+  extractPrompt(children: string, props: TProps): Promise<{ prompt: string; mcpConfigPath?: string }>
+  buildOptions(props: TProps, context: { prompt: string; cwd?: string; mcpConfigPath?: string }): TOptions
+  execute(options: TOptions & { onProgress: (chunk: string) => void }): Promise<AgentResult>
+}
+```
+
+## Notes
+
+- Requires `SmithersProvider` context.
+- Automatically integrates with `ExecutionScope`, `Worktree`, and middleware.
+- Handles retry, validation, logging, and DB persistence.
+- Use `ralphCount` for execution triggering.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="useClaude" icon="robot" href="/api-reference/use-claude">
+    Claude implementation using this hook
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/api-reference/middleware">
+    Compose middleware for agents
+  </Card>
+</CardGroup>

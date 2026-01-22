@@ -112,7 +112,7 @@ async function main() {
 
   try {
     const root = createSmithersRoot()
-    await root.mount(App)
+    await root.mount(<App />)
     db.execution.complete(executionId, { summary: 'Group chat collaboration completed' })
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))

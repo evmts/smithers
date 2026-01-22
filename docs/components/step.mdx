@@ -5,6 +5,10 @@ description: Individual step within a workflow phase
 
 # Step
 
+```tsx
+import { Step } from "smithers-orchestrator";
+```
+
 Individual task within a Phase. Steps execute sequentially.
 
 ```tsx
@@ -24,8 +28,8 @@ Phase and Step components require `<Ralph>` or `<While>` for multi-iteration wor
 
 ## Props
 
-<ParamField path="name" type="string?">
-  Name of the step for tracking and logging. Defaults to 'unnamed'.
+<ParamField path="name" type="string" default="'unnamed'">
+  Name of the step for tracking and logging.
 </ParamField>
 
 <ParamField path="children" type="ReactNode" required>

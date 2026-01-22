@@ -63,7 +63,8 @@
       "pages": [
         "concepts/ralph-wiggum-loop",
         "concepts/database-persistence",
-        "concepts/renderer-architecture"
+        "concepts/renderer-architecture",
+        "concepts/resumability"
       ]
     },
     {
@@ -144,7 +145,13 @@
       "pages": [
         "api-reference/reactive-hooks",
         "api-reference/hooks",
-        "api-reference/lifecycle-hooks"
+        "api-reference/lifecycle-hooks",
+        "api-reference/use-amp",
+        "api-reference/use-claude",
+        "api-reference/use-codex",
+        "api-reference/use-command",
+        "api-reference/use-review",
+        "api-reference/use-smithers-subagent"
       ]
     },
     {

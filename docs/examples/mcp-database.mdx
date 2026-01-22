@@ -44,7 +44,7 @@ async function main() {
 
   try {
     const root = createSmithersRoot();
-    await root.mount(DataAnalysis);
+    await root.mount(<DataAnalysis />);
     db.execution.complete(executionId, { summary: "Data analysis complete" });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));

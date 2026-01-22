@@ -37,6 +37,7 @@ db.close();
 | `db.phases` | Phase tracking |
 | `db.steps` | Step tracking |
 | `db.agents` | Agent invocation tracking |
+| `db.tasks` | Task tracking for Ralph iteration management |
 | `db.tools` | Tool call tracking |
 | `db.artifacts` | Artifact tracking |
 | `db.human` | Human interaction tracking |
@@ -45,6 +46,52 @@ db.close();
 | `db.buildState` | Build status coordination |
 | `db.vcsQueue` | Serialized VCS operations |
 | `db.query` | Raw query access |
+
+## Tasks API
+
+Track task lifecycle within Ralph iterations:
+
+```tsx
+// Start a task (returns task ID)
+const taskId = db.tasks.start("Claude", "code-review", { scopeId: "phase-1" });
+
+// Complete or fail a task
+db.tasks.complete(taskId);
+db.tasks.fail(taskId);
+
+// Query task counts for an iteration
+const running = db.tasks.getRunningCount(1);
+const total = db.tasks.getTotalCount(1);
+
+// List all tasks for current execution
+const tasks = db.tasks.list();
+
+// Get current iteration number
+const iteration = db.tasks.getCurrentIteration();
+
+// Wrap async work in task lifecycle
+const result = await db.tasks.withTask("Claude", "analysis", undefined, async () => {
+  // ... do work
+  return data;
+});
+```
+
+### Task Interface
+
+```tsx
+interface Task {
+  id: string;
+  execution_id: string;
+  iteration: number;
+  scope_id: string | null;
+  component_type: string;
+  component_name: string | null;
+  status: "running" | "completed" | "failed";
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+}
+```
 
 ## Raw Queries
 

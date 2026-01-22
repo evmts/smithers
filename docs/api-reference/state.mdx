@@ -49,9 +49,9 @@ import { useSmithers } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/db";
 
 function WorkflowBody() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
   const { data: phaseJson } = useQueryValue<string>(
-    reactiveDb,
+    db.db,
     "SELECT value FROM state WHERE key = 'phase'"
   );
   const phase = phaseJson ? JSON.parse(phaseJson) : "start";

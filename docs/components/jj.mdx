@@ -49,20 +49,18 @@ Requires [Jujutsu](https://github.com/martinvonz/jj): `brew install jj`
 
 ### Describe
 
-Auto-generates commit message from diff.
+Auto-generates commit message from diff. Currently uses a simple line-count heuristic.
 
 ```tsx
 <Describe />
-<Describe useAgent="claude" />
-<Describe useAgent="claude" template="conventional-commits" />
 ```
 
 | Prop | Type | Description |
 |------|------|-------------|
 | `id` | `string?` | Optional operation ID for tracking |
-| `useAgent` | `'claude'?` | Placeholder prop - does NOT actually use Claude (not yet implemented) |
-| `template` | `string?` | Template format - 🚧 not yet implemented |
 | `children` | `ReactNode?` | Optional child content |
+
+> **Planned:** AI-powered commit message generation (`useAgent`, `template` props) is not yet implemented. Currently generates simple "Changes: N lines modified" messages.
 
 ### Status
 
