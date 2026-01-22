@@ -2,6 +2,7 @@
 Smithers Python Implementation
 
 A Python port of the Smithers orchestration framework for AI agent coordination.
+Features React-like render loop with SQLite-backed durable state.
 """
 
 # Database
@@ -38,13 +39,44 @@ from .engine import (
     TickLoop,
     Context,
     EventSystem,
+    ArtifactSystem,
+    ApprovalSystem,
+    LoopRegistry,
+    PhaseRegistry,
+    EffectRegistry,
+    StopConditions,
 )
 
-# State stores
+# State stores and signals
 from .state import (
     StateStore,
     SqliteStore,
     VolatileStore,
+)
+
+from .state.signals import (
+    Signal,
+    Computed,
+    DependencyTracker,
+    ActionQueue,
+    SignalRegistry,
+)
+
+# Logging
+from .logs import (
+    NDJSONLogger,
+    EventType,
+    create_logger,
+)
+
+# VCS integration
+from .vcs import (
+    Workspace,
+    VCSOperations,
+    VCSType,
+    create_execution_worktree,
+    cleanup_execution_worktree,
+    detect_vcs_type,
 )
 
 # JSX runtime
@@ -81,10 +113,33 @@ __all__ = [
     'TickLoop',
     'Context',
     'EventSystem',
+    'ArtifactSystem',
+    'ApprovalSystem',
+    'LoopRegistry',
+    'PhaseRegistry',
+    'EffectRegistry',
+    'StopConditions',
     # State
     'StateStore',
     'SqliteStore',
     'VolatileStore',
+    # Signals
+    'Signal',
+    'Computed',
+    'DependencyTracker',
+    'ActionQueue',
+    'SignalRegistry',
+    # Logging
+    'NDJSONLogger',
+    'EventType',
+    'create_logger',
+    # VCS
+    'Workspace',
+    'VCSOperations',
+    'VCSType',
+    'create_execution_worktree',
+    'cleanup_execution_worktree',
+    'detect_vcs_type',
     # JSX
     'jsx',
     'Fragment',
