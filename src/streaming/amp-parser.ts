@@ -1,5 +1,3 @@
-// Amp CLI stream parser -> Smithers stream parts.
-
 import { randomUUID } from 'node:crypto'
 import type { SmithersStreamPart } from './types.js'
 import type { JSONValue } from './v3-compat.js'

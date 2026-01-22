@@ -1,5 +1,3 @@
-// Smithers stream part types built on V3 stream protocol semantics.
-
 import type { LanguageModelV3StreamPart } from "./v3-compat.js";
 
 export type StreamPart = LanguageModelV3StreamPart;

@@ -1,5 +1,3 @@
-// V3 stream part types (aligned with Vercel AI SDK v3 semantics).
-
 export type JSONValue =
   | null
   | boolean
