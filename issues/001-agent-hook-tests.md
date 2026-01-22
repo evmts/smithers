@@ -2,19 +2,36 @@
 
 **Priority:** HIGH  
 **Effort:** L (1-2 days)  
-**Category:** Test Coverage
+**Category:** Test Coverage  
+**Status:** In Progress
 
-## Problem
+## Progress
 
-The core agent hooks have **zero test coverage**:
+Unit tests added for agent hooks and adapters:
 
 | File | LOC | Tests |
 |------|-----|-------|
-| `src/hooks/useClaude.ts` | 460 | ❌ None |
-| `src/hooks/useAmp.ts` | 430 | ❌ None |
-| `src/hooks/useCodex.ts` | 360 | ❌ None |
+| `src/hooks/useClaude.ts` | 20 | ✅ 22 tests |
+| `src/hooks/useAmp.ts` | 20 | ✅ 21 tests |
+| `src/hooks/useCodex.ts` | 20 | ✅ 37 tests |
+| `src/hooks/useAgentRunner.ts` | 240 | ✅ 32 tests |
 | `src/hooks/useReview.ts` | ~100 | ❌ None |
 | `src/hooks/useSmithersSubagent.ts` | ~150 | ❌ None |
+
+Adapter tests (already existed):
+- `src/hooks/adapters/claude.test.ts` - ✅ 
+- `src/hooks/adapters/amp.test.ts` - ✅
+- `src/hooks/adapters/codex.test.ts` - ✅
+
+## Remaining Work
+
+- [ ] E2E tests with real CLI (requires mocking or API key)
+- [ ] Tests for useReview and useSmithersSubagent
+- [ ] Full integration tests with SmithersProvider context
+
+## Original Problem
+
+The core agent hooks have **zero test coverage**:
 
 These are the most critical hooks in the system - they execute all agent work.
 
@@ -111,7 +128,7 @@ describe('useClaude error handling', () => {
 
 ## Acceptance Criteria
 
-- [ ] All 3 agent hooks have unit tests
+- [x] All 3 agent hooks have unit tests
 - [ ] Each hook has E2E test (skippable without API key)
 - [ ] Boundary conditions tested
 - [ ] Error cases tested
