@@ -1,0 +1,11 @@
+.{
+    .name = .smithers,
+    .version = "0.3.0",
+    .dependencies = .{
+        .god_tui = .{
+            .path = "src/god-tui",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0xeabe917791b9c43e,
+}

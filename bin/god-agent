@@ -1,0 +1,11 @@
+#!/bin/bash
+# Run god-agent TUI from repo root
+# Builds if needed, then runs the binary directly (required for TTY support)
+
+set -e
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "$REPO_ROOT"
+zig build
+exec ./zig-out/bin/god-agent "$@"

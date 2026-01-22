@@ -270,6 +270,11 @@ pub const Terminal = struct {
             return;
         }
 
+        // Check if stdin is a TTY before attempting raw mode
+        if (!posix.isatty(self.stdin)) {
+            return error.NotATty;
+        }
+
         const fd = self.stdin;
         self.original_termios = try posix.tcgetattr(fd);
 

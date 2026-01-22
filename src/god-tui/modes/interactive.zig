@@ -80,7 +80,13 @@ pub const InteractiveMode = struct {
     pub fn run(self: *Self) !void {
         self.is_running = true;
 
-        try self.terminal.start(onInputCallback, onResizeCallback, self);
+        self.terminal.start(onInputCallback, onResizeCallback, self) catch |err| {
+            if (err == error.NotATty) {
+                std.debug.print("Error: Interactive mode requires a TTY. Use -p/--print for non-interactive mode.\n", .{});
+                return error.NotATty;
+            }
+            return err;
+        };
         defer self.terminal.stop();
 
         try self.renderUI();
