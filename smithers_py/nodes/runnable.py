@@ -41,10 +41,11 @@ class ClaudeNode(NodeBase):
         default_factory=ToolPolicy,
         description="Tool access policy for this agent"
     )
-    schema: Optional[Type[BaseModel]] = Field(
+    output_schema: Optional[Type[BaseModel]] = Field(
         default=None,
         exclude=True,  # Type objects can't be serialized
-        description="Optional Pydantic model for structured output validation"
+        description="Optional Pydantic model for structured output validation",
+        alias="schema"  # Allow 'schema' as input alias for backwards compatibility
     )
     max_turns: int = Field(default=50, description="Maximum conversation turns")
 

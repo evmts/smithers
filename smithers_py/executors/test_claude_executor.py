@@ -313,7 +313,7 @@ async def test_structured_output(executor, test_db):
             prompt="What is the answer?",
             model="opus",
             execution_id=test_db.current_execution_id,
-            schema=TestOutputSchema,
+            output_schema=TestOutputSchema,
         ):
             if isinstance(event, AgentResult):
                 result = event

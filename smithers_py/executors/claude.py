@@ -80,7 +80,7 @@ class ClaudeExecutor:
         execution_id: str,
         max_turns: int = 50,
         tools: Optional[Dict[str, Any]] = None,
-        schema: Optional[Type[BaseModel]] = None,
+        output_schema: Optional[Type[BaseModel]] = None,
         resume_from: Optional[str] = None,
     ) -> AsyncIterator[Union[StreamEvent, AgentResult]]:
         """Execute a Claude agent with streaming support.
@@ -105,10 +105,10 @@ class ClaudeExecutor:
             pydantic_model = self._map_model_name(model)
 
             # Create PydanticAI agent
-            if schema:
+            if output_schema:
                 agent = Agent(
                     model=pydantic_model,
-                    result_type=schema,
+                    result_type=output_schema,
                     system_prompt=None,  # We include system in user prompt
                 )
             else:
