@@ -1,10 +1,31 @@
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
-import { useMountedState, useExecutionMount } from '../reconciler/hooks.js'
+import { useMountedState, useExecutionMount, useUnmount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { useExecutionScope } from './ExecutionScope.js'
 import { makeStateKey } from '../utils/scope.js'
 import { useWorktree } from './WorktreeProvider.js'
+
+/**
+ * Validates command input for shell injection risks.
+ * Rejects commands containing dangerous shell metacharacters when using shell execution.
+ */
+function validateShellCommand(cmd: string): void {
+  const dangerousPatterns = [
+    /[;&|`$]/, // command chaining, substitution
+    /\$\(/, // command substitution
+    /[<>]/, // redirects
+    /\n/, // newlines (command injection)
+  ]
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(cmd)) {
+      throw new Error(
+        `Shell injection risk detected in command: "${cmd}". ` +
+        `Use array form (cmd: ['program', 'arg1', 'arg2']) for untrusted input.`
+      )
+    }
+  }
+}
 
 export interface CommandResult {
   stdout: string
@@ -32,6 +53,12 @@ export interface CommandProps {
   timeout?: number
   /** Stable identifier for resumability */
   id?: string
+  /**
+   * Skip shell injection validation for trusted commands.
+   * WARNING: Only set to true for commands from trusted sources (code literals).
+   * Never use with user/LLM-supplied input. For untrusted input, use array form.
+   */
+  trusted?: boolean
   /** Success callback */
   onFinished?: (result: CommandResult) => void
   /** Error callback */
@@ -59,9 +86,18 @@ export function Command(props: CommandProps): ReactNode {
   })()
 
   const taskIdRef = useRef<string | null>(null)
+  const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isMounted = useMountedState()
   const executionScope = useExecutionScope()
   const shouldExecute = smithers.executionEnabled && executionScope.enabled
+
+  // Cleanup timeout on unmount to prevent memory leaks
+  useUnmount(() => {
+    if (timeoutIdRef.current !== null) {
+      clearTimeout(timeoutIdRef.current)
+      timeoutIdRef.current = null
+    }
+  })
 
   const setState = (newState: CommandState) => {
     smithers.db.state.set(stateKey, newState, 'command')
@@ -102,6 +138,12 @@ export function Command(props: CommandProps): ReactNode {
           })
         } else {
           // String form: shell execution
+          // WARNING: Shell execution with string commands can be dangerous if cmd
+          // is user/LLM-supplied. Validate to reject dangerous metacharacters
+          // unless trusted=true. Prefer array form for untrusted input.
+          if (!props.trusted) {
+            validateShellCommand(props.cmd)
+          }
           proc = Bun.spawn(['bash', '-c', props.cmd], {
             cwd: effectiveCwd,
             env: { ...process.env, ...props.env },
@@ -110,14 +152,20 @@ export function Command(props: CommandProps): ReactNode {
           })
         }
 
-        // Setup timeout
+        // Setup timeout with cleanup tracking
         const timeoutPromise = new Promise<'timeout'>((resolve) => {
-          setTimeout(() => resolve('timeout'), timeout)
+          timeoutIdRef.current = setTimeout(() => resolve('timeout'), timeout)
         })
 
         const exitPromise = proc.exited
 
         const raceResult = await Promise.race([exitPromise, timeoutPromise])
+
+        // Clear timeout on command completion to prevent leak
+        if (timeoutIdRef.current !== null) {
+          clearTimeout(timeoutIdRef.current)
+          timeoutIdRef.current = null
+        }
 
         if (raceResult === 'timeout') {
           proc.kill()

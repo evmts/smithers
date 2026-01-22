@@ -14,6 +14,12 @@ pub const tools = @import("tools/registry.zig");
 pub const ToolRegistry = tools.ToolRegistry;
 pub const ToolResult = tools.ToolResult;
 
+pub const provider = @import("provider.zig");
+pub const ProviderInterface = provider.ProviderInterface;
+pub const MockProvider = provider.MockProvider;
+pub const AgentProvider = provider.AgentProvider;
+pub const ProviderConfig = provider.ProviderConfig;
+
 pub const Agent = struct {
     allocator: Allocator,
     messages: ArrayListUnmanaged(Message),
@@ -24,6 +30,7 @@ pub const Agent = struct {
     follow_up_queue: ArrayListUnmanaged(Message),
     on_event: ?*const fn (AgentEvent) void = null,
     tool_registry: ToolRegistry,
+    llm_provider: ?AgentProvider = null,
 
     const Self = @This();
 
@@ -36,6 +43,12 @@ pub const Agent = struct {
             .follow_up_queue = .{},
             .tool_registry = ToolRegistry.initBuiltin(allocator),
         };
+    }
+
+    pub fn withProvider(self: Self, llm_provider: AgentProvider) Self {
+        var agent = self;
+        agent.llm_provider = llm_provider;
+        return agent;
     }
 
     pub fn deinit(self: *Self) void {
@@ -66,8 +79,9 @@ pub const Agent = struct {
                 try self.messages.append(self.allocator, steering_msg);
             }
 
-            // Simulate LLM response (stub - would use ai-zig in full impl)
-            const response = Message.assistant("Response from LLM");
+            // Call LLM provider if available, else use stub
+            const response_text = try self.callProvider();
+            const response = Message.assistant(response_text);
             try self.messages.append(self.allocator, response);
 
             self.emitEvent(.{ .type = .turn_end, .turn = self.current_turn });
@@ -83,6 +97,35 @@ pub const Agent = struct {
         }
 
         self.emitEvent(.{ .type = .agent_end });
+    }
+
+    fn callProvider(self: *Self) ![]const u8 {
+        if (self.llm_provider) |*llm| {
+            var ctx = provider.Context.init(self.allocator);
+            defer ctx.deinit();
+
+            // Build context from messages
+            if (self.config.system_prompt) |sys| {
+                ctx.system_prompt = sys;
+            }
+
+            // Stream from provider
+            var stream = try llm.stream(&ctx);
+            defer stream.deinit();
+
+            var response_text: []const u8 = "";
+            while (stream.next()) |event| {
+                if (provider.SimpleEvent.fromStreamEvent(event)) |simple| {
+                    const agent_event = simple.toAgentEvent();
+                    self.emitEvent(agent_event);
+                    if (simple == .text) {
+                        response_text = simple.text;
+                    }
+                }
+            }
+            return if (response_text.len > 0) response_text else "Response from LLM";
+        }
+        return "Response from LLM";
     }
 
     pub fn steer(self: *Self, message: Message) void {
@@ -171,4 +214,41 @@ test "Agent abort stops running" {
     agent.abort();
 
     try std.testing.expect(!agent.is_running);
+}
+
+test "Agent with MockProvider" {
+    const allocator = std.testing.allocator;
+
+    var mock = try provider.createMockWithResponse(allocator, "Hello from mock");
+    defer mock.deinit();
+
+    const config = ProviderConfig{};
+    const agent_provider = AgentProvider.init(allocator, mock.interface(), config);
+
+    var agent = Agent.init(allocator, .{}).withProvider(agent_provider);
+    defer agent.deinit();
+
+    try std.testing.expect(agent.llm_provider != null);
+}
+
+test "Agent prompt with provider emits events" {
+    const allocator = std.testing.allocator;
+
+    var mock = try provider.createMockWithResponse(allocator, "Mock response");
+    defer mock.deinit();
+
+    const config = ProviderConfig{};
+    const agent_provider = AgentProvider.init(allocator, mock.interface(), config);
+
+    var agent = Agent.init(allocator, .{}).withProvider(agent_provider);
+    defer agent.deinit();
+
+    agent.on_event = struct {
+        fn callback(_: AgentEvent) void {}
+    }.callback;
+
+    try agent.prompt(Message.user("Test"));
+
+    try std.testing.expect(agent.messageCount() >= 2); // user + assistant
+    try std.testing.expectEqual(@as(u32, 1), agent.current_turn);
 }

@@ -149,7 +149,7 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}): P
       }
     })
 
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       const finalize = async () => {
         await Promise.allSettled([stdoutChain, stderrChain])
         const remainingEvents = parser.flush()
@@ -164,17 +164,19 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}): P
 
         console.log(formatter.formatSummary(duration, logWriter.getLogDir()))
 
-        if (code === 0) {
+        const exitCode = code === 0 ? 0 : (code ?? (signal ? 1 : 0))
+
+        if (exitCode === 0) {
           console.log('✅ Orchestration completed successfully')
           console.log('')
         } else {
-          console.log(`❌ Orchestration exited with code: ${code}`)
+          console.log(`❌ Orchestration exited with code: ${exitCode}${signal ? ` (signal: ${signal})` : ''}`)
           console.log('')
         }
 
-        resolve(code || 0)
+        resolve(exitCode)
         if (!options.noExit) {
-          process.exit(code || 0)
+          process.exit(exitCode)
         }
       }
 

@@ -121,7 +121,7 @@ describe('Command', () => {
 
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Command cmd="bash -c 'echo error >&2; exit 1'" onError={onError} />
+          <Command cmd="bash -c 'echo error >&2; exit 1'" trusted onError={onError} />
         </SmithersProvider>
       )
 
@@ -164,6 +164,7 @@ describe('Command', () => {
           <Command
             cmd="bash -c 'echo $MY_VAR'"
             env={{ MY_VAR: 'custom_value' }}
+            trusted
             onFinished={onFinished}
           />
         </SmithersProvider>
@@ -224,7 +225,7 @@ describe('Command', () => {
 
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Command cmd="echo hello | tr 'h' 'H'" onFinished={onFinished} />
+          <Command cmd="echo hello | tr 'h' 'H'" trusted onFinished={onFinished} />
         </SmithersProvider>
       )
 
@@ -241,7 +242,7 @@ describe('Command', () => {
 
       await root.render(
         <SmithersProvider db={db} executionId={executionId}>
-          <Command cmd="echo first && echo second" onFinished={onFinished} />
+          <Command cmd="echo first && echo second" trusted onFinished={onFinished} />
         </SmithersProvider>
       )
 

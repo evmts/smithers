@@ -1,8 +1,10 @@
-import { type ReactNode, type ReactElement, Children, isValidElement, useRef, useState } from 'react'
+import { type ReactNode, type ReactElement, Children, isValidElement, useRef } from 'react'
 import { useMountedState, useMount } from '../reconciler/hooks.js'
+import { useSmithers } from './SmithersProvider.js'
+import { useQueryValue } from '../reactive-sqlite/hooks/useQueryValue.js'
 
 export interface SwitchProps<T = unknown> {
-  id?: string
+  id: string
   value: T | (() => T) | (() => Promise<T>)
   serialize?: (value: T) => string
   deserialize?: (raw: string) => T
@@ -26,37 +28,63 @@ export function Default(_props: DefaultProps): ReactElement | null {
   return null
 }
 
-interface ResolvedState<T> {
+interface SwitchState {
   resolved: boolean
-  value?: T
+  value?: unknown
+  error?: string
 }
 
-export function Switch<T>({ value, children }: SwitchProps<T>): ReactNode {
+export function Switch<T>({ id, value, children }: SwitchProps<T>): ReactNode {
+  const { db } = useSmithers()
   const isMounted = useMountedState()
-  const resolvedRef = useRef<ResolvedState<T>>({ resolved: false })
-  const [, forceUpdate] = useState(0)
+  const hasStartedRef = useRef(false)
+  
+  const stateKey = `switch.${id}.state`
+  
+  const { data: stateJson } = useQueryValue<string>(
+    db.db,
+    "SELECT value FROM state WHERE key = ?",
+    [stateKey]
+  )
+  
+  const switchState: SwitchState = stateJson 
+    ? JSON.parse(stateJson) 
+    : { resolved: false }
 
   useMount(() => {
+    if (hasStartedRef.current) return
+    hasStartedRef.current = true
+    
     const resolveValue = async () => {
-      let val: T
-      if (typeof value === 'function') {
-        val = await (value as () => T | Promise<T>)()
-      } else {
-        val = value
-      }
-      if (isMounted()) {
-        resolvedRef.current = { resolved: true, value: val }
-        forceUpdate(n => n + 1)
+      try {
+        let val: T
+        if (typeof value === 'function') {
+          val = await (value as () => T | Promise<T>)()
+        } else {
+          val = value
+        }
+        if (isMounted()) {
+          db.state.set<SwitchState>(stateKey, { resolved: true, value: val }, 'switch_resolve')
+        }
+      } catch (err) {
+        if (isMounted()) {
+          const errorMessage = err instanceof Error ? err.message : String(err)
+          db.state.set<SwitchState>(stateKey, { resolved: true, error: errorMessage }, 'switch_error')
+        }
       }
     }
     resolveValue()
   })
 
-  if (!resolvedRef.current.resolved) {
+  if (!switchState.resolved) {
     return null
   }
 
-  const actualValue = resolvedRef.current.value as T
+  if (switchState.error) {
+    throw new Error(`Switch[${id}] value resolution failed: ${switchState.error}`)
+  }
+
+  const actualValue = switchState.value as T
 
   let matchedCase: ReactElement | null = null
   let defaultCase: ReactElement | null = null

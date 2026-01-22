@@ -58,23 +58,25 @@ export async function run(fileArg?: string, options: RunOptions = {}): Promise<R
       }
     })
 
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       console.log('')
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
-      if (code === 0) {
+      const exitCode = code === 0 ? 0 : (code ?? (signal ? 1 : 0))
+
+      if (exitCode === 0) {
         console.log('')
         console.log('✅ Orchestration completed successfully')
         console.log('')
       } else {
         console.log('')
-        console.log(`❌ Orchestration exited with code: ${code}`)
+        console.log(`❌ Orchestration exited with code: ${exitCode}${signal ? ` (signal: ${signal})` : ''}`)
         console.log('')
       }
 
-      resolve(code || 0)
+      resolve(exitCode)
       if (!options.noExit) {
-        process.exit(code || 0)
+        process.exit(exitCode)
       }
     })
   })
