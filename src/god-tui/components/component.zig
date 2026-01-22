@@ -72,6 +72,7 @@ pub const Container = struct {
     children: ArrayListUnmanaged(Component),
     allocator: Allocator,
     cached_lines: ?[][]const u8 = null,
+    cached_width: u16 = 0,
     valid: bool = false,
 
     const Self = @This();
@@ -130,6 +131,11 @@ pub const Container = struct {
     }
 
     pub fn render(self: *Self, width: u16, allocator: Allocator) Component.RenderError![][]const u8 {
+        // Invalidate if width changed
+        if (self.cached_width != width) {
+            self.valid = false;
+        }
+
         if (self.valid) {
             if (self.cached_lines) |lines| {
                 // Return copy of cached lines
@@ -163,6 +169,7 @@ pub const Container = struct {
         for (result, 0..) |line, i| {
             self.cached_lines.?[i] = try self.allocator.dupe(u8, line);
         }
+        self.cached_width = width;
         self.valid = true;
 
         return result;

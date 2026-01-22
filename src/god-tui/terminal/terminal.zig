@@ -49,6 +49,9 @@ allocator: std.mem.Allocator,
 // Original termios for restoration
 original_termios: ?std.posix.termios = null,
 
+// Static resize flag for signal handler (atomic for signal safety)
+var resize_pending: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
+
 pub fn init(allocator: std.mem.Allocator) Terminal {
     return .{
         .stdin_buffer = StdinBuffer.init(allocator),
@@ -92,9 +95,28 @@ pub fn startTerminal(
 
     // Force SIGWINCH to refresh dimensions (Unix only)
     if (builtin.os.tag != .windows) {
-        // Register signal handler
-        // Note: In production, use proper signal handling
+        // Register SIGWINCH handler for resize events
+        const sigact = std.posix.Sigaction{
+            .handler = .{
+                .handler = struct {
+                    fn handler(_: c_int) callconv(.C) void {
+                        // Signal flag for main loop to handle
+                        resize_pending.store(true, .release);
+                    }
+                }.handler,
+            },
+            .mask = std.posix.empty_sigset,
+            .flags = 0,
+        };
+        _ = std.posix.sigaction(std.posix.SIG.WINCH, &sigact, null);
+
+        // Force SIGWINCH to refresh stale dimensions
+        _ = std.posix.kill(std.posix.getpid(), std.posix.SIG.WINCH) catch {};
     }
+
+    // If Kitty protocol detected, enable enhanced keyboard mode
+    // (flags 7 = 1=disambiguate + 2=report-events + 4=alternate-keys)
+    // This is done after capability detection in processCapabilityResponse
 }
 
 // Stop the terminal - restore cooked mode
@@ -192,6 +214,18 @@ pub fn enableKittyKeyboard(self: *Terminal, flags: u8) !void {
     self.caps.kitty_keyboard = true;
 }
 
+/// Check if resize is pending and handle it
+pub fn checkResize(self: *Terminal) bool {
+    if (resize_pending.swap(false, .acquire)) {
+        self.updateDimensions();
+        if (self.on_resize) |callback| {
+            callback();
+        }
+        return true;
+    }
+    return false;
+}
+
 // Process capability response
 pub fn processCapabilityResponse(self: *Terminal, response: []const u8) void {
     // Kitty keyboard protocol detection: CSI ? <flags> u
@@ -203,6 +237,8 @@ pub fn processCapabilityResponse(self: *Terminal, response: []const u8) void {
                 while (num_end < response.len and response[num_end] >= '0' and response[num_end] <= '9') : (num_end += 1) {}
                 if (num_end > i + 3 and num_end < response.len and response[num_end] == 'u') {
                     self.caps.kitty_keyboard = true;
+                    // Auto-enable Kitty flags 7 on detection
+                    self.enableKittyKeyboard(7) catch {};
                     break;
                 }
             }
@@ -517,4 +553,52 @@ test "processCapabilityResponse cell size" {
     term.processCapabilityResponse("\x1b[6;18;9t");
     try std.testing.expectEqual(@as(?u16, 18), term.caps.cell_pixel_height);
     try std.testing.expectEqual(@as(?u16, 9), term.caps.cell_pixel_width);
+}
+
+test "checkResize returns false when no resize pending" {
+    const allocator = std.testing.allocator;
+    var term = Terminal.init(allocator);
+    defer term.deinit();
+
+    // Reset static flag
+    resize_pending.store(false, .release);
+
+    try std.testing.expect(!term.checkResize());
+}
+
+test "checkResize returns true and calls callback when resize pending" {
+    const allocator = std.testing.allocator;
+    var term = Terminal.init(allocator);
+    defer term.deinit();
+
+    // Track callback invocation
+    const CallbackState = struct {
+        var called: bool = false;
+
+        fn callback() void {
+            called = true;
+        }
+    };
+
+    term.on_resize = CallbackState.callback;
+    CallbackState.called = false;
+
+    // Simulate resize signal
+    resize_pending.store(true, .release);
+
+    try std.testing.expect(term.checkResize());
+    try std.testing.expect(CallbackState.called);
+    try std.testing.expect(!resize_pending.load(.acquire)); // Should be cleared
+}
+
+test "processCapabilityResponse kitty auto-enables flags" {
+    const allocator = std.testing.allocator;
+    var term = Terminal.init(allocator);
+    defer term.deinit();
+
+    term.processCapabilityResponse("\x1b[?0u");
+    try std.testing.expect(term.caps.kitty_keyboard);
+
+    // Should have written the enable sequence to buffer
+    try std.testing.expect(std.mem.indexOf(u8, term.output_buffer.items, "\x1b[>7u") != null);
 }
