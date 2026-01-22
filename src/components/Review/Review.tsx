@@ -2,9 +2,6 @@ import type { ReactNode } from 'react'
 import { useReview } from '../../hooks/useReview.js'
 import type { ReviewProps } from './types.js'
 
-/**
- * Review component - reviews code changes using AI
- */
 export function Review(props: ReviewProps): ReactNode {
   const { status, result, error } = useReview(props)
 

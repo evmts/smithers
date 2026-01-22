@@ -35,11 +35,6 @@ export interface NotesResult {
   previousNotes: string | null
 }
 
-/**
- * Notes component - adds/appends git notes with smithers tracking
- *
- * React pattern: Uses useEffect with empty deps and async IIFE inside
- */
 export function Notes(props: NotesProps): ReactNode {
   const smithers = useSmithers()
   const executionScope = useExecutionScope()

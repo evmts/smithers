@@ -1,5 +1,3 @@
-// Execution-related type definitions for Smithers orchestrator
-
 import type { z } from 'zod'
 import type { StopCondition, ClaudeModel, ClaudePermissionMode, ClaudeOutputFormat } from './agents.js'
 

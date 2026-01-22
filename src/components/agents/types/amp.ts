@@ -1,5 +1,3 @@
-// Amp agent props type definitions for Smithers orchestrator
-
 import type { ReactNode } from 'react'
 import type { SmithersStreamPart } from '../../../streaming/types.js'
 import type { AgentResult } from './execution.js'

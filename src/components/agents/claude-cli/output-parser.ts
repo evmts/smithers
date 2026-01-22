@@ -1,6 +1,3 @@
-// Claude CLI Output Parser
-// Parses CLI output to extract result information
-
 import type { ClaudeOutputFormat } from '../types.js'
 
 /**

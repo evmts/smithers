@@ -1,6 +1,3 @@
-// Smithers Subagent CLI Executor
-// Generates and executes Smithers scripts using Claude for planning
-
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
@@ -15,10 +12,6 @@ export const DEFAULT_PLANNING_TIMEOUT_MS = 120000
 
 /** Default max planning turns */
 export const DEFAULT_MAX_PLANNING_TURNS = 5
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface SmithersExecutionOptions {
   /**
@@ -93,10 +86,6 @@ export interface SmithersResult extends AgentResult {
    */
   planningResult: AgentResult
 }
-
-// ============================================================================
-// Script Generation
-// ============================================================================
 
 const SCRIPT_TEMPLATE = `#!/usr/bin/env bun
 /**
@@ -177,9 +166,6 @@ Return ONLY the script body (everything that goes inside the main function), not
 The script should be complete and ready to execute.
 Do not include markdown code fences - return raw TypeScript/TSX code only.`
 
-/**
- * Generate a Smithers script using Claude
- */
 async function generateSmithersScript(
   task: string,
   options: SmithersExecutionOptions
@@ -224,9 +210,6 @@ Return ONLY the script body code, no markdown fences or explanations.`
   return { script: fullScript, planningResult }
 }
 
-/**
- * Write script to file and make it executable
- */
 async function writeScriptFile(script: string, scriptPath?: string): Promise<string> {
   const filePath = scriptPath || path.join(
     os.tmpdir(),
@@ -239,9 +222,6 @@ async function writeScriptFile(script: string, scriptPath?: string): Promise<str
   return filePath
 }
 
-/**
- * Execute a Smithers script
- */
 async function executeScript(
   scriptPath: string,
   options: SmithersExecutionOptions
@@ -321,19 +301,6 @@ async function executeScript(
   }
 }
 
-// ============================================================================
-// Main Executor
-// ============================================================================
-
-/**
- * Execute a Smithers subagent task
- *
- * This function:
- * 1. Uses Claude to plan a Smithers script for the given task
- * 2. Writes the script to a temp file
- * 3. Executes the script with bun
- * 4. Returns the combined result
- */
 export async function executeSmithers(options: SmithersExecutionOptions): Promise<SmithersResult> {
   const startTime = Date.now()
 

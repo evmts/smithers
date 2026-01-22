@@ -1,6 +1,3 @@
-// Codex CLI Output Parser
-// Parses output from Codex CLI
-
 export interface ParsedCodexOutput {
   output: string
   structured?: unknown

@@ -8,8 +8,8 @@ description: Pause workflow for human input or approval
 ```tsx
 <Human
   message="Review the implementation"
-  onApprove={() => setPhase("continue")}
-  onReject={() => setPhase("cancelled")}
+  onApprove={() => db.state.set("phase", "continue")}
+  onReject={() => db.state.set("phase", "cancelled")}
 >
   The agent has implemented the feature.
   Please review before continuing.
@@ -20,7 +20,7 @@ description: Pause workflow for human input or approval
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `id` | `string?` | Stable ID for resumability (optional - falls back to content hash) |
+| `id` | `string?` | Stable ID for resumability (optional - if not provided, falls back to content-based hash) |
 | `message` | `string?` | Short message shown to human |
 | `children` | `ReactNode?` | Detailed content shown |
 | `onApprove` | `() => void?` | Called on approval |

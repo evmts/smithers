@@ -1,8 +1,3 @@
-/**
- * Message parser for Claude CLI output.
- * Parses streaming output into discrete message and tool-call entries.
- */
-
 export interface TailLogEntry {
   index: number
   type: 'message' | 'tool-call'

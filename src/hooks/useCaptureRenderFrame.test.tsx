@@ -161,7 +161,7 @@ describe('useCaptureRenderFrame', () => {
 
   describe('error handling', () => {
     test('catches error when getTreeXML throws', async () => {
-      const consoleWarnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+      const consoleDebugSpy = spyOn(console, 'debug').mockImplementation(() => {})
       const getTreeXML = () => { throw new Error('test error') }
       
       await ctx.root.render(
@@ -172,12 +172,12 @@ describe('useCaptureRenderFrame', () => {
       
       await new Promise(r => setTimeout(r, 100))
       
-      expect(consoleWarnSpy).toHaveBeenCalled()
-      consoleWarnSpy.mockRestore()
+      expect(consoleDebugSpy).toHaveBeenCalled()
+      consoleDebugSpy.mockRestore()
     })
 
     test('does not crash component on capture failure', async () => {
-      const consoleWarnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+      const consoleDebugSpy = spyOn(console, 'debug').mockImplementation(() => {})
       const getTreeXML = () => { throw new Error('boom') }
       
       const renderPromise = ctx.root.render(
@@ -191,12 +191,12 @@ describe('useCaptureRenderFrame', () => {
       
       const xml = ctx.root.toXML()
       expect(xml).toContain('test-component')
-      consoleWarnSpy.mockRestore()
+      consoleDebugSpy.mockRestore()
     })
 
-    test('logs warning with [useCaptureRenderFrame] prefix', async () => {
+    test('logs debug with [useCaptureRenderFrame] prefix', async () => {
       let loggedMessage = ''
-      const consoleWarnSpy = spyOn(console, 'warn').mockImplementation((msg: string) => {
+      const consoleDebugSpy = spyOn(console, 'debug').mockImplementation((msg: string) => {
         loggedMessage = msg
       })
       const getTreeXML = () => { throw new Error('test') }
@@ -210,7 +210,7 @@ describe('useCaptureRenderFrame', () => {
       await new Promise(r => setTimeout(r, 100))
       
       expect(loggedMessage).toContain('[useCaptureRenderFrame]')
-      consoleWarnSpy.mockRestore()
+      consoleDebugSpy.mockRestore()
     })
   })
 

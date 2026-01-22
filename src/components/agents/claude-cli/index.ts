@@ -8,14 +8,11 @@ export {
   formatMap,
 } from './arg-builder.js'
 
-// Stop conditions
 export { checkStopConditions } from './stop-conditions.js'
 
-// Output parser
 export { parseClaudeOutput } from './output-parser.js'
 export type { ParsedOutput } from './output-parser.js'
 
-// Executor functions and constants
 export {
   executeClaudeCLI,
   executeClaudeShell,

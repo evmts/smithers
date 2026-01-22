@@ -98,17 +98,15 @@ function IterativeWorkflowBody({ attempts, testsPassing }) {
 }
 
 function IterativeWorkflowInner() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
   
   // State in SQLite, not useState (see State Management docs)
   const { data: attemptsVal } = useQueryValue<number>(
-    reactiveDb,
     "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'attempts'"
   );
   const attempts = attemptsVal ?? 0;
 
   const { data: testsPassingVal } = useQueryValue<number>(
-    reactiveDb,
     "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'tests_passing'"
   );
   const testsPassing = Boolean(testsPassingVal);
@@ -137,7 +135,7 @@ export function IterativeWorkflow({ db, executionId }) {
 
 ### Implicit Stopping
 
-Ralph also stops implicitly when nothing renders for an iteration. If no components mount and register tasks within 500ms, the loop assumes the workflow is complete.
+Ralph also stops implicitly when nothing renders for an iteration. If no components mount and register tasks within a short timeout, the loop assumes the workflow is complete.
 
 **What this means:**
 - The 500ms is a *detection timeout*, not an execution limit
@@ -176,11 +174,10 @@ db.tasks.complete(taskId);  // Loop can now advance
 import { useQueryValue } from "smithers-orchestrator/db";
 
 function MyComponent() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
   
   // Reactive: re-renders when 'phase' changes in DB
   const { data: phase } = useQueryValue<string>(
-    reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
   );
   
@@ -232,11 +229,10 @@ function PhaseWorkflowBody({ phase, setPhase }) {
 }
 
 function PhaseWorkflowInner() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
   
   // State in SQLite, not useState
   const { data: phaseVal } = useQueryValue<string>(
-    reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
   );
   const phase = phaseVal ?? "research";
@@ -643,17 +639,15 @@ const db = createSmithersDB({ path: ".smithers/retry-tests.db" });
 const executionId = db.execution.start("Retry Tests", "retry.tsx");
 
 function RetryWorkflow() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
 
   // Reactive state from SQLite
   const { data: attemptsRaw } = useQueryValue<number>(
-    reactiveDb,
     "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
   );
   const attempts = attemptsRaw ?? 0;
 
   const { data: doneRaw } = useQueryValue<number>(
-    reactiveDb,
     "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'"
   );
   const done = Boolean(doneRaw);
@@ -676,10 +670,7 @@ function RetryWorkflow() {
 }
 
 function AppInner() {
-  const { reactiveDb } = useSmithers();
-  
   const { data: doneRaw } = useQueryValue<number>(
-    reactiveDb,
     "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'"
   );
   const done = Boolean(doneRaw);

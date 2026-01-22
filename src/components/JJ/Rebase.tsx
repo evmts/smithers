@@ -13,9 +13,6 @@ export interface RebaseProps {
   children?: ReactNode
 }
 
-/**
- * Parse conflict files from jj rebase output or status.
- */
 function parseConflicts(output: string): string[] {
   const conflicts: string[] = []
   const lines = output.split('\n')
@@ -37,12 +34,6 @@ function parseConflicts(output: string): string[] {
   return conflicts
 }
 
-/**
- * JJ Rebase component - performs JJ rebase with conflict handling.
- *
- * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
- * Registers with Ralph for task tracking.
- */
 interface RebaseState {
   status: 'pending' | 'running' | 'complete' | 'conflict' | 'error'
   conflicts: string[]

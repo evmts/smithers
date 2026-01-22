@@ -35,7 +35,7 @@ Just type:
 smithers
 ```
 
-This launches the interactive agent. Same API as [OpenCode](https://opencode.ai) since Smithers wraps it.
+This launches the interactive agent.
 
 Or run a specific workflow file:
 
@@ -133,13 +133,13 @@ function Workflow() {
   return (
     <SmithersProvider db={db} executionId={executionId}>
       <Ralph id="workflow" condition={() => phase !== 'done'} maxIterations={10}>
-        <Phase name="research" onComplete={() => db.state.set('phase', 'implement')}>
+        <Phase name="research">
           <Step name="analyze">
             <Claude>Analyze the codebase structure.</Claude>
           </Step>
         </Phase>
 
-        <Phase name="implement" onComplete={() => db.state.set('phase', 'review')}>
+        <Phase name="implement">
           <Step name="code">
             <Claude>Implement the feature.</Claude>
           </Step>
@@ -148,7 +148,7 @@ function Workflow() {
           </Step>
         </Phase>
 
-        <Phase name="review" onComplete={() => db.state.set('phase', 'done')}>
+        <Phase name="review">
           <Step name="review">
             <Claude>Review all changes.</Claude>
           </Step>
@@ -160,7 +160,7 @@ function Workflow() {
 
 const root = createSmithersRoot();
 try {
-  await root.mount(Workflow);
+  await root.mount(() => <Workflow />);
   db.execution.complete(executionId, { summary: "Done" });
 } catch (err) {
   db.execution.fail(executionId, String(err));

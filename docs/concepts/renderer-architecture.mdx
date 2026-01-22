@@ -18,7 +18,7 @@ Custom React renderer that outputs `SmithersNode` trees instead of DOM elements.
 │                              YOUR JSX CODE                                      │
 │                                                                                 │
 │   function MyAgent() {                                                          │
-│     const { ralphCount } = useSmithers()                                        │
+│     const ralphCount = useRalphCount()                                          │
 │     return (                                                                    │
 │       <Orchestration>                                                           │
 │         <Phase name="build">                                                    │
@@ -180,6 +180,7 @@ src/reconciler/
 ├── root.ts            # createSmithersRoot(), mount()
 ├── serialize.ts       # Tree → XML serialization
 └── hooks.ts           # useMount, useUnmount, useMountedState
+(test files omitted)
 ```
 
 ## Key Concepts

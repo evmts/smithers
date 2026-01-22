@@ -59,15 +59,17 @@ const config = configJson ? JSON.parse(configJson) : { timeout: 1000, retries: 1
 ## Complete Workflow
 
 ```tsx
+import { useSmithers, If, Claude, Review, Commit } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/db";
 
 function FeatureWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
   
   // Phase is a simple string - no JSON parsing needed
-  const phase = useQueryValue<string>(
+  const { data: phaseVal } = useQueryValue<string>(
     reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
-  ) ?? "implement";
+  );
+  const phase = phaseVal ?? "implement";
 
   return (
     <>
@@ -99,7 +101,7 @@ function FeatureWorkflowBody() {
 ## Jujutsu Snapshots
 
 ```tsx
-import { Snapshot } from 'smithers/components/JJ'
+import { Snapshot } from 'smithers-orchestrator/components/JJ'
 
 // Create snapshot before risky operations
 <Snapshot message="Before refactoring" />

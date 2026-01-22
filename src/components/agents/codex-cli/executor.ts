@@ -1,6 +1,3 @@
-// Codex CLI Executor
-// Executes Codex CLI commands using Bun
-
 import type { AgentResult } from '../types.js'
 import type { CodexCLIExecutionOptions } from '../types/codex.js'
 import { buildCodexArgs } from './arg-builder.js'

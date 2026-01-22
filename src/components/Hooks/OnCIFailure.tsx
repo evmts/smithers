@@ -1,6 +1,3 @@
-// OnCIFailure hook component - polls CI status and triggers children on failure
-// Currently supports GitHub Actions
-
 import { useRef, type ReactNode } from 'react'
 import { useSmithers } from '../SmithersProvider.js'
 import { useUnmount, useExecutionMount, useEffectOnValueChange } from '../../reconciler/hooks.js'
@@ -47,9 +44,6 @@ interface GitHubActionsRun {
   name: string
 }
 
-/**
- * Fetch the latest GitHub Actions run for a branch
- */
 async function fetchLatestGitHubActionsRun(branch: string): Promise<GitHubActionsRun | null> {
   const result = await Bun.$`gh run list --branch ${branch} --limit 1 --json status,conclusion,databaseId,name`.json()
 
@@ -79,9 +73,6 @@ async function resolveDefaultBranch(): Promise<string | null> {
   return null
 }
 
-/**
- * Fetch failed job names from a GitHub Actions run
- */
 async function fetchFailedJobs(runId: number): Promise<string[]> {
   try {
     const result = await Bun.$`gh run view ${runId} --json jobs`.json() as { jobs: Array<{ name: string; conclusion: string }> }
@@ -97,9 +88,6 @@ async function fetchFailedJobs(runId: number): Promise<string[]> {
   }
 }
 
-/**
- * Fetch logs from a failed GitHub Actions run
- */
 async function fetchRunLogs(runId: number): Promise<string> {
   try {
     const result = await Bun.$`gh run view ${runId} --log-failed 2>/dev/null`.text()
@@ -113,23 +101,6 @@ async function fetchRunLogs(runId: number): Promise<string> {
   }
 }
 
-/**
- * OnCIFailure - Hook component that triggers on CI failures
- *
- * Polls GitHub Actions status and renders children when a failure is detected.
- * Keeps track of processed run IDs to avoid re-triggering on the same failure.
- *
- * Usage:
- * ```tsx
- * <OnCIFailure
- *   provider="github-actions"
- *   pollInterval={60000}
- *   onFailure={(failure) => console.log('CI failed:', failure)}
- * >
- *   <Claude>The CI has failed. Analyze the logs and fix the issue.</Claude>
- * </OnCIFailure>
- * ```
- */
 interface CIFailureState {
   ciStatus: 'idle' | 'polling' | 'failed' | 'error'
   currentFailure: CIFailure | null

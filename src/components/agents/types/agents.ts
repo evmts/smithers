@@ -1,5 +1,3 @@
-// Agent props type definitions for Smithers orchestrator
-
 import type { ReactNode } from 'react'
 import type { z } from 'zod'
 import type { Tool, MCPServer } from './tools.js'

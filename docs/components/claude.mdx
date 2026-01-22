@@ -66,8 +66,8 @@ Execute Claude via Claude Code CLI. Children are the prompt.
 
 ### Tool Configuration
 
-<ParamField path="tools" type="Tool[]">
-  Custom tools to provide to Claude.
+<ParamField path="tools" type="(string | Tool | MCPServer)[]">
+  Custom tools to provide to Claude. Can be tool names (strings), Tool objects, or MCPServer instances.
   
   <Warning>**Experimental.** Custom tool support is functional but API may change. Use `allowedTools`/`disallowedTools` for built-in tools, or the `<Sqlite>` component for database access.</Warning>
 
@@ -248,14 +248,6 @@ Execute Claude via Claude Code CLI. Children are the prompt.
   Maximum retries for the outer error retry loop.
 </ParamField>
 
-<ParamField path="retryDelayMs" type="number" default="250">
-  Base delay in milliseconds for retry backoff.
-
-  ```tsx
-  <Claude retryDelayMs={500} maxRetries={3}>Task with slower retries.</Claude>
-  ```
-</ParamField>
-
 <ParamField path="schemaRetries" type="number" default="2">
   Maximum retries for structured output schema validation. When Claude returns
   output that fails Zod schema validation, it will retry up to this many times.
@@ -264,6 +256,14 @@ Execute Claude via Claude Code CLI. Children are the prompt.
   <Claude schema={UserSchema} schemaRetries={3}>
     Return user data in the expected format.
   </Claude>
+  ```
+</ParamField>
+
+<ParamField path="retryDelayMs" type="number" default="250">
+  Base delay in milliseconds for retry backoff.
+
+  ```tsx
+  <Claude retryDelayMs={500} maxRetries={3}>Task with slower retries.</Claude>
   ```
 </ParamField>
 

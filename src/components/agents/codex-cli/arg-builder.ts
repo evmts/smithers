@@ -1,6 +1,3 @@
-// Codex CLI Argument Builder
-// Builds CLI arguments from execution options
-
 import type { CodexCLIExecutionOptions, CodexSandboxMode, CodexApprovalPolicy } from '../types/codex.js'
 
 /**

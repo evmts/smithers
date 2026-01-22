@@ -19,7 +19,7 @@ description: Explicitly terminate orchestration with structured summary
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `summary` | `EndSummary \| () => EndSummary` | required | Structured run summary |
+| `summary` | `EndSummary \| (() => EndSummary \| Promise<EndSummary>)` | required | Structured run summary (supports async) |
 | `exitCode` | `number` | `0` or `1` | Process exit code |
 | `reason` | `string` | from status | Optional reason string |
 

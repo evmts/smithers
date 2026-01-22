@@ -45,9 +45,6 @@ export interface CommitResult {
   deletions: number
 }
 
-/**
- * Generate commit message using Claude CLI
- */
 async function generateCommitMessage(cwd?: string): Promise<string> {
   // Get the diff for context
   const diffResult = await (cwd ? Bun.$`git diff --cached --stat`.cwd(cwd) : Bun.$`git diff --cached --stat`).text()
@@ -74,11 +71,6 @@ ${diffContent.slice(0, 5000)}${diffContent.length > 5000 ? '\n...(truncated)' : 
   return result.output.trim()
 }
 
-/**
- * Commit component - creates a git commit with smithers metadata
- *
- * React pattern: Uses useEffect with empty deps and async IIFE inside
- */
 export function Commit(props: CommitProps): ReactNode {
   const smithers = useSmithers()
   const opIdRef = useRef(props.id ?? crypto.randomUUID())

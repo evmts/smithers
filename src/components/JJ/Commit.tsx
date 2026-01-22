@@ -20,11 +20,6 @@ interface CommitState {
   error: string | null
 }
 
-/**
- * JJ Commit component - creates a JJ commit with optional auto-describe.
- *
- * React pattern: Uses db.state for resumability and task tracking.
- */
 export function Commit(props: CommitProps): ReactNode {
   const smithers = useSmithers()
   const executionScope = useExecutionScope()

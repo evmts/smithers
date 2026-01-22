@@ -45,7 +45,7 @@ Without While or Ralph, your workflow runs exactly once. Use While for iterative
 ┌──────────────┐
 │   PENDING    │
 └──────┬───────┘
-       │ executionEnabled
+       │ mount
        ▼
 ┌──────────────┐
 │   EVALUATE   │◄─────────────────────────┐
@@ -115,7 +115,7 @@ function ReviewFixLoop() {
   onIteration={(i) => console.log(`Poll attempt ${i}`)}
 >
   <Step name="Wait">
-    <Delay ms={10000} />
+    <Claude>Check CI status and wait if still pending</Claude>
   </Step>
 </While>
 ```

@@ -6,7 +6,11 @@ description: Automatic sequential phase state via SQLite
 # PhaseRegistry
 
 <Note>
-`PhaseRegistryProvider` requires `SmithersProvider` context—it calls `useSmithers()` internally to access the database and reactive state.
+`PhaseRegistryProvider` is automatically included in `SmithersProvider`. Manual use is rarely needed.
+</Note>
+
+<Note>
+Phase index automatically resets to 0 when Ralph iteration changes.
 </Note>
 
 ```tsx

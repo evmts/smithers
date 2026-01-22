@@ -13,12 +13,6 @@ export interface StatusProps {
   children?: ReactNode
 }
 
-/**
- * JJ Status component - checks JJ working copy status.
- *
- * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
- * Registers with Ralph for task tracking.
- */
 interface StatusState {
   status: 'pending' | 'running' | 'complete' | 'error'
   fileStatus: { modified: string[]; added: string[]; deleted: string[] } | null

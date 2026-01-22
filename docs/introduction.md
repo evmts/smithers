@@ -1,6 +1,6 @@
 ---
 title: Introduction
-description: Ralph the plan not the agent
+description: Ralph the plan, not the agent
 ---
 
 # Smithers
@@ -132,9 +132,6 @@ const ReviewSchema = z.object({
 State lives in SQLite. Survives restarts.
 
 ```tsx
-// Set state
-db.state.set("phase", "review");
-
 // Get state
 const phase = db.state.get("phase");
 
@@ -180,27 +177,18 @@ The [Ralph loop](https://ghuntley.com/ralph/) renders → executes → persists 
 
 ## Why React?
 
-LLMs and humans perform well writing declarative React code. All coding agents can one-shot valid Smithers workflows naturally.
-
-Most multi-agent frameworks fail. They add coordination overhead that costs more than it saves, and you end up worse than a simple while loop. Smithers avoids this by making the plan declarative and the state durable. React's functional nature makes even complex multiagent setups easy to modularize and easy to reason about.
-
-React has a rich ecosystem that works well with agents: reactive libraries plug directly into React's reactivity system. This lets you compose declarative plans from battle-tested primitives.
-
-React gives you:
-
-- Composition and reuse
-- Version control diffs that make sense
-- Agent-generated code you can review
-- A massive ecosystem of reactive hooks to reuse
+React: composition, diffing, version control diffs that make sense, LLM-friendly.
 
 ---
 
 <Tip>
-**React Hook Compatibility**: [TanStack AI](https://tanstack.com/ai/latest/docs) and [Vercel AI SDK](https://ai-sdk.dev/docs) React hooks work in Smithers components. Use `useChat` for streaming chat, `useCompletion` for text completion, and `useObject` for structured generation.
+**React Hook Compatibility**: [TanStack AI](https://tanstack.com/ai/latest/docs) and [Vercel AI SDK](https://ai-sdk.dev/docs) React hooks may work in Smithers components.
+
+**Note:** Compatibility with Smithers' custom React reconciler is not fully verified. Test thoroughly before production use.
 
 ```tsx
 import { If, Claude } from "smithers-orchestrator";
-import { useChat, useCompletion, useObject } from "ai/react";
+import { useChat } from "ai/react";
 
 function MyAgent() {
   const { messages, isLoading } = useChat();

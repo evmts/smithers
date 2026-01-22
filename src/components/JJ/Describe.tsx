@@ -12,12 +12,6 @@ export interface DescribeProps {
   children?: ReactNode
 }
 
-/**
- * JJ Describe component - auto-generates commit message.
- *
- * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
- * Registers with Ralph for task tracking.
- */
 interface DescribeState {
   status: 'pending' | 'running' | 'complete' | 'error'
   description: string | null

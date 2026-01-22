@@ -16,7 +16,7 @@ Event-driven components that trigger on CI failures, commits, and other external
 Trigger on CI failure:
 
 ```tsx
-import { OnCIFailure } from "smithers-orchestrator";
+import { OnCIFailure } from "smithers-orchestrator/components/Hooks";
 
 <OnCIFailure
   provider="github-actions"
@@ -73,7 +73,7 @@ interface CIFailure {
 Trigger on git commit:
 
 ```tsx
-import { PostCommit } from "smithers-orchestrator";
+import { PostCommit } from "smithers-orchestrator/components/Hooks";
 
 <PostCommit runOn="smithers-only">
   <Claude>

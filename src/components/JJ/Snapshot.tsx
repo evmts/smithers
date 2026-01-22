@@ -12,12 +12,6 @@ export interface SnapshotProps {
   children?: ReactNode
 }
 
-/**
- * JJ Snapshot component - creates a JJ snapshot and logs to database.
- *
- * React pattern: Uses refs + version tracking for fire-and-forget VCS ops.
- * Registers with Ralph for task tracking.
- */
 interface SnapshotState {
   status: 'pending' | 'running' | 'complete' | 'error'
   changeId: string | null

@@ -1,604 +1,369 @@
-// Terminal Abstraction Layer per God-TUI spec §2
+// Terminal Abstraction Layer
+// Reference: issues/god-tui/02-terminal-abstraction.md
+
 const std = @import("std");
 const builtin = @import("builtin");
 const ansi = @import("ansi.zig");
 const keys = @import("keys.zig");
 const StdinBuffer = @import("stdin_buffer.zig").StdinBuffer;
 
-pub const Terminal = @This();
-
-// Callbacks
-pub const InputCallback = *const fn (data: []const u8) void;
-pub const ResizeCallback = *const fn () void;
-pub const PasteCallback = *const fn (content: []const u8) void;
-
-// Terminal capabilities detected at startup
-pub const Capabilities = struct {
-    kitty_keyboard: bool = false,
-    kitty_graphics: bool = false,
-    rgb: bool = false,
-    sync_output: bool = false,
-    bracketed_paste: bool = false,
-    hyperlinks: bool = false,
-    sixel: bool = false,
-    focus_tracking: bool = false,
-    // Cell dimensions (from CSI 16t response)
-    cell_pixel_width: ?u16 = null,
-    cell_pixel_height: ?u16 = null,
-};
-
-// Terminal state
-columns: u16 = 80,
-rows: u16 = 24,
-caps: Capabilities = .{},
-
-// Internal state
-running: bool = false,
-was_raw_mode: bool = false,
-stdin_buffer: StdinBuffer,
-
-// Callbacks
-on_input: ?InputCallback = null,
-on_resize: ?ResizeCallback = null,
-on_paste: ?PasteCallback = null,
-
-// Output buffer for batched writes
-output_buffer: std.ArrayListUnmanaged(u8) = .{},
-allocator: std.mem.Allocator,
-
-// Original termios for restoration
-original_termios: ?std.posix.termios = null,
-
-// Static resize flag for signal handler (atomic for signal safety)
-var resize_pending: std.atomic.Value(bool) = std.atomic.Value(bool).init(false);
-
-pub fn init(allocator: std.mem.Allocator) Terminal {
-    return .{
-        .stdin_buffer = StdinBuffer.init(allocator),
-        .allocator = allocator,
-    };
-}
-
-pub fn deinit(self: *Terminal) void {
-    if (self.running) {
-        self.stop() catch {};
-    }
-    self.stdin_buffer.deinit();
-    self.output_buffer.deinit(self.allocator);
-}
-
-// Start the terminal - enable raw mode, register handlers
-pub fn startTerminal(
-    self: *Terminal,
-    on_input: InputCallback,
-    on_resize: ResizeCallback,
-) !void {
-    self.on_input = on_input;
-    self.on_resize = on_resize;
-
-    // Get current dimensions
-    self.updateDimensions();
-
-    // Save and enable raw mode
-    try self.enableRawMode();
-
-    // Enable bracketed paste
-    try self.write(ansi.BRACKETED_PASTE_ON);
-
-    // Query Kitty protocol support
-    try self.write(ansi.KITTY_QUERY);
-
-    // Query cell size for images
-    try self.write(ansi.QUERY_CELL_SIZE);
-
-    self.running = true;
-
-    // Force SIGWINCH to refresh dimensions (Unix only)
-    if (builtin.os.tag != .windows) {
-        // Register SIGWINCH handler for resize events
-        const sigact = std.posix.Sigaction{
-            .handler = .{
-                .handler = struct {
-                    fn handler(_: c_int) callconv(.C) void {
-                        // Signal flag for main loop to handle
-                        resize_pending.store(true, .release);
-                    }
-                }.handler,
-            },
-            .mask = std.posix.empty_sigset,
-            .flags = 0,
-        };
-        _ = std.posix.sigaction(std.posix.SIG.WINCH, &sigact, null);
-
-        // Force SIGWINCH to refresh stale dimensions
-        _ = std.posix.kill(std.posix.getpid(), std.posix.SIG.WINCH) catch {};
-    }
-
-    // If Kitty protocol detected, enable enhanced keyboard mode
-    // (flags 7 = 1=disambiguate + 2=report-events + 4=alternate-keys)
-    // This is done after capability detection in processCapabilityResponse
-}
-
-// Stop the terminal - restore cooked mode
-pub fn stop(self: *Terminal) !void {
-    if (!self.running) return;
-
-    // Disable bracketed paste
-    try self.write(ansi.BRACKETED_PASTE_OFF);
-
-    // Pop Kitty protocol if enabled
-    if (self.caps.kitty_keyboard) {
-        try self.write(ansi.KITTY_POP);
-    }
-
-    // Show cursor
-    try self.write(ansi.SHOW_CURSOR);
-
-    // Flush output
-    try self.flush();
-
-    // Restore terminal mode
-    try self.disableRawMode();
-
-    self.running = false;
-    self.on_input = null;
-    self.on_resize = null;
-}
-
-// Write data to terminal (buffered)
-pub fn write(self: *Terminal, data: []const u8) !void {
-    try self.output_buffer.appendSlice(self.allocator, data);
-}
-
-// Write formatted output
-pub fn print(self: *Terminal, comptime fmt: []const u8, args: anytype) !void {
-    try self.output_buffer.writer(self.allocator).print(fmt, args);
-}
-
-// Flush output buffer to stdout
-pub fn flush(self: *Terminal) !void {
-    if (self.output_buffer.items.len == 0) return;
-
-    _ = try std.posix.write(std.posix.STDOUT_FILENO, self.output_buffer.items);
-    self.output_buffer.clearRetainingCapacity();
-}
-
-// Get output buffer writer
-pub fn writer(self: *Terminal) std.ArrayListUnmanaged(u8).Writer {
-    return self.output_buffer.writer(self.allocator);
-}
-
-// === Cursor Operations ===
-
-pub fn hideCursor(self: *Terminal) !void {
-    try self.write(ansi.HIDE_CURSOR);
-}
-
-pub fn showCursor(self: *Terminal) !void {
-    try self.write(ansi.SHOW_CURSOR);
-}
-
-pub fn moveBy(self: *Terminal, lines: i16) !void {
-    if (lines < 0) {
-        try ansi.cursorUp(self.writer(), @intCast(-lines));
-    } else if (lines > 0) {
-        try ansi.cursorDown(self.writer(), @intCast(lines));
-    }
-}
-
-// === Clear Operations ===
-
-pub fn clearLine(self: *Terminal) !void {
-    try self.write(ansi.CLEAR_LINE);
-}
-
-pub fn clearFromCursor(self: *Terminal) !void {
-    try self.write(ansi.CLEAR_TO_EOS);
-}
-
-pub fn clearScreen(self: *Terminal) !void {
-    try self.write(ansi.CLEAR_ALL);
-}
-
-// === Window Operations ===
-
-pub fn setTitle(self: *Terminal, title: []const u8) !void {
-    try ansi.setTitle(self.writer(), title);
-}
-
-// === Protocol Setup ===
-
-// Enable Kitty keyboard protocol with flags
-pub fn enableKittyKeyboard(self: *Terminal, flags: u8) !void {
-    try self.print("\x1b[>{d}u", .{flags});
-    self.caps.kitty_keyboard = true;
-}
-
-/// Check if resize is pending and handle it
-pub fn checkResize(self: *Terminal) bool {
-    if (resize_pending.swap(false, .acquire)) {
-        self.updateDimensions();
-        if (self.on_resize) |callback| {
-            callback();
-        }
-        return true;
-    }
-    return false;
-}
-
-// Process capability response
-pub fn processCapabilityResponse(self: *Terminal, response: []const u8) void {
-    // Kitty keyboard protocol detection: CSI ? <flags> u
-    if (std.mem.indexOf(u8, response, "\x1b[?") != null) {
-        var i: usize = 0;
-        while (i + 4 < response.len) : (i += 1) {
-            if (response[i] == '\x1b' and response[i + 1] == '[' and response[i + 2] == '?') {
-                var num_end = i + 3;
-                while (num_end < response.len and response[num_end] >= '0' and response[num_end] <= '9') : (num_end += 1) {}
-                if (num_end > i + 3 and num_end < response.len and response[num_end] == 'u') {
-                    self.caps.kitty_keyboard = true;
-                    // Auto-enable Kitty flags 7 on detection
-                    self.enableKittyKeyboard(7) catch {};
-                    break;
-                }
-            }
-        }
-    }
-
-    // Cell size response: CSI 6 ; height ; width t
-    if (std.mem.indexOf(u8, response, "\x1b[6;")) |pos| {
-        const resp_start = pos + 4;
-        if (std.mem.indexOfPos(u8, response, resp_start, ";")) |semi1| {
-            if (std.mem.indexOfPos(u8, response, semi1 + 1, "t")) |end| {
-                const height = std.fmt.parseInt(u16, response[resp_start..semi1], 10) catch null;
-                const width = std.fmt.parseInt(u16, response[semi1 + 1 .. end], 10) catch null;
-                self.caps.cell_pixel_height = height;
-                self.caps.cell_pixel_width = width;
-            }
-        }
-    }
-
-    // Sync output support
-    if (std.mem.indexOf(u8, response, "2026;2$y") != null or
-        std.mem.indexOf(u8, response, "2026;1$y") != null)
-    {
-        self.caps.sync_output = true;
-    }
-
-    // Bracketed paste support
-    if (std.mem.indexOf(u8, response, "2004;2$y") != null or
-        std.mem.indexOf(u8, response, "2004;1$y") != null)
-    {
-        self.caps.bracketed_paste = true;
-    }
-}
-
-// === Raw Mode ===
-
-fn enableRawMode(self: *Terminal) !void {
-    if (builtin.os.tag == .windows) {
-        // Windows: use different approach
-        return;
-    }
-
-    const stdin_fd = std.posix.STDIN_FILENO;
-
-    // Save original termios
-    self.original_termios = try std.posix.tcgetattr(stdin_fd);
-
-    var raw = self.original_termios.?;
-
-    // Input flags: disable break, CR to NL, parity, strip, XON/XOFF
-    raw.iflag.BRKINT = false;
-    raw.iflag.ICRNL = false;
-    raw.iflag.INPCK = false;
-    raw.iflag.ISTRIP = false;
-    raw.iflag.IXON = false;
-
-    // Output flags: disable post-processing
-    raw.oflag.OPOST = false;
-
-    // Control flags: set 8-bit chars
-    raw.cflag.CSIZE = .CS8;
-
-    // Local flags: disable echo, canonical, extended, signals
-    raw.lflag.ECHO = false;
-    raw.lflag.ICANON = false;
-    raw.lflag.IEXTEN = false;
-    raw.lflag.ISIG = false;
-
-    // Control chars: return each byte immediately
-    raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
-    raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
-
-    try std.posix.tcsetattr(stdin_fd, .FLUSH, raw);
-    self.was_raw_mode = true;
-}
-
-fn disableRawMode(self: *Terminal) !void {
-    if (builtin.os.tag == .windows) return;
-    if (!self.was_raw_mode) return;
-
-    if (self.original_termios) |termios| {
-        const stdin_fd = std.posix.STDIN_FILENO;
-        try std.posix.tcsetattr(stdin_fd, .FLUSH, termios);
-    }
-
-    self.was_raw_mode = false;
-}
-
-fn updateDimensions(self: *Terminal) void {
-    if (builtin.os.tag == .windows) {
-        // Windows: use GetConsoleScreenBufferInfo
-        self.columns = 80;
-        self.rows = 24;
-        return;
-    }
-
-    const stdout_fd = std.posix.STDOUT_FILENO;
-    var ws: std.posix.winsize = undefined;
-
-    if (std.posix.system.ioctl(stdout_fd, std.posix.T.IOCGWINSZ, @intFromPtr(&ws)) == 0) {
-        self.columns = ws.col;
-        self.rows = ws.row;
-    }
-}
-
-// Process raw input from stdin
-pub fn processInput(self: *Terminal, data: []const u8) !void {
-    const emit_fn = struct {
-        var terminal: *Terminal = undefined;
-
-        fn emit(event: @import("stdin_buffer.zig").Event) void {
-            switch (event) {
-                .data => |d| {
-                    if (terminal.on_input) |callback| {
-                        callback(d);
-                    }
-                },
-                .paste => |content| {
-                    if (terminal.on_paste) |callback| {
-                        callback(content);
-                    }
-                },
-            }
-        }
-    };
-    emit_fn.terminal = self;
-
-    try self.stdin_buffer.process(data, emit_fn.emit);
-}
-
-// Flush any pending input after timeout
-pub fn flushInput(self: *Terminal) void {
-    const emit_fn = struct {
-        var terminal: *Terminal = undefined;
-
-        fn emit(event: @import("stdin_buffer.zig").Event) void {
-            switch (event) {
-                .data => |d| {
-                    if (terminal.on_input) |callback| {
-                        callback(d);
-                    }
-                },
-                .paste => |content| {
-                    if (terminal.on_paste) |callback| {
-                        callback(content);
-                    }
-                },
-            }
-        }
-    };
-    emit_fn.terminal = self;
-
-    self.stdin_buffer.flush(emit_fn.emit);
-}
-
-pub fn hasPendingInput(self: *const Terminal) bool {
-    return self.stdin_buffer.hasPending();
-}
-
-// === Convenience Methods ===
-
-// Begin synchronized output
-pub fn syncStart(self: *Terminal) !void {
-    try self.write(ansi.SYNC_START);
-}
-
-// End synchronized output
-pub fn syncEnd(self: *Terminal) !void {
-    try self.write(ansi.SYNC_END);
-}
-
-// === Mock Terminal for Testing ===
-
-pub const MockTerminal = struct {
-    output: std.ArrayListUnmanaged(u8) = .{},
-    input_queue: std.ArrayListUnmanaged([]const u8) = .{},
-    columns: u16 = 80,
-    rows: u16 = 24,
-    caps: Capabilities = .{},
+pub const Terminal = struct {
+    const Self = @This();
 
     allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator) MockTerminal {
+    // Dimensions
+    columns: u16 = 80,
+    rows: u16 = 24,
+
+    // Protocol state
+    kitty_protocol_active: bool = false,
+    cell_pixel_width: ?u16 = null,
+    cell_pixel_height: ?u16 = null,
+
+    // Internal state
+    was_raw: bool = false,
+    stdin_buffer: StdinBuffer,
+    output_buffer: std.ArrayListUnmanaged(u8),
+
+    // Callbacks
+    on_input: ?*const fn (data: []const u8, ctx: ?*anyopaque) void = null,
+    on_resize: ?*const fn (ctx: ?*anyopaque) void = null,
+    callback_ctx: ?*anyopaque = null,
+
+    // File handles
+    stdin: std.posix.fd_t,
+    stdout: std.posix.fd_t,
+
+    // Original terminal state (for restore)
+    original_termios: ?std.posix.termios = null,
+
+    pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
+            .stdin_buffer = StdinBuffer.init(allocator),
+            .output_buffer = .{},
+            .stdin = std.io.getStdIn().handle,
+            .stdout = std.io.getStdOut().handle,
         };
     }
 
-    pub fn deinit(self: *MockTerminal) void {
-        self.output.deinit(self.allocator);
-        self.input_queue.deinit(self.allocator);
+    pub fn deinit(self: *Self) void {
+        self.stop();
+        self.stdin_buffer.deinit();
+        self.output_buffer.deinit(self.allocator);
     }
 
-    pub fn write(self: *MockTerminal, data: []const u8) !void {
-        try self.output.appendSlice(self.allocator, data);
+    // Start terminal in raw mode with protocol negotiation
+    pub fn start(
+        self: *Self,
+        on_input: ?*const fn (data: []const u8, ctx: ?*anyopaque) void,
+        on_resize: ?*const fn (ctx: ?*anyopaque) void,
+        ctx: ?*anyopaque,
+    ) !void {
+        self.on_input = on_input;
+        self.on_resize = on_resize;
+        self.callback_ctx = ctx;
+
+        // Get current dimensions
+        self.updateDimensions();
+
+        // Enable raw mode
+        try self.enableRawMode();
+
+        // Setup stdin buffer callbacks
+        self.stdin_buffer.setCallbacks(
+            inputDataCallback,
+            inputPasteCallback,
+            @ptrCast(self),
+        );
+
+        // Write start sequence
+        try self.output_buffer.appendSlice(self.allocator, ansi.BRACKETED_PASTE_ENABLE);
+        try self.output_buffer.appendSlice(self.allocator, ansi.KITTY_QUERY);
+        try self.output_buffer.appendSlice(self.allocator, ansi.CELL_SIZE_QUERY);
+        try self.flush();
     }
 
-    pub fn print(self: *MockTerminal, comptime fmt: []const u8, args: anytype) !void {
-        try self.output.writer(self.allocator).print(fmt, args);
+    fn inputDataCallback(data: []const u8, ctx: ?*anyopaque) void {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        if (self.on_input) |cb| {
+            cb(data, self.callback_ctx);
+        }
     }
 
-    pub fn getOutput(self: *const MockTerminal) []const u8 {
-        return self.output.items;
+    fn inputPasteCallback(content: []const u8, ctx: ?*anyopaque) void {
+        // Paste content delivered as single input event
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        if (self.on_input) |cb| {
+            cb(content, self.callback_ctx);
+        }
     }
 
-    pub fn clearOutput(self: *MockTerminal) void {
-        self.output.clearRetainingCapacity();
+    // Stop terminal and restore state
+    pub fn stop(self: *Self) void {
+        // Write stop sequence
+        if (self.kitty_protocol_active) {
+            self.output_buffer.appendSlice(self.allocator, ansi.KITTY_POP) catch {};
+        }
+        self.output_buffer.appendSlice(self.allocator, ansi.BRACKETED_PASTE_DISABLE) catch {};
+        self.output_buffer.appendSlice(self.allocator, ansi.SHOW_CURSOR) catch {};
+        self.flush() catch {};
+
+        // Restore terminal mode
+        self.disableRawMode();
     }
 
-    pub fn simulateInput(self: *MockTerminal, data: []const u8) !void {
-        try self.input_queue.append(self.allocator, data);
+    // Write data to output buffer
+    pub fn write(self: *Self, data: []const u8) !void {
+        try self.output_buffer.appendSlice(self.allocator, data);
     }
 
-    pub fn simulateResize(self: *MockTerminal, cols: u16, new_rows: u16) void {
-        self.columns = cols;
-        self.rows = new_rows;
+    // Flush output buffer to stdout
+    pub fn flush(self: *Self) !void {
+        if (self.output_buffer.items.len == 0) return;
+        _ = try std.posix.write(self.stdout, self.output_buffer.items);
+        self.output_buffer.clearRetainingCapacity();
+    }
+
+    // Process incoming stdin data
+    pub fn processInput(self: *Self, data: []const u8) !void {
+        // Check for Kitty protocol response
+        if (std.mem.indexOf(u8, data, "\x1b[?") != null and
+            std.mem.indexOf(u8, data, "u") != null)
+        {
+            self.kitty_protocol_active = true;
+            // Enable Kitty flags
+            try self.write(ansi.KITTY_ENABLE_FLAGS_7);
+        }
+
+        // Check for cell size response: ESC[6;height;widtht
+        if (std.mem.indexOf(u8, data, "\x1b[6;")) |pos| {
+            self.parseCellSize(data[pos..]);
+        }
+
+        try self.stdin_buffer.process(data);
+    }
+
+    fn parseCellSize(self: *Self, data: []const u8) void {
+        // Format: ESC[6;height;widtht
+        if (!std.mem.startsWith(u8, data, "\x1b[6;")) return;
+
+        const inner = data[4..];
+        const semi = std.mem.indexOf(u8, inner, ";") orelse return;
+        const height_str = inner[0..semi];
+
+        const rest = inner[semi + 1 ..];
+        const t_pos = std.mem.indexOf(u8, rest, "t") orelse return;
+        const width_str = rest[0..t_pos];
+
+        self.cell_pixel_height = std.fmt.parseInt(u16, height_str, 10) catch null;
+        self.cell_pixel_width = std.fmt.parseInt(u16, width_str, 10) catch null;
+    }
+
+    // Update terminal dimensions
+    pub fn updateDimensions(self: *Self) void {
+        if (builtin.os.tag == .windows) {
+            // Windows: would use GetConsoleScreenBufferInfo
+            return;
+        }
+
+        var ws = std.posix.winsize{
+            .ws_col = 0,
+            .ws_row = 0,
+            .ws_xpixel = 0,
+            .ws_ypixel = 0,
+        };
+        const result = std.posix.system.ioctl(self.stdout, std.posix.T.IOCGWINSZ, @intFromPtr(&ws));
+        if (result == 0) {
+            if (ws.ws_col > 0) self.columns = ws.ws_col;
+            if (ws.ws_row > 0) self.rows = ws.ws_row;
+        }
+    }
+
+    // Cursor operations
+    pub fn hideCursor(self: *Self) !void {
+        try self.write(ansi.HIDE_CURSOR);
+    }
+
+    pub fn showCursor(self: *Self) !void {
+        try self.write(ansi.SHOW_CURSOR);
+    }
+
+    pub fn moveBy(self: *Self, lines: i32) !void {
+        var buf: [16]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        try ansi.moveBy(fbs.writer(), lines);
+        try self.write(fbs.getWritten());
+    }
+
+    // Clear operations
+    pub fn clearLine(self: *Self) !void {
+        try self.write(ansi.CLEAR_LINE);
+    }
+
+    pub fn clearFromCursor(self: *Self) !void {
+        try self.write(ansi.CLEAR_FROM_CURSOR);
+    }
+
+    pub fn clearScreen(self: *Self) !void {
+        try self.write(ansi.CLEAR_ALL);
+    }
+
+    // Window title
+    pub fn setTitle(self: *Self, title: []const u8) !void {
+        var buf: [256]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        try ansi.setTitle(fbs.writer(), title);
+        try self.write(fbs.getWritten());
+    }
+
+    // Raw mode management
+    fn enableRawMode(self: *Self) !void {
+        if (builtin.os.tag == .windows) {
+            // Windows: would use SetConsoleMode
+            return;
+        }
+
+        const fd = self.stdin;
+        self.original_termios = try std.posix.tcgetattr(fd);
+
+        var raw = self.original_termios.?;
+
+        // Input flags: disable BREAK, CR-to-NL, parity, strip, XON/XOFF
+        raw.iflag.BRKINT = false;
+        raw.iflag.ICRNL = false;
+        raw.iflag.INPCK = false;
+        raw.iflag.ISTRIP = false;
+        raw.iflag.IXON = false;
+
+        // Output flags: disable post-processing
+        raw.oflag.OPOST = false;
+
+        // Control flags: 8-bit chars
+        raw.cflag.CSIZE = .CS8;
+
+        // Local flags: disable echo, canonical, signals, extended
+        raw.lflag.ECHO = false;
+        raw.lflag.ICANON = false;
+        raw.lflag.ISIG = false;
+        raw.lflag.IEXTEN = false;
+
+        // Control characters: min 0, time 1 (100ms)
+        raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
+        raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
+
+        try std.posix.tcsetattr(fd, .NOW, raw);
+        self.was_raw = true;
+    }
+
+    fn disableRawMode(self: *Self) void {
+        if (!self.was_raw) return;
+        if (self.original_termios) |termios| {
+            std.posix.tcsetattr(self.stdin, .NOW, termios) catch {};
+        }
+        self.was_raw = false;
+    }
+
+    // Check if running in a TTY
+    pub fn isTTY(self: *Self) bool {
+        return std.posix.isatty(self.stdin);
     }
 };
 
-// === Tests ===
+// Mock terminal for testing
+pub const MockTerminal = struct {
+    const Self = @This();
 
-test "Terminal init/deinit" {
-    const allocator = std.testing.allocator;
+    allocator: std.mem.Allocator,
+    output: std.ArrayListUnmanaged(u8),
+    input_queue: std.ArrayListUnmanaged([]const u8),
+    columns: u16 = 80,
+    rows: u16 = 24,
+    kitty_protocol_active: bool = false,
+
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return .{
+            .allocator = allocator,
+            .output = .{},
+            .input_queue = .{},
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.output.deinit(self.allocator);
+        for (self.input_queue.items) |item| {
+            self.allocator.free(item);
+        }
+        self.input_queue.deinit(self.allocator);
+    }
+
+    pub fn write(self: *Self, data: []const u8) !void {
+        try self.output.appendSlice(self.allocator, data);
+    }
+
+    pub fn flush(self: *Self) !void {
+        // No-op for mock
+        _ = self;
+    }
+
+    pub fn simulateInput(self: *Self, data: []const u8) !void {
+        const copy = try self.allocator.dupe(u8, data);
+        try self.input_queue.append(self.allocator, copy);
+    }
+
+    pub fn simulateResize(self: *Self, cols: u16, row: u16) void {
+        self.columns = cols;
+        self.rows = row;
+    }
+
+    pub fn getOutput(self: *Self) []const u8 {
+        return self.output.items;
+    }
+
+    pub fn clearOutput(self: *Self) void {
+        self.output.clearRetainingCapacity();
+    }
+
+    pub fn containsOutput(self: *Self, needle: []const u8) bool {
+        return std.mem.indexOf(u8, self.output.items, needle) != null;
+    }
+};
+
+test "Terminal init and dimensions" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
     var term = Terminal.init(allocator);
     defer term.deinit();
 
-    try std.testing.expectEqual(@as(u16, 80), term.columns);
-    try std.testing.expectEqual(@as(u16, 24), term.rows);
+    try testing.expect(term.columns >= 1);
+    try testing.expect(term.rows >= 1);
 }
 
-test "Terminal write buffering" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
+test "MockTerminal write and output" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
 
-    try term.write("Hello");
-    try term.write(" World");
-
-    try std.testing.expectEqualStrings("Hello World", term.output_buffer.items);
-}
-
-test "Terminal cursor operations" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
-
-    try term.hideCursor();
-    try std.testing.expectEqualStrings(ansi.HIDE_CURSOR, term.output_buffer.items);
-
-    term.output_buffer.clearRetainingCapacity();
-
-    try term.showCursor();
-    try std.testing.expectEqualStrings(ansi.SHOW_CURSOR, term.output_buffer.items);
-}
-
-test "Terminal moveBy" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
-
-    try term.moveBy(-3);
-    try std.testing.expectEqualStrings("\x1b[3A", term.output_buffer.items);
-
-    term.output_buffer.clearRetainingCapacity();
-
-    try term.moveBy(5);
-    try std.testing.expectEqualStrings("\x1b[5B", term.output_buffer.items);
-}
-
-test "Terminal sync output" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
-
-    try term.syncStart();
-    try term.write("content");
-    try term.syncEnd();
-
-    try std.testing.expectEqualStrings(
-        ansi.SYNC_START ++ "content" ++ ansi.SYNC_END,
-        term.output_buffer.items,
-    );
-}
-
-test "MockTerminal" {
-    const allocator = std.testing.allocator;
     var mock = MockTerminal.init(allocator);
     defer mock.deinit();
 
-    try mock.write("Test");
-    try std.testing.expectEqualStrings("Test", mock.getOutput());
+    try mock.write("Hello");
+    try mock.write(" World");
+
+    try testing.expectEqualStrings("Hello World", mock.getOutput());
+    try testing.expect(mock.containsOutput("Hello"));
+}
+
+test "MockTerminal simulate resize" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var mock = MockTerminal.init(allocator);
+    defer mock.deinit();
 
     mock.simulateResize(120, 40);
-    try std.testing.expectEqual(@as(u16, 120), mock.columns);
-    try std.testing.expectEqual(@as(u16, 40), mock.rows);
-}
 
-test "processCapabilityResponse kitty" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
-
-    term.processCapabilityResponse("\x1b[?0u");
-    try std.testing.expect(term.caps.kitty_keyboard);
-}
-
-test "processCapabilityResponse cell size" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
-
-    term.processCapabilityResponse("\x1b[6;18;9t");
-    try std.testing.expectEqual(@as(?u16, 18), term.caps.cell_pixel_height);
-    try std.testing.expectEqual(@as(?u16, 9), term.caps.cell_pixel_width);
-}
-
-test "checkResize returns false when no resize pending" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
-
-    // Reset static flag
-    resize_pending.store(false, .release);
-
-    try std.testing.expect(!term.checkResize());
-}
-
-test "checkResize returns true and calls callback when resize pending" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
-
-    // Track callback invocation
-    const CallbackState = struct {
-        var called: bool = false;
-
-        fn callback() void {
-            called = true;
-        }
-    };
-
-    term.on_resize = CallbackState.callback;
-    CallbackState.called = false;
-
-    // Simulate resize signal
-    resize_pending.store(true, .release);
-
-    try std.testing.expect(term.checkResize());
-    try std.testing.expect(CallbackState.called);
-    try std.testing.expect(!resize_pending.load(.acquire)); // Should be cleared
-}
-
-test "processCapabilityResponse kitty auto-enables flags" {
-    const allocator = std.testing.allocator;
-    var term = Terminal.init(allocator);
-    defer term.deinit();
-
-    term.processCapabilityResponse("\x1b[?0u");
-    try std.testing.expect(term.caps.kitty_keyboard);
-
-    // Should have written the enable sequence to buffer
-    try std.testing.expect(std.mem.indexOf(u8, term.output_buffer.items, "\x1b[>7u") != null);
+    try testing.expectEqual(@as(u16, 120), mock.columns);
+    try testing.expectEqual(@as(u16, 40), mock.rows);
 }

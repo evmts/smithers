@@ -43,13 +43,13 @@ Requires [Jujutsu](https://github.com/martinvonz/jj): `brew install jj`
 |------|------|-------------|
 | `id` | `string?` | Stable identifier for resumability |
 | `message` | `string?` | Commit message (defaults to "Commit by Smithers") |
-| `autoDescribe` | `boolean?` | Use Claude to generate message from diff |
+| `autoDescribe` | `boolean?` | Generate simple line count message from diff (does NOT use Claude) |
 | `notes` | `string?` | Git notes to attach |
 | `children` | `ReactNode?` | Optional child content |
 
 ### Describe
 
-Auto-generates commit message from diff using optional AI assistance.
+Auto-generates commit message from diff.
 
 ```tsx
 <Describe />
@@ -60,8 +60,8 @@ Auto-generates commit message from diff using optional AI assistance.
 | Prop | Type | Description |
 |------|------|-------------|
 | `id` | `string?` | Optional operation ID for tracking |
-| `useAgent` | `'claude'?` | Use Claude to generate description from diff |
-| `template` | `string?` | Template format (e.g., "conventional-commits", "feat: {summary}") |
+| `useAgent` | `'claude'?` | Placeholder prop - does NOT actually use Claude (not yet implemented) |
+| `template` | `string?` | Template format - 🚧 not yet implemented |
 | `children` | `ReactNode?` | Optional child content |
 
 ### Status

@@ -1,6 +1,3 @@
-// PostCommit hook component - triggers children when a git commit is made
-// Installs a git post-commit hook and polls db.state for triggers
-
 import * as path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { useRef, type ReactNode } from 'react'
@@ -32,9 +29,6 @@ interface HookTrigger {
   processed?: boolean
 }
 
-/**
- * Install the git post-commit hook
- */
 async function installPostCommitHook(): Promise<void> {
   const hookPath = (await Bun.$`git rev-parse --git-path hooks/post-commit`.text()).trim()
   if (!hookPath) {
@@ -77,9 +71,6 @@ bunx smithers hook-trigger post-commit "$COMMIT_HASH"
   await Bun.$`chmod +x ${hookPath}`.quiet()
 }
 
-/**
- * Check if a commit has smithers metadata in git notes
- */
 async function hasSmithersMetadata(commitHash: string): Promise<boolean> {
   try {
     const result = await Bun.$`git notes --ref ${SMITHERS_NOTES_REF} show ${commitHash} 2>/dev/null`.text()
@@ -89,22 +80,6 @@ async function hasSmithersMetadata(commitHash: string): Promise<boolean> {
   }
 }
 
-/**
- * PostCommit - Hook component that triggers on git commits
- *
- * On mount, installs a git post-commit hook that calls:
- *   bunx smithers hook-trigger post-commit "$COMMIT_HASH"
- *
- * Then polls db.state for 'last_hook_trigger' to detect new commits.
- * When a commit is detected, renders children.
- *
- * Usage:
- * ```tsx
- * <PostCommit runOn="smithers-only">
- *   <Claude>Review the latest commit and suggest improvements</Claude>
- * </PostCommit>
- * ```
- */
 interface PostCommitState {
   triggered: boolean
   currentTrigger: HookTrigger | null

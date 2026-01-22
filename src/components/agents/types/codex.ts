@@ -1,5 +1,3 @@
-// Codex-specific type definitions for Smithers orchestrator
-
 import type { ReactNode } from 'react'
 import type { z } from 'zod'
 import type { AgentResult } from './execution.js'
