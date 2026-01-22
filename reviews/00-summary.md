@@ -34,3 +34,7 @@ Test coverage issues tracked in issues/:
 - [issues/005-missing-component-tests.md](../issues/005-missing-component-tests.md) - MEDIUM priority
 
 See [10-test-coverage-audit.md](./10-test-coverage-audit.md) for full audit.
+
+## Python Implementation Reviews
+
+- [20-python-implementation-review.md](./20-python-implementation-review.md) - Full smithers_py review with P0 bugs and architecture issues

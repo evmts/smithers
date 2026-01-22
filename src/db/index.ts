@@ -210,7 +210,23 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     const currentFileUrl = import.meta.url
     if (currentFileUrl.startsWith('file://')) {
       const currentDir = path.dirname(fileURLToPath(currentFileUrl))
+      // First try: schema.sql in same directory (works for non-bundled dist/src/db/)
       schemaPath = path.join(currentDir, 'schema.sql')
+      
+      // If bundled CLI (dist/bin/cli.js), look for schema in dist/src/db/
+      if (!fs.existsSync(schemaPath) && currentDir.includes('dist/bin')) {
+        const distRoot = path.resolve(currentDir, '..')
+        schemaPath = path.join(distRoot, 'src', 'db', 'schema.sql')
+      }
+      
+      // Fallback: try package root (for npm installed packages)
+      if (!fs.existsSync(schemaPath)) {
+        const pkgRoot = path.resolve(currentDir, '..', '..')
+        const pkgSchemaPath = path.join(pkgRoot, 'dist', 'src', 'db', 'schema.sql')
+        if (fs.existsSync(pkgSchemaPath)) {
+          schemaPath = pkgSchemaPath
+        }
+      }
     } else {
       schemaPath = path.resolve(process.cwd(), 'src/db/schema.sql')
     }

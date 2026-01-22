@@ -18,7 +18,7 @@ from smithers_py.state import VolatileStore
 from smithers_py.executors.base import TaskStatus, AgentResult, StreamEvent
 
 
-class TestModel:
+class MockExecutor:
     """Mock executor that simulates Claude responses without API calls.
     
     Configurable response behavior for testing various scenarios.
@@ -142,7 +142,7 @@ class ExecutionHarness:
         self._run_task: Optional[asyncio.Task] = None
         self._temp_fd: Optional[int] = None
         self._temp_path: Optional[str] = None
-        self.test_model: Optional[TestModel] = None
+        self.test_model: Optional[MockExecutor] = None
         self.frame_storm_guard: Optional[FrameStormGuard] = None
     
     async def setup(self) -> "ExecutionHarness":
@@ -160,7 +160,7 @@ class ExecutionHarness:
         await run_migrations(self.db.connection)
         
         self.volatile_state = VolatileStore()
-        self.test_model = TestModel()
+        self.test_model = MockExecutor()
         self.frame_storm_guard = FrameStormGuard(
             max_frames_per_second=10,
             max_frames_per_run=100,
@@ -188,7 +188,7 @@ class ExecutionHarness:
     async def start(
         self,
         app_component: Callable,
-        test_model: Optional[TestModel] = None,
+        test_model: Optional[MockExecutor] = None,
         execution_id: Optional[str] = None,
         run_in_background: bool = False
     ) -> str:
@@ -242,7 +242,8 @@ class ExecutionHarness:
         key: str,
         value: Any,
         timeout: float = 5.0,
-        poll_interval: float = 0.05
+        poll_interval: float = 0.05,
+        run_frames: bool = True
     ) -> bool:
         """Wait for volatile state to reach expected value.
         
@@ -251,6 +252,7 @@ class ExecutionHarness:
             value: Expected value
             timeout: Maximum time to wait
             poll_interval: Time between checks
+            run_frames: If True, run frames while waiting
             
         Returns:
             True if value matched, False if timeout
@@ -261,6 +263,13 @@ class ExecutionHarness:
             current = self.volatile_state.get(key)
             if current == value:
                 return True
+            
+            if run_frames and self.tick_loop:
+                try:
+                    await self.tick_loop._run_single_frame()
+                except Exception:
+                    pass
+            
             await asyncio.sleep(poll_interval)
         
         return False

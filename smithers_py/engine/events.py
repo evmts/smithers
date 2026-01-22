@@ -134,8 +134,9 @@ class EventSystem:
                         self._base = base_state
                         self._tx = tx
 
-                    def get(self, key: str):
-                        return self._base.get(key)
+                    def get(self, key: str, default=None):
+                        val = self._base.get(key)
+                        return val if val is not None else default
 
                     def set(self, key: str, value: Any, trigger: Optional[str] = None):
                         # Queue in transaction instead of direct write
@@ -157,8 +158,9 @@ class EventSystem:
                         self._base = base_v
                         self._tx = tx
 
-                    def get(self, key: str):
-                        return self._base.get(key)
+                    def get(self, key: str, default=None):
+                        val = self._base.get(key)
+                        return val if val is not None else default
 
                     def set(self, key: str, value: Any):
                         # Queue in transaction

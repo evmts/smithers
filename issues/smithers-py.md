@@ -4,6 +4,23 @@
 **Status:** Draft (implementation-ready)
 **Scope:** Python orchestration library + transport-agnostic MCP server + desktop web GUI (Zig + WebUI + Solid.js)
 
+---
+
+## ⚠️ Before Implementation: Review Required Documents
+
+Before working on smithers-py, read these reviews first:
+
+1. **[reviews/20-python-implementation-review.md](../reviews/20-python-implementation-review.md)** - Critical bugs, architecture issues, and prioritized fixes for the current Python implementation
+2. **[reviews/10-test-coverage-audit.md](../reviews/10-test-coverage-audit.md)** - Test coverage gaps that also apply to Python port
+
+### P0 Issues to Address First
+- Duplicate SqliteStore classes (`state/sqlite.py` vs `db/database.py`)
+- Handler plumbing broken (JSX handlers not wired to EventSystem/TickLoop)
+- Task exceptions never retrieved
+- ClaudeExecutor silent failure when pydantic_ai missing
+
+---
+
 This document is written to (a) preserve the key Smithers mental model and semantics, and (b) specify the missing operational details: how the render loop works, how "effects" and batching work, how we model signals, how agent sessions persist and resume, and how we handle real-world failure modes (rate limits, network outages, crashes).
 
 ---

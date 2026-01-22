@@ -11,7 +11,7 @@ import asyncio
 from smithers_py.nodes import TextNode, ClaudeNode, PhaseNode
 from smithers_py.engine.tick_loop import Context
 
-from .harness import ExecutionHarness, TestModel
+from .harness import ExecutionHarness, MockExecutor
 
 
 @pytest.mark.asyncio
@@ -56,7 +56,7 @@ class TestCLIExecution:
             else:
                 return TextNode(text="Done")
         
-        test_model = TestModel(responses={"Hello world": "Hello from test model"})
+        test_model = MockExecutor(responses={"Hello world": "Hello from test model"})
         await harness.start(app_with_claude, test_model=test_model)
         
         assert harness.is_quiescent
@@ -65,7 +65,11 @@ class TestCLIExecution:
         assert results_received[0] == "Hello from test model"
     
     async def test_script_with_multiple_phases(self, harness: ExecutionHarness):
-        """Script with multiple phases executes in order."""
+        """Script with multiple phases executes in order.
+        
+        Note: Due to quiescence detection, we need to run multiple ticks
+        to ensure all phases complete when state changes trigger new work.
+        """
         
         phase_order = []
         
@@ -110,12 +114,19 @@ class TestCLIExecution:
             else:
                 return TextNode(text="All phases complete")
         
-        await harness.start(multi_phase_app)
+        await harness.start(multi_phase_app, run_in_background=True)
         
-        assert harness.is_quiescent
-        assert phase_order == ["phase1", "phase2"]
+        await harness.wait_for_state("phase1_done", True, timeout=2.0)
+        assert harness.get_state("phase1_done") is True
+        assert "phase1" in phase_order
+        
+        await harness.run_frames(3)
+        
+        await harness.wait_for_state("phase2_done", True, timeout=2.0)
+        
         assert harness.get_state("phase1_done") is True
         assert harness.get_state("phase2_done") is True
+        assert phase_order == ["phase1", "phase2"]
     
     async def test_script_error_handling(self, harness: ExecutionHarness):
         """Script handles agent errors gracefully."""
@@ -139,9 +150,9 @@ class TestCLIExecution:
             else:
                 return TextNode(text="Error handled")
         
-        failing_model = TestModel(fail_on={"failing_node"})
+        failing_model = MockExecutor(fail_on={"will fail"})
         await harness.start(app_with_error, test_model=failing_model)
         
-        assert harness.is_quiescent
+        await harness.wait_for_state("error_handled", True, timeout=2.0)
         assert harness.get_state("error_handled") is True
         assert len(errors_caught) == 1

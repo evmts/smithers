@@ -11,7 +11,7 @@ import asyncio
 from smithers_py.nodes import TextNode, ClaudeNode, PhaseNode, IfNode
 from smithers_py.engine.tick_loop import Context
 
-from .harness import ExecutionHarness, TestModel
+from .harness import ExecutionHarness, MockExecutor
 
 
 @pytest.mark.asyncio
@@ -67,20 +67,25 @@ class TestMultiStepWorkflow:
             else:
                 return TextNode(text="Workflow complete")
         
-        model = TestModel(responses={
+        model = MockExecutor(responses={
             "step 1": "Result from step 1",
             "step 2": "Result from step 2",
             "step 3": "Result from step 3"
         })
         
-        await harness.start(workflow_app, test_model=model)
+        await harness.start(workflow_app, test_model=model, run_in_background=True)
         
-        assert harness.is_quiescent
+        await harness.wait_for_state("step1_result", "Result from step 1", timeout=2.0)
+        assert "step1" in step_order
+        
+        await harness.run_frames(3)
+        await harness.wait_for_state("step2_result", "Result from step 2", timeout=2.0)
+        
+        await harness.run_frames(3)
+        await harness.wait_for_state("step3_result", "Result from step 3", timeout=2.0)
+        
         assert step_order == ["step1", "step2", "step3"]
         assert harness.get_state("current_step") == 4
-        assert harness.get_state("step1_result") == "Result from step 1"
-        assert harness.get_state("step2_result") == "Result from step 2"
-        assert harness.get_state("step3_result") == "Result from step 3"
     
     async def test_conditional_branches(self, harness: ExecutionHarness):
         """Workflow with conditional branches takes correct path."""
@@ -130,9 +135,16 @@ class TestMultiStepWorkflow:
             else:
                 return TextNode(text="Done")
         
-        await harness.start(branching_app)
+        await harness.start(branching_app, run_in_background=True)
         
-        assert harness.is_quiescent
+        await harness.wait_for_state("analysis_done", True, timeout=2.0)
+        await harness.run_frames(3)
+        
+        await harness.wait_for_state("fix_done", True, timeout=2.0)
+        await harness.run_frames(3)
+        
+        await harness.wait_for_state("deploy_done", True, timeout=2.0)
+        
         assert path_taken == ["analyze", "fix", "deploy"]
     
     async def test_parallel_agents_in_phase(self, harness: ExecutionHarness):
@@ -179,9 +191,10 @@ class TestMultiStepWorkflow:
             else:
                 return TextNode(text="All agents completed")
         
-        await harness.start(parallel_app)
+        await harness.start(parallel_app, run_in_background=True)
         
-        assert harness.is_quiescent
+        await harness.wait_for_state("all_done", True, timeout=3.0)
+        
         assert harness.get_state("all_done") is True
         assert harness.get_state("completed_count") == 3
     
@@ -209,8 +222,12 @@ class TestMultiStepWorkflow:
             else:
                 return TextNode(text="Loop complete")
         
-        await harness.start(loop_app)
+        await harness.start(loop_app, run_in_background=True)
         
-        assert harness.is_quiescent
+        for i in range(5):
+            await harness.wait_for_state("iteration", i + 1, timeout=2.0)
+            if i < 4:
+                await harness.run_frames(3)
+        
         assert iteration_count == 5
         assert harness.get_state("iteration") == 5

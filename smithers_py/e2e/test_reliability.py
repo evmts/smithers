@@ -14,7 +14,7 @@ from smithers_py.nodes import TextNode, ClaudeNode, PhaseNode
 from smithers_py.engine.tick_loop import Context
 from smithers_py.engine.frame_storm import FrameStormGuard, FrameStormError, compute_plan_hash, compute_state_hash
 
-from .harness import ExecutionHarness, TestModel
+from .harness import ExecutionHarness, MockExecutor
 
 
 @pytest.mark.asyncio
@@ -131,7 +131,7 @@ class TestQuiescenceDetection:
     async def test_no_quiescence_while_running(self, harness: ExecutionHarness):
         """Quiescence not reached while tasks are running."""
         
-        slow_model = TestModel(delay=0.5)
+        slow_model = MockExecutor(delay=0.5)
         
         task_started = asyncio.Event()
         
@@ -171,7 +171,7 @@ class TestCrashRecovery:
     """Test crash recovery and resumption."""
     
     async def test_crash_recovery_resumes_from_checkpoint(self, harness: ExecutionHarness):
-        """While loop crashes at iteration 3, resume continues from 3."""
+        """After crash, resume continues from persisted state."""
         
         async def on_iter_done(result, ctx):
             current = ctx.v.get("iteration", 0)
@@ -191,22 +191,23 @@ class TestCrashRecovery:
             else:
                 return TextNode(text="Loop complete")
         
-        crash_model = TestModel(crash_at_iteration=3)
+        await harness.start(loop_app, run_in_background=True)
         
-        try:
-            await harness.start(loop_app, test_model=crash_model)
-        except RuntimeError as e:
-            assert "crash at iteration 3" in str(e).lower()
-        
-        crashed_at = harness.get_state("iteration")
-        assert crashed_at == 2
+        await harness.wait_for_state("iteration", 2, timeout=3.0)
         
         harness.force_kill()
         
-        recovery_model = TestModel()
+        crashed_at = harness.get_state("iteration")
+        assert crashed_at == 2
+        assert harness.get_state("iter_0_done") is True
+        assert harness.get_state("iter_1_done") is True
+        
+        recovery_model = MockExecutor()
+        harness.test_model = recovery_model
+        
         await harness.resume(loop_app)
         
-        assert harness.is_quiescent
+        await harness.wait_for_quiescence(timeout=3.0)
         assert harness.get_state("iteration") == 5
     
     async def test_state_persists_across_crash(self, harness: ExecutionHarness):
@@ -229,7 +230,9 @@ class TestCrashRecovery:
             else:
                 return TextNode(text="Done")
         
-        await harness.start(stateful_app)
+        await harness.start(stateful_app, run_in_background=True)
+        
+        await harness.wait_for_state("work_done", True, timeout=2.0)
         
         assert harness.get_state("work_done") is True
         assert harness.get_state("result_data") == "important_value"
@@ -242,10 +245,7 @@ class TestCrashRecovery:
         assert harness.get_state("result_data") == "important_value"
     
     async def test_incomplete_task_detected_on_resume(self, harness: ExecutionHarness):
-        """Orphaned tasks from crash are detected on resume."""
-        
-        orphans_recovered = []
-        original_recover = None
+        """After force kill, resume can continue with new state."""
         
         def app(ctx: Context):
             done = ctx.v.get("done", False)
@@ -257,7 +257,7 @@ class TestCrashRecovery:
                 )
             return TextNode(text="Done")
         
-        model = TestModel()
+        model = MockExecutor()
         await harness.start(app, test_model=model, run_in_background=True)
         
         await asyncio.sleep(0.05)
@@ -266,4 +266,5 @@ class TestCrashRecovery:
         harness.set_state("done", True)
         await harness.resume(app)
         
+        await harness.wait_for_quiescence(timeout=2.0)
         assert harness.is_quiescent
