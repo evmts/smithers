@@ -5,18 +5,26 @@ A comprehensive SQLite-based database layer matching the TypeScript schema
 for state management, execution tracking, and orchestration.
 """
 
+from __future__ import annotations
+
 import sqlite3
-try:
-    import aiosqlite
-except ImportError:
-    aiosqlite = None  # For sync-only usage
 import json
 import uuid
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union, Tuple, AsyncGenerator
+from typing import Any, Dict, List, Optional, Union, Tuple, AsyncGenerator, TYPE_CHECKING
 from pathlib import Path
 import os
+
+if TYPE_CHECKING:
+    import aiosqlite
+
+try:
+    import aiosqlite as _aiosqlite
+    HAS_AIOSQLITE = True
+except ImportError:
+    _aiosqlite = None
+    HAS_AIOSQLITE = False
 
 
 class GlobalStateStore:
@@ -25,9 +33,9 @@ class GlobalStateStore:
     For execution-scoped state, use smithers_py.state.SqliteStore instead.
     """
 
-    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection]):
+    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection], is_async: bool = False):
         self.db = db_connection
-        self._is_async = isinstance(db_connection, aiosqlite.Connection)
+        self._is_async = is_async
 
     async def get(self, key: str) -> Any:
         if self._is_async:
@@ -68,9 +76,9 @@ class GlobalStateStore:
 class ExecutionModule:
     """Execution tracking module"""
 
-    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection]):
+    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection], is_async: bool = False):
         self.db = db_connection
-        self._is_async = isinstance(db_connection, aiosqlite.Connection)
+        self._is_async = is_async
         self._current_execution_id: Optional[str] = None
 
     async def start(self, name: str, source_file: str, config: Optional[Dict[str, Any]] = None, execution_id: Optional[str] = None) -> str:
@@ -195,9 +203,9 @@ class ExecutionModule:
 class TasksModule:
     """Task management module"""
 
-    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection]):
+    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection], is_async: bool = False):
         self.db = db_connection
-        self._is_async = isinstance(db_connection, aiosqlite.Connection)
+        self._is_async = is_async
 
     async def start(self, task_id: str, name: str, execution_id: str, component_type: str, component_name: Optional[str] = None) -> None:
         """Start a task"""
@@ -273,9 +281,9 @@ class TasksModule:
 class ArtifactsModule:
     """Artifacts storage module for the spec-required artifacts system"""
 
-    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection]):
+    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection], is_async: bool = False):
         self.db = db_connection
-        self._is_async = isinstance(db_connection, aiosqlite.Connection)
+        self._is_async = is_async
 
     async def create(self, execution_id: str, node_id: Optional[str], frame_id: Optional[int],
                      key: Optional[str], name: str, artifact_type: str, content: Dict[str, Any]) -> str:
@@ -385,9 +393,9 @@ class ArtifactsModule:
 class RenderFramesModule:
     """Render frame storage for time-travel debugging"""
 
-    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection]):
+    def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection], is_async: bool = False):
         self.db = db_connection
-        self._is_async = isinstance(db_connection, aiosqlite.Connection)
+        self._is_async = is_async
 
     async def save(self, execution_id: str, xml_content: str, sequence_number: Optional[int] = None) -> str:
         """Save a render frame"""
@@ -468,7 +476,9 @@ class SmithersDB:
             return
 
         if self.is_async:
-            self._connection = await aiosqlite.connect(self.db_path)
+            if not HAS_AIOSQLITE:
+                raise ImportError("aiosqlite is required for async mode. Install with: pip install aiosqlite")
+            self._connection = await _aiosqlite.connect(self.db_path)
             # Production defaults (PRD 8.11)
             await self._connection.execute("PRAGMA journal_mode=WAL")
             await self._connection.execute("PRAGMA busy_timeout=5000")
@@ -483,11 +493,11 @@ class SmithersDB:
             self._connection.execute("PRAGMA foreign_keys=ON")
 
         # Initialize modules
-        self.execution = ExecutionModule(self._connection)
-        self.state = GlobalStateStore(self._connection)
-        self.tasks = TasksModule(self._connection)
-        self.frames = RenderFramesModule(self._connection)
-        self.artifacts = ArtifactsModule(self._connection)
+        self.execution = ExecutionModule(self._connection, self.is_async)
+        self.state = GlobalStateStore(self._connection, self.is_async)
+        self.tasks = TasksModule(self._connection, self.is_async)
+        self.frames = RenderFramesModule(self._connection, self.is_async)
+        self.artifacts = ArtifactsModule(self._connection, self.is_async)
 
         self._initialized = True
 

@@ -7,7 +7,6 @@ import {
   signalOrchestrationErrorByToken,
 } from '../components/SmithersProvider.js'
 
-// Type for the fiber root container
 type FiberRoot = ReturnType<typeof SmithersReconciler.createContainer>
 
 function isThenable(value: unknown): value is Promise<ReactNode> {
@@ -16,52 +15,25 @@ function isThenable(value: unknown): value is Promise<ReactNode> {
          typeof (value as { then?: unknown }).then === 'function'
 }
 
-/**
- * Smithers root for mounting React components.
- */
 export interface SmithersRoot {
-  /**
-   * Mount the app and wait for orchestration to complete.
-   * Returns a Promise that resolves when Ralph signals completion.
-   */
   mount(App: () => ReactNode | Promise<ReactNode>): Promise<void>
-
-  /**
-   * Render and wait for initial commit to complete.
-   * Useful for unit tests that don't use SmithersProvider/Ralph.
-   */
   render(element: ReactNode): Promise<void>
-
   getTree(): SmithersNode
   dispose(): void
-  /**
-   * Serialize the tree to XML for display/approval.
-   * This is crucial for showing users the agent plan before execution.
-   */
   toXML(): string
 }
 
-// Optional legacy global frame capture (not concurrency-safe).
 let globalFrameCaptureRoot: SmithersRoot | null = null
 
-/**
- * Opt-in global frame capture for legacy callers (not concurrency-safe).
- */
 export function setGlobalFrameCaptureRoot(root: SmithersRoot | null): void {
   globalFrameCaptureRoot = root
 }
 
-/**
- * Get the globally registered tree serialized as XML (not concurrency-safe).
- */
 export function getCurrentTreeXML(): string | null {
   if (!globalFrameCaptureRoot) return null
   return globalFrameCaptureRoot.toXML()
 }
 
-/**
- * Create a Smithers root for rendering React components to SmithersNode trees.
- */
 export function createSmithersRoot(): SmithersRoot {
   const rootNode: SmithersNode = {
     type: 'ROOT',
@@ -86,41 +58,30 @@ export function createSmithersRoot(): SmithersRoot {
     rejectRender(error)
   }
 
-  /**
-   * Create fiber root with consistent configuration.
-   * @param onUncaughtError - Handler for uncaught errors
-   * @param onCaughtError - Handler for caught errors (error boundaries)
-   */
   const createFiberRoot = (
     onUncaughtError: (error: unknown) => void,
     onCaughtError: (error: unknown) => void
   ): FiberRoot => {
-    // createContainer(containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, transitionCallbacks)
-    // NOTE: @types/react-reconciler 0.32 has 8 params, but runtime 0.33 has 10
     return (SmithersReconciler.createContainer as any)(
-      rootNode, // containerInfo
-      0, // tag: LegacyRoot (ConcurrentRoot = 1)
-      null, // hydrationCallbacks
-      false, // isStrictMode
-      null, // concurrentUpdatesByDefaultOverride
-      '', // identifierPrefix
+      rootNode,
+      0,
+      null,
+      false,
+      null,
+      '',
       onUncaughtError,
       onCaughtError,
       (error: unknown) => console.error('Smithers recoverable error:', error),
-      null // transitionCallbacks
+      null
     )
   }
 
   return {
     async mount(App: () => ReactNode | Promise<ReactNode>): Promise<void> {
-      // Clean up previous render (synchronous in LegacyRoot mode)
       if (fiberRoot) {
         SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
-        // React calls clearContainer/removeNode to clean up children
       }
 
-      // Create a promise that Ralph will resolve when orchestration completes
-      // Token-based API ensures concurrency safety across multiple roots
       const { promise: completionPromise, token: orchestrationToken } = createOrchestrationPromise()
       let fatalError: unknown | null = null
       let completionError: unknown | null = null
@@ -135,7 +96,6 @@ export function createSmithersRoot(): SmithersRoot {
         signalOrchestrationErrorByToken(orchestrationToken, err)
       }
 
-      // Check if App returns a Promise
       let element: ReactNode
       try {
         const result = App()
@@ -153,8 +113,6 @@ export function createSmithersRoot(): SmithersRoot {
 
       fiberRoot = createFiberRoot(handleFatalError, handleFatalError)
 
-      // Render the app synchronously.
-      // LegacyRoot mode (tag: 0) keeps commit boundaries deterministic.
       SmithersReconciler.updateContainer(element, fiberRoot, null, () => {})
 
       // Wait for orchestration to complete or a fatal error to surface
@@ -189,9 +147,6 @@ export function createSmithersRoot(): SmithersRoot {
           )
         }
 
-        // Update container with element (or null to unmount).
-        // The callback is invoked when React has finished committing the update.
-        // LegacyRoot mode (tag: 0) keeps commit boundaries deterministic.
         try {
           SmithersReconciler.updateContainer(element, fiberRoot, null, () => {
             finalize()
@@ -211,7 +166,6 @@ export function createSmithersRoot(): SmithersRoot {
         SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
         fiberRoot = null
       }
-      // Defensive cleanup: recursively clear all parent pointers and empty children array
       function clearTree(node: SmithersNode) {
         for (const child of node.children) {
           child.parent = null

@@ -32,7 +32,6 @@ export function retryMiddleware(options: RetryMiddlewareOptions = {}): SmithersM
           return await doExecute()
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error))
-          // If retryOn returns false, throw original error without wrapping
           if (!retryOn(lastError)) {
             throw lastError
           }

@@ -50,9 +50,7 @@ export function createStateModule(ctx: StateModuleContext): StateModule {
     setMany: (updates: Record<string, unknown>, trigger?: string) => {
       if (rdb.isClosed) return
       rdb.transaction(() => {
-        for (const [key, value] of Object.entries(updates)) {
-          state.set(key, value, trigger)
-        }
+        Object.entries(updates).forEach(([key, value]) => state.set(key, value, trigger))
       })
     },
 

@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 export interface TaskProps {
   done?: boolean
   children?: ReactNode
-  [key: string]: unknown
 }
 
 export function Task(props: TaskProps): ReactNode {

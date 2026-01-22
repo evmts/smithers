@@ -51,10 +51,8 @@ const PATTERNS = {
 } as const
 
 function countMatches(text: string, pattern: RegExp): number {
-  // Create global version for counting
   const globalPattern = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g')
-  const matches = text.match(globalPattern)
-  return matches?.length ?? 0
+  return text.match(globalPattern)?.length ?? 0
 }
 
 function computeScores(content: string): Record<CaptureType, number> {
@@ -161,45 +159,20 @@ export function extractCommitHash(text: string): string | undefined {
 }
 
 export function extractTitle(content: string): string {
-  // Try to find a title from first line or first sentence
-  const lines = content.trim().split('\n')
-  const firstLine = lines[0]?.trim() ?? ''
-
-  // Remove markdown heading prefix
+  const firstLine = content.trim().split('\n')[0]?.trim() ?? ''
   const cleaned = firstLine.replace(/^#+\s*/, '')
-
-  // Truncate to reasonable length
-  if (cleaned.length > 80) {
-    return cleaned.slice(0, 77) + '...'
-  }
-
+  if (cleaned.length > 80) return cleaned.slice(0, 77) + '...'
   return cleaned || 'Untitled'
 }
 
 export function extractSummary(content: string, maxLength = 200): string {
   const lines = content.trim().split('\n')
-
-  // Skip title line, get first substantial paragraph
-  let summary = ''
-  for (const line of lines.slice(1)) {
+  const summary = lines.slice(1).find((line) => {
     const trimmed = line.trim()
-    if (!trimmed) continue
-    if (trimmed.startsWith('#')) continue
-    if (trimmed.startsWith('-') || trimmed.startsWith('*')) continue
+    return trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('-') && !trimmed.startsWith('*')
+  })?.trim() ?? lines[0]?.trim() ?? ''
 
-    summary = trimmed
-    break
-  }
-
-  if (!summary) {
-    summary = lines[0]?.trim() ?? ''
-  }
-
-  if (summary.length > maxLength) {
-    return summary.slice(0, maxLength - 3) + '...'
-  }
-
-  return summary
+  return summary.length > maxLength ? summary.slice(0, maxLength - 3) + '...' : summary
 }
 
 export function inferPriority(text: string): 'high' | 'medium' | 'low' {

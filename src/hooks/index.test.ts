@@ -59,8 +59,9 @@ describe('hooks/index exports', () => {
     })
 
     test('exports UseHumanResult type (type-only, verify via import)', () => {
+      const mockAsk = () => Promise.resolve(undefined)
       const typeCheck: UseHumanResult = {
-        ask: async () => {},
+        ask: mockAsk,
         status: 'idle',
         requestId: null,
       }

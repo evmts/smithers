@@ -140,7 +140,6 @@ export class ProgressLogger {
   }
 }
 
-// Singleton instance
 let globalLogger: ProgressLogger | null = null
 
 export function getProgressLogger(options?: ProgressLoggerOptions): ProgressLogger {

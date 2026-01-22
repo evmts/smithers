@@ -4,7 +4,6 @@ export interface SubagentProps {
   name?: string
   parallel?: boolean
   children?: ReactNode
-  [key: string]: unknown
 }
 
 export function Subagent(props: SubagentProps): ReactNode {

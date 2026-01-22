@@ -9,7 +9,6 @@ export interface GlobOptions {
 export async function glob(opts: GlobOptions): Promise<string[]> {
   const cwd = opts.cwd ?? process.cwd()
   
-  // Prevent absolute paths in pattern
   if (opts.pattern.startsWith('/') || opts.pattern.includes('..')) {
     throw new Error('Pattern cannot contain absolute paths or parent traversal')
   }

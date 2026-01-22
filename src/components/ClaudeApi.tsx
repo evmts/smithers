@@ -8,7 +8,6 @@ export interface ClaudeApiProps {
   systemPrompt?: string
   onFinished?: (result: unknown) => void
   onError?: (error: Error) => void
-  [key: string]: unknown
 }
 
 export function ClaudeApi(props: ClaudeApiProps): ReactNode {

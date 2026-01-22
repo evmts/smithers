@@ -8,10 +8,6 @@ import { createLogger, type Logger } from '../debug/index.js'
 import { useRequireRalph } from './While.js'
 import { isJJRepo, jjSnapshot, jjCommit, getJJStatus, getJJDiffStats } from '../utils/vcs.js'
 
-// ============================================================================
-// STEP REGISTRY CONTEXT (for sequential execution within a phase)
-// ============================================================================
-
 interface StepRegistryContextValue {
   registerStep: (name: string) => number
   currentStepIndex: number
@@ -36,10 +32,6 @@ export function useStepIndex(name: string | undefined): number {
   }
   return indexRef.current
 }
-
-// ============================================================================
-// STEP REGISTRY PROVIDER (automatically wraps Phase children)
-// ============================================================================
 
 export interface StepRegistryProviderProps {
   children: ReactNode
@@ -181,32 +173,18 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
   )
 }
 
-// ============================================================================
-// STEP COMPONENT
-// ============================================================================
-
 export interface StepProps {
   name?: string
   children: ReactNode
-  /** Create a JJ snapshot before step execution. Useful for rollback if step fails. */
   snapshotBefore?: boolean
-  /** Create a JJ snapshot after step completes successfully. */
   snapshotAfter?: boolean
-  /** Create a JJ commit after step completes. Logged to db.vcs.logCommit(). */
   commitAfter?: boolean
-  /** Custom commit message when commitAfter is true. Defaults to "Step: {step-name}". */
   commitMessage?: string
   onStart?: () => void
   onComplete?: () => void
   onError?: (error: Error) => void
 }
 
-/**
- * Step component with automatic sequential execution
- *
- * Steps within a Phase execute sequentially by default.
- * Wrap in <Parallel> for concurrent execution.
- */
 export function Step(props: StepProps): ReactNode {
   const ralphCtx = useRequireRalph('Step')
   const { db, reactiveDb, executionId } = useSmithers()
@@ -256,7 +234,6 @@ export function Step(props: StepProps): ReactNode {
     [executionId, ralphCount, stepScopeId, 'step']
   )
 
-  // VCS helper: create snapshot before step
   const doSnapshotBefore = useCallback(async () => {
     if (!props.snapshotBefore) return
     try {
@@ -280,7 +257,6 @@ export function Step(props: StepProps): ReactNode {
     }
   }, [db, log, props.name, props.snapshotBefore])
 
-  // VCS helper: create snapshot after step
   const doSnapshotAfter = useCallback(async () => {
     if (!props.snapshotAfter) return
     try {
@@ -304,7 +280,6 @@ export function Step(props: StepProps): ReactNode {
     }
   }, [db, log, props.name, props.snapshotAfter])
 
-  // VCS helper: commit after step
   const doCommitAfter = useCallback(async () => {
     if (!props.commitAfter) return
     try {

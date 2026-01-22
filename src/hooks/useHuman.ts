@@ -10,40 +10,11 @@ export interface AskOptions {
 }
 
 export interface UseHumanResult {
-  /**
-   * Request input from a human.
-   * Resolves when the human approves/rejects/responds.
-   */
-  ask: <T = any>(prompt: string, options?: AskOptions) => Promise<T>
-
-  /**
-   * Current interaction status
-   */
+  ask: <T = unknown>(prompt: string, options?: AskOptions) => Promise<T>
   status: 'idle' | 'pending' | 'resolved'
-
-  /**
-   * The current request ID (if any)
-   */
   requestId: string | null
 }
 
-/**
- * Hook to pause execution and request human input.
- *
- * @example
- * ```tsx
- * const { ask } = useHuman()
- *
- * async function deploy() {
- *   const approved = await ask<boolean>('Deploy to production?', {
- *     options: ['Yes', 'No']
- *   })
- *   if (approved) {
- *     // ...
- *   }
- * }
- * ```
- */
 export function useHuman(): UseHumanResult {
   const { db, reactiveDb } = useSmithers()
   const requestKeyRef = useRef(`humanRequest:${uuid()}`)
@@ -84,19 +55,14 @@ export function useHuman(): UseHumanResult {
     resolve(response)
   })
 
-  const ask = useCallback(async <T = any>(prompt: string, options?: AskOptions) => {
+  const ask = useCallback(<T = unknown>(prompt: string, options?: AskOptions) => {
     return new Promise<T>((resolve) => {
-      // 1. Store resolver
       resolveRef.current = resolve as (value: unknown) => void
-
-      // 2. Create request in DB
       const id = db.human.request(
         options?.options ? 'select' : 'confirmation',
         prompt,
         options?.options
       )
-
-      // 3. Set ID to start subscription
       db.state.set(requestKeyRef.current, id, 'human_request_created')
     })
   }, [db])

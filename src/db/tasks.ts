@@ -1,5 +1,5 @@
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
-import { uuid, now, parseJson } from './utils.js'
+import { uuid, now } from './utils.js'
 
 export interface Task {
   id: string
@@ -119,7 +119,8 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
       const result = rdb.queryOne<{ value: string }>(
         "SELECT value FROM state WHERE key = 'ralphCount'"
       )
-      return parseJson(result?.value, 0)
+      if (!result?.value) return 0
+      try { return JSON.parse(result.value) } catch { return 0 }
     },
 
     withTask: async <T>(

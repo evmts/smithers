@@ -18,35 +18,13 @@ const hashString = (value: string): string => {
 }
 
 export interface HumanProps {
-  /**
-   * Stable identifier for resumability. Required for crash-resume.
-   * Must be deterministic across restarts - no random IDs.
-   */
   id?: string
   message?: string
   onApprove?: () => void
   onReject?: () => void
   children?: ReactNode
-  [key: string]: unknown
 }
 
-/**
- * Human component - pauses execution for human interaction.
- *
- * When the execution loop encounters a Human node, it pauses
- * and waits for human approval/rejection before continuing.
- *
- * @example
- * ```tsx
- * <Human
- *   message="Approve deployment?"
- *   onApprove={() => setApproved(true)}
- *   onReject={() => setRejected(true)}
- * >
- *   About to deploy to production
- * </Human>
- * ```
- */
 export function Human(props: HumanProps): ReactNode {
   const { db, reactiveDb } = useSmithers()
   const executionScope = useExecutionScope()
@@ -71,26 +49,17 @@ export function Human(props: HumanProps): ReactNode {
   const requestId = requestIdRaw ? parseJson<string>(requestIdRaw, '') : null
 
   useMount(() => {
-    // Check for existing request (resumability)
-    if (requestId) {
-      // Don't start a new task if resuming
-      return
-    }
-
-    // Register blocking task
+    if (requestId) return
     taskIdRef.current = db.tasks.start('human_interaction', props.message ?? 'Human input required', { scopeId: executionScope.scopeId })
 
-    // Create human interaction request
     const newRequestId = db.human.request(
       'confirmation',
       props.message ?? 'Approve to continue'
     )
 
-    // Store request id for resumability
     db.state.set(stateKey, newRequestId, 'human_request')
   })
 
-  // Reactive subscription to the request
   const { data: request } = useQueryOne<HumanInteraction>(
     reactiveDb,
     `SELECT * FROM human_interactions WHERE id = ?`,
@@ -98,17 +67,14 @@ export function Human(props: HumanProps): ReactNode {
     { skip: !requestId }
   )
 
-  // Handle resolution
   useEffectOnValueChange(request?.status, () => {
     if (!request || request.status === 'pending') return
 
-    // Complete task to unblock orchestration
     if (taskIdRef.current) {
       db.tasks.complete(taskIdRef.current)
       taskIdRef.current = null
     }
 
-    // Fire callbacks
     if (request.status === 'approved') {
       props.onApprove?.()
     } else {

@@ -56,7 +56,6 @@ const hostConfig = {
   supportsMutation: true,
   supportsPersistence: false,
   supportsHydration: false,
-  // Primary renderer is opt-in; default false avoids conflicts with other renderers.
   isPrimaryRenderer:
     process.env['SMITHERS_PRIMARY_RENDERER'] === 'true' ||
     process.env['SMITHERS_PRIMARY_RENDERER'] === '1',
@@ -155,7 +154,6 @@ const hostConfig = {
 
     for (const [key, value] of Object.entries(updatePayload)) {
       if (value === undefined) {
-        // Handle removal: __smithersKey/key stored on instance.key, not props
         if (key === '__smithersKey' || key === 'key') {
           delete instance.key
         } else {

@@ -5,7 +5,6 @@ import { useMount } from '../reconciler/hooks.js'
 export interface StopProps {
   reason?: string
   children?: ReactNode
-  [key: string]: unknown
 }
 
 export function Stop(props: StopProps): ReactNode {

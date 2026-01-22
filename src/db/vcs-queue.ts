@@ -27,7 +27,6 @@ interface VCSQueueRow {
   payload: string
   status: string
   created_at: string
-  priority?: number
 }
 
 function mapQueueItem(item: VCSQueueRow): VCSQueueItem {

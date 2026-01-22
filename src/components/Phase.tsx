@@ -16,56 +16,13 @@ function getPhaseStatus(isSkipped: boolean, isActive: boolean, isCompleted: bool
   return 'pending'
 }
 export interface PhaseProps {
-  /**
-   * Phase name (must be unique within the orchestration)
-   */
   name: string
-
-  /**
-   * Children components - only rendered when phase is active
-   */
   children: ReactNode
-
-  /**
-   * Skip this phase if condition returns truthy.
-   * Takes precedence over automatic state management.
-   */
   skipIf?: () => unknown
-
-  /**
-   * Callback when phase starts (becomes active)
-   */
   onStart?: () => void
-
-  /**
-   * Callback when phase completes
-   */
   onComplete?: () => void
 }
 
-/**
- * Phase component with automatic state management
- *
- * All phases are always rendered in the plan output (visible structure),
- * but only the active phase renders its children (executes work).
- *
- * Phases execute sequentially by default - when one completes, the next begins.
- *
- * @example
- * ```tsx
- * <Ralph maxIterations={3}>
- *   <Phase name="Research">
- *     <Claude>Research best practices...</Claude>
- *   </Phase>
- *   <Phase name="Implementation">
- *     <Claude>Implement the solution...</Claude>
- *   </Phase>
- *   <Phase name="Review">
- *     <Claude>Review the implementation...</Claude>
- *   </Phase>
- * </Ralph>
- * ```
- */
 export function Phase(props: PhaseProps): ReactNode {
   // Phase requires Ralph/While for iteration-based progression
   const ralphCtx = useRequireRalph('Phase')
@@ -106,7 +63,6 @@ export function Phase(props: PhaseProps): ReactNode {
   // Compute status string for output
   const status = getPhaseStatus(isSkipped, isActive, isCompleted, hasError)
 
-  // Track if we've already processed the skip for this phase
   const hasSkippedRef = useRef(false)
 
   const skipKey = useMemo(

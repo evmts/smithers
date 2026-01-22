@@ -169,7 +169,6 @@ export async function cancel(opts: CancelOptions): Promise<void> {
 export async function createWorkflow(opts: CreateWorkflowOptions): Promise<CreateWorkflowResult> {
   const cwd = opts.cwd ?? process.cwd()
   
-  // Sanitize name to prevent path traversal
   const safeName = opts.name.replace(/[^a-zA-Z0-9_-]/g, '_')
   if (safeName !== opts.name) {
     return {

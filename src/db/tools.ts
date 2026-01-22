@@ -15,7 +15,6 @@ export interface ToolsModuleContext {
   getCurrentExecutionId: () => string | null
 }
 
-// Helper to map row to typed object with JSON parsing
 const mapToolCall = (row: any): ToolCall | null => {
   if (!row) return null
   return {

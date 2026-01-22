@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 export interface PersonaProps {
   role?: string
   children?: ReactNode
-  [key: string]: unknown
 }
 
 export function Persona(props: PersonaProps): ReactNode {

@@ -19,8 +19,9 @@ describe('useHuman', () => {
 
   describe('UseHumanResult type contract', () => {
     test('result shape matches interface', () => {
+      const mockAsk = () => Promise.resolve(undefined)
       const result: UseHumanResult = {
-        ask: async () => {},
+        ask: mockAsk,
         status: 'idle',
         requestId: null,
       }
@@ -30,22 +31,26 @@ describe('useHuman', () => {
     })
 
     test('status can be idle', () => {
-      const result: UseHumanResult = { ask: async () => {}, status: 'idle', requestId: null }
+      const mockAsk = () => Promise.resolve(undefined)
+      const result: UseHumanResult = { ask: mockAsk, status: 'idle', requestId: null }
       expect(result.status).toBe('idle')
     })
 
     test('status can be pending', () => {
-      const result: UseHumanResult = { ask: async () => {}, status: 'pending', requestId: 'abc' }
+      const mockAsk = () => Promise.resolve(undefined)
+      const result: UseHumanResult = { ask: mockAsk, status: 'pending', requestId: 'abc' }
       expect(result.status).toBe('pending')
     })
 
     test('status can be resolved', () => {
-      const result: UseHumanResult = { ask: async () => {}, status: 'resolved', requestId: 'abc' }
+      const mockAsk = () => Promise.resolve(undefined)
+      const result: UseHumanResult = { ask: mockAsk, status: 'resolved', requestId: 'abc' }
       expect(result.status).toBe('resolved')
     })
 
     test('requestId can be string when active', () => {
-      const result: UseHumanResult = { ask: async () => {}, status: 'pending', requestId: 'req-123' }
+      const mockAsk = () => Promise.resolve(undefined)
+      const result: UseHumanResult = { ask: mockAsk, status: 'pending', requestId: 'req-123' }
       expect(result.requestId).toBe('req-123')
     })
   })

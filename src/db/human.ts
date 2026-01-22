@@ -35,7 +35,6 @@ export interface InteractiveSessionConfig {
   blockOrchestration?: boolean
 }
 
-/** Raw database row (JSON fields are strings). */
 export interface HumanInteractionRow {
   id: string
   execution_id: string

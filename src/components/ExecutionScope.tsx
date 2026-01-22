@@ -1,4 +1,4 @@
-import type { DependencyList, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { createContext, useContext } from 'react'
 import { useEffectOnValueChange } from '../reconciler/hooks.js'
 
@@ -28,7 +28,7 @@ export function useExecutionScope(): ExecutionScopeValue {
 export function useExecutionEffect(
   enabled: boolean,
   effect: () => void | (() => void),
-  deps: DependencyList = []
+  deps: unknown[] = []
 ): void {
   useEffectOnValueChange(enabled, () => {
     if (!enabled) return

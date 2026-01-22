@@ -4,13 +4,11 @@ import { useSmithers } from './SmithersProvider.js'
 import { useMount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/hooks/useQueryValue.js'
 
-/** Default max iterations when neither props nor config specifies a value */
 export const DEFAULT_MAX_ITERATIONS = 10
 
 interface WhileProps {
   id: string
   condition: () => boolean | Promise<boolean>
-  /** Max iterations. Falls back to config.maxIterations, then DEFAULT_MAX_ITERATIONS (10) */
   maxIterations?: number
   children: ReactNode
   onIteration?: (iteration: number) => void
@@ -29,11 +27,6 @@ export function useWhileIteration() {
   return useContext(WhileIterationContext)
 }
 
-/**
- * Hook that throws if not inside a Ralph or While loop.
- * Use in components that require iterative execution (Phase, Step, etc.)
- * @param componentName - Name of the component for error message
- */
 export function useRequireRalph(componentName: string): WhileIterationContextValue {
   const ctx = useContext(WhileIterationContext)
   if (!ctx) {
@@ -46,10 +39,6 @@ export function useRequireRalph(componentName: string): WhileIterationContextVal
   return ctx
 }
 
-/**
- * Hook to check if inside a Ralph/While loop without throwing.
- * Returns the context if inside a loop, null otherwise.
- */
 export function useRalphContext(): WhileIterationContextValue | null {
   return useContext(WhileIterationContext)
 }

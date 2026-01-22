@@ -20,89 +20,22 @@ import { createBuildStateModule, type BuildStateModule } from './build-state.js'
 import { createVCSQueueModule, type VCSQueueModule } from './vcs-queue.js'
 
 export interface SmithersDB {
-  /**
-   * Raw ReactiveDatabase instance (for advanced usage)
-   */
   db: ReactiveDatabase
-
-  /**
-   * State management (replaces Zustand)
-   */
   state: StateModule
-
-  /**
-   * Memory operations
-   */
   memories: MemoriesModule
-
-  /**
-   * Execution tracking
-   */
   execution: ExecutionModule
-
-  /**
-   * Phase tracking
-   */
   phases: PhasesModule
-
-  /**
-   * Agent tracking
-   */
   agents: AgentsModule
-
-  /**
-   * Step tracking
-   */
   steps: StepsModule
-
-  /**
-   * Task tracking (for Ralph iteration management)
-   */
   tasks: TasksModule
-
-  /**
-   * Tool call tracking
-   */
   tools: ToolsModule
-
-  /**
-   * Artifact tracking
-   */
   artifacts: ArtifactsModule
-
-  /**
-   * Human interaction tracking
-   */
   human: HumanModule
-
-  /**
-   * VCS tracking
-   */
   vcs: VcsModule
-
-  /**
-   * Render frame snapshots for time-travel debugging
-   */
   renderFrames: RenderFramesModule
-
-  /**
-   * Build state coordination for broken builds
-   */
   buildState: BuildStateModule
-
-  /**
-   * VCS operation queue for serialized git/jj operations
-   */
   vcsQueue: VCSQueueModule
-
-  /**
-   * Raw query access
-   */
   query: QueryFunction
-
-  /**
-   * Close the database connection
-   */
   close: () => void
 }
 
@@ -186,22 +119,15 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     const currentFileUrl = import.meta.url
     if (currentFileUrl.startsWith('file://')) {
       const currentDir = path.dirname(fileURLToPath(currentFileUrl))
-      // First try: schema.sql in same directory (works for non-bundled dist/src/db/)
       schemaPath = path.join(currentDir, 'schema.sql')
       
-      // If bundled CLI (dist/bin/cli.js), look for schema in dist/src/db/
       if (!fs.existsSync(schemaPath) && currentDir.includes('dist/bin')) {
-        const distRoot = path.resolve(currentDir, '..')
-        schemaPath = path.join(distRoot, 'src', 'db', 'schema.sql')
+        schemaPath = path.join(path.resolve(currentDir, '..'), 'src', 'db', 'schema.sql')
       }
       
-      // Fallback: try package root (for npm installed packages)
       if (!fs.existsSync(schemaPath)) {
-        const pkgRoot = path.resolve(currentDir, '..', '..')
-        const pkgSchemaPath = path.join(pkgRoot, 'dist', 'src', 'db', 'schema.sql')
-        if (fs.existsSync(pkgSchemaPath)) {
-          schemaPath = pkgSchemaPath
-        }
+        const pkgSchemaPath = path.join(path.resolve(currentDir, '..', '..'), 'dist', 'src', 'db', 'schema.sql')
+        if (fs.existsSync(pkgSchemaPath)) schemaPath = pkgSchemaPath
       }
     } else {
       schemaPath = path.resolve(process.cwd(), 'src/db/schema.sql')

@@ -16,8 +16,6 @@ export interface ValidationMiddlewareOptions {
 export function validationMiddleware(options: ValidationMiddlewareOptions): SmithersMiddleware {
   return {
     name: 'validation',
-    // Use wrapExecute instead of transformResult so validation errors
-    // can be caught by retry middleware (which also uses wrapExecute)
     wrapExecute: async ({ doExecute }) => {
       const result = await doExecute()
 

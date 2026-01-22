@@ -33,7 +33,6 @@ export const rendererMethods = {
   },
 
   insertNode(parent: SmithersNode, node: SmithersNode, anchor?: SmithersNode): void {
-    // Remove from old parent if exists (cross-parent move)
     const oldParent = node.parent
     if (oldParent) {
       const oldIdx = oldParent.children.indexOf(node)
@@ -42,7 +41,6 @@ export const rendererMethods = {
 
     node.parent = parent
 
-    // Remove from new parent if already present (same-parent reorder)
     const existingIdx = parent.children.indexOf(node)
     if (existingIdx !== -1) parent.children.splice(existingIdx, 1)
 
