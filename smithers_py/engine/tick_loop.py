@@ -569,9 +569,16 @@ class TickLoop:
             )
             
         finally:
-            # Always stop heartbeat and release lease
-            self.lease_manager.stop_heartbeat(node_id)
-            await self.lease_manager.release_lease(node_id)
+            # Always stop heartbeat and release lease - defensive to prevent
+            # "Task exception was never retrieved" warnings from cleanup failures
+            try:
+                self.lease_manager.stop_heartbeat(node_id)
+            except Exception as cleanup_err:
+                logger.warning("Failed to stop heartbeat for %s: %s", node_id, cleanup_err)
+            try:
+                await self.lease_manager.release_lease(node_id)
+            except Exception as cleanup_err:
+                logger.warning("Failed to release lease for %s: %s", node_id, cleanup_err)
 
     async def _execute_node(self, node: Node, node_id: str) -> None:
         """Legacy execute method - redirects to lease-aware version."""

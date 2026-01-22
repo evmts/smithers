@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useRef } from 'react'
-import { useVersionTracking } from './shared.js'
+import { useVersionTracking, parseMutationArgs } from './shared.js'
 import type { ReactiveDatabase } from '../database.js'
 import type { UseMutationResult, UseMutationOptions } from '../types.js'
 import { useDatabaseOptional } from './context.js'
@@ -39,34 +39,14 @@ export function useMutation<TParams extends any[] = any[]>(
   sqlOrOptions?: string | UseMutationOptions,
   optionsOrDb?: UseMutationOptions | ReactiveDatabase
 ): UseMutationResult<TParams> {
-  // Parse overloaded arguments
   const contextDb = useDatabaseOptional()
-
-  let db: ReactiveDatabase
-  let sql: string
-  let options: UseMutationOptions
-
-  if (typeof sqlOrDb === 'string') {
-    // New signature: useMutation(sql, options?, explicitDb?)
-    sql = sqlOrDb
-    if (typeof sqlOrOptions === 'object' && sqlOrOptions !== null && !('query' in sqlOrOptions)) {
-      // sqlOrOptions is UseMutationOptions
-      options = sqlOrOptions as UseMutationOptions
-      db = (optionsOrDb as ReactiveDatabase) ?? contextDb!
-    } else {
-      options = {}
-      db = (sqlOrOptions as ReactiveDatabase) ?? contextDb!
-    }
-
-    if (!db) {
-      throw new Error('useMutation requires either a DatabaseProvider or an explicit db argument')
-    }
-  } else {
-    // Legacy signature: useMutation(db, sql, options?)
-    db = sqlOrDb
-    sql = sqlOrOptions as string
-    options = (optionsOrDb as UseMutationOptions) ?? {}
-  }
+  const { db, sql, options } = parseMutationArgs(
+    contextDb,
+    sqlOrDb,
+    sqlOrOptions,
+    optionsOrDb,
+    'useMutation'
+  )
 
   const { invalidateTables, onSuccess, onError } = options
   

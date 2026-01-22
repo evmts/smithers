@@ -29,12 +29,12 @@ async function main() {
   }
 
   function FeatureWorkflow() {
-    const { db } = useSmithers();
-    const phase = useQueryValue<string>(
-      db.db, "SELECT value FROM state WHERE key = 'phase'"
+    const { db, reactiveDb } = useSmithers();
+    const { data: phase } = useQueryValue<string>(
+      reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
     );
-    const plan = useQueryValue<string>(
-      db.db, "SELECT value FROM state WHERE key = 'plan'"
+    const { data: plan } = useQueryValue<string>(
+      reactiveDb, "SELECT value FROM state WHERE key = 'plan'"
     );
 
     return (

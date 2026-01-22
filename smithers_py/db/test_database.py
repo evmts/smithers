@@ -13,7 +13,7 @@ from typing import Any, Dict
 
 from smithers_py.db.database import (
     SmithersDB,
-    SqliteStore,
+    GlobalStateStore,
     ExecutionModule,
     TasksModule,
     RenderFramesModule,
@@ -24,8 +24,8 @@ from smithers_py.db.database import (
 from smithers_py.db.migrations import run_migrations, run_migrations_sync
 
 
-class TestSqliteStore:
-    """Test SqliteStore state management"""
+class TestGlobalStateStore:
+    """Test GlobalStateStore state management"""
 
     @pytest.mark.asyncio
     async def test_sync_store_basic_operations(self):
@@ -37,7 +37,7 @@ class TestSqliteStore:
             # Create sync database
             conn = sqlite3.connect(db_path)
             run_migrations_sync(conn)
-            store = SqliteStore(conn)
+            store = GlobalStateStore(conn)
 
             # Test set and get
             await store.set("test_key", {"value": 42})
@@ -67,7 +67,7 @@ class TestSqliteStore:
             # Create async database
             conn = await aiosqlite.connect(db_path)
             await conn.executescript(open(Path(__file__).parent / 'schema.sql').read())
-            store = SqliteStore(conn)
+            store = GlobalStateStore(conn)
 
             # Test set and get
             await store.set("async_key", [1, 2, 3])
@@ -97,7 +97,7 @@ class TestSqliteStore:
         try:
             conn = sqlite3.connect(db_path)
             run_migrations_sync(conn)
-            store = SqliteStore(conn)
+            store = GlobalStateStore(conn)
 
             # Test None value
             await store.set("null_key", None)

@@ -6,7 +6,7 @@ import type { ReactiveDatabase } from '../database.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
 import { useQuery } from './useQuery.js'
 import { useDatabaseOptional } from './context.js'
-import { isReactiveDatabase } from './shared.js'
+import { parseQueryArgs } from './shared.js'
 
 /**
  * Hook to get a single row from a query
@@ -42,50 +42,15 @@ export function useQueryOne<T = Record<string, unknown>>(
   paramsOrOptions?: any[] | UseQueryOptions,
   optionsOrDb?: UseQueryOptions | ReactiveDatabase
 ): Omit<UseQueryResult<T>, 'data'> & { data: T | null } {
-  // Parse overloaded arguments
   const contextDb = useDatabaseOptional()
-
-  let db: ReactiveDatabase
-  let sql: string
-  let params: any[]
-  let options: UseQueryOptions
-
-  if (typeof sqlOrDb === 'string') {
-    // New signature: useQueryOne(sql, params?, optionsOrDb?, db?)
-    sql = sqlOrDb
-
-    if (Array.isArray(sqlOrParams)) {
-      // useQueryOne(sql, params, ...) - 3rd arg could be options or db
-      params = sqlOrParams
-      if (isReactiveDatabase(paramsOrOptions)) {
-        options = {}
-        db = paramsOrOptions
-      } else {
-        options = (paramsOrOptions as UseQueryOptions) ?? {}
-        db = isReactiveDatabase(optionsOrDb) ? optionsOrDb : contextDb!
-      }
-    } else {
-      // useQueryOne(sql) or useQueryOne(sql, options) or useQueryOne(sql, db)
-      params = []
-      if (isReactiveDatabase(sqlOrParams)) {
-        options = {}
-        db = sqlOrParams
-      } else {
-        options = (sqlOrParams as UseQueryOptions) ?? {}
-        db = isReactiveDatabase(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
-      }
-    }
-
-    if (!db) {
-      throw new Error('useQueryOne requires either a DatabaseProvider or an explicit db argument')
-    }
-  } else {
-    // Legacy signature: useQueryOne(db, sql, params?, options?)
-    db = sqlOrDb
-    sql = sqlOrParams as string
-    params = Array.isArray(paramsOrOptions) ? paramsOrOptions : []
-    options = (optionsOrDb as UseQueryOptions) ?? {}
-  }
+  const { db, sql, params, options } = parseQueryArgs(
+    contextDb,
+    sqlOrDb,
+    sqlOrParams,
+    paramsOrOptions,
+    optionsOrDb,
+    'useQueryOne'
+  )
 
   const result = useQuery<T>(db, sql, params, options)
   return {

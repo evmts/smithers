@@ -111,76 +111,70 @@ export interface SmithersDBOptions {
   reset?: boolean
 }
 
+type ColumnMigration = { table: string; column: string; sql: string }
+type TableMigration = { table: string; createSql: string; indexes?: string[] }
+
+const COLUMN_MIGRATIONS: ColumnMigration[] = [
+  { table: 'agents', column: 'log_path', sql: 'ALTER TABLE agents ADD COLUMN log_path TEXT' },
+  { table: 'agents', column: 'stream_summary', sql: 'ALTER TABLE agents ADD COLUMN stream_summary TEXT' },
+  { table: 'human_interactions', column: 'session_config', sql: 'ALTER TABLE human_interactions ADD COLUMN session_config TEXT' },
+  { table: 'human_interactions', column: 'session_transcript', sql: 'ALTER TABLE human_interactions ADD COLUMN session_transcript TEXT' },
+  { table: 'human_interactions', column: 'session_duration', sql: 'ALTER TABLE human_interactions ADD COLUMN session_duration INTEGER' },
+  { table: 'human_interactions', column: 'error', sql: 'ALTER TABLE human_interactions ADD COLUMN error TEXT' },
+  { table: 'executions', column: 'end_summary', sql: 'ALTER TABLE executions ADD COLUMN end_summary TEXT' },
+  { table: 'executions', column: 'end_reason', sql: 'ALTER TABLE executions ADD COLUMN end_reason TEXT' },
+  { table: 'executions', column: 'exit_code', sql: 'ALTER TABLE executions ADD COLUMN exit_code INTEGER DEFAULT 0' },
+  { table: 'tasks', column: 'scope_id', sql: 'ALTER TABLE tasks ADD COLUMN scope_id TEXT' },
+]
+
+const TABLE_MIGRATIONS: TableMigration[] = [
+  {
+    table: 'agent_stream_events',
+    createSql: `CREATE TABLE IF NOT EXISTS agent_stream_events (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      event_id TEXT,
+      tool_name TEXT,
+      content TEXT,
+      timestamp INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+    indexes: [
+      'CREATE INDEX IF NOT EXISTS idx_agent_stream_events_agent ON agent_stream_events(agent_id)',
+      'CREATE INDEX IF NOT EXISTS idx_agent_stream_events_type ON agent_stream_events(event_type)',
+      'CREATE INDEX IF NOT EXISTS idx_agent_stream_events_created ON agent_stream_events(created_at DESC)',
+    ],
+  },
+]
+
+const STANDALONE_INDEXES = ['CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(scope_id)']
+
 function runMigrations(rdb: ReactiveDatabase): void {
-  const agentsColumns = rdb.query<{ name: string }>('PRAGMA table_info(agents)')
-  const hasLogPath = agentsColumns.some((col) => col.name === 'log_path')
-  if (!hasLogPath) {
-    rdb.exec('ALTER TABLE agents ADD COLUMN log_path TEXT')
-  }
-  const hasStreamSummary = agentsColumns.some((col) => col.name === 'stream_summary')
-  if (!hasStreamSummary) {
-    rdb.exec('ALTER TABLE agents ADD COLUMN stream_summary TEXT')
-  }
-
-  const streamEventsTable = rdb.query<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_stream_events'"
-  )
-  if (streamEventsTable.length === 0) {
-    rdb.exec(`
-      CREATE TABLE IF NOT EXISTS agent_stream_events (
-        id TEXT PRIMARY KEY,
-        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-        event_type TEXT NOT NULL,
-        event_id TEXT,
-        tool_name TEXT,
-        content TEXT,
-        timestamp INTEGER NOT NULL,
-        created_at TEXT NOT NULL
-      )
-    `)
-    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_agent ON agent_stream_events(agent_id)')
-    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_type ON agent_stream_events(event_type)')
-    rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_created ON agent_stream_events(created_at DESC)')
+  const columnCache = new Map<string, Set<string>>()
+  const getColumns = (table: string) => {
+    if (!columnCache.has(table)) {
+      const cols = rdb.query<{ name: string }>(`PRAGMA table_info(${table})`)
+      columnCache.set(table, new Set(cols.map((c) => c.name)))
+    }
+    return columnCache.get(table)!
   }
 
-  const humanColumns = rdb.query<{ name: string }>('PRAGMA table_info(human_interactions)')
-  const hasSessionConfig = humanColumns.some((col) => col.name === 'session_config')
-  if (!hasSessionConfig) {
-    rdb.exec('ALTER TABLE human_interactions ADD COLUMN session_config TEXT')
-  }
-  const hasSessionTranscript = humanColumns.some((col) => col.name === 'session_transcript')
-  if (!hasSessionTranscript) {
-    rdb.exec('ALTER TABLE human_interactions ADD COLUMN session_transcript TEXT')
-  }
-  const hasSessionDuration = humanColumns.some((col) => col.name === 'session_duration')
-  if (!hasSessionDuration) {
-    rdb.exec('ALTER TABLE human_interactions ADD COLUMN session_duration INTEGER')
-  }
-  const hasHumanError = humanColumns.some((col) => col.name === 'error')
-  if (!hasHumanError) {
-    rdb.exec('ALTER TABLE human_interactions ADD COLUMN error TEXT')
+  for (const { table, column, sql } of COLUMN_MIGRATIONS) {
+    if (!getColumns(table).has(column)) rdb.exec(sql)
   }
 
-  const executionsColumns = rdb.query<{ name: string }>('PRAGMA table_info(executions)')
-  const hasEndSummary = executionsColumns.some((col) => col.name === 'end_summary')
-  if (!hasEndSummary) {
-    rdb.exec('ALTER TABLE executions ADD COLUMN end_summary TEXT')
-  }
-  const hasEndReason = executionsColumns.some((col) => col.name === 'end_reason')
-  if (!hasEndReason) {
-    rdb.exec('ALTER TABLE executions ADD COLUMN end_reason TEXT')
-  }
-  const hasExitCode = executionsColumns.some((col) => col.name === 'exit_code')
-  if (!hasExitCode) {
-    rdb.exec('ALTER TABLE executions ADD COLUMN exit_code INTEGER DEFAULT 0')
+  for (const { table, createSql, indexes } of TABLE_MIGRATIONS) {
+    const exists = rdb.query<{ name: string }>(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${table}'`
+    )
+    if (exists.length === 0) {
+      rdb.exec(createSql)
+      indexes?.forEach((idx) => rdb.exec(idx))
+    }
   }
 
-  const tasksColumns = rdb.query<{ name: string }>('PRAGMA table_info(tasks)')
-  const hasScopeId = tasksColumns.some((col) => col.name === 'scope_id')
-  if (!hasScopeId) {
-    rdb.exec('ALTER TABLE tasks ADD COLUMN scope_id TEXT')
-  }
-  rdb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(scope_id)')
+  STANDALONE_INDEXES.forEach((idx) => rdb.exec(idx))
 }
 
 export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {

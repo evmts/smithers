@@ -6,7 +6,7 @@ import type { ReactiveDatabase } from '../database.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
 import { useQuery } from './useQuery.js'
 import { useDatabaseOptional } from './context.js'
-import { isReactiveDatabase } from './shared.js'
+import { parseQueryArgs } from './shared.js'
 
 /**
  * Hook to get a single value from a query
@@ -36,50 +36,15 @@ export function useQueryValue<T = unknown>(
   paramsOrOptions?: any[] | UseQueryOptions,
   optionsOrDb?: UseQueryOptions | ReactiveDatabase
 ): Omit<UseQueryResult<Record<string, T>>, 'data'> & { data: T | null } {
-  // Parse overloaded arguments
   const contextDb = useDatabaseOptional()
-
-  let db: ReactiveDatabase
-  let sql: string
-  let params: any[]
-  let options: UseQueryOptions
-
-  if (typeof sqlOrDb === 'string') {
-    // New signature: useQueryValue(sql, params?, optionsOrDb?, db?)
-    sql = sqlOrDb
-
-    if (Array.isArray(sqlOrParams)) {
-      // useQueryValue(sql, params, ...) - 3rd arg could be options or db
-      params = sqlOrParams
-      if (isReactiveDatabase(paramsOrOptions)) {
-        options = {}
-        db = paramsOrOptions
-      } else {
-        options = (paramsOrOptions as UseQueryOptions) ?? {}
-        db = isReactiveDatabase(optionsOrDb) ? optionsOrDb : contextDb!
-      }
-    } else {
-      // useQueryValue(sql) or useQueryValue(sql, options) or useQueryValue(sql, db)
-      params = []
-      if (isReactiveDatabase(sqlOrParams)) {
-        options = {}
-        db = sqlOrParams
-      } else {
-        options = (sqlOrParams as UseQueryOptions) ?? {}
-        db = isReactiveDatabase(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
-      }
-    }
-
-    if (!db) {
-      throw new Error('useQueryValue requires either a DatabaseProvider or an explicit db argument')
-    }
-  } else {
-    // Legacy signature: useQueryValue(db, sql, params?, options?)
-    db = sqlOrDb
-    sql = sqlOrParams as string
-    params = Array.isArray(paramsOrOptions) ? paramsOrOptions : []
-    options = (optionsOrDb as UseQueryOptions) ?? {}
-  }
+  const { db, sql, params, options } = parseQueryArgs(
+    contextDb,
+    sqlOrDb,
+    sqlOrParams,
+    paramsOrOptions,
+    optionsOrDb,
+    'useQueryValue'
+  )
 
   const result = useQuery<Record<string, T>>(db, sql, params, options)
   const firstRow = result.data[0]

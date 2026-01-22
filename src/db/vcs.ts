@@ -116,75 +116,88 @@ interface ReportRow {
   created_at: string
 }
 
-const mapCommit = (row: CommitRow | null): Commit | null => {
+type FieldMapper<R, T> = (row: R) => T
+type FieldSpec<R, T> = keyof R | FieldMapper<R, T>
+
+function mapRow<R extends { created_at: string }, T>(
+  row: R | null,
+  spec: { [K in keyof T]: FieldSpec<R, T[K]> }
+): T | null {
   if (!row) return null
-  return {
-    id: row.id,
-    execution_id: row.execution_id,
-    agent_id: row.agent_id ?? undefined,
-    vcs_type: row.vcs_type as Commit['vcs_type'],
-    commit_hash: row.commit_hash,
-    change_id: row.change_id ?? undefined,
-    message: row.message,
-    author: row.author ?? undefined,
-    files_changed: row.files_changed ? parseJson(row.files_changed, []) : undefined,
-    insertions: row.insertions ?? undefined,
-    deletions: row.deletions ?? undefined,
-    smithers_metadata: row.smithers_metadata ? parseJson(row.smithers_metadata, {}) : undefined,
-    created_at: new Date(row.created_at),
+  const result = {} as T
+  for (const key in spec) {
+    const field = spec[key]
+    if (typeof field === 'function') {
+      result[key] = (field as FieldMapper<R, T[typeof key]>)(row)
+    } else {
+      const val = row[field as keyof R]
+      result[key] = (val ?? undefined) as T[typeof key]
+    }
   }
+  return result
 }
 
-const mapSnapshot = (row: SnapshotRow | null): Snapshot | null => {
-  if (!row) return null
-  return {
-    id: row.id,
-    execution_id: row.execution_id,
-    change_id: row.change_id,
-    commit_hash: row.commit_hash ?? undefined,
-    description: row.description ?? undefined,
-    files_modified: row.files_modified ? parseJson(row.files_modified, []) : undefined,
-    files_added: row.files_added ? parseJson(row.files_added, []) : undefined,
-    files_deleted: row.files_deleted ? parseJson(row.files_deleted, []) : undefined,
-    has_conflicts: row.has_conflicts === 1,
-    created_at: new Date(row.created_at),
-  }
-}
+const mapCommit = (row: CommitRow | null): Commit | null =>
+  mapRow<CommitRow, Commit>(row, {
+    id: 'id',
+    execution_id: 'execution_id',
+    agent_id: 'agent_id',
+    vcs_type: r => r.vcs_type as Commit['vcs_type'],
+    commit_hash: 'commit_hash',
+    change_id: 'change_id',
+    message: 'message',
+    author: 'author',
+    files_changed: r => r.files_changed ? parseJson(r.files_changed, []) : undefined,
+    insertions: 'insertions',
+    deletions: 'deletions',
+    smithers_metadata: r => r.smithers_metadata ? parseJson(r.smithers_metadata, {}) : undefined,
+    created_at: r => new Date(r.created_at),
+  })
 
-const mapReview = (row: ReviewRow | null): Review | null => {
-  if (!row) return null
-  return {
-    id: row.id,
-    execution_id: row.execution_id,
-    agent_id: row.agent_id ?? undefined,
-    target_type: row.target_type as Review['target_type'],
-    target_ref: row.target_ref ?? undefined,
-    approved: row.approved === 1,
-    summary: row.summary,
-    issues: parseJson(row.issues, []),
-    approvals: row.approvals ? parseJson(row.approvals, []) : undefined,
-    reviewer_model: row.reviewer_model ?? undefined,
-    blocking: row.blocking === 1,
-    posted_to_github: row.posted_to_github === 1,
-    posted_to_git_notes: row.posted_to_git_notes === 1,
-    created_at: new Date(row.created_at),
-  }
-}
+const mapSnapshot = (row: SnapshotRow | null): Snapshot | null =>
+  mapRow<SnapshotRow, Snapshot>(row, {
+    id: 'id',
+    execution_id: 'execution_id',
+    change_id: 'change_id',
+    commit_hash: 'commit_hash',
+    description: 'description',
+    files_modified: r => r.files_modified ? parseJson(r.files_modified, []) : undefined,
+    files_added: r => r.files_added ? parseJson(r.files_added, []) : undefined,
+    files_deleted: r => r.files_deleted ? parseJson(r.files_deleted, []) : undefined,
+    has_conflicts: r => r.has_conflicts === 1,
+    created_at: r => new Date(r.created_at),
+  })
 
-const mapReport = (row: ReportRow | null): Report | null => {
-  if (!row) return null
-  return {
-    id: row.id,
-    execution_id: row.execution_id,
-    agent_id: row.agent_id ?? undefined,
-    type: row.type as Report['type'],
-    title: row.title,
-    content: row.content,
-    data: row.data ? parseJson(row.data, {}) : undefined,
-    severity: row.severity as Report['severity'],
-    created_at: new Date(row.created_at),
-  }
-}
+const mapReview = (row: ReviewRow | null): Review | null =>
+  mapRow<ReviewRow, Review>(row, {
+    id: 'id',
+    execution_id: 'execution_id',
+    agent_id: 'agent_id',
+    target_type: r => r.target_type as Review['target_type'],
+    target_ref: 'target_ref',
+    approved: r => r.approved === 1,
+    summary: 'summary',
+    issues: r => parseJson(r.issues, []),
+    approvals: r => r.approvals ? parseJson(r.approvals, []) : undefined,
+    reviewer_model: 'reviewer_model',
+    blocking: r => r.blocking === 1,
+    posted_to_github: r => r.posted_to_github === 1,
+    posted_to_git_notes: r => r.posted_to_git_notes === 1,
+    created_at: r => new Date(r.created_at),
+  })
+
+const mapReport = (row: ReportRow | null): Report | null =>
+  mapRow<ReportRow, Report>(row, {
+    id: 'id',
+    execution_id: 'execution_id',
+    agent_id: 'agent_id',
+    type: r => r.type as Report['type'],
+    title: 'title',
+    content: 'content',
+    data: r => r.data ? parseJson(r.data, {}) : undefined,
+    severity: r => r.severity as Report['severity'],
+    created_at: r => new Date(r.created_at),
+  })
 
 export function createVcsModule(ctx: VcsModuleContext): VcsModule {
   const { rdb, getCurrentExecutionId } = ctx

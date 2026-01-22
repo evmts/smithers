@@ -86,6 +86,31 @@ export function createSmithersRoot(): SmithersRoot {
     rejectRender(error)
   }
 
+  /**
+   * Create fiber root with consistent configuration.
+   * @param onUncaughtError - Handler for uncaught errors
+   * @param onCaughtError - Handler for caught errors (error boundaries)
+   */
+  const createFiberRoot = (
+    onUncaughtError: (error: unknown) => void,
+    onCaughtError: (error: unknown) => void
+  ): FiberRoot => {
+    // createContainer(containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, transitionCallbacks)
+    // NOTE: @types/react-reconciler 0.32 has 8 params, but runtime 0.33 has 10
+    return (SmithersReconciler.createContainer as any)(
+      rootNode, // containerInfo
+      0, // tag: LegacyRoot (ConcurrentRoot = 1)
+      null, // hydrationCallbacks
+      false, // isStrictMode
+      null, // concurrentUpdatesByDefaultOverride
+      '', // identifierPrefix
+      onUncaughtError,
+      onCaughtError,
+      (error: unknown) => console.error('Smithers recoverable error:', error),
+      null // transitionCallbacks
+    )
+  }
+
   return {
     async mount(App: () => ReactNode | Promise<ReactNode>): Promise<void> {
       // Clean up previous render (synchronous in LegacyRoot mode)
@@ -126,21 +151,7 @@ export function createSmithersRoot(): SmithersRoot {
         return Promise.reject(new Error('Render failed', { cause: err }))
       }
 
-      // Create the fiber root container
-      // createContainer(containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onUncaughtError, onCaughtError, onRecoverableError, transitionCallbacks)
-      // NOTE: @types/react-reconciler 0.32 has 8 params, but runtime 0.33 has 10
-      fiberRoot = (SmithersReconciler.createContainer as any)(
-        rootNode, // containerInfo
-        0, // tag: LegacyRoot (ConcurrentRoot = 1)
-        null, // hydrationCallbacks
-        false, // isStrictMode
-        null, // concurrentUpdatesByDefaultOverride
-        '', // identifierPrefix
-        handleFatalError, // onUncaughtError
-        handleFatalError, // onCaughtError
-        (error: unknown) => console.error('Smithers recoverable error:', error), // onRecoverableError
-        null // transitionCallbacks
-      )
+      fiberRoot = createFiberRoot(handleFatalError, handleFatalError)
 
       // Render the app synchronously.
       // LegacyRoot mode (tag: 0) keeps commit boundaries deterministic.
@@ -171,19 +182,10 @@ export function createSmithersRoot(): SmithersRoot {
           renderState = null
         }
 
-        // Create fiber root if needed
         if (!fiberRoot) {
-          fiberRoot = (SmithersReconciler.createContainer as any)(
-            rootNode, // containerInfo
-            0, // tag: LegacyRoot (ConcurrentRoot = 1)
-            null, // hydrationCallbacks
-            false, // isStrictMode
-            null, // concurrentUpdatesByDefaultOverride
-            '', // identifierPrefix
+          fiberRoot = createFiberRoot(
             handleRenderError('Smithers uncaught error:'),
-            handleRenderError('Smithers caught error:'),
-            (error: unknown) => console.error('Smithers recoverable error:', error),
-            null // transitionCallbacks
+            handleRenderError('Smithers caught error:')
           )
         }
 

@@ -100,131 +100,146 @@ export class ClaudeStreamParser {
     return parts;
   }
 
-  private mapEvent(event: Record<string, unknown>): SmithersStreamPart[] {
+  private handleStreamStart(event: Record<string, unknown>): SmithersStreamPart[] {
     const parts: SmithersStreamPart[] = [];
-    const eventType = event["type"];
-
-    switch (eventType) {
-      case "stream_start":
-      case "message_start": {
-        const warnings = Array.isArray(event["warnings"]) ? event["warnings"] : [];
-        parts.push({ type: "stream-start", warnings });
-        const message = event["message"] as ClaudeMessage | undefined;
-        if (message?.model) {
-          const metadata: { model: string; requestId?: string } = { model: message.model };
-          if (message.id) {
-            metadata.requestId = message.id;
-          }
-          parts.push({ type: "response-metadata", metadata });
-        }
-        return parts;
+    const warnings = Array.isArray(event["warnings"]) ? event["warnings"] : [];
+    parts.push({ type: "stream-start", warnings });
+    const message = event["message"] as ClaudeMessage | undefined;
+    if (message?.model) {
+      const metadata: { model: string; requestId?: string } = { model: message.model };
+      if (message.id) {
+        metadata.requestId = message.id;
       }
-      case "response_metadata": {
-        const metadata = (event["metadata"] ?? {}) as Record<string, unknown>;
-        parts.push({ type: "response-metadata", metadata });
-        return parts;
-      }
-      case "message_stop": {
-        const usage = event["usage"] as ClaudeUsage | undefined;
-        if (usage) {
-          const stopReason = (event["stop_reason"] as string) ?? "stop";
-          parts.push({
-            type: "finish",
-            usage: {
-              inputTokens: { total: usage.input_tokens ?? 0 },
-              outputTokens: { total: usage.output_tokens ?? 0 },
-            },
-            finishReason: { unified: stopReason as "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown" },
-          });
-        }
-        return parts;
-      }
-      case "content_block_start": {
-        const block = (event["content_block"] ?? {}) as ClaudeContentBlock;
-        const id = block.id ?? randomUUID();
-        this.currentBlockId = id;
-
-        if (block.type === "text") {
-          this.currentBlockType = "text";
-          parts.push({ type: "text-start", id });
-          return parts;
-        }
-        if (block.type === "thinking" || block.type === "reasoning") {
-          this.currentBlockType = "reasoning";
-          parts.push({ type: "reasoning-start", id });
-          return parts;
-        }
-        if (block.type === "tool_use") {
-          this.currentBlockType = "tool";
-          parts.push({ type: "tool-input-start", id, toolName: block.name ?? "unknown" });
-          return parts;
-        }
-        return parts;
-      }
-      case "content_block_delta": {
-        const delta = (event["delta"] ?? {}) as ClaudeDelta;
-        const id = (event["indexed_content_block_id"] as string) ?? this.currentBlockId ?? randomUUID();
-        if (delta.text !== undefined) {
-          parts.push({ type: "text-delta", id, delta: String(delta.text) });
-          return parts;
-        }
-        if (delta.thinking !== undefined || delta.reasoning !== undefined) {
-          const content = delta.thinking ?? delta.reasoning ?? "";
-          parts.push({ type: "reasoning-delta", id, delta: String(content) });
-          return parts;
-        }
-        if (delta.input !== undefined) {
-          parts.push({ type: "tool-input-delta", id, delta: JSON.stringify(delta.input) });
-          return parts;
-        }
-        return parts;
-      }
-      case "content_block_stop": {
-        const id = (event["indexed_content_block_id"] as string) ?? this.currentBlockId ?? randomUUID();
-        if (this.currentBlockType === "text") {
-          parts.push({ type: "text-end", id });
-        } else if (this.currentBlockType === "reasoning") {
-          parts.push({ type: "reasoning-end", id });
-        } else if (this.currentBlockType === "tool") {
-          parts.push({ type: "tool-input-end", id });
-        }
-        this.currentBlockId = null;
-        this.currentBlockType = null;
-        return parts;
-      }
-      case "tool_use": {
-        const id = (event["id"] as string) ?? randomUUID();
-        const toolName = (event["name"] as string) ?? "unknown";
-        parts.push({ type: "tool-input-start", id, toolName });
-        if (event["input"] !== undefined) {
-          parts.push({ type: "tool-input-delta", id, delta: JSON.stringify(event["input"]) });
-        }
-        parts.push({ type: "tool-input-end", id });
-        parts.push({
-          type: "tool-call",
-          toolCallId: id,
-          toolName,
-          input: JSON.stringify(event["input"] ?? {}),
-        });
-        return parts;
-      }
-      case "tool_result": {
-        const toolCallId = (event["tool_use_id"] as string) ?? (event["toolCallId"] as string) ?? randomUUID();
-        const toolName = (event["name"] as string) ?? "unknown";
-        const result = event["content"] ?? event["result"] ?? event["output"] ?? null;
-        parts.push({
-          type: "tool-result",
-          toolCallId,
-          toolName,
-          result: result as JSONValue,
-        });
-        return parts;
-      }
-      case "error":
-        parts.push({ type: "error", error: event["error"] ?? event });
-        return parts;
-      default:
-        return [{ type: "cli-output", stream: "stdout", raw: JSON.stringify(event) }];
+      parts.push({ type: "response-metadata", metadata });
     }
+    return parts;
+  }
+
+  private handleResponseMetadata(event: Record<string, unknown>): SmithersStreamPart[] {
+    const metadata = (event["metadata"] ?? {}) as Record<string, unknown>;
+    return [{ type: "response-metadata", metadata }];
+  }
+
+  private handleMessageStop(event: Record<string, unknown>): SmithersStreamPart[] {
+    const usage = event["usage"] as ClaudeUsage | undefined;
+    if (!usage) return [];
+    const stopReason = (event["stop_reason"] as string) ?? "stop";
+    return [{
+      type: "finish",
+      usage: {
+        inputTokens: { total: usage.input_tokens ?? 0 },
+        outputTokens: { total: usage.output_tokens ?? 0 },
+      },
+      finishReason: { unified: stopReason as "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown" },
+    }];
+  }
+
+  private handleContentBlockStart(event: Record<string, unknown>): SmithersStreamPart[] {
+    const block = (event["content_block"] ?? {}) as ClaudeContentBlock;
+    const id = block.id ?? randomUUID();
+    this.currentBlockId = id;
+
+    const blockHandlers: Record<string, () => SmithersStreamPart[]> = {
+      text: () => {
+        this.currentBlockType = "text";
+        return [{ type: "text-start", id }];
+      },
+      thinking: () => {
+        this.currentBlockType = "reasoning";
+        return [{ type: "reasoning-start", id }];
+      },
+      reasoning: () => {
+        this.currentBlockType = "reasoning";
+        return [{ type: "reasoning-start", id }];
+      },
+      tool_use: () => {
+        this.currentBlockType = "tool";
+        return [{ type: "tool-input-start", id, toolName: block.name ?? "unknown" }];
+      },
+    };
+
+    return blockHandlers[block.type]?.() ?? [];
+  }
+
+  private handleContentBlockDelta(event: Record<string, unknown>): SmithersStreamPart[] {
+    const delta = (event["delta"] ?? {}) as ClaudeDelta;
+    const id = (event["indexed_content_block_id"] as string) ?? this.currentBlockId ?? randomUUID();
+
+    if (delta.text !== undefined) {
+      return [{ type: "text-delta", id, delta: String(delta.text) }];
+    }
+    if (delta.thinking !== undefined || delta.reasoning !== undefined) {
+      const content = delta.thinking ?? delta.reasoning ?? "";
+      return [{ type: "reasoning-delta", id, delta: String(content) }];
+    }
+    if (delta.input !== undefined) {
+      return [{ type: "tool-input-delta", id, delta: JSON.stringify(delta.input) }];
+    }
+    return [];
+  }
+
+  private handleContentBlockStop(event: Record<string, unknown>): SmithersStreamPart[] {
+    const id = (event["indexed_content_block_id"] as string) ?? this.currentBlockId ?? randomUUID();
+    const endTypes: Record<BlockType, SmithersStreamPart> = {
+      text: { type: "text-end", id },
+      reasoning: { type: "reasoning-end", id },
+      tool: { type: "tool-input-end", id },
+    };
+    const part = this.currentBlockType ? endTypes[this.currentBlockType] : null;
+    this.currentBlockId = null;
+    this.currentBlockType = null;
+    return part ? [part] : [];
+  }
+
+  private handleToolUse(event: Record<string, unknown>): SmithersStreamPart[] {
+    const id = (event["id"] as string) ?? randomUUID();
+    const toolName = (event["name"] as string) ?? "unknown";
+    const parts: SmithersStreamPart[] = [{ type: "tool-input-start", id, toolName }];
+    if (event["input"] !== undefined) {
+      parts.push({ type: "tool-input-delta", id, delta: JSON.stringify(event["input"]) });
+    }
+    parts.push({ type: "tool-input-end", id });
+    parts.push({
+      type: "tool-call",
+      toolCallId: id,
+      toolName,
+      input: JSON.stringify(event["input"] ?? {}),
+    });
+    return parts;
+  }
+
+  private handleToolResult(event: Record<string, unknown>): SmithersStreamPart[] {
+    const toolCallId = (event["tool_use_id"] as string) ?? (event["toolCallId"] as string) ?? randomUUID();
+    const toolName = (event["name"] as string) ?? "unknown";
+    const result = event["content"] ?? event["result"] ?? event["output"] ?? null;
+    return [{
+      type: "tool-result",
+      toolCallId,
+      toolName,
+      result: result as JSONValue,
+    }];
+  }
+
+  private handleError(event: Record<string, unknown>): SmithersStreamPart[] {
+    return [{ type: "error", error: event["error"] ?? event }];
+  }
+
+  private readonly eventHandlers: Record<string, (event: Record<string, unknown>) => SmithersStreamPart[]> = {
+    stream_start: (e) => this.handleStreamStart(e),
+    message_start: (e) => this.handleStreamStart(e),
+    response_metadata: (e) => this.handleResponseMetadata(e),
+    message_stop: (e) => this.handleMessageStop(e),
+    content_block_start: (e) => this.handleContentBlockStart(e),
+    content_block_delta: (e) => this.handleContentBlockDelta(e),
+    content_block_stop: (e) => this.handleContentBlockStop(e),
+    tool_use: (e) => this.handleToolUse(e),
+    tool_result: (e) => this.handleToolResult(e),
+    error: (e) => this.handleError(e),
+  };
+
+  private mapEvent(event: Record<string, unknown>): SmithersStreamPart[] {
+    const eventType = event["type"] as string;
+    const handler = this.eventHandlers[eventType];
+    return handler ? handler(event) : [{ type: "cli-output", stream: "stdout", raw: JSON.stringify(event) }];
   }
 }

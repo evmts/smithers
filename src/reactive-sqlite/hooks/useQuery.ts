@@ -6,7 +6,7 @@ import { useSyncExternalStore, useCallback, useMemo, useRef } from 'react'
 import type { ReactiveDatabase } from '../database.js'
 import { extractReadTables } from '../parser.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
-import { useQueryCache, useStoreSignal, isReactiveDatabase } from './shared.js'
+import { useQueryCache, useStoreSignal, parseQueryArgs } from './shared.js'
 import { useDatabaseOptional } from './context.js'
 import { useEffectOnValueChange } from '../../reconciler/hooks.js'
 
@@ -43,50 +43,15 @@ export function useQuery<T = Record<string, unknown>>(
   paramsOrOptions?: any[] | UseQueryOptions,
   optionsOrDb?: UseQueryOptions | ReactiveDatabase
 ): UseQueryResult<T> {
-  // Parse overloaded arguments
   const contextDb = useDatabaseOptional()
-
-  let db: ReactiveDatabase
-  let sql: string
-  let params: any[]
-  let options: UseQueryOptions
-
-  if (typeof sqlOrDb === 'string') {
-    // New signature: useQuery(sql, params?, options?, explicitDb?)
-    sql = sqlOrDb
-
-    if (Array.isArray(sqlOrParams)) {
-      // useQuery(sql, params, ...) - 3rd arg could be options or db
-      params = sqlOrParams
-      if (isReactiveDatabase(paramsOrOptions)) {
-        options = {}
-        db = paramsOrOptions
-      } else {
-        options = (paramsOrOptions as UseQueryOptions) ?? {}
-        db = isReactiveDatabase(optionsOrDb) ? optionsOrDb : contextDb!
-      }
-    } else {
-      // useQuery(sql) or useQuery(sql, options) or useQuery(sql, db)
-      params = []
-      if (isReactiveDatabase(sqlOrParams)) {
-        options = {}
-        db = sqlOrParams
-      } else {
-        options = (sqlOrParams as UseQueryOptions) ?? {}
-        db = isReactiveDatabase(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
-      }
-    }
-
-    if (!db) {
-      throw new Error('useQuery requires either a DatabaseProvider or an explicit db argument')
-    }
-  } else {
-    // Legacy signature: useQuery(db, sql, params?, options?)
-    db = sqlOrDb
-    sql = sqlOrParams as string
-    params = Array.isArray(paramsOrOptions) ? paramsOrOptions : []
-    options = (optionsOrDb as UseQueryOptions) ?? {}
-  }
+  const { db, sql, params, options } = parseQueryArgs(
+    contextDb,
+    sqlOrDb,
+    sqlOrParams,
+    paramsOrOptions,
+    optionsOrDb,
+    'useQuery'
+  )
 
   const { skip = false, deps = [] } = options
 
