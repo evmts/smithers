@@ -49,14 +49,15 @@ Repository = "https://github.com/evmts/smithers.git"
 Issues = "https://github.com/evmts/smithers/issues"
 Changelog = "https://github.com/evmts/smithers/blob/main/smithers_py/CHANGELOG.md"
 
-[tool.hatch.build]
-packages = [".", "db", "engine", "executors", "logs", "mcp", "nodes", "serialize", "state", "vcs", "e2e", "examples"]
-
-[tool.hatch.build.targets.wheel]
-packages = [".", "db", "engine", "executors", "logs", "mcp", "nodes", "serialize", "state", "vcs"]
-
-[tool.hatch.build.targets.wheel.sources]
-"." = "smithers_py"
+# Flat layout - package is in the repo root, maps to smithers_py
+# See: https://hatch.pypa.io/1.13/config/build/#force-include
+[tool.hatch.build.targets.wheel.force-include]
+"__init__.py" = "smithers_py/__init__.py"
+"__main__.py" = "smithers_py/__main__.py"
+"decorators.py" = "smithers_py/decorators.py"
+"errors.py" = "smithers_py/errors.py"
+"jsx_runtime.py" = "smithers_py/jsx_runtime.py"
+"py.typed" = "smithers_py/py.typed"
 "db" = "smithers_py/db"
 "engine" = "smithers_py/engine"
 "executors" = "smithers_py/executors"
