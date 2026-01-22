@@ -341,12 +341,20 @@ class ExecutionHarness:
         """
         exec_id = exec_id or self.execution_id
         
+        cursor = self.db.connection.execute(
+            "SELECT COALESCE(MAX(sequence_number), -1) + 1 FROM render_frames WHERE execution_id = ?",
+            (exec_id,)
+        )
+        row = cursor.fetchone()
+        start_frame_id = row[0] if row else 0
+        
         self.tick_loop = TickLoop(
             db=self.db,
             volatile_state=self.volatile_state,
             app_component=app_component,
             execution_id=exec_id
         )
+        self.tick_loop.frame_id = start_frame_id
         self.tick_loop.claude_executor = self.test_model
         self.tick_loop.min_frame_interval = 0.01
         
