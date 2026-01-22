@@ -219,7 +219,8 @@ export class ReactiveDatabase {
     try {
       subscription.callback();
     } catch (error) {
-      console.error('[ReactiveDatabase] subscription callback error', error);
+      console.debug('Subscription callback failed:', error);
+      // Mark subscription as errored if there's a way to do so
     }
   }
 

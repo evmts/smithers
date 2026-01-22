@@ -19,7 +19,7 @@ export function useCaptureRenderFrame(
         if (!treeXml) return
         db.renderFrames.store(treeXml, ralphCount)
       } catch (e) {
-        console.warn('[useCaptureRenderFrame] Frame capture failed:', e)
+        console.debug('[useCaptureRenderFrame] Frame capture failed:', e)
       }
     }
 

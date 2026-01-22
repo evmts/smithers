@@ -143,7 +143,7 @@ export async function addGitNotes(
     const msg = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed to ${append ? 'append' : 'add'} git notes: ${msg}`)
   } finally {
-    await unlink(tempPath).catch(() => {})
+    await unlink(tempPath).catch((err) => console.debug('Cleanup failed:', err))
   }
 }
 

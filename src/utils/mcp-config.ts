@@ -67,7 +67,7 @@ export function extractMCPConfigs(childrenString: string): ExtractedMCPConfig {
         toolInstructions.push(`${header}\n${safeInstructions}`)
       }
     } catch (e) {
-      console.warn(`Failed to parse MCP tool config: ${e}`)
+      console.warn(`Failed to parse MCP tool config: type=${type}, configJson=${configJson}, error=${e}`)
     }
 
     // Remove the mcp-tool element from the prompt

@@ -116,7 +116,7 @@ export function useMutation<TParams extends any[] = any[]>(
       } catch (err) {
         errorRef.current = err as Error
         onError?.(err as Error)
-        throw err
+        throw new Error(`Mutation failed`, { cause: err })
       } finally {
         isLoadingRef.current = false
         invalidateAndUpdate()

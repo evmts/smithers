@@ -202,7 +202,7 @@ export async function createWorkflow(opts: CreateWorkflowOptions): Promise<Creat
     await proc.exited
     
     if (proc.exitCode !== 0) {
-      await unlink(tempPath).catch(() => {})
+      await unlink(tempPath).catch((err) => console.debug('Cleanup failed:', err))
       const errorOutput = stderr || stdout
       const errors = errorOutput.split('\n').filter(Boolean)
       return {

@@ -21,7 +21,8 @@ function checkHasIncomplete(dbPath: string): boolean {
     } finally {
       db.close()
     }
-  } catch {
+  } catch (err) {
+    console.debug('Check failed:', err)
     return false
   }
 }
@@ -59,11 +60,13 @@ export async function discoverScripts(opts: DiscoverOptions = {}): Promise<Scrip
             dbPath,
             hasIncomplete
           })
-        } catch {
+        } catch (err) {
+          console.debug('Check failed:', err)
           continue
         }
       }
-    } catch {
+    } catch (err) {
+      console.debug('Check failed:', err)
       continue
     }
   }

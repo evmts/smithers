@@ -33,7 +33,7 @@ export function retryMiddleware(options: RetryMiddlewareOptions = {}): SmithersM
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error))
           if (attempt >= maxRetries || !retryOn(lastError)) {
-            throw lastError
+            throw new Error(`Failed after ${attempt + 1} retries`, { cause: lastError })
           }
           const delay = calculateBackoff(attempt, backoff, baseDelayMs)
           const retryAttempt = attempt + 1
