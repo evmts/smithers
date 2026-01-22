@@ -229,7 +229,7 @@ CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_node ON events(node_id);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp DESC);
 
--- 6. STATE - Current State (Replaces global state stores)
+-- 6. STATE - Global State (not execution-scoped)
 
 CREATE TABLE IF NOT EXISTS state (
   key TEXT PRIMARY KEY,
@@ -242,6 +242,32 @@ INSERT OR IGNORE INTO state (key, value) VALUES
   ('phase', '"initial"'),
   ('ralphCount', '0'),
   ('data', 'null');
+
+-- 6b. EXECUTION_STATE - Execution-scoped State (used by smithers_py.state.SqliteStore)
+
+CREATE TABLE IF NOT EXISTS execution_state (
+  execution_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,           -- JSON string
+  updated_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (execution_id, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_state_exec ON execution_state(execution_id);
+
+-- 6c. EXECUTION_TRANSITIONS - Execution-scoped Audit Log
+
+CREATE TABLE IF NOT EXISTS execution_transitions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  execution_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  trigger TEXT,
+  timestamp TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_transitions_exec_time ON execution_transitions(execution_id, timestamp);
 
 -- 7. TRANSITIONS - State Audit Log (Flux-like)
 

@@ -457,7 +457,7 @@ class SmithersDB:
 
         # Initialize modules
         self.execution = ExecutionModule(self._connection)
-        self.state = SqliteStore(self._connection)
+        self.state = GlobalStateStore(self._connection)
         self.tasks = TasksModule(self._connection)
         self.frames = RenderFramesModule(self._connection)
         self.artifacts = ArtifactsModule(self._connection)

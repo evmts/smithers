@@ -95,6 +95,31 @@ class TestIntrinsics:
         assert node.max_turns == 10
         assert node.handlers.on_finished is on_finished
 
+    def test_claude_node_camelcase_handlers(self):
+        """Test creating ClaudeNode with camelCase event handlers."""
+        handler_calls = []
+
+        def my_finished(result, ctx=None):
+            handler_calls.append(('finished', result))
+
+        def my_error(err, ctx=None):
+            handler_calls.append(('error', err))
+
+        def my_progress(msg, ctx=None):
+            handler_calls.append(('progress', msg))
+
+        node = jsx("claude", {
+            "model": "sonnet",
+            "prompt": "test",
+            "onFinished": my_finished,
+            "onError": my_error,
+            "onProgress": my_progress
+        })
+        assert isinstance(node, ClaudeNode)
+        assert node.on_finished is my_finished
+        assert node.on_error is my_error
+        assert node.on_progress is my_progress
+
     def test_while_node_creation(self):
         """Test creating WhileNode via JSX."""
         node = jsx("while", {"condition": "x < 10", "max_iterations": 100})

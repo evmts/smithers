@@ -12,6 +12,9 @@ from .actions import (
     resolve_conflicts,
 )
 
+# Alias for clarity - SqliteStore is execution-scoped
+ExecutionStateStore = SqliteStore
+
 __all__ = [
     # Base protocol
     "StateStore",
@@ -20,6 +23,7 @@ __all__ = [
     # Stores
     "VolatileStore",
     "SqliteStore",
+    "ExecutionStateStore",  # Alias for SqliteStore (execution-scoped)
     # Actions (PRD 7.4)
     "StateAction",
     "ActionType",

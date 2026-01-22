@@ -13,7 +13,8 @@ Main exports:
 
 from .database import (
     SmithersDB,
-    SqliteStore,
+    GlobalStateStore,
+    SqliteStore,  # Backwards compatibility alias for GlobalStateStore
     ExecutionModule,
     TasksModule,
     RenderFramesModule,
@@ -31,7 +32,8 @@ from .migrations import (
 __all__ = [
     # Main classes
     'SmithersDB',
-    'SqliteStore',
+    'GlobalStateStore',
+    'SqliteStore',  # Backwards compatibility alias
     'ExecutionModule',
     'TasksModule',
     'RenderFramesModule',
