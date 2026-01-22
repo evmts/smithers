@@ -60,10 +60,18 @@ For iterative workflows, wrap with `<Ralph>` or `<While>` - see [Ralph](/compone
     executionId={executionId}
     config={{
       defaultModel: "sonnet",
+      maxIterations: 20,  // Default for Ralph/While loops
       verbose: true,
     }}
   >
   ```
+
+  **SmithersConfig properties:**
+  - `defaultModel`: Default model for Claude agents
+  - `maxIterations`: Default max iterations for Ralph/While loops (default: 10). Individual loops can override via `maxIterations` prop.
+  - `globalTimeout`: Global timeout in milliseconds
+  - `verbose`: Enable verbose logging
+  - `extra`: Additional configuration for extensibility
 </ParamField>
 
 <ParamField path="globalTimeout" type="number">

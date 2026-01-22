@@ -1446,3 +1446,130 @@ describe('While index exports', () => {
     expect(true).toBe(true)
   })
 })
+
+// ============================================================================
+// CONFIG.MAXITERATIONS FALLBACK
+// ============================================================================
+
+describe('While config.maxIterations fallback', () => {
+  let db: SmithersDB
+  let root: SmithersRoot
+  let executionId: string
+
+  beforeEach(async () => {
+    db = createSmithersDB({ reset: true })
+    executionId = db.execution.start('test-while-config', 'While.test.tsx')
+    root = createSmithersRoot()
+  })
+
+  afterEach(() => {
+    signalOrchestrationComplete()
+    root.dispose()
+    db.close()
+  })
+
+  test('uses config.maxIterations when prop not provided', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} config={{ maxIterations: 25 }}>
+        <While id="config-max" condition={() => true}>
+          <task>Work</task>
+        </While>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 100))
+
+    const xml = root.toXML()
+    expect(xml).toContain('maxIterations="25"')
+  })
+
+  test('prop maxIterations overrides config.maxIterations', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} config={{ maxIterations: 25 }}>
+        <While id="prop-override" condition={() => true} maxIterations={5}>
+          <task>Work</task>
+        </While>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 100))
+
+    const xml = root.toXML()
+    expect(xml).toContain('maxIterations="5"')
+  })
+
+  test('defaults to 10 when neither prop nor config provided', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <While id="default-max" condition={() => true}>
+          <task>Work</task>
+        </While>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 100))
+
+    const xml = root.toXML()
+    expect(xml).toContain('maxIterations="10"')
+  })
+
+  test('defaults to 10 when config exists but maxIterations not set', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} config={{ verbose: true }}>
+        <While id="config-no-max" condition={() => true}>
+          <task>Work</task>
+        </While>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 100))
+
+    const xml = root.toXML()
+    expect(xml).toContain('maxIterations="10"')
+  })
+
+  test('config.maxIterations=0 is respected (stops immediately)', async () => {
+    let completeCalled = false
+    let completeReason: 'condition' | 'max' | null = null
+
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} config={{ maxIterations: 0 }}>
+        <While
+          id="config-zero"
+          condition={() => true}
+          onComplete={(_, reason) => {
+            completeCalled = true
+            completeReason = reason
+          }}
+        >
+          <task>Work</task>
+        </While>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 100))
+
+    expect(completeCalled).toBe(true)
+    expect(completeReason).toBe('condition')
+  })
+
+  test('multiple While loops share same config.maxIterations default', async () => {
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId} config={{ maxIterations: 15 }}>
+        <While id="loop-a" condition={() => true}>
+          <task>Loop A</task>
+        </While>
+        <While id="loop-b" condition={() => true}>
+          <task>Loop B</task>
+        </While>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 100))
+
+    const xml = root.toXML()
+    // Both loops should have maxIterations="15"
+    const matches = xml.match(/maxIterations="15"/g)
+    expect(matches?.length).toBe(2)
+  })
+})

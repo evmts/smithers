@@ -4,9 +4,13 @@ import { useSmithers } from './SmithersProvider.js'
 import { useMount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/hooks/useQueryValue.js'
 
+/** Default max iterations when neither props nor config specifies a value */
+export const DEFAULT_MAX_ITERATIONS = 10
+
 interface WhileProps {
   id: string
   condition: () => boolean | Promise<boolean>
+  /** Max iterations. Falls back to config.maxIterations, then DEFAULT_MAX_ITERATIONS (10) */
   maxIterations?: number
   children: ReactNode
   onIteration?: (iteration: number) => void
@@ -51,8 +55,8 @@ export function useRalphContext(): WhileIterationContextValue | null {
 }
 
 export function While(props: WhileProps): ReactNode {
-  const { db } = useSmithers()
-  const { id: whileId, maxIterations = 10 } = props
+  const { db, config } = useSmithers()
+  const { id: whileId, maxIterations = config.maxIterations ?? DEFAULT_MAX_ITERATIONS } = props
   const hasInitializedRef = useRef(false)
   
   const iterationKey = `while.${whileId}.iteration`
