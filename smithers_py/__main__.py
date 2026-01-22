@@ -307,6 +307,565 @@ async def update_execution_status(db: SmithersDB, execution_id: str, status: str
         pass
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI Command Handlers
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def cmd_list(args: argparse.Namespace) -> int:
+    """List all executions"""
+    db_path = args.db if hasattr(args, 'db') and args.db else ".smithers/db.sqlite"
+    
+    if not Path(db_path).exists():
+        print(f"Database not found: {db_path}")
+        return 1
+    
+    db = await create_async_smithers_db(db_path)
+    await run_migrations(db.connection)
+    
+    try:
+        limit = args.limit if hasattr(args, 'limit') and args.limit else 20
+        rows = await db.query(
+            """
+            SELECT id, name, source_file, status, created_at, completed_at
+            FROM executions
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,)
+        )
+        
+        print(f"\n📋 Executions (showing {len(rows)}):\n")
+        
+        table_rows = []
+        for row in rows:
+            exec_id, name, source_file, status, created_at, completed_at = row
+            table_rows.append([
+                exec_id[:8] + "..",
+                name or Path(source_file or "").stem or "-",
+                format_status(status or "pending"),
+                format_timestamp(created_at),
+                format_duration(created_at, completed_at),
+            ])
+        
+        print_table(["ID", "Name", "Status", "Created", "Duration"], table_rows, [12, 20, 15, 20, 10])
+        print()
+        return 0
+    finally:
+        await db.close()
+
+
+async def cmd_inspect(args: argparse.Namespace) -> int:
+    """Inspect execution details"""
+    db_path = args.db if hasattr(args, 'db') and args.db else ".smithers/db.sqlite"
+    exec_id = args.execution_id
+    
+    if not Path(db_path).exists():
+        print(f"Database not found: {db_path}")
+        return 1
+    
+    db = await create_async_smithers_db(db_path)
+    await run_migrations(db.connection)
+    
+    try:
+        # Get execution
+        row = await db.query_one(
+            """
+            SELECT id, name, source_file, status, config, result, error,
+                   started_at, completed_at, created_at,
+                   total_iterations, total_agents, total_tool_calls, total_tokens_used
+            FROM executions WHERE id = ? OR id LIKE ?
+            """,
+            (exec_id, f"{exec_id}%")
+        )
+        
+        if not row:
+            print(f"Execution not found: {exec_id}")
+            return 1
+        
+        (exec_id, name, source_file, status, config, result, error,
+         started_at, completed_at, created_at,
+         total_iterations, total_agents, total_tool_calls, total_tokens_used) = row
+        
+        print(f"\n🔍 Execution: {exec_id}\n")
+        print(f"  Name:        {name or '-'}")
+        print(f"  Source:      {source_file or '-'}")
+        print(f"  Status:      {format_status(status or 'pending')}")
+        print(f"  Created:     {format_timestamp(created_at)}")
+        print(f"  Started:     {format_timestamp(started_at)}")
+        print(f"  Completed:   {format_timestamp(completed_at)}")
+        print(f"  Duration:    {format_duration(started_at, completed_at)}")
+        print()
+        print(f"  Iterations:  {total_iterations or 0}")
+        print(f"  Agents:      {total_agents or 0}")
+        print(f"  Tool Calls:  {total_tool_calls or 0}")
+        print(f"  Tokens:      {total_tokens_used or 0}")
+        
+        if error:
+            print(f"\n  ❌ Error:\n    {error}")
+        
+        if config and config != '{}':
+            try:
+                print(f"\n  Config: {json.loads(config)}")
+            except:
+                pass
+        
+        if result:
+            try:
+                print(f"\n  Result: {json.loads(result)}")
+            except:
+                print(f"\n  Result: {result[:200]}...")
+        
+        # Get agents summary
+        agents = await db.query(
+            """
+            SELECT id, model, status, tokens_input, tokens_output
+            FROM agents WHERE execution_id = ?
+            ORDER BY created_at
+            """,
+            (exec_id,)
+        )
+        
+        if agents:
+            print(f"\n  📦 Agents ({len(agents)}):")
+            for agent in agents[:10]:
+                agent_id, model, agent_status, t_in, t_out = agent
+                print(f"    - {agent_id[:8]}.. ({model}) {format_status(agent_status)} tokens:{t_in or 0}/{t_out or 0}")
+            if len(agents) > 10:
+                print(f"    ... and {len(agents) - 10} more")
+        
+        print()
+        return 0
+    finally:
+        await db.close()
+
+
+async def cmd_db_state(args: argparse.Namespace) -> int:
+    """Dump current state snapshot"""
+    db_path = args.db if hasattr(args, 'db') and args.db else ".smithers/db.sqlite"
+    exec_id = args.execution_id
+    
+    if not Path(db_path).exists():
+        print(f"Database not found: {db_path}")
+        return 1
+    
+    db = await create_async_smithers_db(db_path)
+    await run_migrations(db.connection)
+    
+    try:
+        # Get all state
+        rows = await db.query("SELECT key, value, updated_at FROM state ORDER BY key")
+        
+        print(f"\n📊 State Snapshot (execution: {exec_id[:8]}..)\n")
+        
+        for key, value, updated_at in rows:
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict) or isinstance(parsed, list):
+                    value_str = json.dumps(parsed, indent=2)
+                    # Indent multiline values
+                    value_str = "\n      ".join(value_str.split("\n"))
+                else:
+                    value_str = str(parsed)
+            except:
+                value_str = value[:100] if len(value) > 100 else value
+            
+            print(f"  {key}: {value_str}")
+        
+        print()
+        return 0
+    finally:
+        await db.close()
+
+
+async def cmd_db_transitions(args: argparse.Namespace) -> int:
+    """Show state change history with triggers"""
+    db_path = args.db if hasattr(args, 'db') and args.db else ".smithers/db.sqlite"
+    exec_id = args.execution_id
+    last_n = args.last if hasattr(args, 'last') and args.last else 20
+    
+    if not Path(db_path).exists():
+        print(f"Database not found: {db_path}")
+        return 1
+    
+    db = await create_async_smithers_db(db_path)
+    await run_migrations(db.connection)
+    
+    try:
+        rows = await db.query(
+            """
+            SELECT id, key, old_value, new_value, trigger, trigger_agent_id, created_at
+            FROM transitions
+            WHERE execution_id = ? OR execution_id IS NULL
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (exec_id, last_n)
+        )
+        
+        print(f"\n🔄 Transitions (last {last_n}, execution: {exec_id[:8]}..)\n")
+        
+        if not rows:
+            print("  (no transitions recorded)")
+        else:
+            for row in reversed(rows):  # Show oldest first
+                trans_id, key, old_val, new_val, trigger, trigger_agent, created_at = row
+                
+                # Truncate values for display
+                def truncate(v: Optional[str], max_len: int = 40) -> str:
+                    if not v:
+                        return "null"
+                    try:
+                        parsed = json.loads(v)
+                        s = json.dumps(parsed)
+                    except:
+                        s = v
+                    return s[:max_len] + ".." if len(s) > max_len else s
+                
+                print(f"  {format_timestamp(created_at)} | {key}")
+                print(f"    {truncate(old_val)} → {truncate(new_val)}")
+                if trigger:
+                    trigger_info = f"trigger: {trigger}"
+                    if trigger_agent:
+                        trigger_info += f" (agent: {trigger_agent[:8]}..)"
+                    print(f"    {trigger_info}")
+                print()
+        
+        return 0
+    finally:
+        await db.close()
+
+
+async def cmd_db_frames(args: argparse.Namespace) -> int:
+    """List frames with plan tree info"""
+    db_path = args.db if hasattr(args, 'db') and args.db else ".smithers/db.sqlite"
+    exec_id = args.execution_id
+    from_seq = args.from_seq if hasattr(args, 'from_seq') and args.from_seq else 0
+    to_seq = args.to_seq if hasattr(args, 'to_seq') and args.to_seq else 999999
+    
+    if not Path(db_path).exists():
+        print(f"Database not found: {db_path}")
+        return 1
+    
+    db = await create_async_smithers_db(db_path)
+    await run_migrations(db.connection)
+    
+    try:
+        # Try MCP frames table first
+        rows = await db.query(
+            """
+            SELECT id, sequence, status, phase_path, step_index, plan_tree, created_at
+            FROM frames
+            WHERE execution_id = ?
+              AND sequence >= ? AND sequence <= ?
+            ORDER BY sequence
+            """,
+            (exec_id, from_seq, to_seq)
+        )
+        
+        if rows:
+            print(f"\n🎞️ Frames (execution: {exec_id[:8]}..)\n")
+            
+            table_rows = []
+            for row in rows:
+                frame_id, seq, status, phase_path, step_idx, plan_tree, created_at = row
+                
+                # Parse plan_tree for summary
+                tree_summary = "-"
+                if plan_tree:
+                    try:
+                        tree = json.loads(plan_tree)
+                        if isinstance(tree, dict):
+                            tree_summary = f"{len(tree)} nodes"
+                    except:
+                        tree_summary = f"{len(plan_tree)} chars"
+                
+                table_rows.append([
+                    str(seq),
+                    format_status(status or "pending"),
+                    phase_path or "-",
+                    str(step_idx) if step_idx is not None else "-",
+                    tree_summary,
+                    format_timestamp(created_at),
+                ])
+            
+            print_table(["Seq", "Status", "Phase", "Step", "Tree", "Time"], table_rows)
+        else:
+            # Fall back to render_frames
+            rows = await db.query(
+                """
+                SELECT id, sequence_number, ralph_count, xml_content, timestamp
+                FROM render_frames
+                WHERE execution_id = ?
+                  AND sequence_number >= ? AND sequence_number <= ?
+                ORDER BY sequence_number
+                """,
+                (exec_id, from_seq, to_seq)
+            )
+            
+            print(f"\n🎞️ Render Frames (execution: {exec_id[:8]}..)\n")
+            
+            if not rows:
+                print("  (no frames recorded)")
+            else:
+                table_rows = []
+                for row in rows:
+                    frame_id, seq, ralph_count, xml_content, timestamp = row
+                    xml_len = len(xml_content) if xml_content else 0
+                    table_rows.append([
+                        str(seq),
+                        str(ralph_count or 0),
+                        f"{xml_len} chars",
+                        format_timestamp(timestamp),
+                    ])
+                
+                print_table(["Seq", "Ralph#", "XML Size", "Time"], table_rows)
+        
+        print()
+        return 0
+    finally:
+        await db.close()
+
+
+async def cmd_logs(args: argparse.Namespace) -> int:
+    """Live tail logs or cat log files"""
+    exec_id = args.execution_id
+    follow = args.follow if hasattr(args, 'follow') else False
+    level = args.level if hasattr(args, 'level') else "info"
+    
+    # Look for log files in standard locations
+    log_paths = [
+        Path(f".smithers/executions/{exec_id}/logs"),
+        Path(f".smithers/logs/{exec_id}"),
+        Path(".smithers/logs"),
+    ]
+    
+    log_files = []
+    for log_dir in log_paths:
+        if log_dir.exists():
+            log_files.extend(log_dir.glob("*.log"))
+            log_files.extend(log_dir.glob("*.ndjson"))
+            log_files.extend(log_dir.glob("*.txt"))
+    
+    # Also check for agent log files
+    db_path = args.db if hasattr(args, 'db') and args.db else ".smithers/db.sqlite"
+    if Path(db_path).exists():
+        db = await create_async_smithers_db(db_path)
+        await run_migrations(db.connection)
+        
+        try:
+            rows = await db.query(
+                "SELECT log_path FROM agents WHERE execution_id = ? AND log_path IS NOT NULL",
+                (exec_id,)
+            )
+            for (log_path,) in rows:
+                if log_path and Path(log_path).exists():
+                    log_files.append(Path(log_path))
+        finally:
+            await db.close()
+    
+    if not log_files:
+        print(f"No log files found for execution: {exec_id}")
+        return 1
+    
+    # Deduplicate
+    log_files = list(set(log_files))
+    
+    print(f"\n📜 Logs for execution: {exec_id[:8]}..\n")
+    print(f"  Found {len(log_files)} log file(s):")
+    for lf in log_files:
+        print(f"    - {lf}")
+    print()
+    
+    if follow:
+        # Live tail mode - use subprocess
+        import subprocess
+        try:
+            print("  (Press Ctrl+C to stop)\n")
+            subprocess.run(["tail", "-f"] + [str(lf) for lf in log_files])
+        except KeyboardInterrupt:
+            print("\n  Stopped.")
+    else:
+        # Cat mode - read and print
+        level_priority = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+        min_level = level_priority.get(level.lower(), 1)
+        
+        for log_file in log_files:
+            print(f"  ─── {log_file} ───\n")
+            try:
+                content = log_file.read_text()
+                
+                # If NDJSON, parse and filter
+                if log_file.suffix == ".ndjson":
+                    for line in content.strip().split("\n"):
+                        if not line:
+                            continue
+                        try:
+                            entry = json.loads(line)
+                            entry_level = entry.get("level", "info").lower()
+                            if level_priority.get(entry_level, 1) >= min_level:
+                                ts = entry.get("timestamp", entry.get("ts", ""))
+                                msg = entry.get("message", entry.get("msg", line))
+                                print(f"  [{entry_level.upper():5}] {ts} - {msg}")
+                        except:
+                            print(f"  {line}")
+                else:
+                    print(content)
+            except Exception as e:
+                print(f"  Error reading: {e}")
+            print()
+    
+    return 0
+
+
+async def cmd_export(args: argparse.Namespace) -> int:
+    """Export execution for offline analysis"""
+    db_path = args.db if hasattr(args, 'db') and args.db else ".smithers/db.sqlite"
+    exec_id = args.execution_id
+    output_path = args.output if hasattr(args, 'output') and args.output else f"{exec_id[:8]}_export.zip"
+    
+    if not Path(db_path).exists():
+        print(f"Database not found: {db_path}")
+        return 1
+    
+    db = await create_async_smithers_db(db_path)
+    await run_migrations(db.connection)
+    
+    try:
+        # Verify execution exists
+        row = await db.query_one("SELECT id, name FROM executions WHERE id = ? OR id LIKE ?", (exec_id, f"{exec_id}%"))
+        if not row:
+            print(f"Execution not found: {exec_id}")
+            return 1
+        
+        full_exec_id = row[0]
+        exec_name = row[1] or "execution"
+        
+        print(f"\n📦 Exporting execution: {full_exec_id}\n")
+        
+        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Export execution metadata
+            exec_row = await db.query_one(
+                """SELECT * FROM executions WHERE id = ?""",
+                (full_exec_id,)
+            )
+            if exec_row:
+                # Get column names
+                cols = await db.query("PRAGMA table_info(executions)")
+                col_names = [c[1] for c in cols]
+                exec_dict = dict(zip(col_names, exec_row))
+                zf.writestr("execution.json", json.dumps(exec_dict, indent=2))
+                print("  ✓ execution.json")
+            
+            # Export state
+            state_rows = await db.query("SELECT key, value, updated_at FROM state")
+            state_dict = {row[0]: {"value": row[1], "updated_at": row[2]} for row in state_rows}
+            zf.writestr("state.json", json.dumps(state_dict, indent=2))
+            print("  ✓ state.json")
+            
+            # Export transitions
+            trans_rows = await db.query(
+                """SELECT id, key, old_value, new_value, trigger, trigger_agent_id, created_at
+                   FROM transitions WHERE execution_id = ? ORDER BY created_at""",
+                (full_exec_id,)
+            )
+            trans_list = [
+                {"id": r[0], "key": r[1], "old_value": r[2], "new_value": r[3],
+                 "trigger": r[4], "trigger_agent_id": r[5], "created_at": r[6]}
+                for r in trans_rows
+            ]
+            zf.writestr("transitions.json", json.dumps(trans_list, indent=2))
+            print(f"  ✓ transitions.json ({len(trans_list)} records)")
+            
+            # Export agents
+            agent_rows = await db.query(
+                """SELECT id, model, prompt, status, result, error, started_at, completed_at,
+                          tokens_input, tokens_output, tool_calls_count
+                   FROM agents WHERE execution_id = ? ORDER BY created_at""",
+                (full_exec_id,)
+            )
+            agents_list = [
+                {"id": r[0], "model": r[1], "prompt": r[2], "status": r[3], "result": r[4],
+                 "error": r[5], "started_at": r[6], "completed_at": r[7],
+                 "tokens_input": r[8], "tokens_output": r[9], "tool_calls_count": r[10]}
+                for r in agent_rows
+            ]
+            zf.writestr("agents.json", json.dumps(agents_list, indent=2))
+            print(f"  ✓ agents.json ({len(agents_list)} records)")
+            
+            # Export tool calls
+            tool_rows = await db.query(
+                """SELECT id, agent_id, tool_name, input, output_inline, error, status,
+                          started_at, completed_at, duration_ms
+                   FROM tool_calls WHERE execution_id = ? ORDER BY created_at""",
+                (full_exec_id,)
+            )
+            tools_list = [
+                {"id": r[0], "agent_id": r[1], "tool_name": r[2], "input": r[3],
+                 "output_inline": r[4], "error": r[5], "status": r[6],
+                 "started_at": r[7], "completed_at": r[8], "duration_ms": r[9]}
+                for r in tool_rows
+            ]
+            zf.writestr("tool_calls.json", json.dumps(tools_list, indent=2))
+            print(f"  ✓ tool_calls.json ({len(tools_list)} records)")
+            
+            # Export frames
+            frame_rows = await db.query(
+                """SELECT id, sequence, status, phase_path, step_index, plan_tree, created_at
+                   FROM frames WHERE execution_id = ? ORDER BY sequence""",
+                (full_exec_id,)
+            )
+            frames_list = [
+                {"id": r[0], "sequence": r[1], "status": r[2], "phase_path": r[3],
+                 "step_index": r[4], "plan_tree": r[5], "created_at": r[6]}
+                for r in frame_rows
+            ]
+            zf.writestr("frames.json", json.dumps(frames_list, indent=2))
+            print(f"  ✓ frames.json ({len(frames_list)} records)")
+            
+            # Export render frames
+            render_rows = await db.query(
+                """SELECT id, sequence_number, ralph_count, xml_content, timestamp
+                   FROM render_frames WHERE execution_id = ? ORDER BY sequence_number""",
+                (full_exec_id,)
+            )
+            render_list = [
+                {"id": r[0], "sequence_number": r[1], "ralph_count": r[2],
+                 "xml_content": r[3], "timestamp": r[4]}
+                for r in render_rows
+            ]
+            zf.writestr("render_frames.json", json.dumps(render_list, indent=2))
+            print(f"  ✓ render_frames.json ({len(render_list)} records)")
+            
+            # Export events
+            event_rows = await db.query(
+                """SELECT id, source, node_id, event_type, payload, timestamp
+                   FROM events WHERE execution_id = ? ORDER BY timestamp""",
+                (full_exec_id,)
+            )
+            events_list = [
+                {"id": r[0], "source": r[1], "node_id": r[2], "event_type": r[3],
+                 "payload": r[4], "timestamp": r[5]}
+                for r in event_rows
+            ]
+            zf.writestr("events.json", json.dumps(events_list, indent=2))
+            print(f"  ✓ events.json ({len(events_list)} records)")
+            
+            # Include any log files
+            log_dir = Path(f".smithers/executions/{full_exec_id}/logs")
+            if log_dir.exists():
+                for log_file in log_dir.iterdir():
+                    if log_file.is_file():
+                        zf.write(log_file, f"logs/{log_file.name}")
+                        print(f"  ✓ logs/{log_file.name}")
+        
+        print(f"\n✅ Exported to: {output_path}")
+        print(f"   Size: {Path(output_path).stat().st_size / 1024:.1f} KB\n")
+        return 0
+        
+    finally:
+        await db.close()
+
+
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
@@ -358,10 +917,48 @@ def main():
 
     # list command
     list_parser = subparsers.add_parser("list", help="List executions")
+    list_parser.add_argument("--limit", "-n", type=int, default=20, help="Max executions to show (default: 20)")
+    list_parser.add_argument("--db", help="Path to SQLite database (default: .smithers/db.sqlite)")
 
     # inspect command
-    inspect_parser = subparsers.add_parser("inspect", help="Inspect execution")
-    inspect_parser.add_argument("execution_id", help="Execution ID to inspect")
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect execution details")
+    inspect_parser.add_argument("execution_id", help="Execution ID (or prefix) to inspect")
+    inspect_parser.add_argument("--db", help="Path to SQLite database (default: .smithers/db.sqlite)")
+
+    # db command group
+    db_parser = subparsers.add_parser("db", help="Database inspection commands")
+    db_subparsers = db_parser.add_subparsers(dest="db_command", help="DB subcommands")
+    
+    # db state
+    db_state_parser = db_subparsers.add_parser("state", help="Dump current state snapshot")
+    db_state_parser.add_argument("execution_id", help="Execution ID")
+    db_state_parser.add_argument("--db", help="Path to SQLite database")
+    
+    # db transitions
+    db_trans_parser = db_subparsers.add_parser("transitions", help="Show state change history")
+    db_trans_parser.add_argument("execution_id", help="Execution ID")
+    db_trans_parser.add_argument("--last", "-n", type=int, default=20, help="Number of transitions to show (default: 20)")
+    db_trans_parser.add_argument("--db", help="Path to SQLite database")
+    
+    # db frames
+    db_frames_parser = db_subparsers.add_parser("frames", help="List frames with plan tree info")
+    db_frames_parser.add_argument("execution_id", help="Execution ID")
+    db_frames_parser.add_argument("--from", dest="from_seq", type=int, default=0, help="Start sequence number")
+    db_frames_parser.add_argument("--to", dest="to_seq", type=int, default=999999, help="End sequence number")
+    db_frames_parser.add_argument("--db", help="Path to SQLite database")
+
+    # logs command
+    logs_parser = subparsers.add_parser("logs", help="View execution logs")
+    logs_parser.add_argument("execution_id", help="Execution ID")
+    logs_parser.add_argument("--follow", "-f", action="store_true", help="Live tail logs")
+    logs_parser.add_argument("--level", "-l", default="info", choices=["debug", "info", "warn", "error"], help="Minimum log level (default: info)")
+    logs_parser.add_argument("--db", help="Path to SQLite database")
+
+    # export command
+    export_parser = subparsers.add_parser("export", help="Export execution for offline analysis")
+    export_parser.add_argument("execution_id", help="Execution ID")
+    export_parser.add_argument("--output", "-o", help="Output zip file path (default: <exec-id>_export.zip)")
+    export_parser.add_argument("--db", help="Path to SQLite database")
 
     args = parser.parse_args()
 
@@ -391,12 +988,27 @@ def main():
         return 0
 
     elif args.command == "list":
-        print("Not yet implemented")
-        return 0
+        return asyncio.run(cmd_list(args))
 
     elif args.command == "inspect":
-        print("Not yet implemented")
-        return 0
+        return asyncio.run(cmd_inspect(args))
+
+    elif args.command == "db":
+        if args.db_command == "state":
+            return asyncio.run(cmd_db_state(args))
+        elif args.db_command == "transitions":
+            return asyncio.run(cmd_db_transitions(args))
+        elif args.db_command == "frames":
+            return asyncio.run(cmd_db_frames(args))
+        else:
+            print("Usage: smithers_py db {state|transitions|frames} <execution_id>")
+            return 1
+
+    elif args.command == "logs":
+        return asyncio.run(cmd_logs(args))
+
+    elif args.command == "export":
+        return asyncio.run(cmd_export(args))
 
     else:
         parser.print_help()

@@ -12,6 +12,16 @@ pub const renderer = @import("rendering/renderer.zig");
 
 // Phase 3: Component System
 pub const Component = @import("components/component.zig").Component;
+
+// Phase 4: Overlay System
+pub const overlay = @import("overlay/overlay.zig");
+pub const OverlayStack = overlay.OverlayStack;
+pub const OverlayEntry = overlay.OverlayEntry;
+pub const OverlayOptions = overlay.OverlayOptions;
+pub const OverlayAnchor = overlay.OverlayAnchor;
+pub const OverlayMargin = overlay.OverlayMargin;
+pub const ResolvedLayout = overlay.ResolvedLayout;
+pub const SizeValue = overlay.SizeValue;
 pub const Focusable = @import("components/component.zig").Focusable;
 pub const Container = @import("components/component.zig").Container;
 pub const Text = @import("components/text.zig").Text;
