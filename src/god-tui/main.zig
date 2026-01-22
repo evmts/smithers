@@ -3,8 +3,15 @@
 
 const std = @import("std");
 const clap = @import("clap");
-const god_tui = @import("god_tui");
 const posix = std.posix;
+
+const agent_mod = @import("agent");
+const Agent = agent_mod.Agent;
+const AgentConfig = agent_mod.AgentConfig;
+const print_mode = @import("print_mode");
+const PrintMode = print_mode.PrintMode;
+const interactive_mode = @import("interactive_mode");
+const InteractiveMode = interactive_mode.InteractiveMode;
 
 pub const version = "0.1.0";
 
@@ -282,17 +289,34 @@ pub fn main() !void {
     // Mode selection
     if (config.print_mode or positionals.len > 0) {
         // Print mode: single prompt, output, exit
-        writeStdout("Print mode: ");
-        for (positionals) |p| {
-            printFmt("{s} ", .{p});
-        }
-        writeStdout("\n");
-        writeStdout("(Agent not yet implemented - Phase 10)\n");
+        const agent_config = AgentConfig{
+            .model = config.model,
+            .system_prompt = config.system_prompt,
+            .max_turns = config.max_turns,
+        };
+
+        var printMode = PrintMode.initWithConfig(allocator, agent_config) catch |err| {
+            printFmt("Error initializing agent: {any}\n", .{err});
+            return;
+        };
+        defer printMode.deinit();
+
+        printMode.run(positionals) catch |err| {
+            switch (err) {
+                error.NoPrompt => writeStdout("Error: No prompt provided\n"),
+                else => printFmt("Error: {any}\n", .{err}),
+            }
+        };
     } else {
         // Interactive mode: full TUI
-        writeStdout("Interactive mode\n");
-        printFmt("Model: {s}\n", .{config.model});
-        writeStdout("(TUI not yet implemented - Phase 11)\n");
+        var interactiveMode = InteractiveMode.init(allocator);
+        defer interactiveMode.deinit();
+
+        interactiveMode.setModel(config.model);
+
+        interactiveMode.run() catch |err| {
+            printFmt("Error running interactive mode: {any}\n", .{err});
+        };
     }
 }
 

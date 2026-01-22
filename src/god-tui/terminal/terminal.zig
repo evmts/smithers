@@ -117,7 +117,7 @@ pub const Terminal = struct {
 
         const handler = posix.Sigaction{
             .handler = .{ .handler = sigwinchHandler },
-            .mask = posix.empty_sigset,
+            .mask = posix.sigemptyset(),
             .flags = 0,
         };
         var old_action: posix.Sigaction = undefined;
@@ -125,7 +125,7 @@ pub const Terminal = struct {
         self.original_sigwinch = old_action;
     }
 
-    fn sigwinchHandler(_: i32) callconv(.C) void {
+    fn sigwinchHandler(_: i32) callconv(.c) void {
         if (global_terminal) |term| {
             term.updateDimensions();
             if (term.on_resize) |cb| {
@@ -217,16 +217,16 @@ pub const Terminal = struct {
             return;
         }
 
-        const ws = posix.winsize{
-            .ws_col = 0,
-            .ws_row = 0,
-            .ws_xpixel = 0,
-            .ws_ypixel = 0,
+        var ws = posix.winsize{
+            .col = 0,
+            .row = 0,
+            .xpixel = 0,
+            .ypixel = 0,
         };
         const result = posix.system.ioctl(self.stdout, posix.T.IOCGWINSZ, @intFromPtr(&ws));
         if (result == 0) {
-            if (ws.ws_col > 0) self.columns = ws.ws_col;
-            if (ws.ws_row > 0) self.rows = ws.ws_row;
+            if (ws.col > 0) self.columns = ws.col;
+            if (ws.row > 0) self.rows = ws.row;
         }
     }
 

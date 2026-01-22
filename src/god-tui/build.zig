@@ -34,6 +34,68 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(lib);
 
+    // Agent module for main executable
+    const agent_main_mod = b.createModule(.{
+        .root_source_file = b.path("agent/agent.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Terminal module for main executable
+    const terminal_main_mod = b.createModule(.{
+        .root_source_file = b.path("terminal/terminal.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Rendering module for main executable
+    const rendering_main_mod = b.createModule(.{
+        .root_source_file = b.path("rendering/renderer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // UI modules for main executable
+    const header_main_mod = b.createModule(.{
+        .root_source_file = b.path("ui/header.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const chat_main_mod = b.createModule(.{
+        .root_source_file = b.path("ui/chat.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const status_main_mod = b.createModule(.{
+        .root_source_file = b.path("ui/status.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Print mode module
+    const print_mode_mod = b.createModule(.{
+        .root_source_file = b.path("modes/print.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "agent", .module = agent_main_mod },
+        },
+    });
+
+    // Interactive mode module
+    const interactive_mode_mod = b.createModule(.{
+        .root_source_file = b.path("modes/interactive.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "terminal", .module = terminal_main_mod },
+            .{ .name = "rendering", .module = rendering_main_mod },
+            .{ .name = "header", .module = header_main_mod },
+            .{ .name = "chat", .module = chat_main_mod },
+            .{ .name = "status", .module = status_main_mod },
+        },
+    });
+
     // god-agent executable
     const exe = b.addExecutable(.{
         .name = "god-agent",
@@ -46,7 +108,9 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ai", .module = ai_mod },
                 .{ .name = "anthropic", .module = anthropic_mod },
                 .{ .name = "provider", .module = provider_mod },
-                .{ .name = "god_tui", .module = god_tui_mod },
+                .{ .name = "agent", .module = agent_main_mod },
+                .{ .name = "print_mode", .module = print_mode_mod },
+                .{ .name = "interactive_mode", .module = interactive_mode_mod },
             },
         }),
     });
@@ -84,7 +148,9 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "ai", .module = ai_mod },
                 .{ .name = "anthropic", .module = anthropic_mod },
                 .{ .name = "provider", .module = provider_mod },
-                .{ .name = "god_tui", .module = god_tui_mod },
+                .{ .name = "agent", .module = agent_main_mod },
+                .{ .name = "print_mode", .module = print_mode_mod },
+                .{ .name = "interactive_mode", .module = interactive_mode_mod },
             },
         }),
     });
