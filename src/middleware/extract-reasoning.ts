@@ -1,4 +1,5 @@
 import type { AgentResult } from '../components/agents/types.js'
+import { createTransformMiddleware } from './create-transform-middleware.js'
 import type { SmithersMiddleware } from './types.js'
 
 export interface ExtractReasoningOptions {
@@ -13,29 +14,26 @@ export function extractReasoningMiddleware(options: ExtractReasoningOptions): Sm
   const tagName = options.tagName
   const tagRegex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'gi')
 
-  return {
-    name: 'extractReasoning',
-    transformResult: (result: AgentResult) => {
-      const matches: string[] = []
-      const output = result.output.replace(tagRegex, (_, content: string) => {
-        matches.push(content.trim())
-        return ''
-      })
+  return createTransformMiddleware('extractReasoning', (result: AgentResult) => {
+    const matches: string[] = []
+    const output = result.output.replace(tagRegex, (_, content: string) => {
+      matches.push(content.trim())
+      return ''
+    })
 
-      if (matches.length === 0) {
-        return result
-      }
+    if (matches.length === 0) {
+      return result
+    }
 
-      const reasoning = matches.join(separator).trim()
-      const cleanedOutput = options.startWithReasoning ? output.trimStart() : output.trim()
+    const reasoning = matches.join(separator).trim()
+    const cleanedOutput = options.startWithReasoning ? output.trimStart() : output.trim()
 
-      options.onReasoning?.(reasoning)
+    options.onReasoning?.(reasoning)
 
-      return {
-        ...result,
-        reasoning,
-        output: cleanedOutput,
-      }
-    },
-  }
+    return {
+      ...result,
+      reasoning,
+      output: cleanedOutput,
+    }
+  })
 }

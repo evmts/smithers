@@ -39,7 +39,7 @@ await root.mount(
   <SmithersProvider db={db} executionId={executionId}>
     <Ralph
       id="coverage-loop"
-      condition={async () => (await getCoverage()) < 80}
+      condition={async () => (await getCoverage()) < 80} // getCoverage: user-defined function
       maxIterations={20}
     >
       <Claude>Add tests to increase coverage to 80%.</Claude>

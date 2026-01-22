@@ -132,12 +132,14 @@ export interface Transition {
   created_at: Date
 }
 
+export type BuildStatus = 'passing' | 'broken' | 'fixing'
+
 export interface BuildState {
   id: number
-  status: 'passing' | 'broken' | 'fixing'
-  fixer_agent_id: string | null | undefined
-  broken_since: Date | string | null | undefined
-  last_check: Date | string | null | undefined
+  status: BuildStatus
+  fixer_agent_id: string | null
+  broken_since: string | null
+  last_check: string | null
 }
 
 export interface Artifact {

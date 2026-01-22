@@ -1,6 +1,7 @@
 import * as path from 'path'
 import { Database } from 'bun:sqlite'
 import type { ExecutionStatus, PhaseTree, StepNode, Frame } from './types.js'
+import { findDbForExecution } from './utils.js'
 
 export interface StatusOptions {
   cwd?: string
@@ -41,28 +42,6 @@ interface DbRenderFrame {
   created_at: string
 }
 
-function findDbForExecution(executionId: string, cwd: string): Database | null {
-  const dataDir = path.join(cwd, '.smithers', 'data')
-  const glob = new Bun.Glob('*.db')
-  
-  for (const dbFile of glob.scanSync({ cwd: dataDir, absolute: true })) {
-    try {
-      const db = new Database(dbFile, { readonly: true })
-      const exec = db.query<{ id: string }, [string]>(
-        "SELECT id FROM executions WHERE id = ?"
-      ).get(executionId)
-      
-      if (exec) {
-        return db
-      }
-      db.close()
-    } catch {
-      continue
-    }
-  }
-  return null
-}
-
 function mapStatus(dbStatus: string): 'pending' | 'running' | 'complete' | 'failed' {
   switch (dbStatus) {
     case 'pending': return 'pending'
@@ -76,12 +55,13 @@ function mapStatus(dbStatus: string): 'pending' | 'running' | 'complete' | 'fail
 
 export function status(executionId: string, opts: StatusOptions = {}): ExecutionStatus {
   const cwd = opts.cwd ?? process.cwd()
-  const db = findDbForExecution(executionId, cwd)
+  const dbPath = findDbForExecution(executionId, path.join(cwd, '.smithers'))
   
-  if (!db) {
+  if (!dbPath) {
     throw new Error(`Execution ${executionId} not found`)
   }
   
+  const db = new Database(dbPath, { readonly: true })
   try {
     const exec = db.query<DbExecution, [string]>(
       "SELECT id, file_path, status, total_iterations, error FROM executions WHERE id = ?"
@@ -152,12 +132,13 @@ export function frames(
   const limit = opts.limit ?? 100
   const maxChars = opts.maxChars ?? 5000
   
-  const db = findDbForExecution(executionId, cwd)
+  const dbPath = findDbForExecution(executionId, path.join(cwd, '.smithers'))
   
-  if (!db) {
+  if (!dbPath) {
     throw new Error(`Execution ${executionId} not found`)
   }
   
+  const db = new Database(dbPath, { readonly: true })
   try {
     const dbFrames = db.query<DbRenderFrame, [string, number, number]>(
       `SELECT id, sequence_number, tree_xml, created_at 

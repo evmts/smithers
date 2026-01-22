@@ -114,6 +114,17 @@ from .jsx_runtime import jsx, Fragment
 # Decorators
 from .decorators import component
 
+# Executors - for advanced use cases
+from .executors import (
+    ClaudeExecutor,
+    AgentResult,
+    TaskStatus,
+    ExecutorProtocol,
+    RateLimitCoordinator,
+    ErrorClassifier,
+    ErrorClass,
+)
+
 __all__ = [
     # Database
     'SmithersDB',
@@ -203,6 +214,14 @@ __all__ = [
     'Fragment',
     # Decorators
     'component',
+    # Executors
+    'ClaudeExecutor',
+    'AgentResult',
+    'TaskStatus',
+    'ExecutorProtocol',
+    'RateLimitCoordinator',
+    'ErrorClassifier',
+    'ErrorClass',
 ]
 
 __version__ = '1.0.0'

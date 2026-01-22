@@ -1,6 +1,6 @@
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Step } from './types.js'
-import { uuid, now } from './utils.js'
+import { uuid, now, calcDuration } from './utils.js'
 
 export interface StepsModule {
   start: (name?: string) => string
@@ -42,8 +42,7 @@ export function createStepsModule(ctx: StepsModuleContext): StepsModule {
 
     complete: (id: string, vcsInfo?: { snapshot_before?: string; snapshot_after?: string; commit_created?: string }) => {
       if (rdb.isClosed) return
-      const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM steps WHERE id = ?', [id])
-      const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
+      const durationMs = calcDuration(rdb, 'steps', 'id', id)
       rdb.run(
         `UPDATE steps SET status = 'completed', completed_at = ?, duration_ms = ?, snapshot_before = ?, snapshot_after = ?, commit_created = ? WHERE id = ?`,
         [now(), durationMs, vcsInfo?.snapshot_before ?? null, vcsInfo?.snapshot_after ?? null, vcsInfo?.commit_created ?? null, id]

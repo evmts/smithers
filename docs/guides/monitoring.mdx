@@ -43,7 +43,7 @@ Without `ANTHROPIC_API_KEY`, outputs are truncated instead.
 ## LogWriter API
 
 ```tsx
-import { LogWriter } from 'smithers-orchestrator/monitor'
+import { LogWriter } from 'smithers-orchestrator'
 
 const logger = new LogWriter('.smithers/logs', executionId)
 logger.writeLog('agent-output', content, { agent: 'claude' })

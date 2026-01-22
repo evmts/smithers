@@ -59,8 +59,7 @@ const config = configJson ? JSON.parse(configJson) : { timeout: 1000, retries: 1
 ## Complete Workflow
 
 ```tsx
-import { useSmithers, If, Claude, Review, Commit } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
+import { useSmithers, If, Claude, Review, Commit, useQueryValue } from "smithers-orchestrator";
 
 function FeatureWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
@@ -101,7 +100,7 @@ function FeatureWorkflowBody() {
 ## Jujutsu Snapshots
 
 ```tsx
-import { Snapshot } from 'smithers-orchestrator/components/JJ'
+import { Snapshot } from 'smithers-orchestrator'
 
 // Create snapshot before risky operations
 <Snapshot message="Before refactoring" />

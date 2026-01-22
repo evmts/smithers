@@ -1,17 +1,9 @@
 import { useAgentRunner, type UseAgentResult } from './useAgentRunner.js'
 import { CodexAdapter } from './adapters/codex.js'
 import type { CodexProps } from '../components/agents/types/codex.js'
-import type { AgentResult } from '../components/agents/types/execution.js'
-import type { TailLogEntry } from '../components/agents/claude-cli/message-parser.js'
 
-export interface UseCodexResult {
-  status: 'pending' | 'running' | 'complete' | 'error'
-  agentId: string | null
-  executionId: string | null
+export interface UseCodexResult extends UseAgentResult {
   model: string
-  result: AgentResult | null
-  error: Error | null
-  tailLog: TailLogEntry[]
 }
 
 export function useCodex(props: CodexProps): UseCodexResult {

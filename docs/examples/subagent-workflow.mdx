@@ -12,6 +12,7 @@ import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
+  Ralph,
   Phase,
   Step,
   Claude,
@@ -29,12 +30,12 @@ async function main() {
   }
 
   function FeatureWorkflow() {
-    const { db, reactiveDb } = useSmithers();
+    const { db } = useSmithers();
     const { data: phase } = useQueryValue<string>(
-      reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
+      db.db, "SELECT value FROM state WHERE key = 'phase'"
     );
     const { data: plan } = useQueryValue<string>(
-      reactiveDb, "SELECT value FROM state WHERE key = 'plan'"
+      db.db, "SELECT value FROM state WHERE key = 'plan'"
     );
 
     return (
@@ -101,8 +102,10 @@ async function main() {
 
   function App() {
     return (
-      <SmithersProvider db={db} executionId={executionId} maxIterations={5}>
-        <FeatureWorkflow />
+      <SmithersProvider db={db} executionId={executionId}>
+        <Ralph id="feature-workflow" condition={() => db.state.get("phase") !== "done"} maxIterations={5}>
+          <FeatureWorkflow />
+        </Ralph>
       </SmithersProvider>
     );
   }

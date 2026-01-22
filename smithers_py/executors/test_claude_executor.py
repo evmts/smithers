@@ -26,8 +26,8 @@ from smithers_py.executors.base import (
 )
 
 
-class TestOutputSchema(BaseModel):
-    """Test schema for structured output."""
+class SampleOutputSchema(BaseModel):
+    """Sample schema for structured output testing."""
     answer: str
     confidence: float
     reasoning: List[str]
@@ -47,7 +47,7 @@ class ToolReturn:
         self.content = content
 
 
-class TestModel:
+class MockModel:
     """Mock model that simulates PydanticAI responses for testing."""
 
     def __init__(self):
@@ -91,7 +91,7 @@ class TestModel:
 class MockStream:
     """Mock stream context manager."""
 
-    def __init__(self, model: TestModel):
+    def __init__(self, model: MockModel):
         self.model = model
         self._token_index = 0
         self._current_queue = 0
@@ -160,7 +160,7 @@ class MockAgent:
     """Mock PydanticAI Agent."""
 
     def __init__(self, model, result_type=None, system_prompt=None):
-        self.model = model  # Our TestModel instance
+        self.model = model  # Our MockModel instance
         self.result_type = result_type
         self.system_prompt = system_prompt
         self._tools: Dict[str, Callable] = {}
@@ -232,11 +232,11 @@ def parse_agent_row(row):
 @pytest.mark.asyncio
 async def test_basic_text_execution(executor, test_db):
     """Test basic text generation with streaming."""
-    # Configure TestModel response
-    test_model = TestModel()
+    # Configure MockModel response
+    test_model = MockModel()
     test_model.set_stream_text(["Hello", " ", "world", "!"])
 
-    # Mock Agent class to return MockAgent with our TestModel
+    # Mock Agent class to return MockAgent with our MockModel
     with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
         mock_agent_cls.return_value = MockAgent(test_model)
 
@@ -289,9 +289,9 @@ async def test_basic_text_execution(executor, test_db):
 @pytest.mark.asyncio
 async def test_structured_output(executor, test_db):
     """Test structured output with Pydantic schema."""
-    # Configure TestModel with structured response
-    test_model = TestModel()
-    test_output = TestOutputSchema(
+    # Configure MockModel with structured response
+    test_model = MockModel()
+    test_output = SampleOutputSchema(
         answer="42",
         confidence=0.95,
         reasoning=["The answer to life", "The universe", "And everything"]
@@ -300,7 +300,7 @@ async def test_structured_output(executor, test_db):
 
     # Mock Agent class
     with patch("smithers_py.executors.claude.Agent") as mock_agent_cls:
-        mock_agent_cls.return_value = MockAgent(test_model, result_type=TestOutputSchema)
+        mock_agent_cls.return_value = MockAgent(test_model, result_type=SampleOutputSchema)
 
         # Mock the model mapping
         original_map = executor._map_model_name
@@ -313,7 +313,7 @@ async def test_structured_output(executor, test_db):
             prompt="What is the answer?",
             model="opus",
             execution_id=test_db.current_execution_id,
-            output_schema=TestOutputSchema,
+            output_schema=SampleOutputSchema,
         ):
             if isinstance(event, AgentResult):
                 result = event
@@ -355,8 +355,8 @@ async def test_tool_calls(executor, test_db):
         "get_weather": get_weather,
     }
 
-    # Configure TestModel with tool calls
-    test_model = TestModel()
+    # Configure MockModel with tool calls
+    test_model = MockModel()
     test_model.set_stream_text(["Let me ", "calculate ", "and check weather..."])
     test_model.set_tool_calls([
         ToolCall(tool_name="calculator", args={"a": 5, "b": 3}),
@@ -443,8 +443,8 @@ async def test_tool_calls(executor, test_db):
 @pytest.mark.asyncio
 async def test_error_handling(executor, test_db):
     """Test error handling and status updates."""
-    # Configure TestModel to raise error
-    test_model = TestModel()
+    # Configure MockModel to raise error
+    test_model = MockModel()
     test_model.set_error("API rate limit exceeded")
 
     # Mock Agent class
@@ -499,8 +499,8 @@ async def test_error_handling(executor, test_db):
 @pytest.mark.skip(reason="Mock executes too fast to test cancellation; test would need real delay")
 async def test_cancellation(executor, test_db):
     """Test execution cancellation."""
-    # Configure TestModel with delayed response
-    test_model = TestModel()
+    # Configure MockModel with delayed response
+    test_model = MockModel()
     test_model.set_stream_text(["Starting", " long", " response..."])
 
     # Mock Agent class
@@ -551,8 +551,8 @@ async def test_model_mapping(executor):
 @pytest.mark.asyncio
 async def test_token_usage_tracking(executor, test_db):
     """Test token usage tracking from PydanticAI."""
-    # Configure TestModel with usage
-    test_model = TestModel()
+    # Configure MockModel with usage
+    test_model = MockModel()
     test_model.set_stream_text(["Response text"])
     test_model.set_usage(request_tokens=100, response_tokens=50, total_tokens=150)
 
@@ -594,8 +594,8 @@ async def test_token_usage_tracking(executor, test_db):
 @pytest.mark.asyncio
 async def test_multiple_turns(executor, test_db):
     """Test multi-turn conversation tracking."""
-    # Configure TestModel for multiple turns
-    test_model = TestModel()
+    # Configure MockModel for multiple turns
+    test_model = MockModel()
     test_model.set_stream_text(["Turn 1 response"])
     test_model.set_stream_text(["Turn 2 response"])
     test_model.set_stream_text(["Turn 3 response"])
@@ -632,8 +632,8 @@ async def test_multiple_turns(executor, test_db):
 @pytest.mark.asyncio
 async def test_empty_response(executor, test_db):
     """Test handling of empty response."""
-    # Configure TestModel with empty response
-    test_model = TestModel()
+    # Configure MockModel with empty response
+    test_model = MockModel()
     test_model.set_stream_text([])
 
     # Mock Agent class
@@ -670,7 +670,7 @@ async def test_concurrent_executions(executor, test_db):
     # Create separate test models for each concurrent execution
     test_models = []
     for i in range(3):
-        model = TestModel()
+        model = MockModel()
         model.set_stream_text([f"Response{i}"])
         test_models.append(model)
 
@@ -765,8 +765,8 @@ async def test_resume_from_history(executor, test_db):
 
     await executor._persist_result(initial_result, test_db.current_execution_id)
 
-    # Configure TestModel for resume
-    test_model = TestModel()
+    # Configure MockModel for resume
+    test_model = MockModel()
     test_model.set_stream_text(["Resumed response"])
 
     # Mock Agent class

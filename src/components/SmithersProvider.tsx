@@ -4,117 +4,33 @@ import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { DatabaseProvider } from '../reactive-sqlite/hooks/context.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
 import { PhaseRegistryProvider } from './PhaseRegistry.js'
-import { useMount, useUnmount, useEffectOnValueChange } from '../reconciler/hooks.js'
+import { useMount, useUnmount } from '../reconciler/hooks.js'
 import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
 import { jjSnapshot } from '../utils/vcs.js'
-import { makeStateKey } from '../utils/scope.js'
 import type { SmithersMiddleware } from '../middleware/types.js'
+import {
+  OrchestrationTokenContext,
+  signalOrchestrationCompleteByToken,
+} from './OrchestrationController.js'
+import {
+  type GlobalStopCondition,
+  type OrchestrationContext,
+  STOP_EVALUATORS,
+} from './StopConditionEvaluator.js'
+import { useTaskCompletionTracker } from './TaskCompletionTracker.js'
 
-type OrchestrationController = {
-  resolve: () => void
-  reject: (err: Error) => void
-}
+export {
+  createOrchestrationPromise,
+  signalOrchestrationCompleteByToken,
+  signalOrchestrationErrorByToken,
+  useOrchestrationToken,
+} from './OrchestrationController.js'
 
-const orchestrationControllers = new Map<string, OrchestrationController>()
-
-const OrchestrationTokenContext = createContext<string | null>(null)
-
-export function createOrchestrationPromise(): { promise: Promise<void>; token: string } {
-  const token = crypto.randomUUID()
-  const promise = new Promise<void>((resolve, reject) => {
-    orchestrationControllers.set(token, { resolve, reject })
-  })
-  return { promise, token }
-}
-
-export function signalOrchestrationCompleteByToken(token: string): void {
-  const controller = orchestrationControllers.get(token)
-  if (controller) {
-    controller.resolve()
-    orchestrationControllers.delete(token)
-  }
-}
-
-export function signalOrchestrationErrorByToken(token: string, err: Error): void {
-  const controller = orchestrationControllers.get(token)
-  if (controller) {
-    controller.reject(err)
-    orchestrationControllers.delete(token)
-  }
-}
-
-export function useOrchestrationToken(): string | null {
-  return useContext(OrchestrationTokenContext)
-}
-
-export interface GlobalStopCondition {
-  type: 'total_tokens' | 'total_agents' | 'total_time' | 'report_severity' | 'ci_failure' | 'custom'
-  value?: number | string
-  fn?: (context: OrchestrationContext) => boolean | Promise<boolean>
-  message?: string
-}
-
-export interface OrchestrationContext {
-  executionId: string
-  totalTokens: number
-  totalAgents: number
-  totalToolCalls: number
-  elapsedTimeMs: number
-}
-
-export interface OrchestrationResult {
-  executionId: string
-  status: 'completed' | 'stopped' | 'failed' | 'cancelled'
-  totalAgents: number
-  totalToolCalls: number
-  totalTokens: number
-  durationMs: number
-}
-
-type StopEvaluatorContext = {
-  ctx: OrchestrationContext
-  condition: GlobalStopCondition
-  db: import('../db/index.js').SmithersDB
-  executionId: string
-}
-
-type StopEvaluatorResult = { shouldStop: boolean; message: string }
-
-const STOP_EVALUATORS: Record<GlobalStopCondition['type'], (args: StopEvaluatorContext) => Promise<StopEvaluatorResult>> = {
-  total_tokens: async ({ ctx, condition }) => ({
-    shouldStop: typeof condition.value === 'number' && ctx.totalTokens >= condition.value,
-    message: condition.message ?? `Token limit ${condition.value} exceeded`,
-  }),
-  total_agents: async ({ ctx, condition }) => ({
-    shouldStop: typeof condition.value === 'number' && ctx.totalAgents >= condition.value,
-    message: condition.message ?? `Agent limit ${condition.value} exceeded`,
-  }),
-  total_time: async ({ ctx, condition }) => ({
-    shouldStop: typeof condition.value === 'number' && ctx.elapsedTimeMs >= condition.value,
-    message: condition.message ?? `Time limit ${condition.value}ms exceeded`,
-  }),
-  report_severity: async ({ db, condition }) => {
-    const criticalReports = await db.vcs.getCriticalReports()
-    return {
-      shouldStop: criticalReports.length > 0,
-      message: condition.message ?? `Critical report(s) found: ${criticalReports.length}`,
-    }
-  },
-  ci_failure: async ({ db, executionId, condition }) => {
-    const ciFailureKey = makeStateKey(executionId, 'hook', 'lastCIFailure')
-    const ciFailure =
-      await db.state.get<{ message?: string }>(ciFailureKey) ??
-      await db.state.get<{ message?: string }>('last_ci_failure')
-    return {
-      shouldStop: ciFailure !== null,
-      message: condition.message ?? `CI failure detected: ${ciFailure?.message ?? 'unknown'}`,
-    }
-  },
-  custom: async ({ ctx, condition }) => ({
-    shouldStop: condition.fn ? await condition.fn(ctx) : false,
-    message: condition.message ?? 'Custom stop condition met',
-  }),
-}
+export type {
+  GlobalStopCondition,
+  OrchestrationContext,
+  OrchestrationResult,
+} from './StopConditionEvaluator.js'
 
 export interface SmithersConfig {
   maxIterations?: number
@@ -190,6 +106,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   const startTimeRef = useRef(Date.now())
   const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasCompletedRef = useRef(false)
 
   const { data: stopRequested } = useQueryValue<boolean>(
     reactiveDb,
@@ -200,25 +117,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     reactiveDb,
     "SELECT CASE WHEN value IS NOT NULL THEN 1 ELSE 0 END as requested FROM state WHERE key = 'rebase_requested'"
   )
-
-  const { data: runningTaskCount } = useQueryValue<number>(
-    reactiveDb,
-    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND status = 'running'`,
-    [props.executionId]
-  )
-
-  const { data: totalTaskCount } = useQueryValue<number>(
-    reactiveDb,
-    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ?`,
-    [props.executionId]
-  )
-
-  const pendingTasks = runningTaskCount ?? 0
-  const hasStartedTasks = (totalTaskCount ?? 0) > 0
-
-  const hasCompletedRef = useRef(false)
-  const hasStartedTasksRef = useRef(false)
-  const completionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const orchestrationToken = props.orchestrationToken ?? null
 
@@ -264,6 +162,18 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     }
   }, [props.stopConditions, props.db, props.executionId, props.onStopRequested])
 
+  const handleComplete = useMemo(() => () => {
+    if (hasCompletedRef.current) return
+    hasCompletedRef.current = true
+    signalComplete()
+    props.onComplete?.()
+  }, [signalComplete, props.onComplete])
+
+  useTaskCompletionTracker(reactiveDb, props.executionId, {
+    onComplete: handleComplete,
+    checkStopConditions,
+  })
+
   useMount(() => {
     ;(async () => {
       try {
@@ -303,39 +213,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   useCaptureRenderFrame(props.db, 0, props.getTreeXML)
 
-  if (hasStartedTasks && !hasStartedTasksRef.current) {
-    hasStartedTasksRef.current = true
-  }
-
-  useEffectOnValueChange(pendingTasks, () => {
-    if (completionCheckTimeoutRef.current) {
-      clearTimeout(completionCheckTimeoutRef.current)
-      completionCheckTimeoutRef.current = null
-    }
-
-    checkStopConditions()
-
-    if (pendingTasks > 0) return
-
-    if (!hasStartedTasksRef.current) {
-      completionCheckTimeoutRef.current = setTimeout(() => {
-        if (!hasCompletedRef.current && !hasStartedTasksRef.current) {
-          hasCompletedRef.current = true
-          signalComplete()
-          props.onComplete?.()
-        }
-      }, 500)
-      return
-    }
-
-    completionCheckTimeoutRef.current = setTimeout(() => {
-      if (reactiveDb.isClosed || hasCompletedRef.current) return
-      hasCompletedRef.current = true
-      signalComplete()
-      props.onComplete?.()
-    }, 50)
-  }, [hasStartedTasks, props, reactiveDb, signalComplete, checkStopConditions])
-
   const value: SmithersContextValue = useMemo(() => ({
     db: props.db,
     executionId: props.executionId,
@@ -369,7 +246,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
 
   useUnmount(() => {
     if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current)
-    if (completionCheckTimeoutRef.current) clearTimeout(completionCheckTimeoutRef.current)
 
     ;(async () => {
       try {
@@ -403,5 +279,3 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     </OrchestrationTokenContext.Provider>
   )
 }
-
-

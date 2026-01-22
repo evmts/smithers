@@ -1,6 +1,6 @@
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Agent, AgentStreamEvent, StreamSummary } from './types.js'
-import { uuid, now, parseJson } from './utils.js'
+import { uuid, now, parseJson, calcDuration } from './utils.js'
 import type { SmithersStreamPart } from '../streaming/types.js'
 
 export interface AgentsModule {
@@ -104,15 +104,15 @@ export function createAgentsModule(ctx: AgentsModuleContext): AgentsModule {
       if (rdb.isClosed) return
       const timestamp = now()
       rdb.transaction(() => {
-        const startRow = rdb.queryOne<{ started_at: string; execution_id: string }>('SELECT started_at, execution_id FROM agents WHERE id = ?', [id])
-        const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
+        const durationMs = calcDuration(rdb, 'agents', 'id', id)
+        const execRow = rdb.queryOne<{ execution_id: string }>('SELECT execution_id FROM agents WHERE id = ?', [id])
         rdb.run(
           `UPDATE agents SET status = 'completed', result = ?, result_structured = ?, tokens_input = ?, tokens_output = ?, completed_at = ?, duration_ms = ? WHERE id = ?`,
           [result, structuredResult ? JSON.stringify(structuredResult) : null, tokens?.input ?? null, tokens?.output ?? null, timestamp, durationMs, id]
         )
-        if (tokens && startRow) {
+        if (tokens && execRow) {
           rdb.run('UPDATE executions SET total_tokens_used = COALESCE(total_tokens_used, 0) + ? WHERE id = ?',
-            [(tokens.input ?? 0) + (tokens.output ?? 0), startRow.execution_id])
+            [(tokens.input ?? 0) + (tokens.output ?? 0), execRow.execution_id])
         }
       })
       if (getCurrentAgentId() === id) setCurrentAgentId(null)

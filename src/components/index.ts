@@ -79,11 +79,18 @@ export type { SmithersProps, SmithersResult } from './Smithers.js'
 // Agent types
 export * from './agents/types.js'
 
-// Git VCS components - available via smithers-orchestrator/components/Git
-// Note: Not re-exported here due to naming conflicts with JJ components
+// Git VCS components (prefixed to avoid JJ conflicts)
+export { Commit as GitCommit, type CommitProps as GitCommitProps, type CommitResult as GitCommitResult } from './Git/Commit.js'
+export { Notes as GitNotes, type NotesProps as GitNotesProps, type NotesResult as GitNotesResult } from './Git/Notes.js'
+// Default Commit alias - uses Git implementation
+export { Commit, type CommitProps, type CommitResult } from './Git/Commit.js'
 
-// JJ VCS components - available via smithers-orchestrator/components/JJ
-// Note: Not re-exported here due to naming conflicts with Git components
+// JJ VCS components (prefixed to avoid Git conflicts)
+export { Snapshot, type SnapshotProps } from './JJ/Snapshot.js'
+export { Commit as JJCommit, type CommitProps as JJCommitProps } from './JJ/Commit.js'
+export { Describe as JJDescribe, type DescribeProps as JJDescribeProps } from './JJ/Describe.js'
+export { Status as JJStatus, type StatusProps as JJStatusProps } from './JJ/Status.js'
+export { Rebase as JJRebase, type RebaseProps as JJRebaseProps } from './JJ/Rebase.js'
 
 // Lifecycle Hooks components - available via smithers-orchestrator/components/Hooks
 // Note: Not re-exported here to keep hooks as separate import

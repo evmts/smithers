@@ -50,7 +50,7 @@ function GroupChat({ problem }: { problem: string }) {
     db.db.run('INSERT INTO messages (agent, content) VALUES (?, ?)', [agent, content])
 
   return (
-    <Ralph maxIterations={10}>
+    <Ralph id="group-chat" condition={() => !done} maxIterations={10}>
       {!done && (
         <Phase name="Collaboration">
           <Parallel>

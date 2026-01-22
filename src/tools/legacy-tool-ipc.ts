@@ -133,7 +133,7 @@ export async function startWatcher(): Promise<void> {
           console.error(`[legacy-tool-ipc] Error processing ${reqFile}:`, err)
         }
       }
-    } catch (err) {
+    } catch {
       // Directory might not exist yet, ignore
     }
   }, 50) // Poll every 50ms

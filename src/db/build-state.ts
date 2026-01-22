@@ -1,15 +1,8 @@
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { now } from './utils.js'
+import type { BuildState, BuildStatus } from './types.js'
 
-export type BuildStatus = 'passing' | 'broken' | 'fixing'
-
-export interface BuildState {
-  id: number
-  status: BuildStatus
-  fixer_agent_id: string | null
-  broken_since: string | null
-  last_check: string | null
-}
+export type { BuildState, BuildStatus }
 
 export interface BuildStateDecision {
   shouldFix: boolean

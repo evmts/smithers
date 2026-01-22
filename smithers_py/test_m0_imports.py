@@ -64,10 +64,10 @@ def test_imports():
         print(f"❌ {len(errors)} errors found:")
         for error in errors:
             print(f"  - {error}")
-        return False
+        assert False, f"{len(errors)} import errors found"
     else:
         print("✅ All imports successful! M0 package structure is valid.")
-        return True
+        # Don't return - pytest expects None
 
 if __name__ == "__main__":
     success = test_imports()

@@ -1,5 +1,5 @@
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
-import { uuid, now } from './utils.js'
+import { uuid, now, calcDuration } from './utils.js'
 
 export interface Task {
   id: string
@@ -61,8 +61,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
 
     complete: (id: string) => {
       if (rdb.isClosed) return
-      const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM tasks WHERE id = ?', [id])
-      const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
+      const durationMs = calcDuration(rdb, 'tasks', 'id', id)
       rdb.run(
         `UPDATE tasks SET status = 'completed', completed_at = ?, duration_ms = ? WHERE id = ?`,
         [now(), durationMs, id]
@@ -71,8 +70,7 @@ export function createTasksModule(ctx: TasksModuleContext): TasksModule {
 
     fail: (id: string) => {
       if (rdb.isClosed) return
-      const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM tasks WHERE id = ?', [id])
-      const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
+      const durationMs = calcDuration(rdb, 'tasks', 'id', id)
       rdb.run(
         `UPDATE tasks SET status = 'failed', completed_at = ?, duration_ms = ? WHERE id = ?`,
         [now(), durationMs, id]

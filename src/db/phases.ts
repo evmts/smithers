@@ -1,6 +1,6 @@
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Phase } from './types.js'
-import { uuid, now } from './utils.js'
+import { uuid, now, calcDuration } from './utils.js'
 
 export interface PhasesModule {
   start: (name: string, iteration?: number) => string
@@ -37,8 +37,7 @@ export function createPhasesModule(ctx: PhasesModuleContext): PhasesModule {
 
     complete: (id: string) => {
       if (rdb.isClosed) return
-      const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM phases WHERE id = ?', [id])
-      const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
+      const durationMs = calcDuration(rdb, 'phases', 'id', id)
       rdb.run(
         `UPDATE phases SET status = 'completed', completed_at = ?, duration_ms = ? WHERE id = ?`,
         [now(), durationMs, id]

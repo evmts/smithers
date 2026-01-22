@@ -1,5 +1,7 @@
 export { composeMiddleware } from './compose.js'
 export type { SmithersMiddleware, ClaudeExecutionParams } from './types.js'
+export { createTransformMiddleware } from './create-transform-middleware.js'
+export type { TransformFn } from './create-transform-middleware.js'
 
 export { extractReasoningMiddleware } from './extract-reasoning.js'
 export type { ExtractReasoningOptions } from './extract-reasoning.js'

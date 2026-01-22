@@ -112,10 +112,14 @@ const Schema = z.object({
   confidence: z.number().min(0).max(1).describe("Confidence 0-1"),
 });
 
-// Custom validation
+// Custom validation in onFinished
 <Claude
   schema={Schema}
-  validate={(result) => result.issues.length > 0 && result.score <= 100}
   schemaRetries={2}
+  onFinished={(result) => {
+    if (result.structured?.score && result.structured.score <= 100) {
+      console.log("Valid analysis received");
+    }
+  }}
 >
 ```

@@ -20,14 +20,14 @@ export interface AgentRendererProps {
   tag: string
   status: AgentStatus
   agentId: string | null
-  executionId?: string | null
-  modelOrMode?: string
+  executionId?: string | null | undefined
+  modelOrMode?: string | undefined
   modelAttrName: 'model' | 'mode'
-  result?: AgentResult | null
-  error?: Error | null
+  result?: AgentResult | null | undefined
+  error?: Error | null | undefined
   tailLog: LogEntry[]
-  tailLogCount?: number
-  tailLogLines?: number
+  tailLogCount?: number | undefined
+  tailLogLines?: number | undefined
   children?: ReactNode
 }
 

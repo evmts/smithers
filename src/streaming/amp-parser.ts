@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { BaseStreamParser } from './base-parser.js'
 import type { SmithersStreamPart } from './types.js'
 import type { JSONValue } from './v3-compat.js'
 
@@ -34,60 +35,21 @@ interface AmpStreamEvent {
   error?: string
 }
 
-export class AmpStreamParser {
-  private buffer = ''
+export class AmpStreamParser extends BaseStreamParser {
+  protected handleNonJsonLine(line: string): SmithersStreamPart[] {
+    return [{ type: 'cli-output', stream: 'stdout', raw: line }]
+  }
 
-  parse(chunk: string): SmithersStreamPart[] {
-    this.buffer += chunk
+  protected mapEvent(event: Record<string, unknown>): SmithersStreamPart[] {
+    const ampEvent = event as AmpStreamEvent
     const parts: SmithersStreamPart[] = []
 
-    const lines = this.buffer.split('\n')
-    this.buffer = lines.pop() ?? ''
-
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      const parsed = this.parseJsonLine(trimmed)
-      if (parsed) {
-        parts.push(...parsed)
-      } else {
-        parts.push({ type: 'cli-output', stream: 'stdout', raw: line })
-      }
+    if (ampEvent.error) {
+      parts.push({ type: 'error', error: ampEvent.error })
     }
 
-    return parts
-  }
-
-  flush(): SmithersStreamPart[] {
-    if (!this.buffer.trim()) {
-      this.buffer = ''
-      return []
-    }
-    const parts = this.parseJsonLine(this.buffer) ?? [
-      { type: 'cli-output', stream: 'stdout', raw: this.buffer },
-    ]
-    this.buffer = ''
-    return parts
-  }
-
-  private parseJsonLine(line: string): SmithersStreamPart[] | null {
-    try {
-      const event = JSON.parse(line) as AmpStreamEvent
-      return this.mapEvent(event)
-    } catch {
-      return null
-    }
-  }
-
-  private mapEvent(event: AmpStreamEvent): SmithersStreamPart[] {
-    const parts: SmithersStreamPart[] = []
-
-    if (event.error) {
-      parts.push({ type: 'error', error: event.error })
-    }
-
-    if (event.type === 'assistant' && event.message?.content) {
-      for (const block of event.message.content) {
+    if (ampEvent.type === 'assistant' && ampEvent.message?.content) {
+      for (const block of ampEvent.message.content) {
         if (block.type === 'text' && block.text) {
           parts.push(...this.emitTextBlock(block.text))
         } else if (block.type && block.type.includes('tool')) {
@@ -102,10 +64,10 @@ export class AmpStreamParser {
       return parts
     }
 
-    if (event.type && event.type.includes('tool')) {
-      const toolName = event.tool_name ?? event.name ?? 'unknown'
-      const input = event.tool_input ?? event.input ?? {}
-      const result = event.tool_result ?? event.result
+    if (ampEvent.type && ampEvent.type.includes('tool')) {
+      const toolName = ampEvent.tool_name ?? ampEvent.name ?? 'unknown'
+      const input = ampEvent.tool_input ?? ampEvent.input ?? {}
+      const result = ampEvent.tool_result ?? ampEvent.result
       const toolCallId = randomUUID()
       parts.push({ type: 'tool-call', toolCallId, toolName, input: JSON.stringify(input) })
       if (result !== undefined) {
@@ -114,12 +76,12 @@ export class AmpStreamParser {
       return parts
     }
 
-    if (event.type === 'result' && event.usage) {
+    if (ampEvent.type === 'result' && ampEvent.usage) {
       parts.push({
         type: 'finish',
         usage: {
-          inputTokens: { total: event.usage.input_tokens ?? 0 },
-          outputTokens: { total: event.usage.output_tokens ?? 0 },
+          inputTokens: { total: ampEvent.usage.input_tokens ?? 0 },
+          outputTokens: { total: ampEvent.usage.output_tokens ?? 0 },
         },
         finishReason: { unified: 'stop' },
       })

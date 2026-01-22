@@ -5,7 +5,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
 import { RateLimitMonitor, createRateLimitMonitor } from './monitor.js'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
-import type { RateLimitStatus } from './types.js'
+
 
 describe('RateLimitMonitor', () => {
   describe('constructor', () => {

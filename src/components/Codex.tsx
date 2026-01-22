@@ -1,46 +1,27 @@
 import type { ReactNode } from 'react'
 import { useCodex } from '../hooks/useCodex.js'
-import { truncateToLastLines } from './agents/claude-cli/message-parser.js'
+import { AgentRenderer } from './AgentRenderer.js'
 import type { CodexProps } from './agents/types/codex.js'
 
 export function Codex(props: CodexProps): ReactNode {
   const { status, agentId, executionId, model, result, error, tailLog } = useCodex(props)
 
-  const maxEntries = props.tailLogCount ?? 10
-  const maxLines = props.tailLogLines ?? 10
-  const displayEntries = status === 'complete'
-    ? tailLog.slice(-1)
-    : tailLog.slice(-maxEntries)
-
   return (
-    <codex
+    <AgentRenderer
+      tag="codex"
       status={status}
       agentId={agentId}
       executionId={executionId}
-      model={model}
-      {...(error?.message ? { error: error.message } : {})}
-      {...(result?.tokensUsed?.input !== undefined ? { tokensInput: result.tokensUsed.input } : {})}
-      {...(result?.tokensUsed?.output !== undefined ? { tokensOutput: result.tokensUsed.output } : {})}
-      {...(result?.turnsUsed !== undefined ? { turnsUsed: result.turnsUsed } : {})}
-      {...(result?.durationMs !== undefined ? { durationMs: result.durationMs } : {})}
+      modelOrMode={model}
+      modelAttrName="model"
+      result={result}
+      error={error}
+      tailLog={tailLog}
+      tailLogCount={props.tailLogCount}
+      tailLogLines={props.tailLogLines}
     >
-      {displayEntries.length > 0 && (
-        <messages count={displayEntries.length}>
-          {displayEntries.map(entry =>
-            entry.type === 'message' ? (
-              <message key={entry.index} index={entry.index}>
-                {truncateToLastLines(entry.content, maxLines)}
-              </message>
-            ) : (
-              <tool-call key={entry.index} name={entry.toolName} index={entry.index}>
-                {truncateToLastLines(entry.content, maxLines)}
-              </tool-call>
-            )
-          )}
-        </messages>
-      )}
       {props.children}
-    </codex>
+    </AgentRenderer>
   )
 }
 

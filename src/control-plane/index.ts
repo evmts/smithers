@@ -2,7 +2,7 @@ import { discoverScripts, type DiscoverOptions } from './discover.js'
 import { run, resume, cancel, createWorkflow, type RunOptions, type ResumeOptions, type CreateWorkflowOptions } from './runner.js'
 import { status, frames, type FramesOptions } from './status.js'
 import { glob as globFn } from './glob.js'
-import { grep as grepFn, type GrepMatch } from './grep.js'
+import { grep as grepFn, type GrepResult } from './grep.js'
 import type { ScriptInfo, ExecutionStatus, CreateWorkflowResult, RunResult, Frame } from './types.js'
 
 export interface SmithersControlPlane {
@@ -14,7 +14,7 @@ export interface SmithersControlPlane {
   frames(executionId: string, opts?: { since?: number; limit?: number; maxChars?: number }): Promise<{ frames: Frame[]; cursor: number }>
   cancel(executionId: string): Promise<void>
   glob(opts: { pattern: string; limit?: number }): Promise<string[]>
-  grep(opts: { pattern: string; path?: string; glob?: string; caseSensitive?: boolean }): Promise<GrepMatch[]>
+  grep(opts: { pattern: string; path?: string; glob?: string; caseSensitive?: boolean }): Promise<GrepResult>
 }
 
 export interface ControlPlaneOptions {
@@ -59,4 +59,4 @@ export { discoverScripts } from './discover.js'
 export { run, resume, cancel, createWorkflow } from './runner.js'
 export { status, frames } from './status.js'
 export { glob } from './glob.js'
-export { grep, type GrepMatch } from './grep.js'
+export { grep, type GrepMatch, type GrepResult } from './grep.js'

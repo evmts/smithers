@@ -14,16 +14,19 @@ db.agents.complete(agentId, "Feature implemented", { success: true }, { input: 1
 ## Contract
 
 - **Sync:** All methods are synchronous
-- **Return shape:** snake_case fields with ISO8601 string timestamps
+- **Return shape:** snake_case fields with `Date` object timestamps
 - **Status:** `pending | running | completed | failed | cancelled`
 
 ## Methods
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `start` | `(prompt: string, model: string, systemPrompt?: string) => string` | Start agent |
-| `complete` | `(id: string, output: string, result?: object, tokens?: {input, output}) => void` | Mark complete |
+| `start` | `(prompt: string, model?: string, systemPrompt?: string, logPath?: string) => string` | Start agent |
+| `complete` | `(id: string, result: string, structuredResult?: object, tokens?: {input, output}) => void` | Mark complete |
 | `fail` | `(id: string, error: string) => void` | Mark failed |
+| `setStreamSummary` | `(id: string, summary: StreamSummary) => void` | Set stream summary stats |
+| `recordStreamEvent` | `(agentId: string, part: SmithersStreamPart) => void` | Record a stream event |
+| `getStreamEvents` | `(agentId: string, options?: {types?: string[], limit?: number}) => AgentStreamEvent[]` | Get stream events |
 | `current` | `() => Agent \| null` | Get running agent |
 | `list` | `(executionId: string) => Agent[]` | List agents for execution |
 
@@ -61,6 +64,27 @@ interface Agent {
   started_at?: Date;
   completed_at?: Date;
   duration_ms?: number;
+  created_at: Date;
+  log_path?: string;
+  stream_summary?: StreamSummary;
+}
+
+interface StreamSummary {
+  textBlocks: number;
+  reasoningBlocks: number;
+  toolCalls: number;
+  toolResults: number;
+  errors: number;
+}
+
+interface AgentStreamEvent {
+  id: string;
+  agent_id: string;
+  event_type: string;
+  event_id?: string;
+  tool_name?: string;
+  content?: string;
+  timestamp: number;
   created_at: Date;
 }
 

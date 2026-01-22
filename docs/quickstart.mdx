@@ -67,7 +67,7 @@ function Hello() {
 }
 
 const root = createSmithersRoot();
-await root.mount(() => <Hello />);
+await root.mount(<Hello />);
 db.close();
 ```
 
@@ -84,16 +84,10 @@ If you're using TypeScript, add these settings:
 ```json
 {
   "compilerOptions": {
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "jsxImportSource": "smithers-orchestrator"
   }
 }
-```
-
-**bunfig.toml:**
-```toml
-[dev]
-jsx = "react"
 ```
 </Accordion>
 
@@ -160,7 +154,7 @@ function Workflow() {
 
 const root = createSmithersRoot();
 try {
-  await root.mount(() => <Workflow />);
+  await root.mount(<Workflow />);
   db.execution.complete(executionId, { summary: "Done" });
 } catch (err) {
   db.execution.fail(executionId, String(err));

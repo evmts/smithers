@@ -16,13 +16,23 @@ export interface GrepMatch {
   content: string
 }
 
-export async function grep(opts: GrepOptions): Promise<GrepMatch[]> {
+export interface GrepResult {
+  matches: GrepMatch[]
+  error?: string
+}
+
+export async function grep(opts: GrepOptions): Promise<GrepResult> {
   const cwd = opts.cwd ?? process.cwd()
   const limit = opts.limit ?? 100
   const results: GrepMatch[] = []
   
   const flags = opts.caseSensitive ? '' : 'i'
-  const regex = new RegExp(opts.pattern, flags)
+  let regex: RegExp
+  try {
+    regex = new RegExp(opts.pattern, flags)
+  } catch (e) {
+    return { matches: [], error: `Invalid regex pattern: ${e instanceof Error ? e.message : String(e)}` }
+  }
   
   const searchPath = opts.path ? nodePath.join(cwd, opts.path) : cwd
   
@@ -64,7 +74,7 @@ export async function grep(opts: GrepOptions): Promise<GrepMatch[]> {
           })
           
           if (results.length >= limit) {
-            return results
+            return { matches: results }
           }
         }
       }
@@ -73,5 +83,5 @@ export async function grep(opts: GrepOptions): Promise<GrepMatch[]> {
     }
   }
   
-  return results
+  return { matches: results }
 }

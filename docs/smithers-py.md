@@ -65,6 +65,10 @@ Mimics React's mental model:
 
 ### Option 1: Python JSX (`.px` files)
 
+<Note>
+`.px` files use JSX-like syntax transpiled to Python. A planned transpiler will convert `<Component prop={value}>` to `Component(prop=value, children=[...])` calls. Until then, use the context manager or decorator syntax below.
+</Note>
+
 ```python
 # coding: jsx
 from smithers_py import component, Ralph, Phase, Claude, If

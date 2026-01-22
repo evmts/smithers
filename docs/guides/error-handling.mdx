@@ -17,8 +17,7 @@ description: Handle errors gracefully in Smithers workflows
 ## Retry with State
 
 ```tsx
-import { useSmithers, If, Stop, Claude } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
+import { useSmithers, If, Stop, Claude, useQueryValue } from "smithers-orchestrator";
 
 function RetryWorkflowBody() {
   const { db, reactiveDb } = useSmithers();
@@ -69,8 +68,7 @@ function RetryWorkflowBody() {
 ## Graceful Degradation
 
 ```tsx
-import { useSmithers, If, Claude, Human } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
+import { useSmithers, If, Claude, Human, useQueryValue } from "smithers-orchestrator";
 
 function ResilientWorkflowBody() {
   const { db, reactiveDb } = useSmithers();

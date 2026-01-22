@@ -50,8 +50,7 @@ description: Connect Claude to external tools via Model Context Protocol
 ## Data Pipeline
 
 ```tsx
-import { useSmithers, If, Claude, Sqlite } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
+import { useSmithers, If, Claude, Sqlite, useQueryValue } from "smithers-orchestrator";
 
 function DataPipelineBody() {
   const { db, reactiveDb } = useSmithers();

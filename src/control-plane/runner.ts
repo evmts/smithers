@@ -2,7 +2,7 @@ import * as path from 'path'
 import { unlink, mkdir } from 'fs/promises'
 import { Database } from 'bun:sqlite'
 import type { RunResult, CreateWorkflowResult } from './types.js'
-import { deriveDbPath } from './utils.js'
+import { deriveDbPath, findDbForExecution } from './utils.js'
 
 const runningProcesses = new Map<string, { proc: ReturnType<typeof Bun.spawn>; pid: number }>()
 
@@ -76,26 +76,20 @@ export async function resume(opts: ResumeOptions = {}): Promise<RunResult> {
   const cwd = opts.cwd ?? process.cwd()
   
   if (opts.executionId) {
-    const dataDir = path.join(cwd, '.smithers', 'data')
-    const glob = new Bun.Glob('*.db')
-    
-    for await (const dbFile of glob.scan({ cwd: dataDir, absolute: true })) {
-      try {
-        const db = new Database(dbFile, { readonly: true })
-        try {
-          const exec = db.query<{ file_path: string }, [string]>(
-            "SELECT file_path FROM executions WHERE id = ?"
-          ).get(opts.executionId)
-          
-          if (exec) {
-            return run({ script: exec.file_path, executionId: opts.executionId, cwd })
-          }
-        } finally {
-          db.close()
-        }
-      } catch {
-        continue
+    const dbPath = findDbForExecution(opts.executionId, path.join(cwd, '.smithers'))
+    if (!dbPath) {
+      throw new Error(`Execution ${opts.executionId} not found`)
+    }
+    const db = new Database(dbPath, { readonly: true })
+    try {
+      const exec = db.query<{ file_path: string }, [string]>(
+        "SELECT file_path FROM executions WHERE id = ?"
+      ).get(opts.executionId)
+      if (exec) {
+        return run({ script: exec.file_path, executionId: opts.executionId, cwd })
       }
+    } finally {
+      db.close()
     }
     throw new Error(`Execution ${opts.executionId} not found`)
   }
@@ -132,38 +126,27 @@ export async function resume(opts: ResumeOptions = {}): Promise<RunResult> {
 
 export async function cancel(opts: CancelOptions): Promise<void> {
   const cwd = opts.cwd ?? process.cwd()
-  const dataDir = path.join(cwd, '.smithers', 'data')
-  const glob = new Bun.Glob('*.db')
+  const dbPath = findDbForExecution(opts.executionId, path.join(cwd, '.smithers'))
   
-  for await (const dbFile of glob.scan({ cwd: dataDir, absolute: true })) {
-    try {
-      const db = new Database(dbFile)
-      try {
-        const exec = db.query<{ id: string }, [string]>(
-          "SELECT id FROM executions WHERE id = ?"
-        ).get(opts.executionId)
-        
-        if (exec) {
-          const running = runningProcesses.get(opts.executionId)
-          if (running) {
-            running.proc.kill()
-            runningProcesses.delete(opts.executionId)
-          }
-          db.run(
-            "UPDATE executions SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?",
-            [opts.executionId]
-          )
-          return
-        }
-      } finally {
-        db.close()
-      }
-    } catch {
-      continue
-    }
+  if (!dbPath) {
+    throw new Error(`Execution ${opts.executionId} not found`)
   }
   
-  throw new Error(`Execution ${opts.executionId} not found`)
+  const running = runningProcesses.get(opts.executionId)
+  if (running) {
+    running.proc.kill()
+    runningProcesses.delete(opts.executionId)
+  }
+  
+  const db = new Database(dbPath)
+  try {
+    db.run(
+      "UPDATE executions SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?",
+      [opts.executionId]
+    )
+  } finally {
+    db.close()
+  }
 }
 
 export async function createWorkflow(opts: CreateWorkflowOptions): Promise<CreateWorkflowResult> {

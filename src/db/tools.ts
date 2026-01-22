@@ -1,6 +1,6 @@
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { ToolCall } from './types.js'
-import { uuid, now, parseJson } from './utils.js'
+import { uuid, now, parseJson, calcDuration } from './utils.js'
 
 export interface ToolsModule {
   start: (agentId: string, toolName: string, input: Record<string, any>) => string
@@ -50,8 +50,7 @@ export function createToolsModule(ctx: ToolsModuleContext): ToolsModule {
       const outputSize = Buffer.byteLength(output, 'utf8')
       const timestamp = now()
       rdb.transaction(() => {
-        const startRow = rdb.queryOne<{ started_at: string }>('SELECT started_at FROM tool_calls WHERE id = ?', [id])
-        const durationMs = startRow ? Date.now() - new Date(startRow.started_at).getTime() : null
+        const durationMs = calcDuration(rdb, 'tool_calls', 'id', id)
 
         if (outputSize < 1024) {
           rdb.run(

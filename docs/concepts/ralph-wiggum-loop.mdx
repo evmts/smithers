@@ -70,7 +70,7 @@ You control iteration using the `<Ralph>` component inside `<SmithersProvider>`.
 
 ```tsx
 import { SmithersProvider, Ralph, useSmithers, Claude, If } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
+import { useQueryValue } from "smithers-orchestrator";
 
 function IterativeWorkflowBody({ attempts, testsPassing }) {
   const { db } = useSmithers();
@@ -102,12 +102,16 @@ function IterativeWorkflowInner() {
   
   // State in SQLite, not useState (see State Management docs)
   const { data: attemptsVal } = useQueryValue<number>(
-    "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'attempts'"
+    db.db,
+    "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'attempts'",
+    []
   );
   const attempts = attemptsVal ?? 0;
 
   const { data: testsPassingVal } = useQueryValue<number>(
-    "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'tests_passing'"
+    db.db,
+    "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'tests_passing'",
+    []
   );
   const testsPassing = Boolean(testsPassingVal);
 
@@ -135,10 +139,9 @@ export function IterativeWorkflow({ db, executionId }) {
 
 ### Implicit Stopping
 
-Ralph also stops implicitly when nothing renders for an iteration. If no components mount and register tasks within a short timeout, the loop assumes the workflow is complete.
+Ralph also stops implicitly when nothing renders for an iteration. If no components mount and register tasks, the loop assumes the workflow is complete.
 
 **What this means:**
-- The 500ms is a *detection timeout*, not an execution limit
 - Your agents can run for hours; this only applies to detecting when there's nothing left to do
 - If any component calls `db.tasks.start()`, the loop waits for that task to complete
 
@@ -171,14 +174,16 @@ db.tasks.complete(taskId);  // Loop can now advance
 `useQueryValue` makes SQLite state reactive: when the database changes, your component re-renders:
 
 ```tsx
-import { useQueryValue } from "smithers-orchestrator/db";
+import { useQueryValue } from "smithers-orchestrator";
 
 function MyComponent() {
   const { db } = useSmithers();
   
   // Reactive: re-renders when 'phase' changes in DB
   const { data: phase } = useQueryValue<string>(
-    "SELECT value FROM state WHERE key = 'phase'"
+    db.db,
+    "SELECT value FROM state WHERE key = 'phase'",
+    []
   );
   
   // Update triggers re-render automatically
@@ -196,7 +201,7 @@ The power of the Ralph Loop comes from React reactivity:
 
 ```tsx
 import { SmithersProvider, Ralph, Claude, If } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
+import { useQueryValue } from "smithers-orchestrator";
 
 function PhaseWorkflowBody({ phase, setPhase }) {
   return (
@@ -233,7 +238,9 @@ function PhaseWorkflowInner() {
   
   // State in SQLite, not useState
   const { data: phaseVal } = useQueryValue<string>(
-    "SELECT value FROM state WHERE key = 'phase'"
+    db.db,
+    "SELECT value FROM state WHERE key = 'phase'",
+    []
   );
   const phase = phaseVal ?? "research";
 
@@ -633,7 +640,7 @@ import {
   If,
   useSmithers,
 } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
+import { useQueryValue } from "smithers-orchestrator";
 
 const db = createSmithersDB({ path: ".smithers/retry-tests.db" });
 const executionId = db.execution.start("Retry Tests", "retry.tsx");

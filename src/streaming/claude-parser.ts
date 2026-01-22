@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { BaseStreamParser } from "./base-parser.js";
 import type { SmithersStreamPart } from "./types.js";
 import type { JSONValue } from "./v3-compat.js";
 
@@ -27,55 +28,11 @@ interface ClaudeMessage {
   model?: string;
 }
 
-export class ClaudeStreamParser {
-  private buffer = "";
+export class ClaudeStreamParser extends BaseStreamParser {
   private currentBlockId: string | null = null;
   private currentBlockType: BlockType | null = null;
 
-  parse(chunk: string): SmithersStreamPart[] {
-    this.buffer += chunk;
-    const parts: SmithersStreamPart[] = [];
-
-    const lines = this.buffer.split("\n");
-    this.buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-
-      const parsed = this.parseJsonLine(trimmed);
-      if (parsed) {
-        parts.push(...parsed);
-      } else {
-        parts.push(...this.emitTextFallback(line));
-      }
-    }
-
-    return parts;
-  }
-
-  flush(): SmithersStreamPart[] {
-    if (!this.buffer.trim()) {
-      this.buffer = "";
-      return [];
-    }
-    const parts = this.emitTextFallback(this.buffer);
-    this.buffer = "";
-    return parts;
-  }
-
-  private parseJsonLine(line: string): SmithersStreamPart[] | null {
-    try {
-      const event = JSON.parse(line) as Record<string, unknown>;
-      return this.mapEvent(event);
-    } catch {
-      return null;
-    }
-  }
-
-  private emitTextFallback(content: string): SmithersStreamPart[] {
+  protected handleNonJsonLine(content: string): SmithersStreamPart[] {
     const parts: SmithersStreamPart[] = [];
 
     if (this.currentBlockType !== "text") {
@@ -235,7 +192,7 @@ export class ClaudeStreamParser {
     error: (e) => this.handleError(e),
   };
 
-  private mapEvent(event: Record<string, unknown>): SmithersStreamPart[] {
+  protected mapEvent(event: Record<string, unknown>): SmithersStreamPart[] {
     const eventType = event["type"] as string;
     const handler = this.eventHandlers[eventType];
     return handler ? handler(event) : [{ type: "cli-output", stream: "stdout", raw: JSON.stringify(event) }];

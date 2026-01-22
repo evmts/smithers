@@ -18,6 +18,10 @@ The official plugin lets Claude generate and run Smithers workflows.
 /plugin install smithers@smithers
 ```
 
+<Note>
+Plugin commands are coming soon. Check the [GitHub repo](https://github.com/evmts/smithers) for availability.
+</Note>
+
 Now ask Claude:
 
 ```
@@ -32,7 +36,7 @@ Claude generates the `.tsx` file. Review it like any other code.
 
 Add the Smithers skill to your project:
 
-**`.cursor/rules/smithers.mdc`:**
+**`.cursor/rules/smithers.mdc`** (or `.cursorrules` for older Cursor versions):
 
 ```markdown
 ---
@@ -90,7 +94,7 @@ description: Create and monitor multi-agent AI orchestrations using Smithers fra
 Use `smithers-orchestrator` to create React-based agent workflows with Phase/Step/Claude components. Always use createSmithersDB for persistence.
 ```
 
-Or install from the plugin registry:
+Or install from the skill registry (coming soon):
 
 ```bash
 amp skill add evmts/smithers
