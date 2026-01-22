@@ -123,8 +123,8 @@ interface Review {
   target_ref?: string;
   approved: boolean;
   summary: string;
-  issues: { severity: string; file?: string; line?: number; message: string }[];
-  approvals?: { reviewer: string; approved: boolean; comment?: string }[];
+  issues: ReviewIssue[];
+  approvals?: ReviewApproval[];
   reviewer_model?: string;
   blocking: boolean;
   posted_to_github: boolean;
@@ -142,6 +142,19 @@ interface Report {
   data?: Record<string, any>;
   severity: "info" | "warning" | "critical";
   created_at: Date;
+}
+
+interface ReviewIssue {
+  severity: "critical" | "major" | "minor" | "suggestion";
+  file?: string;
+  line?: number;
+  message: string;
+  suggestion?: string;
+}
+
+interface ReviewApproval {
+  aspect: string;
+  reason: string;
 }
 ```
 
