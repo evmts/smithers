@@ -461,6 +461,8 @@ setSessionName(name) / setLabel(entryId, label)
 
 ## Implementation Phases
 
+### Library Phases (Complete ✅)
+
 | Phase | Components | Key Milestones |
 |-------|------------|----------------|
 | 1. Terminal | Terminal interface, raw mode, Kitty protocol | Echo typed chars, handle Ctrl+C |
@@ -468,9 +470,29 @@ setSessionName(name) / setLabel(entryId, label)
 | 3. Components | Component/Container, Text, focus, requestRender | Scrollable text display |
 | 4. Editor | Cursor nav, kill ring, undo, history, paste, wrap | Functional multiline input |
 | 5. Overlays | Stack, anchoring, compositing, focus restore | Modal dialog over content |
-| 6. AI | Message types, streaming, Anthropic/OpenAI providers | Stream response to screen |
+| 6. AI | Message types, streaming events (types only) | Event stream interface |
 | 7. Extensions | Loading, events, tool/command registration | Custom /command works |
 | 8. Sessions | NDJSON, tree, compaction, crash recovery | Resume after restart |
+
+### Application Phases (TODO)
+
+| Phase | Components | Dependencies | Key Milestones |
+|-------|------------|--------------|----------------|
+| 9. CLI | Argument parsing, subcommands, config | [zig-clap](https://github.com/Hejsil/zig-clap) | `god-agent --help` works |
+| 10. Agent | Agent loop, tool execution, queues | [ai-zig](https://github.com/evmts/ai-zig) | Tool calls execute |
+| 11. Interactive | Chat UI, header, status, commands | god-tui lib | Full TUI running |
+| 12. Integration | E2E testing, polish, docs | All above | Production ready |
+
+**Deep-dive spec**: `issues/god-tui/13-application-layer.md`
+
+---
+
+## External Dependencies
+
+| Package | Purpose | URL |
+|---------|---------|-----|
+| zig-clap | CLI argument parsing | https://github.com/Hejsil/zig-clap |
+| ai-zig | LLM providers (30+ supported) | https://github.com/evmts/ai-zig |
 
 ---
 

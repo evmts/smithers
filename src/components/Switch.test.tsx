@@ -3,7 +3,7 @@ import React from 'react'
 import { createSmithersDB, type SmithersDB } from '../db/index.js'
 import { createSmithersRoot, type SmithersRoot } from '../reconciler/root.js'
 import { SmithersProvider } from './SmithersProvider.js'
-import { Switch, Case, Default, type SwitchProps, type CaseProps, type DefaultProps } from './Switch.js'
+import { Switch, Case, Default } from './Switch.js'
 
 // ============================================================================
 // MODULE EXPORTS
