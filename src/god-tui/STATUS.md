@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Current State:** 8/8 phases implemented with passing tests.
+**Current State:** 11/12 phases implemented (Library complete, Application Phases 9-11 complete).
 
 ```bash
 # Run individual module tests (build test has interactive stdin issues):
@@ -34,6 +34,38 @@ zig build  # Compiles successfully
 | 6 | AI Providers | ✅ Complete | ✅ | Message types, streaming events, mock provider |
 | 7 | Extension System | ✅ Complete | ✅ | Events, tools, commands, shortcuts, flags, event bus |
 | 8 | Session Management | ✅ Complete | ✅ | NDJSON format, tree structure, SessionManager |
+| 9 | CLI Entry Point | ✅ Complete | ✅ | clap parsing, subcommands, config.zig |
+| 10 | Agent Loop | ✅ Complete | ✅ | Agent struct, tools, registry |
+| 11 | Interactive Mode | ✅ Complete | ✅ | UI components, modes, slash commands |
+| 12 | Integration | 🚧 Pending | - | E2E tests, wire together, polish |
+
+---
+
+## Application Layer
+
+### Phase 9: CLI Entry Point ✅
+- `main.zig` - Entry point with clap argument parsing
+- `config.zig` - Configuration management (JSON parsing, ThinkingLevel)
+- Subcommands: `session list|show|export|delete`, `config show|set|edit`
+- Options: `-m/--model`, `-c/--continue`, `-R/--restore`, `-p/--print`, etc.
+
+### Phase 10: Agent Loop ✅
+- `agent/agent.zig` - Core Agent struct (prompt, steer, followUp, abort)
+- `agent/types.zig` - Message, Role, AgentConfig, AgentEvent
+- `agent/tools/registry.zig` - ToolRegistry with 7 built-in tools
+- `agent/tools/` - read_file, write_file, edit_file, bash, glob, grep, list_dir
+
+### Phase 11: Interactive Mode ✅
+- `modes/interactive.zig` - Full TUI mode with slash commands
+- `modes/print.zig` - Single-shot mode
+- `ui/header.zig` - Header component (version, model, session)
+- `ui/chat.zig` - Chat container (messages, tool calls)
+- `ui/status.zig` - Status bar (keybindings, busy state)
+
+### Phase 12: Integration (TODO)
+- E2E tests
+- Documentation
+- Performance optimization
 
 ---
 
