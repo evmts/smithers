@@ -59,8 +59,10 @@ class GlobalStateStore:
             self.db.commit()
 
 
-# Backwards compatibility alias
-SqliteStore = GlobalStateStore
+# NOTE: For execution-scoped state storage (with execution_id), use:
+#   from smithers_py.state.sqlite import SqliteStore
+# 
+# This module's GlobalStateStore is for global state only (no execution scope).
 
 
 class ExecutionModule:

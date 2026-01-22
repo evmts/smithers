@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 # Imports - errors will be caught during test execution
-from smithers_py.db.database import SmithersDB, ExecutionModule, TasksModule, SqliteStore
+from smithers_py.db.database import SmithersDB, ExecutionModule, TasksModule
 from smithers_py.state.sqlite import SqliteStore as StateSqliteStore
 from smithers_py.state.base import WriteOp, StoreTarget
 from smithers_py.executors.claude import ClaudeExecutor

@@ -43,8 +43,8 @@ pub const Terminal = struct {
             .allocator = allocator,
             .stdin_buffer = StdinBuffer.init(allocator),
             .output_buffer = .{},
-            .stdin = std.io.getStdIn().handle,
-            .stdout = std.io.getStdOut().handle,
+            .stdin = std.posix.STDIN_FILENO,
+            .stdout = std.posix.STDOUT_FILENO,
         };
     }
 
@@ -79,7 +79,7 @@ pub const Terminal = struct {
         );
 
         // Write start sequence
-        const w = self.output_buffer.writer();
+        const w = self.output_buffer.writer(self.allocator);
         try w.writeAll(ansi.BRACKETED_PASTE_ENABLE);
         try w.writeAll(ansi.KITTY_QUERY);
         try w.writeAll(ansi.CELL_SIZE_QUERY);
@@ -104,7 +104,7 @@ pub const Terminal = struct {
     // Stop terminal and restore state
     pub fn stop(self: *Self) void {
         // Write stop sequence
-        const w = self.output_buffer.writer();
+        const w = self.output_buffer.writer(self.allocator);
         if (self.kitty_protocol_active) {
             w.writeAll(ansi.KITTY_POP) catch {};
         }
@@ -193,7 +193,7 @@ pub const Terminal = struct {
     }
 
     pub fn moveBy(self: *Self, lines: i32) !void {
-        const w = self.output_buffer.writer();
+        const w = self.output_buffer.writer(self.allocator);
         try ansi.moveBy(w, lines);
     }
 
@@ -212,7 +212,7 @@ pub const Terminal = struct {
 
     // Window title
     pub fn setTitle(self: *Self, title: []const u8) !void {
-        const w = self.output_buffer.writer();
+        const w = self.output_buffer.writer(self.allocator);
         try ansi.setTitle(w, title);
     }
 

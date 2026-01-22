@@ -171,22 +171,23 @@ test "Keys: matchesKey combinations" {
 test "StdinBuffer: single character" {
     const allocator = testing.allocator;
 
-    var received = std.ArrayList(u8).init(allocator);
-    defer received.deinit();
+    var received = std.ArrayListUnmanaged(u8){};
+    defer received.deinit(allocator);
 
     var buf = stdin_buffer.StdinBuffer.init(allocator);
     defer buf.deinit();
 
     const Ctx = struct {
-        data: *std.ArrayList(u8),
+        data: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
 
         fn callback(seq: []const u8, ctx: ?*anyopaque) void {
             const self: *@This() = @ptrCast(@alignCast(ctx));
-            self.data.appendSlice(seq) catch {};
+            self.data.appendSlice(self.alloc, seq) catch {};
         }
     };
 
-    var ctx = Ctx{ .data = &received };
+    var ctx = Ctx{ .data = &received, .alloc = allocator };
     buf.setCallbacks(Ctx.callback, null, @ptrCast(&ctx));
 
     try buf.process("x");
@@ -197,23 +198,23 @@ test "StdinBuffer: single character" {
 test "StdinBuffer: escape sequence" {
     const allocator = testing.allocator;
 
-    var received = std.ArrayList([]const u8).init(allocator);
+    var received = std.ArrayListUnmanaged([]const u8){};
     defer {
         for (received.items) |item| allocator.free(item);
-        received.deinit();
+        received.deinit(allocator);
     }
 
     var buf = stdin_buffer.StdinBuffer.init(allocator);
     defer buf.deinit();
 
     const Ctx = struct {
-        seqs: *std.ArrayList([]const u8),
+        seqs: *std.ArrayListUnmanaged([]const u8),
         alloc: std.mem.Allocator,
 
         fn callback(seq: []const u8, ctx: ?*anyopaque) void {
             const self: *@This() = @ptrCast(@alignCast(ctx));
             const copy = self.alloc.dupe(u8, seq) catch return;
-            self.seqs.append(copy) catch self.alloc.free(copy);
+            self.seqs.append(self.alloc, copy) catch self.alloc.free(copy);
         }
     };
 
