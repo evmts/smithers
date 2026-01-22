@@ -158,6 +158,41 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Terminal module for modes
+    const terminal_mod = b.createModule(.{
+        .root_source_file = b.path("terminal/terminal.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Rendering module for modes
+    const rendering_mod = b.createModule(.{
+        .root_source_file = b.path("rendering/renderer.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Header module for modes
+    const header_ui_mod = b.createModule(.{
+        .root_source_file = b.path("ui/header.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Chat module for modes
+    const chat_ui_mod = b.createModule(.{
+        .root_source_file = b.path("ui/chat.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Status module for modes
+    const status_ui_mod = b.createModule(.{
+        .root_source_file = b.path("ui/status.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Modes module tests
     const modes_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -166,6 +201,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "agent", .module = agent_mod },
+                .{ .name = "terminal", .module = terminal_mod },
+                .{ .name = "rendering", .module = rendering_mod },
+                .{ .name = "header", .module = header_ui_mod },
+                .{ .name = "chat", .module = chat_ui_mod },
+                .{ .name = "status", .module = status_ui_mod },
             },
         }),
     });
