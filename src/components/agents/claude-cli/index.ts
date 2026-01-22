@@ -1,7 +1,3 @@
-// Claude CLI Module
-// Main exports - re-exports everything from submodules
-
-// Argument builder
 export {
   buildClaudeArgs,
   modelMap,

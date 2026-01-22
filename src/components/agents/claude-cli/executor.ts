@@ -1,6 +1,3 @@
-// Claude CLI Executor
-// Executes Claude CLI commands using Bun
-
 import type { CLIExecutionOptions, AgentResult } from '../types.js'
 import {
   generateStructuredOutputPrompt,

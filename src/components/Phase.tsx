@@ -1,7 +1,3 @@
-// Phase component with automatic SQLite-backed state management
-// Phases are always rendered in output, but only active phase renders children
-// REQUIRES: Must be used inside a <Ralph> or <While> loop
-
 import { useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers, ExecutionBoundary } from './SmithersProvider.js'
 import { usePhaseRegistry, usePhaseIndex } from './PhaseRegistry.js'

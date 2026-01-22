@@ -1,6 +1,3 @@
-// Amp CLI output parser
-// Parses stream-json output from amp CLI
-
 import type { AgentResult, StopReason } from '../types/execution.js'
 import type { TailLogEntry } from '../claude-cli/message-parser.js'
 import { safeStringify } from '../../../debug/index.js'

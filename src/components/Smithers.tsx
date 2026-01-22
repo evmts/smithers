@@ -1,14 +1,7 @@
-// Smithers Subagent Component
-// Launches a new Smithers instance to plan and execute a task
-
 import type { ReactNode } from 'react'
 import { useSmithersSubagent } from '../hooks/useSmithersSubagent.js'
 import type { SmithersResult } from './agents/SmithersCLI.js'
 import type { ClaudeModel } from './agents/types.js'
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface SmithersProps {
   /**
@@ -88,33 +81,6 @@ export interface SmithersProps {
   onScriptGenerated?: (script: string, path: string) => void
 }
 
-// ============================================================================
-// Component
-// ============================================================================
-
-/**
- * Smithers Subagent Component
- *
- * Launches a new Smithers instance to plan and execute a complex task.
- * Uses Claude to generate a Smithers script based on the task description,
- * then executes that script as a subprocess.
- *
- * @example
- * ```tsx
- * <Smithers
- *   plannerModel="opus"
- *   executionModel="sonnet"
- *   onFinished={(result) => console.log('Task completed:', result.output)}
- * >
- *   Create a new API endpoint for user authentication.
- *   The endpoint should:
- *   1. Accept POST requests with email and password
- *   2. Validate credentials against the database
- *   3. Return a JWT token on success
- *   4. Include proper error handling and tests
- * </Smithers>
- * ```
- */
 export function Smithers(props: SmithersProps): ReactNode {
   const { status, subagentId, executionId, plannerModel, executionModel, result, error } = useSmithersSubagent(props)
 
@@ -136,10 +102,6 @@ export function Smithers(props: SmithersProps): ReactNode {
     </smithers-subagent>
   )
 }
-
-// ============================================================================
-// Exports
-// ============================================================================
 
 export type { SmithersResult }
 export { executeSmithers } from './agents/SmithersCLI.js'

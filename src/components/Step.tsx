@@ -1,7 +1,3 @@
-// Step component with automatic sequential execution within phases
-// Steps execute one after another unless wrapped in <Parallel>
-// REQUIRES: Must be used inside a <Ralph> or <While> loop (typically via Phase)
-
 import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'

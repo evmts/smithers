@@ -1,6 +1,3 @@
-// Claude Code CLI Executor
-// Re-exports from the claude-cli module for backward compatibility
-
 export {
   // Argument builder
   buildClaudeArgs,

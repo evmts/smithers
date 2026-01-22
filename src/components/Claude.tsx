@@ -3,19 +3,6 @@ import { useClaude } from '../hooks/useClaude.js'
 import { truncateToLastLines } from './agents/claude-cli/message-parser.js'
 import type { ClaudeProps, AgentResult } from './agents/types.js'
 
-/**
- * Claude Agent Component
- *
- * Executes Claude CLI as a React component with database tracking,
- * progress reporting, and retry logic.
- *
- * @example
- * ```tsx
- * <Claude model="sonnet" onFinished={(result) => console.log(result.output)}>
- *   Fix the bug in src/utils.ts
- * </Claude>
- * ```
- */
 export function Claude(props: ClaudeProps): ReactNode {
   const { status, agentId, executionId, model, result, error, tailLog } = useClaude(props)
 

@@ -1,6 +1,3 @@
-// Parallel - Execute children concurrently
-// When placed inside a Phase, all child Steps/Claude components execute simultaneously
-
 import { useCallback, useRef, type ReactNode } from 'react'
 import { ExecutionScopeProvider, useExecutionScope } from './ExecutionScope.js'
 import { StepRegistryProvider, useStepRegistry } from './Step.js'

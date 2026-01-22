@@ -3,19 +3,6 @@ import { useAmp } from '../hooks/useAmp.js'
 import { truncateToLastLines } from './agents/claude-cli/message-parser.js'
 import type { AmpProps } from './agents/types/amp.js'
 
-/**
- * Amp Agent Component
- *
- * Executes Amp CLI as a React component with database tracking,
- * progress reporting, and retry logic.
- *
- * @example
- * ```tsx
- * <Amp mode="smart" onFinished={(result) => console.log(result.output)}>
- *   Fix the bug in src/utils.ts
- * </Amp>
- * ```
- */
 export function Amp(props: AmpProps): ReactNode {
   const { status, agentId, executionId, mode, result, error, tailLog } = useAmp(props)
 

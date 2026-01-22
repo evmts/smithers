@@ -1,5 +1,3 @@
-// PhaseRegistry - Manages sequential phase execution via SQLite state
-
 import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'

@@ -1,6 +1,3 @@
-// Agent system types for Smithers orchestrator
-// Re-exports from types/ folder for backward compatibility
-
 export type {
   JSONSchema,
   ToolContext,

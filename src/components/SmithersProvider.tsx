@@ -260,10 +260,6 @@ export function ExecutionBoundary(props: ExecutionBoundaryProps): ReactNode {
   )
 }
 
-// ============================================================================
-// PROVIDER
-// ============================================================================
-
 export interface SmithersProviderProps {
   /**
    * Database instance
@@ -339,31 +335,6 @@ export interface SmithersProviderProps {
   children: ReactNode
 }
 
-/**
- * SmithersProvider - Root context provider for Smithers orchestration
- *
- * Provides database, execution context, and global controls to child components.
- * Does NOT provide iteration - use <Ralph> or <While> for iterative workflows.
- *
- * For single-run workflows (no iteration):
- * ```tsx
- * <SmithersProvider db={db} executionId={executionId}>
- *   <Claude>Do something once</Claude>
- * </SmithersProvider>
- * ```
- *
- * For iterative/phased workflows:
- * ```tsx
- * <SmithersProvider db={db} executionId={executionId}>
- *   <Ralph id="main" condition={() => !done} maxIterations={10}>
- *     <Phase name="research">...</Phase>
- *     <Phase name="implement">...</Phase>
- *   </Ralph>
- * </SmithersProvider>
- * ```
- *
- * Note: Phase and Step components REQUIRE being inside a Ralph/While loop.
- */
 export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   const reactiveDb = props.db.db
 

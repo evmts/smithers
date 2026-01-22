@@ -3,19 +3,6 @@ import { useCodex } from '../hooks/useCodex.js'
 import { truncateToLastLines } from './agents/claude-cli/message-parser.js'
 import type { CodexProps } from './agents/types/codex.js'
 
-/**
- * Codex Agent Component
- *
- * Executes OpenAI Codex CLI as a React component with database tracking,
- * progress reporting, and retry logic.
- *
- * @example
- * ```tsx
- * <Codex model="o4-mini" onFinished={(result) => console.log(result.output)}>
- *   Fix the bug in src/utils.ts
- * </Codex>
- * ```
- */
 export function Codex(props: CodexProps): ReactNode {
   const { status, agentId, executionId, model, result, error, tailLog } = useCodex(props)
 

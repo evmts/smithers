@@ -1,6 +1,3 @@
-// Amp CLI executor
-// Spawns and manages amp CLI process
-
 import { buildAmpArgs, buildAmpEnv } from './arg-builder.js'
 import { parseAmpOutput } from './output-parser.js'
 import { checkStopConditions } from '../claude-cli/stop-conditions.js'

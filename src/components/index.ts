@@ -1,7 +1,3 @@
-/**
- * JSX components for Smithers
- */
-
 // Core agent components
 export { Claude, type ClaudeProps, type AgentResult, executeClaudeCLI } from './Claude.js'
 export { ClaudeApi, type ClaudeApiProps } from './ClaudeApi.js'

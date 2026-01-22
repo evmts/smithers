@@ -9,20 +9,6 @@ export interface SqliteProps {
   children?: ReactNode
 }
 
-/**
- * SQLite MCP Tool component.
- *
- * Provides SQLite database access to Claude via MCP server.
- * Use as a child of <Claude> with custom instructions.
- *
- * @example
- * <Claude>
- *   <Sqlite path="./data.db">
- *     Database has users table with id, name, email columns.
- *   </Sqlite>
- *   Query all users and format as a table.
- * </Claude>
- */
 export function Sqlite(props: SqliteProps): ReactNode {
   const config = JSON.stringify({
     path: props.path,

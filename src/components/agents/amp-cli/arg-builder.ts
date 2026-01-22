@@ -1,6 +1,3 @@
-// Amp CLI argument builder
-// Builds command-line arguments for the amp CLI
-
 import type { AmpCLIExecutionOptions, AmpMode } from '../types/amp.js'
 
 /**
