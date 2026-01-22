@@ -32,6 +32,30 @@ export interface CLISpawnResult {
   turnsUsed: number
 }
 
+export interface ParsedCLIOutput {
+  output: string
+  structured?: unknown
+  tokensUsed?: { input: number; output: number }
+  turnsUsed?: number
+  sessionId?: string
+}
+
+export interface ExecuteCLIOptions<TParsed extends ParsedCLIOutput> extends CLISpawnOptions {
+  cliName: string
+  args: string[]
+  parseOutput: (stdout: string, exitCode: number) => TParsed
+  getStopOutput?: (spawnResult: CLISpawnResult) => string
+  formatError?: (parsed: TParsed, spawnResult: CLISpawnResult) => string
+  buildResult?: (result: AgentResult, parsed: TParsed, spawnResult: CLISpawnResult) => AgentResult
+  buildStopResult?: (result: AgentResult, spawnResult: CLISpawnResult) => AgentResult
+}
+
+export interface ExecuteCLIResult<TParsed extends ParsedCLIOutput> {
+  result: AgentResult
+  spawnResult: CLISpawnResult
+  parsed?: TParsed
+}
+
 export async function spawnCLI(options: CLISpawnOptions): Promise<CLISpawnResult> {
   const startTime = Date.now()
   const timeout = options.timeout ?? DEFAULT_CLI_TIMEOUT_MS
@@ -171,4 +195,48 @@ export function formatErrorOutput(
   exitCode: number
 ): string {
   return `${cliName} CLI failed (exit ${exitCode})\nCommand: ${cliName} ${args.join(' ')}\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`
+}
+
+export async function executeCLI<TParsed extends ParsedCLIOutput>(
+  options: ExecuteCLIOptions<TParsed>
+): Promise<ExecuteCLIResult<TParsed>> {
+  const spawnResult = await spawnCLI(options)
+
+  if (spawnResult.killed || spawnResult.stopTriggered) {
+    const output = options.getStopOutput?.(spawnResult) ?? (spawnResult.stdout || spawnResult.stderr)
+    let result = buildAgentResult(spawnResult, output)
+    if (options.buildStopResult) {
+      result = options.buildStopResult(result, spawnResult)
+    }
+    return { result, spawnResult }
+  }
+
+  const parsed = options.parseOutput(spawnResult.stdout, spawnResult.exitCode)
+
+  if (spawnResult.exitCode !== 0) {
+    const output = options.formatError
+      ? options.formatError(parsed, spawnResult)
+      : formatErrorOutput(options.cliName, options.args, parsed.output, spawnResult.stderr, spawnResult.exitCode)
+    let result = buildAgentResult(spawnResult, output, {
+      structured: parsed.structured,
+      tokensUsed: parsed.tokensUsed ?? spawnResult.tokensUsed,
+      turnsUsed: parsed.turnsUsed ?? spawnResult.turnsUsed,
+      stopReason: 'error',
+    })
+    if (options.buildResult) {
+      result = options.buildResult(result, parsed, spawnResult)
+    }
+    return { result, spawnResult, parsed }
+  }
+
+  let result = buildAgentResult(spawnResult, parsed.output, {
+    structured: parsed.structured,
+    tokensUsed: parsed.tokensUsed ?? spawnResult.tokensUsed,
+    turnsUsed: parsed.turnsUsed ?? spawnResult.turnsUsed,
+    stopReason: 'completed',
+  })
+  if (options.buildResult) {
+    result = options.buildResult(result, parsed, spawnResult)
+  }
+  return { result, spawnResult, parsed }
 }

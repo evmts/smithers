@@ -151,12 +151,22 @@ pub fn build(b: *std.Build) void {
     ui_test_step.dependOn(&run_ui_tests.step);
     test_step.dependOn(&run_ui_tests.step);
 
+    // Agent module for modes
+    const agent_mod = b.createModule(.{
+        .root_source_file = b.path("agent/agent.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Modes module tests
     const modes_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("modes/test.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "agent", .module = agent_mod },
+            },
         }),
     });
     const run_modes_tests = b.addRunArtifact(modes_tests);

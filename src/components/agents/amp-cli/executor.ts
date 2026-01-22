@@ -1,7 +1,7 @@
 import { buildAmpArgs, buildAmpEnv } from './arg-builder.js'
 import { parseAmpOutput } from './output-parser.js'
 import { AmpStreamParser } from '../../../streaming/amp-parser.js'
-import { spawnCLI, buildAgentResult, DEFAULT_CLI_TIMEOUT_MS } from '../shared/cli-executor.js'
+import { executeCLI, DEFAULT_CLI_TIMEOUT_MS } from '../shared/cli-executor.js'
 import type { AmpCLIExecutionOptions } from '../types/amp.js'
 import type { AgentResult } from '../types/execution.js'
 import type { StopCondition } from '../types/agents.js'
@@ -64,7 +64,9 @@ export async function executeAmpCLI(options: AmpCLIExecutionOptions): Promise<Ag
     }
   }
 
-  const spawnOptions = {
+  const { result } = await executeCLI({
+    cliName: 'amp',
+    args,
     command: ['amp', ...args],
     cwd: options.cwd ?? process.cwd(),
     env: {
@@ -74,6 +76,7 @@ export async function executeAmpCLI(options: AmpCLIExecutionOptions): Promise<Ag
     stdin: prompt,
     timeout: options.timeout ?? DEFAULT_CLI_TIMEOUT_MS,
     stopConditions,
+    ...(options.onProgress && { onProgress: options.onProgress }),
     onStdoutChunk: (chunk: string) => {
       const parts = streamParser.parse(chunk)
       processStreamParts(parts)
@@ -82,37 +85,39 @@ export async function executeAmpCLI(options: AmpCLIExecutionOptions): Promise<Ag
         turnsUsed,
       }
     },
-  }
-  
-  if (options.onProgress) {
-    (spawnOptions as { onProgress?: (chunk: string) => void }).onProgress = options.onProgress
-  }
-
-  const spawnResult = await spawnCLI(spawnOptions)
-
-  const remainingParts = streamParser.flush()
-  processStreamParts(remainingParts)
-
-  if (spawnResult.killed || spawnResult.stopTriggered) {
-    return buildAgentResult(spawnResult, outputText.trim() || spawnResult.stdout || spawnResult.stderr, {
-      tokensUsed,
-      turnsUsed,
-    })
-  }
-
-  const result = parseAmpOutput(spawnResult.stdout, spawnResult.exitCode)
-  result.durationMs = spawnResult.durationMs
-  
-  if (tokensUsed.input || tokensUsed.output) {
-    result.tokensUsed = tokensUsed
-  }
-  if (turnsUsed > 0) {
-    result.turnsUsed = turnsUsed
-  }
-
-  if (spawnResult.exitCode !== 0 && spawnResult.stderr) {
-    result.output = result.output ? `${result.output}\n\nError: ${spawnResult.stderr}` : spawnResult.stderr
-  }
+    parseOutput: (stdout, exitCode) => {
+      const remainingParts = streamParser.flush()
+      processStreamParts(remainingParts)
+      const parsed = parseAmpOutput(stdout, exitCode)
+      return {
+        output: parsed.output,
+        tokensUsed: (tokensUsed.input || tokensUsed.output) ? tokensUsed : parsed.tokensUsed,
+        turnsUsed: turnsUsed > 0 ? turnsUsed : parsed.turnsUsed,
+        ...(parsed.sessionId && { sessionId: parsed.sessionId }),
+      }
+    },
+    getStopOutput: (spawnResult) => outputText.trim() || spawnResult.stdout || spawnResult.stderr,
+    formatError: (parsed, spawnResult) => {
+      if (spawnResult.stderr) {
+        return parsed.output ? `${parsed.output}\n\nError: ${spawnResult.stderr}` : spawnResult.stderr
+      }
+      return parsed.output
+    },
+    buildResult: (result, parsed) => {
+      if (parsed.sessionId) {
+        return { ...result, sessionId: parsed.sessionId }
+      }
+      return result
+    },
+    buildStopResult: (result, spawnResult) => {
+      const remainingParts = streamParser.flush()
+      processStreamParts(remainingParts)
+      return {
+        ...result,
+        output: outputText.trim() || spawnResult.stdout || spawnResult.stderr,
+      }
+    },
+  })
 
   return result
 }

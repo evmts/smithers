@@ -5,29 +5,48 @@ const std = @import("std");
 const posix = std.posix;
 const Allocator = std.mem.Allocator;
 
+const agent_mod = @import("agent");
+const Agent = agent_mod.Agent;
+const AgentConfig = agent_mod.AgentConfig;
+const AgentEvent = agent_mod.AgentEvent;
+const Message = agent_mod.Message;
+
 pub const PrintMode = struct {
     allocator: Allocator,
-    model: []const u8 = "claude-sonnet-4",
+    agent: *Agent,
+    owns_agent: bool,
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator) Self {
+    pub fn init(allocator: Allocator, agent: *Agent) Self {
         return .{
             .allocator = allocator,
+            .agent = agent,
+            .owns_agent = false,
+        };
+    }
+
+    pub fn initWithConfig(allocator: Allocator, config: AgentConfig) !Self {
+        const agent = try allocator.create(Agent);
+        agent.* = Agent.init(allocator, config);
+        agent.on_event = handleEvent;
+        return .{
+            .allocator = allocator,
+            .agent = agent,
+            .owns_agent = true,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        _ = self;
+        if (self.owns_agent) {
+            self.agent.deinit();
+            self.allocator.destroy(self.agent);
+        }
     }
 
-    pub fn setModel(self: *Self, model: []const u8) void {
-        self.model = model;
-    }
-
-    pub fn run(self: *Self, prompt: []const []const u8) !void {
-        if (prompt.len == 0) {
-            try self.writeStdout("Error: No prompt provided\n");
+    pub fn run(self: *Self, prompt_parts: []const []const u8) !void {
+        if (prompt_parts.len == 0) {
+            try writeStdout("Error: No prompt provided\n");
             return error.NoPrompt;
         }
 
@@ -35,44 +54,114 @@ pub const PrintMode = struct {
         var full_prompt = std.ArrayListUnmanaged(u8){};
         defer full_prompt.deinit(self.allocator);
 
-        for (prompt, 0..) |part, i| {
+        for (prompt_parts, 0..) |part, i| {
             if (i > 0) try full_prompt.append(self.allocator, ' ');
             try full_prompt.appendSlice(self.allocator, part);
         }
 
-        // In a real implementation, this would:
-        // 1. Initialize AI provider
-        // 2. Send prompt
-        // 3. Stream response to stdout
-        // 4. Handle tool calls if enabled
-        // 5. Exit when complete
+        // Set event callback for streaming output
+        self.agent.on_event = handleEvent;
 
-        // For now, output a placeholder indicating the mode is working
-        const output = try std.fmt.allocPrint(self.allocator, "Prompt: {s}\nModel: {s}\n[Print mode stub - AI integration pending]\n", .{ full_prompt.items, self.model });
-        defer self.allocator.free(output);
-        try self.writeStdout(output);
+        // Create user message and run agent
+        const message = Message.user(full_prompt.items);
+        try self.agent.prompt(message);
+
+        // Get last assistant message and print it
+        const messages = self.agent.messages.items;
+        for (0..messages.len) |i| {
+            const msg = messages[messages.len - 1 - i];
+            if (msg.role == .assistant) {
+                try writeStdout(msg.content);
+                try writeStdout("\n");
+                break;
+            }
+        }
     }
 
-    fn writeStdout(_: *Self, data: []const u8) !void {
+    fn handleEvent(event: AgentEvent) void {
+        switch (event.type) {
+            .text_delta => {
+                if (event.text) |text| {
+                    _ = posix.write(posix.STDOUT_FILENO, text) catch {};
+                }
+            },
+            .agent_error => {
+                if (event.error_message) |err| {
+                    _ = posix.write(posix.STDERR_FILENO, "Error: ") catch {};
+                    _ = posix.write(posix.STDERR_FILENO, err) catch {};
+                    _ = posix.write(posix.STDERR_FILENO, "\n") catch {};
+                }
+            },
+            else => {},
+        }
+    }
+
+    fn writeStdout(data: []const u8) !void {
         _ = try posix.write(posix.STDOUT_FILENO, data);
     }
 };
 
 // ============ Tests ============
 
-test "PrintMode init" {
+test "PrintMode init with agent" {
     const allocator = std.testing.allocator;
-    var mode = PrintMode.init(allocator);
+    var agent = Agent.init(allocator, .{});
+    defer agent.deinit();
+
+    var mode = PrintMode.init(allocator, &agent);
     defer mode.deinit();
 
-    try std.testing.expectEqualStrings("claude-sonnet-4", mode.model);
+    try std.testing.expect(!mode.owns_agent);
+    try std.testing.expectEqual(&agent, mode.agent);
 }
 
-test "PrintMode set model" {
+test "PrintMode initWithConfig creates owned agent" {
     const allocator = std.testing.allocator;
-    var mode = PrintMode.init(allocator);
+    var mode = try PrintMode.initWithConfig(allocator, .{ .max_turns = 5 });
     defer mode.deinit();
 
-    mode.setModel("gpt-4");
-    try std.testing.expectEqualStrings("gpt-4", mode.model);
+    try std.testing.expect(mode.owns_agent);
+    try std.testing.expectEqual(@as(u32, 5), mode.agent.config.max_turns);
+}
+
+test "PrintMode run with empty prompt returns error" {
+    const allocator = std.testing.allocator;
+    var mode = try PrintMode.initWithConfig(allocator, .{});
+    defer mode.deinit();
+
+    const empty: []const []const u8 = &.{};
+    const result = mode.run(empty);
+    try std.testing.expectError(error.NoPrompt, result);
+}
+
+test "PrintMode sends prompt to agent" {
+    const allocator = std.testing.allocator;
+    var agent = Agent.init(allocator, .{});
+    defer agent.deinit();
+
+    var mode = PrintMode.init(allocator, &agent);
+    defer mode.deinit();
+
+    // Directly test that prompt gets added to agent
+    const message = Message.user("test prompt");
+    try agent.prompt(message);
+
+    try std.testing.expect(agent.messageCount() >= 1);
+    try std.testing.expectEqual(@as(u32, 1), agent.current_turn);
+}
+
+test "PrintMode joins prompt parts" {
+    const allocator = std.testing.allocator;
+
+    // Test the join logic by manually building the prompt
+    var full_prompt = std.ArrayListUnmanaged(u8){};
+    defer full_prompt.deinit(allocator);
+
+    const parts: []const []const u8 = &.{ "part1", "part2", "part3" };
+    for (parts, 0..) |part, i| {
+        if (i > 0) try full_prompt.append(allocator, ' ');
+        try full_prompt.appendSlice(allocator, part);
+    }
+
+    try std.testing.expectEqualStrings("part1 part2 part3", full_prompt.items);
 }

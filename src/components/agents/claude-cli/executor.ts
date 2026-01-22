@@ -7,8 +7,7 @@ import {
 import { buildClaudeArgs } from './arg-builder.js'
 import { parseClaudeOutput } from './output-parser.js'
 import {
-  spawnCLI,
-  buildAgentResult,
+  executeCLI,
   formatErrorOutput,
   DEFAULT_CLI_TIMEOUT_MS,
   type StreamChunkResult,
@@ -108,7 +107,9 @@ export async function executeClaudeCLIOnce(
     : null
 
   try {
-    const spawnResult = await spawnCLI({
+    const { result, spawnResult } = await executeCLI({
+      cliName: 'claude',
+      args,
       command,
       cwd: options.cwd ?? process.cwd(),
       env,
@@ -117,59 +118,30 @@ export async function executeClaudeCLIOnce(
       ...(options.stopConditions && { stopConditions: options.stopConditions }),
       ...(options.onProgress && { onProgress: options.onProgress }),
       ...(usageTracker && { onStdoutChunk: (chunk: string) => usageTracker.processChunk(chunk) }),
+      parseOutput: (stdout) => {
+        usageTracker?.flush()
+        return parseClaudeOutput(stdout, options.outputFormat)
+      },
+      formatError: (parsed, spawnResult) =>
+        formatErrorOutput('claude', args, parsed.output, spawnResult.stderr, spawnResult.exitCode),
+      buildStopResult: (result, spawnResult) => {
+        usageTracker?.flush()
+        const usage = usageTracker?.getUsage()
+        return {
+          ...result,
+          output: spawnResult.stdout || spawnResult.stderr,
+          tokensUsed: usage?.tokensUsed ?? spawnResult.tokensUsed,
+          turnsUsed: usage?.turnsUsed ?? spawnResult.turnsUsed,
+        }
+      },
     })
-
-    usageTracker?.flush()
 
     const sessionMatch = spawnResult.stderr.match(/session[_-]?id[:\s]+([a-f0-9-]+)/i)
     const sessionId = sessionMatch?.[1]
-
-    if (spawnResult.killed && !spawnResult.stopTriggered) {
-      return buildAgentResult(spawnResult, spawnResult.stdout || spawnResult.stderr, {
-        stopReason: 'stop_condition',
-        exitCode: -1,
-      })
-    }
-
-    if (spawnResult.stopTriggered) {
-      const usage = usageTracker?.getUsage()
-      return {
-        output: spawnResult.stdout,
-        tokensUsed: usage?.tokensUsed ?? spawnResult.tokensUsed,
-        turnsUsed: usage?.turnsUsed ?? spawnResult.turnsUsed,
-        stopReason: 'stop_condition',
-        durationMs: spawnResult.durationMs,
-        exitCode: spawnResult.exitCode,
-        ...(sessionId ? { sessionId } : {}),
-      }
-    }
-
-    const parsed = parseClaudeOutput(spawnResult.stdout, options.outputFormat)
     const shouldRetry = !useApiKey && shouldFallbackToApiKey(spawnResult.stdout, spawnResult.stderr, spawnResult.exitCode)
 
-    if (spawnResult.exitCode !== 0) {
-      const output = formatErrorOutput('claude', args, parsed.output, spawnResult.stderr, spawnResult.exitCode)
-      return {
-        output,
-        structured: parsed.structured,
-        tokensUsed: parsed.tokensUsed,
-        turnsUsed: parsed.turnsUsed,
-        stopReason: 'error',
-        durationMs: spawnResult.durationMs,
-        exitCode: spawnResult.exitCode,
-        ...(sessionId ? { sessionId } : {}),
-        ...(shouldRetry ? { shouldRetryWithApiKey: true } : {}),
-      }
-    }
-
     return {
-      output: parsed.output,
-      structured: parsed.structured,
-      tokensUsed: parsed.tokensUsed,
-      turnsUsed: parsed.turnsUsed,
-      stopReason: 'completed',
-      durationMs: spawnResult.durationMs,
-      exitCode: spawnResult.exitCode,
+      ...result,
       ...(sessionId ? { sessionId } : {}),
       ...(shouldRetry ? { shouldRetryWithApiKey: true } : {}),
     }

@@ -17,3 +17,13 @@ export const calcDuration = (rdb: ReactiveDatabase, table: string, idColumn: str
   const row = rdb.queryOne<{ started_at: string }>(`SELECT started_at FROM ${table} WHERE ${idColumn} = ?`, [id])
   return row ? Date.now() - new Date(row.started_at).getTime() : null
 }
+
+export const withOpenDb = <T>(rdb: ReactiveDatabase, fallback: T, fn: () => T): T => {
+  if (rdb.isClosed) return fallback
+  return fn()
+}
+
+export const withOpenDbVoid = (rdb: ReactiveDatabase, fn: () => void): void => {
+  if (rdb.isClosed) return
+  fn()
+}

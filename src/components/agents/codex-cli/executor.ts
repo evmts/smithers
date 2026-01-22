@@ -1,6 +1,6 @@
 import type { AgentResult } from '../types.js'
 import type { CodexCLIExecutionOptions } from '../types/codex.js'
-import { spawnCLI, buildAgentResult, formatErrorOutput, DEFAULT_CLI_TIMEOUT_MS } from '../shared/cli-executor.js'
+import { executeCLI, formatErrorOutput, DEFAULT_CLI_TIMEOUT_MS } from '../shared/cli-executor.js'
 import { buildCodexArgs } from './arg-builder.js'
 import { parseCodexOutput } from './output-parser.js'
 
@@ -24,43 +24,26 @@ export async function executeCodexCLIOnce(
   const args = buildCodexArgs(options)
 
   try {
-    const spawnOptions = {
+    const safeArgs = [...args]
+    if (safeArgs.length > 0) {
+      safeArgs[safeArgs.length - 1] = '[prompt redacted]'
+    }
+
+    const { result } = await executeCLI({
+      cliName: 'Codex',
+      args: safeArgs,
       command: ['codex', ...args],
       timeout: options.timeout ?? DEFAULT_CLI_TIMEOUT_MS,
       ...(options.cwd && { cwd: options.cwd }),
       ...(options.onProgress && { onProgress: options.onProgress }),
-    }
-    const spawnResult = await spawnCLI(spawnOptions)
-
-    if (spawnResult.killed) {
-      return buildAgentResult(spawnResult, spawnResult.stdout || spawnResult.stderr, {
-        durationMs: Date.now() - startTime,
-      })
-    }
-
-    const parsed = parseCodexOutput(spawnResult.stdout, options.json)
-
-    if (spawnResult.exitCode !== 0) {
-      const safeArgs = [...args]
-      if (safeArgs.length > 0) {
-        safeArgs[safeArgs.length - 1] = '[prompt redacted]'
-      }
-      const errorOutput = formatErrorOutput('Codex', safeArgs, parsed.output, spawnResult.stderr, spawnResult.exitCode)
-      return buildAgentResult(spawnResult, errorOutput, {
-        structured: parsed.structured,
-        tokensUsed: parsed.tokensUsed,
-        turnsUsed: parsed.turnsUsed,
-        durationMs: Date.now() - startTime,
-      })
-    }
-
-    return buildAgentResult(spawnResult, parsed.output, {
-      structured: parsed.structured,
-      tokensUsed: parsed.tokensUsed,
-      turnsUsed: parsed.turnsUsed,
-      stopReason: 'completed',
-      durationMs: Date.now() - startTime,
+      parseOutput: (stdout) => parseCodexOutput(stdout, options.json),
+      formatError: (parsed, spawnResult) =>
+        formatErrorOutput('Codex', safeArgs, parsed.output, spawnResult.stderr, spawnResult.exitCode),
+      buildResult: (result) => ({ ...result, durationMs: Date.now() - startTime }),
+      buildStopResult: (result) => ({ ...result, durationMs: Date.now() - startTime }),
     })
+
+    return result
   } catch (error) {
     const durationMs = Date.now() - startTime
     const errorMessage = error instanceof Error ? error.message : String(error)

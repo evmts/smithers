@@ -1,6 +1,6 @@
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Execution } from './types.js'
-import { uuid, now, parseJson } from './utils.js'
+import { uuid, now, parseJson, withOpenDb, withOpenDbVoid } from './utils.js'
 
 export interface ExecutionModule {
   start: (name: string, filePath: string, config?: Record<string, any>) => string
@@ -61,78 +61,86 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
 
   const execution: ExecutionModule = {
     start: (name: string, filePath: string, config?: Record<string, any>): string => {
-      if (rdb.isClosed) return uuid()
-      const id = process.env['SMITHERS_EXECUTION_ID'] ?? uuid()
-      const existing = rdb.queryOne<{ id: string }>('SELECT id FROM executions WHERE id = ?', [id])
-      if (existing) {
-        rdb.run(
-          `UPDATE executions SET status = 'running', started_at = ?, error = NULL, completed_at = NULL WHERE id = ?`,
-          [now(), id]
-        )
-      } else {
-        rdb.run(
-          `INSERT INTO executions (id, name, file_path, status, config, started_at, created_at)
-           VALUES (?, ?, ?, 'running', ?, ?, ?)`,
-          [id, name, filePath, JSON.stringify(config ?? {}), now(), now()]
-        )
-      }
-      setCurrentExecutionId(id)
-      return id
+      return withOpenDb(rdb, uuid(), () => {
+        const id = process.env['SMITHERS_EXECUTION_ID'] ?? uuid()
+        const existing = rdb.queryOne<{ id: string }>('SELECT id FROM executions WHERE id = ?', [id])
+        if (existing) {
+          rdb.run(
+            `UPDATE executions SET status = 'running', started_at = ?, error = NULL, completed_at = NULL WHERE id = ?`,
+            [now(), id]
+          )
+        } else {
+          rdb.run(
+            `INSERT INTO executions (id, name, file_path, status, config, started_at, created_at)
+             VALUES (?, ?, ?, 'running', ?, ?, ?)`,
+            [id, name, filePath, JSON.stringify(config ?? {}), now(), now()]
+          )
+        }
+        setCurrentExecutionId(id)
+        return id
+      })
     },
 
     complete: (id: string, result?: Record<string, any>) => {
-      if (rdb.isClosed) return
-      rdb.run(
-        `UPDATE executions SET status = 'completed', result = ?, completed_at = ? WHERE id = ?`,
-        [result ? JSON.stringify(result) : null, now(), id]
-      )
-      if (getCurrentExecutionId() === id) setCurrentExecutionId(null)
+      withOpenDbVoid(rdb, () => {
+        rdb.run(
+          `UPDATE executions SET status = 'completed', result = ?, completed_at = ? WHERE id = ?`,
+          [result ? JSON.stringify(result) : null, now(), id]
+        )
+        if (getCurrentExecutionId() === id) setCurrentExecutionId(null)
+      })
     },
 
     fail: (id: string, error: string) => {
-      if (rdb.isClosed) return
-      rdb.run(
-        `UPDATE executions SET status = 'failed', error = ?, completed_at = ? WHERE id = ?`,
-        [error, now(), id]
-      )
-      if (getCurrentExecutionId() === id) setCurrentExecutionId(null)
+      withOpenDbVoid(rdb, () => {
+        rdb.run(
+          `UPDATE executions SET status = 'failed', error = ?, completed_at = ? WHERE id = ?`,
+          [error, now(), id]
+        )
+        if (getCurrentExecutionId() === id) setCurrentExecutionId(null)
+      })
     },
 
     cancel: (id: string) => {
-      if (rdb.isClosed) return
-      rdb.run(
-        `UPDATE executions SET status = 'cancelled', completed_at = ? WHERE id = ?`,
-        [now(), id]
-      )
-      if (getCurrentExecutionId() === id) setCurrentExecutionId(null)
+      withOpenDbVoid(rdb, () => {
+        rdb.run(
+          `UPDATE executions SET status = 'cancelled', completed_at = ? WHERE id = ?`,
+          [now(), id]
+        )
+        if (getCurrentExecutionId() === id) setCurrentExecutionId(null)
+      })
     },
 
     current: (): Execution | null => {
-      if (rdb.isClosed) return null
-      const currentId = getCurrentExecutionId()
-      if (!currentId) return null
-      return mapExecution(rdb.queryOne('SELECT * FROM executions WHERE id = ?', [currentId]))
+      return withOpenDb(rdb, null, () => {
+        const currentId = getCurrentExecutionId()
+        if (!currentId) return null
+        return mapExecution(rdb.queryOne('SELECT * FROM executions WHERE id = ?', [currentId]))
+      })
     },
 
     get: (id: string): Execution | null => {
-      if (rdb.isClosed) return null
-      return mapExecution(rdb.queryOne('SELECT * FROM executions WHERE id = ?', [id]))
+      return withOpenDb(rdb, null, () => (
+        mapExecution(rdb.queryOne('SELECT * FROM executions WHERE id = ?', [id]))
+      ))
     },
 
     list: (limit: number = 20): Execution[] => {
-      if (rdb.isClosed) return []
-      return rdb.query<any>('SELECT * FROM executions ORDER BY created_at DESC LIMIT ?', [limit])
-        .map(mapExecution)
-        .filter((e): e is Execution => e !== null)
+      return withOpenDb(rdb, [], () => (
+        rdb.query<any>('SELECT * FROM executions ORDER BY created_at DESC LIMIT ?', [limit])
+          .map(mapExecution)
+          .filter((e): e is Execution => e !== null)
+      ))
     },
 
     findIncomplete: (): Execution | null => {
-      if (rdb.isClosed) return null
-      const exec = mapExecution(rdb.queryOne(
-        "SELECT * FROM executions WHERE status IN ('pending', 'running') ORDER BY created_at DESC LIMIT 1"
-      ))
-      if (exec) setCurrentExecutionId(exec.id)
-      return exec
+      return withOpenDb(rdb, null, () => {
+        const exec = mapExecution(rdb.queryOne(
+          "SELECT * FROM executions WHERE status IN ('pending', 'running') ORDER BY created_at DESC LIMIT 1"
+        ))
+        if (exec) setCurrentExecutionId(exec.id)
+        return exec
+      })
     },
   }
 
