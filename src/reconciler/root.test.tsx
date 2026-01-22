@@ -44,7 +44,8 @@ describe('SmithersRoot mount', () => {
     }
 
     expect(result).toBeInstanceOf(Error)
-    expect((result as Error).message).toBe('pre-render')
+    expect((result as Error).message).toBe('Render failed')
+    expect(((result as Error).cause as Error).message).toBe('pre-render')
 
     root.dispose()
   })
@@ -59,7 +60,8 @@ describe('SmithersRoot mount', () => {
     }
 
     expect(result).toBeInstanceOf(Error)
-    expect((result as Error).message).toBe('async-pre-render')
+    expect((result as Error).message).toBe('Render failed')
+    expect(((result as Error).cause as Error).message).toBe('async-pre-render')
 
     root.dispose()
   })

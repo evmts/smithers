@@ -1,10 +1,6 @@
 import type { SmithersDB } from '../../db/index.js'
 import { printSectionHeader } from './view-utils.js'
 
-/**
- * Shows detailed view of a single execution by ID.
- * Displays execution metadata, agents, tool calls, and timeline.
- */
 export async function showExecution(db: SmithersDB, executionId: string) {
   const headerLine = '═══════════════════════════════════════════════════════════'
   printSectionHeader(headerLine, `EXECUTION: ${executionId.slice(0, 8)}...`)

@@ -1,5 +1,3 @@
-// Hook for auto-generating 10-minute reports
-
 import { useCallback } from 'react'
 import type { SmithersDB } from '../../db/index.js'
 import { generateReport, type Report } from '../services/report-generator.js'

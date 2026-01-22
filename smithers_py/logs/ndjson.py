@@ -10,7 +10,7 @@ Provides structured NDJSON event logging with:
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO
@@ -163,7 +163,7 @@ class NDJSONLogger:
         task_id: Optional[str] = None,
     ) -> None:
         """Log an event."""
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         event = LogEvent(
             timestamp=timestamp,

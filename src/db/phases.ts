@@ -1,5 +1,3 @@
-// Phase tracking module for Smithers DB
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Phase } from './types.js'
 import { uuid, now } from './utils.js'

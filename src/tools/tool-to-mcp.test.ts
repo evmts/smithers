@@ -1,6 +1,3 @@
-/**
- * Unit tests for tool-to-mcp.ts - MCP definition conversion
- */
 import { describe, test, expect } from 'bun:test'
 import { z } from 'zod'
 import { toolToMCPDefinition, createSmithersToolServer } from './tool-to-mcp.js'

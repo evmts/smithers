@@ -12,11 +12,14 @@ Implements the 7-phase tick loop for rendering, reconciliation, and execution:
 """
 
 import asyncio
+import logging
 import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional, Callable, List, Set
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 from ..db.database import SmithersDB
 from ..state.volatile import VolatileStore
@@ -126,23 +129,23 @@ class TickLoop:
         Loops until quiescence: no running tasks, no pending state writes,
         and no effects that require rerender.
         """
-        print(f"🎬 Starting tick loop for execution {self.execution_id}")
+        logger.info("Starting tick loop for execution %s", self.execution_id)
         self.last_activity_time = time.time()  # Initialize activity timer
 
         try:
             # Recover orphaned tasks on startup (PRD 7.3.3)
             orphan_actions = await recover_orphans(self.db, OrphanPolicy.RETRY, max_retries=3)
             if orphan_actions:
-                print(f"⚠️  Recovered {len(orphan_actions)} orphaned tasks from previous run")
+                logger.warning("Recovered %d orphaned tasks from previous run", len(orphan_actions))
                 for action in orphan_actions:
-                    print(f"    - {action.task_id}: {action.action}")
+                    logger.warning("  - %s: %s", action.task_id, action.action)
 
             while True:
                 await self._run_single_frame()
 
                 # Check for quiescence
                 if self._is_quiescent():
-                    print("🏁 Reached quiescence - no more work to do")
+                    logger.info("Reached quiescence - tick loop completing")
                     break
 
                 # Calculate next tick delay
@@ -150,10 +153,10 @@ class TickLoop:
                 if delay > 0:
                     await asyncio.sleep(delay)
 
-            print("✅ Tick loop completed successfully")
+            logger.info("Tick loop completed successfully")
 
         except Exception as e:
-            print(f"❌ Tick loop failed: {e}")
+            logger.error("Tick loop failed: %s", e)
             raise
 
     async def _run_single_frame(self) -> None:
@@ -164,7 +167,7 @@ class TickLoop:
         if frame_start_time - self.last_frame_time < self.min_frame_interval:
             return
 
-        print(f"🎯 Frame {self.frame_id} starting...")
+        logger.debug("Frame %d starting", self.frame_id)
 
         try:
             # PHASE 1: State Snapshot
@@ -193,10 +196,10 @@ class TickLoop:
             self.last_frame_time = frame_start_time
             self.previous_tree = current_tree
 
-            print(f"✅ Frame {self.frame_id - 1} completed")
+            logger.debug("Frame %d completed", self.frame_id - 1)
 
         except Exception as e:
-            print(f"❌ Frame {self.frame_id} failed: {e}")
+            logger.error("Frame %d failed: %s", self.frame_id, e)
             raise
 
     async def _phase1_state_snapshot(self, frame_start_time: float) -> Context:
@@ -209,7 +212,7 @@ class TickLoop:
         - Database handle
         - Frame metadata
         """
-        print("  📸 Phase 1: State Snapshot")
+        logger.debug("Phase 1: State Snapshot")
 
         # Create snapshots (deep copies for isolation)
         v_snapshot = self.volatile_state.snapshot()
@@ -230,7 +233,7 @@ class TickLoop:
         Calls app component with frozen context.
         No side effects allowed - only tree construction.
         """
-        print("  🎨 Phase 2: Render")
+        logger.debug("Phase 2: Render")
 
         # Call user's app component with frozen context
         tree = self.app_component(ctx)
@@ -248,7 +251,7 @@ class TickLoop:
         Uses deterministic SHA256-based node IDs per PRD section 7.2 and 8.2.
         Returns diff information about what changed.
         """
-        print("  🔄 Phase 3: Reconcile")
+        logger.debug("Phase 3: Reconcile")
 
         # Use deterministic identity tracker for reconciliation
         reconcile_result = self.identity_tracker.update_for_frame(current_tree)
@@ -257,7 +260,7 @@ class TickLoop:
         lint_warnings = self.plan_linter.lint(self.identity_tracker.current_ids)
         if lint_warnings:
             for warning in lint_warnings[:3]:  # Limit to first 3
-                print(f"    ⚠️  Lint: [{warning.rule}] {warning.message}")
+                logger.warning("Lint: [%s] %s", warning.rule, warning.message)
 
         # Convert to legacy format for compatibility with existing code
         changes = {
@@ -281,7 +284,7 @@ class TickLoop:
             
             # Request cancellation for unmounted nodes with running tasks (PRD 7.3.4)
             if node_id in self.running_tasks:
-                print(f"    🛑 Requesting cancellation for unmounted node: {node_id}")
+                logger.info("Requesting cancellation for unmounted node: %s", node_id)
                 self.cancellation_handler.request_cancel(node_id)
 
         # Update event system with current mounted nodes
@@ -300,14 +303,14 @@ class TickLoop:
 
         Saves the rendered tree as XML in render_frames table.
         """
-        print("  💾 Phase 4: Commit")
+        logger.debug("Phase 4: Commit")
 
         # Serialize tree to XML
         xml_content = serialize_to_xml(current_tree)
 
         # Skip if XML unchanged (frame coalescing)
         if xml_content == self.last_frame_xml:
-            print("    ⏭️  Skipping duplicate frame")
+            logger.debug("Skipping duplicate frame")
             return
 
         # Save frame to database
@@ -318,7 +321,7 @@ class TickLoop:
         )
 
         self.last_frame_xml = xml_content
-        print(f"    💾 Saved frame {frame_id} (sequence {self.frame_id})")
+        logger.debug("Saved frame %s (sequence %d)", frame_id, self.frame_id)
 
     async def _phase5_execute(self, changes: Dict[str, Any]) -> None:
         """
@@ -329,7 +332,7 @@ class TickLoop:
         - Applies state changes from event handlers
         - Uses deterministic node IDs for task tracking
         """
-        print("  🚀 Phase 5: Execute")
+        logger.debug("Phase 5: Execute")
 
         # First, check for completed tasks and fire event handlers
         completed_tasks = []
@@ -345,10 +348,10 @@ class TickLoop:
                 except Exception as e:
                     # Exception already recorded in task_results by _execute_node_with_lease
                     # Just log that we retrieved it
-                    print(f"    ⚠️  Task {task_id} had exception: {type(e).__name__}")
+                    logger.warning("Task %s had exception: %s", task_id, type(e).__name__)
 
         if completed_tasks:
-            print(f"    📋 Processing {len(completed_tasks)} completed tasks")
+            logger.debug("Processing %d completed tasks", len(completed_tasks))
 
             # Collect all state changes from event handlers
             all_state_changes = []
@@ -371,7 +374,7 @@ class TickLoop:
                         all_state_changes.extend(state_changes)
                     else:
                         # Stale result - node unmounted, don't fire handlers
-                        print(f"    ⚠️  Stale result for node {task_id}, not firing handlers")
+                        logger.warning("Stale result for node %s, not firing handlers", task_id)
 
                 # Clean up
                 self.running_tasks.discard(task_id)
@@ -380,7 +383,7 @@ class TickLoop:
 
             # Apply all state changes from event handlers
             if all_state_changes:
-                print(f"    💾 Applying {len(all_state_changes)} state changes from event handlers")
+                logger.debug("Applying %d state changes from event handlers", len(all_state_changes))
                 # Route changes to appropriate store based on target
                 for op in all_state_changes:
                     if op.target == StoreTarget.VOLATILE:
@@ -394,7 +397,7 @@ class TickLoop:
         runnable_nodes = self._find_runnable(mounted_items)
 
         if runnable_nodes:
-            print(f"    📋 Starting {len(runnable_nodes)} new runnable tasks")
+            logger.debug("Starting %d new runnable tasks", len(runnable_nodes))
 
             for node_id, node in runnable_nodes:
                 # Mark as running in identity tracker
@@ -405,7 +408,7 @@ class TickLoop:
                 self.task_futures[node_id] = task
                 self.running_tasks.add(node_id)
         elif not completed_tasks:
-            print("    📋 No runnable nodes to execute")
+            logger.debug("No runnable nodes to execute")
 
     async def _phase6_post_commit_effects(self, changes: Dict[str, Any]) -> None:
         """
@@ -414,7 +417,7 @@ class TickLoop:
         M0: No-op since no effect system exists yet.
         Future versions will handle cleanup, notifications, etc.
         """
-        print("  ✨ Phase 6: Post-Commit Effects (M0: no-op)")
+        logger.debug("Phase 6: Post-Commit Effects (M0: no-op)")
 
         # M0: No effect system implemented yet
         pass
@@ -425,19 +428,19 @@ class TickLoop:
 
         Commits any pending writes to both volatile and SQLite stores.
         """
-        print("  🔄 Phase 7: State Update Flush")
+        logger.debug("Phase 7: State Update Flush")
         flushed_any = False
 
         # Commit any pending writes
         if self.volatile_state.has_pending_writes():
             self.volatile_state.commit()
             flushed_any = True
-            print("    ✅ Flushed volatile state updates")
+            logger.debug("Flushed volatile state updates")
 
         if self.sqlite_state.has_pending_writes():
             self.sqlite_state.commit()
             flushed_any = True
-            print("    ✅ Flushed SQLite state updates")
+            logger.debug("Flushed SQLite state updates")
         
         if flushed_any:
             self.state_modified_this_frame = True
@@ -483,7 +486,7 @@ class TickLoop:
             return
 
         try:
-            print(f"    🤖 Executing Claude node {node_id}")
+            logger.info("Executing Claude node %s", node_id)
             
             # Register task in DB for crash recovery
             await self.db.tasks.start(
@@ -497,7 +500,7 @@ class TickLoop:
             # Acquire lease before starting (PRD 7.3.2)
             lease_acquired = await self.lease_manager.acquire_lease(node_id)
             if not lease_acquired:
-                print(f"    ⚠️  Failed to acquire lease for {node_id}")
+                logger.warning("Failed to acquire lease for %s", node_id)
                 return
             
             # Start heartbeat for this task (extends lease periodically)
@@ -517,7 +520,7 @@ class TickLoop:
             ):
                 # Check for cancellation signal
                 if cancel_event.is_set():
-                    print(f"    🛑 Claude node {node_id} cancelled")
+                    logger.info("Claude node %s cancelled", node_id)
                     await self.cancellation_handler.mark_cancelled(node_id)
                     return  # Exit without storing result
                     
@@ -537,15 +540,15 @@ class TickLoop:
             if result:
                 self.task_results[node_id] = result
                 await self.db.tasks.complete(node_id)
-                print(f"    ✅ Claude node {node_id} completed with status: {result.status}")
+                logger.info("Claude node %s completed with status: %s", node_id, result.status)
 
         except asyncio.CancelledError:
-            print(f"    🛑 Claude node {node_id} cancelled (asyncio)")
+            logger.info("Claude node %s cancelled (asyncio)", node_id)
             await self.cancellation_handler.mark_cancelled(node_id)
             raise
             
         except Exception as e:
-            print(f"    ❌ Claude node {node_id} failed: {e}")
+            logger.error("Claude node %s failed: %s", node_id, e)
             # Mark task as failed in DB
             try:
                 await self.db.tasks.fail(node_id, str(e))
@@ -594,20 +597,20 @@ class TickLoop:
         # If state was modified, we need another frame to reflect changes
         if self.state_modified_this_frame:
             self.state_modified_this_frame = False
-            print("    ⏳ State modified, scheduling re-render")
+            logger.debug("State modified, scheduling re-render")
             return False
 
         # Idle timeout: don't stop until idle for configured duration
         if time.time() - self.last_activity_time < self.idle_timeout:
             # Still within grace period
             if not has_running_tasks and not has_pending_writes:
-                print(f"    ⏳ Idle grace period ({self.idle_timeout}s)")
+                logger.debug("Idle grace period (%ss)", self.idle_timeout)
                 return False
 
         if has_running_tasks:
-            print(f"    ⏳ Still running {len(self.running_tasks)} tasks")
+            logger.debug("Still running %d tasks", len(self.running_tasks))
         if has_pending_writes:
-            print("    ⏳ Pending state writes need to be flushed")
+            logger.debug("Pending state writes need to be flushed")
 
         return not has_running_tasks and not has_pending_writes
 

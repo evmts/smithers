@@ -1,6 +1,3 @@
-// Tools module - exports all tool-related functionality
-
-// Types - single source of truth from types.ts
 export type {
   SmithersTool,
   SmithersToolContext,
@@ -12,9 +9,6 @@ export type {
   ToolSpec,
 } from './types.js'
 
-// Note: Tool, ToolContext, JSONSchema exported from components/index.js
-
-// Registry - constants and functions only
 export {
   type BuiltinToolName,
   BUILTIN_TOOLS,

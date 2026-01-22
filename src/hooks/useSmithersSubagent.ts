@@ -233,7 +233,6 @@ export function useSmithersSubagent(props: SmithersProps): UseSmithersSubagentRe
       } catch (err) {
         endTotalTiming()
         const errorObj = err instanceof Error ? err : new Error(String(err))
-        // Extract root cause from wrapped errors (e.g., retry middleware)
         const rootCause = errorObj.cause instanceof Error ? errorObj.cause : errorObj
         const errorMessage = rootCause.message
         log.error('Subagent execution failed', errorObj, { agentId: activeAgentId })

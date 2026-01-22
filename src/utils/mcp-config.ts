@@ -13,15 +13,10 @@ export interface ExtractedMCPConfig {
   toolInstructions: string
 }
 
-/**
- * Extract MCP tool configurations from serialized children string.
- * Parses <mcp-tool> elements and returns configs + clean prompt.
- */
 export function extractMCPConfigs(childrenString: string): ExtractedMCPConfig {
   const configs: MCPToolConfig[] = []
   const toolInstructions: string[] = []
 
-  // Regex to match <mcp-tool type="..." config="...">...</mcp-tool>
   const mcpToolRegex = /<mcp-tool\s+type="([^"]+)"\s+config="([^"]+)"[^>]*>([\s\S]*?)<\/mcp-tool>/g
 
   let cleanPrompt = childrenString
@@ -70,11 +65,9 @@ export function extractMCPConfigs(childrenString: string): ExtractedMCPConfig {
       console.warn(`Failed to parse MCP tool config: type=${type}, configJson=${configJson}, error=${e}`)
     }
 
-    // Remove the mcp-tool element from the prompt
     cleanPrompt = cleanPrompt.replace(fullMatch, '')
   }
 
-  // Clean up extra whitespace
   cleanPrompt = cleanPrompt.trim()
 
   return {
@@ -84,9 +77,6 @@ export function extractMCPConfigs(childrenString: string): ExtractedMCPConfig {
   }
 }
 
-/**
- * Generate MCP server configuration for extracted tools.
- */
 export function generateMCPServerConfig(configs: MCPToolConfig[]): Record<string, any> {
   const mcpConfig: Record<string, any> = {
     mcpServers: {},
@@ -129,11 +119,9 @@ export function generateMCPServerConfig(configs: MCPToolConfig[]): Record<string
         break
       }
 
-      // Future: Add more MCP server types
       case 'filesystem':
       case 'github':
       case 'custom':
-        // Placeholder for future implementations
         break
     }
   }
@@ -141,9 +129,6 @@ export function generateMCPServerConfig(configs: MCPToolConfig[]): Record<string
   return mcpConfig
 }
 
-/**
- * Write MCP config to a temporary file and return the path.
- */
 export async function writeMCPConfigFile(config: Record<string, any>): Promise<string> {
   const tmpDir = os.tmpdir()
   const configPath = path.join(tmpDir, `smithers-mcp-${Date.now()}.json`)

@@ -16,8 +16,8 @@ import {
   useWhileIteration,
   Claude,
   useSmithers,
+  useQueryValue,
 } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
 
 interface CoverageResult {
   functionCoverage: number;
@@ -45,9 +45,9 @@ const COVERAGE_PROMPT = `Improve test coverage:
 4. Atomic commits, 2-3 tests per iteration max`;
 
 function CoverageLoop({ targetCoverage = 98, maxIterations = 20 }) {
-  const { db, reactiveDb } = useSmithers();
-  const { data: checkCountVal } = useQueryValue<number>(
-    reactiveDb, "SELECT json_extract(value, '$') as v FROM state WHERE key = 'coverage.checkCount'"
+  const { db } = useSmithers();
+  const checkCountVal = useQueryValue<number>(
+    db.db, "SELECT json_extract(value, '$') as v FROM state WHERE key = 'coverage.checkCount'"
   );
   const checkCount = checkCountVal ?? 0;
 

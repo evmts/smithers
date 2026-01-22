@@ -1,4 +1,3 @@
-// Amp agent adapter
 import type { AgentAdapter, MessageParserInterface } from './types.js'
 import type { AmpProps, AmpCLIExecutionOptions } from '../../components/agents/types/amp.js'
 import type { AgentResult } from '../../components/agents/types/execution.js'

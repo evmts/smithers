@@ -1,6 +1,3 @@
-// Human Interaction Handler View (F5)
-// Respond to pending useHuman requests
-
 import { useCallback } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
@@ -46,7 +43,6 @@ export function HumanInteractionHandler({ db }: HumanInteractionHandlerProps) {
     }
   }, [selectedRequest, selectedOption, responseText, approveRequest])
 
-  // Handle keyboard navigation
   useKeyboard((key: KeyEvent) => {
     if (key.name === 'j' || key.name === 'down') {
       if (selectedRequest?.options && selectedRequest.options.length > 0) {
@@ -99,7 +95,6 @@ export function HumanInteractionHandler({ db }: HumanInteractionHandlerProps) {
         />
       </box>
 
-      {/* Request list */}
       <box style={{
         border: true,
         height: Math.min(8, pendingRequests.length + 2),
@@ -133,7 +128,6 @@ export function HumanInteractionHandler({ db }: HumanInteractionHandlerProps) {
         </scrollbox>
       </box>
 
-      {/* Selected request details */}
       {selectedRequest && (
         <box style={{
           flexDirection: 'column',
@@ -160,7 +154,6 @@ export function HumanInteractionHandler({ db }: HumanInteractionHandlerProps) {
             style={{ fg: '#c0caf5', marginBottom: 1, marginLeft: 2 }}
           />
 
-          {/* Options or text input */}
           {selectedRequest.options && selectedRequest.options.length > 0 ? (
             <box style={{ marginTop: 1 }}>
               <text

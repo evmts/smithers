@@ -1,6 +1,3 @@
-// Database Explorer View (F3)
-// Browse SQLite tables and query data
-
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'
@@ -77,7 +74,6 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
 
   return (
     <box style={{ flexDirection: 'row', width: '100%', height: '100%' }}>
-      {/* Table list */}
       <box style={{
         width: 20,
         flexDirection: 'column',
@@ -107,7 +103,6 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
         </scrollbox>
       </box>
 
-      {/* Table data */}
       <box style={{ flexGrow: 1, flexDirection: 'column', paddingLeft: 1 }}>
         <box style={{ flexDirection: 'row', marginBottom: 1, justifyContent: 'space-between' }}>
           <text
@@ -120,7 +115,6 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
           />
         </box>
 
-        {/* Column headers */}
         {columns.length > 0 && (
           <box style={{ flexDirection: 'row', marginBottom: 1 }}>
             {columns.slice(0, 5).map((col) => (
@@ -140,7 +134,6 @@ export function DatabaseExplorer({ db, height }: DatabaseExplorerProps) {
           </box>
         )}
 
-        {/* Data rows */}
         <scrollbox focused={!isTableListFocused} style={{ flexGrow: 1 }}>
           {visibleRows.map((row, index) => (
             <box key={index} style={{ flexDirection: 'row' }}>

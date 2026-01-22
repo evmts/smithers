@@ -1,5 +1,3 @@
-// Header component showing execution info and branding
-
 import { TextAttributes } from '@opentui/core'
 import { colors, getStatusColor } from '../../utils/colors.js'
 

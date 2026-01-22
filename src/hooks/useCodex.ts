@@ -1,4 +1,3 @@
-// Codex agent hook - thin wrapper around useAgentRunner
 import { useAgentRunner, type UseAgentResult } from './useAgentRunner.js'
 import { CodexAdapter } from './adapters/codex.js'
 import type { CodexProps } from '../components/agents/types/codex.js'

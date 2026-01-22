@@ -74,10 +74,6 @@ function mapStatus(dbStatus: string): 'pending' | 'running' | 'complete' | 'fail
   }
 }
 
-/**
- * Get status of an execution
- * @throws {Error} If execution not found
- */
 export function status(executionId: string, opts: StatusOptions = {}): ExecutionStatus {
   const cwd = opts.cwd ?? process.cwd()
   const db = findDbForExecution(executionId, cwd)
@@ -147,10 +143,6 @@ export function status(executionId: string, opts: StatusOptions = {}): Execution
   }
 }
 
-/**
- * Get render frames for an execution
- * @throws {Error} If execution not found
- */
 export function frames(
   executionId: string,
   opts: FramesOptions = {}

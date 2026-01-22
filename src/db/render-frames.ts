@@ -1,6 +1,3 @@
-// Render frames module for Smithers DB
-// Stores snapshots of the SmithersNode tree for time-travel debugging
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { uuid, now } from './utils.js'
 
@@ -14,44 +11,13 @@ export interface RenderFrame {
 }
 
 export interface RenderFramesModule {
-  /**
-   * Store a new render frame
-   */
   store: (treeXml: string, ralphCount?: number) => string
-
-  /**
-   * Get a specific frame by ID
-   */
   get: (id: string) => RenderFrame | null
-
-  /**
-   * Get frame by sequence number for current execution
-   */
   getBySequence: (sequenceNumber: number) => RenderFrame | null
-
-  /**
-   * List all frames for current execution
-   */
   list: () => RenderFrame[]
-
-  /**
-   * List frames for a specific execution
-   */
   listForExecution: (executionId: string) => RenderFrame[]
-
-  /**
-   * Get the latest frame for current execution
-   */
   latest: () => RenderFrame | null
-
-  /**
-   * Get frame count for current execution
-   */
   count: () => number
-
-  /**
-   * Get next sequence number for current execution
-   */
   nextSequence: () => number
 }
 

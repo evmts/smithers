@@ -1,4 +1,3 @@
-// Unified agent runner hook - shared execution logic for Claude, Amp, and Codex hooks
 import { useRef, useMemo } from 'react'
 import { useSmithers } from '../components/SmithersProvider.js'
 import { useWorktree } from '../components/WorktreeProvider.js'
@@ -168,7 +167,6 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
         const upstreamOnProgress = execOpts['onProgress'] as ((msg: string) => void) | undefined
         const onProgress = (chunk: string) => {
           if (typedStreamingEnabled && streamParser) {
-            // Write raw chunk to legacy log file if legacyLogFormat is enabled
             if (legacyLogFilename) logWriter.appendLog(legacyLogFilename, chunk)
             const parts = streamParser.parse(chunk)
             for (const part of parts) {
@@ -218,7 +216,6 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
       } catch (err) {
         endTotalTiming()
         const errorObj = err instanceof Error ? err : new Error(String(err))
-        // Extract root cause from wrapped errors (e.g., retry middleware)
         const rootCause = errorObj.cause instanceof Error ? errorObj.cause : errorObj
         const errorMessage = rootCause.message
         log.error('Agent execution failed', errorObj, { agentId: currentAgentId })

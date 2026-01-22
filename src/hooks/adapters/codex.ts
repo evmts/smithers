@@ -1,4 +1,3 @@
-// Codex agent adapter
 import type { AgentAdapter, MessageParserInterface } from './types.js'
 import type { CodexProps, CodexCLIExecutionOptions } from '../../components/agents/types/codex.js'
 import type { AgentResult } from '../../components/agents/types/execution.js'

@@ -1,5 +1,3 @@
-// Reusable scrollable list component with vim-style navigation
-
 import { useRef, type ReactNode } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { KeyEvent } from '@opentui/core'

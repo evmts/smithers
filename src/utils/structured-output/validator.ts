@@ -1,12 +1,6 @@
-// Output Parsing and Validation
-// Parse and validate LLM output against Zod schemas
-
 import { z } from 'zod'
 import type { ParseResult } from './types.js'
 
-/**
- * Extract JSON from text that may contain markdown code blocks or other content
- */
 function extractBalancedFrom(text: string, startIndex: number): string | null {
   const startChar = text[startIndex]
   if (startChar !== '{' && startChar !== '[') return null
@@ -88,9 +82,6 @@ export function extractJson(text: string): string | null {
   return null
 }
 
-/**
- * Parse and validate output against a Zod schema
- */
 export function parseStructuredOutput<T extends z.ZodType>(
   output: string,
   schema: T

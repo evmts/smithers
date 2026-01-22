@@ -1,9 +1,7 @@
-// Smithers hooks
 export { useRalphCount } from './useRalphCount.js'
 export * from './useHuman.js'
 export * from './useHumanInteractive.js'
 export { useCaptureRenderFrame } from './useCaptureRenderFrame.js'
-export { useCommitWithRetry } from './useCommitWithRetry.js'
 export { useClaude, type UseClaudeResult } from './useClaude.js'
 export { useCodex, type UseCodexResult } from './useCodex.js'
 export { useAmp, type UseAmpResult } from './useAmp.js'

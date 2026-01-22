@@ -1,8 +1,3 @@
-/**
- * Tests for src/core/index.ts
- * The core module is a thin re-export layer for backwards compatibility
- */
-
 import { describe, test, expect } from 'bun:test'
 import * as coreModule from './index.js'
 import { serialize } from './index.js'
@@ -21,8 +16,7 @@ describe('core/index', () => {
     })
 
     test('type exports compile (SmithersNode, ExecutionState, etc.)', () => {
-      // Compile-time smoke check; enforced via `bun run typecheck`.
-      const node: SmithersNode = {
+const node: SmithersNode = {
         type: 'task',
         props: { name: 'test' },
         children: [],
@@ -120,8 +114,7 @@ describe('core/index', () => {
     test('all documented exports are present', () => {
       const exports = Object.keys(coreModule)
       expect(exports).toContain('serialize')
-      // Policy: core module stays serialize-only for backwards compatibility.
-      expect(exports.length).toBe(1)
+expect(exports.length).toBe(1)
     })
   })
 })

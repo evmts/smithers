@@ -1,6 +1,3 @@
-// Claude Assistant Service for Observability Chat
-// Provides read-only access to database and render frames
-
 import Anthropic from '@anthropic-ai/sdk'
 import type { SmithersDB } from '../../db/index.js'
 
@@ -91,11 +88,6 @@ Render Frames: ${recentFrames.length} recent frames available
   return {
     isAvailable: () => !!client,
 
-    /**
-     * Send messages to Claude and get a response.
-     * @throws {Error} Claude API not available - when ANTHROPIC_API_KEY is not set
-     * @throws {Anthropic.APIError} API request failed - network, rate limit, or server errors
-     */
     chat: async (messages: ChatMessage[]): Promise<string> => {
       if (!client) {
         throw new Error('Claude API not available. Set ANTHROPIC_API_KEY.')

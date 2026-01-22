@@ -1,5 +1,3 @@
-// Agent tracking module for Smithers DB
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Agent, AgentStreamEvent, StreamSummary } from './types.js'
 import { uuid, now, parseJson } from './utils.js'

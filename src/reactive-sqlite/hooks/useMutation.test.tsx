@@ -148,7 +148,8 @@ describe('useMutation', () => {
       }
 
       expect(error).not.toBeNull()
-      expect(error!.message).toContain('nonexistent')
+      expect(error!.message).toBe('Mutation failed')
+      expect((error!.cause as Error).message).toContain('nonexistent')
 
       root.dispose()
     })

@@ -1,5 +1,3 @@
-// Type definitions for Smithers DB
-
 export type SqlParam = string | number | boolean | null | Uint8Array
 
 export interface Memory {
@@ -157,10 +155,6 @@ export interface Artifact {
   metadata: Record<string, any>
   created_at: Date
 }
-
-// ============================================================================
-// VCS and Reporting Tables
-// ============================================================================
 
 export interface Report {
   id: string

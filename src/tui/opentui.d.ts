@@ -1,9 +1,3 @@
-// OpenTUI type declarations + JSX intrinsic element typing for TUI components.
-//
-// NOTE: src/tui is excluded from tsconfig.json typecheck because OpenTUI's custom
-// JSX properties (fg, bg, focusedBackgroundColor, etc.) conflict with React's CSSProperties.
-// This is an accepted limitation. See git history for the original issue documentation.
-
 import type { ReactNode, CSSProperties } from 'react'
 
 declare module '@opentui/core' {

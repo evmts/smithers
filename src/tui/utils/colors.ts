@@ -1,5 +1,3 @@
-// Tokyo Night color palette and status color utilities
-
 export const colors = {
   bg: '#1a1b26',
   bgDark: '#16161e',

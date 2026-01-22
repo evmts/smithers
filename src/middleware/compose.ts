@@ -26,9 +26,6 @@ function buildProgressTransformer(
   }
 }
 
-/**
- * Compose multiple middleware into a single middleware.
- */
 export function composeMiddleware(...middlewares: (SmithersMiddleware | null | undefined)[]): SmithersMiddleware {
   const active = filterMiddleware(middlewares)
 

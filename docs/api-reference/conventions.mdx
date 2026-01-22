@@ -5,6 +5,21 @@ description: Shared contracts for the database API
 
 # API Conventions
 
+## Import Paths
+
+```typescript
+// Main entry - components, hooks, reconciler
+import { Claude, Amp, SmithersProvider, useMount } from "smithers-orchestrator"
+
+// Database - reactive hooks, full DB types
+import { useQueryValue, ReactiveDatabase, type SmithersDB } from "smithers-orchestrator/db"
+
+// JSX runtime (tsconfig handles this)
+import {} from "smithers-orchestrator/jsx-runtime"
+```
+
+Main entry re-exports `createSmithersDB` and `SmithersDB` type. Use `/db` subpath for reactive hooks (`useQuery`, `useQueryValue`, `useMutation`).
+
 ## Sync vs Async
 
 All `db.*` methods are synchronous. Exceptions documented explicitly.

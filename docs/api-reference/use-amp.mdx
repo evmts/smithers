@@ -56,10 +56,21 @@ interface UseAmpResult {
 | `cwd` | `string` | — | Working directory for the agent |
 | `continueThread` | `boolean` | — | Continue from previous thread |
 | `resumeThread` | `string` | — | Resume a specific thread by ID |
+| `labels` | `string[]` | — | Labels to attach to the thread |
 | `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Validate result before accepting |
+| `retryOnValidationFailure` | `boolean` | — | Retry if validation fails |
+| `maxRetries` | `number` | `3` | Maximum retry attempts |
 | `stopConditions` | `StopCondition[]` | — | Conditions that will stop the agent |
 | `middleware` | `SmithersMiddleware[]` | — | Middleware applied to this execution |
-| `labels` | `string[]` | — | Labels to attach to the thread |
+| `tailLogCount` | `number` | `10` | Number of tail log entries to display during execution |
+| `tailLogLines` | `number` | `10` | Number of lines to show per tail log entry |
+| `reportingEnabled` | `boolean` | `true` | Enable database reporting for this agent |
+| `recordStreamEvents` | `boolean` | `true` when `reportingEnabled` | Record stream events to the database |
+| `onFinished` | `(result: AgentResult) => void` | — | Called when agent finishes successfully |
+| `onError` | `(error: Error) => void` | — | Called when agent encounters an error |
+| `onProgress` | `(message: string) => void` | — | Called for progress updates |
+| `onToolCall` | `(tool: string, input: any) => void` | — | Called when agent makes a tool call |
+| `onStreamPart` | `(part: SmithersStreamPart) => void` | — | Called for typed stream events (when enabled) |
 
 ## Notes
 

@@ -1,4 +1,3 @@
-// Monitor utilities for LLM-friendly output
 export { OutputParser } from './output-parser.js'
 export type { ParsedEvent } from './output-parser.js'
 export { StreamFormatter } from './stream-formatter.js'

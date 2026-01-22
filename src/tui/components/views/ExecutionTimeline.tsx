@@ -1,6 +1,3 @@
-// Execution Timeline View (F1)
-// Real-time view of phases, agents, and tool calls
-
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { TextAttributes, type KeyEvent } from '@opentui/core'

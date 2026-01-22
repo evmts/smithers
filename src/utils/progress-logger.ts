@@ -1,8 +1,3 @@
-/**
- * ProgressLogger - Provides progress logging for orchestrations.
- * Outputs formatted progress messages with timestamps and stats.
- */
-
 export interface ProgressLoggerOptions {
   heartbeatInterval?: number
   prefix?: string

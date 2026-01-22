@@ -10,4 +10,4 @@ export * from "./monitor/index.js";
 export * from "./supersmithers/index.js";
 
 // Re-export database functions for top-level imports
-export { createSmithersDB, type SmithersDB, type SmithersDBOptions } from "./db/index.js";
+export { createSmithersDB, type SmithersDB, type SmithersDBOptions, useQuery, useMutation, useQueryOne, useQueryValue } from "./db/index.js";

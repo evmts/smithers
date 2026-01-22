@@ -1,6 +1,3 @@
-// Render Frame Inspector View (F2)
-// Time-travel through render frame history with XML visualization
-
 import { TextAttributes, type KeyEvent } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
@@ -23,7 +20,6 @@ export function RenderFrameInspector({ db }: RenderFrameInspectorProps) {
     goToFirst
   } = useRenderFrames(db)
 
-  // Handle keyboard navigation
   useKeyboard((key: KeyEvent) => {
     if (key.name === ']' || key.name === 'l' || key.name === 'right') {
       nextFrame()

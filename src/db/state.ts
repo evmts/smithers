@@ -1,5 +1,3 @@
-// State management module for Smithers DB
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Transition } from './types.js'
 import { uuid, now, parseJson } from './utils.js'
@@ -11,9 +9,7 @@ export interface StateModule {
   getAll: () => Record<string, unknown>
   reset: () => void
   history: (key?: string, limit?: number) => Transition[]
-  /** Check if a key exists in state */
   has: (key: string) => boolean
-  /** Delete a key from state */
   delete: (key: string, trigger?: string) => void
 }
 

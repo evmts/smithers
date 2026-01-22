@@ -1,4 +1,3 @@
-// Amp agent hook - thin wrapper around useAgentRunner
 import { useAgentRunner, type UseAgentResult } from './useAgentRunner.js'
 import { AmpAdapter } from './adapters/amp.js'
 import type { AmpProps } from '../components/agents/types/amp.js'

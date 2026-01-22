@@ -16,6 +16,7 @@ import {
   SmithersProvider,
   useSmithers,
   useQueryValue,
+  useQuery,
   Ralph,
   Claude,
   Phase,
@@ -33,18 +34,18 @@ function GroupChat({ problem }: { problem: string }) {
   )`)
   
   // Reactive query - re-renders when messages change
-  const { data: messages } = useQueryValue<Message[]>(
+  const messages = useQuery<Message>(
     db.db,
     'SELECT * FROM messages ORDER BY ts',
     []
   )
-  const { data: done } = useQueryValue<boolean>(
+  const done = useQueryValue<boolean>(
     db.db,
     "SELECT EXISTS(SELECT 1 FROM messages WHERE content LIKE '%SOLVED:%')",
     []
   )
   
-  const transcript = (messages ?? []).map(m => `[${m.agent}]: ${m.content}`).join('\n')
+  const transcript = messages.map(m => `[${m.agent}]: ${m.content}`).join('\n')
   const addMessage = (agent: string, content: string) =>
     db.db.run('INSERT INTO messages (agent, content) VALUES (?, ?)', [agent, content])
 

@@ -19,8 +19,8 @@ import {
   Review,
   If,
   useSmithers,
+  useQueryValue,
 } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
 
 async function main() {
   const db = createSmithersDB({ path: ".smithers/review-workflow" });
@@ -35,9 +35,9 @@ async function main() {
   }
 
   function ReviewWorkflow() {
-    const { db, reactiveDb } = useSmithers();
-    const { data: phase } = useQueryValue<string>(
-      reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
+    const { db } = useSmithers();
+    const phase = useQueryValue<string>(
+      db.db, "SELECT value FROM state WHERE key = 'phase'"
     );
     const currentPhase = phase ?? "implement";
 

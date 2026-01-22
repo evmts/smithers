@@ -4,16 +4,13 @@ import { createContext } from 'react'
 import type { SmithersNode } from './types.js'
 import { rendererMethods } from './methods.js'
 
-// Track current update priority (avoids hardcoded magic numbers)
 let currentUpdatePriority: number = DefaultEventPriority
 
-// Time utilities
 const now = () =>
   typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now()
 
-// React 19 required members
 const NotPendingTransition = null
 const HostTransitionContext = createContext(NotPendingTransition)
 
@@ -22,7 +19,6 @@ const schedulePostPaint =
     ? queueMicrotask
     : (cb: () => void) => Promise.resolve().then(cb)
 
-// Re-export rendererMethods for backwards compatibility
 export { rendererMethods }
 
 type Props = Record<string, unknown>
@@ -56,15 +52,7 @@ function diffProps(oldProps: Props, newProps: Props): UpdatePayload | null {
   return hasChanges ? updatePayload : null
 }
 
-/**
- * React Reconciler host configuration for SmithersNode trees.
- * This maps React's reconciliation operations to our SmithersNode structure.
- *
- * Note: react-reconciler typings lag the React 19 host config surface.
- * We keep this object untyped and rely on runtime behavior.
- */
 const hostConfig = {
-  // Core configuration
   supportsMutation: true,
   supportsPersistence: false,
   supportsHydration: false,
@@ -73,17 +61,14 @@ const hostConfig = {
     process.env['SMITHERS_PRIMARY_RENDERER'] === 'true' ||
     process.env['SMITHERS_PRIMARY_RENDERER'] === '1',
 
-  // Optional capability flags
   warnsIfNotActing: false,
   supportsResources: false,
   supportsSingletons: false,
 
-  // Timing
   scheduleTimeout: setTimeout,
   cancelTimeout: clearTimeout,
   noTimeout: -1 as const,
 
-  // Context
   getRootHostContext(): HostContext {
     return {}
   },
@@ -92,17 +77,11 @@ const hostConfig = {
     return parentHostContext
   },
 
-  // Instance creation
   createInstance(type: string, props: Props): Instance {
     const node = rendererMethods.createElement(type)
-
-    // Apply all props
     for (const [key, value] of Object.entries(props)) {
-      if (key !== 'children') {
-        rendererMethods.setProperty(node, key, value)
-      }
+      if (key !== 'children') rendererMethods.setProperty(node, key, value)
     }
-
     return node
   },
 
@@ -110,7 +89,6 @@ const hostConfig = {
     return rendererMethods.createTextNode(text)
   },
 
-  // Tree manipulation (mutation mode)
   appendChild(parent: Container, child: Instance | TextInstance): void {
     rendererMethods.insertNode(parent, child)
   },
@@ -147,7 +125,6 @@ const hostConfig = {
     rendererMethods.removeNode(container, child)
   },
 
-  // Updates
   prepareUpdate(
     _instance: Instance,
     _type: string,
@@ -198,7 +175,6 @@ const hostConfig = {
     rendererMethods.replaceText(textInstance, newText)
   },
 
-  // Finalization
   finalizeInitialChildren(): boolean {
     return false
   },
@@ -207,11 +183,8 @@ const hostConfig = {
     return null
   },
 
-  resetAfterCommit(): void {
-    // No-op
-  },
+  resetAfterCommit(): void {},
 
-  // Required methods
   getPublicInstance(instance: Instance): PublicInstance {
     return instance
   },
@@ -221,7 +194,6 @@ const hostConfig = {
   },
 
   clearContainer(container: Container): void {
-    // Detach full subtrees to avoid stale parent pointers; preserve array reference.
     const children = [...container.children]
     for (const child of children) {
       rendererMethods.removeNode(container, child)
@@ -229,40 +201,18 @@ const hostConfig = {
     container.children.length = 0
   },
 
-  // Event handling (not used for Smithers)
-  preparePortalMount(): void {
-    // No-op
-  },
+  preparePortalMount(): void {},
+  detachDeletedInstance(): void {},
 
-  // Detach/attach (for offscreen trees)
-  detachDeletedInstance(): void {
-    // No-op
-  },
-
-  // Required for newer React versions
   getCurrentEventPriority(): number {
     return currentUpdatePriority
   },
 
-  getInstanceFromNode(): null {
-    return null
-  },
-
-  beforeActiveInstanceBlur(): void {
-    // No-op
-  },
-
-  afterActiveInstanceBlur(): void {
-    // No-op
-  },
-
-  prepareScopeUpdate(): void {
-    // No-op
-  },
-
-  getInstanceFromScope(): null {
-    return null
-  },
+  getInstanceFromNode(): null { return null },
+  beforeActiveInstanceBlur(): void {},
+  afterActiveInstanceBlur(): void {},
+  prepareScopeUpdate(): void {},
+  getInstanceFromScope(): null { return null },
 
   setCurrentUpdatePriority(priority: number): void {
     currentUpdatePriority = priority
@@ -272,78 +222,38 @@ const hostConfig = {
     return currentUpdatePriority
   },
 
-  resolveUpdatePriority(): number {
-    return currentUpdatePriority
-  },
+  resolveUpdatePriority(): number { return currentUpdatePriority },
 
-  // For microtasks (React 18+)
   supportsMicrotasks: true,
   scheduleMicrotask:
     typeof queueMicrotask === 'function'
       ? queueMicrotask
       : (callback: () => void) => Promise.resolve().then(callback),
 
-  // For hiding/unhiding instances (Suspense boundaries)
-  hideInstance(): void {
-    // No-op
-  },
+  hideInstance(): void {},
+  hideTextInstance(): void {},
+  unhideInstance(): void {},
+  unhideTextInstance(): void {},
 
-  hideTextInstance(): void {
-    // No-op
-  },
-
-  unhideInstance(): void {
-    // No-op
-  },
-
-  unhideTextInstance(): void {
-    // No-op
-  },
-
-  // Resources (React 19+)
   NotPendingTransition,
   HostTransitionContext,
-  resetFormInstance(): void {
-    // No-op
-  },
+  resetFormInstance(): void {},
   requestPostPaintCallback(callback: (time: number) => void): void {
     schedulePostPaint(() => callback(now()))
   },
-  trackSchedulerEvent(): void {
-    // No-op
-  },
-  resolveEventType(): null | string {
-    return null
-  },
-  resolveEventTimeStamp(): number {
-    return now()
-  },
-  shouldAttemptEagerTransition(): boolean {
-    return false
-  },
-  maySuspendCommit(): boolean {
-    return false
-  },
-  preloadInstance(): boolean {
-    return true
-  },
-  startSuspendingCommit(): void {
-    // No-op
-  },
-  suspendInstance(): void {
-    // No-op
-  },
-  waitForCommitToBeReady(): null {
-    return null
-  },
+  trackSchedulerEvent(): void {},
+  resolveEventType(): null | string { return null },
+  resolveEventTimeStamp(): number { return now() },
+  shouldAttemptEagerTransition(): boolean { return false },
+  maySuspendCommit(): boolean { return false },
+  preloadInstance(): boolean { return true },
+  startSuspendingCommit(): void {},
+  suspendInstance(): void {},
+  waitForCommitToBeReady(): null { return null },
 }
 
-/**
- * Create the React Reconciler instance
- */
 export const SmithersReconciler = Reconciler(hostConfig)
 
-// Register renderer with React DevTools.
 SmithersReconciler.injectIntoDevTools({
   findFiberByHostInstance: () => null,
   bundleType: process.env.NODE_ENV === 'development' ? 1 : 0,

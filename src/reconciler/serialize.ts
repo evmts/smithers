@@ -1,9 +1,5 @@
 import type { SmithersNode } from './types.js'
 
-/**
- * Known component types that have meaning in Smithers.
- * If a known type appears under an unknown parent, we add a warning.
- */
 const KNOWN_TYPES = new Set([
   // Core orchestration
   'claude',
@@ -59,17 +55,11 @@ const KNOWN_TYPES = new Set([
   'hooks',
 ])
 
-/**
- * Add warnings to nodes when known components appear inside unknown elements.
- * This helps detect accidental nesting like <loop><Claude>...</Claude></loop>
- * where the user likely didn't want Claude to execute.
- */
 function addWarningsForUnknownParents(node: SmithersNode | null | undefined): void {
   if (!node || !node.type) {
     return
   }
 
-  // Clear previous warnings to ensure idempotency when serialize() is called multiple times
   node.warnings = []
 
   if (node.type === 'TEXT') {
@@ -83,16 +73,10 @@ function addWarningsForUnknownParents(node: SmithersNode | null | undefined): vo
   const type = node.type.toLowerCase()
   const isKnown = KNOWN_TYPES.has(type)
 
-  // Walk up to find unknown parent
   let parent = node.parent
   while (parent) {
     const parentType = parent.type.toLowerCase()
-
-    // If parent is a known type, stop walking - the parent will get its own warning if needed.
-    // This prevents redundant warnings for deeply nested known components.
-    if (KNOWN_TYPES.has(parentType)) {
-      break
-    }
+    if (KNOWN_TYPES.has(parentType)) break
 
     if (parent.type !== 'ROOT') {
       if (isKnown) {
@@ -105,56 +89,22 @@ function addWarningsForUnknownParents(node: SmithersNode | null | undefined): vo
     parent = parent.parent
   }
 
-  // Clean up: remove empty warnings array
-  if (node.warnings.length === 0) {
-    delete node.warnings
-  }
+  if (node.warnings.length === 0) delete node.warnings
 
-  // Recurse to children
   for (const child of node.children) {
     addWarningsForUnknownParents(child)
   }
 }
 
-/**
- * Serialize a SmithersNode tree to XML string.
- * This XML is the "plan" shown to users before execution.
- *
- * NOTE: serialize mutates nodes by setting/clearing warnings during validation.
- *
- * GOTCHA: When testing entity escaping, create nodes MANUALLY with raw strings.
- * If input already contains XML entities, serialization will escape them again.
- *
- * Example transformations:
- * - { type: 'task', props: { name: 'test' }, children: [] } → '<task name="test" />'
- * - { type: 'ROOT', children: [...] } → children joined with \n (no <ROOT> wrapper)
- * - node.key appears FIRST in attributes (before other props)
- */
 export function serialize(node: SmithersNode): string {
-  // Skip null/undefined nodes
-  if (!node || !node.type) {
-    return ''
-  }
-
-  // Add warnings for known components under unknown parents (once at root)
+  if (!node || !node.type) return ''
   addWarningsForUnknownParents(node)
-
   return serializeNode(node)
 }
 
-/**
- * Internal recursive serialization (doesn't add warnings).
- */
 function serializeNode(node: SmithersNode): string {
-  // Skip null/undefined nodes
-  if (!node || !node.type) {
-    return ''
-  }
-
-  // TEXT nodes: just escape and return the value
-  if (node.type === 'TEXT') {
-    return escapeXml(String(node.props['value'] ?? ''))
-  }
+  if (!node || !node.type) return ''
+  if (node.type === 'TEXT') return escapeXml(String(node.props['value'] ?? ''))
 
   const childNodes = node.children.filter(c => c && c.type)
   const hasTextChild = childNodes.some((child) => {
@@ -164,44 +114,21 @@ function serializeNode(node: SmithersNode): string {
   })
   const serializedChildren = childNodes.map(serializeNode).filter(s => s)
 
-  // ROOT nodes: serialize children without wrapper tags
-  if (node.type === 'ROOT') {
-    return hasTextChild ? serializedChildren.join('') : serializedChildren.join('\n')
-  }
+  if (node.type === 'ROOT') return hasTextChild ? serializedChildren.join('') : serializedChildren.join('\n')
 
   const tag = node.type.toLowerCase()
-
-  // Key attribute goes FIRST (if present) for readability
   const keyAttr = node.key !== undefined ? ` key="${escapeXml(String(node.key))}"` : ''
-
-  // Then other props (filtered and escaped)
   const attrs = serializeProps(node.props)
-
-  // Serialize children recursively
   const children = hasTextChild ? serializedChildren.join('') : serializedChildren.join('\n')
 
-  // Self-closing tag if no children
-  if (!children) {
-    return `<${tag}${keyAttr}${attrs} />`
-  }
-
-  if (hasTextChild) {
-    return `<${tag}${keyAttr}${attrs}>${children}</${tag}>`
-  }
-
-  // Otherwise wrap children with indentation
+  if (!children) return `<${tag}${keyAttr}${attrs} />`
+  if (hasTextChild) return `<${tag}${keyAttr}${attrs}>${children}</${tag}>`
   return `<${tag}${keyAttr}${attrs}>\n${indent(children)}\n</${tag}>`
 }
 
-/**
- * Check if a value contains functions (recursively).
- * Used to filter out non-serializable props like middleware arrays.
- */
 function containsFunctions(value: unknown, seen = new WeakSet()): boolean {
   if (typeof value === 'function') return true
   if (value === null || typeof value !== 'object') return false
-
-  // Prevent infinite recursion on circular references
   if (seen.has(value as object)) return false
   seen.add(value as object)
 
@@ -211,74 +138,35 @@ function containsFunctions(value: unknown, seen = new WeakSet()): boolean {
   return Object.values(value as Record<string, unknown>).some(v => containsFunctions(v, seen))
 }
 
-/**
- * Serialize props to XML attributes.
- *
- * GOTCHA: Several props must be filtered out:
- * - callbacks (onFinished, onError, etc.)
- * - children (handled separately)
- * - key (handled separately via node.key)
- * - any function values (including nested in arrays/objects)
- */
 function serializeProps(props: Record<string, unknown>): string {
-  // Props that should never appear in XML (common callback/config names)
   const nonSerializable = new Set([
-    'children',      // Handled separately, not a prop
-    'onFinished',    // Callbacks are runtime-only
-    'onError',
-    'onStart',
-    'onComplete',
-    'onIteration',
-    'onProgress',
-    'onStreamStart',
-    'onStreamDelta',
-    'onStreamEnd',
-    'onStreamPart',
-    'onToolCall',
-    'onReady',
-    'onApprove',
-    'onReject',
-    'validate',      // Functions don't serialize
-    'middleware',    // Middleware arrays contain functions
-    'key',           // Stored on node.key, not props
-    '__smithersKey', // Internal key bridge; avoid duplicate serialization
-    'ref',           // React refs should not serialize
+    'children', 'onFinished', 'onError', 'onStart', 'onComplete', 'onIteration',
+    'onProgress', 'onStreamStart', 'onStreamDelta', 'onStreamEnd', 'onStreamPart',
+    'onToolCall', 'onReady', 'onApprove', 'onReject', 'validate', 'middleware',
+    'key', '__smithersKey', 'ref',
   ])
 
   return Object.entries(props)
     .filter(([key]) => !nonSerializable.has(key))
     .filter(([, value]) => value !== undefined && value !== null)
-    .filter(([, value]) => !containsFunctions(value))  // Filter functions recursively
+    .filter(([, value]) => !containsFunctions(value))
     .map(([key, value]) => {
-      // GOTCHA: Object props need to be serialized as JSON
       if (typeof value === 'object') {
-        try {
-          return ` ${key}="${escapeXml(JSON.stringify(value))}"`
-        } catch {
-          // Handle circular references and other stringify errors
-          return ` ${key}="${escapeXml('[Object (circular or non-serializable)]')}"`
-        }
+        try { return ` ${key}="${escapeXml(JSON.stringify(value))}"` }
+        catch { return ` ${key}="${escapeXml('[Object (circular or non-serializable)]')}"` }
       }
       return ` ${key}="${escapeXml(String(value))}"`
     })
     .join('')
 }
 
-/**
- * Escape XML entities.
- *
- * CRITICAL GOTCHA: & MUST be replaced FIRST!
- * Otherwise you'll double-escape: '<' → '&lt;' → '&amp;lt;' ☠️
- *
- * Correct order: & first, then others
- */
 function escapeXml(str: string): string {
   return str
-    .replace(/&/g, '&amp;')   // MUST be first!
+    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')  // Optional but good to have
+    .replace(/'/g, '&apos;')
 }
 
 function indent(str: string, spaces = 2): string {

@@ -1,4 +1,3 @@
-// Agent adapter interface for useAgentRunner
 import type { TailLogEntry } from '../../components/agents/claude-cli/message-parser.js'
 import type { AgentResult } from '../../components/agents/types/execution.js'
 import type { SmithersStreamPart } from '../../streaming/types.js'

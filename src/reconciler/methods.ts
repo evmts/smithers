@@ -1,10 +1,5 @@
 import type { SmithersNode } from './types.js'
 
-/**
- * Renderer configuration methods.
- * Exported separately for direct testing without JSX.
- * This file has NO React dependencies - it's framework-agnostic.
- */
 export const rendererMethods = {
   createElement(type: string): SmithersNode {
     return {
@@ -29,17 +24,11 @@ export const rendererMethods = {
   },
 
   setProperty(node: SmithersNode, name: string, value: unknown): void {
-    if (name === 'children') {
-      // Children are handled by insertNode, not setProperty
-      return
-    }
+    if (name === 'children') return
     if (name === '__smithersKey' || name === 'key') {
-      // __smithersKey is injected by our custom jsx-runtime to expose React's key.
-      // "key" is still accepted for direct rendererMethods usage.
       node.key = value as string | number
       return
     }
-    // All other props go into props object
     node.props[name] = value
   },
 
@@ -70,13 +59,8 @@ export const rendererMethods = {
   removeNode(parent: SmithersNode, node: SmithersNode): void {
     const idx = parent.children.indexOf(node)
     if (idx !== -1) parent.children.splice(idx, 1)
-
-    // Always clear parent pointer if it matches, even if not found in array
-    // (defensive against race conditions or manual clearing)
     if (node.parent === parent) node.parent = null
 
-    // Recursively clear parent pointers of all descendants
-    // This ensures no stale pointers remain when unmounting subtrees
     function clearDescendants(n: SmithersNode) {
       for (const child of n.children) {
         child.parent = null
@@ -84,7 +68,6 @@ export const rendererMethods = {
       }
     }
     clearDescendants(node)
-    // Note: node.children is intentionally left intact for debugging/inspection.
   },
 
   isTextNode(node: SmithersNode): boolean {

@@ -1,8 +1,3 @@
-/**
- * Capture utilities - classification, template generation, and file I/O
- * for /capture command
- */
-
 import * as path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 
@@ -30,7 +25,6 @@ export interface GeneratedCapture {
   isAppend: boolean
 }
 
-// Note: Do NOT use /g flag with patterns used in .test() to avoid lastIndex issues
 const PATTERNS = {
   review: {
     commitHash: /\b[0-9a-f]{7,40}\b/i,
@@ -356,12 +350,6 @@ export async function generateFilePath(
   }
 }
 
-/**
- * Write a generated capture to disk.
- * @throws {Error} Failed to create directory - when mkdir fails
- * @throws {Error} Failed to read existing file - when file.text() fails on append
- * @throws {Error} Failed to write file - when Bun.write fails
- */
 export async function writeCapture(generated: GeneratedCapture): Promise<void> {
   try {
     await mkdir(path.dirname(generated.filePath), { recursive: true })
@@ -371,7 +359,6 @@ export async function writeCapture(generated: GeneratedCapture): Promise<void> {
 
   try {
     if (generated.isAppend) {
-      // Read existing content and append
       const file = Bun.file(generated.filePath)
       let existing = ''
       try {

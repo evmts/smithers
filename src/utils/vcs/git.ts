@@ -1,6 +1,3 @@
-// Git operations
-// Uses Bun.$ for command execution per CLAUDE.md
-
 import * as path from 'node:path'
 import { tmpdir } from 'node:os'
 import { unlink } from 'node:fs/promises'
@@ -21,10 +18,6 @@ function withCwd<T extends { cwd: (dir: string) => T }>(command: T, cwd?: string
   return cwd ? command.cwd(cwd) : command
 }
 
-/**
- * Execute a git command
- * @throws {Error} If git command fails, includes stderr
- */
 export async function git(...args: Array<string | GitOptions>): Promise<CommandResult> {
   let options: GitOptions | undefined
   const last = args[args.length - 1]
@@ -48,10 +41,6 @@ export async function git(...args: Array<string | GitOptions>): Promise<CommandR
   }
 }
 
-/**
- * Get current commit hash
- * @throws {Error} If ref cannot be resolved
- */
 export async function getCommitHash(ref: string = 'HEAD', cwd?: string): Promise<string> {
   try {
     const result = await withCwd(Bun.$`git rev-parse ${ref}`, cwd).text()
@@ -61,10 +50,6 @@ export async function getCommitHash(ref: string = 'HEAD', cwd?: string): Promise
   }
 }
 
-/**
- * Get commit information
- * @throws {Error} If commit info cannot be retrieved for ref
- */
 export async function getCommitInfo(ref: string = 'HEAD', cwd?: string): Promise<CommitInfo> {
   try {
     const hash = await withCwd(Bun.$`git rev-parse ${ref}`, cwd).text()
@@ -80,10 +65,6 @@ export async function getCommitInfo(ref: string = 'HEAD', cwd?: string): Promise
   }
 }
 
-/**
- * Get diff statistics
- * @throws {Error} If diff stats cannot be retrieved
- */
 export async function getDiffStats(ref?: string, cwd?: string): Promise<DiffStats> {
   const args = ref ? `${ref}..HEAD` : 'HEAD~1..HEAD'
   let result: string
@@ -111,18 +92,11 @@ export async function getDiffStats(ref?: string, cwd?: string): Promise<DiffStat
   return { files, insertions, deletions }
 }
 
-/**
- * Get git status
- */
 export async function getGitStatus(cwd?: string): Promise<VCSStatus> {
   const result = await withCwd(Bun.$`git status --porcelain`, cwd).text()
   return parseGitStatus(result)
 }
 
-/**
- * Add git notes with smithers metadata
- * @throws {Error} If git notes operation fails
- */
 export async function addGitNotes(
   content: string,
   ref: string = 'HEAD',
@@ -148,9 +122,6 @@ export async function addGitNotes(
   }
 }
 
-/**
- * Get git notes for a commit
- */
 export async function getGitNotes(ref: string = 'HEAD', cwd?: string): Promise<string | null> {
   try {
     const result = await withCwd(Bun.$`git notes --ref ${SMITHERS_NOTES_REF} show ${ref}`, cwd).text()
@@ -160,17 +131,11 @@ export async function getGitNotes(ref: string = 'HEAD', cwd?: string): Promise<s
   }
 }
 
-/**
- * Check if git notes exist for a commit
- */
 export async function hasGitNotes(ref: string = 'HEAD', cwd?: string): Promise<boolean> {
   const notes = await getGitNotes(ref, cwd)
   return notes !== null
 }
 
-/**
- * Check if we're in a git repository
- */
 export async function isGitRepo(cwd?: string): Promise<boolean> {
   try {
     await withCwd(Bun.$`git rev-parse --git-dir`, cwd).quiet()
@@ -180,9 +145,6 @@ export async function isGitRepo(cwd?: string): Promise<boolean> {
   }
 }
 
-/**
- * Get current branch name (git)
- */
 export async function getCurrentBranch(cwd?: string): Promise<string | null> {
   try {
     const result = await withCwd(Bun.$`git branch --show-current`, cwd).text()
@@ -192,9 +154,6 @@ export async function getCurrentBranch(cwd?: string): Promise<string | null> {
   }
 }
 
-/**
- * Parse `git worktree list --porcelain` output
- */
 export function parseWorktreeList(output: string): WorktreeInfo[] {
   const worktrees: WorktreeInfo[] = []
   let current: Partial<WorktreeInfo> = {}
@@ -225,9 +184,6 @@ export function parseWorktreeList(output: string): WorktreeInfo[] {
   return worktrees
 }
 
-/**
- * List all worktrees for the repository
- */
 export async function listWorktrees(cwd?: string): Promise<WorktreeInfo[]> {
   const args = cwd
     ? ['-C', cwd, 'worktree', 'list', '--porcelain']
@@ -236,9 +192,6 @@ export async function listWorktrees(cwd?: string): Promise<WorktreeInfo[]> {
   return parseWorktreeList(result.stdout.toString())
 }
 
-/**
- * Add a new worktree
- */
 export async function addWorktree(
   worktreePath: string,
   branch: string,
@@ -272,9 +225,6 @@ export async function addWorktree(
   await Bun.$`git ${args}`.quiet()
 }
 
-/**
- * Remove a worktree
- */
 export async function removeWorktree(
   worktreePath: string,
   options?: { force?: boolean; cwd?: string }
@@ -296,9 +246,6 @@ export async function removeWorktree(
   await Bun.$`git ${args}`.quiet()
 }
 
-/**
- * Check if a branch exists
- */
 export async function branchExists(branch: string, cwd?: string): Promise<boolean> {
   try {
     const args = cwd
@@ -311,9 +258,6 @@ export async function branchExists(branch: string, cwd?: string): Promise<boolea
   }
 }
 
-/**
- * Check if a worktree exists at path
- */
 export async function worktreeExists(worktreePath: string, cwd?: string): Promise<boolean> {
   const worktrees = await listWorktrees(cwd)
   const normalizedPath = path.resolve(worktreePath)

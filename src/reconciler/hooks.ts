@@ -50,7 +50,6 @@ export const useUnmount = (fn: () => void): void => {
   const enabled = useExecutionGate();
   const hasEnabledRef = useRef(enabled);
 
-  // Update the ref each render so if it changes, the newest callback will be invoked
   fnRef.current = fn;
   if (enabled) {
     hasEnabledRef.current = true;

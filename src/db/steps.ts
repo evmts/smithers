@@ -1,5 +1,3 @@
-// Step tracking module for Smithers DB
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Step } from './types.js'
 import { uuid, now } from './utils.js'

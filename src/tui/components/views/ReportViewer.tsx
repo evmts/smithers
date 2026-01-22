@@ -1,6 +1,3 @@
-// Report Viewer View (F6)
-// Auto-generated 10-minute summaries
-
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
 import { useReportGenerator, type UseReportGeneratorResult } from '../../hooks/useReportGenerator.js'
@@ -52,7 +49,6 @@ function ReportViewerContent({
     }
   }, [reports.length, selectedIndex, setSelectedIndex])
 
-  // Handle keyboard navigation
   useKeyboard((key: KeyEvent) => {
     if (key.name === 'j' || key.name === 'down') {
       setSelectedIndex(prev => Math.min(prev + 1, Math.max(0, reports.length - 1)))
@@ -89,7 +85,6 @@ function ReportViewerContent({
       )}
 
       <box style={{ flexDirection: 'row', height: '100%' }}>
-        {/* Report list */}
         <box style={{
           width: 35,
           flexDirection: 'column',
@@ -124,7 +119,6 @@ function ReportViewerContent({
           </scrollbox>
         </box>
 
-        {/* Report content */}
         <box style={{ flexGrow: 1, flexDirection: 'column', paddingLeft: 1 }}>
           {selectedReport ? (
             <>

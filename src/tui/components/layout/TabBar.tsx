@@ -1,5 +1,3 @@
-// Tab bar for navigation between views
-
 import type { TabKey, TabInfo } from '../../appNavigation.js'
 import { TextAttributes } from '@opentui/core'
 import { colors } from '../../utils/colors.js'

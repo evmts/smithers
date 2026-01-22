@@ -1,5 +1,3 @@
-// Tool call tracking module for Smithers DB
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { ToolCall } from './types.js'
 import { uuid, now, parseJson } from './utils.js'

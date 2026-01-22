@@ -1,4 +1,3 @@
-// Claude agent hook - thin wrapper around useAgentRunner
 import { useAgentRunner, type UseAgentResult } from './useAgentRunner.js'
 import { ClaudeAdapter } from './adapters/claude.js'
 import type { ClaudeProps } from '../components/agents/types.js'

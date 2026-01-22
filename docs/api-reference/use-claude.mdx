@@ -55,12 +55,32 @@ interface UseClaudeResult {
 | `allowedTools` | `string[]` | — | Specific tools to allow (whitelist) |
 | `disallowedTools` | `string[]` | — | Specific tools to disallow (blacklist) |
 | `maxTurns` | `number` | — | Maximum number of agentic loops |
+| `maxTokens` | `number` | — | Maximum tokens for output |
 | `timeout` | `number` | — | Timeout in milliseconds |
-| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Validate result before accepting |
-| `stopConditions` | `StopCondition[]` | — | Conditions that will stop the agent |
-| `schema` | `z.ZodType` | — | Zod schema for structured output validation |
-| `middleware` | `SmithersMiddleware[]` | — | Middleware applied to this execution |
 | `cwd` | `string` | — | Working directory for the agent |
+| `systemPrompt` | `string` | — | System prompt for the agent |
+| `outputFormat` | `'text' \| 'json' \| 'stream-json'` | `'text'` | Output format |
+| `continueConversation` | `boolean` | — | Continue from previous conversation |
+| `resumeSession` | `string` | — | Resume a specific session |
+| `schema` | `z.ZodType` | — | Zod schema for structured output validation |
+| `schemaRetries` | `number` | `2` | Maximum retries for schema validation failures |
+| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Validate result before accepting |
+| `retryOnValidationFailure` | `boolean` | — | Retry if validation fails |
+| `maxRetries` | `number` | — | Maximum retry attempts |
+| `retryDelayMs` | `number` | `250` | Base delay in milliseconds for retry backoff |
+| `stopConditions` | `StopCondition[]` | — | Conditions that will stop the agent |
+| `middleware` | `SmithersMiddleware[]` | — | Middleware applied to this execution |
+| `tailLogCount` | `number` | `10` | Number of tail log entries to display during execution |
+| `tailLogLines` | `number` | `10` | Number of lines to show per tail log entry |
+| `useSubscription` | `boolean` | `true` | Use Claude subscription credits instead of API credits |
+| `reportingEnabled` | `boolean` | — | Enable database reporting for this agent |
+| `recordStreamEvents` | `boolean` | `true` when `reportingEnabled` | Record stream events to the database |
+| `legacyLogFormat` | `boolean` | `false` | Write legacy raw text logs alongside NDJSON stream logs |
+| `onFinished` | `(result: AgentResult) => void` | — | Called when agent finishes successfully |
+| `onError` | `(error: Error) => void` | — | Called when agent encounters an error |
+| `onProgress` | `(message: string) => void` | — | Called for progress updates |
+| `onToolCall` | `(tool: string, input: any) => void` | — | Called when agent makes a tool call |
+| `onStreamPart` | `(part: SmithersStreamPart) => void` | — | Called for typed stream events (when enabled) |
 
 ## Notes
 

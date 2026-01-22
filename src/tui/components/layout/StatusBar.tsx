@@ -1,5 +1,3 @@
-// Status bar showing connection state and help hints
-
 import { colors } from '../../utils/colors.js'
 
 export interface StatusBarProps {

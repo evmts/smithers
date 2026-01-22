@@ -69,7 +69,6 @@ export function useHuman(): UseHumanResult {
     [requestId ?? '__never__']
   )
 
-  // Resolve promise when request status changes
   useEffectOnValueChange(request?.status, () => {
     if (!request || request.status === 'pending' || !resolveRef.current) return
 

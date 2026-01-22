@@ -1,5 +1,3 @@
-// XML syntax highlighting viewer
-
 import { colors } from '../../utils/colors.js'
 
 export interface XMLViewerProps {
@@ -31,22 +29,10 @@ export function XMLViewer({ xml, maxLines = 100 }: XMLViewerProps) {
 
 export function getLineColor(line: string): string {
   const trimmed = line.trim()
-
-  // Comments
   if (trimmed.startsWith('<!--')) return colors.comment
-
-  // Self-closing tags
   if (trimmed.match(/^<[^>]+\/>$/)) return colors.cyan
-
-  // Opening tags
   if (trimmed.match(/^<[^/][^>]*>$/)) return colors.blue
-
-  // Closing tags
   if (trimmed.match(/^<\/[^>]+>$/)) return colors.purple
-
-  // Tag with attributes
   if (trimmed.startsWith('<')) return colors.blue
-
-  // Text content
   return colors.fg
 }

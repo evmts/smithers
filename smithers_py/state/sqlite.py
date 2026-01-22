@@ -153,7 +153,7 @@ class SqliteStore:
                     self.db.execute(
                         """INSERT OR REPLACE INTO execution_state (execution_id, key, value, updated_at)
                            VALUES (?, ?, ?, ?)""",
-                        (self.execution_id, op.key, new_value_str, op.timestamp or datetime.now())
+                        (self.execution_id, op.key, new_value_str, (op.timestamp or datetime.now()).isoformat())
                     )
 
                 # Log transition for audit
@@ -161,7 +161,7 @@ class SqliteStore:
                     """INSERT INTO execution_transitions (execution_id, key, old_value, new_value, trigger, timestamp)
                        VALUES (?, ?, ?, ?, ?, ?)""",
                     (self.execution_id, op.key, current_value_str, new_value_str,
-                     op.trigger, op.timestamp or datetime.now())
+                     op.trigger, (op.timestamp or datetime.now()).isoformat())
                 )
 
         # Clear the queue

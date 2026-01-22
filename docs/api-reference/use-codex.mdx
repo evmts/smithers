@@ -53,11 +53,28 @@ interface UseCodexResult {
 | `approvalPolicy` | `'untrusted' \| 'on-failure' \| 'on-request' \| 'never'` | — | Approval policy for commands |
 | `fullAuto` | `boolean` | — | Enable full-auto mode (sets `-a on-request --sandbox workspace-write`) |
 | `bypassSandbox` | `boolean` | — | Bypass all approvals and sandbox (EXTREMELY DANGEROUS) |
-| `timeout` | `number` | — | Timeout in milliseconds |
-| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Validate result before accepting |
-| `stopConditions` | `StopCondition[]` | — | Conditions that will stop the agent |
-| `schema` | `z.ZodType` | — | Zod schema for structured output validation |
 | `cwd` | `string` | — | Working directory for the agent |
+| `skipGitRepoCheck` | `boolean` | — | Skip git repository check |
+| `addDirs` | `string[]` | — | Additional directories that should be writable |
+| `images` | `string[]` | — | Images to attach to the prompt |
+| `profile` | `string` | — | Configuration profile from config.toml |
+| `configOverrides` | `Record<string, unknown>` | — | Configuration overrides (key=value pairs) |
+| `timeout` | `number` | — | Timeout in milliseconds |
+| `schema` | `z.ZodType` | — | Zod schema for structured output validation |
+| `schemaRetries` | `number` | `2` | Maximum retries for schema validation failures |
+| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Validate result before accepting |
+| `retryOnValidationFailure` | `boolean` | — | Retry if validation fails |
+| `maxRetries` | `number` | — | Maximum retry attempts |
+| `stopConditions` | `StopCondition[]` | — | Conditions that will stop the agent |
+| `middleware` | `SmithersMiddleware[]` | — | Middleware applied to this execution |
+| `tailLogCount` | `number` | `10` | Number of tail log entries to display during execution |
+| `tailLogLines` | `number` | `10` | Number of lines to show per tail log entry |
+| `jsonOutput` | `boolean` | — | Enable JSON output mode |
+| `reportingEnabled` | `boolean` | — | Enable database reporting for this agent |
+| `onFinished` | `(result: AgentResult) => void` | — | Called when agent finishes successfully |
+| `onError` | `(error: Error) => void` | — | Called when agent encounters an error |
+| `onProgress` | `(message: string) => void` | — | Called for progress updates |
+| `onStreamPart` | `(part: SmithersStreamPart) => void` | — | Called for typed stream events (when enabled) |
 
 ## Notes
 

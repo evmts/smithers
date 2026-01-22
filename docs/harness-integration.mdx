@@ -98,41 +98,9 @@ amp skill add evmts/smithers
 
 ---
 
-## MCP Server
+## MCP Server (Coming Soon)
 
-Run Smithers as an MCP (Model Context Protocol) server for any compatible client.
-
-**Start the server:**
-
-```bash
-smithers serve --port 3847
-```
-
-**Configure your MCP client:**
-
-```json
-{
-  "mcpServers": {
-    "smithers": {
-      "command": "smithers",
-      "args": ["serve", "--port", "3847"],
-      "env": {
-        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
-      }
-    }
-  }
-}
-```
-
-**Available MCP tools:**
-
-| Tool | Description |
-|------|-------------|
-| `smithers_create_workflow` | Generate a workflow from description |
-| `smithers_run` | Execute a workflow file |
-| `smithers_status` | Check execution status |
-| `smithers_resume` | Resume incomplete execution |
-| `smithers_list` | List all executions |
+MCP (Model Context Protocol) server integration is planned for a future release. This will allow running Smithers as an MCP server for any compatible client.
 
 ---
 

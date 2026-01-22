@@ -1,6 +1,3 @@
-// Main TUI Application with tab navigation
-// F1-F6 for view switching, vim-style navigation
-
 import { useCallback, type ReactNode } from 'react'
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react'
 import { Header } from './components/layout/Header.js'
@@ -53,9 +50,7 @@ export function App({ dbPath, hooks }: AppProps) {
     process.exit(0)
   }, [renderer])
 
-  // Handle keyboard navigation
   keyboardHook((key: KeyEvent) => {
-    // Quit on Ctrl+C or Ctrl+Q
     if (shouldQuit(key)) {
       handleQuit()
       return
@@ -74,7 +69,6 @@ export function App({ dbPath, hooks }: AppProps) {
     }
   })
 
-  // Calculate content area height (total - header - tabbar - statusbar)
   const contentHeight = getContentHeight(height)
 
   const renderView = useCallback((reportState: UseReportGeneratorResult) => {

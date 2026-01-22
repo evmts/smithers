@@ -1,6 +1,3 @@
-// Hook for connecting to Smithers database
-// Provides reactive access to execution data
-
 import { useRef } from 'react'
 import { createSmithersDB, type SmithersDB } from '../../db/index.js'
 import { useEffectOnValueChange } from '../../reconciler/hooks.js'

@@ -1,12 +1,6 @@
-// Prompt Generation
-// Generate prompts for structured output
-
 import { z } from 'zod'
 import { schemaToPromptDescription } from './zod-converter.js'
 
-/**
- * Generate system prompt additions for structured output
- */
 export function generateStructuredOutputPrompt(schema: z.ZodType): string {
   const jsonSchema = schemaToPromptDescription(schema)
 
@@ -25,9 +19,6 @@ Rules:
 `
 }
 
-/**
- * Generate a retry prompt when validation fails
- */
 export function generateRetryPrompt(
   originalOutput: string,
   validationError: string

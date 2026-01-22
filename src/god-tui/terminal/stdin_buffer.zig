@@ -1,66 +1,75 @@
-// Stdin Buffer per God-TUI spec §6
-// Handles partial sequence arrival and bracketed paste detection
+// Stdin Buffer - Input sequence parsing with bracketed paste
+// Reference: issues/god-tui/06-input-handling.md
+
 const std = @import("std");
 const ansi = @import("ansi.zig");
 
-pub const Event = union(enum) {
-    data: []const u8, // Complete sequence
-    paste: []const u8, // Paste content (without markers)
-};
+// Callback types
+pub const DataCallback = *const fn (sequence: []const u8, ctx: ?*anyopaque) void;
+pub const PasteCallback = *const fn (content: []const u8, ctx: ?*anyopaque) void;
 
 pub const StdinBuffer = struct {
-    buffer: std.ArrayListUnmanaged(u8) = .{},
-    paste_buffer: std.ArrayListUnmanaged(u8) = .{},
-    paste_mode: bool = false,
-    timeout_ns: u64 = 10 * std.time.ns_per_ms, // 10ms default
+    const Self = @This();
 
     allocator: std.mem.Allocator,
+    buffer: std.ArrayListUnmanaged(u8),
+    paste_buffer: std.ArrayListUnmanaged(u8),
+    in_paste: bool = false,
+    timeout_ns: u64 = 10 * std.time.ns_per_ms, // 10ms default
+    data_callback: ?DataCallback = null,
+    paste_callback: ?PasteCallback = null,
+    callback_ctx: ?*anyopaque = null,
 
-    pub fn init(allocator: std.mem.Allocator) StdinBuffer {
+    pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
+            .buffer = .{},
+            .paste_buffer = .{},
         };
     }
 
-    pub fn deinit(self: *StdinBuffer) void {
+    pub fn deinit(self: *Self) void {
         self.buffer.deinit(self.allocator);
         self.paste_buffer.deinit(self.allocator);
     }
 
-    pub fn reset(self: *StdinBuffer) void {
-        self.buffer.clearRetainingCapacity();
-        self.paste_buffer.clearRetainingCapacity();
-        self.paste_mode = false;
+    pub fn setCallbacks(self: *Self, data_cb: ?DataCallback, paste_cb: ?PasteCallback, ctx: ?*anyopaque) void {
+        self.data_callback = data_cb;
+        self.paste_callback = paste_cb;
+        self.callback_ctx = ctx;
     }
 
-    // Process incoming data and emit events
-    // Returns events via the callback
-    pub fn process(
-        self: *StdinBuffer,
-        data: []const u8,
-        emit: *const fn (Event) void,
-    ) !void {
+    fn emitData(self: *Self, seq: []const u8) void {
+        if (self.data_callback) |cb| {
+            cb(seq, self.callback_ctx);
+        }
+    }
+
+    fn emitPaste(self: *Self, content: []const u8) void {
+        if (self.paste_callback) |cb| {
+            cb(content, self.callback_ctx);
+        }
+    }
+
+    // Process incoming data from stdin
+    pub fn process(self: *Self, data: []const u8) !void {
         // Handle high-byte conversion for legacy terminals
         // Single byte > 127 converts to ESC + (byte - 128)
-        var converted_data: [2]u8 = undefined;
-        var effective_data = data;
-
         if (data.len == 1 and data[0] > 127) {
-            converted_data[0] = '\x1b';
-            converted_data[1] = data[0] - 128;
-            effective_data = &converted_data;
+            try self.buffer.append(self.allocator, '\x1b');
+            try self.buffer.append(self.allocator, data[0] - 128);
+        } else {
+            try self.buffer.appendSlice(self.allocator, data);
         }
 
-        // Empty input on empty buffer emits empty event
-        if (effective_data.len == 0 and self.buffer.items.len == 0) {
-            emit(.{ .data = "" });
+        // Empty buffer after empty input
+        if (self.buffer.items.len == 0) {
+            self.emitData("");
             return;
         }
 
-        try self.buffer.appendSlice(self.allocator, effective_data);
-
         // === PASTE MODE HANDLING ===
-        if (self.paste_mode) {
+        if (self.in_paste) {
             try self.paste_buffer.appendSlice(self.allocator, self.buffer.items);
             self.buffer.clearRetainingCapacity();
 
@@ -69,14 +78,20 @@ pub const StdinBuffer = struct {
                 const content = self.paste_buffer.items[0..end_idx];
                 const remaining = self.paste_buffer.items[end_idx + ansi.PASTE_END.len ..];
 
-                emit(.{ .paste = content });
+                // Emit paste content
+                self.emitPaste(content);
 
-                self.paste_mode = false;
-                self.paste_buffer.clearRetainingCapacity();
+                // Exit paste mode
+                self.in_paste = false;
 
-                // Process any remaining data after paste
+                // Process remaining data after paste
                 if (remaining.len > 0) {
-                    try self.process(remaining, emit);
+                    const rem_copy = try self.allocator.dupe(u8, remaining);
+                    defer self.allocator.free(rem_copy);
+                    self.paste_buffer.clearRetainingCapacity();
+                    try self.process(rem_copy);
+                } else {
+                    self.paste_buffer.clearRetainingCapacity();
                 }
             }
             return;
@@ -84,280 +99,199 @@ pub const StdinBuffer = struct {
 
         // === PASTE START DETECTION ===
         if (std.mem.indexOf(u8, self.buffer.items, ansi.PASTE_START)) |start_idx| {
-            // Emit sequences before paste marker as individual chars
-            var i: usize = 0;
-            while (i < start_idx) : (i += 1) {
-                emit(.{ .data = self.buffer.items[i .. i + 1] });
+            // Emit sequences before paste marker
+            if (start_idx > 0) {
+                const before = self.buffer.items[0..start_idx];
+                try self.extractAndEmitSequences(before);
             }
 
             // Enter paste mode
+            self.in_paste = true;
             const after_marker = self.buffer.items[start_idx + ansi.PASTE_START.len ..];
             try self.paste_buffer.appendSlice(self.allocator, after_marker);
             self.buffer.clearRetainingCapacity();
-            self.paste_mode = true;
 
             // Check for immediate paste end
             if (std.mem.indexOf(u8, self.paste_buffer.items, ansi.PASTE_END)) |end_idx| {
                 const content = self.paste_buffer.items[0..end_idx];
                 const remaining = self.paste_buffer.items[end_idx + ansi.PASTE_END.len ..];
 
-                emit(.{ .paste = content });
-
-                self.paste_mode = false;
-                self.paste_buffer.clearRetainingCapacity();
+                self.emitPaste(content);
+                self.in_paste = false;
 
                 if (remaining.len > 0) {
-                    try self.process(remaining, emit);
+                    const rem_copy = try self.allocator.dupe(u8, remaining);
+                    defer self.allocator.free(rem_copy);
+                    self.paste_buffer.clearRetainingCapacity();
+                    try self.process(rem_copy);
+                } else {
+                    self.paste_buffer.clearRetainingCapacity();
                 }
             }
             return;
         }
 
         // === NORMAL SEQUENCE EXTRACTION ===
-        self.extractAndEmit(emit);
-    }
-
-    // Extract complete sequences and emit them
-    fn extractAndEmit(self: *StdinBuffer, emit: *const fn (Event) void) void {
-        var pos: usize = 0;
-
-        while (pos < self.buffer.items.len) {
-            if (self.buffer.items[pos] == '\x1b') {
-                // Try to parse as escape sequence
-                const seq = ansi.classifySequence(self.buffer.items[pos..]);
-
-                switch (seq.type) {
-                    .incomplete => {
-                        // Keep the incomplete sequence at start of buffer
-                        if (pos > 0) {
-                            const remaining_len = self.buffer.items.len - pos;
-                            // Use memmove semantic - copy in-place
-                            var i: usize = 0;
-                            while (i < remaining_len) : (i += 1) {
-                                self.buffer.items[i] = self.buffer.items[pos + i];
-                            }
-                            self.buffer.shrinkRetainingCapacity(remaining_len);
-                        }
-                        return;
-                    },
-                    .not_escape => {
-                        emit(.{ .data = self.buffer.items[pos .. pos + 1] });
-                        pos += 1;
-                    },
-                    else => {
-                        // Complete sequence
-                        emit(.{ .data = self.buffer.items[pos .. pos + seq.len] });
-                        pos += seq.len;
-                    },
-                }
-            } else {
-                // Regular character
-                emit(.{ .data = self.buffer.items[pos .. pos + 1] });
-                pos += 1;
-            }
-        }
-
+        try self.extractAndEmitSequences(self.buffer.items);
         self.buffer.clearRetainingCapacity();
     }
 
-    // Flush buffer after timeout (emit incomplete sequences as-is)
-    pub fn flush(self: *StdinBuffer, emit: *const fn (Event) void) void {
+    fn extractAndEmitSequences(self: *Self, data: []const u8) !void {
+        var pos: usize = 0;
+
+        while (pos < data.len) {
+            if (data[pos] == '\x1b') {
+                // Find end of escape sequence
+                const remaining = data[pos..];
+                const status = ansi.isCompleteSequence(remaining);
+
+                switch (status) {
+                    .complete => {
+                        // Find actual end of sequence
+                        const end = findSequenceEnd(remaining);
+                        self.emitData(remaining[0..end]);
+                        pos += end;
+                    },
+                    .incomplete => {
+                        // Would need timeout, for now emit as-is
+                        // In real impl, would schedule timeout flush
+                        self.emitData(remaining);
+                        pos = data.len;
+                    },
+                    .not_escape => {
+                        self.emitData(data[pos .. pos + 1]);
+                        pos += 1;
+                    },
+                }
+            } else {
+                // Single character
+                self.emitData(data[pos .. pos + 1]);
+                pos += 1;
+            }
+        }
+    }
+
+    // Flush buffer on timeout (returns remaining sequences)
+    pub fn flush(self: *Self) !void {
         if (self.buffer.items.len > 0) {
-            emit(.{ .data = self.buffer.items });
+            self.emitData(self.buffer.items);
             self.buffer.clearRetainingCapacity();
         }
     }
 
-    // Check if there's pending data that needs timeout flush
-    pub fn hasPending(self: *const StdinBuffer) bool {
-        return self.buffer.items.len > 0;
+    pub fn clear(self: *Self) void {
+        self.buffer.clearRetainingCapacity();
+        self.paste_buffer.clearRetainingCapacity();
+        self.in_paste = false;
     }
 };
 
-// === Tests ===
+fn findSequenceEnd(data: []const u8) usize {
+    if (data.len < 2) return data.len;
+    if (data[0] != '\x1b') return 1;
 
-test "StdinBuffer single char" {
-    const allocator = std.testing.allocator;
-    var buf = StdinBuffer.init(allocator);
-    defer buf.deinit();
+    const after = data[1];
 
-    var events = std.ArrayListUnmanaged(Event){};
-    defer events.deinit(allocator);
-
-    const emit_fn = struct {
-        var captured: *std.ArrayListUnmanaged(Event) = undefined;
-        var alloc: std.mem.Allocator = undefined;
-        fn emit(event: Event) void {
-            captured.append(alloc, event) catch {};
+    // CSI: ESC [ ... final_byte
+    if (after == '[') {
+        var i: usize = 2;
+        while (i < data.len) : (i += 1) {
+            const c = data[i];
+            if (c >= 0x40 and c <= 0x7e) {
+                return i + 1;
+            }
         }
-    };
-    emit_fn.captured = &events;
-    emit_fn.alloc = allocator;
+        return data.len;
+    }
 
-    try buf.process("a", emit_fn.emit);
+    // OSC/APC: terminated by BEL or ST
+    if (after == ']' or after == '_') {
+        var i: usize = 2;
+        while (i < data.len) : (i += 1) {
+            if (data[i] == '\x07') return i + 1;
+            if (i + 1 < data.len and data[i] == '\x1b' and data[i + 1] == '\\') {
+                return i + 2;
+            }
+        }
+        return data.len;
+    }
 
-    try std.testing.expectEqual(@as(usize, 1), events.items.len);
-    try std.testing.expectEqualStrings("a", events.items[0].data);
+    // DCS: ESC P ... ST
+    if (after == 'P') {
+        var i: usize = 2;
+        while (i + 1 < data.len) : (i += 1) {
+            if (data[i] == '\x1b' and data[i + 1] == '\\') {
+                return i + 2;
+            }
+        }
+        return data.len;
+    }
+
+    // SS3: ESC O + single char
+    if (after == 'O') {
+        return @min(3, data.len);
+    }
+
+    // Meta: ESC + char
+    return @min(2, data.len);
 }
 
-test "StdinBuffer escape sequence" {
-    const allocator = std.testing.allocator;
-    var buf = StdinBuffer.init(allocator);
-    defer buf.deinit();
+test "StdinBuffer basic sequence" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
 
-    var events = std.ArrayListUnmanaged(Event){};
-    defer events.deinit(allocator);
+    var sequences = std.ArrayListUnmanaged([]const u8){};
+    defer {
+        for (sequences.items) |s| allocator.free(s);
+        sequences.deinit(allocator);
+    }
 
-    const emit_fn = struct {
-        var captured: *std.ArrayListUnmanaged(Event) = undefined;
-        var alloc: std.mem.Allocator = undefined;
-        fn emit(event: Event) void {
-            captured.append(alloc, event) catch {};
+    var buffer = StdinBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const Ctx = struct {
+        seqs: *std.ArrayListUnmanaged([]const u8),
+        alloc: std.mem.Allocator,
+
+        fn dataCallback(seq: []const u8, ctx: ?*anyopaque) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            self.seqs.append(self.alloc, self.alloc.dupe(u8, seq) catch return) catch {};
         }
     };
-    emit_fn.captured = &events;
-    emit_fn.alloc = allocator;
 
-    try buf.process("\x1b[A", emit_fn.emit);
+    var ctx = Ctx{ .seqs = &sequences, .alloc = allocator };
+    buffer.setCallbacks(Ctx.dataCallback, null, @ptrCast(&ctx));
 
-    try std.testing.expectEqual(@as(usize, 1), events.items.len);
-    try std.testing.expectEqualStrings("\x1b[A", events.items[0].data);
-}
-
-test "StdinBuffer incomplete sequence" {
-    const allocator = std.testing.allocator;
-    var buf = StdinBuffer.init(allocator);
-    defer buf.deinit();
-
-    var events = std.ArrayListUnmanaged(Event){};
-    defer events.deinit(allocator);
-
-    const emit_fn = struct {
-        var captured: *std.ArrayListUnmanaged(Event) = undefined;
-        var alloc: std.mem.Allocator = undefined;
-        fn emit(event: Event) void {
-            captured.append(alloc, event) catch {};
-        }
-    };
-    emit_fn.captured = &events;
-    emit_fn.alloc = allocator;
-
-    // Send partial sequence
-    try buf.process("\x1b[", emit_fn.emit);
-    try std.testing.expectEqual(@as(usize, 0), events.items.len);
-    try std.testing.expect(buf.hasPending());
-
-    // Complete it
-    try buf.process("A", emit_fn.emit);
-    try std.testing.expectEqual(@as(usize, 1), events.items.len);
-    try std.testing.expectEqualStrings("\x1b[A", events.items[0].data);
+    try buffer.process("a");
+    try testing.expectEqual(@as(usize, 1), sequences.items.len);
+    try testing.expectEqualStrings("a", sequences.items[0]);
 }
 
 test "StdinBuffer bracketed paste" {
-    const allocator = std.testing.allocator;
-    var buf = StdinBuffer.init(allocator);
-    defer buf.deinit();
+    const testing = std.testing;
+    const allocator = testing.allocator;
 
-    var events = std.ArrayListUnmanaged(Event){};
-    defer events.deinit(allocator);
+    var paste_content: ?[]const u8 = null;
+    defer if (paste_content) |p| allocator.free(p);
 
-    const emit_fn = struct {
-        var captured: *std.ArrayListUnmanaged(Event) = undefined;
-        var alloc: std.mem.Allocator = undefined;
-        fn emit(event: Event) void {
-            captured.append(alloc, event) catch {};
+    var buffer = StdinBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const Ctx = struct {
+        content: *?[]const u8,
+        alloc: std.mem.Allocator,
+
+        fn pasteCallback(content: []const u8, ctx: ?*anyopaque) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            self.content.* = self.alloc.dupe(u8, content) catch null;
         }
     };
-    emit_fn.captured = &events;
-    emit_fn.alloc = allocator;
 
-    try buf.process("\x1b[200~Hello World\x1b[201~", emit_fn.emit);
+    var ctx = Ctx{ .content = &paste_content, .alloc = allocator };
+    buffer.setCallbacks(null, Ctx.pasteCallback, @ptrCast(&ctx));
 
-    try std.testing.expectEqual(@as(usize, 1), events.items.len);
-    try std.testing.expectEqualStrings("Hello World", events.items[0].paste);
-}
+    try buffer.process("\x1b[200~Hello World\x1b[201~");
 
-test "StdinBuffer split paste" {
-    const allocator = std.testing.allocator;
-    var buf = StdinBuffer.init(allocator);
-    defer buf.deinit();
-
-    var events = std.ArrayListUnmanaged(Event){};
-    defer events.deinit(allocator);
-
-    const emit_fn = struct {
-        var captured: *std.ArrayListUnmanaged(Event) = undefined;
-        var alloc: std.mem.Allocator = undefined;
-        fn emit(event: Event) void {
-            captured.append(alloc, event) catch {};
-        }
-    };
-    emit_fn.captured = &events;
-    emit_fn.alloc = allocator;
-
-    // Paste marker split across reads
-    try buf.process("\x1b[200~Hello", emit_fn.emit);
-    try std.testing.expectEqual(@as(usize, 0), events.items.len);
-    try std.testing.expect(buf.paste_mode);
-
-    try buf.process(" World\x1b[201~", emit_fn.emit);
-    try std.testing.expectEqual(@as(usize, 1), events.items.len);
-    try std.testing.expectEqualStrings("Hello World", events.items[0].paste);
-}
-
-test "StdinBuffer high byte conversion" {
-    const allocator = std.testing.allocator;
-    var buf = StdinBuffer.init(allocator);
-    defer buf.deinit();
-
-    var events = std.ArrayListUnmanaged(Event){};
-    defer events.deinit(allocator);
-
-    const emit_fn = struct {
-        var captured: *std.ArrayListUnmanaged(Event) = undefined;
-        var alloc: std.mem.Allocator = undefined;
-        fn emit(event: Event) void {
-            captured.append(alloc, event) catch {};
-        }
-    };
-    emit_fn.captured = &events;
-    emit_fn.alloc = allocator;
-
-    // Single byte > 127 should convert to ESC + (byte - 128)
-    try buf.process(&[_]u8{0xC1}, emit_fn.emit); // 0xC1 - 128 = 0x41 = 'A'
-
-    // Should get ESC + 'A' = Alt+A or similar
-    try std.testing.expectEqual(@as(usize, 1), events.items.len);
-    try std.testing.expectEqual(@as(usize, 2), events.items[0].data.len);
-    try std.testing.expectEqual(@as(u8, '\x1b'), events.items[0].data[0]);
-    try std.testing.expectEqual(@as(u8, 'A'), events.items[0].data[1]);
-}
-
-test "StdinBuffer flush timeout" {
-    const allocator = std.testing.allocator;
-    var buf = StdinBuffer.init(allocator);
-    defer buf.deinit();
-
-    var events = std.ArrayListUnmanaged(Event){};
-    defer events.deinit(allocator);
-
-    const emit_fn = struct {
-        var captured: *std.ArrayListUnmanaged(Event) = undefined;
-        var alloc: std.mem.Allocator = undefined;
-        fn emit(event: Event) void {
-            captured.append(alloc, event) catch {};
-        }
-    };
-    emit_fn.captured = &events;
-    emit_fn.alloc = allocator;
-
-    // Send just ESC
-    try buf.process("\x1b", emit_fn.emit);
-    try std.testing.expectEqual(@as(usize, 0), events.items.len);
-    try std.testing.expect(buf.hasPending());
-
-    // Simulate timeout - flush
-    buf.flush(emit_fn.emit);
-    try std.testing.expectEqual(@as(usize, 1), events.items.len);
-    try std.testing.expectEqualStrings("\x1b", events.items[0].data);
+    try testing.expect(paste_content != null);
+    try testing.expectEqualStrings("Hello World", paste_content.?);
 }

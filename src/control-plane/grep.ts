@@ -16,10 +16,6 @@ export interface GrepMatch {
   content: string
 }
 
-/**
- * Search for pattern matches in files
- * @throws {Error} If search path is outside workspace
- */
 export async function grep(opts: GrepOptions): Promise<GrepMatch[]> {
   const cwd = opts.cwd ?? process.cwd()
   const limit = opts.limit ?? 100

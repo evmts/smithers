@@ -72,10 +72,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   }
 }
 
-/**
- * Resume an execution
- * @throws {Error} If execution not found (when executionId provided) or no incomplete executions exist
- */
 export async function resume(opts: ResumeOptions = {}): Promise<RunResult> {
   const cwd = opts.cwd ?? process.cwd()
   
@@ -134,10 +130,6 @@ export async function resume(opts: ResumeOptions = {}): Promise<RunResult> {
   return run({ script: latestExec.filePath, executionId: latestExec.id, cwd })
 }
 
-/**
- * Cancel an execution
- * @throws {Error} If execution not found
- */
 export async function cancel(opts: CancelOptions): Promise<void> {
   const cwd = opts.cwd ?? process.cwd()
   const dataDir = path.join(cwd, '.smithers', 'data')

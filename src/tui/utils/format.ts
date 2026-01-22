@@ -1,5 +1,3 @@
-// Shared formatting utilities for TUI components
-
 export function truncate(str: string, maxLen: number, ellipsis: string = '...'): string {
   if (str.length <= maxLen) return str
   return str.slice(0, maxLen - ellipsis.length) + ellipsis

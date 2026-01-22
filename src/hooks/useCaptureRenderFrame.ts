@@ -3,10 +3,6 @@ import { useEffectOnValueChange } from '../reconciler/hooks.js'
 
 const CAPTURE_DELAY_MS = 50
 
-/**
- * Captures render frame on each Ralph iteration.
- * This is a side-effect hook that stores XML tree snapshots.
- */
 export function useCaptureRenderFrame(
   db: SmithersDB,
   ralphCount: number,

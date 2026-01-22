@@ -1,5 +1,3 @@
-// Build state coordination module for broken build orchestration
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { now } from './utils.js'
 

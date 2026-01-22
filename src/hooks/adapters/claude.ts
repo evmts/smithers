@@ -1,4 +1,3 @@
-// Claude agent adapter
 import type { AgentAdapter, MessageParserInterface } from './types.js'
 import type { ClaudeProps, CLIExecutionOptions, AgentResult } from '../../components/agents/types.js'
 import { executeClaudeCLI } from '../../components/agents/ClaudeCodeCLI.js'
@@ -38,14 +37,11 @@ export const ClaudeAdapter: AgentAdapter<ClaudeProps, CLIExecutionOptions> = {
     let prompt = cleanPrompt
     if (toolInstructions) prompt = `${toolInstructions}\n\n---\n\n${cleanPrompt}`
 
-    // Parse tools prop to categorize tools
     const toolsFromProp = props.tools ?? []
     const { builtinTools, mcpServers, smithersTools, legacyTools } = parseToolSpecs(toolsFromProp)
 
-    // Collect all MCP servers: from extractMCPConfigs + tools prop MCPServers + SmithersTools + LegacyTools
     const allMcpServers: MCPServer[] = [...mcpServers]
 
-    // Convert SmithersTools to MCP server if any exist
     if (smithersTools.length > 0) {
       const toolsRecord: Record<string, typeof smithersTools[number]> = {}
       for (const tool of smithersTools) {
@@ -56,25 +52,18 @@ export const ClaudeAdapter: AgentAdapter<ClaudeProps, CLIExecutionOptions> = {
       allMcpServers.push(smithersMcpServer)
     }
 
-    // Convert LegacyTools to MCP server if any exist
-    // LegacyTools use IPC to execute handlers in the parent process
     let hasLegacyTools = false
     if (legacyTools.length > 0) {
       hasLegacyTools = true
-      // Register handlers for IPC execution
       registerLegacyHandlers(legacyTools)
-      // Create MCP server config
       const { server } = createLegacyToolServer(legacyTools)
       allMcpServers.push(server)
     }
 
-    // Generate MCP config file if needed
     let mcpConfigPath: string | undefined = props.mcpConfig
     if (mcpConfigs.length > 0 || allMcpServers.length > 0) {
-      // Start with config from extractMCPConfigs
       const mcpConfig = mcpConfigs.length > 0 ? generateMCPServerConfig(mcpConfigs) : { mcpServers: {} }
 
-      // Add MCPServers from tools prop
       for (const server of allMcpServers) {
         const serverConfig: Record<string, unknown> = {
           command: server.command,
@@ -104,7 +93,6 @@ export const ClaudeAdapter: AgentAdapter<ClaudeProps, CLIExecutionOptions> = {
     if (props.outputFormat !== undefined) options.outputFormat = props.outputFormat
     if (ctx.mcpConfigPath !== undefined) options.mcpConfig = ctx.mcpConfigPath
     
-    // Merge allowedTools: props.allowedTools + builtinTools from tools prop
     const mergedAllowedTools = [
       ...(props.allowedTools ?? []),
       ...(ctx.builtinTools ?? []),
@@ -127,7 +115,6 @@ export const ClaudeAdapter: AgentAdapter<ClaudeProps, CLIExecutionOptions> = {
     return options
   },
   async execute(options): Promise<AgentResult> {
-    // Start IPC watcher if we have legacy tools
     if (hasLegacyToolsInExecution) {
       await startLegacyIpcWatcher()
     }
@@ -137,7 +124,6 @@ export const ClaudeAdapter: AgentAdapter<ClaudeProps, CLIExecutionOptions> = {
       if (result.stopReason === 'error') throw new Error(result.output || 'Claude CLI execution failed')
       return result
     } finally {
-      // Stop IPC watcher and cleanup
       if (hasLegacyToolsInExecution) {
         await stopLegacyIpcWatcher()
         await cleanupIpcDir()

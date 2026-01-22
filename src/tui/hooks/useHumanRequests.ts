@@ -1,5 +1,3 @@
-// Hook for managing pending human interaction requests
-
 import { useCallback } from 'react'
 import type { SmithersDB } from '../../db/index.js'
 import type { HumanInteraction } from '../../db/human.js'

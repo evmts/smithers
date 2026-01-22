@@ -17,12 +17,6 @@ function calculateBackoff(attempt: number, backoff: RetryBackoff, baseDelayMs: n
   return baseDelayMs * Math.pow(2, attempt)
 }
 
-/**
- * Middleware that retries execution on failure with configurable backoff.
- *
- * @throws {Error} After all retries exhausted (message: "Failed after N retries", cause: last error)
- * @throws {Error} Original error when `retryOn` returns false (no wrapping)
- */
 export function retryMiddleware(options: RetryMiddlewareOptions = {}): SmithersMiddleware {
   const maxRetries = options.maxRetries ?? 3
   const backoff = options.backoff ?? 'exponential'

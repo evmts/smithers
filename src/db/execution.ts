@@ -1,5 +1,3 @@
-// Execution tracking module for Smithers DB
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { Execution } from './types.js'
 import { uuid, now, parseJson } from './utils.js'
@@ -64,19 +62,14 @@ export function createExecutionModule(ctx: ExecutionModuleContext): ExecutionMod
   const execution: ExecutionModule = {
     start: (name: string, filePath: string, config?: Record<string, any>): string => {
       if (rdb.isClosed) return uuid()
-      // Use SMITHERS_EXECUTION_ID from control plane if set, otherwise generate new UUID
       const id = process.env['SMITHERS_EXECUTION_ID'] ?? uuid()
-      
-      // Check if execution already exists (resume case)
       const existing = rdb.queryOne<{ id: string }>('SELECT id FROM executions WHERE id = ?', [id])
       if (existing) {
-        // Resume: update status to running
         rdb.run(
           `UPDATE executions SET status = 'running', started_at = ?, error = NULL, completed_at = NULL WHERE id = ?`,
           [now(), id]
         )
       } else {
-        // New execution: insert
         rdb.run(
           `INSERT INTO executions (id, name, file_path, status, config, started_at, created_at)
            VALUES (?, ?, ?, 'running', ?, ?, ?)`,

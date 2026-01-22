@@ -1,6 +1,3 @@
-// Task tracking module for Ralph iteration management
-// Replaces React state-based task tracking with database-backed tracking
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { uuid, now, parseJson } from './utils.js'
 
@@ -18,48 +15,13 @@ export interface Task {
 }
 
 export interface TasksModule {
-  /**
-   * Start a new task and return its ID.
-   * Replaces registerTask() in RalphContext.
-   */
   start: (componentType: string, componentName?: string, options?: { scopeId?: string | null }) => string
-
-  /**
-   * Complete a task by ID.
-   * Replaces completeTask() in RalphContext.
-   */
   complete: (id: string) => void
-
-  /**
-   * Mark a task as failed.
-   */
   fail: (id: string) => void
-
-  /**
-   * Get count of running tasks for a specific iteration.
-   */
   getRunningCount: (iteration: number) => number
-
-  /**
-   * Get count of all tasks for a specific iteration.
-   */
   getTotalCount: (iteration: number) => number
-
-  /**
-   * Get all tasks for the current execution.
-   */
   list: () => Task[]
-
-  /**
-   * Get current iteration from the state table.
-   */
   getCurrentIteration: () => number
-
-  /**
-   * Execute a function within a task lifecycle.
-   * Automatically starts task before execution and completes/fails after.
-   * Ensures task is always properly completed even on errors.
-   */
   withTask: <T>(
     componentType: string,
     componentName: string | undefined,

@@ -1,10 +1,5 @@
-// Parser utilities for VCS output
-
 import type { VCSStatus, DiffStats } from './types.js'
 
-/**
- * Parse git status output
- */
 export function parseGitStatus(output: string): VCSStatus {
   const modified: string[] = []
   const added: string[] = []
@@ -27,9 +22,6 @@ export function parseGitStatus(output: string): VCSStatus {
   return { modified, added, deleted, untracked }
 }
 
-/**
- * Parse JJ status output
- */
 export function parseJJStatus(output: string): VCSStatus {
   const modified: string[] = []
   const added: string[] = []
@@ -46,9 +38,6 @@ export function parseJJStatus(output: string): VCSStatus {
   return { modified, added, deleted }
 }
 
-/**
- * Parse diff statistics from output
- */
 export function parseDiffStats(output: string): DiffStats {
   const files: string[] = []
   let insertions = 0
@@ -59,7 +48,6 @@ export function parseDiffStats(output: string): DiffStats {
   for (const line of lines) {
     if (!line.trim()) continue
 
-    // Match pattern like: "file.ts | 10 +++++++---"
     const match = line.match(/^\s*(.+?)\s*\|\s*(\d+)\s+([+-]+)/)
     if (match && match[1] && match[3]) {
       const [, file, _changes, symbols] = match

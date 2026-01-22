@@ -51,7 +51,7 @@ pub const Terminal = struct {
     pub fn deinit(self: *Self) void {
         self.stop();
         self.stdin_buffer.deinit();
-        self.output_buffer.deinit(self.allocator);
+        self.output_buffer.deinit();
     }
 
     // Start terminal in raw mode with protocol negotiation
@@ -79,9 +79,10 @@ pub const Terminal = struct {
         );
 
         // Write start sequence
-        try self.output_buffer.appendSlice(self.allocator, ansi.BRACKETED_PASTE_ENABLE);
-        try self.output_buffer.appendSlice(self.allocator, ansi.KITTY_QUERY);
-        try self.output_buffer.appendSlice(self.allocator, ansi.CELL_SIZE_QUERY);
+        const w = self.output_buffer.writer();
+        try w.writeAll(ansi.BRACKETED_PASTE_ENABLE);
+        try w.writeAll(ansi.KITTY_QUERY);
+        try w.writeAll(ansi.CELL_SIZE_QUERY);
         try self.flush();
     }
 
@@ -103,11 +104,12 @@ pub const Terminal = struct {
     // Stop terminal and restore state
     pub fn stop(self: *Self) void {
         // Write stop sequence
+        const w = self.output_buffer.writer();
         if (self.kitty_protocol_active) {
-            self.output_buffer.appendSlice(self.allocator, ansi.KITTY_POP) catch {};
+            w.writeAll(ansi.KITTY_POP) catch {};
         }
-        self.output_buffer.appendSlice(self.allocator, ansi.BRACKETED_PASTE_DISABLE) catch {};
-        self.output_buffer.appendSlice(self.allocator, ansi.SHOW_CURSOR) catch {};
+        w.writeAll(ansi.BRACKETED_PASTE_DISABLE) catch {};
+        w.writeAll(ansi.SHOW_CURSOR) catch {};
         self.flush() catch {};
 
         // Restore terminal mode
@@ -116,13 +118,13 @@ pub const Terminal = struct {
 
     // Write data to output buffer
     pub fn write(self: *Self, data: []const u8) !void {
-        try self.output_buffer.appendSlice(self.allocator, data);
+        try self.output_buffer.appendSlice(data);
     }
 
     // Flush output buffer to stdout
     pub fn flush(self: *Self) !void {
         if (self.output_buffer.items.len == 0) return;
-        _ = try std.posix.write(self.stdout, self.output_buffer.items);
+        try self.stdout.writeAll(self.output_buffer.items);
         self.output_buffer.clearRetainingCapacity();
     }
 
@@ -168,13 +170,13 @@ pub const Terminal = struct {
             return;
         }
 
-        var ws = std.posix.winsize{
+        const ws = std.posix.system.winsize{
             .ws_col = 0,
             .ws_row = 0,
             .ws_xpixel = 0,
             .ws_ypixel = 0,
         };
-        const result = std.posix.system.ioctl(self.stdout, std.posix.T.IOCGWINSZ, @intFromPtr(&ws));
+        const result = std.posix.system.ioctl(self.stdout.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&ws));
         if (result == 0) {
             if (ws.ws_col > 0) self.columns = ws.ws_col;
             if (ws.ws_row > 0) self.rows = ws.ws_row;
@@ -191,10 +193,8 @@ pub const Terminal = struct {
     }
 
     pub fn moveBy(self: *Self, lines: i32) !void {
-        var buf: [16]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
-        try ansi.moveBy(fbs.writer(), lines);
-        try self.write(fbs.getWritten());
+        const w = self.output_buffer.writer();
+        try ansi.moveBy(w, lines);
     }
 
     // Clear operations
@@ -212,10 +212,8 @@ pub const Terminal = struct {
 
     // Window title
     pub fn setTitle(self: *Self, title: []const u8) !void {
-        var buf: [256]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
-        try ansi.setTitle(fbs.writer(), title);
-        try self.write(fbs.getWritten());
+        const w = self.output_buffer.writer();
+        try ansi.setTitle(w, title);
     }
 
     // Raw mode management
@@ -225,7 +223,7 @@ pub const Terminal = struct {
             return;
         }
 
-        const fd = self.stdin;
+        const fd = self.stdin.handle;
         self.original_termios = try std.posix.tcgetattr(fd);
 
         var raw = self.original_termios.?;
@@ -260,14 +258,19 @@ pub const Terminal = struct {
     fn disableRawMode(self: *Self) void {
         if (!self.was_raw) return;
         if (self.original_termios) |termios| {
-            std.posix.tcsetattr(self.stdin, .NOW, termios) catch {};
+            std.posix.tcsetattr(self.stdin.handle, .NOW, termios) catch {};
         }
         self.was_raw = false;
     }
 
     // Check if running in a TTY
     pub fn isTTY(self: *Self) bool {
-        return std.posix.isatty(self.stdin);
+        return std.posix.isatty(self.stdin.handle);
+    }
+
+    // Get a writer for direct output
+    pub fn writer(self: *Self) std.ArrayList(u8).Writer {
+        return self.output_buffer.writer();
     }
 };
 
@@ -276,8 +279,8 @@ pub const MockTerminal = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    output: std.ArrayListUnmanaged(u8),
-    input_queue: std.ArrayListUnmanaged([]const u8),
+    output: std.ArrayList(u8),
+    input_queue: std.ArrayList([]const u8),
     columns: u16 = 80,
     rows: u16 = 24,
     kitty_protocol_active: bool = false,
@@ -285,21 +288,21 @@ pub const MockTerminal = struct {
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
-            .output = .{},
-            .input_queue = .{},
+            .output = std.ArrayList(u8).init(allocator),
+            .input_queue = std.ArrayList([]const u8).init(allocator),
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.output.deinit(self.allocator);
+        self.output.deinit();
         for (self.input_queue.items) |item| {
             self.allocator.free(item);
         }
-        self.input_queue.deinit(self.allocator);
+        self.input_queue.deinit();
     }
 
     pub fn write(self: *Self, data: []const u8) !void {
-        try self.output.appendSlice(self.allocator, data);
+        try self.output.appendSlice(data);
     }
 
     pub fn flush(self: *Self) !void {
@@ -309,7 +312,7 @@ pub const MockTerminal = struct {
 
     pub fn simulateInput(self: *Self, data: []const u8) !void {
         const copy = try self.allocator.dupe(u8, data);
-        try self.input_queue.append(self.allocator, copy);
+        try self.input_queue.append(copy);
     }
 
     pub fn simulateResize(self: *Self, cols: u16, row: u16) void {

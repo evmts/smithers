@@ -1,31 +1,10 @@
-/**
- * Core type definitions for Smithers reconciler.
- * These types define the SmithersNode tree structure that the reconciler creates.
- *
- * Key architectural principle: Components execute themselves via useMount,
- * not via external orchestrators. State changes (via React state) trigger
- * re-renders, which trigger re-execution. This is the "Ralph Wiggum loop"
- * pattern - change the key prop to force unmount/remount.
- */
-
 export interface SmithersNode {
-  /** Node type: 'claude', 'phase', 'step', 'TEXT', etc. */
   type: string
-  /** Props passed to the component */
   props: Record<string, unknown>
-  /** Child nodes */
   children: SmithersNode[]
-  /** Reference to parent node (null for root) */
   parent: SmithersNode | null
-  /**
-   * Unique key for reconciliation (set by Smithers jsx-runtime).
-   * React's `key` prop is not passed through to components/instances, so
-   * smithers' jsx-runtime copies it into the `__smithersKey` prop.
-   */
   key?: string | number
-  /** Runtime execution state */
   _execution?: ExecutionState
-  /** Validation warnings (e.g., known component inside unknown element) */
   warnings?: string[]
 }
 

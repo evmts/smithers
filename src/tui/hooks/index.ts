@@ -1,5 +1,3 @@
-// TUI Hooks Index
-
 export { useSmithersConnection, type UseSmithersConnectionResult } from './useSmithersConnection.js'
 export { useRenderFrames, type UseRenderFramesResult } from './useRenderFrames.js'
 export { useClaudeChat, type UseClaudeChatResult } from './useClaudeChat.js'

@@ -1,5 +1,3 @@
-// View Components Index
-
 export { ExecutionTimeline, type ExecutionTimelineProps } from './ExecutionTimeline.js'
 export { RenderFrameInspector, type RenderFrameInspectorProps } from './RenderFrameInspector.js'
 export { DatabaseExplorer, type DatabaseExplorerProps } from './DatabaseExplorer.js'

@@ -28,16 +28,15 @@ const executionId = db.execution.start('Simple Ralph', 'simple-ralph.tsx')
 const prd = readFileSync('./prd.md', 'utf-8')
 
 function SimpleRalph() {
-  const { db } = useSmithers();
-  const { data: done } = useQueryValue<boolean>(
-    db.db,
+  const { db: smithersDb } = useSmithers();
+  const done = useQueryValue<boolean>(
+    smithersDb.db,
     "SELECT json_extract(value, '$') as v FROM state WHERE key = ?",
     ['done']
   );
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
-      <Ralph
+    <Ralph
         id="simple-ralph"
         condition={() => !done}
         maxIterations={10}
@@ -51,7 +50,7 @@ function SimpleRalph() {
           fullAuto
           onFinished={(result) => {
             if (result.output?.includes('TASK_COMPLETE')) {
-              db.state.set('done', 'true')
+              smithersDb.state.set('done', 'true')
             }
           }}
         >
@@ -64,13 +63,20 @@ ${prd}
 Implement the requirements above. When finished, output "TASK_COMPLETE".`}
         </Codex>
       </Ralph>
+  )
+}
+
+function App() {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <SimpleRalph />
     </SmithersProvider>
   )
 }
 
 const root = createSmithersRoot()
 try {
-  await root.mount(SimpleRalph)
+  await root.mount(App)
   db.execution.complete(executionId)
 } finally {
   db.close()

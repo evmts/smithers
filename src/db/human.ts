@@ -1,6 +1,3 @@
-// Human interaction module
-// Handles requests for human input/confirmation
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { uuid, now, parseJson } from './utils.js'
 
@@ -72,48 +69,17 @@ export interface HumanInteraction {
 }
 
 export interface HumanModule {
-  /**
-   * Request human interaction
-   */
   request: (type: HumanInteractionType, prompt: string, options?: string[]) => string
-
-  /**
-   * Request an interactive Claude session
-   */
   requestInteractive: (prompt: string, config: InteractiveSessionConfig) => string
-
-  /**
-   * Resolve a request (called by external harness)
-   */
   resolve: (id: string, status: 'approved' | 'rejected', response?: unknown) => void
-
-  /**
-   * Complete an interactive session with lifecycle outcome
-   */
   completeInteractive: (
     id: string,
     outcome: 'completed' | 'cancelled' | 'timeout' | 'failed',
     response: unknown,
-    options?: {
-      transcript?: string
-      duration?: number
-      error?: string
-    }
+    options?: { transcript?: string; duration?: number; error?: string }
   ) => void
-
-  /**
-   * Cancel a pending interactive session
-   */
   cancelInteractive: (id: string) => void
-
-  /**
-   * Get a request by ID
-   */
   get: (id: string) => HumanInteraction | null
-
-  /**
-   * List pending requests
-   */
   listPending: (executionId?: string) => HumanInteraction[]
 }
 

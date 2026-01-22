@@ -16,9 +16,6 @@ function isWin() {
   return process.platform === "win32";
 }
 
-/**
- * Resolve the full path to `smithers` by scanning PATH (i.e., what `which` does).
- */
 export function resolveSmithersPath(env = process.env): string {
   const PATH = env["PATH"] ?? "";
   const parts = PATH.split(path.delimiter).filter(Boolean);

@@ -1,7 +1,3 @@
-// VCS utilities barrel export
-// Re-exports all VCS functionality for convenient imports
-
-// Types
 export type {
   VCSStatus,
   DiffStats,

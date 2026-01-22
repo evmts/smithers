@@ -1,6 +1,3 @@
-// Report Generator Service
-// Auto-generates 10-minute summaries with optional Claude analysis
-
 import Anthropic from '@anthropic-ai/sdk'
 import type { SmithersDB } from '../../db/index.js'
 
@@ -154,7 +151,6 @@ export async function generateReport(db: SmithersDB): Promise<Report | null> {
   const metrics = gatherMetrics(db)
   const metricsReport = formatMetricsReport(metrics)
 
-  // Try to get Claude analysis
   const analysis = await getClaudeAnalysis(metrics)
 
   const content = analysis
@@ -164,7 +160,6 @@ export async function generateReport(db: SmithersDB): Promise<Report | null> {
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
 
-  // Store in database
   db.db.run(
     `INSERT INTO reports (id, execution_id, type, title, content, data, severity, created_at)
      VALUES (?, ?, 'auto_summary', ?, ?, ?, ?, ?)`,

@@ -1,6 +1,3 @@
-// Chat Interface View (F4)
-// Claude-powered Q&A about execution state
-
 import { useCallback } from 'react'
 import { useKeyboard } from '@opentui/react'
 import type { SmithersDB } from '../../../db/index.js'
@@ -25,7 +22,6 @@ export function ChatInterface({ db }: ChatInterfaceProps) {
     await sendMessage(message)
   }, [inputValue, sendMessage])
 
-  // Handle keyboard
   useKeyboard((key: KeyEvent) => {
     if (key.ctrl && key.name === 'l') {
       clearHistory()
@@ -68,7 +64,6 @@ export function ChatInterface({ db }: ChatInterfaceProps) {
         />
       )}
 
-      {/* Messages area */}
       <scrollbox
         focused={!isInputFocused}
         style={{
@@ -108,7 +103,6 @@ export function ChatInterface({ db }: ChatInterfaceProps) {
         )}
       </scrollbox>
 
-      {/* Input area */}
       <box style={{ height: 3, border: true, padding: 1 }}>
         <input
           placeholder="Ask Claude about the execution..."

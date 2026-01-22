@@ -1,6 +1,3 @@
-// Hook for Claude-powered chat interface
-// Gracefully degrades when ANTHROPIC_API_KEY is not set
-
 import { useCallback, useMemo } from 'react'
 import type { SmithersDB } from '../../db/index.js'
 import { createClaudeAssistant, type ChatMessage } from '../services/claude-assistant.js'

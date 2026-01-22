@@ -1,6 +1,3 @@
-/**
- * Unit tests for registry.ts - Tool registry and specifications.
- */
 import { describe, test, expect } from 'bun:test'
 import { z } from 'zod'
 import {

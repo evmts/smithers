@@ -1,5 +1,3 @@
-// Raw query access module for Smithers DB
-
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import type { SqlParam } from './types.js'
 

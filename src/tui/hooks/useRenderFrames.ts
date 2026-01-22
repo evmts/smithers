@@ -1,5 +1,3 @@
-// Hook for accessing render frames with time-travel navigation
-
 import { useCallback, useMemo } from 'react'
 import type { SmithersDB } from '../../db/index.js'
 import type { RenderFrame } from '../../db/render-frames.js'

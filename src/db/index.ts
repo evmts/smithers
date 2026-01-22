@@ -2,9 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
 import { ReactiveDatabase } from '../reactive-sqlite/index.js'
-// Types are re-exported from './types.js' at the bottom of this file
 
-// Import modules
 import { createStateModule, type StateModule } from './state.js'
 import { createMemoriesModule, type MemoriesModule } from './memories.js'
 import { createExecutionModule, type ExecutionModule } from './execution.js'
@@ -113,12 +111,7 @@ export interface SmithersDBOptions {
   reset?: boolean
 }
 
-/**
- * Run database migrations for existing databases.
- * This ensures new columns are added to tables that were created before schema updates.
- */
 function runMigrations(rdb: ReactiveDatabase): void {
-  // Migration: Add log_path column to agents table if it doesn't exist
   const agentsColumns = rdb.query<{ name: string }>('PRAGMA table_info(agents)')
   const hasLogPath = agentsColumns.some((col) => col.name === 'log_path')
   if (!hasLogPath) {
@@ -129,7 +122,6 @@ function runMigrations(rdb: ReactiveDatabase): void {
     rdb.exec('ALTER TABLE agents ADD COLUMN stream_summary TEXT')
   }
 
-  // Migration: Add agent_stream_events table if missing
   const streamEventsTable = rdb.query<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_stream_events'"
   )
@@ -151,7 +143,6 @@ function runMigrations(rdb: ReactiveDatabase): void {
     rdb.exec('CREATE INDEX IF NOT EXISTS idx_agent_stream_events_created ON agent_stream_events(created_at DESC)')
   }
 
-  // Migration: Add interactive session columns to human_interactions table if missing
   const humanColumns = rdb.query<{ name: string }>('PRAGMA table_info(human_interactions)')
   const hasSessionConfig = humanColumns.some((col) => col.name === 'session_config')
   if (!hasSessionConfig) {
@@ -170,7 +161,6 @@ function runMigrations(rdb: ReactiveDatabase): void {
     rdb.exec('ALTER TABLE human_interactions ADD COLUMN error TEXT')
   }
 
-  // Migration: Add End component columns to executions table if missing
   const executionsColumns = rdb.query<{ name: string }>('PRAGMA table_info(executions)')
   const hasEndSummary = executionsColumns.some((col) => col.name === 'end_summary')
   if (!hasEndSummary) {
@@ -185,7 +175,6 @@ function runMigrations(rdb: ReactiveDatabase): void {
     rdb.exec('ALTER TABLE executions ADD COLUMN exit_code INTEGER DEFAULT 0')
   }
 
-  // Migration: Add scope_id column to tasks table if missing
   const tasksColumns = rdb.query<{ name: string }>('PRAGMA table_info(tasks)')
   const hasScopeId = tasksColumns.some((col) => col.name === 'scope_id')
   if (!hasScopeId) {
@@ -194,17 +183,10 @@ function runMigrations(rdb: ReactiveDatabase): void {
   rdb.exec('CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(scope_id)')
 }
 
-/**
- * Create a Smithers database instance
- */
 export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
-  // Determine database path - prefer env var from control plane, then options, then memory
   const dbPath = process.env['SMITHERS_DB_PATH'] ?? options.path ?? ':memory:'
-
-  // Create ReactiveDatabase
   const rdb = new ReactiveDatabase(dbPath)
 
-  // Initialize schema
   let schemaPath: string
   try {
     const currentFileUrl = import.meta.url
@@ -234,7 +216,6 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     schemaPath = path.resolve(process.cwd(), 'src/db/schema.sql')
   }
 
-  // Reset if requested
   if (options.reset) {
     const tables = ['render_frames', 'tasks', 'steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
                     'transitions', 'state', 'tool_calls', 'agent_stream_events', 'agents', 'phases', 'executions',
@@ -250,11 +231,8 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     }
   }
 
-  // Execute schema
   const schemaSql = fs.readFileSync(schemaPath, 'utf-8')
   rdb.exec(schemaSql)
-
-  // Run migrations for existing databases
   runMigrations(rdb)
 
   let currentExecutionId: string | null = null

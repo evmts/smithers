@@ -1,11 +1,6 @@
-// Report Tool - Allows agents to write structured reports to the database
-
 import { z } from 'zod'
 import { createSmithersTool } from './createSmithersTool.js'
 
-/**
- * Report tool input schema
- */
 const reportTypes = ['progress', 'finding', 'warning', 'error', 'metric', 'decision'] as const
 const severityLevels = ['info', 'warning', 'critical'] as const
 
@@ -23,24 +18,6 @@ const reportOutputSchema = z.object({
   message: z.string(),
 })
 
-/**
- * Create a Report tool instance for an agent
- *
- * The Report tool allows agents to communicate structured information
- * back to the orchestration system. Reports are stored in the database
- * and can trigger stop conditions if severity is critical.
- *
- * Usage in agent prompt:
- * ```
- * Use the Report tool to communicate important findings:
- * - progress: Report progress on the task
- * - finding: Document a discovery or observation
- * - warning: Flag a potential issue
- * - error: Report an error condition
- * - metric: Record a measurement or statistic
- * - decision: Document a decision made
- * ```
- */
 export function createReportTool() {
   return createSmithersTool({
     name: 'Report',
@@ -103,9 +80,6 @@ Severity levels:
   })
 }
 
-/**
- * Generate the Report tool description for inclusion in system prompts
- */
 export function getReportToolDescription(): string {
   return `
 ## Report Tool

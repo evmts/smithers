@@ -344,7 +344,7 @@ async def test_event_state_rerender_flow(setup_test_env):
             return NodeBase(
                 type="result",
                 children=[
-                    NodeBase(type="text", props={"content": f"Result: {result_text}"})
+                    TextNode(text=f"Result: {result_text}")
                 ]
             )
 

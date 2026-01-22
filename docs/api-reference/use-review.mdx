@@ -38,6 +38,20 @@ interface UseReviewResult {
 }
 ```
 
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `target` | `ReviewTarget` | — | What to review (required). Has `type` (`'commit' \| 'diff' \| 'pr' \| 'files'`), `ref`, and optional `files` |
+| `agent` | `'claude'` | `'claude'` | Agent to use for review |
+| `model` | `string` | — | Model to use |
+| `criteria` | `string[]` | — | Review criteria/checklist |
+| `blocking` | `boolean` | — | Stop orchestration if issues are found |
+| `postToGitHub` | `boolean` | — | Post review as GitHub PR comment |
+| `postToGitNotes` | `boolean` | — | Store review in git notes |
+| `onFinished` | `(result: ReviewResult) => void` | — | Callback when review is complete |
+| `onError` | `(error: Error) => void` | — | Callback on error |
+
 ## Notes
 
 - Requires `SmithersProvider` context.
