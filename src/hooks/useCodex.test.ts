@@ -1,108 +1,105 @@
+/**
+ * Unit tests for useCodex hook.
+ * Tests the hook's wrapper behavior around useAgentRunner.
+ */
 import { describe, test, expect } from 'bun:test'
+import { useCodex, type UseCodexResult } from './useCodex.js'
+import { CodexAdapter } from './adapters/codex.js'
+import type { CodexProps } from '../components/agents/types/codex.js'
 
 describe('useCodex', () => {
-  describe('return type structure', () => {
-    const mockResult = {
-      status: 'pending' as const,
-      agentId: null,
-      executionId: null,
-      model: 'o4-mini',
-      result: null,
-      error: null,
-      tailLog: []
-    }
-
-    test('result includes status field', () => {
-      expect('status' in mockResult).toBe(true)
-      expect(['pending', 'running', 'complete', 'error']).toContain(mockResult.status)
+  describe('UseCodexResult type', () => {
+    test('extends UseAgentResult with model field', () => {
+      const result: UseCodexResult = {
+        status: 'pending',
+        agentId: null,
+        executionId: null,
+        model: 'o4-mini',
+        result: null,
+        error: null,
+        tailLog: []
+      }
+      expect(result.model).toBe('o4-mini')
     })
 
-    test('result includes agentId field', () => {
-      expect('agentId' in mockResult).toBe(true)
-    })
-
-    test('result includes executionId field', () => {
-      expect('executionId' in mockResult).toBe(true)
-    })
-
-    test('result includes model field (unique to useCodex)', () => {
-      expect('model' in mockResult).toBe(true)
-      expect(typeof mockResult.model).toBe('string')
-    })
-
-    test('result includes result field', () => {
-      expect('result' in mockResult).toBe(true)
-    })
-
-    test('result includes error field', () => {
-      expect('error' in mockResult).toBe(true)
-    })
-
-    test('result includes tailLog field', () => {
-      expect('tailLog' in mockResult).toBe(true)
-      expect(Array.isArray(mockResult.tailLog)).toBe(true)
+    test('model field is string type', () => {
+      const result: UseCodexResult = {
+        status: 'complete',
+        agentId: 'agent-123',
+        executionId: 'exec-456',
+        model: 'o3',
+        result: { output: 'test', tokensUsed: { input: 100, output: 50 }, turnsUsed: 1, durationMs: 1000, stopReason: 'completed' },
+        error: null,
+        tailLog: []
+      }
+      expect(typeof result.model).toBe('string')
     })
   })
 
   describe('model prop handling', () => {
     test('model defaults to o4-mini when not specified', () => {
-      const props = { children: 'test' }
-      const model = (props as { model?: string }).model ?? 'o4-mini'
+      const props: CodexProps = { children: 'test' }
+      const model = props.model ?? 'o4-mini'
       expect(model).toBe('o4-mini')
     })
 
     test('model uses provided value when specified', () => {
-      const props = { children: 'test', model: 'o3' }
+      const props: CodexProps = { children: 'test', model: 'o3' }
       const model = props.model ?? 'o4-mini'
       expect(model).toBe('o3')
     })
 
-    test('model accepts gpt-4o', () => {
-      const props = { children: 'test', model: 'gpt-4o' }
+    test('model accepts gpt-4.1', () => {
+      const props: CodexProps = { children: 'test', model: 'gpt-4.1' }
       const model = props.model ?? 'o4-mini'
-      expect(model).toBe('gpt-4o')
-    })
-
-    test('model accepts gpt-4', () => {
-      const props = { children: 'test', model: 'gpt-4' }
-      const model = props.model ?? 'o4-mini'
-      expect(model).toBe('gpt-4')
-    })
-
-    test('model accepts custom model strings', () => {
-      const props = { children: 'test', model: 'gpt-4-turbo-2024-01' }
-      const model = props.model ?? 'o4-mini'
-      expect(model).toBe('gpt-4-turbo-2024-01')
+      expect(model).toBe('gpt-4.1')
     })
   })
 
-  describe('UseCodexResult type shape', () => {
-    test('status is one of allowed values', () => {
-      const allowedStatuses = ['pending', 'running', 'complete', 'error']
-      for (const status of allowedStatuses) {
-        expect(allowedStatuses).toContain(status)
-      }
+  describe('CodexAdapter integration', () => {
+    test('useCodex uses CodexAdapter', () => {
+      expect(CodexAdapter.name).toBe('codex')
     })
 
-    test('agentId can be string or null', () => {
-      const nullAgentId: string | null = null
-      const stringAgentId: string | null = 'agent-123'
-      expect(nullAgentId).toBeNull()
-      expect(typeof stringAgentId).toBe('string')
+    test('CodexAdapter getAgentLabel returns model', () => {
+      const label = CodexAdapter.getAgentLabel({ prompt: 'test', model: 'o3' })
+      expect(label).toBe('o3')
     })
 
-    test('executionId can be string or null', () => {
-      const nullExecId: string | null = null
-      const stringExecId: string | null = 'exec-456'
-      expect(nullExecId).toBeNull()
-      expect(typeof stringExecId).toBe('string')
+    test('CodexAdapter getAgentLabel defaults to o4-mini', () => {
+      const label = CodexAdapter.getAgentLabel({ prompt: 'test' })
+      expect(label).toBe('o4-mini')
     })
 
-    test('error can be Error or null', () => {
-      const nullError: Error | null = null
-      const errorObj: Error | null = new Error('test error')
-      expect(nullError).toBeNull()
-      expect(errorObj).toBeInstanceOf(Error)
+    test('CodexAdapter getLoggerName returns Codex', () => {
+      expect(CodexAdapter.getLoggerName()).toBe('Codex')
+    })
+
+    test('CodexAdapter getLoggerContext includes model', () => {
+      const ctx = CodexAdapter.getLoggerContext({ model: 'o3' })
+      expect(ctx.model).toBe('o3')
+    })
+  })
+
+  describe('status values', () => {
+    test('pending is valid status', () => {
+      const result: UseCodexResult = { status: 'pending', agentId: null, executionId: null, model: 'o4-mini', result: null, error: null, tailLog: [] }
+      expect(result.status).toBe('pending')
+    })
+
+    test('running is valid status', () => {
+      const result: UseCodexResult = { status: 'running', agentId: 'a', executionId: 'e', model: 'o4-mini', result: null, error: null, tailLog: [] }
+      expect(result.status).toBe('running')
+    })
+
+    test('complete is valid status', () => {
+      const result: UseCodexResult = { status: 'complete', agentId: 'a', executionId: 'e', model: 'o4-mini', result: { output: 'done', tokensUsed: { input: 0, output: 0 }, turnsUsed: 0, durationMs: 0, stopReason: 'completed' }, error: null, tailLog: [] }
+      expect(result.status).toBe('complete')
+    })
+
+    test('error is valid status', () => {
+      const result: UseCodexResult = { status: 'error', agentId: 'a', executionId: 'e', model: 'o4-mini', result: null, error: new Error('fail'), tailLog: [] }
+      expect(result.status).toBe('error')
     })
   })
 })

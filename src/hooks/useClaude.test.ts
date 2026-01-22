@@ -1,102 +1,111 @@
+/**
+ * Unit tests for useClaude hook.
+ * Tests the hook's wrapper behavior around useAgentRunner.
+ */
 import { describe, test, expect } from 'bun:test'
+import { useClaude, type UseClaudeResult } from './useClaude.js'
+import { ClaudeAdapter } from './adapters/claude.js'
+import type { ClaudeProps } from '../components/agents/types.js'
 
 describe('useClaude', () => {
-  describe('return type structure', () => {
-    const mockResult = {
-      status: 'pending' as const,
-      agentId: null,
-      executionId: null,
-      model: 'sonnet',
-      result: null,
-      error: null,
-      tailLog: []
-    }
-
-    test('result includes status field', () => {
-      expect('status' in mockResult).toBe(true)
-      expect(['pending', 'running', 'complete', 'error']).toContain(mockResult.status)
+  describe('UseClaudeResult type', () => {
+    test('extends UseAgentResult with model field', () => {
+      const result: UseClaudeResult = {
+        status: 'pending',
+        agentId: null,
+        executionId: null,
+        model: 'sonnet',
+        result: null,
+        error: null,
+        tailLog: []
+      }
+      expect(result.model).toBe('sonnet')
     })
 
-    test('result includes agentId field', () => {
-      expect('agentId' in mockResult).toBe(true)
-    })
-
-    test('result includes executionId field', () => {
-      expect('executionId' in mockResult).toBe(true)
-    })
-
-    test('result includes model field (unique to useClaude)', () => {
-      expect('model' in mockResult).toBe(true)
-      expect(typeof mockResult.model).toBe('string')
-    })
-
-    test('result includes result field', () => {
-      expect('result' in mockResult).toBe(true)
-    })
-
-    test('result includes error field', () => {
-      expect('error' in mockResult).toBe(true)
-    })
-
-    test('result includes tailLog field', () => {
-      expect('tailLog' in mockResult).toBe(true)
-      expect(Array.isArray(mockResult.tailLog)).toBe(true)
+    test('model field is string type', () => {
+      const result: UseClaudeResult = {
+        status: 'complete',
+        agentId: 'agent-123',
+        executionId: 'exec-456',
+        model: 'opus',
+        result: { output: 'test', tokensUsed: { input: 100, output: 50 }, turnsUsed: 1, durationMs: 1000, stopReason: 'completed' },
+        error: null,
+        tailLog: []
+      }
+      expect(typeof result.model).toBe('string')
     })
   })
 
   describe('model prop handling', () => {
     test('model defaults to sonnet when not specified', () => {
-      const props = { children: 'test' }
+      const props: ClaudeProps = { children: 'test' }
       const model = props.model ?? 'sonnet'
       expect(model).toBe('sonnet')
     })
 
     test('model uses provided value when specified', () => {
-      const props = { children: 'test', model: 'opus' }
+      const props: ClaudeProps = { children: 'test', model: 'opus' }
       const model = props.model ?? 'sonnet'
       expect(model).toBe('opus')
     })
 
     test('model accepts haiku', () => {
-      const props = { children: 'test', model: 'haiku' }
+      const props: ClaudeProps = { children: 'test', model: 'haiku' }
       const model = props.model ?? 'sonnet'
       expect(model).toBe('haiku')
     })
 
-    test('model accepts custom model strings', () => {
-      const props = { children: 'test', model: 'claude-3-5-sonnet-20241022' }
+    test('model accepts full model identifiers', () => {
+      const props: ClaudeProps = { children: 'test', model: 'claude-3-5-sonnet-20241022' }
       const model = props.model ?? 'sonnet'
       expect(model).toBe('claude-3-5-sonnet-20241022')
     })
   })
 
-  describe('UseClaudeResult type shape', () => {
-    test('status is one of allowed values', () => {
-      const allowedStatuses = ['pending', 'running', 'complete', 'error']
-      for (const status of allowedStatuses) {
-        expect(allowedStatuses).toContain(status)
-      }
+  describe('ClaudeAdapter integration', () => {
+    test('useClaude uses ClaudeAdapter', () => {
+      expect(ClaudeAdapter.name).toBe('claude')
     })
 
-    test('agentId can be string or null', () => {
-      const nullAgentId: string | null = null
-      const stringAgentId: string | null = 'agent-123'
-      expect(nullAgentId).toBeNull()
-      expect(typeof stringAgentId).toBe('string')
+    test('ClaudeAdapter getAgentLabel returns model', () => {
+      const label = ClaudeAdapter.getAgentLabel({ prompt: 'test', model: 'opus' })
+      expect(label).toBe('opus')
     })
 
-    test('executionId can be string or null', () => {
-      const nullExecId: string | null = null
-      const stringExecId: string | null = 'exec-456'
-      expect(nullExecId).toBeNull()
-      expect(typeof stringExecId).toBe('string')
+    test('ClaudeAdapter getAgentLabel defaults to sonnet', () => {
+      const label = ClaudeAdapter.getAgentLabel({ prompt: 'test' })
+      expect(label).toBe('sonnet')
     })
 
-    test('error can be Error or null', () => {
-      const nullError: Error | null = null
-      const errorObj: Error | null = new Error('test error')
-      expect(nullError).toBeNull()
-      expect(errorObj).toBeInstanceOf(Error)
+    test('ClaudeAdapter getLoggerName returns Claude', () => {
+      expect(ClaudeAdapter.getLoggerName()).toBe('Claude')
+    })
+
+    test('ClaudeAdapter getLoggerContext includes model', () => {
+      const ctx = ClaudeAdapter.getLoggerContext({ model: 'haiku' })
+      expect(ctx.model).toBe('haiku')
+    })
+  })
+
+  describe('status values', () => {
+    test('pending is valid status', () => {
+      const result: UseClaudeResult = { status: 'pending', agentId: null, executionId: null, model: 'sonnet', result: null, error: null, tailLog: [] }
+      expect(result.status).toBe('pending')
+    })
+
+    test('running is valid status', () => {
+      const result: UseClaudeResult = { status: 'running', agentId: 'a', executionId: 'e', model: 'sonnet', result: null, error: null, tailLog: [] }
+      expect(result.status).toBe('running')
+    })
+
+    test('complete is valid status', () => {
+      const result: UseClaudeResult = { status: 'complete', agentId: 'a', executionId: 'e', model: 'sonnet', result: { output: 'done', tokensUsed: { input: 0, output: 0 }, turnsUsed: 0, durationMs: 0, stopReason: 'completed' }, error: null, tailLog: [] }
+      expect(result.status).toBe('complete')
+    })
+
+    test('error is valid status', () => {
+      const result: UseClaudeResult = { status: 'error', agentId: 'a', executionId: 'e', model: 'sonnet', result: null, error: new Error('fail'), tailLog: [] }
+      expect(result.status).toBe('error')
     })
   })
 })

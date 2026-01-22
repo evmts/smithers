@@ -1,4 +1,12 @@
+/**
+ * Unit tests for useAgentRunner hook.
+ * Tests the core agent execution logic, status mapping, result parsing, and execution gating.
+ */
 import { describe, test, expect } from 'bun:test'
+import type { UseAgentResult, BaseAgentHookProps } from './useAgentRunner.js'
+import { composeMiddleware } from '../middleware/compose.js'
+import { retryMiddleware } from '../middleware/retry.js'
+import { validationMiddleware } from '../middleware/validation.js'
 
 describe('useAgentRunner', () => {
   describe('status mapping from DB', () => {
@@ -156,13 +164,13 @@ describe('useAgentRunner', () => {
 
   describe('tail log handling', () => {
     test('tailLogCount defaults to 10', () => {
-      const props = { children: 'test' }
-      const tailLogCount = (props as { tailLogCount?: number }).tailLogCount ?? 10
+      const props: BaseAgentHookProps = {}
+      const tailLogCount = props.tailLogCount ?? 10
       expect(tailLogCount).toBe(10)
     })
 
     test('maxEntries uses tailLogCount from props', () => {
-      const props = { children: 'test', tailLogCount: 25 }
+      const props: BaseAgentHookProps = { tailLogCount: 25 }
       const maxEntries = props.tailLogCount ?? 10
       expect(maxEntries).toBe(25)
     })
@@ -170,103 +178,102 @@ describe('useAgentRunner', () => {
     test('respects custom tailLogCount values', () => {
       const testCases = [5, 15, 50, 100]
       for (const count of testCases) {
-        const props = { tailLogCount: count }
+        const props: BaseAgentHookProps = { tailLogCount: count }
         expect(props.tailLogCount).toBe(count)
       }
     })
   })
 
   describe('middleware composition', () => {
-    test('combines provider middleware with props middleware', () => {
-      const providerMiddleware = [{ name: 'provider1' }, { name: 'provider2' }]
-      const propsMiddleware = [{ name: 'props1' }]
-      const combined = [...(providerMiddleware ?? []), ...(propsMiddleware ?? [])]
-      expect(combined.length).toBe(3)
-      expect(combined[0]).toEqual({ name: 'provider1' })
-      expect(combined[1]).toEqual({ name: 'provider2' })
-      expect(combined[2]).toEqual({ name: 'props1' })
+    test('composeMiddleware is callable', () => {
+      const composed = composeMiddleware()
+      expect(composed).toBeDefined()
     })
 
-    test('handles null provider middleware', () => {
-      const providerMiddleware = null
-      const propsMiddleware = [{ name: 'props1' }]
-      const combined = [...(providerMiddleware ?? []), ...(propsMiddleware ?? [])]
-      expect(combined.length).toBe(1)
+    test('retryMiddleware creates middleware with default config', () => {
+      const middleware = retryMiddleware({ maxRetries: 3 })
+      expect(middleware).toBeDefined()
+      expect(middleware.name).toBe('retry')
     })
 
-    test('handles empty props middleware', () => {
-      const providerMiddleware = [{ name: 'provider1' }]
-      const propsMiddleware: { name: string }[] = []
-      const combined = [...(providerMiddleware ?? []), ...(propsMiddleware ?? [])]
-      expect(combined.length).toBe(1)
+    test('retryMiddleware accepts custom baseDelayMs', () => {
+      const middleware = retryMiddleware({ maxRetries: 3, baseDelayMs: 500 })
+      expect(middleware.name).toBe('retry')
     })
 
-    test('retry middleware is always included', () => {
-      const internalMiddlewares = ['retryMiddleware']
-      expect(internalMiddlewares).toContain('retryMiddleware')
+    test('validationMiddleware creates middleware with validate function', () => {
+      const middleware = validationMiddleware({ validate: () => true })
+      expect(middleware).toBeDefined()
+      expect(middleware.name).toBe('validation')
     })
 
-    test('validation middleware added when validate prop is set', () => {
-      const props = { validate: () => true }
-      const internalMiddlewares = ['retryMiddleware']
-      if (props.validate) internalMiddlewares.push('validationMiddleware')
-      expect(internalMiddlewares).toContain('validationMiddleware')
-    })
-
-    test('validation middleware not added when validate prop is absent', () => {
-      const props = {}
-      const internalMiddlewares = ['retryMiddleware']
-      if ((props as { validate?: () => boolean }).validate) internalMiddlewares.push('validationMiddleware')
-      expect(internalMiddlewares).not.toContain('validationMiddleware')
+    test('middleware stack combines provider and props middleware', () => {
+      const providerMiddleware = [retryMiddleware({ maxRetries: 1 })]
+      const propsMiddleware = [validationMiddleware({ validate: () => true })]
+      const combined = [...providerMiddleware, ...propsMiddleware]
+      expect(combined.length).toBe(2)
+      expect(combined[0].name).toBe('retry')
+      expect(combined[1].name).toBe('validation')
     })
   })
 
   describe('UseAgentResult type', () => {
     test('has correct structure', () => {
-      const result = {
-        status: 'pending' as const,
-        agentId: null as string | null,
-        executionId: null as string | null,
+      const result: UseAgentResult = {
+        status: 'pending',
+        agentId: null,
+        executionId: null,
         result: null,
         error: null,
-        tailLog: [] as { type: string; content: string }[]
+        tailLog: []
       }
-      expect('status' in result).toBe(true)
-      expect('agentId' in result).toBe(true)
-      expect('executionId' in result).toBe(true)
-      expect('result' in result).toBe(true)
-      expect('error' in result).toBe(true)
-      expect('tailLog' in result).toBe(true)
+      expect(result.status).toBe('pending')
+      expect(result.agentId).toBeNull()
+      expect(result.executionId).toBeNull()
+      expect(result.result).toBeNull()
+      expect(result.error).toBeNull()
+      expect(result.tailLog).toEqual([])
     })
 
     test('status allows all valid values', () => {
-      const validStatuses: ('pending' | 'running' | 'complete' | 'error')[] = ['pending', 'running', 'complete', 'error']
+      const validStatuses: UseAgentResult['status'][] = ['pending', 'running', 'complete', 'error']
       for (const status of validStatuses) {
-        expect(validStatuses).toContain(status)
+        const result: UseAgentResult = { status, agentId: null, executionId: null, result: null, error: null, tailLog: [] }
+        expect(result.status).toBe(status)
       }
-    })
-  })
-
-  describe('DEFAULT_TAIL_LOG_THROTTLE_MS', () => {
-    const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
-
-    test('is 100ms', () => {
-      expect(DEFAULT_TAIL_LOG_THROTTLE_MS).toBe(100)
     })
   })
 
   describe('BaseAgentHookProps defaults', () => {
-    test('retryDelayMs has default of 250', () => {
-      const defaultRetryDelayMs = 250
-      const props = {}
-      const retryDelayMs = (props as { retryDelayMs?: number }).retryDelayMs ?? defaultRetryDelayMs
+    test('retryDelayMs default is 250', () => {
+      const props: BaseAgentHookProps = {}
+      const retryDelayMs = props.retryDelayMs ?? 250
       expect(retryDelayMs).toBe(250)
     })
 
     test('maxRetries defaults to 3', () => {
-      const props = {}
-      const maxRetries = (props as { maxRetries?: number }).maxRetries ?? 3
+      const props: BaseAgentHookProps = {}
+      const maxRetries = props.maxRetries ?? 3
       expect(maxRetries).toBe(3)
+    })
+
+    test('reportingEnabled defaults to true', () => {
+      const props: BaseAgentHookProps = {}
+      const reportingEnabled = props.reportingEnabled !== false
+      expect(reportingEnabled).toBe(true)
+    })
+
+    test('reportingEnabled can be disabled', () => {
+      const props: BaseAgentHookProps = { reportingEnabled: false }
+      const reportingEnabled = props.reportingEnabled !== false
+      expect(reportingEnabled).toBe(false)
+    })
+  })
+
+  describe('DEFAULT_TAIL_LOG_THROTTLE_MS', () => {
+    test('is 100ms', () => {
+      const DEFAULT_TAIL_LOG_THROTTLE_MS = 100
+      expect(DEFAULT_TAIL_LOG_THROTTLE_MS).toBe(100)
     })
   })
 })
