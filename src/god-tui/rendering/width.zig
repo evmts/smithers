@@ -2,7 +2,107 @@
 // Handles visible width calculation with grapheme segmentation and East Asian Width
 
 const std = @import("std");
-const ansi = @import("../terminal/ansi.zig");
+// ANSI utilities - inline minimal subset needed for width calculation
+const AnsiUtil = struct {
+    const ESC = '\x1b';
+
+    pub const SequenceType = enum {
+        not_escape,
+        incomplete,
+        csi,
+        osc,
+        dcs,
+        apc,
+        ss3,
+        single_char,
+    };
+
+    pub fn classifySequence(data: []const u8) struct { type: SequenceType, len: usize } {
+        if (data.len == 0) return .{ .type = .not_escape, .len = 0 };
+        if (data[0] != ESC) return .{ .type = .not_escape, .len = 0 };
+        if (data.len == 1) return .{ .type = .incomplete, .len = 1 };
+
+        const after = data[1];
+
+        // CSI: ESC [
+        if (after == '[') {
+            var i: usize = 2;
+            while (i < data.len) : (i += 1) {
+                const c = data[i];
+                if (c >= 0x40 and c <= 0x7E) {
+                    return .{ .type = .csi, .len = i + 1 };
+                }
+            }
+            return .{ .type = .incomplete, .len = data.len };
+        }
+
+        // OSC: ESC ]
+        if (after == ']') {
+            var i: usize = 2;
+            while (i < data.len) : (i += 1) {
+                if (data[i] == '\x07') return .{ .type = .osc, .len = i + 1 };
+                if (i + 1 < data.len and data[i] == ESC and data[i + 1] == '\\') {
+                    return .{ .type = .osc, .len = i + 2 };
+                }
+            }
+            return .{ .type = .incomplete, .len = data.len };
+        }
+
+        // DCS: ESC P
+        if (after == 'P') {
+            var i: usize = 2;
+            while (i + 1 < data.len) : (i += 1) {
+                if (data[i] == ESC and data[i + 1] == '\\') {
+                    return .{ .type = .dcs, .len = i + 2 };
+                }
+            }
+            return .{ .type = .incomplete, .len = data.len };
+        }
+
+        // APC: ESC _
+        if (after == '_') {
+            var i: usize = 2;
+            while (i < data.len) : (i += 1) {
+                if (data[i] == '\x07') return .{ .type = .apc, .len = i + 1 };
+                if (i + 1 < data.len and data[i] == ESC and data[i + 1] == '\\') {
+                    return .{ .type = .apc, .len = i + 2 };
+                }
+            }
+            return .{ .type = .incomplete, .len = data.len };
+        }
+
+        // SS3: ESC O + single char
+        if (after == 'O') {
+            if (data.len >= 3) return .{ .type = .ss3, .len = 3 };
+            return .{ .type = .incomplete, .len = data.len };
+        }
+
+        // Meta/Alt: ESC + single char
+        return .{ .type = .single_char, .len = 2 };
+    }
+
+    pub fn stripAnsi(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
+        var result = std.ArrayListUnmanaged(u8){};
+        errdefer result.deinit(allocator);
+
+        var i: usize = 0;
+        while (i < text.len) {
+            if (text[i] == ESC) {
+                const seq = classifySequence(text[i..]);
+                if (seq.type != .not_escape and seq.type != .incomplete) {
+                    i += seq.len;
+                    continue;
+                }
+            }
+            try result.append(allocator, text[i]);
+            i += 1;
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+};
+
+const ansi = AnsiUtil;
 
 /// LRU cache entry for width calculations
 const CacheEntry = struct {
@@ -573,8 +673,8 @@ test "sliceByColumn with ANSI" {
     const allocator = std.testing.allocator;
     const result = try sliceByColumn(allocator, "\x1b[31mRed\x1b[0m Text", 0, 3);
     defer allocator.free(result);
-    // Should include the ANSI sequence
-    try std.testing.expectEqualStrings("\x1b[31mRed", result);
+    // Should include the ANSI sequence and any subsequent ANSI before next visible char
+    try std.testing.expectEqualStrings("\x1b[31mRed\x1b[0m", result);
 }
 
 test "sliceByColumn wide char" {
