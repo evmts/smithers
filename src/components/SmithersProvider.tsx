@@ -15,17 +15,10 @@ type OrchestrationController = {
   reject: (err: Error) => void
 }
 
-// Tokenized map for per-root orchestration - concurrency-safe
 const orchestrationControllers = new Map<string, OrchestrationController>()
 
-// Context for per-provider orchestration token (replaces global _activeOrchestrationToken)
 const OrchestrationTokenContext = createContext<string | null>(null)
 
-/**
- * Create a promise that resolves when orchestration completes.
- * Returns a token that can be used to signal completion.
- * Called by createSmithersRoot before mounting.
- */
 export function createOrchestrationPromise(): { promise: Promise<void>; token: string } {
   const token = crypto.randomUUID()
   const promise = new Promise<void>((resolve, reject) => {
@@ -34,12 +27,6 @@ export function createOrchestrationPromise(): { promise: Promise<void>; token: s
   return { promise, token }
 }
 
-
-
-/**
- * Signal completion for a specific orchestration token.
- * Used by reconciler root.ts for direct control.
- */
 export function signalOrchestrationCompleteByToken(token: string): void {
   const controller = orchestrationControllers.get(token)
   if (controller) {
@@ -48,10 +35,6 @@ export function signalOrchestrationCompleteByToken(token: string): void {
   }
 }
 
-/**
- * Signal error for a specific orchestration token.
- * Used by reconciler root.ts for direct control.
- */
 export function signalOrchestrationErrorByToken(token: string, err: Error): void {
   const controller = orchestrationControllers.get(token)
   if (controller) {
@@ -60,15 +43,9 @@ export function signalOrchestrationErrorByToken(token: string, err: Error): void
   }
 }
 
-/**
- * Hook to get the current orchestration token from context.
- * Returns null if not within a SmithersProvider.
- */
 export function useOrchestrationToken(): string | null {
   return useContext(OrchestrationTokenContext)
 }
-
-
 
 export interface GlobalStopCondition {
   type: 'total_tokens' | 'total_agents' | 'total_time' | 'report_severity' | 'ci_failure' | 'custom'
@@ -94,7 +71,6 @@ export interface OrchestrationResult {
   durationMs: number
 }
 
-// Table-driven stop condition evaluators
 type StopEvaluatorContext = {
   ctx: OrchestrationContext
   condition: GlobalStopCondition
@@ -141,97 +117,29 @@ const STOP_EVALUATORS: Record<GlobalStopCondition['type'], (args: StopEvaluatorC
 }
 
 export interface SmithersConfig {
-  /**
-   * Maximum number of iterations for Ralph loops
-   */
   maxIterations?: number
-
-  /**
-   * Default model to use for agents
-   */
   defaultModel?: string
-
-  /**
-   * Global timeout in milliseconds
-   */
   globalTimeout?: number
-
-  /**
-   * Enable verbose logging
-   */
   verbose?: boolean
-
-  /**
-   * Additional configuration for extensibility
-   */
   extra?: Record<string, unknown>
 }
 
-
-
 export interface SmithersContextValue {
-  /**
-   * Database instance (SmithersDB wrapper)
-   */
   db: SmithersDB
-
-  /**
-   * Current execution ID
-   */
   executionId: string
-
-  /**
-   * Configuration
-   */
   config: SmithersConfig
-
-  /**
-   * Global middleware applied to all Claude executions.
-   */
   middleware?: SmithersMiddleware[]
-
-  /**
-   * Request orchestration stop
-   */
   requestStop: (reason: string) => void
-
-  /**
-   * Request rebase operation
-   */
   requestRebase: (reason: string) => void
-
-  /**
-   * Check if stop has been requested
-   */
   isStopRequested: () => boolean
-
-  /**
-   * Check if rebase has been requested
-   */
   isRebaseRequested: () => boolean
-
-  /**
-   * Raw ReactiveDatabase instance (for useQuery hooks)
-   */
   reactiveDb: ReactiveDatabase
-
-  /**
-   * Whether execution is enabled for this subtree
-   */
   executionEnabled: boolean
 }
 
 const SmithersContext = createContext<SmithersContextValue | undefined>(undefined)
 
-/**
- * Hook to access Smithers context
- *
- * Uses React's Context API, but falls back to module-level store
- * for universal renderer compatibility where context propagation
- * may not work as expected.
- */
 export function useSmithers() {
-  // Try React's Context first
   const ctx = useContext(SmithersContext)
   if (ctx) {
     return ctx
@@ -261,77 +169,19 @@ export function ExecutionBoundary(props: ExecutionBoundaryProps): ReactNode {
 }
 
 export interface SmithersProviderProps {
-  /**
-   * Database instance
-   */
   db: SmithersDB
-
-  /**
-   * Execution ID from db.execution.start()
-   */
   executionId: string
-
-  /**
-   * Optional configuration
-   */
   config?: SmithersConfig
-
-  /**
-   * Optional tree serialization callback for frame capture.
-   * Prefer passing root.toXML() from createSmithersRoot().
-   */
   getTreeXML?: () => string | null
-
-  /**
-   * Global middleware applied to all Claude executions.
-   */
   middleware?: SmithersMiddleware[]
-
-  /**
-   * Callback fired when orchestration completes
-   */
   onComplete?: () => void
-
-  /**
-   * Global timeout in milliseconds
-   */
   globalTimeout?: number
-
-  /**
-   * Global stop conditions
-   */
   stopConditions?: GlobalStopCondition[]
-
-  /**
-   * Create JJ snapshot before starting
-   */
   snapshotBeforeStart?: boolean
-
-  /**
-   * Callback when an error occurs
-   */
   onError?: (error: Error) => void
-
-  /**
-   * Callback when stop is requested
-   */
   onStopRequested?: (reason: string) => void
-
-  /**
-   * Cleanup on complete (close DB, etc.)
-   */
   cleanupOnComplete?: boolean
-
-  /**
-   * Orchestration token for signaling completion.
-   * Created by createOrchestrationPromise() in root.ts.
-   * Required for concurrency-safe multi-root execution.
-   */
   orchestrationToken?: string
-
-  /**
-   * Children components
-   */
   children: ReactNode
 }
 
