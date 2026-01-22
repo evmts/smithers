@@ -30,7 +30,7 @@ description: Create git commits with metadata tracking
 interface CommitResult {
   commitHash: string;
   message: string;
-  filesChanged: number;
+  filesChanged: string[];
   insertions: number;
   deletions: number;
 }

@@ -11,12 +11,94 @@ import logging
 import asyncio
 import uuid
 import importlib.util
+import json
+import zipfile
+import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .db import create_async_smithers_db, run_migrations, SmithersDB
 from .engine import TickLoop
 from .state import VolatileStore
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pretty Printing Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def format_timestamp(ts: Optional[str]) -> str:
+    """Format ISO timestamp for display"""
+    if not ts:
+        return "-"
+    try:
+        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except:
+        return ts[:19] if len(ts) > 19 else ts
+
+
+def format_duration(start: Optional[str], end: Optional[str]) -> str:
+    """Calculate and format duration between timestamps"""
+    if not start or not end:
+        return "-"
+    try:
+        s = datetime.fromisoformat(start.replace('Z', '+00:00'))
+        e = datetime.fromisoformat(end.replace('Z', '+00:00'))
+        delta = e - s
+        secs = delta.total_seconds()
+        if secs < 60:
+            return f"{secs:.1f}s"
+        elif secs < 3600:
+            return f"{int(secs // 60)}m {int(secs % 60)}s"
+        else:
+            return f"{int(secs // 3600)}h {int((secs % 3600) // 60)}m"
+    except:
+        return "-"
+
+
+def format_status(status: str) -> str:
+    """Format status with color indicators"""
+    icons = {
+        'pending': '⏳',
+        'running': '🔄',
+        'completed': '✅',
+        'failed': '❌',
+        'cancelled': '🚫',
+    }
+    return f"{icons.get(status, '?')} {status}"
+
+
+def print_table(headers: list[str], rows: list[list[str]], max_widths: Optional[list[int]] = None) -> None:
+    """Print a formatted table"""
+    if not rows:
+        print("  (no data)")
+        return
+    
+    # Calculate column widths
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(str(cell)))
+    
+    # Apply max widths
+    if max_widths:
+        widths = [min(w, m) if m else w for w, m in zip(widths, max_widths + [None] * len(widths))]
+    
+    # Print header
+    header_line = " | ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    print(f"  {header_line}")
+    print(f"  {'-' * len(header_line)}")
+    
+    # Print rows
+    for row in rows:
+        cells = []
+        for i, cell in enumerate(row):
+            s = str(cell)
+            if len(s) > widths[i]:
+                s = s[:widths[i]-2] + ".."
+            cells.append(s.ljust(widths[i]))
+        print(f"  {' | '.join(cells)}")
 
 
 async def run_script(script_path: str, args: list[str]) -> int:
