@@ -82,6 +82,14 @@ interface UseCodexResult {
 - Respects `ExecutionScope` and `executionEnabled`.
 - `tailLog` is in-memory; status/result come from the DB.
 
+## Authentication
+
+Uses the `codex` CLI authentication. Either:
+- **Subscription**: Run `codex login` once (uses ChatGPT Plus/Pro/Team credits)
+- **API Key**: Set `OPENAI_API_KEY` environment variable
+
+See [Codex Authentication](/components/codex#authentication) for details.
+
 ## Related
 
 <CardGroup cols={2}>

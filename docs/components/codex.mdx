@@ -85,9 +85,30 @@ const reviewSchema = z.object({
 
 ## Authentication
 
+Smithers wraps the `codex` CLI, which supports two authentication methods:
+
+### Option 1: ChatGPT/Codex Subscription (Recommended)
+
+Use your existing ChatGPT Plus, Pro, or Team subscription. No API key required.
+
+```bash
+# One-time login - opens browser for OAuth
+codex login
+```
+
+After login, Codex uses your subscription credits automatically.
+
+### Option 2: API Key
+
+Use OpenAI API credits directly:
+
 ```bash
 export OPENAI_API_KEY="sk-..."
 ```
+
+<Note>
+If both are configured, the CLI uses the API key. To use subscription credits when an API key is set, unset the environment variable or use a separate shell session.
+</Note>
 
 ## Related
 

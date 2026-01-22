@@ -3,10 +3,21 @@ import type { CodexCLIExecutionOptions } from '../types/codex.js'
 import { executeCLI, formatErrorOutput, DEFAULT_CLI_TIMEOUT_MS } from '../shared/cli-executor.js'
 import { buildCodexArgs } from './arg-builder.js'
 import { parseCodexOutput } from './output-parser.js'
+import { zodToJsonSchema } from '../../../utils/structured-output.js'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 export { DEFAULT_CLI_TIMEOUT_MS }
 
 export const DEFAULT_SCHEMA_RETRIES = 2
+
+async function createTempSchemaFile(schema: import('zod').ZodType): Promise<string> {
+  const jsonSchema = zodToJsonSchema(schema)
+  const fileName = `codex-schema-${Date.now()}-${Math.random().toString(36).slice(2)}.json`
+  const filePath = join(tmpdir(), fileName)
+  await Bun.write(filePath, JSON.stringify(jsonSchema))
+  return filePath
+}
 
 function formatCommandForLogs(args: string[]): string {
   if (args.length === 0) return 'codex'
@@ -61,7 +72,25 @@ export async function executeCodexCLIOnce(
 
 export async function executeCodexCLI(options: CodexCLIExecutionOptions): Promise<AgentResult> {
   const startTime = Date.now()
-  return executeCodexCLIOnce(options, startTime)
+  
+  let schemaFilePath: string | undefined
+  let effectiveOptions = options
+  
+  if (options.schema && !options.outputSchema) {
+    schemaFilePath = await createTempSchemaFile(options.schema)
+    effectiveOptions = { ...options, outputSchema: schemaFilePath, json: true }
+  }
+  
+  try {
+    return await executeCodexCLIOnce(effectiveOptions, startTime)
+  } finally {
+    if (schemaFilePath) {
+      try {
+        const { unlink } = await import('node:fs/promises')
+        await unlink(schemaFilePath)
+      } catch {}
+    }
+  }
 }
 
 export async function executeCodexShell(

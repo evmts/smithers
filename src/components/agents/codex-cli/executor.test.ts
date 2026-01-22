@@ -133,6 +133,43 @@ describe('executeCodexCLI', () => {
       expect(options.schemaRetries).toBe(5)
     })
   })
+  
+  describe('schema to outputSchema conversion', () => {
+    test('when schema is provided without outputSchema, args should include --output-schema', async () => {
+      const { zodToJsonSchema } = await import('../../../utils/structured-output.js')
+      const schema = z.object({ ok: z.boolean() })
+      const jsonSchema = zodToJsonSchema(schema)
+      
+      expect(jsonSchema).toHaveProperty('type', 'object')
+      expect(jsonSchema).toHaveProperty('properties')
+      expect(jsonSchema.properties).toHaveProperty('ok')
+    })
+    
+    test('buildCodexArgs includes --output-schema when outputSchema is provided', () => {
+      const options: CodexCLIExecutionOptions = {
+        prompt: 'test',
+        outputSchema: '/tmp/schema.json',
+        json: true,
+      }
+      
+      const args = buildCodexArgs(options)
+      expect(args).toContain('--output-schema')
+      expect(args).toContain('/tmp/schema.json')
+      expect(args).toContain('--json')
+    })
+    
+    test('explicit outputSchema takes precedence over schema', () => {
+      const options: CodexCLIExecutionOptions = {
+        prompt: 'test',
+        schema: z.object({ foo: z.string() }),
+        outputSchema: '/explicit/path.json',
+      }
+      
+      const args = buildCodexArgs(options)
+      expect(args).toContain('--output-schema')
+      expect(args).toContain('/explicit/path.json')
+    })
+  })
 })
 
 describe('executeCodexShell', () => {
