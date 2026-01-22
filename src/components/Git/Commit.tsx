@@ -154,7 +154,6 @@ export function Commit(props: CommitProps): ReactNode {
 
         await addGitNotes(JSON.stringify(notesData, null, 2), 'HEAD', false, props.cwd)
 
-        // Log to database
         await smithers.db.vcs.logCommit({
           vcs_type: 'git',
           commit_hash: commitHash,
