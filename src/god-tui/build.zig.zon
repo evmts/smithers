@@ -1,0 +1,16 @@
+.{
+    .name = .god_tui,
+    .version = "0.15.1",
+    .dependencies = .{
+        .clap = .{
+            .url = "git+https://github.com/Hejsil/zig-clap?ref=0.10.0#e47028deaefc2fb396d3d9e9f7bd776ae0b2a43a",
+            .hash = "clap-0.10.0-oBajB434AQBDh-Ei3YtoKIRxZacVPF1iSwp3IX_ZB8f0",
+        },
+        .zig_ai_sdk = .{
+            .url = "git+https://github.com/evmts/ai-zig#0b374f37ae5f089af6d09ab1afd30070dfabae20",
+            .hash = "zig_ai_sdk-0.1.0-ULWwFOjsNQDpPPJBPUBUJKikJkiIAASwHYLwqyzEmcim",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0xe0dd4a2067d236f7,
+}
