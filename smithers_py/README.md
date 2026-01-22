@@ -212,7 +212,7 @@ ruff check smithers_py/
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.10+
 - pydantic >= 2.0
 - pydantic-ai
 - aiosqlite

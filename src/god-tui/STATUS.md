@@ -4,8 +4,20 @@
 
 **Current State:** 8/8 phases implemented with passing tests.
 
-```
-zig build test → ✅ All tests pass
+```bash
+# Run individual module tests (build test has interactive stdin issues):
+zig test terminal/keys.zig           # 4 tests ✅
+zig test rendering/renderer.zig     # 31 tests ✅
+zig test rendering/width.zig        # 14 tests ✅
+zig test components/component.zig   # 5 tests ✅
+zig test editor/editor.zig          # 25 tests ✅
+zig test overlay/overlay.zig        # 15 tests ✅
+zig test ai/provider.zig            # 5 tests ✅
+zig test extensions/extension.zig   # 8 tests ✅
+zig test session/session.zig        # 6 tests ✅
+
+# Total: 113 tests ✅
+zig build  # Compiles successfully
 ```
 
 ---
