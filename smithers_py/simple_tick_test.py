@@ -80,8 +80,7 @@ async def test_basic_tick():
         await run_migrations(db.connection)
 
         # Create execution
-        execution_id = str(uuid.uuid4())
-        await db.execution.start(
+        execution_id = await db.execution.start(
             name="simple_tick_test",
             source_file="simple_tick_test.py",
             config={"test": True}
@@ -206,8 +205,7 @@ async def test_frame_coalescing():
         await db.connect()
         await run_migrations(db.connection)
 
-        execution_id = str(uuid.uuid4())
-        await db.execution.start("coalescing_test", "simple_tick_test.py")
+        execution_id = await db.execution.start("coalescing_test", "simple_tick_test.py")
 
         # Create static app that always returns same tree
         def static_app(ctx):

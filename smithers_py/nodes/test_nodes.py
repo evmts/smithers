@@ -323,8 +323,9 @@ class TestSmithersNode:
 
     def test_smithers_node_creation(self):
         """Test creating a SmithersNode."""
-        node = SmithersNode(name="subagent-test", component="analyze_task")
+        node = SmithersNode(prompt="analyze the task", name="subagent-test", component="analyze_task")
         assert node.type == "smithers"
+        assert node.prompt == "analyze the task"
         assert node.name == "subagent-test"
         assert node.component == "analyze_task"
         assert node.args == {}
@@ -335,6 +336,7 @@ class TestSmithersNode:
         """Test SmithersNode with custom arguments."""
         args = {"target": "src/", "depth": 3, "verbose": True}
         node = SmithersNode(
+            prompt="explore codebase",
             name="explore",
             component="explore_codebase",
             args=args
@@ -344,6 +346,7 @@ class TestSmithersNode:
     def test_smithers_node_custom_settings(self):
         """Test SmithersNode with custom settings."""
         node = SmithersNode(
+            prompt="run tests",
             name="limited",
             component="test_runner",
             max_frames=100,
@@ -356,6 +359,7 @@ class TestSmithersNode:
         """Test SmithersNode with tool policy."""
         policy = ToolPolicy(allowed=["read", "grep"], denied=["write", "delete"])
         node = SmithersNode(
+            prompt="analyze code",
             name="restricted",
             component="code_analyzer",
             tools=policy
@@ -366,6 +370,7 @@ class TestSmithersNode:
     def test_smithers_node_serialization(self):
         """Test SmithersNode serialization."""
         node = SmithersNode(
+            prompt="validate input",
             name="test-sub",
             component="validator",
             args={"mode": "strict"},
@@ -376,6 +381,7 @@ class TestSmithersNode:
 
         data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
+            "prompt": "validate input",
             "name": "test-sub",
             "component": "validator",
             "args": {"mode": "strict"},
@@ -388,6 +394,7 @@ class TestSmithersNode:
     def test_smithers_node_json_round_trip(self):
         """Test SmithersNode JSON round trip."""
         original = SmithersNode(
+            prompt="test round trip",
             name="round-trip",
             component="test_component",
             args={"nested": {"value": 123}}
@@ -396,37 +403,31 @@ class TestSmithersNode:
         data = json.loads(json_str)
         recreated = SmithersNode.model_validate(data)
 
+        assert recreated.prompt == original.prompt
         assert recreated.name == original.name
         assert recreated.component == original.component
         assert recreated.args == original.args
 
     def test_smithers_node_missing_required_fields(self):
-        """Test SmithersNode requires name and component."""
+        """Test SmithersNode requires prompt."""
         with pytest.raises(ValidationError):
-            SmithersNode()  # missing both
-
-        with pytest.raises(ValidationError):
-            SmithersNode(name="test")  # missing component
-
-        with pytest.raises(ValidationError):
-            SmithersNode(component="test")  # missing name
+            SmithersNode()  # missing prompt
 
     def test_smithers_node_max_frames_validation(self):
         """Test SmithersNode max_frames validation."""
         # Minimum value is 1
         with pytest.raises(ValidationError):
-            SmithersNode(name="test", component="comp", max_frames=0)
+            SmithersNode(prompt="test", max_frames=0)
 
         # Large value should work
-        node = SmithersNode(name="test", component="comp", max_frames=100000)
+        node = SmithersNode(prompt="test", max_frames=100000)
         assert node.max_frames == 100000
 
     def test_smithers_node_edge_cases(self):
         """Test SmithersNode edge cases."""
-        # Empty strings for name/component
-        node = SmithersNode(name="", component="")
-        assert node.name == ""
-        assert node.component == ""
+        # Empty string for prompt
+        node = SmithersNode(prompt="")
+        assert node.prompt == ""
 
         # Complex args structure
         complex_args = {
@@ -436,12 +437,13 @@ class TestSmithersNode:
             "null": None,
             "bool": True
         }
-        node = SmithersNode(name="complex", component="handler", args=complex_args)
+        node = SmithersNode(prompt="complex task", name="complex", component="handler", args=complex_args)
         assert node.args == complex_args
 
         # Test with children (subagents can have children)
         child = TextNode(text="Child node")
         node = SmithersNode(
+            prompt="orchestrate",
             name="parent",
             component="orchestrator",
             children=[child]
@@ -496,6 +498,7 @@ class TestDiscriminatedUnion:
         """Test Node union with SmithersNode."""
         node_dict = {
             "type": "smithers",
+            "prompt": "handle task",
             "name": "subagent",
             "component": "task_handler"
         }
@@ -505,6 +508,7 @@ class TestDiscriminatedUnion:
         node = adapter.validate_python(node_dict)
 
         assert isinstance(node, SmithersNode)
+        assert node.prompt == "handle task"
         assert node.name == "subagent"
         assert node.component == "task_handler"
 
@@ -573,7 +577,7 @@ class TestComplexScenarios:
             StepNode(name="test-step"),
             RalphNode(id="test-ralph"),
             ClaudeNode(model="sonnet", prompt="Test prompt"),
-            SmithersNode(name="test-smithers", component="test_component"),
+            SmithersNode(prompt="test prompt", name="test-smithers", component="test_component"),
         ]
 
         for node in nodes:
@@ -603,64 +607,53 @@ class TestWhileNode:
 
     def test_while_node_creation(self):
         """Test creating a WhileNode."""
-        node = WhileNode(id="test-while", condition=True)
+        node = WhileNode(condition="status == 'running'")
         assert node.type == "while"
-        assert node.id == "test-while"
-        assert node.condition is True
+        assert node.condition == "status == 'running'"
         assert node.max_iterations == 100  # default
 
-    def test_while_node_false_condition(self):
-        """Test WhileNode with false condition."""
-        node = WhileNode(id="test", condition=False)
-        assert node.condition is False
+    def test_while_node_simple_condition(self):
+        """Test WhileNode with simple condition."""
+        node = WhileNode(condition="true")
+        assert node.condition == "true"
 
     def test_while_node_custom_iterations(self):
         """Test WhileNode with custom max_iterations."""
-        node = WhileNode(id="test", condition=True, max_iterations=5)
+        node = WhileNode(condition="x > 0", max_iterations=5)
         assert node.max_iterations == 5
 
     def test_while_node_serialization(self):
         """Test WhileNode serialization."""
-        node = WhileNode(id="loop", condition=True, max_iterations=10, key="w1")
+        node = WhileNode(condition="count < 10", max_iterations=10, key="w1")
         data = node.model_dump(exclude_defaults=True, exclude_none=True)
         expected = {
-            "id": "loop",
-            "condition": True,
+            "condition": "count < 10",
             "max_iterations": 10,
             "key": "w1",
         }
         assert data == expected
 
-    def test_while_node_missing_id(self):
-        """Test WhileNode requires id field."""
-        with pytest.raises(ValidationError) as exc_info:
-            WhileNode(condition=True)  # missing id
-        assert "id" in str(exc_info.value)
-
     def test_while_node_missing_condition(self):
         """Test WhileNode requires condition field."""
         with pytest.raises(ValidationError) as exc_info:
-            WhileNode(id="test")  # missing condition
+            WhileNode()  # missing condition
         assert "condition" in str(exc_info.value)
 
     def test_while_node_min_iterations(self):
         """Test WhileNode max_iterations minimum value."""
         with pytest.raises(ValidationError) as exc_info:
-            WhileNode(id="test", condition=True, max_iterations=0)
+            WhileNode(condition="true", max_iterations=0)
         assert "greater than or equal to 1" in str(exc_info.value)
 
     def test_while_node_edge_cases(self):
         """Test WhileNode edge cases."""
         # Test with very high max_iterations
-        node = WhileNode(id="high", condition=True, max_iterations=10000)
+        node = WhileNode(condition="active", max_iterations=10000)
         assert node.max_iterations == 10000
 
-        # Test with None values that should fail
+        # Test with None condition should fail
         with pytest.raises(ValidationError):
-            WhileNode(id=None, condition=True)
-
-        with pytest.raises(ValidationError):
-            WhileNode(id="test", condition=None)
+            WhileNode(condition=None)
 
 
 class TestFragmentNode:
@@ -705,38 +698,42 @@ class TestEachNode:
 
     def test_each_node_creation(self):
         """Test creating an EachNode."""
-        node = EachNode()
+        render_fn = lambda item: TextNode(text=str(item))
+        node = EachNode(items=[1, 2, 3], render=render_fn)
         assert node.type == "each"
+        assert node.items == [1, 2, 3]
+        assert node.render is render_fn
         assert node.children == []
 
     def test_each_node_with_children(self):
         """Test EachNode with child nodes."""
         text_node = TextNode(text="Item", key="item-1")
-        node = EachNode(children=[text_node])
+        render_fn = lambda item: TextNode(text=str(item))
+        node = EachNode(items=["a"], render=render_fn, children=[text_node])
         assert len(node.children) == 1
         assert node.children[0].key == "item-1"
 
     def test_each_node_serialization(self):
         """Test EachNode serialization."""
-        node = EachNode(key="each1")
+        render_fn = lambda item: TextNode(text=str(item))
+        node = EachNode(items=["x", "y"], render=render_fn, key="each1")
         data = node.model_dump(exclude_defaults=True, exclude_none=True)
-        expected = {
-            "key": "each1",
-        }
-        assert data == expected
+        # Verify items and key are serialized
+        assert data["items"] == ["x", "y"]
+        assert data["key"] == "each1"
+        # render is included but as the function reference
+        assert "render" in data
 
-    def test_each_node_requires_child_keys(self):
-        """Test EachNode children should have keys for stable identity."""
-        # This is more of a runtime requirement, but we can test the structure
-        text_with_key = TextNode(text="Good", key="item-1")
-        text_without_key = TextNode(text="Warning")
+    def test_each_node_missing_required_fields(self):
+        """Test EachNode requires items and render."""
+        with pytest.raises(ValidationError):
+            EachNode()  # missing both
 
-        node = EachNode(children=[text_with_key, text_without_key])
+        with pytest.raises(ValidationError):
+            EachNode(items=[1, 2, 3])  # missing render
 
-        # First child has key
-        assert node.children[0].key == "item-1"
-        # Second child has no key (should generate warning in runtime)
-        assert node.children[1].key is None
+        with pytest.raises(ValidationError):
+            EachNode(render=lambda x: x)  # missing items
 
 
 class TestStopNode:
@@ -1104,35 +1101,44 @@ class TestErrorHandling:
         if_node = IfNode(condition="true")
         assert if_node.condition is True
 
-        # WhileNode also accepts truthy values
-        while_node = WhileNode(id="test", condition=1)
-        assert while_node.condition is True
+        # WhileNode condition is a string expression
+        while_node = WhileNode(condition="count > 0")
+        assert while_node.condition == "count > 0"
 
         # Max iterations should coerce from string if valid
         ralph = RalphNode(id="test", max_iterations="5")
         assert ralph.max_iterations == 5
 
     def test_extra_fields_all_nodes(self):
-        """Test that all nodes reject extra fields."""
+        """Test that nodes with extra='forbid' reject extra fields."""
+        # These nodes have extra="forbid" and should reject extra fields
         nodes_to_test = [
             (TextNode, {"text": "test", "extra": "field"}),
-            (IfNode, {"condition": True, "unknown": "value"}),
-            (PhaseNode, {"name": "test", "additional": "data"}),
-            (StepNode, {"name": "test", "bonus": "field"}),
             (RalphNode, {"id": "test", "unexpected": "param"}),
-            (WhileNode, {"id": "test", "condition": True, "mystery": "value"}),
+            (WhileNode, {"condition": "true", "mystery": "value"}),
             (FragmentNode, {"random": "field"}),
-            (EachNode, {"iterate": "value"}),
+            (EachNode, {"items": [], "render": lambda x: x, "iterate": "value"}),
             (StopNode, {"halt": "now"}),
             (EndNode, {"finish": "yes"}),
             (EffectNode, {"id": "test", "sideeffect": "data"}),
-            (SmithersNode, {"name": "test", "component": "test", "invalid": "field"}),
+            (SmithersNode, {"prompt": "test", "invalid": "field"}),
         ]
 
         for node_class, data in nodes_to_test:
             with pytest.raises(ValidationError) as exc_info:
                 node_class(**data)
             assert "Extra inputs are not permitted" in str(exc_info.value)
+
+        # These nodes have extra="allow" and should accept extra fields
+        nodes_allowing_extra = [
+            (IfNode, {"condition": True, "unknown": "value"}),
+            (PhaseNode, {"name": "test", "additional": "data"}),
+            (StepNode, {"name": "test", "bonus": "field"}),
+        ]
+
+        for node_class, data in nodes_allowing_extra:
+            node = node_class(**data)
+            assert node is not None
 
     def test_deeply_nested_validation(self):
         """Test validation in deeply nested structures."""
@@ -1264,7 +1270,6 @@ class TestIntegrationScenarios:
     def test_node_id_stability(self):
         """Test that node IDs remain stable across serialization."""
         nodes_with_ids = [
-            WhileNode(id="while-1", condition=True),
             RalphNode(id="ralph-1"),
             EffectNode(id="effect-1"),
         ]
@@ -1318,12 +1323,11 @@ class TestIntegrationScenarios:
                 TextNode(text="Start"),
                 IfNode(condition=True, children=[TextNode(text="True branch")]),
                 WhileNode(
-                    id="loop",
-                    condition=True,
+                    condition="active",
                     children=[TextNode(text="Loop body")]
                 ),
                 ClaudeNode(model="haiku", prompt="Quick task"),
-                SmithersNode(name="subagent", component="validator"),
+                SmithersNode(prompt="validate", name="subagent", component="validator"),
                 EffectNode(id="cleanup", deps=[]),
                 StopNode(reason="Complete")
             ]

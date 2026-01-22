@@ -15,9 +15,10 @@ import uuid
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from smithers_py.db.database import SmithersDB
-from smithers_py.db.migrations import run_migrations
+from smithers_py.db.migrations import run_migrations_sync
 from smithers_py.state.volatile import VolatileStore
 from smithers_py.nodes.structural import IfNode, PhaseNode
 from smithers_py.nodes.text import TextNode
@@ -51,7 +52,7 @@ def _app_component(ctx: Context):
 class TestTickLoopIntegration:
     """Integration tests for the tick loop engine."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def setup_test_db(self):
         """Create a temporary database for testing."""
         # Create temporary file
@@ -59,16 +60,18 @@ class TestTickLoopIntegration:
         os.close(temp_fd)
 
         try:
+            # Run migrations first with sync connection
+            import sqlite3
+            conn = sqlite3.connect(temp_path)
+            run_migrations_sync(conn)
+            conn.close()
+
             # Initialize database
-            db = SmithersDB(temp_path, is_async=True)
+            db = SmithersDB(temp_path, is_async=False)
             await db.connect()
 
-            # Run migrations
-            await run_migrations(db.connection)
-
             # Create execution
-            execution_id = str(uuid.uuid4())
-            await db.execution.start(
+            execution_id = await db.execution.start(
                 name="test_tick_loop",
                 source_file="test_tick_loop_integration.py",
                 config={"test": True}
@@ -81,6 +84,7 @@ class TestTickLoopIntegration:
             # Clean up temp file
             Path(temp_path).unlink(missing_ok=True)
 
+    @pytest.mark.asyncio
     async def test_single_frame_render(self, setup_test_db):
         """Test that a single frame renders correctly and persists to DB."""
         db, execution_id = setup_test_db
@@ -123,6 +127,7 @@ class TestTickLoopIntegration:
 
         print(f"✅ Frame XML content:\n{xml_content}")
 
+    @pytest.mark.asyncio
     async def test_state_snapshot_isolation(self, setup_test_db):
         """Test that state snapshots are isolated during render phase."""
         db, execution_id = setup_test_db
@@ -184,6 +189,7 @@ class TestTickLoopIntegration:
 
         print(f"✅ State isolation verified - volatile state unchanged: {volatile_state.get('test_value')}")
 
+    @pytest.mark.asyncio
     async def test_context_object_functionality(self, setup_test_db):
         """Test that Context object provides correct data and functionality."""
         db, execution_id = setup_test_db
@@ -250,6 +256,7 @@ class TestTickLoopIntegration:
 
         print(f"✅ Context validation passed: {ctx_data}")
 
+    @pytest.mark.asyncio
     async def test_frame_coalescing_behavior(self, setup_test_db):
         """Test that identical frames are coalesced (not saved twice)."""
         db, execution_id = setup_test_db
@@ -283,6 +290,7 @@ class TestTickLoopIntegration:
 
         print(f"✅ Frame coalescing verified - only {len(frames)} frame(s) saved")
 
+    @pytest.mark.asyncio
     async def test_conditional_rendering_with_state_changes(self, setup_test_db):
         """Test IfNode condition changes based on state."""
         db, execution_id = setup_test_db
@@ -318,14 +326,11 @@ class TestTickLoopIntegration:
         volatile_state.set('feature_enabled', True)
         volatile_state.commit()
 
-        # Second frame: feature enabled (new tick loop to see state change)
-        tick_loop_2 = TickLoop(
-            db=db,
-            volatile_state=volatile_state,
-            app_component=conditional_app,
-            execution_id=execution_id
-        )
-        await tick_loop_2._run_single_frame()
+        # Reset throttle timer to allow immediate second frame
+        tick_loop.last_frame_time = 0
+
+        # Second frame: feature enabled (reuse same tick loop)
+        await tick_loop._run_single_frame()
 
         # Should have 2 different frames now
         frames = await db.frames.list(execution_id)

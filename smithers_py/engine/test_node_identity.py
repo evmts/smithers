@@ -317,7 +317,7 @@ class TestPlanLinter:
     def test_loop_without_max_warns(self):
         """Loop without max_iterations should warn."""
         from ..nodes import WhileNode
-        node = WhileNode(type="while", id="loop1", condition=True)
+        node = WhileNode(condition="count > 0")
         _, id_map = assign_node_ids(node)
 
         linter = PlanLinter()
