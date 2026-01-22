@@ -14,7 +14,7 @@ db.agents.complete(agentId, "Feature implemented", { success: true }, { input: 1
 ## Contract
 
 - **Sync:** All methods are synchronous
-- **Return shape:** snake_case fields with `Date` timestamps
+- **Return shape:** snake_case fields with ISO8601 string timestamps
 - **Status:** `pending | running | completed | failed | cancelled`
 
 ## Methods
@@ -58,9 +58,10 @@ interface Agent {
   tokens_input?: number;
   tokens_output?: number;
   tool_calls_count: number;
-  started_at?: Date;
-  completed_at?: Date;
+  started_at?: string;
+  completed_at?: string;
   duration_ms?: number;
+  created_at: string;
 }
 
 interface ToolCall {
@@ -71,7 +72,10 @@ interface ToolCall {
   output_inline?: string;
   output_summary?: string;
   status: "pending" | "running" | "completed" | "failed";
+  started_at?: string;
+  completed_at?: string;
   duration_ms?: number;
+  created_at: string;
 }
 ```
 

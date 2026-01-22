@@ -58,8 +58,14 @@ describe('showHelp', () => {
 
     test('lists executions subcommand with description', () => {
       showHelp()
-      
+
       expect(consoleOutput.some(line => line.includes('executions') && line.includes('recent executions'))).toBe(true)
+    })
+
+    test('lists execution <id> subcommand with description', () => {
+      showHelp()
+
+      expect(consoleOutput.some(line => line.includes('execution <id>') && line.includes('specific execution'))).toBe(true)
     })
 
     test('lists memories subcommand with description', () => {
@@ -131,15 +137,23 @@ describe('showHelp', () => {
   })
 
   describe('completeness', () => {
-    test('documents all 7 subcommands', () => {
+    test('documents all 8 subcommands', () => {
       showHelp()
-      
+
       const output = consoleOutput.join('\n')
-      const subcommands = ['state', 'transitions', 'executions', 'memories', 'stats', 'current', 'recovery']
-      
+      const subcommands = ['state', 'transitions', 'executions', 'execution <id>', 'memories', 'stats', 'current', 'recovery']
+
       for (const cmd of subcommands) {
         expect(output).toContain(cmd)
       }
+    })
+  })
+
+  describe('--execution-id option', () => {
+    test('lists --execution-id option', () => {
+      showHelp()
+
+      expect(consoleOutput.some(line => line.includes('--execution-id'))).toBe(true)
     })
   })
 })

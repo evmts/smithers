@@ -466,51 +466,686 @@ describe('13-composition-advanced', () => {
   })
 
   // ============================================================================
-  // MISSING TEST COVERAGE - test.todo()
+  // Nesting depth tests - XML rendering validation
   // ============================================================================
 
-  // Nesting depth tests
-  test.todo('Nesting 10 levels deep')
-  test.todo('Nesting 20 levels deep')
-  test.todo('Nesting 50+ levels deep (stress test)')
+  test('Nesting 10 levels deep', async () => {
+    const startTime = Date.now()
 
-  // Wide tree tests
-  test.todo('Wide tree with 50 siblings')
-  test.todo('Wide tree with 100 siblings')
-  test.todo('Wide tree with 500+ siblings (stress test)')
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="l1">
+          <Step name="l2">
+            <Phase name="l3">
+              <Step name="l4">
+                <Phase name="l5">
+                  <Step name="l6">
+                    <Phase name="l7">
+                      <Step name="l8">
+                        <Phase name="l9">
+                          <Step name="l10">
+                            Level 10 content
+                          </Step>
+                        </Phase>
+                      </Step>
+                    </Phase>
+                  </Step>
+                </Phase>
+              </Step>
+            </Phase>
+          </Step>
+        </Phase>
+      </SmithersProvider>
+    )
 
-  // Conditional patterns
-  test.todo('Ternary conditional {cond ? A : B}')
-  test.todo('Nested conditionals')
-  test.todo('Conditional with side effects')
-  test.todo('Conditional that changes during render')
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
 
-  // Dynamic rendering
-  test.todo('Dynamic children with changing keys')
-  test.todo('Dynamic children with duplicate keys (should warn)')
-  test.todo('Dynamic children with undefined key')
-  test.todo('Dynamic children with object key')
-  test.todo('Dynamic children reordering')
-  test.todo('Dynamic children insertion mid-array')
-  test.todo('Dynamic children deletion')
-  test.todo('Dynamic children with filter')
-  test.todo('Dynamic children with reduce')
-  test.todo('Nested array.map (matrix)')
+    expect(xml).toContain('name="l1"')
+    expect(xml).toContain('name="l5"')
+    expect(xml).toContain('name="l10"')
+    expect(xml).toContain('Level 10 content')
 
-  // Fragment patterns
-  test.todo('Nested Fragments')
-  test.todo('Fragment with key')
-  test.todo('Fragment as only child')
-  test.todo('Empty Fragment')
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
 
-  // Error boundary behavior
-  test.todo('Error in child component rendering')
-  test.todo('Error in deeply nested component')
-  test.todo('Error recovery and re-render')
+    logEvalResult({
+      test: '13-nesting-10-levels',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, nesting_depth: 10 },
+      errors: [],
+    })
+  })
 
-  // Performance edge cases
-  test.todo('1000+ total nodes render time')
-  test.todo('Memory usage with large tree')
-  test.todo('Re-render performance with minimal changes')
-  test.todo('Unmount and cleanup of large tree')
+  test('Nesting 20 levels deep', async () => {
+    const startTime = Date.now()
+
+    // Generate 20 levels programmatically
+    const levels = Array.from({ length: 20 }, (_, i) => i + 1)
+    const buildNested = (depth: number): any => {
+      if (depth > 20) return 'Level 20 content'
+      return depth % 2 === 1
+        ? <Phase name={`l${depth}`}>{buildNested(depth + 1)}</Phase>
+        : <Step name={`l${depth}`}>{buildNested(depth + 1)}</Step>
+    }
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        {buildNested(1)}
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="l1"')
+    expect(xml).toContain('name="l10"')
+    expect(xml).toContain('name="l20"')
+    expect(xml).toContain('Level 20 content')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-nesting-20-levels',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, nesting_depth: 20 },
+      errors: [],
+    })
+  })
+
+  // ============================================================================
+  // Wide tree tests - XML rendering validation
+  // ============================================================================
+
+  test('Wide tree with 50 siblings', async () => {
+    const startTime = Date.now()
+    const items = Array.from({ length: 50 }, (_, i) => `item-${i + 1}`)
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="wide-50">
+          {items.map(item => (
+            <Step key={item} name={item}>{item} content</Step>
+          ))}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    const stepCount = (xml.match(/<step/g) || []).length
+    expect(stepCount).toBe(50)
+
+    expect(xml).toContain('name="item-1"')
+    expect(xml).toContain('name="item-25"')
+    expect(xml).toContain('name="item-50"')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-wide-tree-50',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, sibling_count: stepCount },
+      errors: [],
+    })
+  })
+
+  test('Wide tree with 100 siblings', async () => {
+    const startTime = Date.now()
+    const items = Array.from({ length: 100 }, (_, i) => `s${i + 1}`)
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="wide-100">
+          {items.map(item => (
+            <Step key={item} name={item}>{item}</Step>
+          ))}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    const stepCount = (xml.match(/<step/g) || []).length
+    expect(stepCount).toBe(100)
+
+    expect(xml).toContain('name="s1"')
+    expect(xml).toContain('name="s50"')
+    expect(xml).toContain('name="s100"')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-wide-tree-100',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, sibling_count: stepCount },
+      errors: [],
+    })
+  })
+
+  // ============================================================================
+  // Conditional patterns - XML rendering validation
+  // ============================================================================
+
+  test('Ternary conditional {cond ? A : B}', async () => {
+    const startTime = Date.now()
+    const useA = true
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="ternary">
+          {useA ? <Step name="option-a">Option A selected</Step> : <Step name="option-b">Option B selected</Step>}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="option-a"')
+    expect(xml).toContain('Option A selected')
+    expect(xml).not.toContain('name="option-b"')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-ternary-conditional',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, selected: 'A' },
+      errors: [],
+    })
+  })
+
+  test('Ternary conditional selecting B', async () => {
+    const startTime = Date.now()
+    const useA = false
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="ternary">
+          {useA ? <Step name="option-a">Option A selected</Step> : <Step name="option-b">Option B selected</Step>}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="option-b"')
+    expect(xml).toContain('Option B selected')
+    expect(xml).not.toContain('name="option-a"')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-ternary-conditional-b',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, selected: 'B' },
+      errors: [],
+    })
+  })
+
+  test('Nested conditionals', async () => {
+    const startTime = Date.now()
+    const outer = true
+    const inner = true
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="nested-cond">
+          {outer && (
+            <Step name="outer-step">
+              {inner && <Task done={false}>Inner task shown</Task>}
+            </Step>
+          )}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="outer-step"')
+    expect(xml).toContain('Inner task shown')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-nested-conditionals',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Multiple independent conditionals', async () => {
+    const startTime = Date.now()
+    const showFirst = true
+    const showSecond = false
+    const showThird = true
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="multi-cond">
+          {showFirst && <Step name="first">First step</Step>}
+          {showSecond && <Step name="second">Second step</Step>}
+          {showThird && <Step name="third">Third step</Step>}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="first"')
+    expect(xml).not.toContain('name="second"')
+    expect(xml).toContain('name="third"')
+
+    const stepCount = (xml.match(/<step/g) || []).length
+    expect(stepCount).toBe(2)
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-multiple-conditionals',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, step_count: stepCount },
+      errors: [],
+    })
+  })
+
+  // ============================================================================
+  // Dynamic rendering - XML rendering validation
+  // ============================================================================
+
+  test('Dynamic children with filter', async () => {
+    const startTime = Date.now()
+    const items = ['apple', 'banana', 'cherry', 'date', 'elderberry']
+    const filtered = items.filter(item => item.length > 5)
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="filtered">
+          {filtered.map(item => (
+            <Step key={item} name={item}>{item}</Step>
+          ))}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    // Only items with length > 5: banana, cherry, elderberry
+    expect(xml).toContain('name="banana"')
+    expect(xml).toContain('name="cherry"')
+    expect(xml).toContain('name="elderberry"')
+    expect(xml).not.toContain('name="apple"')
+    expect(xml).not.toContain('name="date"')
+
+    const stepCount = (xml.match(/<step/g) || []).length
+    expect(stepCount).toBe(3)
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-dynamic-filter',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, filtered_count: stepCount },
+      errors: [],
+    })
+  })
+
+  test('Dynamic children with reduce to grouped structure', async () => {
+    const startTime = Date.now()
+    const items = [
+      { group: 'A', name: 'a1' },
+      { group: 'A', name: 'a2' },
+      { group: 'B', name: 'b1' },
+    ]
+    const grouped = items.reduce((acc, item) => {
+      if (!acc[item.group]) acc[item.group] = []
+      acc[item.group].push(item.name)
+      return acc
+    }, {} as Record<string, string[]>)
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="grouped">
+          {Object.entries(grouped).map(([group, names]) => (
+            <Step key={group} name={`group-${group}`}>
+              {names.map(name => (
+                <Task key={name} done={false}>{name}</Task>
+              ))}
+            </Step>
+          ))}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="group-A"')
+    expect(xml).toContain('name="group-B"')
+    expect(xml).toContain('a1')
+    expect(xml).toContain('a2')
+    expect(xml).toContain('b1')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-dynamic-reduce-grouped',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Nested array.map (matrix)', async () => {
+    const startTime = Date.now()
+    const matrix = [
+      ['r0c0', 'r0c1', 'r0c2'],
+      ['r1c0', 'r1c1', 'r1c2'],
+    ]
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="matrix">
+          {matrix.map((row, rowIdx) => (
+            <Step key={`row-${rowIdx}`} name={`row-${rowIdx}`}>
+              {row.map((cell, colIdx) => (
+                <Task key={`${rowIdx}-${colIdx}`} done={false}>{cell}</Task>
+              ))}
+            </Step>
+          ))}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="row-0"')
+    expect(xml).toContain('name="row-1"')
+    expect(xml).toContain('r0c0')
+    expect(xml).toContain('r0c2')
+    expect(xml).toContain('r1c1')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-nested-array-map-matrix',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, rows: 2, cols: 3 },
+      errors: [],
+    })
+  })
+
+  // ============================================================================
+  // Fragment patterns - XML rendering validation
+  // ============================================================================
+
+  test('Nested Fragments', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="nested-fragments">
+          <Fragment>
+            <Fragment>
+              <Step name="deeply-nested">Deeply nested in fragments</Step>
+            </Fragment>
+            <Step name="sibling">Fragment sibling</Step>
+          </Fragment>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="deeply-nested"')
+    expect(xml).toContain('name="sibling"')
+    expect(xml).not.toContain('<fragment')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-nested-fragments',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, fragment_transparent: true },
+      errors: [],
+    })
+  })
+
+  test('Fragment with key in map', async () => {
+    const startTime = Date.now()
+    const items = ['x', 'y', 'z']
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="keyed-fragments">
+          {items.map(item => (
+            <Fragment key={item}>
+              <Step name={`${item}-step`}>{item} step</Step>
+              <Task done={false}>{item} task</Task>
+            </Fragment>
+          ))}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="x-step"')
+    expect(xml).toContain('name="y-step"')
+    expect(xml).toContain('name="z-step"')
+    expect(xml).toContain('x task')
+    expect(xml).toContain('y task')
+    expect(xml).toContain('z task')
+
+    const stepCount = (xml.match(/<step/g) || []).length
+    expect(stepCount).toBe(3)
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-fragment-with-key',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, step_count: stepCount },
+      errors: [],
+    })
+  })
+
+  test('Fragment as only child', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="fragment-only">
+          <Fragment>
+            <Step name="only-child">Only child in fragment</Step>
+          </Fragment>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="only-child"')
+    expect(xml).toContain('Only child in fragment')
+    expect(xml).not.toContain('<fragment')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-fragment-only-child',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Empty Fragment renders nothing', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="empty-fragment">
+          <Fragment />
+          <Step name="after-empty">After empty fragment</Step>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('name="after-empty"')
+    expect(xml).not.toContain('<fragment')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-empty-fragment',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  // ============================================================================
+  // Performance stress tests - XML rendering validation
+  // ============================================================================
+
+  test('Large tree with 500+ nodes renders', async () => {
+    const startTime = Date.now()
+
+    // Create 10 phases with 50 steps each = 500+ nodes
+    const phases = Array.from({ length: 10 }, (_, i) => `phase-${i}`)
+    const stepsPerPhase = Array.from({ length: 50 }, (_, i) => `step-${i}`)
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        {phases.map(phase => (
+          <Phase key={phase} name={phase}>
+            {stepsPerPhase.map(step => (
+              <Step key={`${phase}-${step}`} name={`${phase}-${step}`}>
+                Content
+              </Step>
+            ))}
+          </Phase>
+        ))}
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    const phaseCount = (xml.match(/<phase/g) || []).length
+    const stepCount = (xml.match(/<step/g) || []).length
+
+    expect(phaseCount).toBe(10)
+    expect(stepCount).toBe(500)
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-large-tree-500-nodes',
+      passed: true,
+      duration_ms: duration,
+      structured_output: {
+        xml_valid: true,
+        phase_count: phaseCount,
+        step_count: stepCount,
+        total_nodes: phaseCount + stepCount,
+      },
+      errors: [],
+    })
+  })
+
+  test('Mixed composition stress test', async () => {
+    const startTime = Date.now()
+    const items = Array.from({ length: 20 }, (_, i) => i)
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="stress">
+          {items.map(i => (
+            <Fragment key={i}>
+              {i % 2 === 0 && (
+                <Step name={`even-${i}`}>
+                  <Parallel>
+                    <Task done={false}>Task A-{i}</Task>
+                    <Task done={false}>Task B-{i}</Task>
+                  </Parallel>
+                </Step>
+              )}
+              {i % 2 === 1 && (
+                <Phase name={`odd-phase-${i}`}>
+                  <Step name={`odd-step-${i}`}>Odd {i}</Step>
+                </Phase>
+              )}
+            </Fragment>
+          ))}
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    // 10 even (0,2,4,6,8,10,12,14,16,18) -> 10 steps with parallel
+    // 10 odd (1,3,5,7,9,11,13,15,17,19) -> 10 phases with steps
+    expect(xml).toContain('name="even-0"')
+    expect(xml).toContain('name="odd-phase-1"')
+    expect(xml).toContain('Task A-0')
+    expect(xml).toContain('Task B-0')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '13-mixed-stress-test',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
 })

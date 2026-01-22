@@ -27,7 +27,8 @@ describe('showState', () => {
   function createMockDb(state: Record<string, unknown>) {
     return {
       state: {
-        getAll: async () => state
+        getAll: () => state,
+        history: () => []
       }
     }
   }

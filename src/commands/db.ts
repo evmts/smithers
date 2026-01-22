@@ -3,6 +3,7 @@ export {
   showState,
   showTransitions,
   showExecutions,
+  showExecution,
   showMemories,
   showStats,
   showCurrent,

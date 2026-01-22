@@ -36,9 +36,12 @@ Execute Claude via Claude Code CLI. Children are the prompt.
 </ParamField>
 
 <ParamField path="maxTokens" type="number">
-  Maximum tokens for the response.
-  
-  <Info>Reserved for future implementation. Currently has no effect.</Info>
+  Maximum tokens for the response. When specified, execution stops if total tokens
+  (input + output) exceed this limit.
+
+  ```tsx
+  <Claude maxTokens={4096}>Task with token limit</Claude>
+  ```
 </ParamField>
 
 <ParamField path="timeout" type="number">

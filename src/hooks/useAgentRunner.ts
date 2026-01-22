@@ -47,6 +47,7 @@ export interface BaseAgentHookProps {
   tailLogCount?: number
   middleware?: SmithersMiddleware[]
   recordStreamEvents?: boolean
+  legacyLogFormat?: boolean
 }
 
 export interface UseAgentResult {
@@ -100,7 +101,9 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
       const typedStreamingEnabled = adapter.supportsTypedStreaming(props)
       const baseProps = props as BaseAgentHookProps
       const recordStreamEvents = baseProps.recordStreamEvents ?? baseProps.reportingEnabled !== false
+      const legacyLogFormat = baseProps.legacyLogFormat ?? false
       const streamLogFilename = typedStreamingEnabled ? `agent-${logId}.ndjson` : `agent-${logId}.log`
+      const legacyLogFilename = typedStreamingEnabled && legacyLogFormat ? `agent-${logId}.log` : null
       const streamParser: StreamParserInterface | null = typedStreamingEnabled ? (adapter.createStreamParser?.() ?? null) : null
       const streamSummary: StreamSummary = { textBlocks: 0, reasoningBlocks: 0, toolCalls: 0, toolResults: 0, errors: 0 }
       const logFilename = streamLogFilename
@@ -163,6 +166,8 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
         const upstreamOnProgress = execOpts['onProgress'] as ((msg: string) => void) | undefined
         const onProgress = (chunk: string) => {
           if (typedStreamingEnabled && streamParser) {
+            // Write raw chunk to legacy log file if legacyLogFormat is enabled
+            if (legacyLogFilename) logWriter.appendLog(legacyLogFilename, chunk)
             const parts = streamParser.parse(chunk)
             for (const part of parts) {
               handleStreamPart(part)
@@ -223,6 +228,7 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
         if (isMounted()) props.onError?.(errorObj)
       } finally {
         await logWriter.flushStream(logFilename)
+        if (legacyLogFilename) await logWriter.flushStream(legacyLogFilename)
         if (taskIdRef.current) db.tasks.complete(taskIdRef.current)
       }
     })().catch(err => { const errorObj = err instanceof Error ? err : new Error(String(err)); log.error('Unhandled agent execution error', errorObj); props.onError?.(errorObj) })

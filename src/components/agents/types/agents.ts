@@ -236,4 +236,10 @@ export interface ClaudeProps<TSchema extends z.ZodType = z.ZodType> extends Base
    * @default true when reportingEnabled is true
    */
   recordStreamEvents?: boolean
+
+  /**
+   * Write legacy raw text logs alongside NDJSON stream logs when typed streaming is enabled.
+   * @default false
+   */
+  legacyLogFormat?: boolean
 }

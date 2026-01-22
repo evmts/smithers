@@ -137,6 +137,37 @@ describe('ClaudeAdapter.buildOptions', () => {
 
     expect(options.allowedTools).toEqual(['Bash', 'Glob'])
   })
+
+  test('passes maxTokens to options', () => {
+    const props: ClaudeProps = {
+      children: 'test',
+      maxTokens: 4096,
+    }
+    const ctx = {
+      prompt: 'test prompt',
+      cwd: undefined,
+      mcpConfigPath: undefined,
+    }
+
+    const options = ClaudeAdapter.buildOptions(props, ctx)
+
+    expect(options.maxTokens).toBe(4096)
+  })
+
+  test('maxTokens is undefined when not specified', () => {
+    const props: ClaudeProps = {
+      children: 'test',
+    }
+    const ctx = {
+      prompt: 'test prompt',
+      cwd: undefined,
+      mcpConfigPath: undefined,
+    }
+
+    const options = ClaudeAdapter.buildOptions(props, ctx)
+
+    expect(options.maxTokens).toBeUndefined()
+  })
 })
 
 describe('ClaudeAdapter SmithersTools integration', () => {

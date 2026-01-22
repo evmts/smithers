@@ -6,6 +6,11 @@
 jsx = "react-jsx"
 jsxImportSource = "react"
 
+# SuperSmithers preload plugin for import attribute transformation
+# Transforms: import X from "./path" with { supersmithers: "scope" }
+# Into branded proxy components
+preload = ["./src/supersmithers/register.ts"]
+
 [install]
 auto = "fallback"
 

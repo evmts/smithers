@@ -303,6 +303,20 @@ export async function executeClaudeCLI(options: CLIExecutionOptions): Promise<Ag
 
   // If schema is provided, add structured output instructions to system prompt
   let effectiveOptions = { ...options }
+
+  // Wire maxTokens to a token_limit stop condition
+  if (options.maxTokens !== undefined) {
+    const tokenLimitCondition = {
+      type: 'token_limit' as const,
+      value: options.maxTokens,
+      message: `Token limit ${options.maxTokens} exceeded`,
+    }
+    effectiveOptions.stopConditions = [
+      ...(effectiveOptions.stopConditions ?? []),
+      tokenLimitCondition,
+    ]
+  }
+
   if (options.schema) {
     const schemaPrompt = generateStructuredOutputPrompt(options.schema)
     effectiveOptions.systemPrompt = options.systemPrompt

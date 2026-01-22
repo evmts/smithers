@@ -1,0 +1,263 @@
+---
+title: Resumability
+description: How Smithers persists state and resumes interrupted workflows
+---
+
+# Resumability
+
+Smithers workflows survive process termination. When restarted, execution continues from where it left off.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ First Run (interrupted)                                         │
+│   execution.start() → Phase 1 ✓ → Phase 2 ✓ → Phase 3 [CRASH]  │
+├─────────────────────────────────────────────────────────────────┤
+│ Second Run (resumed)                                            │
+│   execution.findIncomplete() → skip Phase 1,2 → Phase 3 → ✓    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Stable Operation Identifiers
+
+Every operation has a deterministic identifier based on:
+
+| Entity | Identifier Strategy |
+|--------|---------------------|
+| Execution | `SMITHERS_EXECUTION_ID` env var or UUID |
+| Phase | `(execution_id, name, iteration)` |
+| Step | `(execution_id, phase_id, name)` |
+| Agent | UUID, tracked via `phase_id` and `execution_id` |
+| Task | `(execution_id, scope_id, component_name)` |
+
+On restart, Smithers queries completed operations by these identifiers to determine what to skip.
+
+## What Gets Persisted
+
+All state lives in SQLite. Eight entity types are tracked:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ executions   │ Top-level workflow run metadata                  │
+│ phases       │ Workflow phases with iteration tracking          │
+│ steps        │ Individual steps within phases                   │
+│ tasks        │ Async work tracking for Ralph loop               │
+│ agents       │ Claude invocations with prompts/results          │
+│ tool_calls   │ Tools invoked by agents                          │
+│ artifacts    │ Files and outputs created                        │
+│ vcs          │ Commits, snapshots, reviews (git/jj)             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Execution Record
+
+```tsx
+interface Execution {
+  id: string;
+  name: string;
+  file_path: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  config: Record<string, any>;
+  result?: Record<string, any>;
+  error?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  total_iterations: number;
+  total_agents: number;
+  total_tool_calls: number;
+  total_tokens_used: number;
+}
+```
+
+### Phase/Step/Task Records
+
+Each tracks:
+- `status`: Current state (`pending`, `running`, `completed`, `failed`, `skipped`)
+- `started_at` / `completed_at`: Timestamps for duration calculation
+- `duration_ms`: Computed on completion
+
+## How Step Completion is Determined
+
+```tsx
+// Phase component checks step completion
+const completedSteps = db.steps.getByExecution(executionId)
+  .filter(s => s.phase_id === currentPhaseId && s.status === 'completed');
+
+// Skip if step name already completed in this phase
+if (completedSteps.some(s => s.name === stepName)) {
+  return; // Skip - already done
+}
+```
+
+**Completion criteria:**
+1. Step status is `'completed'`
+2. Step belongs to current phase (via `phase_id`)
+3. Step name matches (for named steps)
+
+## What Happens on Restart
+
+```tsx
+// 1. Find incomplete execution
+const incomplete = db.execution.findIncomplete();
+
+if (incomplete) {
+  // 2. Resume with same execution ID
+  const executionId = incomplete.id;
+
+  // 3. Query completed phases
+  const phases = db.phases.list(executionId);
+  const completedPhases = phases.filter(p => p.status === 'completed');
+
+  // 4. Skip completed phases, resume from incomplete
+  // Phase component handles this automatically
+}
+```
+
+### Restart Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. db.execution.findIncomplete()                                │
+│    └─ Returns execution with status='pending'|'running'         │
+│                                                                 │
+│ 2. db.phases.list(executionId)                                  │
+│    └─ Returns all phases for this execution                     │
+│                                                                 │
+│ 3. Phase component checks status                                │
+│    └─ completed/skipped: render nothing                         │
+│    └─ running/pending: render children                          │
+│                                                                 │
+│ 4. Step component checks completion                             │
+│    └─ Skip if step.status === 'completed'                       │
+│    └─ Run if step.status !== 'completed'                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Idempotency Patterns for VCS Operations
+
+VCS operations (commits, snapshots) need special handling because Git/Jujutsu state exists outside SQLite.
+
+### Pattern 1: Check Before Commit
+
+```tsx
+<Step name="commit-feature">
+  {({ stepId }) => {
+    // Check if commit already exists for this step
+    const existingCommit = db.vcs.getCommit(expectedHash);
+    if (existingCommit) {
+      db.steps.complete(stepId, { commit_created: existingCommit.commit_hash });
+      return;
+    }
+
+    // Perform commit
+    const hash = await gitCommit("feat: Add feature");
+    db.vcs.logCommit({ vcs_type: 'git', commit_hash: hash, message: "feat: Add feature" });
+    db.steps.complete(stepId, { commit_created: hash });
+  }}
+</Step>
+```
+
+### Pattern 2: Use Step VCS Tracking
+
+Steps track VCS state via `snapshot_before`, `snapshot_after`, and `commit_created`:
+
+```tsx
+db.steps.complete(stepId, {
+  snapshot_before: "abc123",   // State before step ran
+  snapshot_after: "def456",    // State after step completed
+  commit_created: "789xyz"     // Commit created by this step
+});
+```
+
+On restart, check these fields to determine if VCS work was done.
+
+### Pattern 3: Commit Hash Deduplication
+
+The VCS module uses `INSERT OR REPLACE` for commits:
+
+```tsx
+// Same commit won't create duplicates
+db.vcs.logCommit({ commit_hash: "abc123", ... });
+db.vcs.logCommit({ commit_hash: "abc123", ... }); // Updates existing
+```
+
+### Pattern 4: Worktree Isolation
+
+For parallel VCS operations, use worktrees to isolate changes:
+
+```tsx
+<WorktreeProvider>
+  <Parallel>
+    <Worktree name="feature-a">
+      <Claude>Implement feature A.</Claude>
+      <Commit message="feat: Add feature A" />
+    </Worktree>
+    <Worktree name="feature-b">
+      <Claude>Implement feature B.</Claude>
+      <Commit message="feat: Add feature B" />
+    </Worktree>
+  </Parallel>
+</WorktreeProvider>
+```
+
+Each worktree operates independently, preventing conflicts on restart.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use named steps for resumability">
+    Named steps can be matched on restart:
+    ```tsx
+    // Good - can resume
+    <Step name="implement-auth">
+      <Claude>Implement authentication.</Claude>
+    </Step>
+
+    // Bad - can't match on restart
+    <Step>
+      <Claude>Implement authentication.</Claude>
+    </Step>
+    ```
+  </Accordion>
+
+  <Accordion title="Check for existing work before VCS operations">
+    ```tsx
+    const existingCommit = db.vcs.getCommit(hash);
+    if (!existingCommit) {
+      // Safe to create commit
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use SMITHERS_EXECUTION_ID for deterministic IDs">
+    Set via environment for control plane integration:
+    ```bash
+    SMITHERS_EXECUTION_ID=job-123 bun run workflow.tsx
+    ```
+    The same ID on restart ensures continuity.
+  </Accordion>
+
+  <Accordion title="Always complete or fail steps">
+    Incomplete steps block phase advancement:
+    ```tsx
+    try {
+      // ... work
+      db.steps.complete(stepId);
+    } catch (err) {
+      db.steps.fail(stepId);
+      throw err;
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Database Persistence" icon="database" href="/concepts/database-persistence">
+    SQLite storage architecture
+  </Card>
+  <Card title="VCS Integration" icon="code-branch" href="/guides/vcs-integration">
+    Git and Jujutsu integration patterns
+  </Card>
+</CardGroup>

@@ -99,6 +99,14 @@ program
   });
 
 program
+  .command("demo")
+  .description("Create an interactive demo file to learn Smithers")
+  .action(async () => {
+    const { demo } = await import("../src/commands/demo.ts");
+    return demo();
+  });
+
+program
   .command("run [file]")
   .description("Run a Smithers orchestration file (default: .smithers/main.tsx)")
   .action(async (file?: string) => {
@@ -116,12 +124,13 @@ program
   });
 
 program
-  .command("db [subcommand]")
+  .command("db [subcommand] [args...]")
   .description("Inspect and manage the SQLite database")
   .option("--path <path>", "Database path", DEFAULT_DB_DIR)
-  .action(async (options, command) => {
+  .option("--execution-id <id>", "Filter by execution ID")
+  .action(async (subcommand: string | undefined, args: string[], options: { path?: string; executionId?: string }) => {
     const { dbCommand } = await import("../src/commands/db.ts");
-    return dbCommand(options, command);
+    return dbCommand(subcommand, options, args);
   });
 
 program

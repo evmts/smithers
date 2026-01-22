@@ -17,7 +17,11 @@ export interface CIFailure {
 }
 
 export interface OnCIFailureProps {
-  children: ReactNode
+  /**
+   * Content to render when a failure is detected.
+   * Can be a render prop function that receives the failure object.
+   */
+  children: ReactNode | ((failure: CIFailure) => ReactNode)
   /**
    * CI provider (currently only github-actions supported)
    */
@@ -295,6 +299,15 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
     }
   })
 
+  // Resolve children - support render prop pattern
+  const resolvedChildren = (() => {
+    if (!triggered || !currentFailure?.runId) return null
+    if (typeof props.children === 'function') {
+      return props.children(currentFailure)
+    }
+    return props.children
+  })()
+
   return (
     <ci-failure-hook
       provider={props.provider}
@@ -307,7 +320,7 @@ export function OnCIFailure(props: OnCIFailureProps): ReactNode {
       error={error}
     >
       {triggered && currentFailure?.runId
-        ? <ci-failure-run key={currentFailure.runId}>{props.children}</ci-failure-run>
+        ? <ci-failure-run key={currentFailure.runId}>{resolvedChildren}</ci-failure-run>
         : null}
     </ci-failure-hook>
   )

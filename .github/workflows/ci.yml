@@ -27,3 +27,6 @@ jobs:
 
       - name: Test
         run: bun test
+
+      - name: Typecheck docs examples
+        run: bun run typecheck:docs

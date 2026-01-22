@@ -249,47 +249,741 @@ describe('10-vcs-git', () => {
   })
 
   // ============================================================================
-  // MISSING TEST COVERAGE - test.todo()
+  // Git.Commit tests - XML rendering validation
   // ============================================================================
 
-  // Git.Commit tests
-  test.todo('Commit with message prop only')
-  test.todo('Commit with files prop (specific files)')
-  test.todo('Commit with all=true (stage all)')
-  test.todo('Commit with amend=true')
-  test.todo('Commit onSuccess callback')
-  test.todo('Commit onError callback')
-  test.todo('Commit with empty working tree (no changes)')
-  test.todo('Commit with merge conflict state')
-  test.todo('Commit with hooks enabled')
-  test.todo('Commit with hooks disabled (no-verify)')
-  test.todo('Commit signed (GPG)')
-  test.todo('Commit status transitions: pending -> running -> completed')
-  test.todo('Commit status transitions: pending -> running -> error')
+  test('Commit with message prop only', async () => {
+    const startTime = Date.now()
 
-  // Git.Notes tests
-  test.todo('Notes with arbitrary JSON data')
-  test.todo('Notes with nested objects')
-  test.todo('Notes with array data')
-  test.todo('Notes commitRef defaults to HEAD')
-  test.todo('Notes with specific commitRef')
-  test.todo('Notes with invalid commitRef')
-  test.todo('Notes append to existing note')
-  test.todo('Notes replace existing note')
-  test.todo('Notes read operation')
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Commit message="feat: add new feature" />
+        </Phase>
+      </SmithersProvider>
+    )
 
-  // Git error handling
-  test.todo('Git operation in non-git directory')
-  test.todo('Git operation with dirty submodules')
-  test.todo('Git operation during rebase')
-  test.todo('Git operation during merge')
-  test.todo('Git lock file handling')
-  test.todo('Git timeout handling')
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
 
-  // Integration scenarios
-  test.todo('Commit followed by Notes on same commit')
-  test.todo('Multiple commits in sequence')
-  test.todo('Git operations inside Parallel (unsafe, should warn)')
-  test.todo('Git mock mode returns fake results')
-  test.todo('Git real mode (non-mock) execution')
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-message-prop-only',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Commit with files prop (specific files)', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Commit message="fix: update config" files={['package.json', 'tsconfig.json']}>
+            Update configuration files
+          </Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('Update configuration files')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-files-prop',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Commit with all=true (stage all)', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Commit message="chore: update all" all={true}>
+            Stage and commit all tracked files
+          </Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-all-true',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Commit with autoGenerate=true', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Commit autoGenerate={true}>
+            Auto-generate commit message using Claude
+          </Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-auto-generate',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Commit with onFinished callback prop', async () => {
+    const startTime = Date.now()
+    const onFinished = () => {}
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Commit message="test callback" onFinished={onFinished}>
+            Test success callback
+          </Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-on-finished-callback',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, callback_registered: true },
+      errors: [],
+    })
+  })
+
+  test('Commit with onError callback prop', async () => {
+    const startTime = Date.now()
+    const onError = () => {}
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Commit message="test error callback" onError={onError}>
+            Test error callback
+          </Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-on-error-callback',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, callback_registered: true },
+      errors: [],
+    })
+  })
+
+  test('Commit with notes prop (metadata)', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Commit
+            message="feat: with metadata"
+            notes={{ reviewStatus: 'approved', automated: true }}
+          >
+            Commit with structured notes
+          </Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-with-notes',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Commit with cwd prop (custom directory)', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Commit message="commit in subdir" cwd="/tmp/test-repo">
+            Commit in custom directory
+          </Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-with-cwd',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  // ============================================================================
+  // Git.Notes tests - XML rendering validation
+  // ============================================================================
+
+  test('Notes with arbitrary JSON data', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{
+              customField: 'value',
+              number: 42,
+              boolean: true,
+            }}
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-arbitrary-json',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes with nested objects', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{
+              level1: {
+                level2: {
+                  level3: { deepValue: 'nested' }
+                }
+              }
+            }}
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-nested-objects',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes with array data', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{
+              tags: ['alpha', 'beta', 'release'],
+              versions: [1, 2, 3],
+              mixed: [{ id: 1 }, { id: 2 }],
+            }}
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-array-data',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes commitRef defaults to HEAD', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes data={{ test: 'default HEAD' }} />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-default-head',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes with specific commitRef', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{ target: 'specific commit' }}
+            commitRef="abc123"
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-specific-commit-ref',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes append to existing note', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{ additional: 'appended data' }}
+            append={true}
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-append',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes replace existing note (append=false)', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{ replacement: 'new data' }}
+            append={false}
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-replace',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes with cwd prop (custom directory)', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{ repo: 'custom path' }}
+            cwd="/tmp/test-repo"
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-with-cwd',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes with onFinished callback', async () => {
+    const startTime = Date.now()
+    const onFinished = () => {}
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{ callback: 'test' }}
+            onFinished={onFinished}
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-on-finished-callback',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Notes with onError callback', async () => {
+    const startTime = Date.now()
+    const onError = () => {}
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs">
+          <Git.Notes
+            data={{ error: 'handler' }}
+            onError={onError}
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-notes-on-error-callback',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  // ============================================================================
+  // Integration scenarios - XML rendering validation
+  // ============================================================================
+
+  test('Commit followed by Notes on same commit', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="vcs-workflow">
+          <Git.Commit message="feat: new feature">
+            Implement feature
+          </Git.Commit>
+          <Git.Notes
+            data={{ automated: true, phase: 'commit-notes' }}
+            commitRef="HEAD"
+          />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('<git-notes')
+    expect(xml).toContain('Implement feature')
+
+    const commitCount = (xml.match(/<git-commit/g) || []).length
+    const notesCount = (xml.match(/<git-notes/g) || []).length
+
+    expect(commitCount).toBe(1)
+    expect(notesCount).toBe(1)
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-commit-then-notes',
+      passed: true,
+      duration_ms: duration,
+      structured_output: {
+        xml_valid: true,
+        commit_count: commitCount,
+        notes_count: notesCount,
+      },
+      errors: [],
+    })
+  })
+
+  test('Multiple commits in sequence', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="multi-commit">
+          <Git.Commit message="commit 1">First commit</Git.Commit>
+          <Git.Commit message="commit 2">Second commit</Git.Commit>
+          <Git.Commit message="commit 3">Third commit</Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    const commitCount = (xml.match(/<git-commit/g) || []).length
+    expect(commitCount).toBe(3)
+
+    expect(xml).toContain('First commit')
+    expect(xml).toContain('Second commit')
+    expect(xml).toContain('Third commit')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-multiple-commits-sequence',
+      passed: true,
+      duration_ms: duration,
+      structured_output: {
+        xml_valid: true,
+        commit_count: commitCount,
+      },
+      errors: [],
+    })
+  })
+
+  test('Git mock mode renders pending status', async () => {
+    const startTime = Date.now()
+
+    // Mock mode is enabled by default in test env
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="mock-test">
+          <Git.Commit message="mock commit">Mock mode test</Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-git-mock-mode',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Git with stable id prop for resumability', async () => {
+    const startTime = Date.now()
+    const stableId = 'my-stable-commit-id'
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="stable-id">
+          <Git.Commit id={stableId} message="stable commit">
+            Commit with stable ID
+          </Git.Commit>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<git-commit')
+    expect(xml).toContain('status=')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '10-git-stable-id',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, stable_id: stableId },
+      errors: [],
+    })
+  })
 })

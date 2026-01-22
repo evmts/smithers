@@ -683,3 +683,226 @@ describe('OnCIFailure integration', () => {
     expect(state).toBeDefined()
   })
 })
+
+// ============================================================================
+// RENDER PROP TESTS
+// ============================================================================
+
+describe('OnCIFailure render prop pattern', () => {
+  let ctx: TestContext
+
+  beforeEach(async () => {
+    ctx = await createTestContext()
+  })
+
+  afterEach(() => {
+    cleanupTestContext(ctx)
+  })
+
+  test('accepts function as children (render prop)', async () => {
+    const renderProp = (failure: CIFailure) => (
+      <render-prop-child run-id={failure.runId} />
+    )
+
+    // Pre-set triggered state with failure
+    ctx.db.state.set(getStateKey(ctx), {
+      ciStatus: 'failed',
+      currentFailure: {
+        failed: true,
+        runId: '12345',
+        workflowName: 'CI',
+        failedJobs: ['test'],
+        logs: 'Error logs here'
+      },
+      triggered: true,
+      error: null,
+      processedRunIds: [12345],
+    }, 'test-setup')
+
+    await ctx.root.render(
+      <SmithersProvider
+        db={ctx.db}
+        executionId={ctx.executionId}
+        stopped={true}
+      >
+        <OnCIFailure provider="github-actions">
+          {renderProp}
+        </OnCIFailure>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 50))
+
+    const xml = ctx.root.toXML()
+    expect(xml).toContain('render-prop-child')
+    expect(xml).toContain('run-id="12345"')
+  })
+
+  test('render prop receives full CIFailure object', async () => {
+    let receivedFailure: CIFailure | null = null
+
+    const renderProp = (failure: CIFailure) => {
+      receivedFailure = failure
+      return <capture-failure />
+    }
+
+    const testFailure: CIFailure = {
+      failed: true,
+      runId: '99999',
+      workflowName: 'Build and Test',
+      failedJobs: ['unit-tests', 'lint'],
+      logs: 'Test failure logs\nLine 2'
+    }
+
+    ctx.db.state.set(getStateKey(ctx), {
+      ciStatus: 'failed',
+      currentFailure: testFailure,
+      triggered: true,
+      error: null,
+      processedRunIds: [99999],
+    }, 'test-setup')
+
+    await ctx.root.render(
+      <SmithersProvider
+        db={ctx.db}
+        executionId={ctx.executionId}
+        stopped={true}
+      >
+        <OnCIFailure provider="github-actions">
+          {renderProp}
+        </OnCIFailure>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 50))
+
+    expect(receivedFailure).not.toBeNull()
+    expect(receivedFailure!.failed).toBe(true)
+    expect(receivedFailure!.runId).toBe('99999')
+    expect(receivedFailure!.workflowName).toBe('Build and Test')
+    expect(receivedFailure!.failedJobs).toEqual(['unit-tests', 'lint'])
+    expect(receivedFailure!.logs).toContain('Test failure logs')
+  })
+
+  test('render prop not called when not triggered', async () => {
+    const renderProp = mock((_failure: CIFailure) => <render-prop-child />)
+
+    await ctx.root.render(
+      <SmithersProvider
+        db={ctx.db}
+        executionId={ctx.executionId}
+        stopped={true}
+      >
+        <OnCIFailure provider="github-actions">
+          {renderProp}
+        </OnCIFailure>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 50))
+
+    const xml = ctx.root.toXML()
+    expect(xml).not.toContain('render-prop-child')
+    expect(renderProp).not.toHaveBeenCalled()
+  })
+
+  test('static ReactNode children still work (backward compatibility)', async () => {
+    ctx.db.state.set(getStateKey(ctx), {
+      ciStatus: 'failed',
+      currentFailure: { failed: true, runId: '111' },
+      triggered: true,
+      error: null,
+      processedRunIds: [111],
+    }, 'test-setup')
+
+    await ctx.root.render(
+      <SmithersProvider
+        db={ctx.db}
+        executionId={ctx.executionId}
+        stopped={true}
+      >
+        <OnCIFailure provider="github-actions">
+          <static-child data-test="value" />
+        </OnCIFailure>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 50))
+
+    const xml = ctx.root.toXML()
+    expect(xml).toContain('static-child')
+    expect(xml).toContain('data-test="value"')
+  })
+
+  test('render prop can access failure.logs', async () => {
+    const renderProp = (failure: CIFailure) => (
+      <log-display logs={failure.logs ?? 'no-logs'} />
+    )
+
+    ctx.db.state.set(getStateKey(ctx), {
+      ciStatus: 'failed',
+      currentFailure: {
+        failed: true,
+        runId: '222',
+        logs: 'FATAL: Tests failed at line 42'
+      },
+      triggered: true,
+      error: null,
+      processedRunIds: [222],
+    }, 'test-setup')
+
+    await ctx.root.render(
+      <SmithersProvider
+        db={ctx.db}
+        executionId={ctx.executionId}
+        stopped={true}
+      >
+        <OnCIFailure provider="github-actions">
+          {renderProp}
+        </OnCIFailure>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 50))
+
+    const xml = ctx.root.toXML()
+    expect(xml).toContain('log-display')
+    expect(xml).toContain('FATAL: Tests failed at line 42')
+  })
+
+  test('render prop can access failure.failedJobs array', async () => {
+    const renderProp = (failure: CIFailure) => (
+      <job-list jobs={failure.failedJobs?.join('|') ?? ''} />
+    )
+
+    ctx.db.state.set(getStateKey(ctx), {
+      ciStatus: 'failed',
+      currentFailure: {
+        failed: true,
+        runId: '333',
+        failedJobs: ['build', 'test', 'deploy']
+      },
+      triggered: true,
+      error: null,
+      processedRunIds: [333],
+    }, 'test-setup')
+
+    await ctx.root.render(
+      <SmithersProvider
+        db={ctx.db}
+        executionId={ctx.executionId}
+        stopped={true}
+      >
+        <OnCIFailure provider="github-actions">
+          {renderProp}
+        </OnCIFailure>
+      </SmithersProvider>
+    )
+
+    await new Promise(r => setTimeout(r, 50))
+
+    const xml = ctx.root.toXML()
+    expect(xml).toContain('job-list')
+    expect(xml).toContain('build|test|deploy')
+  })
+})

@@ -255,50 +255,493 @@ describe('12-mcp-integration', () => {
   })
 
   // ============================================================================
-  // MISSING TEST COVERAGE - test.todo()
+  // Sqlite MCP tool tests - XML rendering validation
   // ============================================================================
 
-  // Sqlite MCP tool tests
-  test.todo('Sqlite with absolute path')
-  test.todo('Sqlite with relative path')
-  test.todo('Sqlite with in-memory database (:memory:)')
-  test.todo('Sqlite readOnly=true blocks writes')
-  test.todo('Sqlite readOnly=false allows writes')
-  test.todo('Sqlite with createIfMissing prop')
-  test.todo('Sqlite tool availability in Claude context')
-  test.todo('Sqlite query execution (non-mock)')
-  test.todo('Sqlite query result formatting')
-  test.todo('Sqlite error handling (invalid SQL)')
-  test.todo('Sqlite connection timeout')
-  test.todo('Sqlite large result set handling')
+  test('Sqlite with absolute path', async () => {
+    const startTime = Date.now()
 
-  // MCP server lifecycle
-  test.todo('MCP server starts on first use')
-  test.todo('MCP server stops on component unmount')
-  test.todo('MCP server reuses existing connection')
-  test.todo('MCP server reconnection on failure')
-  test.todo('MCP server timeout handling')
-  test.todo('MCP server stdio transport')
-  test.todo('MCP server SSE transport')
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="data">
+          <Sqlite path="/var/data/myapp.db">
+            Database at absolute path
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
 
-  // MCP tool integration
-  test.todo('Multiple MCP tools same Claude context')
-  test.todo('MCP tool invocation logged to DB')
-  test.todo('MCP tool result passed to Claude')
-  test.todo('MCP tool error handling')
-  test.todo('MCP tool with structured schema')
-  test.todo('MCP tool permissions/capabilities')
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
 
-  // Additional MCP tools
-  test.todo('Filesystem MCP tool')
-  test.todo('Fetch MCP tool')
-  test.todo('Memory MCP tool')
-  test.todo('Custom MCP server integration')
-  test.todo('MCP tool discovery/listing')
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+    expect(xml).toContain('/var/data/myapp.db')
 
-  // Edge cases
-  test.todo('MCP inside Parallel (resource sharing)')
-  test.todo('MCP server crash recovery')
-  test.todo('MCP with very long query')
-  test.todo('MCP mock mode returns fake results')
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-sqlite-absolute-path',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Sqlite with relative path', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="data">
+          <Sqlite path="./data/local.db">
+            Database at relative path
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+    expect(xml).toContain('./data/local.db')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-sqlite-relative-path',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Sqlite with in-memory database (:memory:)', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="data">
+          <Sqlite path=":memory:">
+            In-memory SQLite database for temporary operations
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+    expect(xml).toContain(':memory:')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-sqlite-in-memory',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Sqlite readOnly=true config', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="data">
+          <Sqlite path="./readonly.db" readOnly={true}>
+            Read-only database access
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+
+    // Verify config contains readOnly: true
+    const configMatch = xml.match(/config="([^"]+)"/)
+    expect(configMatch).toBeTruthy()
+    if (configMatch) {
+      const configJson = configMatch[1].replace(/&quot;/g, '"')
+      const config = JSON.parse(configJson)
+      expect(config.readOnly).toBe(true)
+    }
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-sqlite-readonly-true',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, readOnly: true },
+      errors: [],
+    })
+  })
+
+  test('Sqlite readOnly=false config', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="data">
+          <Sqlite path="./readwrite.db" readOnly={false}>
+            Read-write database access
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+
+    // Verify config contains readOnly: false
+    const configMatch = xml.match(/config="([^"]+)"/)
+    expect(configMatch).toBeTruthy()
+    if (configMatch) {
+      const configJson = configMatch[1].replace(/&quot;/g, '"')
+      const config = JSON.parse(configJson)
+      expect(config.readOnly).toBe(false)
+    }
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-sqlite-readonly-false',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, readOnly: false },
+      errors: [],
+    })
+  })
+
+  test('Sqlite without children (minimal)', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="data">
+          <Sqlite path="./minimal.db" />
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+    expect(xml).toContain('./minimal.db')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-sqlite-minimal',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Sqlite with schema description', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="data">
+          <Sqlite path="./schema.db">
+            Tables:
+            - users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)
+            - posts (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT, body TEXT)
+            - comments (id INTEGER PRIMARY KEY, post_id INTEGER, author TEXT, content TEXT)
+
+            Foreign keys:
+            - posts.user_id references users.id
+            - comments.post_id references posts.id
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+    expect(xml).toContain('users')
+    expect(xml).toContain('posts')
+    expect(xml).toContain('comments')
+    expect(xml).toContain('PRIMARY KEY')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-sqlite-schema-description',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  // ============================================================================
+  // MCP tool integration tests - XML rendering validation
+  // ============================================================================
+
+  test('Multiple MCP tools same Claude context', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="multi-tool">
+          <Claude model="sonnet">
+            <Sqlite path="./users.db">Users database</Sqlite>
+            <Sqlite path="./products.db" readOnly={true}>Products database</Sqlite>
+            <Sqlite path="./orders.db">Orders database</Sqlite>
+            Join data from all three databases
+          </Claude>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<claude')
+    const toolCount = (xml.match(/<mcp-tool/g) || []).length
+    expect(toolCount).toBe(3)
+
+    expect(xml).toContain('users.db')
+    expect(xml).toContain('products.db')
+    expect(xml).toContain('orders.db')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-multiple-mcp-tools-claude',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, tool_count: toolCount },
+      errors: [],
+    })
+  })
+
+  test('MCP tool in nested Phase structure', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="outer">
+          <Phase name="inner">
+            <Sqlite path="./nested.db">
+              Database in nested phase
+            </Sqlite>
+          </Phase>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<phase name="outer"')
+    expect(xml).toContain('<phase name="inner"')
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-mcp-nested-phase',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('MCP Sqlite with Claude and prompt text', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="query-task">
+          <Claude model="opus">
+            <Sqlite path="./analytics.db" readOnly={true}>
+              Analytics database with events table:
+              - timestamp: datetime
+              - event_type: text
+              - user_id: text
+              - metadata: json
+            </Sqlite>
+
+            Query the top 10 most frequent event types in the last 24 hours.
+            Format results as a markdown table.
+          </Claude>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<claude')
+    expect(xml).toContain('model="opus"')
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+    expect(xml).toContain('analytics.db')
+    expect(xml).toContain('top 10 most frequent')
+    expect(xml).toContain('markdown table')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-mcp-claude-prompt',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('MCP tool renders config JSON correctly', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="config-test">
+          <Sqlite path="./config-test.db" readOnly={true}>
+            Test config serialization
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    // Extract and parse config
+    const configMatch = xml.match(/config="([^"]+)"/)
+    expect(configMatch).toBeTruthy()
+
+    if (configMatch) {
+      const configJson = configMatch[1].replace(/&quot;/g, '"')
+      const config = JSON.parse(configJson)
+
+      expect(config).toHaveProperty('path')
+      expect(config).toHaveProperty('readOnly')
+      expect(config.path).toBe('./config-test.db')
+      expect(config.readOnly).toBe(true)
+    }
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-mcp-config-json',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, config_parsed: true },
+      errors: [],
+    })
+  })
+
+  test('MCP mock mode renders correctly', async () => {
+    const startTime = Date.now()
+
+    // Mock mode is enabled by default in test env
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="mock-test">
+          <Sqlite path="./mock.db">
+            Mock mode test
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<mcp-tool')
+    expect(xml).toContain('type="sqlite"')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-mcp-mock-mode',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true },
+      errors: [],
+    })
+  })
+
+  test('Multiple Sqlite in different Phases', async () => {
+    const startTime = Date.now()
+
+    await env.root.render(
+      <SmithersProvider db={env.db} executionId={env.executionId}>
+        <Phase name="read-phase">
+          <Sqlite path="./source.db" readOnly={true}>
+            Source database for reading
+          </Sqlite>
+        </Phase>
+        <Phase name="write-phase">
+          <Sqlite path="./target.db" readOnly={false}>
+            Target database for writing
+          </Sqlite>
+        </Phase>
+      </SmithersProvider>
+    )
+
+    const xml = env.root.toXML()
+    const duration = Date.now() - startTime
+
+    expect(xml).toContain('<phase name="read-phase"')
+    expect(xml).toContain('<phase name="write-phase"')
+
+    const toolCount = (xml.match(/<mcp-tool/g) || []).length
+    expect(toolCount).toBe(2)
+
+    expect(xml).toContain('source.db')
+    expect(xml).toContain('target.db')
+
+    const validation = validateXML(xml)
+    expect(validation.valid).toBe(true)
+
+    logEvalResult({
+      test: '12-sqlite-multiple-phases',
+      passed: true,
+      duration_ms: duration,
+      structured_output: { xml_valid: true, tool_count: toolCount },
+      errors: [],
+    })
+  })
 })

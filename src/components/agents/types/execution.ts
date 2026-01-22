@@ -97,6 +97,11 @@ export interface CLIExecutionOptions {
   maxTurns?: number
 
   /**
+   * Maximum tokens for output (wired to token_limit stop condition)
+   */
+  maxTokens?: number
+
+  /**
    * System prompt
    */
   systemPrompt?: string

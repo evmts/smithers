@@ -46,20 +46,38 @@ Requires [Jujutsu](https://github.com/martinvonz/jj): `brew install jj`
 
 ### Describe
 
+Auto-generates commit message from diff using optional AI assistance.
+
 ```tsx
-<Describe changeId="abc123" description="Updated description" />
+<Describe />
+<Describe useAgent="claude" />
+<Describe useAgent="claude" template="conventional-commits" />
 ```
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `changeId` | `string` | Change ID to describe |
-| `description` | `string` | New description |
+| `id` | `string?` | Optional operation ID for tracking |
+| `useAgent` | `'claude'?` | Use Claude to generate description from diff |
+| `template` | `string?` | Template format (e.g., "conventional-commits", "feat: {summary}") |
+| `children` | `ReactNode?` | Optional child content |
 
 ### Status
 
+Checks JJ working copy status and invokes callbacks based on dirty/clean state.
+
 ```tsx
-<Status onStatus={(status) => console.log(status)} />
+<Status
+  onDirty={(status) => console.log('Modified:', status.modified)}
+  onClean={() => console.log('Working copy is clean')}
+/>
 ```
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `id` | `string?` | Optional unique identifier |
+| `onDirty` | `(status: { modified: string[]; added: string[]; deleted: string[] }) => void?` | Called when working copy has changes |
+| `onClean` | `() => void?` | Called when working copy is clean |
+| `children` | `ReactNode?` | Optional child content |
 
 ### Rebase
 

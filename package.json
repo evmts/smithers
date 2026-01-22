@@ -11,7 +11,10 @@
     ".": "./dist/src/index.js",
     "./jsx-runtime": "./dist/src/reconciler/jsx-runtime.js",
     "./jsx-dev-runtime": "./dist/src/reconciler/jsx-runtime.js",
-    "./db": "./dist/src/db/index.js"
+    "./db": "./dist/src/db/index.js",
+    "./supersmithers": "./dist/src/supersmithers/index.js",
+    "./supersmithers/runtime": "./dist/src/supersmithers/runtime.js",
+    "./supersmithers/register": "./dist/src/supersmithers/register.js"
   },
   "files": [
     "dist",
@@ -29,6 +32,7 @@
     "build:lib": "bun scripts/build-lib.ts",
     "build:bin": "bun build ./bin/cli.ts --outdir dist/bin --target bun",
     "typecheck": "tsc --noEmit",
+    "typecheck:docs": "bun --config=/dev/null scripts/typecheck-docs.ts",
     "lint": "oxlint src/",
     "lint:fix": "oxlint --fix src/",
     "test": "bun test",

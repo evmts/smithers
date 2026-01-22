@@ -598,6 +598,7 @@ describe('CLI execution options validation', () => {
     expect(options.model).toBeUndefined()
     expect(options.permissionMode).toBeUndefined()
     expect(options.maxTurns).toBeUndefined()
+    expect(options.maxTokens).toBeUndefined()
     expect(options.systemPrompt).toBeUndefined()
     expect(options.outputFormat).toBeUndefined()
     expect(options.mcpConfig).toBeUndefined()
@@ -745,6 +746,49 @@ describe('pattern stop condition', () => {
     )
 
     expect(result.shouldStop).toBe(false)
+  })
+})
+
+describe('maxTokens option', () => {
+  test('maxTokens is optional in CLIExecutionOptions', () => {
+    const options: CLIExecutionOptions = {
+      prompt: 'test',
+    }
+    expect(options.maxTokens).toBeUndefined()
+  })
+
+  test('maxTokens can be set to a number', () => {
+    const options: CLIExecutionOptions = {
+      prompt: 'test',
+      maxTokens: 1000,
+    }
+    expect(options.maxTokens).toBe(1000)
+  })
+
+  test('token_limit stop condition triggers when total tokens exceed limit', () => {
+    const result = checkStopConditions(
+      [{ type: 'token_limit', value: 100 }],
+      { tokensUsed: { input: 60, output: 50 } }
+    )
+    expect(result.shouldStop).toBe(true)
+    expect(result.reason).toContain('Token limit')
+  })
+
+  test('token_limit stop condition does not trigger when under limit', () => {
+    const result = checkStopConditions(
+      [{ type: 'token_limit', value: 200 }],
+      { tokensUsed: { input: 60, output: 50 } }
+    )
+    expect(result.shouldStop).toBe(false)
+  })
+
+  test('token_limit with custom message', () => {
+    const result = checkStopConditions(
+      [{ type: 'token_limit', value: 100, message: 'Custom token limit exceeded' }],
+      { tokensUsed: { input: 60, output: 50 } }
+    )
+    expect(result.shouldStop).toBe(true)
+    expect(result.reason).toBe('Custom token limit exceeded')
   })
 })
 

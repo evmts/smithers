@@ -37,3 +37,17 @@ export {
   type CreateSmithersToolServerOptions,
 } from './tool-to-mcp.js'
 export { createReportTool, getReportToolDescription } from './ReportTool.js'
+export {
+  createLegacyToolServer,
+  type LegacyToolServerResult,
+  type LegacyToolDefinition,
+} from './legacy-tool-server.js'
+export {
+  registerHandlers,
+  startWatcher,
+  stopWatcher,
+  cleanupIpcDir,
+  getIpcDir,
+  type IPCRequest,
+  type IPCResponse,
+} from './legacy-tool-ipc.js'

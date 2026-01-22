@@ -555,7 +555,8 @@ CREATE INDEX IF NOT EXISTS idx_vcs_queue_status ON vcs_queue(status);
 CREATE TABLE IF NOT EXISTS supersmithers_modules (
   module_hash TEXT PRIMARY KEY,
   scope TEXT NOT NULL,
-  baseline_abs_path TEXT NOT NULL,
+  module_abs_path TEXT NOT NULL,
+  export_name TEXT NOT NULL DEFAULT 'default',
   created_at TEXT DEFAULT (datetime('now'))
 );
 

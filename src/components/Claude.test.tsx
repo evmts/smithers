@@ -67,6 +67,11 @@ describe('ClaudeProps interface', () => {
     expect(props.maxTurns).toBe(5)
   })
 
+  test('maxTokens is optional number', () => {
+    const props: ClaudeProps = { maxTokens: 4096 }
+    expect(props.maxTokens).toBe(4096)
+  })
+
   test('tools is optional string array', () => {
     const props: ClaudeProps = { tools: ['Read', 'Edit', 'Bash'] }
     expect(props.tools).toHaveLength(3)
@@ -218,6 +223,21 @@ describe('ClaudeProps interface', () => {
     const props: ClaudeProps = { onToolCall: callback }
     props.onToolCall?.('Read', { path: '/file.txt' })
     expect(callback).toHaveBeenCalledWith('Read', { path: '/file.txt' })
+  })
+
+  test('legacyLogFormat is optional boolean', () => {
+    const props: ClaudeProps = { legacyLogFormat: true }
+    expect(props.legacyLogFormat).toBe(true)
+  })
+
+  test('legacyLogFormat defaults to false when not specified', () => {
+    const props: ClaudeProps = {}
+    expect(props.legacyLogFormat).toBeUndefined()
+  })
+
+  test('recordStreamEvents is optional boolean', () => {
+    const props: ClaudeProps = { recordStreamEvents: false }
+    expect(props.recordStreamEvents).toBe(false)
   })
 })
 

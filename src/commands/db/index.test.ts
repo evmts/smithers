@@ -86,6 +86,11 @@ describe('db view exports', () => {
     expect(typeof showExecutions).toBe('function')
   })
 
+  test('exports showExecution', async () => {
+    const { showExecution } = await import('./index')
+    expect(typeof showExecution).toBe('function')
+  })
+
   test('exports showMemories', async () => {
     const { showMemories } = await import('./index')
     expect(typeof showMemories).toBe('function')

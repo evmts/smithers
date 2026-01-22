@@ -10,6 +10,20 @@ import { SmithersProvider } from '../SmithersProvider.js'
 import { Describe } from './Describe.js'
 
 describe('DescribeProps interface', () => {
+  test('does NOT have deprecated changeId/description props', () => {
+    // Verify the old API (changeId, description) is not present
+    // The new API uses useAgent/template for AI-assisted description generation
+    const props: DescribeProps = {
+      useAgent: 'claude',
+      template: 'conventional-commits',
+    }
+    // These would be TypeScript errors if they existed:
+    // @ts-expect-error - changeId is not a valid prop
+    expect((props as { changeId?: string }).changeId).toBeUndefined()
+    // @ts-expect-error - description is not a valid prop
+    expect((props as { description?: string }).description).toBeUndefined()
+  })
+
   test('useAgent is optional', () => {
     const props: DescribeProps = {}
     expect(props.useAgent).toBeUndefined()
@@ -38,6 +52,11 @@ describe('DescribeProps interface', () => {
 
     expect(props.useAgent).toBe('claude')
     expect(props.template).toBe('conventional-commits')
+  })
+
+  test('id prop is optional', () => {
+    const props: DescribeProps = { id: 'custom-id' }
+    expect(props.id).toBe('custom-id')
   })
 })
 

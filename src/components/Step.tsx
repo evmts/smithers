@@ -10,6 +10,7 @@ import { StepContext } from './StepContext.js'
 import { useEffectOnValueChange, useUnmount } from '../reconciler/hooks.js'
 import { createLogger, type Logger } from '../debug/index.js'
 import { useRequireRalph } from './While.js'
+import { isJJRepo, jjSnapshot, jjCommit, getJJStatus, getJJDiffStats } from '../utils/vcs.js'
 
 // ============================================================================
 // STEP REGISTRY CONTEXT (for sequential execution within a phase)
@@ -191,6 +192,14 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
 export interface StepProps {
   name?: string
   children: ReactNode
+  /** Create a JJ snapshot before step execution. Useful for rollback if step fails. */
+  snapshotBefore?: boolean
+  /** Create a JJ snapshot after step completes successfully. */
+  snapshotAfter?: boolean
+  /** Create a JJ commit after step completes. Logged to db.vcs.logCommit(). */
+  commitAfter?: boolean
+  /** Custom commit message when commitAfter is true. Defaults to "Step: {step-name}". */
+  commitMessage?: string
   onStart?: () => void
   onComplete?: () => void
   onError?: (error: Error) => void
@@ -251,11 +260,90 @@ export function Step(props: StepProps): ReactNode {
     [executionId, ralphCount, stepScopeId, 'step']
   )
 
-  const completeStep = useCallback(() => {
+  // VCS helper: create snapshot before step
+  const doSnapshotBefore = useCallback(async () => {
+    if (!props.snapshotBefore) return
+    try {
+      const isJJ = await isJJRepo()
+      if (!isJJ) {
+        log.warn('snapshotBefore: JJ not available, skipping')
+        return
+      }
+      const snapshotResult = await jjSnapshot(`Before step: ${props.name ?? 'unnamed'}`)
+      const fileStatus = await getJJStatus()
+      db.vcs.logSnapshot({
+        change_id: snapshotResult.changeId,
+        description: snapshotResult.description,
+        files_modified: fileStatus.modified,
+        files_added: fileStatus.added,
+        files_deleted: fileStatus.deleted,
+      })
+      log.info('Snapshot before', { changeId: snapshotResult.changeId })
+    } catch (err) {
+      log.warn('snapshotBefore failed (continuing)', { error: err instanceof Error ? err.message : String(err) })
+    }
+  }, [db, log, props.name, props.snapshotBefore])
+
+  // VCS helper: create snapshot after step
+  const doSnapshotAfter = useCallback(async () => {
+    if (!props.snapshotAfter) return
+    try {
+      const isJJ = await isJJRepo()
+      if (!isJJ) {
+        log.warn('snapshotAfter: JJ not available, skipping')
+        return
+      }
+      const snapshotResult = await jjSnapshot(`After step: ${props.name ?? 'unnamed'}`)
+      const fileStatus = await getJJStatus()
+      db.vcs.logSnapshot({
+        change_id: snapshotResult.changeId,
+        description: snapshotResult.description,
+        files_modified: fileStatus.modified,
+        files_added: fileStatus.added,
+        files_deleted: fileStatus.deleted,
+      })
+      log.info('Snapshot after', { changeId: snapshotResult.changeId })
+    } catch (err) {
+      log.warn('snapshotAfter failed (continuing)', { error: err instanceof Error ? err.message : String(err) })
+    }
+  }, [db, log, props.name, props.snapshotAfter])
+
+  // VCS helper: commit after step
+  const doCommitAfter = useCallback(async () => {
+    if (!props.commitAfter) return
+    try {
+      const isJJ = await isJJRepo()
+      if (!isJJ) {
+        log.warn('commitAfter: JJ not available, skipping')
+        return
+      }
+      const message = props.commitMessage ?? `Step: ${props.name ?? 'unnamed'}`
+      const commitResult = await jjCommit(message)
+      const stats = await getJJDiffStats()
+      db.vcs.logCommit({
+        vcs_type: 'jj',
+        commit_hash: commitResult.commitHash,
+        change_id: commitResult.changeId,
+        message,
+        files_changed: stats.files,
+        insertions: stats.insertions,
+        deletions: stats.deletions,
+      })
+      log.info('Commit after', { commitHash: commitResult.commitHash, changeId: commitResult.changeId })
+    } catch (err) {
+      log.warn('commitAfter failed (continuing)', { error: err instanceof Error ? err.message : String(err) })
+    }
+  }, [db, log, props.commitAfter, props.commitMessage, props.name])
+
+  const completeStep = useCallback(async () => {
     const id = stepIdRef.current
     if (!id) return
 
     try {
+      // Run VCS operations before marking complete
+      await doSnapshotAfter()
+      await doCommitAfter()
+
       db.steps.complete(id)
       log.info('Completed', { stepId: id })
       registry?.markStepComplete(myIndex)
@@ -272,7 +360,7 @@ export function Step(props: StepProps): ReactNode {
         db.tasks.complete(taskIdRef.current)
       }
     }
-  }, [db, log, myIndex, props.onComplete, props.onError, registry])
+  }, [db, doCommitAfter, doSnapshotAfter, log, myIndex, props.onComplete, props.onError, registry])
 
   const maybeCompleteStep = useCallback((runningCount: number, totalCount: number) => {
     if (!hasStartedRef.current || hasCompletedRef.current) return
@@ -286,11 +374,14 @@ export function Step(props: StepProps): ReactNode {
     }
   }, [completeStep, executionScope.enabled, isActive])
 
-  const startStep = useCallback(() => {
+  const startStep = useCallback(async () => {
     if (isDbClosed()) return
     taskIdRef.current = db.tasks.start('step', props.name, { scopeId: stepScopeId })
 
     try {
+      // Run snapshotBefore VCS operation
+      await doSnapshotBefore()
+
       const id = db.steps.start(props.name)
       stepIdRef.current = id
       log.info('Started', { stepId: id })
@@ -308,7 +399,7 @@ export function Step(props: StepProps): ReactNode {
         db.tasks.complete(taskIdRef.current)
       }
     }
-  }, [db, log, props.name, props.onError, props.onStart, stepScopeId])
+  }, [db, doSnapshotBefore, log, props.name, props.onError, props.onStart, stepScopeId])
 
   useEffectOnValueChange(canExecute, () => {
     if (!canExecute || hasStartedRef.current) return

@@ -115,6 +115,39 @@ describe('Step component', () => {
       }
       expect(props.onError).toBe(onError)
     })
+
+    test('accepts optional snapshotBefore prop', () => {
+      const props: StepProps = {
+        children: <div />,
+        snapshotBefore: true,
+      }
+      expect(props.snapshotBefore).toBe(true)
+    })
+
+    test('accepts optional snapshotAfter prop', () => {
+      const props: StepProps = {
+        children: <div />,
+        snapshotAfter: true,
+      }
+      expect(props.snapshotAfter).toBe(true)
+    })
+
+    test('accepts optional commitAfter prop', () => {
+      const props: StepProps = {
+        children: <div />,
+        commitAfter: true,
+      }
+      expect(props.commitAfter).toBe(true)
+    })
+
+    test('accepts optional commitMessage prop', () => {
+      const props: StepProps = {
+        children: <div />,
+        commitAfter: true,
+        commitMessage: 'feat: implement feature',
+      }
+      expect(props.commitMessage).toBe('feat: implement feature')
+    })
   })
 
   describe('StepRegistryProviderProps interface', () => {
