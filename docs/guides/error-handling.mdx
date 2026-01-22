@@ -17,7 +17,7 @@ description: Handle errors gracefully in Smithers workflows
 ## Retry with State
 
 ```tsx
-import { useSmithers, If, Stop } from "smithers-orchestrator";
+import { useSmithers, If, Stop, Claude } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/db";
 
 function RetryWorkflowBody() {

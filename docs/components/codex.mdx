@@ -22,11 +22,29 @@ Wraps OpenAI Codex CLI for code-focused AI agent tasks. Alternative to Claude wi
 | `fullAuto` | `boolean` | `false` | Enable full-auto mode (approves edits, workspace write) |
 | `sandboxMode` | `'read-only' \| 'workspace-write' \| 'danger-full-access'` | - | Sandbox mode for commands |
 | `approvalPolicy` | `'untrusted' \| 'on-failure' \| 'on-request' \| 'never'` | - | Approval policy |
+| `bypassSandbox` | `boolean` | `false` | Bypass all approvals and sandbox (EXTREMELY DANGEROUS) |
 | `cwd` | `string` | - | Working directory |
+| `skipGitRepoCheck` | `boolean` | `false` | Skip git repository check |
+| `addDirs` | `string[]` | - | Additional directories that should be writable |
+| `images` | `string[]` | - | Images to attach to the prompt |
+| `profile` | `string` | - | Configuration profile from config.toml |
+| `configOverrides` | `Record<string, unknown>` | - | Configuration overrides (key=value pairs) |
+| `stopConditions` | `StopCondition[]` | - | Conditions that will stop the agent |
 | `timeout` | `number` | `300000` | Timeout in ms |
 | `schema` | `ZodType` | - | Structured output schema |
+| `schemaRetries` | `number` | `2` | Maximum retries for schema validation failures |
 | `onFinished` | `(result: AgentResult) => void` | - | Success callback |
 | `onError` | `(error: Error) => void` | - | Error callback |
+| `onProgress` | `(message: string) => void` | - | Progress callback |
+| `onStreamPart` | `(part: SmithersStreamPart) => void` | - | Stream part callback for typed stream events |
+| `reportingEnabled` | `boolean` | `false` | Enable database reporting for this agent |
+| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | - | Validation function for result |
+| `retryOnValidationFailure` | `boolean` | `false` | Retry if validation fails |
+| `maxRetries` | `number` | - | Maximum retry attempts |
+| `tailLogCount` | `number` | `10` | Number of tail log entries during execution |
+| `tailLogLines` | `number` | `10` | Number of lines per tail log entry |
+| `middleware` | `SmithersMiddleware[]` | - | Middleware applied to execution |
+| `jsonOutput` | `boolean` | `false` | Enable JSON output mode |
 
 ## With Structured Output
 

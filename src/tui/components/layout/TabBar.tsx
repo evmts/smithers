@@ -7,7 +7,7 @@ import { colors } from '../../utils/colors.js'
 export interface TabBarProps {
   tabs: TabInfo[]
   activeTab: TabKey
-  onTabChange: (tab: TabKey) => void
+  onTabChange?: (tab: TabKey) => void
 }
 
 export function TabBar({ tabs, activeTab }: TabBarProps) {

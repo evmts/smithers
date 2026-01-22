@@ -1,4 +1,5 @@
 import * as nodePath from 'path'
+import { isSensitiveFile } from './security.js'
 
 export interface GrepOptions {
   pattern: string
@@ -13,24 +14,6 @@ export interface GrepMatch {
   file: string
   line: number
   content: string
-}
-
-const SENSITIVE_PATTERNS = [
-  /^\.env$/,
-  /^\.env\..+$/,
-  /\.pem$/,
-  /\.key$/,
-  /^\.npmrc$/,
-  /^id_rsa/,
-  /\.p12$/,
-  /\.pfx$/,
-  /^\.git-credentials$/,
-  /^\.netrc$/,
-]
-
-export function isSensitiveFile(filePath: string): boolean {
-  const basename = nodePath.basename(filePath)
-  return SENSITIVE_PATTERNS.some(pattern => pattern.test(basename))
 }
 
 export async function grep(opts: GrepOptions): Promise<GrepMatch[]> {

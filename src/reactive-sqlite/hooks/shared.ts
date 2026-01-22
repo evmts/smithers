@@ -3,6 +3,14 @@
  */
 
 import { useRef, useCallback, useSyncExternalStore } from 'react'
+import type { ReactiveDatabase } from '../database.js'
+
+/**
+ * Type guard to detect if an object is a ReactiveDatabase
+ */
+export function isReactiveDatabase(obj: unknown): obj is ReactiveDatabase {
+  return obj !== null && typeof obj === 'object' && 'subscribe' in obj && typeof (obj as any).subscribe === 'function'
+}
 
 /**
  * Hook for a simple in-memory signal store.

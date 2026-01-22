@@ -43,6 +43,22 @@ interface UseCodexResult {
 }
 ```
 
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | — | The prompt to send to Codex |
+| `model` | `'o3' \| 'o4-mini' \| 'gpt-4o' \| 'gpt-4' \| string` | `'o4-mini'` | Codex model to use |
+| `sandboxMode` | `'read-only' \| 'workspace-write' \| 'danger-full-access'` | — | Sandbox mode for command execution |
+| `approvalPolicy` | `'untrusted' \| 'on-failure' \| 'on-request' \| 'never'` | — | Approval policy for commands |
+| `fullAuto` | `boolean` | — | Enable full-auto mode (sets `-a on-request --sandbox workspace-write`) |
+| `bypassSandbox` | `boolean` | — | Bypass all approvals and sandbox (EXTREMELY DANGEROUS) |
+| `timeout` | `number` | — | Timeout in milliseconds |
+| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Validate result before accepting |
+| `stopConditions` | `StopCondition[]` | — | Conditions that will stop the agent |
+| `schema` | `z.ZodType` | — | Zod schema for structured output validation |
+| `cwd` | `string` | — | Working directory for the agent |
+
 ## Notes
 
 - Requires `SmithersProvider` context.

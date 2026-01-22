@@ -10,3 +10,16 @@ src/.smithers/
 .smithers/
 tapes/_vhs_smithers/
 src/god-tui/.zig-cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/

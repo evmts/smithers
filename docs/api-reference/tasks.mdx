@@ -20,14 +20,14 @@ db.tasks.complete(taskId);
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `start` | `(componentType: string, componentName?: string) => string` | Start task |
+| `start` | `(componentType: string, componentName?: string, options?: { scopeId?: string \| null }) => string` | Start task |
 | `complete` | `(id: string) => void` | Mark complete |
 | `fail` | `(id: string) => void` | Mark failed (does not stop orchestration) |
 | `getRunningCount` | `(iteration: number) => number` | Count running tasks |
 | `getTotalCount` | `(iteration: number) => number` | Count all tasks |
 | `list` | `() => Task[]` | List all tasks |
 | `getCurrentIteration` | `() => number` | Get current Ralph iteration |
-| `withTask` | `<T>(type: string, name: string, fn: () => T) => Promise<T>` | Execute within task lifecycle |
+| `withTask` | `<T>(type: string, name: string \| undefined, options: { scopeId?: string \| null } \| undefined, fn: () => T \| Promise<T>) => Promise<T>` | Execute within task lifecycle |
 
 ## Usage
 
@@ -56,6 +56,7 @@ interface Task {
   id: string;
   execution_id: string;
   iteration: number;
+  scope_id: string | null;
   component_type: string;
   component_name: string | null;
   status: 'running' | 'completed' | 'failed';

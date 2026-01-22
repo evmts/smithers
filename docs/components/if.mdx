@@ -19,8 +19,8 @@ description: Conditional rendering component
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `condition` | `boolean` | Children render only when true |
-| `children` | `ReactNode` | Content to render when condition is true |
+| `condition` | `unknown` | Children render when truthy (any truthy/falsy value) |
+| `children` | `ReactNode` | Content to render when condition is truthy |
 
 ## Multi-Phase Workflow
 

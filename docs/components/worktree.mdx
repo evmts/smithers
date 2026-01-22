@@ -32,6 +32,7 @@ All nested components automatically operate in the worktree directory.
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
+| `id` | `string?` | `branch` | Stable identifier for resumability |
 | `branch` | `string` | required | Branch name. Created from `base` if doesn't exist |
 | `base` | `string` | `"HEAD"` | Base ref when creating new branch |
 | `path` | `string` | `.worktrees/${branch}` | Worktree directory path |

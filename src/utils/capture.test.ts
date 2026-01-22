@@ -1,7 +1,10 @@
 /**
  * Unit tests for capture.ts - content classification and template generation
  */
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   classifyContent,
   extractCommitHash,
@@ -12,7 +15,11 @@ import {
   generateReviewTemplate,
   generateIssueTemplate,
   generateTodoItem,
+  generateFilePath,
+  writeCapture,
+  capture,
   type CaptureContext,
+  type GeneratedCapture,
 } from './capture.js'
 
 describe('classifyContent', () => {
@@ -543,5 +550,256 @@ describe('PATTERNS', () => {
     expect(PATTERNS.issue).toBeDefined()
     expect(PATTERNS.todo).toBeDefined()
     expect(PATTERNS.prompt).toBeDefined()
+  })
+})
+
+// ============================================================================
+// File I/O Tests
+// ============================================================================
+
+describe('generateFilePath', () => {
+  test('generates review path with timestamp and hash', async () => {
+    const ctx: CaptureContext = {
+      content: 'Review content',
+      commitHash: 'abc1234def',
+    }
+    const path = await generateFilePath('review', ctx, '/tmp/test-capture')
+    expect(path).toMatch(/^\/tmp\/test-capture\/reviews\/\d{8}_\d{6}_abc1234\.md$/)
+  })
+
+  test('generates review path extracting hash from content', async () => {
+    const ctx: CaptureContext = {
+      content: 'Review commit f691852 changes',
+    }
+    const path = await generateFilePath('review', ctx, '/tmp/test-capture')
+    expect(path).toMatch(/^\/tmp\/test-capture\/reviews\/\d{8}_\d{6}_f691852\.md$/)
+  })
+
+  test('generates review path with "manual" when no hash', async () => {
+    const ctx: CaptureContext = {
+      content: 'Review without hash',
+    }
+    const path = await generateFilePath('review', ctx, '/tmp/test-capture')
+    expect(path).toMatch(/^\/tmp\/test-capture\/reviews\/\d{8}_\d{6}_manual\.md$/)
+  })
+
+  test('generates issue path with kebab-case title', async () => {
+    const ctx: CaptureContext = {
+      content: 'Issue details',
+      title: 'Add WebSocket Support',
+    }
+    const path = await generateFilePath('issue', ctx, '/tmp/test-capture')
+    expect(path).toBe('/tmp/test-capture/issues/add-websocket-support.md')
+  })
+
+  test('generates issue path extracting title from content', async () => {
+    const ctx: CaptureContext = {
+      content: 'Improve Error Handling\n\nMore details here',
+    }
+    const path = await generateFilePath('issue', ctx, '/tmp/test-capture')
+    expect(path).toBe('/tmp/test-capture/issues/improve-error-handling.md')
+  })
+
+  test('generates todo path as TODO.md', async () => {
+    const ctx: CaptureContext = { content: 'Task item' }
+    const path = await generateFilePath('todo', ctx, '/tmp/test-capture')
+    expect(path).toBe('/tmp/test-capture/TODO.md')
+  })
+
+  test('generates prompt path as PROMPT.md', async () => {
+    const ctx: CaptureContext = { content: 'Context info' }
+    const path = await generateFilePath('prompt', ctx, '/tmp/test-capture')
+    expect(path).toBe('/tmp/test-capture/PROMPT.md')
+  })
+})
+
+describe('writeCapture', () => {
+  let tempDir: string
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'capture-test-'))
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('writes new file', async () => {
+    const generated: GeneratedCapture = {
+      type: 'issue',
+      filePath: join(tempDir, 'issues', 'test-issue.md'),
+      content: '# Test Issue\n\nContent here',
+      isAppend: false,
+    }
+
+    await writeCapture(generated)
+
+    const written = await Bun.file(generated.filePath).text()
+    expect(written).toBe('# Test Issue\n\nContent here')
+  })
+
+  test('creates parent directories', async () => {
+    const generated: GeneratedCapture = {
+      type: 'review',
+      filePath: join(tempDir, 'deep', 'nested', 'path', 'review.md'),
+      content: 'Review content',
+      isAppend: false,
+    }
+
+    await writeCapture(generated)
+
+    const written = await Bun.file(generated.filePath).text()
+    expect(written).toBe('Review content')
+  })
+
+  test('appends to existing file', async () => {
+    const filePath = join(tempDir, 'TODO.md')
+    await Bun.write(filePath, '## Existing\n\n- [ ] Task 1')
+
+    const generated: GeneratedCapture = {
+      type: 'todo',
+      filePath,
+      content: '\n## New\n\n- [ ] Task 2',
+      isAppend: true,
+    }
+
+    await writeCapture(generated)
+
+    const written = await Bun.file(filePath).text()
+    // writeCapture adds a separator newline between existing and new content
+    expect(written).toBe('## Existing\n\n- [ ] Task 1\n\n## New\n\n- [ ] Task 2')
+  })
+
+  test('appends to empty file', async () => {
+    const filePath = join(tempDir, 'PROMPT.md')
+    await Bun.write(filePath, '')
+
+    const generated: GeneratedCapture = {
+      type: 'prompt',
+      filePath,
+      content: 'New content',
+      isAppend: true,
+    }
+
+    await writeCapture(generated)
+
+    const written = await Bun.file(filePath).text()
+    expect(written).toBe('New content')
+  })
+
+  test('appends to non-existent file (creates it)', async () => {
+    const filePath = join(tempDir, 'new-file.md')
+
+    const generated: GeneratedCapture = {
+      type: 'todo',
+      filePath,
+      content: '- [ ] First task',
+      isAppend: true,
+    }
+
+    await writeCapture(generated)
+
+    const written = await Bun.file(filePath).text()
+    expect(written).toBe('- [ ] First task')
+  })
+
+  test('overwrites existing file when not appending', async () => {
+    const filePath = join(tempDir, 'overwrite.md')
+    await Bun.write(filePath, 'Old content')
+
+    const generated: GeneratedCapture = {
+      type: 'issue',
+      filePath,
+      content: 'New content',
+      isAppend: false,
+    }
+
+    await writeCapture(generated)
+
+    const written = await Bun.file(filePath).text()
+    expect(written).toBe('New content')
+  })
+})
+
+describe('capture (full integration)', () => {
+  let tempDir: string
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'capture-integration-'))
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  test('captures review type correctly', async () => {
+    const result = await capture({
+      content: 'Commit abc1234 has a bug in auth.ts:45',
+      cwd: tempDir,
+    })
+
+    expect(result.type).toBe('review')
+    expect(result.filePath).toContain('/reviews/')
+    expect(result.filePath).toContain('abc1234')
+    expect(result.isAppend).toBe(false)
+    expect(result.content).toContain('# Code Review for Commit')
+  })
+
+  test('captures issue type correctly', async () => {
+    const result = await capture({
+      content: 'We should add WebSocket support for real-time features',
+      cwd: tempDir,
+    })
+
+    expect(result.type).toBe('issue')
+    expect(result.filePath).toContain('/issues/')
+    expect(result.isAppend).toBe(false)
+    expect(result.content).toContain('## Problem Statement')
+  })
+
+  test('captures todo type correctly', async () => {
+    const result = await capture({
+      content: '- [ ] Must fix critical bug immediately',
+      cwd: tempDir,
+    })
+
+    expect(result.type).toBe('todo')
+    expect(result.filePath).toEndWith('TODO.md')
+    expect(result.isAppend).toBe(true)
+    expect(result.content).toContain('- [ ]')
+  })
+
+  test('captures prompt type correctly', async () => {
+    const result = await capture({
+      content: 'Put this in PROMPT.md: important context',
+      cwd: tempDir,
+    })
+
+    expect(result.type).toBe('prompt')
+    expect(result.filePath).toEndWith('PROMPT.md')
+    expect(result.content).toContain('important context')
+  })
+
+  test('sets isAppend true for prompt when PROMPT.md exists', async () => {
+    // Create existing PROMPT.md
+    await Bun.write(join(tempDir, 'PROMPT.md'), 'Existing content')
+
+    const result = await capture({
+      content: 'Add this to PROMPT.md: more context',
+      cwd: tempDir,
+    })
+
+    expect(result.type).toBe('prompt')
+    expect(result.isAppend).toBe(true)
+  })
+
+  test('sets isAppend false for prompt when PROMPT.md does not exist', async () => {
+    const result = await capture({
+      content: 'Put this in PROMPT.md: first entry',
+      cwd: tempDir,
+    })
+
+    expect(result.type).toBe('prompt')
+    expect(result.isAppend).toBe(false)
   })
 })

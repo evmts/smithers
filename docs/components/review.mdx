@@ -22,11 +22,11 @@ description: AI-powered code review with configurable criteria
 |------|------|---------|-------------|
 | `target` | `ReviewTarget` | required | What to review (see below) |
 | `criteria` | `string[]` | `[]` | Review criteria to check |
-| `model` | `'opus' \| 'sonnet' \| 'haiku'` | `'sonnet'` | Model for review |
+| `model` | `string` | `'claude-sonnet-4'` | Model to use for review |
 | `blocking` | `boolean` | `false` | Block workflow on failure |
 | `postToGitHub` | `boolean` | `false` | Post comments to GitHub PR |
 | `postToGitNotes` | `boolean` | `false` | Store review in git notes |
-| `agent` | `Claude props` | - | Custom agent configuration |
+| `agent` | `'claude'` | - | Agent to use (currently only 'claude') |
 | `onFinished` | `(result: ReviewResult) => void` | - | Called on completion |
 | `onError` | `(error: Error) => void` | - | Called on error |
 

@@ -40,6 +40,10 @@ import { OnCIFailure } from "smithers-orchestrator";
   CI provider to monitor. Currently only GitHub Actions is supported.
 </ParamField>
 
+<ParamField path="branch" type="string">
+  Branch to monitor (defaults to repo default branch when available).
+</ParamField>
+
 <ParamField path="pollInterval" type="number" default="30000">
   Polling interval in milliseconds.
 </ParamField>

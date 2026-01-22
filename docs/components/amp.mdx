@@ -34,9 +34,13 @@ Runs the Amp CLI as a Smithers agent with DB-backed reporting and retry logic.
 | `onStreamPart` | `(part: SmithersStreamPart) => void` | - | Typed stream events |
 | `reportingEnabled` | `boolean` | `true` | DB reporting |
 | `maxRetries` | `number` | `3` | Retry attempts |
+| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | - | Custom validation function |
 | `retryOnValidationFailure` | `boolean` | `false` | Retry on validation failure |
+| `stopConditions` | `StopCondition[]` | - | Conditions for early termination |
 | `tailLogCount` | `number` | `10` | Tail log entries |
 | `tailLogLines` | `number` | `10` | Lines per entry |
+| `middleware` | `SmithersMiddleware[]` | - | Execution middleware |
+| `recordStreamEvents` | `boolean` | `true` (when reportingEnabled) | Record stream events to DB |
 
 ## Related
 

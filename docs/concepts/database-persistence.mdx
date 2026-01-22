@@ -113,26 +113,12 @@ Every state change is recorded:
 // Get history for a key
 const history = db.state.history("phase", 10);
 // [
-//   { id: "t1", key: "phase", value: "start", trigger: "init", timestamp: ... },
+//   { id: "t1", key: "phase", value: "start", trigger: "init", created_at: ... },
 //   { id: "t2", key: "phase", value: "review", trigger: "tests_passed", ... },
 // ]
 
-// Time-travel: replay to a previous state
-db.state.replayTo("t1");
-// State is now back to what it was at transition t1
-```
-
-### Snapshots
-
-Save and restore complete state:
-
-```tsx
-// Take a snapshot
-const snapshot = db.state.snapshot();
-// { phase: "review", data: {...}, attempts: 3 }
-
-// Later, restore the snapshot
-db.state.restore(snapshot, "rollback");
+// Get all transitions (no key filter)
+const allHistory = db.state.history(undefined, 100);
 ```
 
 ## Agent Tracking

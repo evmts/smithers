@@ -98,15 +98,17 @@ function IterativeWorkflowBody({ attempts, testsPassing }) {
 }
 
 export function IterativeWorkflow({ db, executionId }) {
+  const { reactiveDb } = useSmithers();
+  
   // State in SQLite, not useState (see State Management docs)
   const { data: attemptsVal } = useQueryValue<number>(
-    db.reactive,
+    reactiveDb,
     "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'attempts'"
   );
   const attempts = attemptsVal ?? 0;
 
   const { data: testsPassingVal } = useQueryValue<number>(
-    db.reactive,
+    reactiveDb,
     "SELECT CAST(value AS INTEGER) as v FROM state WHERE key = 'tests_passing'"
   );
   const testsPassing = Boolean(testsPassingVal);
@@ -224,9 +226,11 @@ function PhaseWorkflowBody({ phase, setPhase }) {
 }
 
 export function PhaseWorkflow({ db, executionId }) {
+  const { reactiveDb } = useSmithers();
+  
   // State in SQLite, not useState
   const { data: phaseVal } = useQueryValue<string>(
-    db.reactive,
+    reactiveDb,
     "SELECT value FROM state WHERE key = 'phase'"
   );
   const phase = phaseVal ?? "research";
@@ -660,8 +664,10 @@ function RetryWorkflow() {
 }
 
 function App() {
+  const { reactiveDb } = useSmithers();
+  
   const { data: doneRaw } = useQueryValue<number>(
-    db.reactive,
+    reactiveDb,
     "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'"
   );
   const done = Boolean(doneRaw);

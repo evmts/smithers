@@ -151,6 +151,18 @@ For iterative workflows, wrap with `<Ralph>` or `<While>` - see [Ralph](/compone
   ```
 </ParamField>
 
+<ParamField path="onComplete" type="() => void">
+  Called when orchestration completes.
+
+  ```tsx
+  <SmithersProvider
+    db={db}
+    executionId={executionId}
+    onComplete={() => console.log("Workflow finished")}
+  >
+  ```
+</ParamField>
+
 ## Context Values
 
 Child components can access the context using the `useSmithers` hook:
@@ -274,23 +286,23 @@ function DatabaseAccessExample() {
 
 ## Reactive Queries
 
-Use reactive database queries with the `useQuery` hook:
+Use reactive database queries with the `useQueryValue` hook:
 
 ```tsx
-import { useQuery } from "smithers-orchestrator/db";
+import { useQueryValue } from "smithers-orchestrator/db";
 
 function TaskMonitor() {
-  const { reactiveDb } = useSmithers();
+  const { db } = useSmithers();
 
   // Automatically re-renders when tasks table changes
-  const { data: runningTasks } = useQuery(
-    reactiveDb,
-    "SELECT * FROM tasks WHERE status = 'running'"
+  const runningCount = useQueryValue<number>(
+    db.db,
+    "SELECT COUNT(*) as c FROM tasks WHERE status = 'running'"
   );
 
   return (
     <div>
-      Running tasks: {runningTasks?.length ?? 0}
+      Running tasks: {runningCount ?? 0}
     </div>
   );
 }

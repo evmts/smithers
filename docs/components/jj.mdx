@@ -27,8 +27,9 @@ Requires [Jujutsu](https://github.com/martinvonz/jj): `brew install jj`
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `message` | `string` | Snapshot description |
-| `children` | `ReactNode` | Optional child content |
+| `id` | `string?` | Stable identifier for resumability |
+| `message` | `string?` | Snapshot description |
+| `children` | `ReactNode?` | Optional child content |
 
 ### Commit
 
@@ -40,9 +41,11 @@ Requires [Jujutsu](https://github.com/martinvonz/jj): `brew install jj`
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `message` | `string` | Commit message (defaults to "Commit by Smithers") |
-| `autoDescribe` | `boolean` | Use Claude to generate message from diff |
-| `notes` | `string` | Git notes to attach |
+| `id` | `string?` | Stable identifier for resumability |
+| `message` | `string?` | Commit message (defaults to "Commit by Smithers") |
+| `autoDescribe` | `boolean?` | Use Claude to generate message from diff |
+| `notes` | `string?` | Git notes to attach |
+| `children` | `ReactNode?` | Optional child content |
 
 ### Describe
 
@@ -84,6 +87,14 @@ Checks JJ working copy status and invokes callbacks based on dirty/clean state.
 ```tsx
 <Rebase source="feature" destination="main" />
 ```
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `id` | `string?` | Stable identifier for resumability |
+| `destination` | `string?` | Target revision to rebase onto |
+| `source` | `string?` | Source revision to rebase |
+| `onConflict` | `(conflicts: string[]) => void?` | Called when rebase has conflicts |
+| `children` | `ReactNode?` | Optional child content |
 
 ## Database Logging
 

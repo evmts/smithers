@@ -43,6 +43,22 @@ interface UseSmithersSubagentResult {
 }
 ```
 
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | — | Task description |
+| `plannerModel` | `ClaudeModel` | `'sonnet'` | Model to use for planning the script |
+| `executionModel` | `ClaudeModel` | `'sonnet'` | Model for Claude agents in the generated script |
+| `maxPlanningTurns` | `number` | `5` | Maximum turns for the planning phase |
+| `timeout` | `number` | `600000` | Timeout in milliseconds (default 10 min) |
+| `context` | `string` | — | Additional context to provide to the planner |
+| `cwd` | `string` | — | Working directory for script execution |
+| `keepScript` | `boolean` | `false` | Keep the generated script after execution |
+| `scriptPath` | `string` | — | Custom path for the generated script (implies keepScript) |
+| `onProgress` | `(message: string) => void` | — | Called for progress updates |
+| `onScriptGenerated` | `(script: string, path: string) => void` | — | Called when the script is generated (before execution) |
+
 ## Notes
 
 - Requires `SmithersProvider` context.

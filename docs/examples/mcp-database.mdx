@@ -84,6 +84,9 @@ bun data-analysis.tsx
 ## Workflow with Database
 
 ```tsx
+import { useSmithers, If, Claude, Sqlite } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/db";
+
 function DataWorkflow() {
   const { db, reactiveDb } = useSmithers();
   const { data: phase } = useQueryValue<string>(

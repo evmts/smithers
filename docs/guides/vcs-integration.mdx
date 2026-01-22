@@ -42,7 +42,7 @@ db.state.set("phase", "implement");
 db.state.set("retryCount", 3);
 
 const phase = db.state.get("phase"); // "implement"
-const count = db.state.get("retryCount"); // "3" (returned as string)
+const count = db.state.get("retryCount"); // 3 (returned as number)
 ```
 
 For complex objects, use JSON explicitly:

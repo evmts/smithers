@@ -42,7 +42,7 @@ All methods sync. Uniqueness: `(category, scope, key)`.
 | `addLearning` | `(key, content, source) => void` | Store lesson learned |
 | `addPreference` | `(key, content, scope?) => void` | Store preference |
 | `add` | `(input: MemoryInput) => void` | Generic add |
-| `get` | `(category, key) => Memory \| null` | Retrieve by key |
+| `get` | `(category, key, scope?) => Memory \| null` | Retrieve by key |
 | `list` | `(category?, scope?, limit?) => Memory[]` | List memories |
 | `search` | `(query, category?, limit?) => Memory[]` | Search by content |
 | `update` | `(id, updates) => void` | Update memory |
@@ -59,8 +59,12 @@ interface Memory {
   content: string;
   confidence: number;
   source?: string;
+  source_execution_id?: string;
   scope: "global" | "project" | "session";
   created_at: string;
+  updated_at: string;
+  accessed_at: string;
+  expires_at?: string;
 }
 ```
 

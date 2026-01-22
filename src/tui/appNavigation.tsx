@@ -38,7 +38,7 @@ interface TabViewSpec {
   render: (db: SmithersDB, height: number) => React.ReactElement
 }
 
-const TAB_VIEWS: Record<TabKey, TabViewSpec> = {
+const TAB_VIEWS: Partial<Record<TabKey, TabViewSpec>> = {
   timeline: {
     id: 'ExecutionTimeline',
     render: (db, height) => <ExecutionTimeline db={db} height={height} />

@@ -13,16 +13,22 @@ description: Signal workflow termination
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `reason` | `string` | Reason for stopping |
+| `reason` | `string?` | Reason for stopping |
+| `children` | `ReactNode?` | Optional child content |
 
 ## Conditional Stop
 
 ```tsx
-function ConditionalWorkflow() {
-  const [status, setStatus] = useState("running");
+function ConditionalWorkflowBody() {
+  const { db, reactiveDb } = useSmithers()
+  const { data: statusVal } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'status'"
+  )
+  const status = statusVal ?? "running"
+  const setStatus = (s: string) => db.state.set('status', s)
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
+    <>
       <If condition={status === "running"}>
         <Claude
           onFinished={(result) => {
@@ -41,6 +47,14 @@ function ConditionalWorkflow() {
       <If condition={status === "complete"}>
         <Stop reason="Task completed" />
       </If>
+    </>
+  )
+}
+
+function ConditionalWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <ConditionalWorkflowBody />
     </SmithersProvider>
   );
 }

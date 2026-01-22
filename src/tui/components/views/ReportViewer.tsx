@@ -12,11 +12,11 @@ import { useTuiState } from '../../state.js'
 
 export interface ReportViewerProps {
   db?: SmithersDB
-  height: number
+  height?: number
   reportState?: UseReportGeneratorResult
 }
 
-export function ReportViewer({ db, height: _height, reportState }: ReportViewerProps) {
+export function ReportViewer({ db, reportState }: ReportViewerProps) {
   if (reportState) {
     return <ReportViewerContent reportState={reportState} />
   }

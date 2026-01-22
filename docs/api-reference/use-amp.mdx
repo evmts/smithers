@@ -43,6 +43,24 @@ interface UseAmpResult {
 }
 ```
 
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | — | The prompt to send to Amp |
+| `mode` | `'smart' \| 'rush'` | `'smart'` | `smart` uses SOTA models; `rush` is faster/cheaper for small tasks |
+| `maxTurns` | `number` | — | Maximum number of agentic loops |
+| `systemPrompt` | `string` | — | System prompt for the agent |
+| `permissionMode` | `'default' \| 'acceptEdits' \| 'bypassPermissions'` | `'default'` | Permission mode for file operations |
+| `timeout` | `number` | — | Timeout in milliseconds |
+| `cwd` | `string` | — | Working directory for the agent |
+| `continueThread` | `boolean` | — | Continue from previous thread |
+| `resumeThread` | `string` | — | Resume a specific thread by ID |
+| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Validate result before accepting |
+| `stopConditions` | `StopCondition[]` | — | Conditions that will stop the agent |
+| `middleware` | `SmithersMiddleware[]` | — | Middleware applied to this execution |
+| `labels` | `string[]` | — | Labels to attach to the thread |
+
 ## Notes
 
 - Requires `SmithersProvider` context.

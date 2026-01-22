@@ -28,7 +28,7 @@ db.vcs.logCommit({
 |--------|-----------|-------------|
 | `logCommit` | `(data: CommitData) => string` | Log a commit |
 | `getCommits` | `(limit?: number) => Commit[]` | List recent commits |
-| `getCommit` | `(hash: string, vcsType: string) => Commit \| null` | Get by hash |
+| `getCommit` | `(hash: string, vcsType?: 'git' \| 'jj') => Commit \| null` | Get by hash |
 
 ## Snapshots
 
@@ -89,32 +89,57 @@ db.vcs.addReport({
 interface Commit {
   id: string;
   execution_id: string;
+  agent_id?: string;
   vcs_type: "git" | "jj";
   commit_hash: string;
   change_id?: string;
   message: string;
+  author?: string;
   files_changed?: string[];
   insertions?: number;
   deletions?: number;
+  smithers_metadata?: Record<string, any>;
+  created_at: Date;
+}
+
+interface Snapshot {
+  id: string;
+  execution_id: string;
+  change_id: string;
+  commit_hash?: string;
+  description?: string;
+  files_modified?: string[];
+  files_added?: string[];
+  files_deleted?: string[];
+  has_conflicts: boolean;
   created_at: Date;
 }
 
 interface Review {
   id: string;
+  execution_id: string;
+  agent_id?: string;
   target_type: "commit" | "diff" | "pr" | "files";
   target_ref?: string;
   approved: boolean;
   summary: string;
   issues: { severity: string; file?: string; line?: number; message: string }[];
+  approvals?: { reviewer: string; approved: boolean; comment?: string }[];
+  reviewer_model?: string;
   blocking: boolean;
+  posted_to_github: boolean;
+  posted_to_git_notes: boolean;
   created_at: Date;
 }
 
 interface Report {
   id: string;
+  execution_id: string;
+  agent_id?: string;
   type: "progress" | "finding" | "warning" | "error" | "metric" | "decision";
   title: string;
   content: string;
+  data?: Record<string, any>;
   severity: "info" | "warning" | "critical";
   created_at: Date;
 }

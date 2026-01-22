@@ -60,13 +60,10 @@ const DEFAULT_STATE: HookState = {
   taskId: null,
 }
 
-const mapOutcome = (status: string): InteractiveSessionResult['outcome'] => {
-  if (status === 'completed') return 'completed'
-  if (status === 'cancelled') return 'cancelled'
-  if (status === 'timeout') return 'timeout'
-  if (status === 'failed') return 'failed'
-  return 'completed'
-}
+const VALID_OUTCOMES = new Set(['completed', 'cancelled', 'timeout', 'failed'])
+
+const mapOutcome = (status: string): InteractiveSessionResult['outcome'] =>
+  VALID_OUTCOMES.has(status) ? status as InteractiveSessionResult['outcome'] : 'completed'
 
 export function useHumanInteractive<T = InteractiveSessionResult>(): UseHumanInteractiveResult<T> {
   const { db, reactiveDb } = useSmithers()

@@ -9,10 +9,10 @@ import { formatTimestamp } from '../../utils/format.js'
 
 export interface RenderFrameInspectorProps {
   db: SmithersDB
-  height: number
+  height?: number
 }
 
-export function RenderFrameInspector({ db, height: _height }: RenderFrameInspectorProps) {
+export function RenderFrameInspector({ db }: RenderFrameInspectorProps) {
   const {
     currentFrame,
     currentIndex,

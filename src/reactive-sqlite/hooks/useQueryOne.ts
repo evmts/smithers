@@ -6,6 +6,7 @@ import type { ReactiveDatabase } from '../database.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
 import { useQuery } from './useQuery.js'
 import { useDatabaseOptional } from './context.js'
+import { isReactiveDatabase } from './shared.js'
 
 /**
  * Hook to get a single row from a query
@@ -53,29 +54,25 @@ export function useQueryOne<T = Record<string, unknown>>(
     // New signature: useQueryOne(sql, params?, optionsOrDb?, db?)
     sql = sqlOrDb
 
-    // Helper to detect ReactiveDatabase (has subscribe method)
-    const isDb = (obj: unknown): obj is ReactiveDatabase =>
-      obj !== null && typeof obj === 'object' && 'subscribe' in obj && typeof (obj as any).subscribe === 'function'
-
     if (Array.isArray(sqlOrParams)) {
       // useQueryOne(sql, params, ...) - 3rd arg could be options or db
       params = sqlOrParams
-      if (isDb(paramsOrOptions)) {
+      if (isReactiveDatabase(paramsOrOptions)) {
         options = {}
         db = paramsOrOptions
       } else {
         options = (paramsOrOptions as UseQueryOptions) ?? {}
-        db = isDb(optionsOrDb) ? optionsOrDb : contextDb!
+        db = isReactiveDatabase(optionsOrDb) ? optionsOrDb : contextDb!
       }
     } else {
       // useQueryOne(sql) or useQueryOne(sql, options) or useQueryOne(sql, db)
       params = []
-      if (isDb(sqlOrParams)) {
+      if (isReactiveDatabase(sqlOrParams)) {
         options = {}
         db = sqlOrParams
       } else {
         options = (sqlOrParams as UseQueryOptions) ?? {}
-        db = isDb(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
+        db = isReactiveDatabase(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
       }
     }
 

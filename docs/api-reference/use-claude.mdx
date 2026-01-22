@@ -44,6 +44,24 @@ interface UseClaudeResult {
 }
 ```
 
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | — | The prompt to send to Claude |
+| `model` | `'opus' \| 'sonnet' \| 'haiku' \| string` | `'sonnet'` | Claude model to use |
+| `permissionMode` | `'default' \| 'acceptEdits' \| 'plan' \| 'dontAsk' \| 'bypassPermissions'` | `'default'` | Permission mode for file operations |
+| `mcpConfig` | `string` | — | Path to MCP configuration file |
+| `allowedTools` | `string[]` | — | Specific tools to allow (whitelist) |
+| `disallowedTools` | `string[]` | — | Specific tools to disallow (blacklist) |
+| `maxTurns` | `number` | — | Maximum number of agentic loops |
+| `timeout` | `number` | — | Timeout in milliseconds |
+| `validate` | `(result: AgentResult) => boolean \| Promise<boolean>` | — | Validate result before accepting |
+| `stopConditions` | `StopCondition[]` | — | Conditions that will stop the agent |
+| `schema` | `z.ZodType` | — | Zod schema for structured output validation |
+| `middleware` | `SmithersMiddleware[]` | — | Middleware applied to this execution |
+| `cwd` | `string` | — | Working directory for the agent |
+
 ## Notes
 
 - Requires `SmithersProvider` context.

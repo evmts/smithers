@@ -67,7 +67,7 @@ function Hello() {
 }
 
 const root = createSmithersRoot();
-await root.mount(Hello);
+await root.mount(() => <Hello />);
 db.close();
 ```
 

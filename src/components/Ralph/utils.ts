@@ -25,6 +25,7 @@ export function signalOrchestrationComplete(): void {
 
 /**
  * Signal that orchestration failed (called internally).
+ * @deprecated Use signalOrchestrationErrorByToken from SmithersProvider instead
  */
 export function signalOrchestrationError(err: Error): void {
   if (orchestrationReject) {

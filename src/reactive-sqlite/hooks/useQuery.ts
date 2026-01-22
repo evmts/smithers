@@ -6,7 +6,7 @@ import { useSyncExternalStore, useCallback, useMemo, useRef } from 'react'
 import type { ReactiveDatabase } from '../database.js'
 import { extractReadTables } from '../parser.js'
 import type { UseQueryResult, UseQueryOptions } from '../types.js'
-import { useQueryCache, useStoreSignal } from './shared.js'
+import { useQueryCache, useStoreSignal, isReactiveDatabase } from './shared.js'
 import { useDatabaseOptional } from './context.js'
 import { useEffectOnValueChange } from '../../reconciler/hooks.js'
 
@@ -55,28 +55,25 @@ export function useQuery<T = Record<string, unknown>>(
     // New signature: useQuery(sql, params?, options?, explicitDb?)
     sql = sqlOrDb
 
-    const isDb = (obj: unknown): obj is ReactiveDatabase =>
-      obj !== null && typeof obj === 'object' && 'subscribe' in obj && typeof (obj as any).subscribe === 'function'
-
     if (Array.isArray(sqlOrParams)) {
       // useQuery(sql, params, ...) - 3rd arg could be options or db
       params = sqlOrParams
-      if (isDb(paramsOrOptions)) {
+      if (isReactiveDatabase(paramsOrOptions)) {
         options = {}
         db = paramsOrOptions
       } else {
         options = (paramsOrOptions as UseQueryOptions) ?? {}
-        db = isDb(optionsOrDb) ? optionsOrDb : contextDb!
+        db = isReactiveDatabase(optionsOrDb) ? optionsOrDb : contextDb!
       }
     } else {
       // useQuery(sql) or useQuery(sql, options) or useQuery(sql, db)
       params = []
-      if (isDb(sqlOrParams)) {
+      if (isReactiveDatabase(sqlOrParams)) {
         options = {}
         db = sqlOrParams
       } else {
         options = (sqlOrParams as UseQueryOptions) ?? {}
-        db = isDb(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
+        db = isReactiveDatabase(paramsOrOptions) ? (paramsOrOptions as ReactiveDatabase) : contextDb!
       }
     }
 

@@ -4,8 +4,115 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
-const width_mod = @import("../rendering/width.zig");
-const Component = @import("../components/component.zig").Component;
+
+// Note: In production, these would be injected via build system
+// For now, use inline implementations for compositing
+
+// ============ Width Utilities (inline for standalone compilation) ============
+
+const width_mod = struct {
+    pub fn visibleWidth(text: []const u8) u32 {
+        // Simple width calculation - ASCII = 1 column each
+        // Skip ANSI escape sequences
+        var width: u32 = 0;
+        var i: usize = 0;
+        while (i < text.len) {
+            if (text[i] == '\x1b') {
+                // Skip ANSI sequence
+                i += 1;
+                if (i < text.len and text[i] == '[') {
+                    i += 1;
+                    while (i < text.len and !(text[i] >= 0x40 and text[i] <= 0x7E)) : (i += 1) {}
+                    if (i < text.len) i += 1;
+                } else if (i < text.len and text[i] == ']') {
+                    while (i < text.len and text[i] != '\x07') : (i += 1) {}
+                    if (i < text.len) i += 1;
+                }
+            } else if (text[i] >= 0x20 and text[i] <= 0x7E) {
+                width += 1;
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+        return width;
+    }
+
+    pub fn sliceByColumn(allocator: Allocator, text: []const u8, start_col: u32, end_col: u32) ![]u8 {
+        var result = ArrayListUnmanaged(u8){};
+        errdefer result.deinit(allocator);
+
+        var col: u32 = 0;
+        var i: usize = 0;
+        var in_range = false;
+
+        while (i < text.len) {
+            // Handle ANSI sequences - preserve them
+            if (text[i] == '\x1b') {
+                var seq_end = i + 1;
+                if (seq_end < text.len and text[seq_end] == '[') {
+                    seq_end += 1;
+                    while (seq_end < text.len and !(text[seq_end] >= 0x40 and text[seq_end] <= 0x7E)) : (seq_end += 1) {}
+                    if (seq_end < text.len) seq_end += 1;
+                }
+                if (in_range or col >= start_col) {
+                    try result.appendSlice(allocator, text[i..seq_end]);
+                }
+                i = seq_end;
+                continue;
+            }
+
+            if (col >= start_col and !in_range) in_range = true;
+            if (col >= end_col) break;
+
+            if (in_range) {
+                try result.append(allocator, text[i]);
+            }
+
+            if (text[i] >= 0x20 and text[i] <= 0x7E) col += 1;
+            i += 1;
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+};
+
+// ============ Component (local copy for standalone compilation) ============
+
+pub const Component = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        render: *const fn (ptr: *anyopaque, width: u16, allocator: Allocator) RenderError![][]const u8,
+        invalidate: *const fn (ptr: *anyopaque) void,
+        handleInput: ?*const fn (ptr: *anyopaque, data: []const u8) void = null,
+        wantsKeyRelease: bool = false,
+        deinit: ?*const fn (ptr: *anyopaque, allocator: Allocator) void = null,
+    };
+
+    pub const RenderError = error{OutOfMemory};
+
+    pub fn render(self: Component, width: u16, allocator: Allocator) RenderError![][]const u8 {
+        return self.vtable.render(self.ptr, width, allocator);
+    }
+
+    pub fn invalidate(self: Component) void {
+        self.vtable.invalidate(self.ptr);
+    }
+
+    pub fn handleInput(self: Component, data: []const u8) void {
+        if (self.vtable.handleInput) |handler| {
+            handler(self.ptr, data);
+        }
+    }
+
+    pub fn deinit(self: Component, allocator: Allocator) void {
+        if (self.vtable.deinit) |deinit_fn| {
+            deinit_fn(self.ptr, allocator);
+        }
+    }
+};
 
 // ============ Size Value ============
 

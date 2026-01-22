@@ -21,7 +21,9 @@ import { Notes } from "smithers-orchestrator";
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
+| `id` | `string` | auto-generated | Stable identifier for resumability |
 | `commitRef` | `string` | `"HEAD"` | Git commit reference |
+| `cwd` | `string` | `process.cwd()` | Repository path |
 | `data` | `Record<string, any>` | required | Structured metadata |
 | `append` | `boolean` | `false` | Append vs replace existing notes |
 | `onFinished` | `(result: NotesResult) => void` | - | Success callback |
@@ -52,10 +54,14 @@ Notes include smithers tracking:
 
 ## With Commit
 
+Notes and Commit are independent components. Use the `notes` prop on Commit, or add Notes separately after a commit:
+
 ```tsx
-<Git.Commit message="feat: add auth">
-  <Notes data={{ reviewPassed: true, testsRun: 42 }} />
-</Git.Commit>
+// Option 1: Use notes prop on Commit
+<Git.Commit message="feat: add auth" notes={{ reviewPassed: true, testsRun: 42 }} />
+
+// Option 2: Add notes to an existing commit
+<Notes commitRef="abc123" data={{ reviewPassed: true, testsRun: 42 }} />
 ```
 
 ## Related

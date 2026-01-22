@@ -42,7 +42,7 @@ async function main() {
         <Claude
           model="sonnet"
           schema={AnalysisSchema}
-          maxRetries={2}
+          schemaRetries={2}
           allowedTools={["Read", "Glob", "Grep"]}
           onFinished={(result) => {
             const analysis = result.structured;
@@ -116,6 +116,6 @@ const Schema = z.object({
 <Claude
   schema={Schema}
   validate={(result) => result.issues.length > 0 && result.score <= 100}
-  maxRetries={2}
+  schemaRetries={2}
 >
 ```

@@ -12,17 +12,22 @@ description: Create git commits with metadata tracking
 />
 ```
 
+Note: `Commit` is exported standalone from `smithers-orchestrator/components/Git`, not as `Git.Commit`.
+
 ## Props
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `message` | `string` | Commit message |
-| `autoGenerate` | `boolean` | Auto-generate message from changes |
-| `files` | `string[]` | Specific files to commit |
-| `all` | `boolean` | Stage all changes (`git add -A`) |
-| `notes` | `Record<string, any>` | Git notes to attach |
-| `onFinished` | `(result: CommitResult) => void` | Called on completion |
-| `onError` | `(error: Error) => void` | Called on error |
+| `id` | `string?` | Stable identifier for resumability |
+| `message` | `string?` | Commit message |
+| `cwd` | `string?` | Repository path (defaults to `process.cwd()`) |
+| `autoGenerate` | `boolean?` | Auto-generate message using Claude |
+| `files` | `string[]?` | Specific files to stage |
+| `all` | `boolean?` | Stage all tracked files with `-a` flag |
+| `notes` | `Record<string, any>?` | Metadata to store in git notes |
+| `children` | `ReactNode?` | Used as message if `message` prop not provided |
+| `onFinished` | `(result: CommitResult) => void?` | Called on completion |
+| `onError` | `(error: Error) => void?` | Called on error |
 
 ### CommitResult
 

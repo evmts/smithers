@@ -5,8 +5,6 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'gpt-4o-mini': { input: 0.15 / 1_000_000, output: 0.6 / 1_000_000 },
 }
 
-const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
-
 function parseResetToDate(value: string | null): Date {
   if (!value) return new Date()
   const trimmed = value.trim()
@@ -29,7 +27,7 @@ function parseResetToDate(value: string | null): Date {
 }
 
 export function createOpenAIClient(config: { apiKey: string; organization?: string; baseUrl?: string }): ProviderClient {
-  const baseUrl = config.baseUrl ?? DEFAULT_BASE_URL
+  const baseUrl = config.baseUrl ?? 'https://api.openai.com/v1'
 
   return {
     provider: 'openai',

@@ -10,7 +10,7 @@ import { useTuiState } from '../../state.js'
 
 export interface ChatInterfaceProps {
   db: SmithersDB
-  height: number
+  height?: number
 }
 
 export function ChatInterface({ db }: ChatInterfaceProps) {

@@ -20,20 +20,25 @@ description: Pause workflow for human input or approval
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `id` | `string` | Stable ID for resumability |
-| `message` | `string` | Short message shown to human |
-| `children` | `ReactNode` | Detailed content shown |
-| `onApprove` | `() => void` | Called on approval |
-| `onReject` | `() => void` | Called on rejection |
+| `id` | `string?` | Stable ID for resumability (optional - falls back to content hash) |
+| `message` | `string?` | Short message shown to human |
+| `children` | `ReactNode?` | Detailed content shown |
+| `onApprove` | `() => void?` | Called on approval |
+| `onReject` | `() => void?` | Called on rejection |
 
 ## Approval Workflow
 
 ```tsx
-function ApprovalWorkflow() {
-  const [phase, setPhase] = useState("implement");
+function ApprovalWorkflowBody() {
+  const { db, reactiveDb } = useSmithers()
+  const { data: phaseVal } = useQueryValue<string>(
+    reactiveDb, "SELECT value FROM state WHERE key = 'phase'"
+  )
+  const phase = phaseVal ?? "implement"
+  const setPhase = (p: string) => db.state.set('phase', p)
 
   return (
-    <SmithersProvider db={db} executionId={executionId}>
+    <>
       <If condition={phase === "implement"}>
         <Claude onFinished={() => setPhase("review")}>
           Implement the feature.
@@ -59,6 +64,14 @@ function ApprovalWorkflow() {
       <If condition={phase === "cancelled"}>
         <Stop reason="Human rejected changes" />
       </If>
+    </>
+  )
+}
+
+function ApprovalWorkflow({ db, executionId }) {
+  return (
+    <SmithersProvider db={db} executionId={executionId}>
+      <ApprovalWorkflowBody />
     </SmithersProvider>
   );
 }

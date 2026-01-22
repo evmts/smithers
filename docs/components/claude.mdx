@@ -116,13 +116,73 @@ Execute Claude via Claude Code CLI. Children are the prompt.
   ```
 </ParamField>
 
-<ParamField path="permissionMode" type="'default' | 'acceptEdits' | 'plan'">
+<ParamField path="permissionMode" type="'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'">
   Permission handling mode.
 
   ```tsx
   <Claude permissionMode="acceptEdits">
     Auto-accept file edits.
   </Claude>
+  ```
+</ParamField>
+
+<ParamField path="mcpConfig" type="string">
+  Path to MCP configuration file.
+
+  ```tsx
+  <Claude mcpConfig="./mcp.json">
+    Use MCP servers defined in config.
+  </Claude>
+  ```
+</ParamField>
+
+### Execution Configuration
+
+<ParamField path="cwd" type="string">
+  Working directory for the agent.
+
+  ```tsx
+  <Claude cwd="/path/to/project">
+    Run in specific directory.
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="useSubscription" type="boolean" default="true">
+  Use Claude subscription credits instead of API credits.
+  When true, excludes ANTHROPIC_API_KEY from environment.
+
+  ```tsx
+  <Claude useSubscription={false}>
+    Use API credits instead.
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="middleware" type="SmithersMiddleware[]">
+  Middleware applied to this Claude execution.
+  Provider middleware are prepended automatically.
+
+  ```tsx
+  <Claude middleware={[loggingMiddleware, rateLimitMiddleware]}>
+    Task with middleware.
+  </Claude>
+  ```
+</ParamField>
+
+<ParamField path="tailLogCount" type="number" default="10">
+  Number of tail log entries to display during execution.
+
+  ```tsx
+  <Claude tailLogCount={20}>Show more log entries.</Claude>
+  ```
+</ParamField>
+
+<ParamField path="tailLogLines" type="number" default="10">
+  Number of lines to show per tail log entry.
+
+  ```tsx
+  <Claude tailLogLines={5}>Shorter log entries.</Claude>
   ```
 </ParamField>
 
@@ -355,7 +415,7 @@ Control what Claude can do:
 
 // Full edit access
 <Claude
-  allowedTools={["Read", "Edit", "Write", "Bash"]}
+  allowedTools={["Read", "edit_file", "create_file", "Bash"]}
   permissionMode="acceptEdits"
 >
   Implement the feature.
@@ -395,7 +455,7 @@ function ConditionalClaudeBody() {
 
       <If condition={phase === "implement"}>
         <Claude
-          allowedTools={["Edit", "Write"]}
+          allowedTools={["edit_file", "create_file"]}
           onFinished={() => setPhase("done")}
         >
           Implement the solution.
@@ -500,7 +560,7 @@ function ResilientClaude({ db, executionId }) {
     <Claude allowedTools={["Read", "Glob", "Grep"]}>
 
     // Implementation phase - edit access
-    <Claude allowedTools={["Read", "Edit", "Write"]}>
+    <Claude allowedTools={["Read", "edit_file", "create_file"]}>
     ```
   </Accordion>
 

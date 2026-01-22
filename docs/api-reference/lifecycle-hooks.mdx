@@ -6,7 +6,16 @@ description: Mount, unmount, and async-safe state hooks
 # Lifecycle Hooks
 
 ```tsx
-import { useMount, useUnmount, useMountedState } from "smithers-orchestrator";
+import { 
+  useMount, 
+  useUnmount, 
+  useMountedState,
+  useEffectOnce,
+  useFirstMountState,
+  useExecutionGate,
+  ExecutionGateProvider,
+  useExecutionMount
+} from "smithers-orchestrator";
 
 function MyComponent() {
   const isMounted = useMountedState();
@@ -58,6 +67,82 @@ Returns getter for current mount state. Prevents setState on unmounted component
 function useMountedState(): () => boolean
 ```
 
+## useEffectOnce
+
+Runs effect only once on mount. Wrapper around `useEffect` with empty deps.
+
+```tsx
+function useEffectOnce(effect: EffectCallback): void
+```
+
+```tsx
+useEffectOnce(() => {
+  console.log("Runs once on mount");
+  return () => console.log("Cleanup on unmount");
+});
+```
+
+## useFirstMountState
+
+Returns `true` on first render, `false` on subsequent renders. Useful for conditional first-mount logic.
+
+```tsx
+function useFirstMountState(): boolean
+```
+
+```tsx
+const isFirstMount = useFirstMountState();
+if (isFirstMount) {
+  initializeOnce();
+}
+```
+
+## useExecutionGate
+
+Returns current execution gate state from context. Used internally by `useMount`/`useUnmount` to prevent execution during disabled phases.
+
+```tsx
+function useExecutionGate(): boolean
+```
+
+## ExecutionGateProvider
+
+Provides execution gate context to children. When `enabled` is false, gated hooks (`useMount`, `useUnmount`, `useEffectOnValueChange`) won't execute.
+
+```tsx
+interface ExecutionGateProviderProps {
+  enabled: boolean;
+  children: ReactNode;
+}
+
+function ExecutionGateProvider(props: ExecutionGateProviderProps): ReactNode
+```
+
+```tsx
+<ExecutionGateProvider enabled={shouldExecute}>
+  <MyComponent /> {/* useMount won't fire if shouldExecute is false */}
+</ExecutionGateProvider>
+```
+
+## useExecutionMount
+
+Runs effect once when `executionEnabled` becomes true. Idempotent—won't re-run even if deps change after first execution.
+
+```tsx
+function useExecutionMount(
+  executionEnabled: boolean,
+  fn: () => void,
+  deps?: DependencyList
+): void
+```
+
+```tsx
+const isReady = useQueryValue(db, "SELECT ready FROM state");
+useExecutionMount(isReady, () => {
+  startTask(); // Runs once when isReady becomes true
+});
+```
+
 ## useEffectOnValueChange
 
 Runs effect when value changes with idempotency. Won't run twice for same value.
@@ -82,6 +167,11 @@ useEffectOnValueChange(ralphCount, () => executeTask());
 | `useMount` | One-time setup on mount |
 | `useUnmount` | Cleanup needing latest state |
 | `useMountedState` | Async operations setting state |
+| `useEffectOnce` | Simple one-time effect |
+| `useFirstMountState` | Conditional first-mount logic |
+| `useExecutionGate` | Check if execution is enabled |
+| `ExecutionGateProvider` | Control execution for subtree |
+| `useExecutionMount` | Run once when enabled |
 | `useEffectOnValueChange` | Re-run on value change with idempotency |
 | `useEffect` | Standard React effect behavior |
 

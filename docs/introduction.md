@@ -168,29 +168,13 @@ SQLite stores every frame. Use version control to rewind.
 
 ## Core Idea
 
-You program the **plan**, not the agents. The plan is real executable code: React components that declare what should happen.
-
 | Other Frameworks     | Smithers                   |
 | -------------------- | -------------------------- |
 | `agent.do_step_1()`  | `<Phase name="implement">` |
 | `agent.do_step_2()`  | `<Step name="code">`       |
 | `if failed: retry()` | `<Claude>Fix it</Claude>`  |
 
-The plan is declarative. Plans evolve in an easy-to-understand way over time, and if the plan breaks for any reason, your monitoring agent can edit the code and restart.
-
-What renders is the current state of the multi-agent setup as readable XML, with SQLite durably persisting state.
-
-Each iteration:
-
-1. Render React to execution plan
-2. Execute runnable agents
-3. Agent output updates state
-4. State change triggers re-render
-5. Loop until done
-
-The plan runs as deterministic code, but agents can read it to understand the larger context they're operating within.
-
-Ralph (the [autonomous agent loop pattern](https://ghuntley.com/ralph/)) handles the render cycle, allowing the plan to run and evolve indefinitely. See [concepts](/concepts/ralph-wiggum-loop). React handles the diffing.
+The [Ralph loop](https://ghuntley.com/ralph/) renders → executes → persists → re-renders until done. SQLite stores state; React handles diffing. See [concepts](/concepts/ralph-wiggum-loop).
 
 ---
 
@@ -200,7 +184,7 @@ LLMs and humans perform well writing declarative React code. All coding agents c
 
 Most multi-agent frameworks fail. They add coordination overhead that costs more than it saves, and you end up worse than a simple while loop. Smithers avoids this by making the plan declarative and the state durable. React's functional nature makes even complex multiagent setups easy to modularize and easy to reason about.
 
-React has a rich ecosystem that works well with agents: Zustand, React Query, and reactive versions of most libraries plug directly into React's reactivity system. This lets you compose declarative plans from battle-tested primitives.
+React has a rich ecosystem that works well with agents: reactive libraries plug directly into React's reactivity system. This lets you compose declarative plans from battle-tested primitives.
 
 React gives you:
 
@@ -212,20 +196,14 @@ React gives you:
 ---
 
 <Tip>
-**React Hook Compatibility**: All [TanStack AI](https://tanstack.com/ai/latest/docs) and [Vercel AI SDK](https://ai-sdk.dev/docs) React hooks work in Smithers components. Use `useChat` for streaming chat, `useCompletion` for text completion, and `useObject` for structured generation.
-
-Use any hook library in addition to the ones built in to Smithers.
+**React Hook Compatibility**: [TanStack AI](https://tanstack.com/ai/latest/docs) and [Vercel AI SDK](https://ai-sdk.dev/docs) React hooks work in Smithers components. Use `useChat` for streaming chat, `useCompletion` for text completion, and `useObject` for structured generation.
 
 ```tsx
 import { If, Claude } from "smithers-orchestrator";
-import { useChat } from "@tanstack/ai-react";
-// or
 import { useChat, useCompletion, useObject } from "ai/react";
 
 function MyAgent() {
-  const { messages, sendMessage, isLoading } = useChat({
-    connection: fetchServerSentEvents("/api/chat"),
-  });
+  const { messages, isLoading } = useChat();
   return (
     <If condition={!isLoading}>
       <Claude>

@@ -26,7 +26,7 @@ const executionId = db.execution.start('Simple Ralph', 'simple-ralph.tsx')
 const prd = readFileSync('./prd.md', 'utf-8')
 
 function SimpleRalph() {
-  const done = db.state.get('done') === 'true'
+  const done = db.state.get('done') === true
 
   return (
     <SmithersProvider db={db} executionId={executionId}>

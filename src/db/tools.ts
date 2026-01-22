@@ -49,6 +49,7 @@ export function createToolsModule(ctx: ToolsModuleContext): ToolsModule {
     },
 
     complete: (id: string, output: string, summary?: string) => {
+      if (rdb.isClosed) return
       const outputSize = Buffer.byteLength(output, 'utf8')
       const timestamp = now()
       rdb.transaction(() => {
@@ -70,16 +71,19 @@ export function createToolsModule(ctx: ToolsModuleContext): ToolsModule {
     },
 
     fail: (id: string, error: string) => {
+      if (rdb.isClosed) return
       rdb.run(`UPDATE tool_calls SET status = 'failed', error = ?, completed_at = ? WHERE id = ?`, [error, now(), id])
     },
 
     list: (agentId: string): ToolCall[] => {
+      if (rdb.isClosed) return []
       return rdb.query<any>('SELECT * FROM tool_calls WHERE agent_id = ? ORDER BY created_at', [agentId])
         .map(mapToolCall)
         .filter((t): t is ToolCall => t !== null)
     },
 
     getOutput: (id: string): string | null => {
+      if (rdb.isClosed) return null
       const row = rdb.queryOne<{ output_inline: string | null }>('SELECT output_inline FROM tool_calls WHERE id = ?', [id])
       return row?.output_inline ?? null
     },

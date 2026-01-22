@@ -1,27 +1,9 @@
-import * as path from 'path'
+import { isSensitiveFile } from './security.js'
 
 export interface GlobOptions {
   pattern: string
   limit?: number
   cwd?: string
-}
-
-const SENSITIVE_PATTERNS = [
-  /^\.env$/,
-  /^\.env\..+$/,
-  /\.pem$/,
-  /\.key$/,
-  /^\.npmrc$/,
-  /^id_rsa/,
-  /\.p12$/,
-  /\.pfx$/,
-  /^\.git-credentials$/,
-  /^\.netrc$/,
-]
-
-export function isSensitiveFile(filePath: string): boolean {
-  const basename = path.basename(filePath)
-  return SENSITIVE_PATTERNS.some(pattern => pattern.test(basename))
 }
 
 export async function glob(opts: GlobOptions): Promise<string[]> {
