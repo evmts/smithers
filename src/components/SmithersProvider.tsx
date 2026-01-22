@@ -188,11 +188,9 @@ export interface SmithersProviderProps {
 export function SmithersProvider(props: SmithersProviderProps): ReactNode {
   const reactiveDb = props.db.db
 
-  // Orchestration refs for timers and start time
   const startTimeRef = useRef(Date.now())
   const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Read stop/rebase signals from database reactively
   const { data: stopRequested } = useQueryValue<boolean>(
     reactiveDb,
     "SELECT CASE WHEN value IS NOT NULL THEN 1 ELSE 0 END as requested FROM state WHERE key = 'stop_requested'"
@@ -203,40 +201,33 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     "SELECT CASE WHEN value IS NOT NULL THEN 1 ELSE 0 END as requested FROM state WHERE key = 'rebase_requested'"
   )
 
-  // Read running task count from database reactively (for completion detection)
   const { data: runningTaskCount } = useQueryValue<number>(
     reactiveDb,
     `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND status = 'running'`,
     [props.executionId]
   )
 
-  // Read total task count (to know if tasks have started)
   const { data: totalTaskCount } = useQueryValue<number>(
     reactiveDb,
     `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ?`,
     [props.executionId]
   )
 
-  // Derive state from DB queries
   const pendingTasks = runningTaskCount ?? 0
   const hasStartedTasks = (totalTaskCount ?? 0) > 0
 
-  // Track if we've already completed to avoid double-completion
   const hasCompletedRef = useRef(false)
   const hasStartedTasksRef = useRef(false)
   const completionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Get orchestration token from props for signaling completion
   const orchestrationToken = props.orchestrationToken ?? null
 
-  // Helper to signal completion using the token
   const signalComplete = useMemo(() => () => {
     if (orchestrationToken) {
       signalOrchestrationCompleteByToken(orchestrationToken)
     }
   }, [orchestrationToken])
 
-  // Helper to check stop conditions (called on task completion)
   const checkStopConditions = useMemo(() => async () => {
     if (!props.stopConditions?.length) return
     const currentStopRequested = props.db.state.get('stop_requested')
@@ -273,11 +264,9 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     }
   }, [props.stopConditions, props.db, props.executionId, props.onStopRequested])
 
-  // Orchestration setup (timeout, snapshots)
   useMount(() => {
     ;(async () => {
       try {
-        // Create snapshot if requested
         if (props.snapshotBeforeStart) {
           try {
             const { changeId, description } = await jjSnapshot('Before orchestration start')
@@ -287,12 +276,10 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
             })
             console.log(`[SmithersProvider] Created initial snapshot: ${changeId}`)
           } catch (error) {
-            // JJ might not be available, that's okay
             console.warn('[SmithersProvider] Could not create JJ snapshot:', error)
           }
         }
 
-        // Set up global timeout
         if (props.globalTimeout) {
           timeoutIdRef.current = setTimeout(() => {
             const currentStopRequested = props.db.state.get('stop_requested')
@@ -307,8 +294,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
             }
           }, props.globalTimeout)
         }
-
-        // Stop conditions are now checked reactively on task completion (see checkStopConditions)
       } catch (error) {
         console.error('[SmithersProvider] Setup error:', error)
         props.onError?.(error as Error)
@@ -316,31 +301,23 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     })()
   })
 
-  // Capture render frame (iteration 0 for single-run)
   useCaptureRenderFrame(props.db, 0, props.getTreeXML)
 
-  // Track when tasks start
   if (hasStartedTasks && !hasStartedTasksRef.current) {
     hasStartedTasksRef.current = true
   }
 
-  // React to task count changes for completion detection
   useEffectOnValueChange(pendingTasks, () => {
-    // Clear any pending completion check
     if (completionCheckTimeoutRef.current) {
       clearTimeout(completionCheckTimeoutRef.current)
       completionCheckTimeoutRef.current = null
     }
 
-    // Check stop conditions on task completion
     checkStopConditions()
 
-    // If tasks are running, wait for them to complete
     if (pendingTasks > 0) return
 
-    // Simple rule: complete when pendingTasks === 0 && hasStartedTasksRef.current
     if (!hasStartedTasksRef.current) {
-      // Wait a bit for tasks to start (render settling)
       completionCheckTimeoutRef.current = setTimeout(() => {
         if (!hasCompletedRef.current && !hasStartedTasksRef.current) {
           hasCompletedRef.current = true
@@ -351,7 +328,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
       return
     }
 
-    // All tasks have completed - small debounce for render settling
     completionCheckTimeoutRef.current = setTimeout(() => {
       if (reactiveDb.isClosed || hasCompletedRef.current) return
       hasCompletedRef.current = true
@@ -391,13 +367,10 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     executionEnabled: true,
   }), [props.db, props.executionId, props.config, props.middleware, stopRequested, rebaseRequested, reactiveDb])
 
-  // Cleanup orchestration on unmount
   useUnmount(() => {
-    // Clear timers
     if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current)
     if (completionCheckTimeoutRef.current) clearTimeout(completionCheckTimeoutRef.current)
 
-    // Generate completion result
     ;(async () => {
       try {
         const execution = await props.db.execution.current()
@@ -406,7 +379,6 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
           props.onComplete?.()
         }
 
-        // Cleanup if requested
         if (props.cleanupOnComplete) {
           await props.db.close()
         }

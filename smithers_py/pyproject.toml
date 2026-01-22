@@ -49,8 +49,23 @@ Repository = "https://github.com/evmts/smithers.git"
 Issues = "https://github.com/evmts/smithers/issues"
 Changelog = "https://github.com/evmts/smithers/blob/main/smithers_py/CHANGELOG.md"
 
+[tool.hatch.build]
+packages = [".", "db", "engine", "executors", "logs", "mcp", "nodes", "serialize", "state", "vcs", "e2e", "examples"]
+
 [tool.hatch.build.targets.wheel]
-packages = ["smithers_py"]
+packages = [".", "db", "engine", "executors", "logs", "mcp", "nodes", "serialize", "state", "vcs"]
+
+[tool.hatch.build.targets.wheel.sources]
+"." = "smithers_py"
+"db" = "smithers_py/db"
+"engine" = "smithers_py/engine"
+"executors" = "smithers_py/executors"
+"logs" = "smithers_py/logs"
+"mcp" = "smithers_py/mcp"
+"nodes" = "smithers_py/nodes"
+"serialize" = "smithers_py/serialize"
+"state" = "smithers_py/state"
+"vcs" = "smithers_py/vcs"
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
