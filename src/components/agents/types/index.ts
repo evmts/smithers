@@ -32,3 +32,11 @@ export type {
   CodexApprovalPolicy,
   CodexCLIExecutionOptions,
 } from './codex.js'
+
+export type {
+  OpenCodeProps,
+  OpenCodeModel,
+  OpenCodePermissionMode,
+  OpenCodeAgent,
+  OpenCodeExecutionOptions,
+} from './opencode.js'

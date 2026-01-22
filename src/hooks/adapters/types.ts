@@ -2,7 +2,7 @@ import type { TailLogEntry } from '../../components/agents/claude-cli/message-pa
 import type { AgentResult } from '../../components/agents/types/execution.js'
 import type { SmithersStreamPart } from '../../streaming/types.js'
 
-export type AgentName = 'claude' | 'amp' | 'codex'
+export type AgentName = 'claude' | 'amp' | 'codex' | 'opencode'
 
 export interface MessageParserInterface {
   parseChunk(chunk: string): void

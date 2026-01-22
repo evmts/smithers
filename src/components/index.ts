@@ -2,6 +2,7 @@ export { Claude, type ClaudeProps, type AgentResult, executeClaudeCLI } from './
 export { ClaudeApi, type ClaudeApiProps } from './ClaudeApi.js'
 export { Amp, type AmpProps, executeAmpCLI } from './Amp.js'
 export { Codex, type CodexProps, executeCodexCLI } from './Codex.js'
+export { OpenCode, type OpenCodeProps, executeOpenCode } from './OpenCode.js'
 
 export { Ralph, type RalphProps, useRalphIteration } from './Ralph.js'
 
