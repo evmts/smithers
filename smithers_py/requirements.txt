@@ -1,0 +1,4 @@
+pydantic>=2.0
+aiosqlite
+anthropic
+pyjsx  # optional, for JSX transpilation

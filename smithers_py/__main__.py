@@ -187,10 +187,10 @@ async def create_execution_record(db: SmithersDB, execution_id: str, script_path
     try:
         await db.connection.execute(
             """
-            INSERT INTO executions (id, script_path, status, created_at)
-            VALUES (?, ?, 'running', datetime('now'))
+            INSERT INTO executions (id, name, source_file, status, created_at)
+            VALUES (?, ?, ?, 'running', datetime('now'))
             """,
-            (execution_id, script_path)
+            (execution_id, Path(script_path).stem, script_path)
         )
         await db.connection.commit()
     except Exception:
@@ -205,7 +205,7 @@ async def update_execution_status(db: SmithersDB, execution_id: str, status: str
             await db.connection.execute(
                 """
                 UPDATE executions 
-                SET status = ?, error = ?, ended_at = datetime('now')
+                SET status = ?, error = ?, completed_at = datetime('now'), updated_at = datetime('now')
                 WHERE id = ?
                 """,
                 (status, error, execution_id)
@@ -214,7 +214,7 @@ async def update_execution_status(db: SmithersDB, execution_id: str, status: str
             await db.connection.execute(
                 """
                 UPDATE executions 
-                SET status = ?, ended_at = datetime('now')
+                SET status = ?, completed_at = datetime('now'), updated_at = datetime('now')
                 WHERE id = ?
                 """,
                 (status, execution_id)

@@ -1,36 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "smithers-py"
-description = "Python components for the Smithers AI orchestration framework"
 version = "0.1.0"
-requires-python = ">=3.11"
+description = "Python implementation of Smithers multi-agent orchestration framework"
+readme = "README.md"
+requires-python = ">=3.9"
 dependencies = [
     "pydantic>=2.0",
-    "pydantic-ai",
     "aiosqlite",
+    "anthropic",
 ]
 
-[project.scripts]
-smithers_py = "smithers_py.__main__:main"
-
 [project.optional-dependencies]
+jsx = ["pyjsx"]
 dev = [
     "pytest",
     "pytest-asyncio",
-    "ruff",
 ]
 
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+[project.scripts]
+smithers-py = "smithers_py.__main__:main"
 
-[tool.ruff]
-line-length = 88
-target-version = "py311"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "S"]
-ignore = []
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
+[tool.hatch.build.targets.wheel]
+packages = ["smithers_py"]
