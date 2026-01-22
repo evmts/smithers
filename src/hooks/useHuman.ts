@@ -45,7 +45,7 @@ export interface UseHumanResult {
  * ```
  */
 export function useHuman(): UseHumanResult {
-  const { db } = useSmithers()
+  const { db, reactiveDb } = useSmithers()
   const requestKeyRef = useRef(`humanRequest:${uuid()}`)
 
   useMount(() => {
@@ -55,19 +55,16 @@ export function useHuman(): UseHumanResult {
   })
 
   const { data: requestIdJson } = useQueryValue<string>(
-    db.db,
+    reactiveDb,
     'SELECT value FROM state WHERE key = ?',
     [requestKeyRef.current]
   )
   const requestId = requestIdJson ? parseJson<string | null>(requestIdJson, null) : null
 
-  // Track the promise resolver so we can call it when DB updates
   const resolveRef = useRef<((value: unknown) => void) | null>(null)
 
-  // Reactive subscription to the current request
-  // This will re-render whenever the request row changes
   const { data: request } = useQueryOne<HumanInteraction>(
-    db.db, // Pass ReactiveDatabase
+    reactiveDb,
     `SELECT * FROM human_interactions WHERE id = ?`,
     [requestId ?? '__never__']
   )

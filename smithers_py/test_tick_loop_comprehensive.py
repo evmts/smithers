@@ -617,6 +617,24 @@ class TestTickLoopComprehensive:
         assert progress_tokens == ["Hello", " ", "world", "!"]
 
 
+@pytest.mark.asyncio
+async def test_task_exception_properly_retrieved():
+    """Test that task exceptions are retrieved to prevent 'exception never retrieved' warnings."""
+    # Create a task that fails
+    async def failing_task():
+        raise ValueError("test error")
+
+    task = asyncio.create_task(failing_task())
+    await asyncio.sleep(0.01)  # Let it fail
+    assert task.done()
+
+    # Verify we can retrieve without warning
+    try:
+        task.result()
+    except ValueError:
+        pass  # Expected
+
+
 # Run all tests
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

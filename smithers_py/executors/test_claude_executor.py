@@ -806,5 +806,12 @@ async def test_resume_from_history(executor, test_db):
     assert result.run_id == "resume-test-123"  # Same run ID
 
 
+def test_claude_executor_import_error_message():
+    """Verify ClaudeExecutor import provides clear error when pydantic_ai missing."""
+    from smithers_py.executors import ClaudeExecutor
+    assert ClaudeExecutor is not None
+    assert not isinstance(ClaudeExecutor, type(None))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

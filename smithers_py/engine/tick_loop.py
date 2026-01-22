@@ -322,6 +322,16 @@ class TickLoop:
         for task_id, task in list(self.task_futures.items()):
             if task.done():
                 completed_tasks.append(task_id)
+                # Retrieve exception to prevent "exception never retrieved" warning
+                try:
+                    task.result()  # This raises if task failed
+                except asyncio.CancelledError:
+                    # Expected for cancelled tasks - logged elsewhere
+                    pass
+                except Exception as e:
+                    # Exception already recorded in task_results by _execute_node_with_lease
+                    # Just log that we retrieved it
+                    print(f"    ⚠️  Task {task_id} had exception: {type(e).__name__}")
 
         if completed_tasks:
             print(f"    📋 Processing {len(completed_tasks)} completed tasks")

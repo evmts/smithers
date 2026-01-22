@@ -52,10 +52,10 @@ class ClaudeNode(NodeBase):
     # For backward compatibility, accept on_* parameters at initialization
     # and move them to handlers
     def __init__(self, **data):
-        # Extract handler callbacks if provided directly
-        on_finished = data.pop('on_finished', None)
-        on_error = data.pop('on_error', None)
-        on_progress = data.pop('on_progress', None)
+        # Extract handler callbacks (both snake_case and camelCase)
+        on_finished = data.pop('on_finished', None) or data.pop('onFinished', None)
+        on_error = data.pop('on_error', None) or data.pop('onError', None)
+        on_progress = data.pop('on_progress', None) or data.pop('onProgress', None)
 
         # Initialize with base data
         super().__init__(**data)
@@ -68,10 +68,16 @@ class ClaudeNode(NodeBase):
         if on_progress is not None:
             self.handlers.on_progress = on_progress
 
+    def _get_handler_from_extra(self, camel_name: str) -> Optional[Callable]:
+        """Check handlers.__pydantic_extra__ for camelCase handler."""
+        if hasattr(self.handlers, '__pydantic_extra__') and self.handlers.__pydantic_extra__:
+            return self.handlers.__pydantic_extra__.get(camel_name)
+        return None
+
     @property
     def on_finished(self) -> Optional[Callable[[Any], None]]:
         """Access on_finished handler for backward compatibility."""
-        return self.handlers.on_finished
+        return self.handlers.on_finished or self._get_handler_from_extra('onFinished')
 
     @on_finished.setter
     def on_finished(self, value: Optional[Callable[[Any], None]]):
@@ -81,7 +87,7 @@ class ClaudeNode(NodeBase):
     @property
     def on_error(self) -> Optional[Callable[[Exception], None]]:
         """Access on_error handler for backward compatibility."""
-        return self.handlers.on_error
+        return self.handlers.on_error or self._get_handler_from_extra('onError')
 
     @on_error.setter
     def on_error(self, value: Optional[Callable[[Exception], None]]):
@@ -91,7 +97,7 @@ class ClaudeNode(NodeBase):
     @property
     def on_progress(self) -> Optional[Callable[[str], None]]:
         """Access on_progress handler for backward compatibility."""
-        return self.handlers.on_progress
+        return self.handlers.on_progress or self._get_handler_from_extra('onProgress')
 
     @on_progress.setter
     def on_progress(self, value: Optional[Callable[[str], None]]):

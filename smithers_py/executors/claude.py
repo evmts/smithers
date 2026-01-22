@@ -17,21 +17,17 @@ from typing import Any, AsyncIterator, Dict, Optional, List, Type, Union
 
 from pydantic import BaseModel
 
-# PydanticAI imports - may need adjustment based on version
+# PydanticAI imports - fail fast with clear error message
 try:
     from pydantic_ai import Agent
     from pydantic_ai.models import KnownModelName
     from pydantic_ai.result import FinalResult, RunUsage
     from pydantic_ai.messages import ModelMessage
-    PYDANTIC_AI_AVAILABLE = True
-except ImportError:
-    # Stub types for when pydantic_ai is not available or API changed
-    Agent = None  # type: ignore
-    KnownModelName = str  # type: ignore
-    FinalResult = None  # type: ignore
-    RunUsage = None  # type: ignore
-    ModelMessage = Any  # type: ignore
-    PYDANTIC_AI_AVAILABLE = False
+except ImportError as e:
+    raise ImportError(
+        "smithers_py.executors.claude requires pydantic-ai. "
+        "Install with: pip install pydantic-ai>=0.1.0"
+    ) from e
 
 from ..db.database import SmithersDB
 from .base import (

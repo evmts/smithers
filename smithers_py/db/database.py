@@ -19,8 +19,11 @@ from pathlib import Path
 import os
 
 
-class SqliteStore:
-    """State storage compatible with TypeScript implementation"""
+class GlobalStateStore:
+    """Global state storage (not execution-scoped) compatible with TypeScript implementation.
+    
+    For execution-scoped state, use smithers_py.state.SqliteStore instead.
+    """
 
     def __init__(self, db_connection: Union[sqlite3.Connection, aiosqlite.Connection]):
         self.db = db_connection
@@ -54,6 +57,10 @@ class SqliteStore:
                 (key, value_json, datetime.now().isoformat())
             )
             self.db.commit()
+
+
+# Backwards compatibility alias
+SqliteStore = GlobalStateStore
 
 
 class ExecutionModule:
@@ -431,7 +438,7 @@ class SmithersDB:
 
         # Modules
         self.execution: Optional[ExecutionModule] = None
-        self.state: Optional[SqliteStore] = None
+        self.state: Optional[GlobalStateStore] = None
         self.tasks: Optional[TasksModule] = None
         self.frames: Optional[RenderFramesModule] = None
         self.artifacts: Optional[ArtifactsModule] = None
