@@ -16,7 +16,7 @@ class IfNode(NodeBase):
     condition: bool = Field(..., description="Whether to render children")
 
     model_config = {
-        "extra": "forbid",
+        "extra": "allow",
     }
 
 
@@ -30,7 +30,7 @@ class PhaseNode(NodeBase):
     name: str = Field(..., description="Name of the phase")
 
     model_config = {
-        "extra": "forbid",
+        "extra": "allow",
     }
 
 
@@ -44,7 +44,7 @@ class StepNode(NodeBase):
     name: str = Field(..., description="Name of the step")
 
     model_config = {
-        "extra": "forbid",
+        "extra": "allow",
     }
 
 

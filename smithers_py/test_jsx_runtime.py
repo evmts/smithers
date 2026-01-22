@@ -582,7 +582,7 @@ class TestEdgeCases:
         assert callable(handlers.onError)
 
         # Invalid handler name
-        with pytest.raises(ValueError, match="must start with 'on' followed by uppercase"):
+        with pytest.raises(ValueError, match="must start with 'on"):
             NodeHandlers(invalid_name=lambda: None)
 
         # Invalid handler value (not callable)

@@ -1,6 +1,7 @@
 """Tests for task lease management."""
 
 import pytest
+import pytest_asyncio
 import sqlite3
 import tempfile
 import os
@@ -16,7 +17,7 @@ from smithers_py.engine.task_lease import (
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def db():
     """Create a temporary database for testing."""
     with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:

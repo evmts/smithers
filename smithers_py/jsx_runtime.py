@@ -90,6 +90,22 @@ def _normalize_children(children: Any) -> List[Node]:
     return [TextNode(text=str(children))]
 
 
+def _is_event_prop(prop_name: str) -> bool:
+    """Check if a prop name is an event handler prop.
+    
+    Matches:
+    - Known snake_case: on_finished, on_error, on_progress
+    - camelCase pattern: on + uppercase letter (onFinished, onError, etc.)
+    """
+    # Known snake_case event props
+    if prop_name in EVENT_PROPS:
+        return True
+    # camelCase pattern: on + uppercase letter
+    if len(prop_name) > 2 and prop_name.startswith('on') and prop_name[2].isupper():
+        return True
+    return False
+
+
 def _extract_event_handlers(props: Dict[str, Any]) -> Dict[str, Any]:
     """Extract event handler props into a separate dict for the handlers field.
 
@@ -100,12 +116,9 @@ def _extract_event_handlers(props: Dict[str, Any]) -> Dict[str, Any]:
         Dictionary with event handlers extracted
     """
     handlers = {}
-    # Extract any prop that starts with 'on' and has uppercase 3rd character
     props_to_remove = []
     for prop_name, prop_value in props.items():
-        if (len(prop_name) > 2 and
-            prop_name.startswith('on') and
-            prop_name[2].isupper()):
+        if _is_event_prop(prop_name):
             handlers[prop_name] = prop_value
             props_to_remove.append(prop_name)
 
@@ -124,17 +137,14 @@ def _validate_event_props(node_class: type, props: Dict[str, Any]) -> None:
         props: The props dictionary to validate
 
     Raises:
-        ValueError: If event props are used on non-observable nodes
+        EventValidationError: If event props are used on non-observable nodes
     """
     if node_class in OBSERVABLE_NODES:
         return  # Event props are allowed on observable nodes
 
     # Check for any event props on non-observable nodes
-    # Event props are those starting with 'on' and having uppercase 3rd character
     for prop_name in props.keys():
-        if (len(prop_name) > 2 and
-            prop_name.startswith('on') and
-            prop_name[2].isupper()):
+        if _is_event_prop(prop_name):
             raise EventValidationError(node_class.__name__, prop_name)
 
 

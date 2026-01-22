@@ -12,6 +12,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union, AsyncGenerat
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from pydantic import BaseModel
 
 from smithers_py.db.database import SmithersDB
@@ -176,23 +177,22 @@ class MockAgent:
         return self.model.run_stream(prompt, message_history=message_history)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_db():
     """Create an in-memory test database."""
-    db = SmithersDB(":memory:")
+    db = SmithersDB(":memory:", is_async=True)
     await db.connect()
     await db.initialize_schema()
 
     # Start test execution
-    execution_id = await db.execution.start("test", "test_claude_executor.py")
-    db._current_execution_id = execution_id
+    await db.execution.start("test", "test_claude_executor.py")
 
     yield db
     await db.close()
 
 
-@pytest.fixture
-def executor(test_db):
+@pytest_asyncio.fixture
+async def executor(test_db):
     """Create ClaudeExecutor with test database."""
     return ClaudeExecutor(test_db)
 

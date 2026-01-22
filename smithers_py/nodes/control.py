@@ -1,6 +1,6 @@
 """Control flow node implementations for Smithers."""
 
-from typing import Literal, Optional
+from typing import Any, Callable, List, Literal, Optional
 from pydantic import Field
 
 from .base import NodeBase
@@ -10,12 +10,10 @@ class WhileNode(NodeBase):
     """While loop node for conditional iteration.
 
     Executes children repeatedly while condition evaluates to True.
-    Requires explicit ID for stable identity across iterations.
     """
 
     type: Literal["while"] = "while"
-    id: str = Field(..., description="Required unique identifier for the while loop")
-    condition: bool = Field(..., description="Loop condition - continues while True")
+    condition: str = Field(..., description="Loop condition expression")
     max_iterations: int = Field(
         default=100,
         ge=1,
@@ -45,15 +43,15 @@ class EachNode(NodeBase):
     """Each node for list rendering.
 
     Renders children for each item in a collection.
-    Requires keys on children for stable identity.
     """
 
     type: Literal["each"] = "each"
-    # Note: items would be passed via props at runtime
-    # The actual iteration logic is handled by the runtime
+    items: List[Any] = Field(..., description="Items to iterate over")
+    render: Callable[[Any], Any] = Field(..., description="Render function for each item")
 
     model_config = {
         "extra": "forbid",
+        "arbitrary_types_allowed": True,
     }
 
 

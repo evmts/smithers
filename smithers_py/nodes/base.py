@@ -41,7 +41,11 @@ class NodeHandlers(BaseModel):
         """Access handler by name, returning None if not set."""
         if name.startswith('_'):
             raise AttributeError(name)
-        return self.__dict__.get(name)
+        # Check model_extra for dynamically added handlers
+        if hasattr(self, '__pydantic_extra__') and self.__pydantic_extra__:
+            if name in self.__pydantic_extra__:
+                return self.__pydantic_extra__[name]
+        return None
 
 
 class NodeMeta(BaseModel):

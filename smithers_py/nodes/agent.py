@@ -1,6 +1,6 @@
 """Agent node implementations for Smithers."""
 
-from typing import Dict, Any, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 from pydantic import Field
 
 from .base import NodeBase
@@ -15,9 +15,10 @@ class SmithersNode(NodeBase):
     """
 
     type: Literal["smithers"] = "smithers"
-    name: str = Field(..., description="Name for this subagent execution")
-    component: str = Field(
-        ...,
+    prompt: str = Field(..., description="Prompt for this subagent execution")
+    name: Optional[str] = Field(default=None, description="Name for this subagent execution")
+    component: Optional[str] = Field(
+        default=None,
         description="Component/function name to execute as subagent"
     )
     args: Dict[str, Any] = Field(
