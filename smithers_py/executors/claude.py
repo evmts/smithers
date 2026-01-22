@@ -46,16 +46,20 @@ class ClaudeExecutor:
     Handles model configuration, streaming, tool calls, and persistence.
     """
 
-    # Model name mappings from Smithers to PydanticAI
+    # Model name mappings from Smithers to PydanticAI (with provider prefix)
     MODEL_MAPPING = {
-        # Short names
-        "sonnet": "claude-3-5-sonnet-20241022",
-        "opus": "claude-3-opus-20240229",
-        "haiku": "claude-3-5-haiku-20241022",
-        # Full names pass through
-        "claude-3-5-sonnet-20241022": "claude-3-5-sonnet-20241022",
-        "claude-3-opus-20240229": "claude-3-opus-20240229",
-        "claude-3-5-haiku-20241022": "claude-3-5-haiku-20241022",
+        # Short names -> full names with provider prefix
+        "sonnet": "anthropic:claude-3-5-sonnet-20241022",
+        "opus": "anthropic:claude-3-opus-20240229",
+        "haiku": "anthropic:claude-3-5-haiku-20241022",
+        # Full names without prefix -> add provider prefix
+        "claude-3-5-sonnet-20241022": "anthropic:claude-3-5-sonnet-20241022",
+        "claude-3-opus-20240229": "anthropic:claude-3-opus-20240229",
+        "claude-3-5-haiku-20241022": "anthropic:claude-3-5-haiku-20241022",
+        # Already prefixed names pass through
+        "anthropic:claude-3-5-sonnet-20241022": "anthropic:claude-3-5-sonnet-20241022",
+        "anthropic:claude-3-opus-20240229": "anthropic:claude-3-opus-20240229",
+        "anthropic:claude-3-5-haiku-20241022": "anthropic:claude-3-5-haiku-20241022",
     }
 
     def __init__(self, db: SmithersDB):
@@ -63,10 +67,17 @@ class ClaudeExecutor:
         self._running_agents: Dict[str, Agent] = {}
 
     def _map_model_name(self, model: str) -> KnownModelName:
-        """Map Smithers model name to PydanticAI model name."""
-        mapped = self.MODEL_MAPPING.get(model, model)
-        # PydanticAI expects type-narrowed string literal
-        return mapped  # type: ignore
+        """Map Smithers model name to PydanticAI model name with provider prefix."""
+        # Check explicit mappings first
+        if model in self.MODEL_MAPPING:
+            return self.MODEL_MAPPING[model]  # type: ignore
+        # If already has provider prefix, use as-is
+        if ":" in model:
+            return model  # type: ignore
+        # Default: add anthropic prefix for claude models
+        if model.startswith("claude"):
+            return f"anthropic:{model}"  # type: ignore
+        return model  # type: ignore
 
     async def execute(
         self,

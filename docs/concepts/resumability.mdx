@@ -186,21 +186,19 @@ db.vcs.logCommit({ commit_hash: "abc123", ... }); // Updates existing
 For parallel VCS operations, use worktrees to isolate changes:
 
 ```tsx
-<WorktreeProvider>
-  <Parallel>
-    <Worktree name="feature-a">
-      <Claude>Implement feature A.</Claude>
-      <Commit message="feat: Add feature A" />
-    </Worktree>
-    <Worktree name="feature-b">
-      <Claude>Implement feature B.</Claude>
-      <Commit message="feat: Add feature B" />
-    </Worktree>
-  </Parallel>
-</WorktreeProvider>
+<Parallel>
+  <Worktree branch="feature-a">
+    <Claude>Implement feature A.</Claude>
+    <Commit message="feat: Add feature A" />
+  </Worktree>
+  <Worktree branch="feature-b">
+    <Claude>Implement feature B.</Claude>
+    <Commit message="feat: Add feature B" />
+  </Worktree>
+</Parallel>
 ```
 
-Each worktree operates independently, preventing conflicts on restart.
+Each worktree operates independently, preventing conflicts on restart. The `<Worktree>` component creates a git worktree at `.worktrees/{branch}` and provides the worktree context to children.
 
 ## Best Practices
 

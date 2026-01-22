@@ -7,6 +7,8 @@ description: Minimal iterative workflow with PRD context
 
 The simplest Ralph loop: read a PRD file and iterate with an agent until done.
 
+> **Note:** This is an enhanced version with reactive state queries. See [`examples/simple-ralph/index.tsx`](https://github.com/evmts/smithers/blob/main/examples/simple-ralph/index.tsx) for a minimal implementation using direct `db.state.get()` calls.
+
 ```tsx
 #!/usr/bin/env smithers
 
@@ -28,9 +30,9 @@ const executionId = db.execution.start('Simple Ralph', 'simple-ralph.tsx')
 const prd = readFileSync('./prd.md', 'utf-8')
 
 function SimpleRalph() {
-  const { db, reactiveDb } = useSmithers();
+  const { db } = useSmithers();
   const { data: done } = useQueryValue<boolean>(
-    reactiveDb,
+    db.db,
     "SELECT json_extract(value, '$') as v FROM state WHERE key = ?",
     ['done']
   );

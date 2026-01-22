@@ -650,12 +650,16 @@ function RetryWorkflow() {
 
   // Reactive state from SQLite
   const { data: attemptsRaw } = useQueryValue<number>(
-    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'"
+    db.db,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'attempts'",
+    []
   );
   const attempts = attemptsRaw ?? 0;
 
   const { data: doneRaw } = useQueryValue<number>(
-    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'"
+    db.db,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'",
+    []
   );
   const done = Boolean(doneRaw);
 
@@ -677,8 +681,11 @@ function RetryWorkflow() {
 }
 
 function AppInner() {
+  const { db } = useSmithers();
   const { data: doneRaw } = useQueryValue<number>(
-    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'"
+    db.db,
+    "SELECT CAST(value AS INTEGER) FROM state WHERE key = 'done'",
+    []
   );
   const done = Boolean(doneRaw);
 

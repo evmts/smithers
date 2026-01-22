@@ -535,17 +535,23 @@ async def test_cancellation(executor, test_db):
 
 @pytest.mark.asyncio
 async def test_model_mapping(executor):
-    """Test model name mapping."""
-    # Test short names
-    assert executor._map_model_name("sonnet") == "claude-3-5-sonnet-20241022"
-    assert executor._map_model_name("opus") == "claude-3-opus-20240229"
-    assert executor._map_model_name("haiku") == "claude-3-5-haiku-20241022"
+    """Test model name mapping with provider prefixes."""
+    # Test short names -> full names with provider prefix
+    assert executor._map_model_name("sonnet") == "anthropic:claude-3-5-sonnet-20241022"
+    assert executor._map_model_name("opus") == "anthropic:claude-3-opus-20240229"
+    assert executor._map_model_name("haiku") == "anthropic:claude-3-5-haiku-20241022"
 
-    # Test full names pass through
-    assert executor._map_model_name("claude-3-5-sonnet-20241022") == "claude-3-5-sonnet-20241022"
+    # Test full claude names get anthropic prefix
+    assert executor._map_model_name("claude-3-5-sonnet-20241022") == "anthropic:claude-3-5-sonnet-20241022"
 
-    # Test unknown model passes through
+    # Test already prefixed names pass through
+    assert executor._map_model_name("anthropic:claude-3-5-sonnet-20241022") == "anthropic:claude-3-5-sonnet-20241022"
+
+    # Test unknown model without prefix passes through
     assert executor._map_model_name("gpt-4") == "gpt-4"
+
+    # Test model with other provider prefix passes through
+    assert executor._map_model_name("openai:gpt-4") == "openai:gpt-4"
 
 
 @pytest.mark.asyncio
