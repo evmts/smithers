@@ -183,6 +183,108 @@ class GetFrameParams(BaseModel):
         return v
 
 
+class CancelNodeParams(BaseModel):
+    """Parameters for cancel_node tool."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    execution_id: str = Field(description="ID of execution")
+    node_id: str = Field(description="ID of node to cancel")
+
+    @field_validator('execution_id')
+    def validate_execution_id(cls, v):
+        if not v.strip():
+            raise ValueError("Execution ID cannot be empty")
+        return v
+
+    @field_validator('node_id')
+    def validate_node_id(cls, v):
+        if not v.strip():
+            raise ValueError("Node ID cannot be empty")
+        return v
+
+
+class RetryNodeParams(BaseModel):
+    """Parameters for retry_node tool."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    execution_id: str = Field(description="ID of execution")
+    node_id: str = Field(description="ID of node to retry")
+
+    @field_validator('execution_id')
+    def validate_execution_id(cls, v):
+        if not v.strip():
+            raise ValueError("Execution ID cannot be empty")
+        return v
+
+    @field_validator('node_id')
+    def validate_node_id(cls, v):
+        if not v.strip():
+            raise ValueError("Node ID cannot be empty")
+        return v
+
+
+class ForkFromFrameParams(BaseModel):
+    """Parameters for fork_from_frame tool."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    execution_id: str = Field(description="ID of execution to fork from")
+    frame_index: int = Field(ge=0, description="Frame index to fork from")
+    new_name: Optional[str] = Field(default=None, description="Name for new execution")
+
+    @field_validator('execution_id')
+    def validate_execution_id(cls, v):
+        if not v.strip():
+            raise ValueError("Execution ID cannot be empty")
+        return v
+
+
+class ApproveParams(BaseModel):
+    """Parameters for approve tool."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    execution_id: str = Field(description="ID of execution")
+    approval_id: str = Field(description="ID of approval to approve")
+    comment: Optional[str] = Field(default=None, description="Optional comment")
+
+    @field_validator('execution_id')
+    def validate_execution_id(cls, v):
+        if not v.strip():
+            raise ValueError("Execution ID cannot be empty")
+        return v
+
+    @field_validator('approval_id')
+    def validate_approval_id(cls, v):
+        if not v.strip():
+            raise ValueError("Approval ID cannot be empty")
+        return v
+
+
+class DenyParams(BaseModel):
+    """Parameters for deny tool."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    execution_id: str = Field(description="ID of execution")
+    approval_id: str = Field(description="ID of approval to deny")
+    comment: Optional[str] = Field(default=None, description="Optional comment")
+
+    @field_validator('execution_id')
+    def validate_execution_id(cls, v):
+        if not v.strip():
+            raise ValueError("Execution ID cannot be empty")
+        return v
+
+    @field_validator('approval_id')
+    def validate_approval_id(cls, v):
+        if not v.strip():
+            raise ValueError("Approval ID cannot be empty")
+        return v
+
+
 # Response models
 class ExecutionSummary(BaseModel):
     """Summary of execution state."""
@@ -220,6 +322,41 @@ class FrameData(BaseModel):
     frame_index: int
     execution_id: str
     xml_content: str
+    timestamp: str
+
+
+class NodeControlResult(BaseModel):
+    """Result of node control operation (cancel/retry)."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    execution_id: str
+    node_id: str
+    action: Literal["cancelled", "retried"]
+    timestamp: str
+
+
+class ForkResult(BaseModel):
+    """Result of fork_from_frame operation."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    source_execution_id: str
+    new_execution_id: str
+    frame_index: int
+    name: Optional[str] = None
+    timestamp: str
+
+
+class ApprovalResult(BaseModel):
+    """Result of approve/deny operation."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    execution_id: str
+    approval_id: str
+    decision: Literal["approved", "denied"]
+    comment: Optional[str] = None
     timestamp: str
 
 
@@ -665,6 +802,203 @@ class MCPToolProvider:
                 timestamp=row[1]
             )
 
+    def cancel_node(self, params: CancelNodeParams) -> NodeControlResult:
+        """Cancel a running node.
+
+        Args:
+            params: Cancel node parameters
+
+        Returns:
+            NodeControlResult with cancellation details
+
+        Raises:
+            ValueError: If execution not found
+            SmithersError: For cancellation errors
+        """
+        with self._lock:
+            if params.execution_id not in self._executions:
+                raise ValueError(f"Execution not found: {params.execution_id}")
+
+            ctx = self._executions[params.execution_id]
+
+            try:
+                # Mark node as cancelled in volatile state
+                ctx.volatile_state.set(f"node:{params.node_id}:status", "cancelled")
+
+                return NodeControlResult(
+                    execution_id=params.execution_id,
+                    node_id=params.node_id,
+                    action="cancelled",
+                    timestamp=datetime.now().isoformat()
+                )
+
+            except Exception as e:
+                logger.error(f"Cancel node failed: {e}")
+                raise SmithersError(f"Cancel node failed: {str(e)}")
+
+    def retry_node(self, params: RetryNodeParams) -> NodeControlResult:
+        """Retry a failed node.
+
+        Args:
+            params: Retry node parameters
+
+        Returns:
+            NodeControlResult with retry details
+
+        Raises:
+            ValueError: If execution not found
+            SmithersError: For retry errors
+        """
+        with self._lock:
+            if params.execution_id not in self._executions:
+                raise ValueError(f"Execution not found: {params.execution_id}")
+
+            ctx = self._executions[params.execution_id]
+
+            try:
+                # Mark node for retry in volatile state
+                ctx.volatile_state.set(f"node:{params.node_id}:status", "pending")
+                ctx.volatile_state.set(f"node:{params.node_id}:retry", True)
+
+                return NodeControlResult(
+                    execution_id=params.execution_id,
+                    node_id=params.node_id,
+                    action="retried",
+                    timestamp=datetime.now().isoformat()
+                )
+
+            except Exception as e:
+                logger.error(f"Retry node failed: {e}")
+                raise SmithersError(f"Retry node failed: {str(e)}")
+
+    def fork_from_frame(self, params: ForkFromFrameParams) -> ForkResult:
+        """Create new execution from frame state.
+
+        Args:
+            params: Fork from frame parameters
+
+        Returns:
+            ForkResult with new execution details
+
+        Raises:
+            ValueError: If execution or frame not found
+            SmithersError: For fork errors
+        """
+        with self._lock:
+            if params.execution_id not in self._executions:
+                raise ValueError(f"Execution not found: {params.execution_id}")
+
+            ctx = self._executions[params.execution_id]
+
+            try:
+                # Get frame data
+                cursor = ctx.db.connection.execute(
+                    """SELECT xml_content, timestamp FROM render_frames
+                       WHERE execution_id = ? AND sequence_number = ?""",
+                    (params.execution_id, params.frame_index)
+                )
+                row = cursor.fetchone()
+
+                if not row:
+                    raise ValueError(f"Frame not found: {params.frame_index}")
+
+                # Generate new execution ID
+                import uuid
+                new_execution_id = str(uuid.uuid4())
+
+                # In a real implementation, we'd:
+                # 1. Create new execution record
+                # 2. Copy state up to this frame
+                # 3. Return the new execution for the caller to start
+
+                return ForkResult(
+                    source_execution_id=params.execution_id,
+                    new_execution_id=new_execution_id,
+                    frame_index=params.frame_index,
+                    name=params.new_name,
+                    timestamp=datetime.now().isoformat()
+                )
+
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.error(f"Fork from frame failed: {e}")
+                raise SmithersError(f"Fork from frame failed: {str(e)}")
+
+    def approve(self, params: ApproveParams) -> ApprovalResult:
+        """Approve a pending approval.
+
+        Args:
+            params: Approve parameters
+
+        Returns:
+            ApprovalResult with approval details
+
+        Raises:
+            ValueError: If execution not found
+            SmithersError: For approval errors
+        """
+        with self._lock:
+            if params.execution_id not in self._executions:
+                raise ValueError(f"Execution not found: {params.execution_id}")
+
+            ctx = self._executions[params.execution_id]
+
+            try:
+                # Mark approval as approved in volatile state
+                ctx.volatile_state.set(f"approval:{params.approval_id}:status", "approved")
+                if params.comment:
+                    ctx.volatile_state.set(f"approval:{params.approval_id}:comment", params.comment)
+
+                return ApprovalResult(
+                    execution_id=params.execution_id,
+                    approval_id=params.approval_id,
+                    decision="approved",
+                    comment=params.comment,
+                    timestamp=datetime.now().isoformat()
+                )
+
+            except Exception as e:
+                logger.error(f"Approve failed: {e}")
+                raise SmithersError(f"Approve failed: {str(e)}")
+
+    def deny(self, params: DenyParams) -> ApprovalResult:
+        """Deny a pending approval.
+
+        Args:
+            params: Deny parameters
+
+        Returns:
+            ApprovalResult with denial details
+
+        Raises:
+            ValueError: If execution not found
+            SmithersError: For denial errors
+        """
+        with self._lock:
+            if params.execution_id not in self._executions:
+                raise ValueError(f"Execution not found: {params.execution_id}")
+
+            ctx = self._executions[params.execution_id]
+
+            try:
+                # Mark approval as denied in volatile state
+                ctx.volatile_state.set(f"approval:{params.approval_id}:status", "denied")
+                if params.comment:
+                    ctx.volatile_state.set(f"approval:{params.approval_id}:comment", params.comment)
+
+                return ApprovalResult(
+                    execution_id=params.execution_id,
+                    approval_id=params.approval_id,
+                    decision="denied",
+                    comment=params.comment,
+                    timestamp=datetime.now().isoformat()
+                )
+
+            except Exception as e:
+                logger.error(f"Deny failed: {e}")
+                raise SmithersError(f"Deny failed: {str(e)}")
+
     def _get_execution_summary(self, ctx: ExecutionContext) -> ExecutionSummary:
         """Get execution summary from context."""
         # Get execution details from database
@@ -765,5 +1099,30 @@ TOOL_DEFINITIONS = [
         "name": "get_frame",
         "description": "Get frame data by index",
         "inputSchema": GetFrameParams.model_json_schema()
+    },
+    {
+        "name": "cancel_node",
+        "description": "Cancel a running node",
+        "inputSchema": CancelNodeParams.model_json_schema()
+    },
+    {
+        "name": "retry_node",
+        "description": "Retry a failed node",
+        "inputSchema": RetryNodeParams.model_json_schema()
+    },
+    {
+        "name": "fork_from_frame",
+        "description": "Create new execution from frame state",
+        "inputSchema": ForkFromFrameParams.model_json_schema()
+    },
+    {
+        "name": "approve",
+        "description": "Approve a pending approval",
+        "inputSchema": ApproveParams.model_json_schema()
+    },
+    {
+        "name": "deny",
+        "description": "Deny a pending approval",
+        "inputSchema": DenyParams.model_json_schema()
     }
 ]

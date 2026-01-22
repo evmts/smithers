@@ -475,7 +475,7 @@ class TestToolDefinitions:
 
     def test_tool_definitions_structure(self):
         """Test tool definitions have correct structure."""
-        assert len(TOOL_DEFINITIONS) == 9
+        assert len(TOOL_DEFINITIONS) == 14
 
         expected_tools = [
             "start_execution",
@@ -486,7 +486,12 @@ class TestToolDefinitions:
             "resume",
             "set_state",
             "restart_from_frame",
-            "get_frame"
+            "get_frame",
+            "cancel_node",
+            "retry_node",
+            "fork_from_frame",
+            "approve",
+            "deny"
         ]
 
         for tool in TOOL_DEFINITIONS:

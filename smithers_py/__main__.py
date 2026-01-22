@@ -251,11 +251,35 @@ def main():
     run_parser.add_argument("script", help="Script file to run (.py or .px)")
     run_parser.add_argument("args", nargs="*", help="Arguments to pass to script")
 
-    # Future commands:
-    # - init: Initialize a new Smithers project
-    # - list: List executions
-    # - resume: Resume an execution
-    # - inspect: Inspect execution state
+    # serve command
+    serve_parser = subparsers.add_parser("serve", help="Start the MCP HTTP server")
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080)"
+    )
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)"
+    )
+    serve_parser.add_argument(
+        "--auth-token",
+        help="Auth token (generated if not provided)"
+    )
+    serve_parser.add_argument(
+        "--db",
+        default=".smithers/db.sqlite",
+        help="Path to SQLite database (default: .smithers/db.sqlite)"
+    )
+
+    # list command
+    list_parser = subparsers.add_parser("list", help="List executions")
+
+    # inspect command
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect execution")
+    inspect_parser.add_argument("execution_id", help="Execution ID to inspect")
 
     args = parser.parse_args()
 
@@ -278,6 +302,19 @@ def main():
             return 1
 
         return asyncio.run(run_script(args.script, args.args))
+
+    elif args.command == "serve":
+        from .mcp.http import run_http_server
+        asyncio.run(run_http_server(args.db, args.port, args.host, args.auth_token))
+        return 0
+
+    elif args.command == "list":
+        print("Not yet implemented")
+        return 0
+
+    elif args.command == "inspect":
+        print("Not yet implemented")
+        return 0
 
     else:
         parser.print_help()
