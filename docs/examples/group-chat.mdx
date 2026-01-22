@@ -26,7 +26,7 @@ import {
 interface Message { id: number; agent: string; content: string }
 
 function GroupChat({ problem }: { problem: string }) {
-  const { db } = useSmithers()
+  const { db, reactiveDb } = useSmithers()
   
   // Create messages table on first run
   db.db.run(`CREATE TABLE IF NOT EXISTS messages (
@@ -34,18 +34,18 @@ function GroupChat({ problem }: { problem: string }) {
   )`)
   
   // Reactive query - re-renders when messages change
-  const messages = useQuery<Message>(
-    db.db,
+  const { data: messages } = useQuery<Message>(
+    reactiveDb,
     'SELECT * FROM messages ORDER BY ts',
     []
   )
-  const done = useQueryValue<boolean>(
-    db.db,
+  const { data: done } = useQueryValue<boolean>(
+    reactiveDb,
     "SELECT EXISTS(SELECT 1 FROM messages WHERE content LIKE '%SOLVED:%')",
     []
   )
   
-  const transcript = messages.map(m => `[${m.agent}]: ${m.content}`).join('\n')
+  const transcript = (messages ?? []).map(m => `[${m.agent}]: ${m.content}`).join('\n')
   const addMessage = (agent: string, content: string) =>
     db.db.run('INSERT INTO messages (agent, content) VALUES (?, ?)', [agent, content])
 

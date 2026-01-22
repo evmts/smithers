@@ -28,9 +28,9 @@ const executionId = db.execution.start('Simple Ralph', 'simple-ralph.tsx')
 const prd = readFileSync('./prd.md', 'utf-8')
 
 function SimpleRalph() {
-  const { db: smithersDb } = useSmithers();
-  const done = useQueryValue<boolean>(
-    smithersDb.db,
+  const { db, reactiveDb } = useSmithers();
+  const { data: done } = useQueryValue<boolean>(
+    reactiveDb,
     "SELECT json_extract(value, '$') as v FROM state WHERE key = ?",
     ['done']
   );
@@ -50,7 +50,7 @@ function SimpleRalph() {
           fullAuto
           onFinished={(result) => {
             if (result.output?.includes('TASK_COMPLETE')) {
-              smithersDb.state.set('done', 'true')
+              db.state.set('done', 'true')
             }
           }}
         >
