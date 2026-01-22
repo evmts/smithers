@@ -1306,7 +1306,8 @@ describe('Claude callbacks', () => {
     await waitForCondition(() => errorReceived !== null, 1000, 10, 'onError')
     
     expect(errorReceived).not.toBeNull()
-    expect(errorReceived!.message).toBe('Execution failed')
+    expect(errorReceived!.message).toBe('Failed after 1 retries')
+    expect((errorReceived!.cause as Error).message).toBe('Execution failed')
     
     root.dispose()
   })

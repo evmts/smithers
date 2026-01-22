@@ -52,7 +52,7 @@ For iterative workflows, wrap with `<Ralph>` or `<While>` - see [Ralph](/compone
 </ParamField>
 
 <ParamField path="config" type="SmithersConfig">
-  Optional configuration for the workflow.
+  Optional configuration for the workflow. Note: `maxIterations` must be set inside this `config` object, not as a top-level prop.
 
   ```tsx
   <SmithersProvider
@@ -68,7 +68,7 @@ For iterative workflows, wrap with `<Ralph>` or `<While>` - see [Ralph](/compone
 
   **SmithersConfig properties:**
   - `defaultModel`: Default model for Claude agents
-  - `maxIterations`: Default max iterations for Ralph/While loops (default: 10). Individual loops can override via `maxIterations` prop.
+  - `maxIterations`: Default max iterations for Ralph/While loops (default: 10). Individual loops can override via `maxIterations` prop. **Must be in `config`, not a top-level prop.**
   - `globalTimeout`: Global timeout in milliseconds
   - `verbose`: Enable verbose logging
   - `extra`: Additional configuration for extensibility
@@ -372,13 +372,13 @@ function WorkflowContent() {
       condition={() => currentPhase !== 'done'} 
       maxIterations={10}
     >
-      <Phase name="research" active={currentPhase === "research"}>
+      <Phase name="research">
         <Claude onFinished={() => setPhase("implement")}>
           Research the problem space.
         </Claude>
       </Phase>
 
-      <Phase name="implement" active={currentPhase === "implement"}>
+      <Phase name="implement">
         <Claude onFinished={() => setPhase("done")}>
           Implement the solution.
         </Claude>

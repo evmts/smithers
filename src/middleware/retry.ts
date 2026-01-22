@@ -21,7 +21,7 @@ function calculateBackoff(attempt: number, backoff: RetryBackoff, baseDelayMs: n
  * Middleware that retries execution on failure with configurable backoff.
  *
  * @throws {Error} After all retries exhausted (message: "Failed after N retries", cause: last error)
- * @throws {Error} When `retryOn` returns false for an error (stops retry loop early)
+ * @throws {Error} Original error when `retryOn` returns false (no wrapping)
  */
 export function retryMiddleware(options: RetryMiddlewareOptions = {}): SmithersMiddleware {
   const maxRetries = options.maxRetries ?? 3
@@ -38,7 +38,11 @@ export function retryMiddleware(options: RetryMiddlewareOptions = {}): SmithersM
           return await doExecute()
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error))
-          if (attempt >= maxRetries || !retryOn(lastError)) {
+          // If retryOn returns false, throw original error without wrapping
+          if (!retryOn(lastError)) {
+            throw lastError
+          }
+          if (attempt >= maxRetries) {
             throw new Error(`Failed after ${attempt + 1} retries`, { cause: lastError })
           }
           const delay = calculateBackoff(attempt, backoff, baseDelayMs)

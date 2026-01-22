@@ -259,11 +259,31 @@ Transport-agnostic with secure defaults:
 
 ## CLI
 
-```bash
-# Run a plan
-smithers_py run script.px
+### Implemented Commands
 
-# Auto-registers .px import hook for Python JSX
+```bash
+# Run a script (.py or .px)
+python -m smithers_py run script.py
+
+# Start MCP HTTP server
+python -m smithers_py serve --port 8080
+
+# List recent executions
+python -m smithers_py list --limit 20
+
+# Inspect execution details
+python -m smithers_py inspect <execution_id>
+
+# Database inspection
+python -m smithers_py db state <execution_id>
+python -m smithers_py db transitions <execution_id>
+python -m smithers_py db frames <execution_id>
+
+# View logs
+python -m smithers_py logs <execution_id>
+
+# Export execution for offline analysis
+python -m smithers_py export <execution_id> -o archive.zip
 ```
 
 ## Milestones
@@ -285,34 +305,62 @@ smithers_py run script.px
 
 ```
 smithers_py/
-├── dsl/jsx.py              # python-jsx integration
+├── __init__.py             # Package entry
+├── __main__.py             # CLI entry point
+├── decorators.py           # @component, @phase decorators
+├── jsx_runtime.py          # JSX runtime (jsx, Fragment)
+├── errors.py               # Error types
 ├── nodes/
-│   ├── base.py             # BaseNode, TextNode
+│   ├── __init__.py
+│   ├── base.py             # BaseNode
+│   ├── text.py             # TextNode
 │   ├── structural.py       # If, Each, Fragment
 │   ├── control.py          # While, Ralph, Phase, Step
 │   ├── agent.py            # Claude, Smithers (subagent)
-│   └── effects.py          # Effect, Stop, End
-├── runtime/
-│   ├── engine.py           # Render/commit/effect loop
-│   ├── context.py          # ctx (state, vol, fs)
-│   ├── signals.py          # Signal, Computed
-│   └── tasks.py            # Task registry
+│   ├── effects.py          # Effect, Stop, End
+│   └── runnable.py         # RunnableNode base
+├── engine/
+│   ├── __init__.py
+│   ├── tick_loop.py        # Render/commit/effect loop
+│   ├── effects.py          # Effect execution
+│   ├── events.py           # Event system
+│   ├── phases.py           # Phase management
+│   ├── loops.py            # Loop constructs
+│   ├── node_identity.py    # Stable node identity
+│   ├── task_lease.py       # Task leasing for crash recovery
+│   ├── stop_conditions.py  # Termination logic
+│   ├── render_purity.py    # Render purity checks
+│   ├── frame_storm.py      # Frame coalescing
+│   ├── fs_watcher.py       # File system watching
+│   ├── artifacts.py        # Artifact management
+│   ├── approvals.py        # Human approval gates
+│   └── handler_transaction.py
 ├── state/
-│   ├── sqlite_store.py     # Durable state
-│   ├── volatile_store.py   # In-memory state
-│   └── batching.py         # Write queue, flush
-├── agents/
-│   ├── pydantic_adapter.py # PydanticAI wrapper
-│   ├── tools.py            # Tool registration
-│   └── history.py          # History processors
+│   ├── __init__.py
+│   ├── base.py             # Base state interface
+│   ├── sqlite.py           # Durable SQLite state
+│   ├── volatile.py         # In-memory state
+│   ├── signals.py          # Signal, Computed
+│   └── actions.py          # State actions
 ├── db/
-│   ├── schema.py           # Table definitions
-│   ├── migrations.py       # Schema migrations
-│   └── queries.py          # Common queries
-└── mcp/
-    ├── server.py           # MCP core
-    ├── stdio.py            # stdio transport
-    └── http.py             # Streamable HTTP
+│   ├── __init__.py
+│   ├── database.py         # Database connection
+│   ├── schema.sql          # Table definitions
+│   ├── artifacts_schema.sql
+│   └── migrations.py       # Schema migrations
+├── mcp/
+│   ├── __init__.py
+│   ├── server.py           # MCP core
+│   ├── stdio.py            # stdio transport
+│   ├── http.py             # Streamable HTTP
+│   ├── tools.py            # Tool registration
+│   ├── resources.py        # MCP resources
+│   └── notifications.py    # MCP notifications
+├── executors/              # Task executors
+├── serialize/              # Serialization utilities
+├── vcs/                    # Version control integration
+├── e2e/                    # End-to-end tests
+└── examples/               # Example scripts
 ```
 
 ## Key Design Decisions
@@ -342,7 +390,7 @@ smithers_py/
   <Card title="TypeScript Docs" icon="code" href="/introduction">
     Main Smithers framework
   </Card>
-  <Card title="PRD" icon="file" href="https://github.com/your-repo/issues/smithers-py.md">
+  <Card title="PRD" icon="file" href="https://github.com/evmts/smithers/blob/main/docs/smithers-py.md">
     Full engineering spec
   </Card>
 </CardGroup>

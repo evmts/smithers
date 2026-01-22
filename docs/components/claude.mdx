@@ -136,6 +136,30 @@ Execute Claude via Claude Code CLI. Children are the prompt.
   ```
 </ParamField>
 
+<ParamField path="outputFormat" type="'text' | 'json' | 'stream-json'" default="text">
+  Output format for Claude's response.
+
+  ```tsx
+  <Claude outputFormat="json">Return structured data.</Claude>
+  ```
+</ParamField>
+
+<ParamField path="continueConversation" type="boolean">
+  Continue from the previous conversation.
+
+  ```tsx
+  <Claude continueConversation>Follow up on previous task.</Claude>
+  ```
+</ParamField>
+
+<ParamField path="resumeSession" type="string">
+  Resume a specific session by ID.
+
+  ```tsx
+  <Claude resumeSession="session-abc123">Continue this session.</Claude>
+  ```
+</ParamField>
+
 ### Execution Configuration
 
 <ParamField path="cwd" type="string">
@@ -222,6 +246,14 @@ Execute Claude via Claude Code CLI. Children are the prompt.
 
 <ParamField path="maxRetries" type="number" default="3">
   Maximum retries for the outer error retry loop.
+</ParamField>
+
+<ParamField path="retryDelayMs" type="number" default="250">
+  Base delay in milliseconds for retry backoff.
+
+  ```tsx
+  <Claude retryDelayMs={500} maxRetries={3}>Task with slower retries.</Claude>
+  ```
 </ParamField>
 
 <ParamField path="schemaRetries" type="number" default="2">

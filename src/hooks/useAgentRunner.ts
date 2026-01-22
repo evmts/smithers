@@ -218,12 +218,15 @@ export function useAgentRunner<TProps extends BaseAgentHookProps, TOptions>(
       } catch (err) {
         endTotalTiming()
         const errorObj = err instanceof Error ? err : new Error(String(err))
+        // Extract root cause from wrapped errors (e.g., retry middleware)
+        const rootCause = errorObj.cause instanceof Error ? errorObj.cause : errorObj
+        const errorMessage = rootCause.message
         log.error('Agent execution failed', errorObj, { agentId: currentAgentId })
-        if (props.reportingEnabled !== false && currentAgentId) await db.agents.fail(currentAgentId, errorObj.message)
+        if (props.reportingEnabled !== false && currentAgentId) await db.agents.fail(currentAgentId, errorMessage)
         if (props.reportingEnabled !== false) {
           const loggerContext = adapter.getLoggerContext(props)
           const modelLabel = loggerContext['model'] ?? loggerContext['mode'] ?? ''
-          const errorData = { type: 'error' as const, title: `${adapter.getLoggerName()} ${modelLabel} failed`, content: errorObj.message, severity: 'warning' as const }
+          const errorData = { type: 'error' as const, title: `${adapter.getLoggerName()} ${modelLabel} failed`, content: errorMessage, severity: 'warning' as const }
           if (currentAgentId) await db.vcs.addReport({ ...errorData, agent_id: currentAgentId })
           else await db.vcs.addReport(errorData)
         }

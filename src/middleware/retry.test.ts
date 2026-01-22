@@ -65,7 +65,7 @@ describe('retryMiddleware', () => {
 
     await expect(
       middleware.wrapExecute?.({ doExecute: execute, options: { prompt: 'test' } })
-    ).rejects.toThrow('persistent failure')
+    ).rejects.toThrow('Failed after 3 retries')
 
     expect(attempts).toBe(3) // initial + 2 retries
   })
@@ -83,6 +83,7 @@ describe('retryMiddleware', () => {
       throw new Error('fatal error')
     }
 
+    // When retryOn returns false, throws original error without wrapping
     await expect(
       middleware.wrapExecute?.({ doExecute: execute, options: { prompt: 'test' } })
     ).rejects.toThrow('fatal error')
@@ -252,7 +253,8 @@ describe('retryMiddleware', () => {
     }
 
     expect(caughtError).toBeInstanceOf(Error)
-    expect(caughtError?.message).toBe('string error')
+    expect(caughtError?.message).toBe('Failed after 2 retries')
+    expect((caughtError?.cause as Error)?.message).toBe('string error')
   })
 
   test('has correct middleware name', () => {

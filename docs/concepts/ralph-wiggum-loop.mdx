@@ -97,8 +97,8 @@ function IterativeWorkflowBody({ attempts, testsPassing }) {
   );
 }
 
-export function IterativeWorkflow({ db, executionId }) {
-  const { reactiveDb } = useSmithers();
+function IterativeWorkflowInner() {
+  const { db, reactiveDb } = useSmithers();
   
   // State in SQLite, not useState (see State Management docs)
   const { data: attemptsVal } = useQueryValue<number>(
@@ -114,16 +114,22 @@ export function IterativeWorkflow({ db, executionId }) {
   const testsPassing = Boolean(testsPassingVal);
 
   return (
+    <Ralph
+      id="main"
+      condition={() => !testsPassing}
+      maxIterations={5}
+      onIteration={(i) => console.log(`Iteration ${i}`)}
+      onComplete={() => console.log("Workflow complete")}
+    >
+      <IterativeWorkflowBody attempts={attempts} testsPassing={testsPassing} />
+    </Ralph>
+  );
+}
+
+export function IterativeWorkflow({ db, executionId }) {
+  return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Ralph
-        id="main"
-        condition={() => !testsPassing}
-        maxIterations={5}
-        onIteration={(i) => console.log(`Iteration ${i}`)}
-        onComplete={() => console.log("Workflow complete")}
-      >
-        <IterativeWorkflowBody attempts={attempts} testsPassing={testsPassing} />
-      </Ralph>
+      <IterativeWorkflowInner />
     </SmithersProvider>
   );
 }
@@ -225,8 +231,8 @@ function PhaseWorkflowBody({ phase, setPhase }) {
   );
 }
 
-export function PhaseWorkflow({ db, executionId }) {
-  const { reactiveDb } = useSmithers();
+function PhaseWorkflowInner() {
+  const { db, reactiveDb } = useSmithers();
   
   // State in SQLite, not useState
   const { data: phaseVal } = useQueryValue<string>(
@@ -238,11 +244,17 @@ export function PhaseWorkflow({ db, executionId }) {
   const setPhase = (newPhase: string) => db.state.set('phase', newPhase);
 
   return (
+    <Ralph id="main" condition={() => phase !== "done"} maxIterations={10}>
+      {/* This block re-renders when phase changes */}
+      <PhaseWorkflowBody phase={phase} setPhase={setPhase} />
+    </Ralph>
+  );
+}
+
+export function PhaseWorkflow({ db, executionId }) {
+  return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Ralph id="main" condition={() => phase !== "done"} maxIterations={10}>
-        {/* This block re-renders when phase changes */}
-        <PhaseWorkflowBody phase={phase} setPhase={setPhase} />
-      </Ralph>
+      <PhaseWorkflowInner />
     </SmithersProvider>
   );
 }
@@ -663,7 +675,7 @@ function RetryWorkflow() {
   );
 }
 
-function App() {
+function AppInner() {
   const { reactiveDb } = useSmithers();
   
   const { data: doneRaw } = useQueryValue<number>(
@@ -673,10 +685,16 @@ function App() {
   const done = Boolean(doneRaw);
 
   return (
+    <Ralph id="main" condition={() => !done} maxIterations={10}>
+      <RetryWorkflow />
+    </Ralph>
+  );
+}
+
+function App() {
+  return (
     <SmithersProvider db={db} executionId={executionId}>
-      <Ralph id="main" condition={() => !done} maxIterations={10}>
-        <RetryWorkflow />
-      </Ralph>
+      <AppInner />
     </SmithersProvider>
   );
 }

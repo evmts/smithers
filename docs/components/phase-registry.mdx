@@ -5,6 +5,10 @@ description: Automatic sequential phase state via SQLite
 
 # PhaseRegistry
 
+<Note>
+`PhaseRegistryProvider` requires `SmithersProvider` context—it calls `useSmithers()` internally to access the database and reactive state.
+</Note>
+
 ```tsx
 import { PhaseRegistryProvider, Phase, Step } from "smithers-orchestrator";
 
