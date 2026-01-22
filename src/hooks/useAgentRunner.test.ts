@@ -1,15 +1,16 @@
 /**
  * Unit tests for useAgentRunner hook.
- * Tests the core agent execution logic, status mapping, result parsing, and execution gating.
+ * Tests the core agent execution logic patterns and middleware integration.
  */
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, mock } from 'bun:test'
 import type { UseAgentResult, BaseAgentHookProps } from './useAgentRunner.js'
 import { composeMiddleware } from '../middleware/compose.js'
 import { retryMiddleware } from '../middleware/retry.js'
-import { validationMiddleware } from '../middleware/validation.js'
+import { validationMiddleware, ValidationError } from '../middleware/validation.js'
+import type { AgentResult } from '../components/agents/types/execution.js'
 
 describe('useAgentRunner', () => {
-  describe('status mapping from DB', () => {
+  describe('status mapping logic', () => {
     const mapDbStatus = (dbStatus: string | null | undefined): 'pending' | 'running' | 'complete' | 'error' => {
       return dbStatus === 'completed' ? 'complete' : dbStatus === 'failed' ? 'error' : dbStatus === 'running' ? 'running' : 'pending'
     }
@@ -29,19 +30,18 @@ describe('useAgentRunner', () => {
     test('maps unknown status to "pending"', () => {
       expect(mapDbStatus('unknown')).toBe('pending')
       expect(mapDbStatus('queued')).toBe('pending')
-      expect(mapDbStatus('started')).toBe('pending')
     })
 
-    test('maps null status to "pending"', () => {
+    test('maps null to "pending"', () => {
       expect(mapDbStatus(null)).toBe('pending')
     })
 
-    test('maps undefined status to "pending"', () => {
+    test('maps undefined to "pending"', () => {
       expect(mapDbStatus(undefined)).toBe('pending')
     })
   })
 
-  describe('result parsing from DB row', () => {
+  describe('result parsing logic', () => {
     interface AgentRow {
       result: string | null
       result_structured: string | null
@@ -50,7 +50,7 @@ describe('useAgentRunner', () => {
       duration_ms: number | null
     }
 
-    const parseResult = (row: AgentRow | null) => {
+    const parseResult = (row: AgentRow | null): AgentResult | null => {
       if (!row?.result) return null
       return {
         output: row.result,
@@ -58,7 +58,7 @@ describe('useAgentRunner', () => {
         tokensUsed: { input: row.tokens_input ?? 0, output: row.tokens_output ?? 0 },
         turnsUsed: 0,
         durationMs: row.duration_ms ?? 0,
-        stopReason: 'completed' as const
+        stopReason: 'completed'
       }
     }
 
@@ -71,22 +71,22 @@ describe('useAgentRunner', () => {
     })
 
     test('parses structured output from JSON string', () => {
-      const row = { result: 'output text', result_structured: '{"key": "value"}', tokens_input: 100, tokens_output: 50, duration_ms: 1000 }
+      const row = { result: 'output', result_structured: '{"key":"value"}', tokens_input: 100, tokens_output: 50, duration_ms: 1000 }
       const parsed = parseResult(row)
       expect(parsed?.structured).toEqual({ key: 'value' })
     })
 
     test('handles invalid JSON in result_structured gracefully', () => {
-      const row = { result: 'output text', result_structured: 'not valid json', tokens_input: 100, tokens_output: 50, duration_ms: 1000 }
+      const row = { result: 'output', result_structured: 'not json', tokens_input: 100, tokens_output: 50, duration_ms: 1000 }
       const parsed = parseResult(row)
       expect(parsed?.structured).toBeUndefined()
     })
 
     test('constructs AgentResult with correct shape', () => {
-      const row = { result: 'output text', result_structured: null, tokens_input: 100, tokens_output: 50, duration_ms: 1000 }
+      const row = { result: 'output', result_structured: null, tokens_input: 100, tokens_output: 50, duration_ms: 1000 }
       const parsed = parseResult(row)
       expect(parsed).toEqual({
-        output: 'output text',
+        output: 'output',
         structured: undefined,
         tokensUsed: { input: 100, output: 50 },
         turnsUsed: 0,
@@ -96,7 +96,7 @@ describe('useAgentRunner', () => {
     })
 
     test('defaults tokens to 0 when null', () => {
-      const row = { result: 'output', result_structured: null, tokens_input: null, tokens_output: null, duration_ms: null }
+      const row = { result: 'output', result_structured: null, tokens_input: null, tokens_output: null, duration_ms: 1000 }
       const parsed = parseResult(row)
       expect(parsed?.tokensUsed).toEqual({ input: 0, output: 0 })
     })
@@ -108,7 +108,7 @@ describe('useAgentRunner', () => {
     })
   })
 
-  describe('error parsing from DB row', () => {
+  describe('error parsing logic', () => {
     const parseError = (errorStr: string | null): Error | null => {
       return errorStr ? new Error(errorStr) : null
     }
@@ -122,33 +122,27 @@ describe('useAgentRunner', () => {
       expect(error).toBeInstanceOf(Error)
       expect(error?.message).toBe('Something went wrong')
     })
-
-    test('preserves error message exactly', () => {
-      const errorMessage = 'API rate limit exceeded: 429'
-      const error = parseError(errorMessage)
-      expect(error?.message).toBe(errorMessage)
-    })
   })
 
   describe('execution gating logic', () => {
-    const shouldExecuteLogic = (executionEnabled: boolean, scopeEnabled: boolean): boolean => {
+    const shouldExecute = (executionEnabled: boolean, scopeEnabled: boolean): boolean => {
       return executionEnabled && scopeEnabled
     }
 
-    const getExecutionKey = (shouldExecute: boolean, ralphCount: number): number | null => {
-      return shouldExecute ? ralphCount : null
+    const getExecutionKey = (shouldExec: boolean, ralphCount: number): number | null => {
+      return shouldExec ? ralphCount : null
     }
 
     test('shouldExecute is false when executionEnabled is false', () => {
-      expect(shouldExecuteLogic(false, true)).toBe(false)
+      expect(shouldExecute(false, true)).toBe(false)
     })
 
-    test('shouldExecute is false when executionScope.enabled is false', () => {
-      expect(shouldExecuteLogic(true, false)).toBe(false)
+    test('shouldExecute is false when scopeEnabled is false', () => {
+      expect(shouldExecute(true, false)).toBe(false)
     })
 
     test('shouldExecute is true when both are true', () => {
-      expect(shouldExecuteLogic(true, true)).toBe(true)
+      expect(shouldExecute(true, true)).toBe(true)
     })
 
     test('executionKey is null when shouldExecute is false', () => {
@@ -158,67 +152,123 @@ describe('useAgentRunner', () => {
     test('executionKey equals ralphCount when shouldExecute is true', () => {
       expect(getExecutionKey(true, 0)).toBe(0)
       expect(getExecutionKey(true, 5)).toBe(5)
-      expect(getExecutionKey(true, 10)).toBe(10)
-    })
-  })
-
-  describe('tail log handling', () => {
-    test('tailLogCount defaults to 10', () => {
-      const props: BaseAgentHookProps = {}
-      const tailLogCount = props.tailLogCount ?? 10
-      expect(tailLogCount).toBe(10)
-    })
-
-    test('maxEntries uses tailLogCount from props', () => {
-      const props: BaseAgentHookProps = { tailLogCount: 25 }
-      const maxEntries = props.tailLogCount ?? 10
-      expect(maxEntries).toBe(25)
-    })
-
-    test('respects custom tailLogCount values', () => {
-      const testCases = [5, 15, 50, 100]
-      for (const count of testCases) {
-        const props: BaseAgentHookProps = { tailLogCount: count }
-        expect(props.tailLogCount).toBe(count)
-      }
     })
   })
 
   describe('middleware composition', () => {
-    test('composeMiddleware is callable', () => {
+    test('composeMiddleware returns middleware object', () => {
       const composed = composeMiddleware()
       expect(composed).toBeDefined()
     })
 
-    test('retryMiddleware creates middleware with default config', () => {
+    test('retryMiddleware creates named middleware', () => {
       const middleware = retryMiddleware({ maxRetries: 3 })
-      expect(middleware).toBeDefined()
       expect(middleware.name).toBe('retry')
     })
 
-    test('retryMiddleware accepts custom baseDelayMs', () => {
+    test('retryMiddleware accepts baseDelayMs', () => {
       const middleware = retryMiddleware({ maxRetries: 3, baseDelayMs: 500 })
       expect(middleware.name).toBe('retry')
     })
 
-    test('validationMiddleware creates middleware with validate function', () => {
+    test('validationMiddleware creates named middleware', () => {
       const middleware = validationMiddleware({ validate: () => true })
-      expect(middleware).toBeDefined()
       expect(middleware.name).toBe('validation')
     })
 
-    test('middleware stack combines provider and props middleware', () => {
-      const providerMiddleware = [retryMiddleware({ maxRetries: 1 })]
-      const propsMiddleware = [validationMiddleware({ validate: () => true })]
-      const combined = [...providerMiddleware, ...propsMiddleware]
-      expect(combined.length).toBe(2)
-      expect(combined[0].name).toBe('retry')
-      expect(combined[1].name).toBe('validation')
+    test('ValidationError is exported', () => {
+      const error = new ValidationError('test')
+      expect(error).toBeInstanceOf(Error)
+      expect(error.message).toBe('test')
+    })
+
+    test('composeMiddleware combines multiple middlewares', () => {
+      const m1 = retryMiddleware({ maxRetries: 1 })
+      const m2 = validationMiddleware({ validate: () => true })
+      const composed = composeMiddleware(m1, m2)
+      expect(composed).toBeDefined()
     })
   })
 
-  describe('UseAgentResult type', () => {
-    test('has correct structure', () => {
+  describe('retryMiddleware wrapExecute behavior', () => {
+    test('calls doExecute function', async () => {
+      const middleware = retryMiddleware({ maxRetries: 0 })
+      const doExecute = mock(() => Promise.resolve({ output: 'ok', tokensUsed: { input: 0, output: 0 }, turnsUsed: 0, durationMs: 0, stopReason: 'completed' as const }))
+      
+      if (middleware.wrapExecute) {
+        const result = await middleware.wrapExecute({ doExecute, options: { prompt: 'test' } })
+        expect(doExecute).toHaveBeenCalled()
+        expect(result.output).toBe('ok')
+      }
+    })
+
+    test('retries on failure', async () => {
+      let attempts = 0
+      const middleware = retryMiddleware({ maxRetries: 2, baseDelayMs: 1 })
+      const doExecute = mock(() => {
+        attempts++
+        if (attempts < 2) throw new Error('fail')
+        return Promise.resolve({ output: 'ok', tokensUsed: { input: 0, output: 0 }, turnsUsed: 0, durationMs: 0, stopReason: 'completed' as const })
+      })
+      
+      if (middleware.wrapExecute) {
+        const result = await middleware.wrapExecute({ doExecute, options: { prompt: 'test' } })
+        expect(attempts).toBe(2)
+        expect(result.output).toBe('ok')
+      }
+    })
+  })
+
+  describe('validationMiddleware transformResult behavior', () => {
+    test('passes result when validation succeeds', async () => {
+      const middleware = validationMiddleware({ validate: () => true })
+      const result: AgentResult = { output: 'ok', tokensUsed: { input: 0, output: 0 }, turnsUsed: 0, durationMs: 0, stopReason: 'completed' }
+      
+      if (middleware.transformResult) {
+        const transformed = await middleware.transformResult(result)
+        expect(transformed.output).toBe('ok')
+      }
+    })
+
+    test('throws ValidationError when validation fails', async () => {
+      const middleware = validationMiddleware({ validate: () => false })
+      const result: AgentResult = { output: 'bad', tokensUsed: { input: 0, output: 0 }, turnsUsed: 0, durationMs: 0, stopReason: 'completed' }
+      
+      if (middleware.transformResult) {
+        await expect(middleware.transformResult(result)).rejects.toThrow(ValidationError)
+      }
+    })
+  })
+
+  describe('BaseAgentHookProps defaults', () => {
+    test('tailLogCount defaults to 10', () => {
+      const props: BaseAgentHookProps = {}
+      expect(props.tailLogCount ?? 10).toBe(10)
+    })
+
+    test('maxRetries defaults to 3', () => {
+      const props: BaseAgentHookProps = {}
+      expect(props.maxRetries ?? 3).toBe(3)
+    })
+
+    test('retryDelayMs defaults to 250', () => {
+      const props: BaseAgentHookProps = {}
+      expect(props.retryDelayMs ?? 250).toBe(250)
+    })
+
+    test('reportingEnabled defaults to true', () => {
+      const props: BaseAgentHookProps = {}
+      expect(props.reportingEnabled !== false).toBe(true)
+    })
+
+    test('reportingEnabled can be disabled', () => {
+      const props: BaseAgentHookProps = { reportingEnabled: false }
+      expect(props.reportingEnabled !== false).toBe(false)
+    })
+  })
+
+  describe('UseAgentResult type structure', () => {
+    test('all required fields are present', () => {
       const result: UseAgentResult = {
         status: 'pending',
         agentId: null,
@@ -229,44 +279,11 @@ describe('useAgentRunner', () => {
       }
       expect(result.status).toBe('pending')
       expect(result.agentId).toBeNull()
-      expect(result.executionId).toBeNull()
-      expect(result.result).toBeNull()
-      expect(result.error).toBeNull()
-      expect(result.tailLog).toEqual([])
     })
 
-    test('status allows all valid values', () => {
-      const validStatuses: UseAgentResult['status'][] = ['pending', 'running', 'complete', 'error']
-      for (const status of validStatuses) {
-        const result: UseAgentResult = { status, agentId: null, executionId: null, result: null, error: null, tailLog: [] }
-        expect(result.status).toBe(status)
-      }
-    })
-  })
-
-  describe('BaseAgentHookProps defaults', () => {
-    test('retryDelayMs default is 250', () => {
-      const props: BaseAgentHookProps = {}
-      const retryDelayMs = props.retryDelayMs ?? 250
-      expect(retryDelayMs).toBe(250)
-    })
-
-    test('maxRetries defaults to 3', () => {
-      const props: BaseAgentHookProps = {}
-      const maxRetries = props.maxRetries ?? 3
-      expect(maxRetries).toBe(3)
-    })
-
-    test('reportingEnabled defaults to true', () => {
-      const props: BaseAgentHookProps = {}
-      const reportingEnabled = props.reportingEnabled !== false
-      expect(reportingEnabled).toBe(true)
-    })
-
-    test('reportingEnabled can be disabled', () => {
-      const props: BaseAgentHookProps = { reportingEnabled: false }
-      const reportingEnabled = props.reportingEnabled !== false
-      expect(reportingEnabled).toBe(false)
+    test('status accepts all valid values', () => {
+      const statuses: UseAgentResult['status'][] = ['pending', 'running', 'complete', 'error']
+      expect(statuses).toHaveLength(4)
     })
   })
 

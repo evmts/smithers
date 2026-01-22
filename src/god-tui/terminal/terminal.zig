@@ -3,9 +3,13 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const posix = std.posix;
 const ansi = @import("ansi.zig");
 const keys = @import("keys.zig");
 const StdinBuffer = @import("stdin_buffer.zig").StdinBuffer;
+
+// Global for SIGWINCH handler (one terminal per process)
+var global_terminal: ?*Terminal = null;
 
 pub const Terminal = struct {
     const Self = @This();
@@ -32,19 +36,20 @@ pub const Terminal = struct {
     callback_ctx: ?*anyopaque = null,
 
     // File handles
-    stdin: std.posix.fd_t,
-    stdout: std.posix.fd_t,
+    stdin: posix.fd_t,
+    stdout: posix.fd_t,
 
     // Original terminal state (for restore)
-    original_termios: ?std.posix.termios = null,
+    original_termios: ?posix.termios = null,
+    original_sigwinch: ?posix.Sigaction = null,
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
             .stdin_buffer = StdinBuffer.init(allocator),
             .output_buffer = .{},
-            .stdin = std.posix.STDIN_FILENO,
-            .stdout = std.posix.STDOUT_FILENO,
+            .stdin = posix.STDIN_FILENO,
+            .stdout = posix.STDOUT_FILENO,
         };
     }
 
@@ -70,6 +75,11 @@ pub const Terminal = struct {
 
         // Enable raw mode
         try self.enableRawMode();
+
+        // Setup SIGWINCH handler (Unix only)
+        if (builtin.os.tag != .windows) {
+            self.setupSigwinch();
+        }
 
         // Setup stdin buffer callbacks
         self.stdin_buffer.setCallbacks(
@@ -101,6 +111,38 @@ pub const Terminal = struct {
         }
     }
 
+    // SIGWINCH handler setup
+    fn setupSigwinch(self: *Self) void {
+        global_terminal = self;
+
+        const handler = posix.Sigaction{
+            .handler = .{ .handler = sigwinchHandler },
+            .mask = posix.empty_sigset,
+            .flags = 0,
+        };
+        var old_action: posix.Sigaction = undefined;
+        posix.sigaction(posix.SIG.WINCH, &handler, &old_action);
+        self.original_sigwinch = old_action;
+    }
+
+    fn sigwinchHandler(_: i32) callconv(.C) void {
+        if (global_terminal) |term| {
+            term.updateDimensions();
+            if (term.on_resize) |cb| {
+                cb(term.callback_ctx);
+            }
+        }
+    }
+
+    fn restoreSigwinch(self: *Self) void {
+        if (self.original_sigwinch) |*action| {
+            posix.sigaction(posix.SIG.WINCH, action, null);
+        }
+        if (global_terminal == self) {
+            global_terminal = null;
+        }
+    }
+
     // Stop terminal and restore state
     pub fn stop(self: *Self) void {
         // Write stop sequence
@@ -111,6 +153,11 @@ pub const Terminal = struct {
         w.writeAll(ansi.BRACKETED_PASTE_DISABLE) catch {};
         w.writeAll(ansi.SHOW_CURSOR) catch {};
         self.flush() catch {};
+
+        // Restore SIGWINCH handler
+        if (builtin.os.tag != .windows) {
+            self.restoreSigwinch();
+        }
 
         // Restore terminal mode
         self.disableRawMode();
@@ -124,7 +171,7 @@ pub const Terminal = struct {
     // Flush output buffer to stdout
     pub fn flush(self: *Self) !void {
         if (self.output_buffer.items.len == 0) return;
-        _ = try std.posix.write(self.stdout, self.output_buffer.items);
+        _ = try posix.write(self.stdout, self.output_buffer.items);
         self.output_buffer.clearRetainingCapacity();
     }
 
@@ -170,13 +217,13 @@ pub const Terminal = struct {
             return;
         }
 
-        const ws = std.posix.winsize{
+        const ws = posix.winsize{
             .ws_col = 0,
             .ws_row = 0,
             .ws_xpixel = 0,
             .ws_ypixel = 0,
         };
-        const result = std.posix.system.ioctl(self.stdout, std.posix.T.IOCGWINSZ, @intFromPtr(&ws));
+        const result = posix.system.ioctl(self.stdout, posix.T.IOCGWINSZ, @intFromPtr(&ws));
         if (result == 0) {
             if (ws.ws_col > 0) self.columns = ws.ws_col;
             if (ws.ws_row > 0) self.rows = ws.ws_row;
@@ -224,7 +271,7 @@ pub const Terminal = struct {
         }
 
         const fd = self.stdin;
-        self.original_termios = try std.posix.tcgetattr(fd);
+        self.original_termios = try posix.tcgetattr(fd);
 
         var raw = self.original_termios.?;
 
@@ -248,24 +295,42 @@ pub const Terminal = struct {
         raw.lflag.IEXTEN = false;
 
         // Control characters: min 0, time 1 (100ms)
-        raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
-        raw.cc[@intFromEnum(std.posix.V.TIME)] = 1;
+        raw.cc[@intFromEnum(posix.V.MIN)] = 0;
+        raw.cc[@intFromEnum(posix.V.TIME)] = 1;
 
-        try std.posix.tcsetattr(fd, .NOW, raw);
+        try posix.tcsetattr(fd, .NOW, raw);
         self.was_raw = true;
     }
 
     fn disableRawMode(self: *Self) void {
         if (!self.was_raw) return;
         if (self.original_termios) |termios| {
-            std.posix.tcsetattr(self.stdin, .NOW, termios) catch {};
+            posix.tcsetattr(self.stdin, .NOW, termios) catch {};
         }
         self.was_raw = false;
     }
 
     // Check if running in a TTY
     pub fn isTTY(self: *Self) bool {
-        return std.posix.isatty(self.stdin);
+        return posix.isatty(self.stdin);
+    }
+
+    // Synchronized output wrapper - batches writes atomically
+    pub fn syncWrite(self: *Self, content: []const u8) !void {
+        try self.write(ansi.SYNC_START);
+        try self.write(content);
+        try self.write(ansi.SYNC_END);
+    }
+
+    // Cursor positioning
+    pub fn moveTo(self: *Self, row: u16, col: u16) !void {
+        const w = self.output_buffer.writer(self.allocator);
+        try ansi.cursorPosition(w, row, col);
+    }
+
+    pub fn moveToColumn(self: *Self, col: u16) !void {
+        const w = self.output_buffer.writer(self.allocator);
+        try ansi.cursorColumn(w, col);
     }
 
     // Get a writer for direct output
@@ -369,4 +434,34 @@ test "MockTerminal simulate resize" {
 
     try testing.expectEqual(@as(u16, 120), mock.columns);
     try testing.expectEqual(@as(u16, 40), mock.rows);
+}
+
+test "Terminal syncWrite wraps content" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var term = Terminal.init(allocator);
+    defer term.deinit();
+
+    try term.syncWrite("content");
+
+    const output = term.output_buffer.items;
+    try testing.expect(std.mem.startsWith(u8, output, ansi.SYNC_START));
+    try testing.expect(std.mem.endsWith(u8, output, ansi.SYNC_END));
+    try testing.expect(std.mem.indexOf(u8, output, "content") != null);
+}
+
+test "Terminal cursor positioning" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var term = Terminal.init(allocator);
+    defer term.deinit();
+
+    try term.moveTo(5, 10);
+    try testing.expectEqualStrings("\x1b[6;11H", term.output_buffer.items);
+
+    term.output_buffer.clearRetainingCapacity();
+    try term.moveToColumn(0);
+    try testing.expectEqualStrings("\x1b[1G", term.output_buffer.items);
 }
