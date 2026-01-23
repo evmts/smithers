@@ -25,3 +25,4 @@ venv/
 .ruff_cache/
 .zig-cache/
 zig-out/
+src/god-tui/main

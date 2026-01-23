@@ -1,180 +1,304 @@
 #!/usr/bin/env smithers
-/**
- * SmithersHub Implementation Workflow
- * 
- * A Ralph loop that incrementally implements SmithersHub using:
- * - Round-robin Codex/Claude for implementation
- * - Gemini for design work (CSS, HTML, JSX)
- * - Multi-agent review (Gemini, Claude, Codex)
- * - TDD approach with E2E, integration, and unit tests
- * - JJ snapshots on every change
- */
 
+import { useRef, type ReactNode } from "react";
 import {
   createSmithersRoot,
   createSmithersDB,
   SmithersProvider,
   Claude,
-  Codex,
-  // TODO: These need to be implemented
-  // Gemini,
-  // RoundRobin,
-  // CommitAndVerify,
-  // DynamicFlow,
+  Ralph,
+  Phase,
+  Step,
+  Parallel,
+  Worktree,
+  Each,
+  If,
+  useSmithers,
+  useWorktree,
+  type AgentResult,
 } from "smithers-orchestrator";
+import { useQueryValue } from "smithers-orchestrator/db";
 
-const db = createSmithersDB({ path: ".smithers/smithershub.db" });
-const executionId = db.execution.start("SmithersHub", "smithershub-workflow.tsx");
+interface DelegatedTask {
+  id: string;
+  branch: string;
+  description: string;
+  files: string[];
+  tests: { e2e: string[]; integration: string[]; unit: string[] };
+}
 
-// Configuration
-const ITERATION_TIMEOUT_MS = 10_000;
-const AGENTS = ["codex", "claude"] as const;
+interface MergeQueueEntry {
+  worktree: string;
+  branch: string;
+  timestamp: number;
+  status: "pending" | "merging" | "merged" | "failed";
+}
 
-// Context files the agent reads each iteration
-const CONTEXT_FILES = [
-  "issues/smithershub/PRD.md",
-  "issues/smithershub/ENGINEERING.md", 
-  "issues/smithershub/DESIGN.md",
-  "issues/smithershub/WORKFLOW.md",
-  "issues/smithershub/NEW_FEATURES_DESIGN.md",
-];
+interface Docs {
+  PRD: string;
+  ENGINEERING: string;
+  DESIGN: string;
+  WORKFLOW: string;
+  NEW_FEATURES: string;
+}
 
-// Structured prompt for the planning phase
-const PLANNING_PROMPT = `
-<context>
-You are implementing SmithersHub incrementally. Read the attached docs.
+const DOCS_DIR = import.meta.dir;
 
-<available_phases>
-- plan: Decide the next single task
-- implement: Write code using TDD
-- review: Get 3x LGTM from Gemini, Claude, Codex
-- commit: JJ commit and verify clean repo
-</available_phases>
+async function loadDocs(): Promise<Docs> {
+  const [PRD, ENGINEERING, DESIGN, WORKFLOW, NEW_FEATURES] = await Promise.all([
+    Bun.file(`${DOCS_DIR}/PRD.md`).text(),
+    Bun.file(`${DOCS_DIR}/ENGINEERING.md`).text(),
+    Bun.file(`${DOCS_DIR}/DESIGN.md`).text(),
+    Bun.file(`${DOCS_DIR}/WORKFLOW.md`).text(),
+    Bun.file(`${DOCS_DIR}/NEW_FEATURES_DESIGN.md`).text(),
+  ]);
+  return { PRD, ENGINEERING, DESIGN, WORKFLOW, NEW_FEATURES };
+}
 
-<rules>
-1. Implement ONE thing per iteration
-2. Use TDD: write tests first
-3. E2E Playwright tests are highest priority
-4. Integration tests second
-5. Unit tests for everything (~100% coverage)
-6. Design work (CSS/HTML/JSX) → delegate to Gemini
-7. After implementation, wait for 3x LGTM reviews
-8. Only commit when all reviews pass
-</rules>
+function createPlanningPrompt(docs: Docs): string {
+  return `
+<prd>
+${docs.PRD}
+</prd>
+
+<engineering>
+${docs.ENGINEERING}
+</engineering>
+
+<design>
+${docs.DESIGN}
+</design>
+
+<workflow>
+${docs.WORKFLOW}
+</workflow>
+
+<new_features>
+${docs.NEW_FEATURES}
+</new_features>
+
+<task>
+Analyze current state. Plan exactly 3 parallelizable tasks.
+Tasks must be independent (no shared file modifications).
+</task>
 
 <output_format>
-Return a structured response:
-{
-  "phase": "plan" | "implement" | "review" | "commit",
-  "task": "Description of the single task",
-  "is_design_work": boolean,
-  "delegate_to": "gemini" | null,
-  "files_to_create": ["path/to/file.ts"],
-  "files_to_modify": ["path/to/existing.ts"],
-  "tests_to_write": {
-    "e2e": ["test description"],
-    "integration": ["test description"],
-    "unit": ["test description"]
-  }
-}
+JSON array of 3 tasks:
+[{"id":"task-1","branch":"feature/x","description":"...","files":[],"tests":{"e2e":[],"integration":[],"unit":[]}}]
 </output_format>
-</context>
-
-Read the current implementation state and decide: what is the single next task?
 `;
+}
 
 const REVIEW_PROMPT = `
-<context>
-You are reviewing a change to SmithersHub.
-
 <criteria>
-1. Does it match the PRD requirements?
-2. Does it follow the ENGINEERING.md architecture?
-3. Does it follow the DESIGN.md guidelines?
-4. Are there sufficient tests (E2E, integration, unit)?
-5. Is the code clean and maintainable?
+1. Matches PRD requirements
+2. Follows ENGINEERING.md architecture
+3. Follows DESIGN.md guidelines
+4. Sufficient tests (E2E, integration, unit)
+5. Clean and maintainable
 </criteria>
 
-<output_format>
-{
-  "verdict": "LGTM" | "REQUEST_CHANGES",
-  "comments": ["specific feedback"],
-  "blocking_issues": ["must fix before merge"]
-}
-</output_format>
-</context>
-
-Review the attached changes.
+<output>{"verdict":"LGTM"|"REQUEST_CHANGES","comments":[],"blocking_issues":[]}</output>
 `;
 
-/**
- * Main workflow component
- * 
- * TODO: This is a scaffold. The following features need to be implemented first:
- * 1. RoundRobin component
- * 2. Agent-as-tool-call (invoke_agent)
- * 3. JJ snapshot integration
- * 4. CommitAndVerify component
- * 5. DynamicFlow component
- * 6. Gemini component
- */
-function SmithersHubWorkflow() {
-  // TODO: Replace with RoundRobin once implemented
-  // const agent = useRoundRobin(AGENTS);
-  
-  // TODO: Replace with DynamicFlow once implemented
-  // For now, using hardcoded phases as a scaffold
-  
+function useTasks(): DelegatedTask[] {
+  const { reactiveDb } = useSmithers();
+  // Query the latest completed planner agent's result
+  const queryResult = useQueryValue<string | null>(
+    reactiveDb,
+    `SELECT result FROM agents
+     WHERE system_prompt LIKE '%Lead architect%'
+       AND status = 'completed'
+       AND result IS NOT NULL
+     ORDER BY completed_at DESC LIMIT 1`,
+    []
+  );
+
+  // Debug: check what useQueryValue returns
+  console.log(`[useTasks] queryResult type=${typeof queryResult}, value=${queryResult ? 'present' : 'null'}`);
+
+  // Handle the case where queryResult is the { data } wrapper
+  const result = typeof queryResult === 'object' && queryResult !== null && 'data' in (queryResult as object)
+    ? (queryResult as { data: string | null }).data
+    : queryResult;
+
+  console.log(`[useTasks] result type=${typeof result}, present=${result ? 'yes' : 'no'}`);
+
+  if (!result || typeof result !== "string") return [];
+
+  // Parse JSON array from result
+  const match = result.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+
+  try {
+    const tasks = JSON.parse(match[0]) as DelegatedTask[];
+    console.log(`[useTasks] parsed ${tasks.length} tasks`);
+    return tasks.length === 3 ? tasks : [];
+  } catch (e) {
+    console.log(`[useTasks] parse error: ${e}`);
+    return [];
+  }
+}
+
+function useMergeQueue() {
+  const { db } = useSmithers();
+  return {
+    queue: db.state.get<MergeQueueEntry[]>("mergeQueue") ?? [],
+    add: (entry: MergeQueueEntry) => {
+      const queue = db.state.get<MergeQueueEntry[]>("mergeQueue") ?? [];
+      db.state.set("mergeQueue", [...queue, entry], "queue_add");
+    },
+    update: (worktree: string, status: MergeQueueEntry["status"]) => {
+      const queue = db.state.get<MergeQueueEntry[]>("mergeQueue") ?? [];
+      db.state.set("mergeQueue", queue.map(e => 
+        e.worktree === worktree ? { ...e, status } : e
+      ), "queue_update");
+    },
+  };
+}
+
+function useTestGate() {
+  const passedRef = useRef(false);
+  return {
+    passed: passedRef.current,
+    markPassed: () => { passedRef.current = true; },
+    condition: () => !passedRef.current,
+  };
+}
+
+function TaskPlanner({ prompt }: { prompt: string }): ReactNode {
   return (
-    <SmithersProvider 
-      db={db} 
-      executionId={executionId} 
-      maxIterations={100}
-      // TODO: Add iterationTimeout prop once implemented
-      // iterationTimeout={ITERATION_TIMEOUT_MS}
+    <Claude
+      model="sonnet"
+      systemPrompt="Lead architect. Output valid JSON only."
     >
-      {/* 
-        SCAFFOLD: This will be replaced with DynamicFlow
-        
-        The actual implementation should:
-        1. Use RoundRobin to alternate Codex/Claude
-        2. Use invoke_agent tool for delegation
-        3. Use JJWrapper for snapshots
-        4. Use CommitAndVerify for safe commits
-      */}
-      
-      {/* Phase 1: Plan */}
-      <Claude 
-        model="sonnet"
-        systemPrompt="You are a senior engineer planning SmithersHub implementation."
-      >
-        {PLANNING_PROMPT}
-        
-        Context files:
-        {CONTEXT_FILES.map(f => `@${f}`).join("\n")}
-      </Claude>
-      
-      {/* 
-        TODO: Remaining phases need new components:
-        
-        Phase 2: Implement (with RoundRobin + delegation)
-        Phase 3: Review (3x agents in parallel)
-        Phase 4: Commit (with JJ verify)
-        
-        See NEW_FEATURES_DESIGN.md for specs.
-      */}
-    </SmithersProvider>
+      {prompt}
+    </Claude>
   );
 }
 
-// Entry point
-async function main() {
-  console.log("Starting SmithersHub implementation workflow...");
-  console.log("Iteration timeout:", ITERATION_TIMEOUT_MS, "ms");
-  console.log("Agents:", AGENTS.join(", "));
-  
+function Implementer({ task }: { task: DelegatedTask }): ReactNode {
+  return (
+    <Claude
+      model="sonnet"
+      systemPrompt={`Implementing: ${task.description}`}
+      permissionMode="bypassPermissions"
+    >
+      {`
+<task>${JSON.stringify(task, null, 2)}</task>
+<rules>
+1. TDD: tests first
+2. Only modify assigned files: ${task.files.join(", ")}
+3. Run tests after
+</rules>
+      `}
+    </Claude>
+  );
+}
+
+function Reviewer({ label }: { label: string }): ReactNode {
+  return (
+    <Claude model="sonnet" systemPrompt={`Reviewer: ${label}`}>
+      {REVIEW_PROMPT}
+    </Claude>
+  );
+}
+
+function TestRunner({ cwd, onPass, onFail }: { 
+  cwd: string; 
+  onPass: () => void; 
+  onFail: () => void;
+}): ReactNode {
+  const hasRunRef = useRef(false);
+
+  if (!hasRunRef.current) {
+    hasRunRef.current = true;
+    Bun.spawn(["bun", "test"], { cwd })
+      .exited.then((code) => {
+        if (code === 0) onPass();
+        else onFail();
+      });
+  }
+
+  return null;
+}
+
+function Committer({ message }: { message: string }): ReactNode {
+  return (
+    <Claude
+      model="sonnet"
+      systemPrompt="Commit changes."
+      permissionMode="bypassPermissions"
+    >
+      {`jj commit -m "${message}"`}
+    </Claude>
+  );
+}
+
+function Merger({ branch, onResult }: { 
+  branch: string; 
+  onResult: (success: boolean) => void;
+}): ReactNode {
+  const hasRunRef = useRef(false);
+
+  if (!hasRunRef.current) {
+    hasRunRef.current = true;
+    Bun.spawn(["jj", "rebase", "-b", branch, "-d", "main"])
+      .exited.then((code) => onResult(code === 0));
+  }
+
+  return null;
+}
+
+function SmithersHubWorkflow({ planningPrompt }: { planningPrompt: string }): ReactNode {
+  const tasks = useTasks();
+  const allPlanned = tasks.length === 3;
+
+  console.log(`[Workflow] tasks.length=${tasks.length}, allPlanned=${allPlanned}`);
+
+  return (
+    <Ralph
+      id="smithershub"
+      condition={() => true}  // Will complete when all phases done
+      maxIterations={10}
+    >
+      <If condition={!allPlanned}>
+        <Phase name="plan">
+          <Step name="delegate-tasks">
+            <TaskPlanner prompt={planningPrompt} />
+          </Step>
+        </Phase>
+      </If>
+
+      <If condition={allPlanned}>
+        <Phase name="execute">
+          <Parallel>
+            <Each items={tasks}>
+              {(task) => (
+                <Step key={task.id} name={`implement-${task.id}`}>
+                  <Implementer task={task} />
+                </Step>
+              )}
+            </Each>
+          </Parallel>
+        </Phase>
+      </If>
+    </Ralph>
+  );
+}
+
+async function main(): Promise<void> {
+  const db = createSmithersDB({ path: `${DOCS_DIR}/.smithers/smithershub.db` });
+  const executionId = db.execution.start("SmithersHub", "smithershub-workflow.tsx");
+  const docs = await loadDocs();
+  const planningPrompt = createPlanningPrompt(docs);
+
   const root = createSmithersRoot();
-  await root.mount(SmithersHubWorkflow);
+  await root.mount(() => (
+    <SmithersProvider db={db} executionId={executionId}>
+      <SmithersHubWorkflow planningPrompt={planningPrompt} />
+    </SmithersProvider>
+  ));
   await db.close();
 }
 
