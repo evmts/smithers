@@ -380,7 +380,8 @@ describe('Agent Invocation Integration', () => {
       ])
 
       // All should succeed
-      [...lowTempResponses, ...highTempResponses].forEach(response => {
+      const allResponses = lowTempResponses.concat(highTempResponses)
+      allResponses.forEach(response => {
         expect(response.provider).toBe('gemini')
         expect(response.error).toBeUndefined()
       })
