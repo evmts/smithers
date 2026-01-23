@@ -1,8 +1,10 @@
-// ANSI Escape Sequences
-// Reference: issues/god-tui/08-ansi-sequences.md
+// ANSI Escape Sequences - libvaxis wrapper
+// Re-exports libvaxis control sequences with backward-compatible aliases
 
-const std = @import("std");
+const vaxis = @import("vaxis");
+const ctlseqs = vaxis.ctlseqs;
 
+// Base sequences
 pub const ESC = "\x1b";
 pub const CSI = "\x1b[";
 pub const OSC = "\x1b]";
@@ -15,64 +17,68 @@ pub const BEL = "\x07";
 pub const CURSOR_MARKER = "\x1b_pi:c\x07";
 
 // Line reset: SGR reset + hyperlink reset
-pub const LINE_RESET = "\x1b[0m\x1b]8;;\x07";
+pub const LINE_RESET = ctlseqs.sgr_reset ++ ctlseqs.osc8_clear;
 
 // Synchronized output (DEC 2026)
-pub const SYNC_START = "\x1b[?2026h";
-pub const SYNC_END = "\x1b[?2026l";
+pub const SYNC_START = ctlseqs.sync_set;
+pub const SYNC_END = ctlseqs.sync_reset;
 
 // Cursor visibility
-pub const HIDE_CURSOR = "\x1b[?25l";
-pub const SHOW_CURSOR = "\x1b[?25h";
+pub const HIDE_CURSOR = ctlseqs.hide_cursor;
+pub const SHOW_CURSOR = ctlseqs.show_cursor;
 
 // Clear operations
 pub const CLEAR_LINE = "\x1b[2K";
 pub const CLEAR_TO_EOL = "\x1b[K";
-pub const CLEAR_FROM_CURSOR = "\x1b[J";
+pub const CLEAR_FROM_CURSOR = ctlseqs.erase_below_cursor;
 pub const CLEAR_SCREEN = "\x1b[2J";
 pub const CLEAR_SCROLLBACK = "\x1b[3J";
-pub const HOME = "\x1b[H";
-pub const CLEAR_ALL = "\x1b[2J\x1b[3J\x1b[H";
+pub const HOME = ctlseqs.home;
+pub const CLEAR_ALL = "\x1b[2J\x1b[3J" ++ ctlseqs.home;
 
 // Bracketed paste
-pub const BRACKETED_PASTE_ENABLE = "\x1b[?2004h";
-pub const BRACKETED_PASTE_DISABLE = "\x1b[?2004l";
+pub const BRACKETED_PASTE_ENABLE = ctlseqs.bp_set;
+pub const BRACKETED_PASTE_DISABLE = ctlseqs.bp_reset;
 pub const PASTE_START = "\x1b[200~";
 pub const PASTE_END = "\x1b[201~";
 
 // Kitty keyboard protocol
-pub const KITTY_QUERY = "\x1b[?u";
+pub const KITTY_QUERY = ctlseqs.csi_u_query;
 pub const KITTY_ENABLE_FLAGS_7 = "\x1b[>7u"; // disambiguate + report-events + alternate-keys
-pub const KITTY_POP = "\x1b[<u";
+pub const KITTY_POP = ctlseqs.csi_u_pop;
 
 // Cell size query
 pub const CELL_SIZE_QUERY = "\x1b[16t";
 
 // SGR reset
-pub const RESET = "\x1b[0m";
+pub const RESET = ctlseqs.sgr_reset;
 
 // SGR attributes
-pub const BOLD = "\x1b[1m";
-pub const DIM = "\x1b[2m";
-pub const ITALIC = "\x1b[3m";
-pub const UNDERLINE = "\x1b[4m";
-pub const BLINK = "\x1b[5m";
-pub const INVERSE = "\x1b[7m";
-pub const HIDDEN = "\x1b[8m";
-pub const STRIKETHROUGH = "\x1b[9m";
+pub const BOLD = ctlseqs.bold_set;
+pub const DIM = ctlseqs.dim_set;
+pub const ITALIC = ctlseqs.italic_set;
+pub const UNDERLINE = ctlseqs.ul_single;
+pub const BLINK = ctlseqs.blink_set;
+pub const INVERSE = ctlseqs.reverse_set;
+pub const HIDDEN = ctlseqs.invisible_set;
+pub const STRIKETHROUGH = ctlseqs.strikethrough_set;
 
 // SGR attribute reset
-pub const RESET_BOLD = "\x1b[22m";
-pub const RESET_ITALIC = "\x1b[23m";
-pub const RESET_UNDERLINE = "\x1b[24m";
-pub const RESET_BLINK = "\x1b[25m";
-pub const RESET_INVERSE = "\x1b[27m";
-pub const RESET_HIDDEN = "\x1b[28m";
-pub const RESET_STRIKETHROUGH = "\x1b[29m";
+pub const RESET_BOLD = ctlseqs.bold_dim_reset;
+pub const RESET_ITALIC = ctlseqs.italic_reset;
+pub const RESET_UNDERLINE = ctlseqs.ul_off;
+pub const RESET_BLINK = ctlseqs.blink_reset;
+pub const RESET_INVERSE = ctlseqs.reverse_reset;
+pub const RESET_HIDDEN = ctlseqs.invisible_reset;
+pub const RESET_STRIKETHROUGH = ctlseqs.strikethrough_reset;
 
 // Default colors
-pub const FG_DEFAULT = "\x1b[39m";
-pub const BG_DEFAULT = "\x1b[49m";
+pub const FG_DEFAULT = ctlseqs.fg_reset;
+pub const BG_DEFAULT = ctlseqs.bg_reset;
+
+// Alt screen
+pub const SMCUP = ctlseqs.smcup;
+pub const RMCUP = ctlseqs.rmcup;
 
 // Move cursor
 pub fn cursorUp(writer: anytype, n: u16) !void {
@@ -170,10 +176,11 @@ pub fn hyperlinkStart(writer: anytype, url: []const u8) !void {
     try writer.print("\x1b]8;;{s}\x07", .{url});
 }
 
-pub const HYPERLINK_END = "\x1b]8;;\x07";
+pub const HYPERLINK_END = ctlseqs.osc8_clear;
 
 // Check if line contains image protocols (skip LINE_RESET for these)
 pub fn containsImage(line: []const u8) bool {
+    const std = @import("std");
     // Kitty graphics: ESC_G
     if (std.mem.indexOf(u8, line, "\x1b_G") != null) return true;
     // iTerm2 inline images
@@ -189,6 +196,7 @@ pub const SequenceStatus = enum {
 };
 
 pub fn isCompleteSequence(data: []const u8) SequenceStatus {
+    const std = @import("std");
     if (data.len == 0) return .not_escape;
     if (data[0] != '\x1b') return .not_escape;
     if (data.len == 1) return .incomplete;
@@ -232,9 +240,9 @@ pub fn isCompleteSequence(data: []const u8) SequenceStatus {
     return if (data.len >= 2) .complete else .incomplete;
 }
 
-test "ANSI sequence completeness" {
-    const testing = std.testing;
+const testing = @import("std").testing;
 
+test "ANSI sequence completeness" {
     try testing.expectEqual(SequenceStatus.complete, isCompleteSequence("\x1b[A"));
     try testing.expectEqual(SequenceStatus.incomplete, isCompleteSequence("\x1b["));
     try testing.expectEqual(SequenceStatus.complete, isCompleteSequence("\x1b[1;5A"));
@@ -243,8 +251,6 @@ test "ANSI sequence completeness" {
 }
 
 test "containsImage" {
-    const testing = std.testing;
-
     try testing.expect(containsImage("\x1b_Ga=T,f=100;base64\x1b\\"));
     try testing.expect(containsImage("\x1b]1337;File=inline=1:base64\x07"));
     try testing.expect(!containsImage("Hello world"));

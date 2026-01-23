@@ -1,15 +1,22 @@
-// Terminal Abstraction Layer
-// Reference: issues/god-tui/02-terminal-abstraction.md
+// Terminal Abstraction Layer - libvaxis wrapper
+// Provides backward-compatible API while using libvaxis for TTY handling
 
 const std = @import("std");
 const builtin = @import("builtin");
 const posix = std.posix;
+const vaxis = @import("vaxis");
+
 const ansi = @import("ansi.zig");
 const keys = @import("keys.zig");
 const StdinBuffer = @import("stdin_buffer.zig").StdinBuffer;
 
-// Global for SIGWINCH handler (one terminal per process)
-var global_terminal: ?*Terminal = null;
+// Re-export vaxis types for direct access
+pub const Vaxis = vaxis.Vaxis;
+pub const Tty = vaxis.Tty;
+pub const Key = vaxis.Key;
+pub const Event = vaxis.Event;
+pub const ctlseqs = vaxis.ctlseqs;
+pub const Winsize = vaxis.Winsize;
 
 pub const Terminal = struct {
     const Self = @This();
@@ -35,13 +42,19 @@ pub const Terminal = struct {
     on_resize: ?*const fn (ctx: ?*anyopaque) void = null,
     callback_ctx: ?*anyopaque = null,
 
-    // File handles
+    // File handles - kept for backward compatibility with interactive.zig
     stdin: posix.fd_t,
     stdout: posix.fd_t,
 
     // Original terminal state (for restore)
     original_termios: ?posix.termios = null,
-    original_sigwinch: ?posix.Sigaction = null,
+
+    // libvaxis capabilities (detected during start)
+    caps: struct {
+        kitty_keyboard: bool = false,
+        rgb: bool = false,
+        unicode: bool = false,
+    } = .{},
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
@@ -73,13 +86,8 @@ pub const Terminal = struct {
         // Get current dimensions
         self.updateDimensions();
 
-        // Enable raw mode
+        // Enable raw mode using vaxis-style termios
         try self.enableRawMode();
-
-        // Setup SIGWINCH handler (Unix only)
-        if (builtin.os.tag != .windows) {
-            self.setupSigwinch();
-        }
 
         // Setup stdin buffer callbacks
         self.stdin_buffer.setCallbacks(
@@ -90,8 +98,8 @@ pub const Terminal = struct {
 
         // Write start sequence
         const w = self.output_buffer.writer(self.allocator);
-        try w.writeAll(ansi.BRACKETED_PASTE_ENABLE);
-        try w.writeAll(ansi.KITTY_QUERY);
+        try w.writeAll(ctlseqs.bp_set); // bracketed paste
+        try w.writeAll(ctlseqs.csi_u_query); // query kitty keyboard
         try w.writeAll(ansi.CELL_SIZE_QUERY);
         try self.flush();
     }
@@ -111,53 +119,16 @@ pub const Terminal = struct {
         }
     }
 
-    // SIGWINCH handler setup
-    fn setupSigwinch(self: *Self) void {
-        global_terminal = self;
-
-        const handler = posix.Sigaction{
-            .handler = .{ .handler = sigwinchHandler },
-            .mask = posix.sigemptyset(),
-            .flags = 0,
-        };
-        var old_action: posix.Sigaction = undefined;
-        posix.sigaction(posix.SIG.WINCH, &handler, &old_action);
-        self.original_sigwinch = old_action;
-    }
-
-    fn sigwinchHandler(_: i32) callconv(.c) void {
-        if (global_terminal) |term| {
-            term.updateDimensions();
-            if (term.on_resize) |cb| {
-                cb(term.callback_ctx);
-            }
-        }
-    }
-
-    fn restoreSigwinch(self: *Self) void {
-        if (self.original_sigwinch) |*action| {
-            posix.sigaction(posix.SIG.WINCH, action, null);
-        }
-        if (global_terminal == self) {
-            global_terminal = null;
-        }
-    }
-
     // Stop terminal and restore state
     pub fn stop(self: *Self) void {
         // Write stop sequence
         const w = self.output_buffer.writer(self.allocator);
         if (self.kitty_protocol_active) {
-            w.writeAll(ansi.KITTY_POP) catch {};
+            w.writeAll(ctlseqs.csi_u_pop) catch {};
         }
-        w.writeAll(ansi.BRACKETED_PASTE_DISABLE) catch {};
-        w.writeAll(ansi.SHOW_CURSOR) catch {};
+        w.writeAll(ctlseqs.bp_reset) catch {};
+        w.writeAll(ctlseqs.show_cursor) catch {};
         self.flush() catch {};
-
-        // Restore SIGWINCH handler
-        if (builtin.os.tag != .windows) {
-            self.restoreSigwinch();
-        }
 
         // Restore terminal mode
         self.disableRawMode();
@@ -182,6 +153,7 @@ pub const Terminal = struct {
             std.mem.indexOf(u8, data, "u") != null)
         {
             self.kitty_protocol_active = true;
+            self.caps.kitty_keyboard = true;
             // Enable Kitty flags
             try self.write(ansi.KITTY_ENABLE_FLAGS_7);
         }
@@ -217,26 +189,38 @@ pub const Terminal = struct {
             return;
         }
 
+        const winsize = getWinsize(self.stdout) catch return;
+        if (winsize.cols > 0) self.columns = winsize.cols;
+        if (winsize.rows > 0) self.rows = winsize.rows;
+    }
+
+    // Get window size using vaxis-style ioctl
+    fn getWinsize(fd: posix.fd_t) !Winsize {
         var ws = posix.winsize{
             .col = 0,
             .row = 0,
             .xpixel = 0,
             .ypixel = 0,
         };
-        const result = posix.system.ioctl(self.stdout, posix.T.IOCGWINSZ, @intFromPtr(&ws));
+        const result = posix.system.ioctl(fd, posix.T.IOCGWINSZ, @intFromPtr(&ws));
         if (result == 0) {
-            if (ws.col > 0) self.columns = ws.col;
-            if (ws.row > 0) self.rows = ws.row;
+            return Winsize{
+                .cols = ws.col,
+                .rows = ws.row,
+                .x_pixel = ws.xpixel,
+                .y_pixel = ws.ypixel,
+            };
         }
+        return error.IoctlError;
     }
 
     // Cursor operations
     pub fn hideCursor(self: *Self) !void {
-        try self.write(ansi.HIDE_CURSOR);
+        try self.write(ctlseqs.hide_cursor);
     }
 
     pub fn showCursor(self: *Self) !void {
-        try self.write(ansi.SHOW_CURSOR);
+        try self.write(ctlseqs.show_cursor);
     }
 
     pub fn moveBy(self: *Self, lines: i32) !void {
@@ -250,7 +234,7 @@ pub const Terminal = struct {
     }
 
     pub fn clearFromCursor(self: *Self) !void {
-        try self.write(ansi.CLEAR_FROM_CURSOR);
+        try self.write(ctlseqs.erase_below_cursor);
     }
 
     pub fn clearScreen(self: *Self) !void {
@@ -263,7 +247,7 @@ pub const Terminal = struct {
         try ansi.setTitle(w, title);
     }
 
-    // Raw mode management
+    // Raw mode management using vaxis-style termios
     fn enableRawMode(self: *Self) !void {
         if (builtin.os.tag == .windows) {
             // Windows: would use SetConsoleMode
@@ -280,37 +264,39 @@ pub const Terminal = struct {
 
         var raw = self.original_termios.?;
 
-        // Input flags: disable BREAK, CR-to-NL, parity, strip, XON/XOFF
+        // Use vaxis-style raw mode settings (from tty.zig makeRaw)
+        raw.iflag.IGNBRK = false;
         raw.iflag.BRKINT = false;
-        raw.iflag.ICRNL = false;
-        raw.iflag.INPCK = false;
+        raw.iflag.PARMRK = false;
         raw.iflag.ISTRIP = false;
+        raw.iflag.INLCR = false;
+        raw.iflag.IGNCR = false;
+        raw.iflag.ICRNL = false;
         raw.iflag.IXON = false;
 
-        // Output flags: disable post-processing
         raw.oflag.OPOST = false;
 
-        // Control flags: 8-bit chars
-        raw.cflag.CSIZE = .CS8;
-
-        // Local flags: disable echo, canonical, signals, extended
         raw.lflag.ECHO = false;
+        raw.lflag.ECHONL = false;
         raw.lflag.ICANON = false;
         raw.lflag.ISIG = false;
         raw.lflag.IEXTEN = false;
 
-        // Control characters: min 1 (block until at least 1 byte), time 0
+        raw.cflag.CSIZE = .CS8;
+        raw.cflag.PARENB = false;
+
+        // VMIN=1, VTIME=0 for blocking read
         raw.cc[@intFromEnum(posix.V.MIN)] = 1;
         raw.cc[@intFromEnum(posix.V.TIME)] = 0;
 
-        try posix.tcsetattr(fd, .NOW, raw);
+        try posix.tcsetattr(fd, .FLUSH, raw);
         self.was_raw = true;
     }
 
     fn disableRawMode(self: *Self) void {
         if (!self.was_raw) return;
         if (self.original_termios) |termios| {
-            posix.tcsetattr(self.stdin, .NOW, termios) catch {};
+            posix.tcsetattr(self.stdin, .FLUSH, termios) catch {};
         }
         self.was_raw = false;
     }
@@ -322,9 +308,9 @@ pub const Terminal = struct {
 
     // Synchronized output wrapper - batches writes atomically
     pub fn syncWrite(self: *Self, content: []const u8) !void {
-        try self.write(ansi.SYNC_START);
+        try self.write(ctlseqs.sync_set);
         try self.write(content);
-        try self.write(ansi.SYNC_END);
+        try self.write(ctlseqs.sync_reset);
     }
 
     // Cursor positioning
@@ -341,6 +327,15 @@ pub const Terminal = struct {
     // Get a writer for direct output
     pub fn writer(self: *Self) std.ArrayListUnmanaged(u8).Writer {
         return self.output_buffer.writer(self.allocator);
+    }
+
+    // Alt screen support
+    pub fn enterAltScreen(self: *Self) !void {
+        try self.write(ctlseqs.smcup);
+    }
+
+    pub fn exitAltScreen(self: *Self) !void {
+        try self.write(ctlseqs.rmcup);
     }
 };
 
@@ -451,8 +446,8 @@ test "Terminal syncWrite wraps content" {
     try term.syncWrite("content");
 
     const output = term.output_buffer.items;
-    try testing.expect(std.mem.startsWith(u8, output, ansi.SYNC_START));
-    try testing.expect(std.mem.endsWith(u8, output, ansi.SYNC_END));
+    try testing.expect(std.mem.startsWith(u8, output, ctlseqs.sync_set));
+    try testing.expect(std.mem.endsWith(u8, output, ctlseqs.sync_reset));
     try testing.expect(std.mem.indexOf(u8, output, "content") != null);
 }
 

@@ -1,59 +1,174 @@
-// Key Parsing and Matching
-// Reference: issues/god-tui/06-input-handling.md
+// Key Parsing and Matching - libvaxis wrapper
+// Re-exports vaxis.Key with backward-compatible aliases and matching utilities
 
 const std = @import("std");
+const vaxis = @import("vaxis");
 
-// Key identifiers for matching
-pub const KeyId = enum {
+// Re-export vaxis.Key for direct use
+pub const VaxisKey = vaxis.Key;
+
+// Key identifiers for matching - maps to vaxis codepoints
+pub const KeyId = enum(u21) {
     // Letters (ctrl+letter produces \x01-\x1a)
-    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z,
+    a = 'a',
+    b = 'b',
+    c = 'c',
+    d = 'd',
+    e = 'e',
+    f = 'f',
+    g = 'g',
+    h = 'h',
+    i = 'i',
+    j = 'j',
+    k = 'k',
+    l = 'l',
+    m = 'm',
+    n = 'n',
+    o = 'o',
+    p = 'p',
+    q = 'q',
+    r = 'r',
+    s = 's',
+    t = 't',
+    u = 'u',
+    v = 'v',
+    w = 'w',
+    x = 'x',
+    y = 'y',
+    z = 'z',
 
     // Numbers
-    @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9",
+    @"0" = '0',
+    @"1" = '1',
+    @"2" = '2',
+    @"3" = '3',
+    @"4" = '4',
+    @"5" = '5',
+    @"6" = '6',
+    @"7" = '7',
+    @"8" = '8',
+    @"9" = '9',
 
-    // Special keys
-    escape,
-    enter,
-    tab,
-    backspace,
-    delete,
-    space,
+    // Special keys - using vaxis codepoints
+    escape = VaxisKey.escape,
+    enter = VaxisKey.enter,
+    tab = VaxisKey.tab,
+    backspace = VaxisKey.backspace,
+    delete = VaxisKey.delete,
+    space = VaxisKey.space,
 
     // Arrow keys
-    up,
-    down,
-    left,
-    right,
+    up = VaxisKey.up,
+    down = VaxisKey.down,
+    left = VaxisKey.left,
+    right = VaxisKey.right,
 
     // Navigation
-    home,
-    end,
-    page_up,
-    page_down,
-    insert,
+    home = VaxisKey.home,
+    end = VaxisKey.end,
+    page_up = VaxisKey.page_up,
+    page_down = VaxisKey.page_down,
+    insert = VaxisKey.insert,
 
     // Function keys
-    f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+    f1 = VaxisKey.f1,
+    f2 = VaxisKey.f2,
+    f3 = VaxisKey.f3,
+    f4 = VaxisKey.f4,
+    f5 = VaxisKey.f5,
+    f6 = VaxisKey.f6,
+    f7 = VaxisKey.f7,
+    f8 = VaxisKey.f8,
+    f9 = VaxisKey.f9,
+    f10 = VaxisKey.f10,
+    f11 = VaxisKey.f11,
+    f12 = VaxisKey.f12,
 
-    // Unknown
-    unknown,
+    // Unknown (using multicodepoint as a sentinel)
+    unknown = VaxisKey.multicodepoint,
+
+    // Convert from vaxis codepoint
+    pub fn fromCodepoint(cp: u21) KeyId {
+        return switch (cp) {
+            'a'...'z' => @enumFromInt(cp),
+            'A'...'Z' => @enumFromInt(cp - 'A' + 'a'), // lowercase
+            '0'...'9' => @enumFromInt(cp),
+            VaxisKey.escape => .escape,
+            VaxisKey.enter => .enter,
+            VaxisKey.tab => .tab,
+            VaxisKey.backspace => .backspace,
+            VaxisKey.delete => .delete,
+            VaxisKey.space => .space,
+            VaxisKey.up => .up,
+            VaxisKey.down => .down,
+            VaxisKey.left => .left,
+            VaxisKey.right => .right,
+            VaxisKey.home => .home,
+            VaxisKey.end => .end,
+            VaxisKey.page_up => .page_up,
+            VaxisKey.page_down => .page_down,
+            VaxisKey.insert => .insert,
+            VaxisKey.f1 => .f1,
+            VaxisKey.f2 => .f2,
+            VaxisKey.f3 => .f3,
+            VaxisKey.f4 => .f4,
+            VaxisKey.f5 => .f5,
+            VaxisKey.f6 => .f6,
+            VaxisKey.f7 => .f7,
+            VaxisKey.f8 => .f8,
+            VaxisKey.f9 => .f9,
+            VaxisKey.f10 => .f10,
+            VaxisKey.f11 => .f11,
+            VaxisKey.f12 => .f12,
+            else => .unknown,
+        };
+    }
 };
 
-// Modifier flags
+// Modifier flags - compatible with vaxis.Key.Modifiers
 pub const Modifiers = packed struct {
     shift: bool = false,
     alt: bool = false,
     ctrl: bool = false,
     super: bool = false,
+
+    pub fn fromVaxis(mods: VaxisKey.Modifiers) Modifiers {
+        return .{
+            .shift = mods.shift,
+            .alt = mods.alt,
+            .ctrl = mods.ctrl,
+            .super = mods.super,
+        };
+    }
+
+    pub fn toVaxis(self: Modifiers) VaxisKey.Modifiers {
+        return .{
+            .shift = self.shift,
+            .alt = self.alt,
+            .ctrl = self.ctrl,
+            .super = self.super,
+        };
+    }
 };
 
-// Parsed key event
+// Parsed key event - wrapper around vaxis.Key
 pub const KeyEvent = struct {
     key: KeyId,
     modifiers: Modifiers,
     is_release: bool = false,
     is_repeat: bool = false,
     raw: []const u8,
+
+    // Create from vaxis.Key
+    pub fn fromVaxis(vkey: VaxisKey, raw_data: []const u8) KeyEvent {
+        return .{
+            .key = KeyId.fromCodepoint(vkey.codepoint),
+            .modifiers = Modifiers.fromVaxis(vkey.mods),
+            .is_release = false, // vaxis reports release as separate event
+            .is_repeat = false,
+            .raw = raw_data,
+        };
+    }
 };
 
 // Kitty modifier bitmask (1-indexed in protocol)
@@ -93,7 +208,7 @@ pub fn parseKittySequence(data: []const u8) ?KeyEvent {
         modifier_val = std.fmt.parseInt(u8, mod_part, 10) catch 1;
     }
 
-    const key = codepointToKeyId(codepoint);
+    const key = KeyId.fromCodepoint(codepoint);
     const modifiers = parseKittyModifiers(modifier_val);
 
     return .{
@@ -102,20 +217,6 @@ pub fn parseKittySequence(data: []const u8) ?KeyEvent {
         .is_release = event_type == 3,
         .is_repeat = event_type == 2,
         .raw = data,
-    };
-}
-
-fn codepointToKeyId(cp: u21) KeyId {
-    return switch (cp) {
-        'a'...'z' => @enumFromInt(@as(u8, @intCast(cp - 'a'))),
-        'A'...'Z' => @enumFromInt(@as(u8, @intCast(cp - 'A'))),
-        '0'...'9' => @enumFromInt(@as(u8, @intCast(cp - '0' + 26))),
-        27 => .escape,
-        13 => .enter,
-        9 => .tab,
-        127 => .backspace,
-        32 => .space,
-        else => .unknown,
     };
 }
 
@@ -157,20 +258,19 @@ pub fn parseLegacyKey(data: []const u8) KeyEvent {
         // Ctrl+A through Ctrl+Z (excluding tab=9, enter=13)
         if (c >= 1 and c <= 26) {
             return .{
-                .key = @enumFromInt(@as(u8, c - 1)),
+                .key = @enumFromInt(@as(u21, c - 1 + 'a')),
                 .modifiers = .{ .ctrl = true },
                 .raw = data,
             };
         }
-        if (c >= 'a' and c <= 'z') return .{ .key = @enumFromInt(@as(u8, c - 'a')), .modifiers = .{}, .raw = data };
-        if (c >= 'A' and c <= 'Z') return .{ .key = @enumFromInt(@as(u8, c - 'A')), .modifiers = .{ .shift = true }, .raw = data };
-        if (c >= '0' and c <= '9') return .{ .key = @enumFromInt(@as(u8, c - '0' + 26)), .modifiers = .{}, .raw = data };
+        if (c >= 'a' and c <= 'z') return .{ .key = @enumFromInt(@as(u21, c)), .modifiers = .{}, .raw = data };
+        if (c >= 'A' and c <= 'Z') return .{ .key = @enumFromInt(@as(u21, c - 'A' + 'a')), .modifiers = .{ .shift = true }, .raw = data };
+        if (c >= '0' and c <= '9') return .{ .key = @enumFromInt(@as(u21, c)), .modifiers = .{}, .raw = data };
     }
 
     // Arrow keys and other CSI sequences
     if (std.mem.startsWith(u8, data, "\x1b[") or std.mem.startsWith(u8, data, "\x1bO")) {
-        const is_ss3 = data[1] == 'O';
-        const seq = if (is_ss3) data[2..] else data[2..];
+        const seq = data[2..];
 
         // Simple arrow keys: ESC[A, ESC[B, etc. or ESCOA, ESCOB
         if (seq.len == 1) {
@@ -241,7 +341,7 @@ pub fn parseLegacyKey(data: []const u8) KeyEvent {
         const c = data[1];
         if (c >= 'a' and c <= 'z') {
             return .{
-                .key = @enumFromInt(@as(u8, c - 'a')),
+                .key = @enumFromInt(@as(u21, c)),
                 .modifiers = .{ .alt = true },
                 .raw = data,
             };
@@ -293,8 +393,8 @@ pub fn matchesKey(data: []const u8, key_str: []const u8) bool {
 fn stringToKeyId(s: []const u8) ?KeyId {
     if (s.len == 1) {
         const c = s[0];
-        if (c >= 'a' and c <= 'z') return @enumFromInt(@as(u8, c - 'a'));
-        if (c >= '0' and c <= '9') return @enumFromInt(@as(u8, c - '0' + 26));
+        if (c >= 'a' and c <= 'z') return @enumFromInt(@as(u21, c));
+        if (c >= '0' and c <= '9') return @enumFromInt(@as(u21, c));
     }
 
     const map = std.StaticStringMap(KeyId).initComptime(.{
@@ -330,6 +430,11 @@ fn stringToKeyId(s: []const u8) ?KeyId {
     });
 
     return map.get(s);
+}
+
+// Match using vaxis.Key directly
+pub fn matchVaxisKey(key: VaxisKey, codepoint: u21, mods: VaxisKey.Modifiers) bool {
+    return key.matches(codepoint, mods);
 }
 
 test "Ctrl+C matching" {

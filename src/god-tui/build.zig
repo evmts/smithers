@@ -211,11 +211,15 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("terminal/test.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vaxis", .module = vaxis_mod },
+            },
         }),
     });
     const run_terminal_tests = b.addRunArtifact(terminal_tests);
     const terminal_test_step = b.step("test-terminal", "Run terminal module tests");
     terminal_test_step.dependOn(&run_terminal_tests.step);
+    test_step.dependOn(&run_terminal_tests.step);
 
     // Agent module tests (with ai-zig for anthropic_provider)
     const agent_tests = b.addTest(.{

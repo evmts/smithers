@@ -1,12 +1,17 @@
 // Stdin Buffer - Input sequence parsing with bracketed paste
-// Reference: issues/god-tui/06-input-handling.md
+// Now delegates to vaxis.Parser for proper escape sequence parsing
 
 const std = @import("std");
+const vaxis = @import("vaxis");
+
 const ansi = @import("ansi.zig");
 
 // Callback types
 pub const DataCallback = *const fn (sequence: []const u8, ctx: ?*anyopaque) void;
 pub const PasteCallback = *const fn (content: []const u8, ctx: ?*anyopaque) void;
+
+// Vaxis event callback - called for key_press, key_release events
+pub const VaxisEventCallback = *const fn (event: vaxis.Event, ctx: ?*anyopaque) void;
 
 pub const StdinBuffer = struct {
     const Self = @This();
@@ -18,7 +23,11 @@ pub const StdinBuffer = struct {
     timeout_ns: u64 = 10 * std.time.ns_per_ms, // 10ms default
     data_callback: ?DataCallback = null,
     paste_callback: ?PasteCallback = null,
+    vaxis_event_callback: ?VaxisEventCallback = null,
     callback_ctx: ?*anyopaque = null,
+
+    // vaxis parser for proper escape sequence handling
+    parser: vaxis.Parser = .{},
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
@@ -39,6 +48,11 @@ pub const StdinBuffer = struct {
         self.callback_ctx = ctx;
     }
 
+    pub fn setVaxisEventCallback(self: *Self, event_cb: ?VaxisEventCallback, ctx: ?*anyopaque) void {
+        self.vaxis_event_callback = event_cb;
+        self.callback_ctx = ctx;
+    }
+
     fn emitData(self: *Self, seq: []const u8) void {
         if (self.data_callback) |cb| {
             cb(seq, self.callback_ctx);
@@ -48,6 +62,12 @@ pub const StdinBuffer = struct {
     fn emitPaste(self: *Self, content: []const u8) void {
         if (self.paste_callback) |cb| {
             cb(content, self.callback_ctx);
+        }
+    }
+
+    fn emitVaxisEvent(self: *Self, event: vaxis.Event) void {
+        if (self.vaxis_event_callback) |cb| {
+            cb(event, self.callback_ctx);
         }
     }
 
@@ -171,6 +191,52 @@ pub const StdinBuffer = struct {
         }
     }
 
+    // Process using vaxis parser - returns parsed events
+    pub fn processWithVaxis(self: *Self, data: []const u8) !void {
+        var seq_start: usize = 0;
+
+        while (seq_start < data.len) {
+            const result = try self.parser.parse(data[seq_start..], null);
+            if (result.n == 0) {
+                // Incomplete sequence - buffer it
+                try self.buffer.appendSlice(self.allocator, data[seq_start..]);
+                return;
+            }
+            seq_start += result.n;
+
+            if (result.event) |event| {
+                // Handle paste events specially
+                switch (event) {
+                    .paste_start => self.in_paste = true,
+                    .paste_end => self.in_paste = false,
+                    .paste => |text| {
+                        self.emitPaste(text);
+                    },
+                    .key_press => |key| {
+                        // Convert to raw bytes for backward compatibility
+                        if (key.text) |text| {
+                            self.emitData(text);
+                        } else {
+                            // Encode key back to escape sequence for legacy callback
+                            var buf: [32]u8 = undefined;
+                            const len = encodeKeyToEscapeSequence(key, &buf);
+                            if (len > 0) {
+                                self.emitData(buf[0..len]);
+                            }
+                        }
+                        self.emitVaxisEvent(event);
+                    },
+                    .key_release => {
+                        self.emitVaxisEvent(event);
+                    },
+                    else => {
+                        self.emitVaxisEvent(event);
+                    },
+                }
+            }
+        }
+    }
+
     // Flush buffer on timeout (returns remaining sequences)
     pub fn flush(self: *Self) !void {
         if (self.buffer.items.len > 0) {
@@ -234,6 +300,64 @@ fn findSequenceEnd(data: []const u8) usize {
 
     // Meta: ESC + char
     return @min(2, data.len);
+}
+
+// Encode a vaxis.Key back to an escape sequence for legacy callbacks
+fn encodeKeyToEscapeSequence(key: vaxis.Key, buf: []u8) usize {
+    // Handle control characters
+    if (key.mods.ctrl and key.codepoint >= 'a' and key.codepoint <= 'z') {
+        buf[0] = @intCast(key.codepoint - 'a' + 1);
+        return 1;
+    }
+
+    // Handle special keys
+    switch (key.codepoint) {
+        vaxis.Key.escape => {
+            buf[0] = 0x1b;
+            return 1;
+        },
+        vaxis.Key.enter => {
+            buf[0] = 0x0d;
+            return 1;
+        },
+        vaxis.Key.tab => {
+            buf[0] = 0x09;
+            return 1;
+        },
+        vaxis.Key.backspace => {
+            buf[0] = 0x7f;
+            return 1;
+        },
+        vaxis.Key.space => {
+            buf[0] = 0x20;
+            return 1;
+        },
+        vaxis.Key.up => {
+            @memcpy(buf[0..3], "\x1b[A");
+            return 3;
+        },
+        vaxis.Key.down => {
+            @memcpy(buf[0..3], "\x1b[B");
+            return 3;
+        },
+        vaxis.Key.right => {
+            @memcpy(buf[0..3], "\x1b[C");
+            return 3;
+        },
+        vaxis.Key.left => {
+            @memcpy(buf[0..3], "\x1b[D");
+            return 3;
+        },
+        else => {
+            // Try to encode as UTF-8
+            if (key.codepoint < 128) {
+                buf[0] = @intCast(key.codepoint);
+                return 1;
+            }
+            const n = std.unicode.utf8Encode(key.codepoint, buf[0..4]) catch return 0;
+            return n;
+        },
+    }
 }
 
 test "StdinBuffer basic sequence" {
