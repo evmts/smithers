@@ -10,6 +10,10 @@
             .url = "git+https://github.com/evmts/ai-zig#0b374f37ae5f089af6d09ab1afd30070dfabae20",
             .hash = "zig_ai_sdk-0.1.0-ULWwFOjsNQDpPPJBPUBUJKikJkiIAASwHYLwqyzEmcim",
         },
+        .libvaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis#622d245b535d15469f1d898eeadaba7056df788b",
+            .hash = "vaxis-0.5.1-BWNV_OA-CQDeFBHIx9ryyASogr2GE3FsAm-l5Ii5-HZT",
+        },
     },
     .paths = .{""},
     .fingerprint = 0xe0dd4a2067d236f7,

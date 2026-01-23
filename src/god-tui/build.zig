@@ -20,6 +20,13 @@ pub fn build(b: *std.Build) void {
     const anthropic_mod = ai_dep.module("anthropic");
     const provider_mod = ai_dep.module("provider");
 
+    // libvaxis for terminal UI
+    const vaxis_dep = b.dependency("libvaxis", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const vaxis_mod = vaxis_dep.module("vaxis");
+
     // God-TUI library module
     const god_tui_mod = b.createModule(.{
         .root_source_file = b.path("lib.zig"),
@@ -51,6 +58,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("terminal/terminal.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "vaxis", .module = vaxis_mod },
+        },
     });
 
     // Rendering module for main executable
@@ -58,6 +68,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("rendering/renderer.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "vaxis", .module = vaxis_mod },
+        },
     });
 
     // UI modules for main executable
@@ -133,6 +146,8 @@ pub fn build(b: *std.Build) void {
     // Run step
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
+    // Inherit TTY for interactive mode
+    run_cmd.stdio = .inherit;
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
@@ -253,6 +268,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("terminal/terminal.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "vaxis", .module = vaxis_mod },
+        },
     });
 
     // Rendering module for modes
@@ -260,6 +278,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("rendering/renderer.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "vaxis", .module = vaxis_mod },
+        },
     });
 
     // Header module for modes
