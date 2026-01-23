@@ -82,7 +82,6 @@
     "bun"
   ],
   "author": "William Cory",
-  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/evmts/smithers.git"

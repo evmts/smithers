@@ -6,12 +6,12 @@ const PROXY_NAMESPACE = 'supersmithers-proxy'
 plugin({
   name: 'supersmithers',
   setup(build) {
-    // Use Bun's transpiler to scan imports
-    build.onLoad({ filter: /\.[cm]?[jt]sx?$/, namespace: 'file' }, async (args) => {
+    // Use Bun's transpiler to scan imports - exclude node_modules
+    build.onLoad({ filter: /^(?!.*node_modules).*\.[cm]?[jt]sx?$/, namespace: 'file' }, async (args) => {
       const source = await Bun.file(args.path).text()
-      const loader = args.path.endsWith('.tsx') || args.path.endsWith('.jsx') ? 'tsx' : 
+      const loader = args.path.endsWith('.tsx') || args.path.endsWith('.jsx') ? 'tsx' :
                      args.path.endsWith('.ts') ? 'ts' : 'js'
-      
+
       // Quick check before parsing
       if (!source.includes('supersmithers')) {
         return { contents: source, loader }

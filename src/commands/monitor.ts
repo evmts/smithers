@@ -36,8 +36,9 @@ export async function monitor(fileArg?: string, options: MonitorOptions = {}): P
   console.log(formatter.formatHeader(filePath))
 
   const startTime = Date.now()
-  const preloadPath = findPreloadPath(import.meta.url)
-  const child = spawn('bun', ['--preload', preloadPath, '--install=fallback', filePath], {
+  // Don't use --preload flag as it overrides bunfig.toml JSX settings
+  // The bunfig.toml in the project root handles all preload configuration
+  const child = spawn('bun', ['--install=fallback', filePath], {
     stdio: ['inherit', 'pipe', 'pipe'],
     shell: false,
   })

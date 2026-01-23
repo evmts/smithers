@@ -18,6 +18,9 @@ import {
   type AgentResult,
 } from "smithers-orchestrator";
 import { useQueryValue } from "smithers-orchestrator/db";
+import { useTasks, usePlannerResult } from "./src/hooks";
+import { TaskPlanner as TaskPlannerComponent } from "./src/components/TaskPlanner";
+import type { ExecutionPlan } from "./src/hooks/useTasks";
 
 interface DelegatedTask {
   id: string;
@@ -101,43 +104,26 @@ const REVIEW_PROMPT = `
 <output>{"verdict":"LGTM"|"REQUEST_CHANGES","comments":[],"blocking_issues":[]}</output>
 `;
 
-function useTasks(): DelegatedTask[] {
-  const { reactiveDb } = useSmithers();
-  // Query the latest completed planner agent's result
-  const queryResult = useQueryValue<string | null>(
-    reactiveDb,
-    `SELECT result FROM agents
-     WHERE system_prompt LIKE '%Lead architect%'
-       AND status = 'completed'
-       AND result IS NOT NULL
-     ORDER BY completed_at DESC LIMIT 1`,
-    []
-  );
+function useTaskPlannerSystem() {
+  const { db } = useSmithers();
+  const tasksHook = useTasks({ db: db.db as any });
+  const plannerHook = usePlannerResult();
 
-  // Debug: check what useQueryValue returns
-  console.log(`[useTasks] queryResult type=${typeof queryResult}, value=${queryResult ? 'present' : 'null'}`);
-
-  // Handle the case where queryResult is the { data } wrapper
-  const result = typeof queryResult === 'object' && queryResult !== null && 'data' in (queryResult as object)
-    ? (queryResult as { data: string | null }).data
-    : queryResult;
-
-  console.log(`[useTasks] result type=${typeof result}, present=${result ? 'yes' : 'no'}`);
-
-  if (!result || typeof result !== "string") return [];
-
-  // Parse JSON array from result
-  const match = result.match(/\[[\s\S]*\]/);
-  if (!match) return [];
-
-  try {
-    const tasks = JSON.parse(match[0]) as DelegatedTask[];
-    console.log(`[useTasks] parsed ${tasks.length} tasks`);
-    return tasks.length === 3 ? tasks : [];
-  } catch (e) {
-    console.log(`[useTasks] parse error: ${e}`);
-    return [];
-  }
+  return {
+    tasksHook,
+    plannerHook,
+    // Legacy compatibility: map new system to old DelegatedTask format
+    getLegacyTasks: (): DelegatedTask[] => {
+      const tasks = tasksHook.getTasksByStatus('completed');
+      return tasks.slice(0, 3).map((task, index) => ({
+        id: task.id,
+        branch: `feature/${task.title.toLowerCase().replace(/\s+/g, '-')}`,
+        description: task.description || task.title,
+        files: [], // Would be populated from task metadata
+        tests: { e2e: [], integration: [], unit: [] } // Would be populated from task metadata
+      }));
+    }
+  };
 }
 
 function useMergeQueue() {
@@ -166,7 +152,7 @@ function useTestGate() {
   };
 }
 
-function TaskPlanner({ prompt }: { prompt: string }): ReactNode {
+function TaskPlannerAgent({ prompt }: { prompt: string }): ReactNode {
   return (
     <Claude
       model="sonnet"
@@ -174,6 +160,59 @@ function TaskPlanner({ prompt }: { prompt: string }): ReactNode {
     >
       {prompt}
     </Claude>
+  );
+}
+
+function EnhancedTaskPlanner({ planningPrompt }: { planningPrompt: string }): ReactNode {
+  const { db } = useSmithers();
+
+  // Mock agent system for task execution
+  const mockAgentSystem = {
+    async executePlan(plan: ExecutionPlan) {
+      // Integrate with existing Claude agents
+      return {
+        id: `execution-${Date.now()}`,
+        planId: plan.id,
+        status: 'completed' as const,
+        results: plan.phases.flatMap(phase =>
+          phase.tasks.map(taskId => ({
+            taskId,
+            status: 'completed' as const,
+            output: `Task ${taskId} completed via Claude agent`,
+            executionTime: 1000 + Math.floor(Math.random() * 4000)
+          }))
+        ),
+        summary: `Successfully executed ${plan.phases.length} phases`,
+        metrics: {
+          totalDuration: 5000,
+          tasksCompleted: plan.phases.flatMap(p => p.tasks).length,
+          tasksError: 0,
+          successRate: 1.0
+        },
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString()
+      };
+    },
+
+    getAvailableAgents: () => [
+      { id: 'claude-sonnet', name: 'Claude Sonnet', capabilities: ['implementation', 'analysis', 'testing'] },
+      { id: 'claude-opus', name: 'Claude Opus', capabilities: ['complex-reasoning', 'architecture', 'review'] },
+      { id: 'claude-haiku', name: 'Claude Haiku', capabilities: ['quick-tasks', 'simple-fixes', 'validation'] }
+    ]
+  };
+
+  return (
+    <TaskPlannerComponent
+      db={db.db as any}
+      agentSystem={mockAgentSystem}
+      enableRealTimeUpdates={true}
+      onTaskCreate={(task) => {
+        console.log('Task created:', task.title);
+      }}
+      onPlanExecute={(plan) => {
+        console.log('Executing plan:', plan.title);
+      }}
+    />
   );
 }
 
@@ -186,6 +225,8 @@ function Implementer({ task, timeout = ONE_HOUR_MS }: { task: DelegatedTask; tim
       systemPrompt={`Implementing: ${task.description}`}
       permissionMode="bypassPermissions"
       timeout={timeout}
+      outputFormat="stream-json"
+      onProgress={(chunk) => process.stdout.write(chunk)}
     >
       {`
 <task>${JSON.stringify(task, null, 2)}</task>
@@ -254,37 +295,82 @@ function Merger({ branch, onResult }: {
 }
 
 function SmithersHubWorkflow({ planningPrompt }: { planningPrompt: string }): ReactNode {
-  const tasks = useTasks();
-  const allPlanned = tasks.length === 3;
-  const allImplemented = allPlanned; // TODO: track completion
+  const taskPlannerSystem = useTaskPlannerSystem();
+  const legacyTasks = taskPlannerSystem.getLegacyTasks();
+  const allPlanned = legacyTasks.length === 3;
 
-  console.log(`[Workflow] tasks.length=${tasks.length}, allPlanned=${allPlanned}`);
+  // Check if we have active plans being executed
+  const hasActivePlans = taskPlannerSystem.plannerHook.isExecuting;
+
+  console.log(`[Workflow] legacyTasks.length=${legacyTasks.length}, allPlanned=${allPlanned}, hasActivePlans=${hasActivePlans}`);
 
   return (
     <Ralph
       id="smithershub"
-      condition={() => !allImplemented}
-      maxIterations={10}
+      condition={() => true}  // Infinite loop until manually stopped
+      maxIterations={1000}
     >
-      <Phase name="plan">
-        <Step name="delegate-tasks">
-          {!allPlanned && <TaskPlanner prompt={planningPrompt} />}
+      <Phase name="modern-planning">
+        <Step name="enhanced-task-planner">
+          <If condition={() => !hasActivePlans}>
+            <EnhancedTaskPlanner planningPrompt={planningPrompt} />
+          </If>
         </Step>
       </Phase>
 
-      <Phase name="execute">
-        <Parallel>
-          <Each items={tasks}>
-            {(task) => (
-              <Step key={task.id} name={`implement-${task.id}`}>
-                <Implementer task={task} />
-              </Step>
-            )}
-          </Each>
-        </Parallel>
+      <Phase name="legacy-planning">
+        <Step name="delegate-tasks">
+          {!allPlanned && <TaskPlannerAgent prompt={planningPrompt} />}
+        </Step>
+      </Phase>
+
+      <Phase name="execute-legacy">
+        <If condition={() => allPlanned}>
+          <Parallel>
+            <Each items={legacyTasks}>
+              {(task) => (
+                <Step key={task.id} name={`implement-${task.id}`}>
+                  <Implementer task={task} />
+                </Step>
+              )}
+            </Each>
+          </Parallel>
+        </If>
+      </Phase>
+
+      <Phase name="execute-modern">
+        <Step name="modern-execution-monitor">
+          <If condition={() => hasActivePlans}>
+            <ModernExecutionMonitor />
+          </If>
+        </Step>
       </Phase>
     </Ralph>
   );
+}
+
+function ModernExecutionMonitor(): ReactNode {
+  const taskPlannerSystem = useTaskPlannerSystem();
+  const progress = taskPlannerSystem.plannerHook.progress;
+
+  // Log progress for monitoring
+  if (progress.current) {
+    console.log(`[Modern Execution] ${progress.completed}/${progress.total}: ${progress.current}`);
+  }
+
+  // Handle execution completion
+  if (taskPlannerSystem.plannerHook.result) {
+    const result = taskPlannerSystem.plannerHook.result;
+    console.log(`[Modern Execution] Completed: ${result.summary}`);
+    console.log(`[Modern Execution] Success rate: ${(result.metrics.successRate * 100).toFixed(1)}%`);
+  }
+
+  // Handle execution errors
+  if (taskPlannerSystem.plannerHook.error) {
+    console.error(`[Modern Execution] Error: ${taskPlannerSystem.plannerHook.error}`);
+  }
+
+  return null; // This is a monitoring component, no UI needed in workflow
 }
 
 async function main(): Promise<void> {

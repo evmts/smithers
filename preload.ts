@@ -7,3 +7,6 @@
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'production'
 }
+
+// Load the SuperSmithers plugin for import attribute transformation
+import './src/supersmithers/register.js'

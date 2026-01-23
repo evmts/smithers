@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { Command } from "commander";
+import { Command } from "commander/esm.mjs";
 import path from "path";
 import { DEFAULT_DB_DIR, DEFAULT_MAIN_FILE, resolveDbPaths } from "../src/commands/cli-utils.ts";
 import pkg from "../package.json";
