@@ -10,11 +10,19 @@ const Agent = agent_mod.Agent;
 const AgentConfig = agent_mod.AgentConfig;
 const AgentEvent = agent_mod.AgentEvent;
 const Message = agent_mod.Message;
+const AgentProvider = agent_mod.AgentProvider;
+const ProviderConfig = agent_mod.ProviderConfig;
+
+// Anthropic provider for real LLM calls
+const AnthropicProvider = agent_mod.AnthropicProvider;
+const createAnthropicProvider = agent_mod.createAnthropicProvider;
+const getDefaultModel = agent_mod.getDefaultModel;
 
 pub const PrintMode = struct {
     allocator: Allocator,
     agent: *Agent,
     owns_agent: bool,
+    anthropic_provider: ?*AnthropicProvider = null,
 
     const Self = @This();
 
@@ -23,6 +31,7 @@ pub const PrintMode = struct {
             .allocator = allocator,
             .agent = agent,
             .owns_agent = false,
+            .anthropic_provider = null,
         };
     }
 
@@ -30,10 +39,26 @@ pub const PrintMode = struct {
         const agent = try allocator.create(Agent);
         agent.* = Agent.init(allocator, config);
         agent.on_event = handleEvent;
+
+        // Try to set up Anthropic provider if API key is available
+        var anthropic_prov: ?*AnthropicProvider = null;
+        if (createAnthropicProvider(allocator)) |prov| {
+            anthropic_prov = prov;
+            const provider_config = ProviderConfig{
+                .model_id = config.model,
+                .api_key = std.posix.getenv("ANTHROPIC_API_KEY"),
+            };
+            const agent_provider = AgentProvider.init(allocator, prov.interface(), provider_config);
+            agent.* = agent.withProvider(agent_provider);
+        } else |_| {
+            // No API key - will use stub responses
+        }
+
         return .{
             .allocator = allocator,
             .agent = agent,
             .owns_agent = true,
+            .anthropic_provider = anthropic_prov,
         };
     }
 
@@ -41,6 +66,10 @@ pub const PrintMode = struct {
         if (self.owns_agent) {
             self.agent.deinit();
             self.allocator.destroy(self.agent);
+        }
+        if (self.anthropic_provider) |prov| {
+            prov.deinit();
+            self.allocator.destroy(prov);
         }
     }
 

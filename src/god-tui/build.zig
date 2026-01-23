@@ -34,11 +34,16 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(lib);
 
-    // Agent module for main executable
+    // Agent module for main executable (with ai-zig for anthropic_provider)
     const agent_main_mod = b.createModule(.{
         .root_source_file = b.path("agent/agent.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "ai", .module = ai_mod },
+            .{ .name = "anthropic", .module = anthropic_mod },
+            .{ .name = "provider", .module = provider_mod },
+        },
     });
 
     // Terminal module for main executable
@@ -188,12 +193,17 @@ pub fn build(b: *std.Build) void {
     const terminal_test_step = b.step("test-terminal", "Run terminal module tests");
     terminal_test_step.dependOn(&run_terminal_tests.step);
 
-    // Agent module tests
+    // Agent module tests (with ai-zig for anthropic_provider)
     const agent_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("agent/agent.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "ai", .module = ai_mod },
+                .{ .name = "anthropic", .module = anthropic_mod },
+                .{ .name = "provider", .module = provider_mod },
+            },
         }),
     });
     const run_agent_tests = b.addRunArtifact(agent_tests);
@@ -217,11 +227,16 @@ pub fn build(b: *std.Build) void {
     ui_test_step.dependOn(&run_ui_tests.step);
     test_step.dependOn(&run_ui_tests.step);
 
-    // Agent module for modes
+    // Agent module for modes (with ai-zig for anthropic_provider)
     const agent_mod = b.createModule(.{
         .root_source_file = b.path("agent/agent.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "ai", .module = ai_mod },
+            .{ .name = "anthropic", .module = anthropic_mod },
+            .{ .name = "provider", .module = provider_mod },
+        },
     });
 
     // Terminal module for modes

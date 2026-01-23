@@ -20,6 +20,13 @@ pub const MockProvider = provider.MockProvider;
 pub const AgentProvider = provider.AgentProvider;
 pub const ProviderConfig = provider.ProviderConfig;
 
+// Anthropic provider (real LLM calls via ai-zig)
+pub const anthropic_provider = @import("anthropic_provider.zig");
+pub const AnthropicProvider = anthropic_provider.AnthropicProvider;
+pub const createAnthropicProvider = anthropic_provider.createAnthropicProvider;
+pub const createAnthropicProviderWithKey = anthropic_provider.createAnthropicProviderWithKey;
+pub const getDefaultModel = anthropic_provider.getDefaultModel;
+
 pub const Agent = struct {
     allocator: Allocator,
     messages: ArrayListUnmanaged(Message),
@@ -107,6 +114,11 @@ pub const Agent = struct {
             // Build context from messages
             if (self.config.system_prompt) |sys| {
                 ctx.system_prompt = sys;
+            }
+
+            // Copy agent messages to context
+            for (self.messages.items) |msg| {
+                try ctx.messages.append(self.allocator, msg);
             }
 
             // Stream from provider
