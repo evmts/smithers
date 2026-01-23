@@ -177,12 +177,15 @@ function TaskPlanner({ prompt }: { prompt: string }): ReactNode {
   );
 }
 
-function Implementer({ task }: { task: DelegatedTask }): ReactNode {
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+function Implementer({ task, timeout = ONE_HOUR_MS }: { task: DelegatedTask; timeout?: number }): ReactNode {
   return (
     <Claude
       model="sonnet"
       systemPrompt={`Implementing: ${task.description}`}
       permissionMode="bypassPermissions"
+      timeout={timeout}
     >
       {`
 <task>${JSON.stringify(task, null, 2)}</task>
@@ -253,36 +256,33 @@ function Merger({ branch, onResult }: {
 function SmithersHubWorkflow({ planningPrompt }: { planningPrompt: string }): ReactNode {
   const tasks = useTasks();
   const allPlanned = tasks.length === 3;
+  const allImplemented = allPlanned; // TODO: track completion
 
   console.log(`[Workflow] tasks.length=${tasks.length}, allPlanned=${allPlanned}`);
 
   return (
     <Ralph
       id="smithershub"
-      condition={() => true}  // Will complete when all phases done
+      condition={() => !allImplemented}
       maxIterations={10}
     >
-      <If condition={!allPlanned}>
-        <Phase name="plan">
-          <Step name="delegate-tasks">
-            <TaskPlanner prompt={planningPrompt} />
-          </Step>
-        </Phase>
-      </If>
+      <Phase name="plan">
+        <Step name="delegate-tasks">
+          {!allPlanned && <TaskPlanner prompt={planningPrompt} />}
+        </Step>
+      </Phase>
 
-      <If condition={allPlanned}>
-        <Phase name="execute">
-          <Parallel>
-            <Each items={tasks}>
-              {(task) => (
-                <Step key={task.id} name={`implement-${task.id}`}>
-                  <Implementer task={task} />
-                </Step>
-              )}
-            </Each>
-          </Parallel>
-        </Phase>
-      </If>
+      <Phase name="execute">
+        <Parallel>
+          <Each items={tasks}>
+            {(task) => (
+              <Step key={task.id} name={`implement-${task.id}`}>
+                <Implementer task={task} />
+              </Step>
+            )}
+          </Each>
+        </Parallel>
+      </Phase>
     </Ralph>
   );
 }
