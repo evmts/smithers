@@ -9,6 +9,7 @@ pub const AgentConfig = types.AgentConfig;
 pub const AgentEvent = types.AgentEvent;
 pub const EventType = types.EventType;
 pub const ThinkingLevel = types.ThinkingLevel;
+pub const ToolCallInfo = types.ToolCallInfo;
 
 pub const tools = @import("tools/registry.zig");
 pub const ToolRegistry = tools.ToolRegistry;
@@ -38,6 +39,8 @@ pub const Agent = struct {
     on_event: ?*const fn (AgentEvent) void = null,
     tool_registry: ToolRegistry,
     llm_provider: ?AgentProvider = null,
+    owned_strings: ArrayListUnmanaged([]const u8) = .{},
+    owned_tool_call_slices: ArrayListUnmanaged([]const ToolCallInfo) = .{},
 
     const Self = @This();
 
@@ -49,6 +52,8 @@ pub const Agent = struct {
             .steering_queue = .{},
             .follow_up_queue = .{},
             .tool_registry = ToolRegistry.initBuiltin(allocator),
+            .owned_strings = .{},
+            .owned_tool_call_slices = .{},
         };
     }
 
@@ -59,11 +64,27 @@ pub const Agent = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        // Free owned response strings
+        for (self.owned_strings.items) |s| {
+            self.allocator.free(s);
+        }
+        self.owned_strings.deinit(self.allocator);
+        // Free owned tool call slices
+        for (self.owned_tool_call_slices.items) |s| {
+            self.allocator.free(s);
+        }
+        self.owned_tool_call_slices.deinit(self.allocator);
         self.messages.deinit(self.allocator);
         self.steering_queue.deinit(self.allocator);
         self.follow_up_queue.deinit(self.allocator);
         self.tool_registry.deinit();
     }
+
+    const ProviderResponse = struct {
+        text: []const u8,
+        tool_calls: []const ToolCallInfo,
+        stop_reason: provider.StopReason,
+    };
 
     pub fn prompt(self: *Self, message: Message) !void {
         try self.messages.append(self.allocator, message);
@@ -87,13 +108,41 @@ pub const Agent = struct {
             }
 
             // Call LLM provider if available, else use stub
-            const response_text = try self.callProvider();
-            const response = Message.assistant(response_text);
-            try self.messages.append(self.allocator, response);
+            const response = try self.callProvider();
+            const response_msg = if (response.tool_calls.len > 0)
+                Message.assistantWithToolCalls(response.text, response.tool_calls)
+            else
+                Message.assistant(response.text);
+            try self.messages.append(self.allocator, response_msg);
 
             self.emitEvent(.{ .type = .turn_end, .turn = self.current_turn });
 
-            // Check if we should continue (would check for tool calls)
+            // Handle tool calls if present
+            if (response.stop_reason == .tool_use and response.tool_calls.len > 0) {
+                for (response.tool_calls) |tc| {
+                    self.emitEvent(.{ .type = .tool_start, .tool_name = tc.name, .tool_id = tc.id });
+
+                    // Parse tool arguments and execute
+                    const parsed_args = std.json.parseFromSlice(std.json.Value, self.allocator, tc.arguments, .{}) catch {
+                        const err_result = Message.toolResult(tc.id, "Failed to parse tool arguments");
+                        try self.messages.append(self.allocator, err_result);
+                        self.emitEvent(.{ .type = .tool_end, .tool_name = tc.name, .tool_id = tc.id });
+                        continue;
+                    };
+                    defer parsed_args.deinit();
+
+                    const tool_result = self.tool_registry.execute(tc.name, parsed_args.value);
+                    const result_content = if (tool_result.success) tool_result.content else (tool_result.error_message orelse "Tool error");
+
+                    const result_msg = Message.toolResult(tc.id, result_content);
+                    try self.messages.append(self.allocator, result_msg);
+                    self.emitEvent(.{ .type = .tool_end, .tool_name = tc.name, .tool_id = tc.id });
+                }
+                // Continue loop to get LLM response to tool results
+                continue;
+            }
+
+            // No tool calls - done
             break;
         }
 
@@ -106,7 +155,7 @@ pub const Agent = struct {
         self.emitEvent(.{ .type = .agent_end });
     }
 
-    fn callProvider(self: *Self) ![]const u8 {
+    fn callProvider(self: *Self) !ProviderResponse {
         if (self.llm_provider) |*llm| {
             var ctx = provider.Context.init(self.allocator);
             defer ctx.deinit();
@@ -125,19 +174,66 @@ pub const Agent = struct {
             var stream = try llm.stream(&ctx);
             defer stream.deinit();
 
-            var response_text: []const u8 = "";
+            var response_parts = std.ArrayListUnmanaged(u8){};
+            var tool_calls = std.ArrayListUnmanaged(ToolCallInfo){};
+            var stop_reason: provider.StopReason = .stop;
+
             while (stream.next()) |event| {
-                if (provider.SimpleEvent.fromStreamEvent(event)) |simple| {
-                    const agent_event = simple.toAgentEvent();
-                    self.emitEvent(agent_event);
-                    if (simple == .text) {
-                        response_text = simple.text;
-                    }
+                switch (event.type) {
+                    .text_delta => {
+                        if (event.delta) |delta| {
+                            self.emitEvent(.{ .type = .text_delta, .text = delta });
+                            response_parts.appendSlice(self.allocator, delta) catch {};
+                        }
+                    },
+                    .toolcall_end => {
+                        if (event.tool_call) |tc| {
+                            // Duplicate tool call strings since they're owned by the stream
+                            const id_copy = self.allocator.dupe(u8, tc.id) catch continue;
+                            const name_copy = self.allocator.dupe(u8, tc.name) catch continue;
+                            const args_copy = self.allocator.dupe(u8, tc.arguments) catch continue;
+                            self.owned_strings.append(self.allocator, id_copy) catch {};
+                            self.owned_strings.append(self.allocator, name_copy) catch {};
+                            self.owned_strings.append(self.allocator, args_copy) catch {};
+                            tool_calls.append(self.allocator, .{
+                                .id = id_copy,
+                                .name = name_copy,
+                                .arguments = args_copy,
+                            }) catch {};
+                        }
+                    },
+                    .done => {
+                        stop_reason = event.reason orelse .stop;
+                    },
+                    .@"error" => {
+                        if (event.content) |content| {
+                            self.emitEvent(.{ .type = .agent_error, .error_message = content });
+                        }
+                    },
+                    else => {},
                 }
             }
-            return if (response_text.len > 0) response_text else "Response from LLM";
+
+            const text = if (response_parts.items.len > 0) blk: {
+                const owned = response_parts.toOwnedSlice(self.allocator) catch {
+                    response_parts.deinit(self.allocator);
+                    break :blk "";
+                };
+                self.owned_strings.append(self.allocator, owned) catch {};
+                break :blk owned;
+            } else "";
+
+            const owned_tool_calls = tool_calls.toOwnedSlice(self.allocator) catch &.{};
+            if (owned_tool_calls.len > 0) {
+                self.owned_tool_call_slices.append(self.allocator, owned_tool_calls) catch {};
+            }
+            return .{
+                .text = text,
+                .tool_calls = owned_tool_calls,
+                .stop_reason = stop_reason,
+            };
         }
-        return "Response from LLM";
+        return .{ .text = "Response from LLM", .tool_calls = &.{}, .stop_reason = .stop };
     }
 
     pub fn steer(self: *Self, message: Message) void {

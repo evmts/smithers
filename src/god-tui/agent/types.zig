@@ -6,10 +6,17 @@ pub const Role = enum {
     tool_result,
 };
 
+pub const ToolCallInfo = struct {
+    id: []const u8,
+    name: []const u8,
+    arguments: []const u8,
+};
+
 pub const Message = struct {
     role: Role,
     content: []const u8,
     tool_call_id: ?[]const u8 = null,
+    tool_calls: ?[]const ToolCallInfo = null,
 
     pub fn user(content: []const u8) Message {
         return .{ .role = .user, .content = content };
@@ -17,6 +24,10 @@ pub const Message = struct {
 
     pub fn assistant(content: []const u8) Message {
         return .{ .role = .assistant, .content = content };
+    }
+
+    pub fn assistantWithToolCalls(content: []const u8, tool_calls: []const ToolCallInfo) Message {
+        return .{ .role = .assistant, .content = content, .tool_calls = tool_calls };
     }
 
     pub fn toolResult(id: []const u8, content: []const u8) Message {

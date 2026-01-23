@@ -95,16 +95,8 @@ pub const PrintMode = struct {
         const message = Message.user(full_prompt.items);
         try self.agent.prompt(message);
 
-        // Get last assistant message and print it
-        const messages = self.agent.messages.items;
-        for (0..messages.len) |i| {
-            const msg = messages[messages.len - 1 - i];
-            if (msg.role == .assistant) {
-                try writeStdout(msg.content);
-                try writeStdout("\n");
-                break;
-            }
-        }
+        // Output already streamed via handleEvent, just add newline
+        try writeStdout("\n");
     }
 
     fn handleEvent(event: AgentEvent) void {

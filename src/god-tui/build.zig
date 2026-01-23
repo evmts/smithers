@@ -93,6 +93,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "agent", .module = agent_main_mod },
             .{ .name = "terminal", .module = terminal_main_mod },
             .{ .name = "rendering", .module = rendering_main_mod },
             .{ .name = "header", .module = header_main_mod },

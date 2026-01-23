@@ -2,6 +2,7 @@
 // Full TUI mode with chat history, input editor, and agent loop
 
 const std = @import("std");
+const posix = std.posix;
 const Allocator = std.mem.Allocator;
 
 const terminal_mod = @import("terminal");
@@ -16,12 +17,23 @@ const ChatContainer = chat_mod.ChatContainer;
 const status_mod = @import("status");
 const StatusBar = status_mod.StatusBar;
 
+const agent_mod = @import("agent");
+const Agent = agent_mod.Agent;
+const AgentConfig = agent_mod.AgentConfig;
+const AgentEvent = agent_mod.AgentEvent;
+const Message = agent_mod.Message;
+const AgentProvider = agent_mod.AgentProvider;
+const ProviderConfig = agent_mod.ProviderConfig;
+const AnthropicProvider = agent_mod.AnthropicProvider;
+const createAnthropicProvider = agent_mod.createAnthropicProvider;
+
 pub const InteractiveMode = struct {
     allocator: Allocator,
     is_running: bool = false,
     model: []const u8 = "claude-sonnet-4",
     version: []const u8 = "0.1.0",
     session_id: ?[]const u8 = null,
+    is_busy: bool = false,
 
     terminal: Terminal,
     renderer_state: RendererState,
@@ -30,6 +42,8 @@ pub const InteractiveMode = struct {
     chat: ChatContainer,
     status: StatusBar,
     input_buffer: std.ArrayListUnmanaged(u8) = .{},
+    agent: ?*Agent = null,
+    anthropic_provider: ?*AnthropicProvider = null,
 
     const Self = @This();
 
@@ -45,7 +59,7 @@ pub const InteractiveMode = struct {
     };
 
     pub fn init(allocator: Allocator) Self {
-        return .{
+        var self = Self{
             .allocator = allocator,
             .terminal = Terminal.init(allocator),
             .renderer_state = RendererState.init(allocator),
@@ -54,10 +68,45 @@ pub const InteractiveMode = struct {
             .chat = ChatContainer.init(allocator),
             .status = StatusBar.init(allocator),
             .input_buffer = .{},
+            .agent = null,
+            .anthropic_provider = null,
         };
+
+        // Initialize agent with Anthropic provider if available
+        self.initAgent();
+        return self;
+    }
+
+    fn initAgent(self: *Self) void {
+        const agent = self.allocator.create(Agent) catch return;
+        agent.* = Agent.init(self.allocator, AgentConfig{
+            .model = self.model,
+            .system_prompt = "You are a helpful AI coding assistant.",
+        });
+
+        // Try to set up Anthropic provider
+        if (createAnthropicProvider(self.allocator)) |prov| {
+            self.anthropic_provider = prov;
+            const provider_config = ProviderConfig{
+                .model_id = self.model,
+                .api_key = posix.getenv("ANTHROPIC_API_KEY"),
+            };
+            const agent_provider = AgentProvider.init(self.allocator, prov.interface(), provider_config);
+            agent.* = agent.withProvider(agent_provider);
+        } else |_| {}
+
+        self.agent = agent;
     }
 
     pub fn deinit(self: *Self) void {
+        if (self.agent) |agent| {
+            agent.deinit();
+            self.allocator.destroy(agent);
+        }
+        if (self.anthropic_provider) |prov| {
+            prov.deinit();
+            self.allocator.destroy(prov);
+        }
         self.input_buffer.deinit(self.allocator);
         self.status.deinit();
         self.chat.deinit();
@@ -200,7 +249,43 @@ pub const InteractiveMode = struct {
             return;
         }
 
+        // Add user message to chat display
         self.chat.addUserMessage(input);
+
+        // Send to agent if available
+        if (self.agent) |agent| {
+            self.is_busy = true;
+            self.status.setBusy(true);
+            self.renderer_state.requestRender();
+
+            // Set up event handler to stream responses
+            agent.on_event = handleAgentEvent;
+
+            // Send message to agent
+            agent.prompt(Message.user(input)) catch {
+                self.chat.addSystemMessage("Error: Failed to get response");
+            };
+
+            // Get the last assistant message and display it
+            const messages = agent.messages.items;
+            for (0..messages.len) |i| {
+                const msg = messages[messages.len - 1 - i];
+                if (msg.role == .assistant) {
+                    self.chat.addAssistantMessage(msg.content);
+                    break;
+                }
+            }
+
+            self.is_busy = false;
+            self.status.setBusy(false);
+            self.renderer_state.requestRender();
+        }
+    }
+
+    fn handleAgentEvent(event: AgentEvent) void {
+        // For now, we don't stream to the TUI - we collect the full response
+        // Future: integrate streaming updates to chat display
+        _ = event;
     }
 
     fn handleCommand(self: *Self, cmd: []const u8) void {
