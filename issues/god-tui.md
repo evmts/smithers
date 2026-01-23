@@ -1,8 +1,10 @@
 # God TUI: Complete Engineering Specification
 
-Language-agnostic spec for production terminal UI with AI integration. Based on pi-mono reverse-engineering.
+Zig-native TUI with AI integration built on **libvaxis**.
 
-**Deep-dive specs**: `issues/god-tui/01-*.md` through `12-*.md` (~13k lines total)
+**Foundation Library**: [rockorager/libvaxis](https://github.com/rockorager/libvaxis) - Production terminal UI library in Zig
+**Reference**: `reference/libvaxis/` (git submodule for AI context)
+**Deep-dive specs**: `issues/god-tui/01-*.md` through `13-*.md` (~13k lines total)
 
 ---
 
@@ -14,171 +16,219 @@ Language-agnostic spec for production terminal UI with AI integration. Based on 
 │  Agent Loop ←→ Session Manager ←→ Extension Runner ←→ Tool Execution    │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                          TUI FRAMEWORK LAYER                             │
-│  Component Container ←→ Renderer (Diffing) ←→ Input Handler (Keys/IME)  │
+│  Component System ←→ Window Hierarchy ←→ Event Dispatch                 │
 ├──────────────────────────────────────────────────────────────────────────┤
-│                       TERMINAL ABSTRACTION LAYER                         │
-│  Terminal { write(), columns, rows, start(), stop(), kittyProtocolActive }│
+│                        LIBVAXIS LAYER (external)                         │
+│  Vaxis { render(), window(), resize() } ←→ Screen/Cell ←→ Parser        │
 ├──────────────────────────────────────────────────────────────────────────┤
-│                            SYSTEM LAYER                                  │
-│  stdin/stdout (raw mode) + SIGWINCH + Kitty protocol negotiation        │
+│                            TTY LAYER (libvaxis)                          │
+│  PosixTty/WindowsTty + SIGWINCH + Protocol Negotiation                  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Core Principles**: No external TUI frameworks (raw ANSI), differential line rendering, DEC 2026 synchronized output, grapheme-aware width calculation, component composition, event-driven extension hooks.
+**Core Principles**: Build on libvaxis primitives, leverage differential cell rendering, use libvaxis capability detection, grapheme-aware via libvaxis gwidth, component composition on Window abstraction.
 
 ---
 
-## 2. Terminal Abstraction Layer
+## 2. Terminal Abstraction Layer (via libvaxis)
 
+Libvaxis provides `Tty` (PosixTty/WindowsTty) and `Vaxis` for terminal abstraction:
+
+```zig
+// libvaxis Tty handles raw mode, signal handlers, buffered I/O
+const tty = try vaxis.tty.Tty.init(.{});
+defer tty.deinit();
+
+// Vaxis is main API surface
+var vx = try vaxis.Vaxis.init(allocator, .{});
+defer vx.deinit(&tty);
+
+// Properties from Vaxis
+vx.screen.width   // Terminal columns
+vx.screen.height  // Terminal rows
+vx.caps           // Detected capabilities (kitty_keyboard, kitty_graphics, etc.)
 ```
-Terminal {
-  start(onInput: fn(string), onResize: fn())  // Enable raw mode, register handlers
-  stop()                                       // Restore cooked mode, disable protocols
-  write(data: string)                          // Buffered stdout write
 
-  columns: int                                 // Current terminal width
-  rows: int                                    // Current terminal height
-  kittyProtocolActive: bool                    // True if CSI-u negotiation succeeded
-  cellPixelWidth: int?                         // From CSI 16t response (for images)
-  cellPixelHeight: int?
+**Capability Queries (automatic on init)**:
+- DA1 (primary device attributes)
+- CSI-u keyboard protocol
+- Kitty graphics protocol
+- SGR pixel mouse
+- Unicode width mode 2027
+- Color scheme subscription
 
-  hideCursor() -> write("\x1b[?25l")
-  showCursor() -> write("\x1b[?25h")
-  moveBy(n: int) -> write(n < 0 ? "\x1b[{-n}A" : "\x1b[{n}B")
-  clearLine() -> write("\x1b[2K")
-  clearFromCursor() -> write("\x1b[J")
-  clearScreen() -> write("\x1b[2J\x1b[3J\x1b[H")  // Screen + scrollback + home
-  setTitle(t: string) -> write("\x1b]0;{t}\x07")
+**Control Sequences (via vaxis.ctlseqs)**:
+```zig
+ctlseqs.smcup           // Enter alt screen
+ctlseqs.rmcup           // Exit alt screen
+ctlseqs.bp_set          // Enable bracketed paste
+ctlseqs.bp_reset        // Disable bracketed paste
+ctlseqs.csi_u_push      // Enable Kitty keyboard (flags 31)
+ctlseqs.csi_u_pop       // Disable Kitty keyboard
+ctlseqs.sync_set        // Begin synchronized output
+ctlseqs.sync_reset      // End synchronized output
+```
+
+**Event Loop (via vaxis.Loop)**:
+```zig
+var loop = try vaxis.Loop(Event).init(&tty, &vx, .{});
+defer loop.deinit();
+
+while (true) {
+    const event = loop.nextEvent();
+    switch (event) {
+        .key_press => |key| handleKey(key),
+        .winsize => |ws| vx.resize(allocator, &tty, ws),
+        .paste_start, .paste_end => handlePaste(),
+        // ...
+    }
 }
 ```
 
-**Start sequence**:
-1. Save terminal state, enable raw mode (disable echo, canonical, signals)
-2. Set stdin encoding UTF-8
-3. Enable bracketed paste: `\x1b[?2004h`
-4. Query Kitty protocol: `\x1b[?u` → response `\x1b[?{flags}u` means supported
-5. Enable Kitty flags 7: `\x1b[>7u` (1=disambiguate + 2=report-events + 4=alternate-keys)
-6. Query cell size: `\x1b[16t` → response `\x1b[6;{height};{width}t`
-7. Register SIGWINCH handler (Unix) for resize → call `onResize()`
-
-**Stop sequence**: `\x1b[<u` (pop Kitty) + `\x1b[?2004l` (disable paste) + restore saved state
-
 ---
 
-## 3. Rendering Engine
+## 3. Rendering Engine (via libvaxis)
 
-**Constants**:
-```
-CURSOR_MARKER = "\x1b_pi:c\x07"   // APC sequence, zero-width, stripped before write
-LINE_RESET = "\x1b[0m\x1b]8;;\x07" // SGR reset + hyperlink reset
-SYNC_START = "\x1b[?2026h"
-SYNC_END = "\x1b[?2026l"
-```
+Libvaxis uses **Cell-based differential rendering** - far more efficient than line-based:
 
-**State**: `previousLines: string[]`, `maxLinesRendered: int`, `pendingRender: bool`
+```zig
+// Get root window
+var win = vx.window();
 
-**Request coalescing**: `requestRender()` sets `pendingRender=true`, schedules via `nextTick()`. Multiple calls before tick = single render.
+// Create child windows (clipped, offset)
+var content = win.child(.{ .x_off = 0, .y_off = 1, .height = .{ .limit = 10 } });
+var sidebar = win.child(.{ .x_off = 40, .width = .{ .limit = 20 } });
 
-```
-doRender():
-  newLines = container.render(terminal.columns)
-  newLines = compositeOverlays(newLines, terminal.columns, terminal.rows)
-  cursorPos = extractAndStripCursorMarker(newLines)  // Find CURSOR_MARKER, remove it
-  newLines = applyLineResets(newLines)               // Append LINE_RESET (skip image lines)
+// Write to cells directly
+win.writeCell(0, 0, .{
+    .char = .{ .grapheme = "H", .width = 1 },
+    .style = .{ .fg = .{ .rgb = .{255, 0, 0} }, .bold = true },
+});
 
-  if !previousLines.length or widthChanged:
-    fullRender(newLines); return
+// Or use print for text with wrapping
+_ = try win.print(&.{
+    .{ .str = "Hello ", .style = .{ .fg = .blue } },
+    .{ .str = "World", .style = .{ .bold = true } },
+}, .{});
 
-  // Find change bounds (string equality, not hash - marginal gains for typical lines)
-  firstChanged, lastChanged = -1, -1
-  for i in 0..max(newLines.length, previousLines.length):
-    if newLines[i] != previousLines[i]:
-      if firstChanged == -1: firstChanged = i
-      lastChanged = i
-
-  if firstChanged == -1:
-    positionHardwareCursor(cursorPos); return  // No changes
-
-  // Viewport check: changes above visible area → full redraw
-  viewportTop = max(0, maxLinesRendered - terminal.rows)
-  if firstChanged < viewportTop:
-    fullRender(newLines); return
-
-  // Build incremental update buffer
-  buf = SYNC_START + moveTo(firstChanged)
-  for i in firstChanged..lastChanged+1:
-    if i > firstChanged: buf += "\r\n"
-    buf += "\x1b[2K" + (newLines[i] ?? "")
-
-  // Clear removed lines if content shrunk
-  for i in newLines.length..previousLines.length:
-    buf += "\r\n\x1b[2K"
-  if previousLines.length > newLines.length:
-    buf += "\x1b[{previousLines.length - newLines.length}A"
-
-  buf += SYNC_END
-  terminal.write(buf)
-  previousLines = newLines
-  maxLinesRendered = max(maxLinesRendered, newLines.length)
-  positionHardwareCursor(cursorPos)
+// Render diffs to terminal (automatic sync protocol)
+try vx.render(&tty);
 ```
 
-**Image line detection**: Skip LINE_RESET for lines containing `\x1b_G` (Kitty) or `\x1b]1337;File=` (iTerm2) - binary corruption risk.
+**Cell Structure** (libvaxis):
+```zig
+Cell {
+    char: Character,        // grapheme + width
+    style: Style,           // fg, bg, underline, bold, italic, etc.
+    link: Hyperlink,        // OSC-8 hyperlinks
+    image: ?Image.Placement // Kitty graphics
+}
+```
+
+**Differential Rendering** (handled by libvaxis):
+1. Compare current Screen vs InternalScreen (last frame)
+2. Only emit escape sequences for changed cells
+3. Optimize cursor movement (relative jumps)
+4. Automatic synchronized output wrapping
+
+**Style System**:
+```zig
+Style {
+    fg: Color,              // .default | .index(u8) | .rgb([3]u8)
+    bg: Color,
+    ul: Color,              // underline color
+    ul_style: UnderlineStyle, // none/single/double/curly/dotted/dashed
+    bold: bool,
+    italic: bool,
+    // ... more attributes
+}
+```
+
+**Image Support** (Kitty protocol via libvaxis):
+```zig
+const img = try vx.loadImage(allocator, &tty, .{ .path = "image.png" });
+cell.image = .{ .img_id = img.id, .scale = .contain };
+```
 
 ---
 
 ## 4. Component System
 
+Build components on libvaxis **Window** abstraction:
+
+```zig
+const Component = struct {
+    /// Render into the given window
+    fn render(self: *@This(), win: vaxis.Window) void;
+
+    /// Handle input event, return true if consumed
+    fn handleEvent(self: *@This(), event: vaxis.Event) bool;
+
+    /// Get minimum size requirements
+    fn getSize(self: *@This()) struct { width: u16, height: u16 };
+};
+
+// Container pattern - compose child windows
+fn renderContainer(win: vaxis.Window, children: []Component) void {
+    var y_offset: u16 = 0;
+    for (children) |child| {
+        const size = child.getSize();
+        const child_win = win.child(.{ .y_off = y_offset, .height = .{ .limit = size.height } });
+        child.render(child_win);
+        y_offset += size.height;
+    }
+}
 ```
-Component {
-  render(width: int) -> string[]  // Lines to display (may include ANSI)
-  handleInput?(data: string)      // Keyboard/paste handler
-  invalidate()                    // Clear cached render, propagate to children
-  wantsKeyRelease?: bool          // Opt-in for Kitty key release events
-}
 
-Focusable extends Component {
-  focused: bool                   // Set by TUI.setFocus()
-  // When focused=true, emit CURSOR_MARKER at cursor position for IME
-}
+**Window Features** (libvaxis built-in):
+```zig
+win.child(opts)              // Create clipped child window
+win.print(segments, opts)    // Rich text with wrapping
+win.writeCell(x, y, cell)    // Direct cell access
+win.fill(.{ .char = .{ .grapheme = " " } })  // Clear area
+win.drawBorder(.{ .style = .single_rounded })  // Box drawing
+```
 
-Container implements Component {
-  children: Component[]
-  render(width) -> children.flatMap(c => c.render(width))
-  invalidate() -> children.forEach(c => c.invalidate())
-  addChild(c), removeChild(c), clear()
+**Focus Management**: Application-level via event routing:
+```zig
+fn handleEvent(event: vaxis.Event) void {
+    // Route to focused component first
+    if (focused_component.handleEvent(event)) return;
+    // Then to parent containers
+    // ...
 }
 ```
 
-**Caching pattern**: Components cache `render()` output. Invalidation triggers:
-- Explicit `invalidate()` call
-- Width change (detected by comparing `width` param)
-- Background function change (sample `bgFn?.toString()` to detect closure changes)
+**Built-in Components** (application layer - `src/god-tui/src/components/`):
 
-**Focus management**: TUI maintains focus stack. `setFocus(component)` sets `focused=false` on previous, `focused=true` on new. Input routes to focused component first.
-
-**Built-in components**:
-
-| Component | Lines | Key Implementation Details |
-|-----------|-------|----------------------------|
-| Text | ~100 | `wrapTextWithAnsi(text, width)`, optional background/padding |
-| Box | ~130 | Child container + padding, caches rendered output |
-| Editor | ~1900 | See §5. Multi-line, word wrap, kill ring, undo, autocomplete |
-| Input | ~350 | Single-line, horizontal scroll, grapheme-aware cursor |
-| SelectList | ~190 | Scrolling viewport, wrap-around nav, theme support |
-| Loader | ~60 | Braille spinner `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, 80ms frame interval |
-| Markdown | ~650 | Uses `marked` parser, syntax highlighting, table rendering |
-| Image | ~90 | Auto-detect Kitty/iTerm2, calculate rows from pixel dimensions |
+| Component | Description |
+|-----------|-------------|
+| Text | Word wrap via libvaxis print with segments |
+| Box | Child window with border via `win.drawBorder()` |
+| Editor | Multi-line, kill ring, undo (see §5) |
+| Input | Single-line with horizontal scroll |
+| SelectList | Scrolling list with viewport management |
+| Loader | Braille spinner `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` |
+| Markdown | Syntax highlight via Cell styles |
+| Image | Kitty protocol via `vx.loadImage()` |
 
 ---
 
 ## 5. Text Editor
 
-**Core state**: `{ lines: string[], cursorLine: int, cursorCol: int }` (logical positions)
+**Core state** (Zig):
+```zig
+const Editor = struct {
+    lines: std.ArrayList([]u8),
+    cursor_line: usize,
+    cursor_col: usize,       // Grapheme index, not byte
+    undo_stack: UndoStack,
+    kill_ring: KillRing,
+    history: History,
+};
+```
 
-**Auxiliary**: undoStack (deep clones), killRing (string[], max ~100), history (string[]), pasteMarkers (Map<id, content>), autocompleteState
-
-**Keybindings**:
+**Keybindings** (via libvaxis Key matching):
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|
 | `Ctrl+A/E` | line start/end | `Ctrl+K/U` | kill to end/start |
@@ -188,155 +238,333 @@ Container implements Component {
 | `↑/↓` | line or history | `Enter` | submit |
 | `Shift+Enter` | newline | `Tab` | autocomplete |
 
-**Kill ring**: Consecutive kills accumulate (`Ctrl+K` twice = both segments in one entry). `add(text, prepend)` appends/prepends to last entry if `lastAction=="kill"`, else pushes new. `yankPop()` rotates ring.
+**Key Matching** (libvaxis):
+```zig
+fn handleKey(key: vaxis.Key) void {
+    if (key.matches('a', .{ .ctrl = true })) {
+        moveToBOL();
+    } else if (key.matches('e', .{ .ctrl = true })) {
+        moveToEOL();
+    } else if (key.matches(.arrow_left, .{ .alt = true })) {
+        moveWordBack();
+    }
+    // ...
+}
+```
+
+**Kill ring**: Consecutive kills accumulate. `add(text, prepend)` appends/prepends to last if `lastAction==.kill`, else pushes new.
 
 **Undo coalescing** (fish-style): Word chars coalesce; whitespace captures word+space as unit; non-typing = immediate snapshot.
 
-**Word wrap**: Build `TextChunk[]` mapping visual→logical lines. Token-based: split on whitespace, greedily fit, break graphemes if token > width.
+**Cursor rendering** (via libvaxis Cell):
+```zig
+// Cursor cell uses reverse video
+win.writeCell(cursor_x, cursor_y, .{
+    .char = char_under_cursor,
+    .style = .{ .reverse = true },
+});
+```
 
-**Large paste**: >10 lines or >1000 chars → compress to `[paste #{id} +{n} lines]` marker, expand on submit.
-
-**Cursor render**: `before + CURSOR_MARKER + "\x1b[7m" + grapheme + "\x1b[27m" + rest`
+**Width calculation** (via libvaxis gwidth):
+```zig
+const width = vaxis.gwidth.gwidth(grapheme, vx.caps.unicode);
+```
 
 ---
 
-## 6. Input Handling
+## 6. Input Handling (via libvaxis)
 
-**StdinBuffer** buffers raw stdin, emits discrete sequences:
+Libvaxis provides **Parser** and **Loop** for complete input handling:
 
+```zig
+// Event union from libvaxis
+const Event = union(enum) {
+    key_press: Key,
+    key_release: Key,
+    mouse: Mouse,
+    paste_start,
+    paste_end,
+    paste: []const u8,      // OSC-52 clipboard
+    focus_in,
+    focus_out,
+    winsize: Winsize,
+    // Capability detection events
+    cap_kitty_keyboard,
+    cap_kitty_graphics,
+    cap_rgb,
+    cap_unicode,
+    // ...
+};
 ```
-process(data):
-  buffer += convertHighBytes(data)  // 0x80-0x9F → ESC sequences for legacy terms
 
-  // Bracketed paste: buffer until end marker
-  if inPaste or buffer.contains("\x1b[200~"):
-    if (endIdx = buffer.indexOf("\x1b[201~")) != -1:
-      emit("paste", extractBetween(buffer, "\x1b[200~", "\x1b[201~"))
-      buffer = buffer[endIdx + 6:]
-    else: inPaste = true; return
+**Key Structure** (libvaxis):
+```zig
+const Key = struct {
+    codepoint: u21,         // Unicode codepoint
+    text: ?[]const u8,      // Text if available
+    mods: Mods,             // Modifier state
 
-  // Parse sequences
-  while buffer.notEmpty:
-    if (seq = tryParseComplete(buffer)):  // CSI, OSC, DCS, APC, SS3
-      emit("data", seq.value); buffer = buffer[seq.length:]
-    else if buffer[0] == "\x1b":
-      if timedOut(10ms): emit("data", "\x1b"); buffer = buffer[1:]
-      else: break  // Wait for more data
-    else:
-      emit("data", buffer[0]); buffer = buffer[1:]
+    pub fn matches(self: Key, cp: anytype, mods: Mods) bool;
+};
+
+const Mods = struct {
+    shift: bool,
+    alt: bool,
+    ctrl: bool,
+    super: bool,
+    // Lock keys
+    caps_lock: bool,
+    num_lock: bool,
+};
 ```
 
-**Sequence completeness**: CSI ends at `@-~`, OSC/DCS/APC end at `\x07` or `\x1b\\`, SS3 is `\x1bO` + single char.
+**Parser State Machine** (libvaxis handles):
+- CSI sequences (cursor, function keys, Kitty enhanced)
+- OSC sequences (clipboard, colors, notifications)
+- SS3 sequences (function keys)
+- Kitty CSI-u format with full modifier/event support
+- Bracketed paste detection
 
-**Kitty CSI-u format**: `\x1b[{codepoint};{modifiers}u` or `\x1b[{codepoint};{modifiers}:{eventType}u`
-- Modifiers: 1-indexed bitmask (1=shift, 2=alt, 4=ctrl, 8=super)
-- Event types: 1=press, 2=repeat, 3=release
+**Mouse Events**:
+```zig
+const Mouse = struct {
+    col: u16,
+    row: u16,
+    button: Button,
+    mods: Mods,
+    type: Type,  // press, release, motion, drag
+};
 
-**Legacy key patterns**:
-| Key | Sequences |
-|-----|-----------|
-| `Ctrl+A-Z` | `\x01`-`\x1a` |
-| `↑↓←→` | `\x1b[A/B/D/C` or `\x1bOA/B/D/C` |
-| `Shift+↑` | `\x1b[1;2A` |
-| `F1-F4` | `\x1bOP`-`\x1bOS` |
-| `F5-F12` | `\x1b[15~`-`\x1b[24~` |
+// Enable mouse
+vx.setMouseMode(&tty, true);
+```
 
-**Key release**: `isKeyRelease(data)` checks for `:3u` suffix in Kitty format.
+**Example Event Loop**:
+```zig
+while (true) {
+    const event = loop.nextEvent();
+    switch (event) {
+        .key_press => |key| {
+            if (key.matches('c', .{ .ctrl = true })) {
+                break;  // Ctrl+C to exit
+            }
+            editor.handleKey(key);
+        },
+        .paste => |text| editor.insertText(text),
+        .winsize => |ws| vx.resize(allocator, &tty, ws),
+        else => {},
+    }
+    try vx.render(&tty);
+}
+```
 
 ---
 
-## 7. Width Calculation
+## 7. Width Calculation (via libvaxis gwidth)
 
-```
-visibleWidth(str) -> int:
-  if !str: return 0
-  if /^[\x20-\x7e]*$/.test(str): return str.length  // ASCII fast path
+Libvaxis provides comprehensive Unicode width calculation in `gwidth.zig`:
 
-  if (cached = widthCache.get(str)): return cached  // FIFO cache, 512 entries
+```zig
+// Three calculation methods available
+const Method = enum {
+    unicode,    // Full grapheme cluster width + emoji
+    wcwidth,    // Simpler, faster, POSIX-compatible
+    no_zwj,     // Split on ZWJ (for specific use cases)
+};
 
-  clean = str
-    .replace("\t", "   ")
-    .replace(/\x1b\[[0-9;]*[mGKHJsu]/g, "")        // SGR, cursor
-    .replace(/\x1b\]8;;[^\x07]*\x07[^\x1b]*/g, "") // Hyperlinks (OSC 8)
-    .replace(/\x1b_[^\x07]*\x07/g, "")             // APC (cursor marker)
-
-  width = 0
-  for seg in Intl.Segmenter(clean, {granularity: "grapheme"}):
-    if /^\p{M}+$/u.test(seg.segment): continue     // Zero-width (combining marks)
-    if isRgiEmoji(seg.segment): width += 2         // Pre-filter: has ZWJ or VS16
-    else: width += eastAsianWidth(seg.segment.codePointAt(0))
-
-  widthCache.set(str, width)
-  return width
+// Get width of a grapheme cluster
+const width = vaxis.gwidth.gwidth(grapheme_str, vx.caps.unicode);
 ```
 
-**East Asian Width** (UAX #11): Wide (W) and Fullwidth (F) = 2 columns, all others = 1. Common wide ranges: CJK `\u4E00-\u9FFF`, Hangul `\uAC00-\uD7AF`, fullwidth `\uFF00-\uFFEF`.
+**Character Structure** (libvaxis):
+```zig
+const Character = struct {
+    grapheme: []const u8,  // UTF-8 encoded grapheme cluster
+    width: u8,             // 0 = calculate at render time
+};
+```
 
-**sliceByColumn(line, startCol, length, strict?)**: Extract segment preserving ANSI codes. If `strict=true` and wide char straddles boundary, replace with space (prevents half-char rendering).
+**Unicode Method Details** (libvaxis gwidth):
+- Iterates grapheme clusters (not codepoints)
+- Emoji variation selectors: `FE0F` → force width 2
+- Text variation selectors: `FE0E` → keep width 1
+- Regional indicator pairs (flags)
+- Zero-width marks and combining chars
+- Uses UAX #11 East Asian Width for CJK
 
-**AnsiCodeTracker**: State machine tracking active SGR (bold, fg, bg, underline style). Used by `wrapTextWithAnsi()` to emit correct reset/restore sequences at line breaks. Tracks: intensity, italic, underline (style + color), strikethrough, inverse, fg (type + value), bg (type + value).
+**East Asian Width** (handled by libvaxis):
+- Wide (W) and Fullwidth (F) = 2 columns
+- CJK: `U+4E00-U+9FFF`, Hangul: `U+AC00-U+D7AF`
+- Fullwidth forms: `U+FF00-U+FFEF`
+
+**Print with Wrapping** (libvaxis handles width automatically):
+```zig
+// Print automatically handles width, wrapping, ANSI
+_ = try win.print(&.{
+    .{ .str = "Wide: 世界", .style = .{} },
+}, .{ .wrap = .word });
+```
+
+**Style Tracking** (via libvaxis Cell styles):
+```zig
+// No manual ANSI tracking needed - styles are per-cell
+win.writeCell(x, y, .{
+    .char = .{ .grapheme = "A" },
+    .style = .{ .bold = true, .fg = .{ .rgb = .{255, 0, 0} } },
+});
+```
 
 ---
 
-## 8. ANSI Escape Sequences
+## 8. ANSI Escape Sequences (via libvaxis ctlseqs)
 
-**Cursor**: `\x1b[{n}A/B/C/D` (up/down/right/left), `\x1b[{n}G` (column), `\x1b[{r};{c}H` (position), `\x1b[?25h/l` (show/hide)
+Libvaxis abstracts escape sequences via `ctlseqs.zig` constants:
 
-**Clear**: `\x1b[K` (to EOL), `\x1b[2K` (line), `\x1b[J` (to EOS), `\x1b[2J` (screen), `\x1b[3J` (scrollback)
+```zig
+const ctlseqs = vaxis.ctlseqs;
 
-**SGR** (`\x1b[{n}m`): 0=reset, 1=bold, 2=dim, 3=italic, 4=underline, 7=inverse, 9=strike, 22-29=reset attrs
-- Colors: 30-37/40-47 (fg/bg), 90-97/100-107 (bright), 39/49 (default)
-- Extended: `38;5;{n}` (256), `38;2;{r};{g};{b}` (RGB), same for 48=bg
-- Underline: `4:0-5` (none/single/double/curly/dotted/dashed), `58;5;{n}` or `58;2;r;g;b` (color)
+// Cursor
+ctlseqs.hide_cursor          // CSI ? 25 l
+ctlseqs.show_cursor          // CSI ? 25 h
+ctlseqs.home                 // CSI H
 
-**OSC**: `\x1b]0;{title}\x07` (title), `\x1b]8;;{url}\x07{text}\x1b]8;;\x07` (hyperlink), `\x1b]52;c;{base64}\x07` (clipboard)
+// Screen modes
+ctlseqs.smcup                // Enter alt screen (CSI ? 1049 h)
+ctlseqs.rmcup                // Exit alt screen (CSI ? 1049 l)
+ctlseqs.sync_set             // Begin sync (CSI ? 2026 h)
+ctlseqs.sync_reset           // End sync (CSI ? 2026 l)
+ctlseqs.bp_set               // Bracketed paste on
+ctlseqs.bp_reset             // Bracketed paste off
 
-**DEC modes**: `\x1b[?2004h/l` (bracketed paste), `\x1b[?2026h/l` (sync output), `\x1b[?1049h/l` (alt screen)
+// Kitty keyboard
+ctlseqs.csi_u_push           // Enable (flags 31)
+ctlseqs.csi_u_pop            // Disable
+ctlseqs.csi_u_query          // Query support
 
-**APC**: `\x1b_{payload}\x07` - used for cursor marker `\x1b_pi:c\x07`
+// Mouse
+ctlseqs.mouse_set            // Enable SGR mouse
+ctlseqs.mouse_reset          // Disable mouse
+```
 
-**Kitty graphics**: `\x1b_Ga=T,f=100,s={w},v={h};{base64}\x1b\\` (transmission keys: a=action, f=format, s/v=size, m=more chunks)
+**Style via Cell** (not raw ANSI):
+```zig
+// libvaxis handles SGR generation during render()
+Cell {
+    .style = .{
+        .fg = .{ .rgb = .{255, 0, 0} },  // True color
+        .bg = .{ .index = 240 },          // 256-color
+        .bold = true,
+        .italic = true,
+        .underline = .curly,
+        .ul_color = .{ .rgb = .{255, 255, 0} },
+    }
+}
+```
 
-**iTerm2 images**: `\x1b]1337;File=inline=1;width={w};height={h};preserveAspectRatio=1:{base64}\x07`
+**Color Types** (libvaxis):
+```zig
+const Color = union(enum) {
+    default,
+    index: u8,              // 256-color palette
+    rgb: [3]u8,            // True color
+};
+```
+
+**Hyperlinks** (via Cell.link):
+```zig
+cell.link = .{ .uri = "https://example.com", .params = "id=link1" };
+```
+
+**Kitty Graphics** (via libvaxis Image):
+```zig
+const img = try vx.loadImage(allocator, &tty, .{ .path = "img.png" });
+try vx.transmitImage(&tty, img, .png);
+cell.image = .{ .img_id = img.id };
+```
 
 ---
 
 ## 9. Overlay System
 
-```
-OverlayOptions {
-  width: int | "%"      // Absolute or percentage of terminal
-  minWidth: int
-  maxHeight: int | "%"
-  anchor: "center" | "top-left" | "top-right" | "bottom-left" |
-          "bottom-right" | "top-center" | "bottom-center" | "left-center" | "right-center"
-  row: int | "%"        // Explicit position (overrides anchor vertical)
-  col: int | "%"        // Explicit position (overrides anchor horizontal)
-  offsetX: int          // Offset from anchor position
-  offsetY: int
-  margin: int | {top, right, bottom, left}  // Constrains positioning
-  visible: fn(termWidth, termHeight) -> bool
+Use libvaxis **Window hierarchy** for overlays:
+
+```zig
+const Overlay = struct {
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+    component: *Component,
+    pre_focus: ?*Component,
+};
+
+var overlay_stack: std.ArrayList(Overlay);
+
+fn renderWithOverlays(vx: *vaxis.Vaxis) void {
+    // Base content
+    var base_win = vx.window();
+    renderBaseContent(base_win);
+
+    // Overlays render on top (later windows overwrite)
+    for (overlay_stack.items) |overlay| {
+        const win = base_win.child(.{
+            .x_off = overlay.x,
+            .y_off = overlay.y,
+            .width = .{ .limit = overlay.width },
+            .height = .{ .limit = overlay.height },
+        });
+        overlay.component.render(win);
+    }
 }
 ```
 
-**Compositing algorithm**:
-1. Resolve layout (width, row, col) from options + terminal dimensions
-2. Render overlay component at resolved width
-3. Extend base content if overlay extends past it
-4. For each overlay line: `compositeLineAt(base, overlay, col, width)`
+**Anchor Positioning** (application layer):
+```zig
+const Anchor = enum {
+    center,
+    top_left, top_center, top_right,
+    bottom_left, bottom_center, bottom_right,
+    left_center, right_center,
+};
 
+fn resolvePosition(anchor: Anchor, overlay_size: Size, screen_size: Size) Position {
+    return switch (anchor) {
+        .center => .{
+            .x = (screen_size.width - overlay_size.width) / 2,
+            .y = (screen_size.height - overlay_size.height) / 2,
+        },
+        .top_left => .{ .x = 0, .y = 0 },
+        // ...
+    };
+}
 ```
-compositeLineAt(base, overlay, col, overlayWidth):
-  before = sliceByColumn(base, 0, col, strict=true)        // Strict: space for half wide chars
-  after = sliceByColumn(base, col + overlayWidth, ∞, strict=true)
-  beforePad = " ".repeat(col - visibleWidth(before))
-  overlayPad = " ".repeat(overlayWidth - visibleWidth(overlay))
-  return before + beforePad + RESET + overlay + overlayPad + RESET + after
+
+**Focus Management**:
+```zig
+fn showOverlay(component: *Component) *Overlay {
+    const overlay = Overlay{
+        .component = component,
+        .pre_focus = focused_component,
+        // ...
+    };
+    overlay_stack.append(overlay);
+    focused_component = component;
+    return &overlay_stack.items[overlay_stack.items.len - 1];
+}
+
+fn hideOverlay(overlay: *Overlay) void {
+    // Restore focus to pre_focus or next visible overlay
+    focused_component = overlay.pre_focus orelse findNextFocusable();
+    // Remove from stack...
+}
 ```
 
-**Focus management**: Overlay stack tracks `preFocus` for each entry. `showOverlay()` returns handle with `hide()` and `setHidden(bool)`. On hide, focus restores to `preFocus` or next visible overlay.
-
-**Image line skip**: Lines containing Kitty/iTerm2 image sequences are not composited (binary corruption risk).
+**Borders** (via libvaxis):
+```zig
+var overlay_win = base.child(.{ .x_off = 10, .y_off = 5, .width = .{ .limit = 40 } });
+overlay_win.drawBorder(.{ .style = .double, .where = .all });
+var content = overlay_win.child(.{ .x_off = 1, .y_off = 1 });  // Inside border
+```
 
 ---
 
@@ -461,18 +689,20 @@ setSessionName(name) / setLabel(entryId, label)
 
 ## Implementation Phases
 
-### Library Phases (Complete ✅)
+### Library Phases (via libvaxis ✅)
 
-| Phase | Components | Key Milestones |
-|-------|------------|----------------|
-| 1. Terminal | Terminal interface, raw mode, Kitty protocol | Echo typed chars, handle Ctrl+C |
-| 2. Rendering | visibleWidth, graphemes, differential, sync output | Render "Hello" without flicker |
-| 3. Components | Component/Container, Text, focus, requestRender | Scrollable text display |
-| 4. Editor | Cursor nav, kill ring, undo, history, paste, wrap | Functional multiline input |
-| 5. Overlays | Stack, anchoring, compositing, focus restore | Modal dialog over content |
-| 6. AI | Message types, streaming events (types only) | Event stream interface |
-| 7. Extensions | Loading, events, tool/command registration | Custom /command works |
-| 8. Sessions | NDJSON, tree, compaction, crash recovery | Resume after restart |
+Libvaxis provides phases 1-5 out of the box:
+
+| Phase | libvaxis Coverage | Notes |
+|-------|-------------------|-------|
+| 1. Terminal | ✅ `Tty`, `Vaxis` | Raw mode, signals, protocols |
+| 2. Rendering | ✅ `Screen`, `Cell`, `render()` | Differential cell rendering |
+| 3. Components | ✅ `Window`, borders | Build app components on Window |
+| 4. Editor | ⚙️ Application layer | Use libvaxis Key, gwidth |
+| 5. Overlays | ✅ Window.child() | Compositing via window hierarchy |
+| 6. AI | ⚙️ Application layer | Types only |
+| 7. Extensions | ⚙️ Application layer | Event hooks |
+| 8. Sessions | ⚙️ Application layer | NDJSON persistence |
 
 ### Application Phases (TODO)
 
@@ -480,7 +710,7 @@ setSessionName(name) / setLabel(entryId, label)
 |-------|------------|--------------|----------------|
 | 9. CLI | Argument parsing, subcommands, config | [zig-clap](https://github.com/Hejsil/zig-clap) | `god-agent --help` works |
 | 10. Agent | Agent loop, tool execution, queues | [ai-zig](https://github.com/evmts/ai-zig) | Tool calls execute |
-| 11. Interactive | Chat UI, header, status, commands | god-tui lib | Full TUI running |
+| 11. Interactive | Chat UI, header, status, commands | libvaxis + components | Full TUI running |
 | 12. Integration | E2E testing, polish, docs | All above | Production ready |
 
 **Deep-dive spec**: `issues/god-tui/13-application-layer.md`
@@ -491,12 +721,36 @@ setSessionName(name) / setLabel(entryId, label)
 
 | Package | Purpose | URL |
 |---------|---------|-----|
+| libvaxis | TUI framework (terminal, rendering, input) | https://github.com/rockorager/libvaxis |
 | zig-clap | CLI argument parsing | https://github.com/Hejsil/zig-clap |
 | ai-zig | LLM providers (30+ supported) | https://github.com/evmts/ai-zig |
 
 ---
 
-## Reference: pi-mono/packages/tui
+## Reference: libvaxis
+
+Key files in `reference/libvaxis/src/`:
+
+| File | Purpose |
+|------|---------|
+| Vaxis.zig | Main API: init, render, window, resize, query |
+| Cell.zig | Character + Style + Link + Image |
+| Screen.zig | 2D grid of Cells |
+| Window.zig | Drawing surface with clipping/offset |
+| Parser.zig | Escape sequence state machine |
+| Loop.zig | Event loop with threaded input |
+| tty.zig | Platform TTY abstraction |
+| gwidth.zig | Unicode width calculation |
+| ctlseqs.zig | Control sequence constants |
+| Key.zig | Key event with modifiers |
+| Mouse.zig | Mouse event handling |
+| Image.zig | Kitty graphics protocol |
+
+**libvaxis examples**: `reference/libvaxis/examples/` for usage patterns
+
+---
+
+## Reference: pi-mono/packages/tui (original inspiration)
 
 | File | LOC | Purpose |
 |------|-----|---------|

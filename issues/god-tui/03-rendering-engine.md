@@ -1,250 +1,232 @@
 # Rendering Engine: Complete Engineering Specification
 
-Language-agnostic spec for differential terminal rendering. Based on reverse-engineering pi-mono TUI.
+Specification for cell-based differential rendering via **libvaxis**.
+
+**Implementation**: libvaxis `Vaxis.render()` in `reference/libvaxis/src/Vaxis.zig`
 
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Render Loop State Machine](#render-loop-state-machine)
+2. [Cell-Based Rendering Model](#cell-based-rendering-model)
 3. [Differential Rendering Algorithm](#differential-rendering-algorithm)
-4. [Line Comparison Strategy](#line-comparison-strategy)
-5. [Viewport Management](#viewport-management)
-6. [Cursor Position Extraction](#cursor-position-extraction)
-7. [Line Reset Strategy](#line-reset-strategy)
-8. [Synchronized Output](#synchronized-output)
-9. [Performance Optimizations](#performance-optimizations)
-10. [Flicker Prevention](#flicker-prevention)
-11. [Image Handling](#image-handling)
-12. [Debug/Logging Strategies](#debuglogging-strategies)
-13. [Edge Cases](#edge-cases)
-14. [Implementation Pseudocode](#implementation-pseudocode)
+4. [Window Abstraction](#window-abstraction)
+5. [Style System](#style-system)
+6. [Synchronized Output](#synchronized-output)
+7. [Performance Optimizations](#performance-optimizations)
+8. [Image Handling](#image-handling)
+9. [Application Layer Integration](#application-layer-integration)
 
 ---
 
 ## Architecture Overview
 
+libvaxis uses **cell-based differential rendering**, more efficient than line-based:
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           RENDER PIPELINE                                    │
+│                        LIBVAXIS RENDER PIPELINE                              │
 │                                                                              │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────┐ │
-│  │   Component  │───▶│   Overlay    │───▶│   Cursor     │───▶│   Line    │ │
-│  │   Render     │    │  Compositing │    │  Extraction  │    │   Reset   │ │
+│  │   Window     │───▶│   Screen     │───▶│   Cell Diff  │───▶│  Escape   │ │
+│  │   Hierarchy  │    │  (current)   │    │  Algorithm   │    │  Sequences│ │
 │  └──────────────┘    └──────────────┘    └──────────────┘    └───────────┘ │
-│         │                                                            │       │
-│         │         ┌─────────────────────────────────────────────────┘       │
-│         │         │                                                          │
-│         ▼         ▼                                                          │
-│  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────┐  │
-│  │   Differential      │───▶│   Synchronized      │───▶│   Terminal      │  │
-│  │   Comparison        │    │   Output Buffer     │    │   Write         │  │
-│  └─────────────────────┘    └─────────────────────┘    └─────────────────┘  │
+│         │                   │                   │                    │       │
+│         │                   │                   │                    │       │
+│         ▼                   ▼                   ▼                    ▼       │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────┐ │
+│  │  Component   │    │InternalScreen│    │   Sync       │    │   TTY     │ │
+│  │  render()    │    │ (previous)   │    │  Protocol    │    │  write()  │ │
+│  └──────────────┘    └──────────────┘    └──────────────┘    └───────────┘ │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Core Data Structures
+### Core Data Structures (libvaxis)
 
+```zig
+// Vaxis maintains render state
+pub const Vaxis = struct {
+    screen: Screen,              // Current frame buffer
+    screen_last: InternalScreen, // Previous frame (for diffing)
+    state: RenderState,          // Cursor pos, pending refresh, etc.
+};
+
+// Screen is a 2D grid of Cells
+pub const Screen = struct {
+    buf: []Cell,
+    width: u16,
+    height: u16,
+};
+
+// Cell is the atomic unit
+pub const Cell = struct {
+    char: Character,
+    style: Style,
+    link: Hyperlink,
+    image: ?Image.Placement,
+};
 ```
-RendererState {
-  previousLines: string[]       // Last rendered content
-  previousWidth: int            // Terminal width at last render
-  cursorRow: int                // Logical cursor (end of content)
-  hardwareCursorRow: int        // Actual terminal cursor position
-  maxLinesRendered: int         // Track terminal working area
-  renderRequested: bool         // Coalesce multiple requests
+
+---
+
+## Cell-Based Rendering Model
+
+### Cell Structure (libvaxis)
+
+```zig
+pub const Cell = struct {
+    char: Character = .{},
+    style: Style = .{},
+    link: Hyperlink = .{},
+    image: ?Image.Placement = null,
+
+    // Rendering hints
+    default: bool = false,     // Skip if default style
+    wrapped: bool = false,     // Can use terminal autowrap
+    skipped: bool = false,     // Wide char continuation
+};
+
+pub const Character = struct {
+    grapheme: [16]u8 = undefined,  // UTF-8 grapheme cluster
+    width: u3 = 0,                  // Display width (0 = calculate)
+};
+```
+
+### Write Operations
+
+```zig
+// Direct cell write
+win.writeCell(col, row, .{
+    .char = .{ .grapheme = "A", .width = 1 },
+    .style = .{ .bold = true, .fg = .{ .rgb = .{255, 0, 0} } },
+});
+
+// Print with automatic wrapping
+_ = try win.print(&.{
+    .{ .str = "Hello ", .style = .{ .fg = .blue } },
+    .{ .str = "World", .style = .{ .bold = true } },
+}, .{ .wrap = .word });
+
+// Fill area
+win.fill(.{ .char = .{ .grapheme = " " }, .style = .{ .bg = .{ .index = 240 } } });
+```
+
+### Render Trigger
+
+```zig
+// Application calls render() after updating cells
+try vx.render(&tty);
+
+// Force full refresh
+vx.queueRefresh();
+try vx.render(&tty);
+```
+
+---
+
+## Differential Rendering Algorithm (libvaxis)
+
+### Cell-by-Cell Comparison
+
+libvaxis compares cells, not lines - much more efficient:
+
+```zig
+// From Vaxis.zig render() - simplified
+pub fn render(self: *Vaxis, tty: *Tty) !void {
+    // Begin synchronized output
+    try tty.write(ctlseqs.sync_set);
+
+    var cursor: struct { row: u16, col: u16 } = .{ .row = 0, .col = 0 };
+
+    for (0..self.screen.height) |row| {
+        for (0..self.screen.width) |col| {
+            const cell = self.screen.get(col, row);
+            const prev = self.screen_last.get(col, row);
+
+            // Skip if unchanged and not forcing refresh
+            if (cell.eql(prev) and !self.state.refresh) continue;
+
+            // Position cursor if needed
+            if (cursor.row != row or cursor.col != col) {
+                try self.moveCursor(tty, col, row, &cursor);
+            }
+
+            // Write cell content
+            try self.writeCell(tty, cell, &cursor);
+        }
+    }
+
+    // End synchronized output
+    try tty.write(ctlseqs.sync_reset);
+
+    // Swap buffers
+    self.screen_last.copyFrom(self.screen);
+    self.state.refresh = false;
 }
 ```
 
----
+### Optimization: Skip Unchanged Regions
 
-## Render Loop State Machine
-
-```
-                    ┌──────────────────┐
-                    │  IDLE            │
-                    │  (waiting for    │
-                    │   render request)│
-                    └────────┬─────────┘
-                             │
-                             │ requestRender()
-                             ▼
-                    ┌──────────────────┐
-                    │  SCHEDULED       │
-                    │  (nextTick       │
-                    │   pending)       │
-                    └────────┬─────────┘
-                             │
-                             │ nextTick fires
-                             ▼
-           ┌─────────────────┴─────────────────┐
-           │            doRender()              │
-           └─────────────────┬─────────────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        ▼                    ▼                    ▼
-┌───────────────┐   ┌───────────────┐   ┌───────────────┐
-│ FIRST_RENDER  │   │ WIDTH_CHANGED │   │ INCREMENTAL   │
-│ (no previous) │   │ (full clear)  │   │ (diff update) │
-└───────┬───────┘   └───────┬───────┘   └───────┬───────┘
-        │                   │                   │
-        └───────────────────┼───────────────────┘
-                            ▼
-                   ┌──────────────────┐
-                   │  UPDATE STATE    │
-                   │  - previousLines │
-                   │  - cursorRow     │
-                   │  - maxLines      │
-                   └────────┬─────────┘
-                            │
-                            ▼
-                   ┌──────────────────┐
-                   │  POSITION CURSOR │
-                   │  (for IME)       │
-                   └────────┬─────────┘
-                            │
-                            ▼
-                   ┌──────────────────┐
-                   │  IDLE            │
-                   └──────────────────┘
+```zig
+// Cell equality check
+pub fn eql(self: Cell, other: Cell) bool {
+    return std.mem.eql(u8, &self.char.grapheme, &other.char.grapheme) and
+           self.style.eql(other.style) and
+           self.link.eql(other.link) and
+           std.meta.eql(self.image, other.image);
+}
 ```
 
-### Request Coalescing
+### Cursor Movement Optimization
 
-Multiple render requests within same tick coalesce into single render:
+```zig
+fn moveCursor(self: *Vaxis, tty: *Tty, col: u16, row: u16, cursor: *Cursor) !void {
+    const row_diff = @as(i32, row) - @as(i32, cursor.row);
+    const col_diff = @as(i32, col) - @as(i32, cursor.col);
 
-```
-requestRender(force = false):
-  if force:
-    // Hard reset - clear all state
-    previousLines = []
-    previousWidth = -1
-    cursorRow = 0
-    hardwareCursorRow = 0
-    maxLinesRendered = 0
+    // Use relative movement when cheaper
+    if (row_diff == 0 and col_diff == 1) {
+        // Rely on cursor advance from last write
+    } else if (row_diff == 1 and col == 0) {
+        try tty.write("\r\n");
+    } else if (col_diff > 0 and col_diff < 8) {
+        // CUF (cursor forward)
+        try tty.writeFormat(ctlseqs.cuf_fmt, .{col_diff});
+    } else {
+        // Absolute positioning
+        try tty.writeFormat(ctlseqs.cup_fmt, .{row + 1, col + 1});
+    }
 
-  if renderRequested:
-    return  // Already scheduled
-
-  renderRequested = true
-  process.nextTick(() => {
-    renderRequested = false
-    doRender()
-  })
-```
-
-**Rationale**: Components may trigger multiple state changes in single event handler. Deferring to nextTick batches updates into one render cycle.
-
----
-
-## Differential Rendering Algorithm
-
-### Phase 1: Content Generation
-
-```
-doRender():
-  width = terminal.columns
-  height = terminal.rows
-
-  // 1. Render component tree
-  newLines = container.render(width)
-
-  // 2. Composite overlays (if any)
-  if overlayStack.notEmpty:
-    newLines = compositeOverlays(newLines, width, height)
-
-  // 3. Extract cursor position (before line resets)
-  cursorPos = extractCursorPosition(newLines)
-
-  // 4. Apply line reset sequences
-  newLines = applyLineResets(newLines)
+    cursor.row = row;
+    cursor.col = col;
+}
 ```
 
-### Phase 2: Render Path Selection
+### Style Change Optimization
 
-```
-  // Path A: First render (no previous content)
-  if previousLines.empty and not widthChanged:
-    fullRender(newLines, clear=false)
-    return
+```zig
+fn writeCell(self: *Vaxis, tty: *Tty, cell: Cell, cursor: *Cursor) !void {
+    // Only emit style changes when different from current
+    if (!cell.style.eql(self.current_style)) {
+        try self.emitStyleDiff(tty, cell.style);
+        self.current_style = cell.style;
+    }
 
-  // Path B: Width changed (must clear screen)
-  if previousWidth != 0 and previousWidth != width:
-    fullRender(newLines, clear=true)
-    return
+    // Emit hyperlink if changed
+    if (!cell.link.eql(self.current_link)) {
+        try self.emitLink(tty, cell.link);
+        self.current_link = cell.link;
+    }
 
-  // Path C: Incremental update
-  incrementalRender(newLines, width, height)
-```
+    // Emit image placement if present
+    if (cell.image) |img| {
+        try self.emitImage(tty, img);
+    }
 
-### Phase 3: Change Detection
-
-```
-incrementalRender(newLines, width, height):
-  firstChanged = -1
-  lastChanged = -1
-  maxLen = max(newLines.length, previousLines.length)
-
-  for i in 0..maxLen:
-    oldLine = previousLines[i] if i < previousLines.length else ""
-    newLine = newLines[i] if i < newLines.length else ""
-
-    if oldLine != newLine:
-      if firstChanged == -1:
-        firstChanged = i
-      lastChanged = i
-
-  // No changes - just update cursor
-  if firstChanged == -1:
-    positionHardwareCursor(cursorPos, newLines.length)
-    return
-```
-
-### Phase 4: Viewport Bounds Check
-
-```
-  // Changes only in deleted lines (below new content)
-  if firstChanged >= newLines.length:
-    handleDeletedLines(newLines, cursorPos)
-    return
-
-  // Changes above viewport - must full render
-  viewportTop = max(0, maxLinesRendered - height)
-  if firstChanged < viewportTop:
-    fullRender(newLines, clear=true)
-    return
-```
-
-### Phase 5: Incremental Update
-
-```
-  buffer = "\x1b[?2026h"  // Begin sync
-
-  // Move cursor to first changed line
-  lineDiff = firstChanged - hardwareCursorRow
-  if lineDiff > 0:
-    buffer += "\x1b[" + lineDiff + "B"
-  else if lineDiff < 0:
-    buffer += "\x1b[" + (-lineDiff) + "A"
-
-  buffer += "\r"  // Column 0
-
-  // Render changed lines only
-  renderEnd = min(lastChanged, newLines.length - 1)
-  for i in firstChanged..renderEnd:
-    if i > firstChanged:
-      buffer += "\r\n"
-    buffer += "\x1b[2K"  // Clear line
-    buffer += validateAndWrite(newLines[i], width)
-
-  finalCursorRow = renderEnd
-
-  // Clear extra lines if content shrunk
-  if previousLines.length > newLines.length:
-    buffer += handleShrinkage(renderEnd, newLines.length, previousLines.length)
-
-  buffer += "\x1b[?2026l"  // End sync
-  terminal.write(buffer)
+    // Write grapheme
+    try tty.write(cell.char.grapheme[0..cell.char.width]);
+    cursor.col += cell.char.width;
+}
 ```
 
 ---

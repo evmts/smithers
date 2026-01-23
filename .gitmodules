@@ -16,3 +16,6 @@
 [submodule "reference/pi-mono"]
 	path = reference/pi-mono
 	url = git@github.com:badlogic/pi-mono.git
+[submodule "reference/libvaxis"]
+	path = reference/libvaxis
+	url = git@github.com:rockorager/libvaxis.git

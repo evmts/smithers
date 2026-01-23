@@ -1,14 +1,14 @@
 # Terminal Abstraction Layer - Engineering Specification
 
-**Status:** Draft
-**Version:** 1.0
-**Reference Implementation:** `pi-mono/packages/tui/src/terminal.ts`
+**Status:** Updated for libvaxis
+**Version:** 2.0
+**Implementation:** `libvaxis` (reference/libvaxis)
 
 ---
 
 ## 1. Overview
 
-The Terminal Abstraction Layer provides a minimal, unified interface for terminal I/O operations. It abstracts the complexity of raw terminal control, keyboard protocols, and cross-platform differences behind a clean API.
+The Terminal Abstraction Layer is provided by **libvaxis**, a production Zig TUI library. It handles raw mode, signal handlers, protocol negotiation, and cross-platform differences.
 
 ```
 +------------------------------------------------------------------+
@@ -17,113 +17,186 @@ The Terminal Abstraction Layer provides a minimal, unified interface for termina
                               |
                               v
 +------------------------------------------------------------------+
-|                     Terminal Interface                            |
-|  start() | stop() | write() | columns | rows | kittyProtocolActive|
-|  moveBy() | hideCursor() | showCursor() | clearLine() | ...       |
+|                     Vaxis (Main API)                              |
+|  init() | deinit() | render() | window() | resize() | caps        |
 +------------------------------------------------------------------+
                               |
           +-------------------+-------------------+
           |                                       |
           v                                       v
 +----------------------+              +----------------------+
-|  ProcessTerminal     |              |  VirtualTerminal     |
-|  (Real TTY)          |              |  (Testing)           |
+|  PosixTty            |              |  WindowsTty          |
+|  (Unix terminals)    |              |  (Windows Console)   |
 +----------------------+              +----------------------+
           |                                       |
           v                                       v
 +----------------------+              +----------------------+
-|  process.stdin       |              |  xterm.js headless   |
-|  process.stdout      |              |  (Terminal Emulator) |
+|  /dev/tty            |              |  Console API         |
+|  termios             |              |  Win32               |
 +----------------------+              +----------------------+
 ```
 
----
+## 1.1 libvaxis Integration
 
-## 2. Terminal Interface Specification
+```zig
+const std = @import("std");
+const vaxis = @import("vaxis");
 
-```
-Interface Terminal {
-    // Lifecycle
-    start(onInput: Callback<string>, onResize: Callback<void>) -> void
-    stop() -> void
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    // Output
-    write(data: string) -> void
+    // Initialize TTY and Vaxis
+    var tty = try vaxis.Tty.init();
+    defer tty.deinit();
 
-    // Dimensions (read-only properties)
-    columns: number
-    rows: number
+    var vx = try vaxis.init(allocator, &tty, .{});
+    defer vx.deinit(&tty);
 
-    // Protocol state
-    kittyProtocolActive: boolean
+    // Enter alt screen, enable features
+    try vx.enterAltScreen(&tty);
+    defer vx.exitAltScreen(&tty);
 
-    // Cursor movement (relative)
-    moveBy(lines: number) -> void   // negative=up, positive=down
+    // Query terminal capabilities
+    try vx.queryTerminal(&tty, 1_000_000_000); // 1s timeout
 
-    // Cursor visibility
-    hideCursor() -> void
-    showCursor() -> void
-
-    // Clear operations
-    clearLine() -> void             // Clear current line (CSI K)
-    clearFromCursor() -> void       // Clear from cursor to screen end (CSI J)
-    clearScreen() -> void           // Clear entire screen + home (CSI 2J + CSI H)
-
-    // Window operations
-    setTitle(title: string) -> void // OSC 0;title BEL
+    // Main loop...
 }
 ```
 
 ---
 
-## 3. Raw Mode Implementation
+## 2. libvaxis API Surface
 
-### 3.1 Enable Sequence
+### 2.1 Vaxis Main Structure
 
-```
-+--------------------------------------------+
-| 1. Save previous raw mode state            |
-| 2. Enable raw mode: setRawMode(true)       |
-| 3. Set encoding to UTF-8                   |
-| 4. Resume stdin                            |
-| 5. Enable bracketed paste mode             |
-| 6. Attach resize handler                   |
-| 7. Force SIGWINCH (refresh dimensions)     |
-| 8. Query + enable Kitty keyboard protocol  |
-+--------------------------------------------+
+```zig
+pub const Vaxis = struct {
+    // Initialization
+    pub fn init(allocator: Allocator, tty: *Tty, opts: Options) !Vaxis;
+    pub fn deinit(self: *Vaxis, tty: *Tty) void;
+
+    // Screen state
+    screen: Screen,              // Current frame buffer
+    screen_last: InternalScreen, // Previous frame (for diffing)
+    caps: Capabilities,          // Detected terminal capabilities
+
+    // Rendering
+    pub fn window(self: *Vaxis) Window;  // Get root window
+    pub fn render(self: *Vaxis, tty: *Tty) !void;  // Diff-render to tty
+    pub fn resize(self: *Vaxis, allocator: Allocator, tty: *Tty, ws: Winsize) !void;
+    pub fn queueRefresh(self: *Vaxis) void;  // Force full redraw
+
+    // Screen modes
+    pub fn enterAltScreen(self: *Vaxis, tty: *Tty) !void;
+    pub fn exitAltScreen(self: *Vaxis, tty: *Tty) !void;
+
+    // Capabilities
+    pub fn queryTerminal(self: *Vaxis, tty: *Tty, timeout_ns: u64) !void;
+
+    // Mouse/input
+    pub fn setMouseMode(self: *Vaxis, tty: *Tty, enable: bool) !void;
+    pub fn setBracketedPaste(self: *Vaxis, tty: *Tty, enable: bool) !void;
+
+    // System
+    pub fn setTitle(self: *Vaxis, tty: *Tty, title: []const u8) !void;
+    pub fn notify(self: *Vaxis, tty: *Tty, title: ?[]const u8, body: []const u8) !void;
+
+    // Graphics
+    pub fn loadImage(self: *Vaxis, allocator: Allocator, tty: *Tty, src: ImageSource) !Image;
+    pub fn transmitImage(self: *Vaxis, tty: *Tty, image: Image, fmt: Format) !void;
+    pub fn freeImage(self: *Vaxis, tty: *Tty, id: u32) void;
+
+    // Clipboard
+    pub fn copyToSystemClipboard(self: *Vaxis, tty: *Tty, text: []const u8) !void;
+    pub fn requestSystemClipboard(self: *Vaxis, tty: *Tty) !void;
+};
 ```
 
-**Escape Sequences on Start:**
+### 2.2 Capabilities (auto-detected)
+
+```zig
+pub const Capabilities = struct {
+    kitty_keyboard: bool,    // CSI-u keyboard protocol
+    kitty_graphics: bool,    // Kitty image protocol
+    rgb: bool,               // True color support
+    sgr_pixels: bool,        // Pixel-based mouse coords
+    unicode: enum { none, unicode, wcwidth },  // Width method
+    color_scheme: ?ColorScheme,  // Light/dark preference
+};
 ```
-\x1b[?2004h     Enable bracketed paste mode
-\x1b[?u         Query Kitty keyboard protocol support
 ```
 
-### 3.2 Disable Sequence
+---
 
-```
-+--------------------------------------------+
-| 1. Disable bracketed paste mode            |
-| 2. Pop Kitty protocol flags (if enabled)   |
-| 3. Clean up stdin buffer                   |
-| 4. Remove event handlers                   |
-| 5. Restore previous raw mode state         |
-+--------------------------------------------+
+## 3. Raw Mode Implementation (via libvaxis Tty)
+
+### 3.1 PosixTty Implementation
+
+libvaxis `PosixTty` handles raw mode automatically:
+
+```zig
+// From reference/libvaxis/src/tty.zig
+pub const PosixTty = struct {
+    fd: std.posix.fd_t,
+    original_termios: std.posix.termios,  // Saved for restore
+    buffered_writer: BufferedWriter,
+
+    pub fn init() !PosixTty {
+        // 1. Open /dev/tty
+        const fd = try std.posix.open("/dev/tty", .{ .ACCMODE = .RDWR }, 0);
+
+        // 2. Save original termios
+        var original = try std.posix.tcgetattr(fd);
+
+        // 3. Configure raw mode
+        var raw = original;
+        // Disable echo, canonical mode, signals, etc.
+        raw.lflag.ECHO = false;
+        raw.lflag.ICANON = false;
+        raw.lflag.ISIG = false;
+        raw.lflag.IEXTEN = false;
+        // Input flags
+        raw.iflag.IXON = false;
+        raw.iflag.ICRNL = false;
+        raw.iflag.BRKINT = false;
+        raw.iflag.INPCK = false;
+        raw.iflag.ISTRIP = false;
+        // Output flags
+        raw.oflag.OPOST = false;
+
+        try std.posix.tcsetattr(fd, .FLUSH, raw);
+
+        // 4. Register SIGWINCH handler
+        // (handled in Loop)
+
+        return .{ .fd = fd, .original_termios = original, ... };
+    }
+
+    pub fn deinit(self: *PosixTty) void {
+        // Restore original termios
+        std.posix.tcsetattr(self.fd, .FLUSH, self.original_termios);
+        std.posix.close(self.fd);
+    }
+};
 ```
 
-**Escape Sequences on Stop:**
-```
-\x1b[?2004l     Disable bracketed paste mode
-\x1b[<u         Pop Kitty keyboard protocol (if active)
+### 3.2 Capability Queries on Init
+
+libvaxis sends these queries in `queryTerminal()`:
+
+```zig
+// From Vaxis.zig queryTerminal()
+tty.write(ctlseqs.primary_device_attrs);   // DA1 - terminal identification
+tty.write(ctlseqs.csi_u_query);            // Kitty keyboard support?
+tty.write(ctlseqs.kitty_graphics_query);   // Kitty graphics?
+tty.write(ctlseqs.decrqm_sgr_pixels);      // Pixel mouse coords?
+tty.write(ctlseqs.decrqm_unicode);         // Unicode width mode?
+tty.write(ctlseqs.color_scheme_request);   // Light/dark preference?
 ```
 
-### 3.3 Raw Mode Details
-
-Raw mode bypasses the terminal's line discipline:
-- Characters are available immediately (no line buffering)
-- No echo of typed characters
-- Control characters (Ctrl+C, Ctrl+Z) are passed as-is
-- Application must handle all input processing
+### 3.3 Raw Mode Comparison
 
 ```
 +-----------------+     +-----------------+
@@ -131,10 +204,13 @@ Raw mode bypasses the terminal's line discipline:
 +-----------------+     +-----------------+
 | Line buffered   |     | Char-by-char    |
 | Echo enabled    |     | No echo         |
-| ^C = SIGINT     |     | ^C = 0x03 byte  |
-| ^Z = SIGTSTP    |     | ^Z = 0x1A byte  |
+| ^C = SIGINT     |     | ^C = key event  |
+| ^Z = SIGTSTP    |     | ^Z = key event  |
+| Signals handled |     | App handles all |
 +-----------------+     +-----------------+
 ```
+
+libvaxis handles all raw mode setup/teardown automatically.
 
 ---
 
@@ -238,75 +314,105 @@ process.on('exit', () => {
 
 ---
 
-## 6. Kitty Keyboard Protocol
+## 6. Kitty Keyboard Protocol (via libvaxis)
 
 ### 6.1 Overview
 
-The Kitty keyboard protocol provides:
-- Unambiguous key encoding (no sequence collisions)
-- Modifier key reporting
-- Key press/repeat/release distinction
-- Non-Latin keyboard layout support (base layout key)
+libvaxis handles Kitty keyboard protocol automatically:
+- Auto-detection via capability query
+- Full modifier support
+- Key press/repeat/release events
+- Base layout key for non-Latin keyboards
 
-### 6.2 Protocol Negotiation
+### 6.2 Protocol in libvaxis
 
-```
-+--------------------------------+
-|  Application sends query       |
-|  CSI ? u (\x1b[?u)             |
-+--------------------------------+
-              |
-              v
-+--------------------------------+
-|  Terminal responds with        |
-|  CSI ? <flags> u               |
-|  (or no response if unsupported)|
-+--------------------------------+
-              |
-              v
-+--------------------------------+
-|  If supported, push flags      |
-|  CSI > 7 u (\x1b[>7u)          |
-+--------------------------------+
+```zig
+// libvaxis enables Kitty protocol with flags 31 (all features)
+// From ctlseqs.zig:
+pub const csi_u_push = csi ++ ">31u";  // Enable
+pub const csi_u_pop = csi ++ "<1u";    // Disable
+pub const csi_u_query = csi ++ "?u";   // Query support
+
+// Capability detected in queryTerminal():
+if (vx.caps.kitty_keyboard) {
+    // Full key information available
+}
 ```
 
-### 6.3 Protocol Flags
+### 6.3 Key Structure in libvaxis
 
-```
-+------+----------------------------------------+
-| Flag | Description                            |
-+------+----------------------------------------+
-|  1   | Disambiguate escape codes              |
-|  2   | Report event types (press/repeat/rel)  |
-|  4   | Report alternate keys (shifted, base)  |
-+------+----------------------------------------+
+```zig
+pub const Key = struct {
+    codepoint: u21,              // Unicode codepoint
+    text: ?[]const u8,           // Reported text (if available)
+    mods: Mods,                  // Modifier state
+    base_layout_codepoint: ?u21, // US layout key (non-Latin)
 
-Combined: 1 + 2 + 4 = 7
-Push command: \x1b[>7u
-Pop command: \x1b[<u
-```
+    pub const Mods = struct {
+        shift: bool = false,
+        alt: bool = false,
+        ctrl: bool = false,
+        super: bool = false,
+        hyper: bool = false,
+        meta: bool = false,
+        caps_lock: bool = false,
+        num_lock: bool = false,
+    };
 
-### 6.4 CSI u Encoding Format
+    /// Check if key matches codepoint and modifiers
+    pub fn matches(self: Key, cp: anytype, mods: Mods) bool;
 
-```
-Basic:      CSI <codepoint> u
-With mod:   CSI <codepoint> ; <modifier> u
-With event: CSI <codepoint> ; <modifier> : <event> u
-With alt:   CSI <codepoint> : <shifted> : <base> ; <modifier> : <event> u
-
-Codepoint: Unicode codepoint of key
-Modifier:  Bitmask (1=shift, 2=alt, 4=ctrl, ...) + 1
-Event:     1=press, 2=repeat, 3=release
-Shifted:   Codepoint when shift pressed
-Base:      Codepoint in US layout (for non-Latin keyboards)
+    /// Check if this is a printable key (no ctrl, has text)
+    pub fn isText(self: Key) bool;
+};
 ```
 
-**Example Sequences:**
+### 6.4 Event Handling
+
+```zig
+// libvaxis Event union includes key events
+pub const Event = union(enum) {
+    key_press: Key,
+    key_release: Key,  // Only with Kitty protocol
+    // ...
+};
+
+// Usage in event loop:
+switch (event) {
+    .key_press => |key| {
+        if (key.matches('c', .{ .ctrl = true })) {
+            // Ctrl+C
+        } else if (key.matches(.arrow_up, .{})) {
+            // Up arrow
+        } else if (key.isText()) {
+            // Insert key.text.?
+        }
+    },
+    .key_release => |key| {
+        // Handle release if needed
+    },
+}
 ```
-\x1b[97u           'a' pressed (codepoint 97)
-\x1b[97;5u         Ctrl+a (97, modifier 5 = ctrl+1)
-\x1b[97;2:3u       'A' released (shift modifier, release event)
-\x1b[1089::97;5:1u Cyrillic 'a' with Ctrl, base='a' (non-Latin keyboard)
+
+### 6.5 Special Key Codepoints (libvaxis)
+
+```zig
+// Common special keys (from Key.zig)
+pub const escape = 0x1B;
+pub const enter = '\r';
+pub const tab = '\t';
+pub const backspace = 0x7F;
+pub const arrow_up = 0x111F;
+pub const arrow_down = 0x1120;
+pub const arrow_left = 0x1121;
+pub const arrow_right = 0x1122;
+pub const home = 0x1123;
+pub const end = 0x1124;
+pub const page_up = 0x1125;
+pub const page_down = 0x1126;
+pub const insert = 0x1127;
+pub const delete = 0x1128;
+pub const f1 = 0x1131;  // through f12
 ```
 
 ### 6.5 Arrow Keys in Kitty Protocol
