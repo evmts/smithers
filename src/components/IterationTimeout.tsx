@@ -1,5 +1,4 @@
 import { useRef } from 'react'
-import { Text, Box } from '@opentui/react'
 import { useMount, useUnmount } from '../reconciler/hooks.js'
 import { IterationTimeoutConfig } from '../orchestrator/timeout.js'
 import { sleep } from '../utils/sleep.js'
@@ -22,18 +21,17 @@ export interface IterationTimeoutProps {
 }
 
 /**
- * IterationTimeout component provides UI for Ralph loop throttling controls
+ * IterationTimeout component provides logic for Ralph loop throttling controls
  * Integrates with useIterationTimeout hook for complete timeout management
+ *
+ * This is a headless component that manages timeout state and lifecycle.
+ * UI rendering can be implemented separately using the provided status methods.
  */
 export function IterationTimeout({
   config,
-  onConfigUpdate,
   onTimeout,
-  showControls = false,
-  showStatus = true,
-  label = "Iteration Timeout",
   autoStart = false
-}: IterationTimeoutProps) {
+}: Pick<IterationTimeoutProps, 'config' | 'onTimeout' | 'autoStart'>) {
   const isRunningRef = useRef(false)
   const cancelRef = useRef(false)
   const lastTimeoutRef = useRef<Date | null>(null)
@@ -74,27 +72,51 @@ export function IterationTimeout({
     isRunningRef.current = false
   }
 
-  const handleToggleEnabled = () => {
-    if (onConfigUpdate) {
-      onConfigUpdate({ enabled: !config.enabled })
-    }
-  }
+  // Return null since this is a headless component that manages logic only
+  // UI can be built using the provided helper methods and state
+  return null
+}
 
-  const handleTimeoutChange = (newTimeout: number) => {
-    if (onConfigUpdate) {
-      onConfigUpdate({ timeoutMs: Math.max(0, newTimeout) })
-    }
-  }
+/**
+ * Headless hook version of IterationTimeout for pure logic management
+ * Returns state and control functions for building custom UIs
+ */
+export function useIterationTimeoutComponent(props: IterationTimeoutProps) {
+  const isRunningRef = useRef(false)
+  const cancelRef = useRef(false)
+  const lastTimeoutRef = useRef<Date | null>(null)
 
-  const handleManualTimeout = async () => {
-    if (onTimeout) {
-      try {
-        lastTimeoutRef.current = new Date()
-        await onTimeout()
-      } catch (error) {
-        console.error('Manual timeout failed:', error)
+  useMount(() => {
+    if (props.autoStart && props.config.enabled && props.onTimeout) {
+      startTimeoutLoop()
+    }
+  })
+
+  useUnmount(() => {
+    cancelRef.current = true
+  })
+
+  const startTimeoutLoop = async () => {
+    if (isRunningRef.current) return
+
+    isRunningRef.current = true
+
+    while (!cancelRef.current && props.config.enabled) {
+      if (props.onTimeout) {
+        try {
+          lastTimeoutRef.current = new Date()
+          await props.onTimeout()
+        } catch (error) {
+          console.warn('Iteration timeout error:', error)
+        }
+      } else {
+        await sleep(props.config.timeoutMs)
       }
+
+      await sleep(10)
     }
+
+    isRunningRef.current = false
   }
 
   const formatDuration = (ms: number): string => {
@@ -103,170 +125,19 @@ export function IterationTimeout({
     return `${(ms / 60000).toFixed(1)}m`
   }
 
-  const getStatusColor = (): string => {
-    if (!config.enabled) return 'gray'
-    if (isRunningRef.current) return 'yellow'
-    return 'green'
-  }
-
-  const getStatusText = (): string => {
-    if (!config.enabled) return 'Disabled'
-    if (isRunningRef.current) return 'Running'
-    return 'Ready'
-  }
-
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      {/* Header */}
-      <Box marginBottom={1}>
-        <Text color="blue">{label}</Text>
-      </Box>
-
-      {/* Status Display */}
-      {showStatus && (
-        <Box marginBottom={1}>
-          <Box marginRight={2}>
-            <Text color={getStatusColor()}>● {getStatusText()}</Text>
-          </Box>
-          <Box marginRight={2}>
-            <Text>Timeout: {formatDuration(config.timeoutMs)}</Text>
-          </Box>
-          {lastTimeoutRef.current && (
-            <Text color="dim">
-              Last: {lastTimeoutRef.current.toLocaleTimeString()}
-            </Text>
-          )}
-        </Box>
-      )}
-
-      {/* Interactive Controls */}
-      {showControls && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Box marginBottom={1}>
-            <Box marginRight={2}>
-              <Text>
-                [{config.enabled ? 'X' : ' '}] Enabled
-              </Text>
-            </Box>
-            <Text color="dim">(Press 'e' to toggle)</Text>
-          </Box>
-
-          <Box marginBottom={1}>
-            <Box marginRight={2}>
-              <Text>Timeout: {config.timeoutMs}ms</Text>
-            </Box>
-            <Text color="dim">(↑/↓ to adjust)</Text>
-          </Box>
-
-          <Box>
-            <Text color="dim">Press 't' to trigger manual timeout</Text>
-          </Box>
-        </Box>
-      )}
-
-      {/* Performance Metrics */}
-      {showStatus && (
-        <Box flexDirection="column" borderStyle="round" borderColor="dim" padding={1}>
-          <Text color="blue">Ralph Loop Throttling Metrics</Text>
-          <Box marginTop={1}>
-            <Text>
-              Expected delay per iteration: {formatDuration(config.timeoutMs)}
-            </Text>
-          </Box>
-          <Box>
-            <Text>
-              Throttling: {config.enabled ? 'Active' : 'Inactive'}
-            </Text>
-          </Box>
-          {config.enabled && (
-            <Box marginTop={1}>
-              <Text color="yellow">
-                ⚡ Ralph iterations will be throttled by {formatDuration(config.timeoutMs)}
-              </Text>
-            </Box>
-          )}
-          {!config.enabled && (
-            <Box marginTop={1}>
-              <Text color="red">
-                ⚠️  No throttling - Ralph may consume excessive resources
-              </Text>
-            </Box>
-          )}
-        </Box>
-      )}
-    </Box>
-  )
-}
-
-/**
- * Simplified IterationTimeout component for minimal UI
- */
-export function IterationTimeoutMinimal({
-  config,
-  onTimeout
-}: Pick<IterationTimeoutProps, 'config' | 'onTimeout'>) {
-  return (
-    <Box>
-      <Text color={config.enabled ? 'green' : 'gray'}>
-        Timeout: {config.timeoutMs}ms {config.enabled ? '●' : '○'}
-      </Text>
-    </Box>
-  )
-}
-
-/**
- * IterationTimeout component with debug information
- */
-export function IterationTimeoutDebug({
-  config,
-  onConfigUpdate,
-  onTimeout,
-  ...props
-}: IterationTimeoutProps) {
-  const debugInfoRef = useRef({
-    renderCount: 0,
-    lastConfigUpdate: null as Date | null,
-    timeoutCallCount: 0
+  const getStatus = () => ({
+    isRunning: isRunningRef.current,
+    isEnabled: props.config.enabled,
+    color: !props.config.enabled ? 'gray' : isRunningRef.current ? 'yellow' : 'green',
+    text: !props.config.enabled ? 'Disabled' : isRunningRef.current ? 'Running' : 'Ready',
+    formattedTimeout: formatDuration(props.config.timeoutMs),
+    lastTimeout: lastTimeoutRef.current
   })
 
-  debugInfoRef.current.renderCount++
-
-  const wrappedOnConfigUpdate = onConfigUpdate ? (newConfig: Partial<IterationTimeoutConfig>) => {
-    debugInfoRef.current.lastConfigUpdate = new Date()
-    onConfigUpdate(newConfig)
-  } : undefined
-
-  const wrappedOnTimeout = onTimeout ? async () => {
-    debugInfoRef.current.timeoutCallCount++
-    return onTimeout()
-  } : undefined
-
-  return (
-    <Box flexDirection="column">
-      <IterationTimeout
-        {...props}
-        config={config}
-        onConfigUpdate={wrappedOnConfigUpdate}
-        onTimeout={wrappedOnTimeout}
-      />
-
-      {/* Debug Information */}
-      <Box marginTop={1} borderStyle="round" borderColor="yellow" padding={1}>
-        <Text color="yellow">Debug Info</Text>
-        <Box marginTop={1}>
-          <Text>Render count: {debugInfoRef.current.renderCount}</Text>
-        </Box>
-        <Box>
-          <Text>Timeout calls: {debugInfoRef.current.timeoutCallCount}</Text>
-        </Box>
-        {debugInfoRef.current.lastConfigUpdate && (
-          <Box>
-            <Text>
-              Last config update: {debugInfoRef.current.lastConfigUpdate.toLocaleTimeString()}
-            </Text>
-          </Box>
-        )}
-      </Box>
-    </Box>
-  )
+  return {
+    status: getStatus(),
+    config: props.config,
+    startTimeoutLoop,
+    formatDuration
+  }
 }
