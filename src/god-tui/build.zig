@@ -160,6 +160,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("lib.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vaxis", .module = vaxis_mod },
+            },
         }),
     });
     const run_lib_tests = b.addRunArtifact(lib_tests);

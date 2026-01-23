@@ -1,14 +1,26 @@
-// Differential Rendering Engine per God-TUI spec §3
-// Efficient terminal rendering with sync mode and incremental updates
+// Vaxis-based Cell Rendering Engine for God-TUI
+// Uses libvaxis for cell-based rendering with automatic diffing
+// Provides backward-compatible API for line-based rendering
 
 const std = @import("std");
-const width_mod = @import("width.zig");
+const vaxis = @import("vaxis");
 
-// ANSI constants and utilities (inline to avoid module path issues)
+// Re-export vaxis types for external use
+pub const Cell = vaxis.Cell;
+pub const Style = vaxis.Cell.Style;
+pub const Color = vaxis.Cell.Color;
+pub const Segment = vaxis.Cell.Segment;
+pub const Window = vaxis.Window;
+pub const Screen = vaxis.Screen;
+pub const Winsize = vaxis.Winsize;
+
+/// Cursor marker for IME positioning (APC sequence)
+pub const CURSOR_MARKER = "\x1b_pi:c\x07";
+
+// ANSI constants for backward compatibility
 const ansi = struct {
     pub const ESC = "\x1b";
     pub const CSI = "\x1b[";
-    pub const CURSOR_MARKER = "\x1b_pi:c\x07";
     pub const LINE_RESET = "\x1b[0m\x1b]8;;\x07";
     pub const SYNC_START = "\x1b[?2026h";
     pub const SYNC_END = "\x1b[?2026l";
@@ -28,55 +40,10 @@ const ansi = struct {
         if (std.mem.indexOf(u8, line, "\x1b]1337;File=") != null) return true;
         return false;
     }
-
-    pub const SequenceType = enum { not_escape, incomplete, csi, osc, dcs, apc, ss3, single_char };
-
-    pub fn classifySequence(data: []const u8) struct { type: SequenceType, len: usize } {
-        if (data.len == 0) return .{ .type = .not_escape, .len = 0 };
-        if (data[0] != '\x1b') return .{ .type = .not_escape, .len = 0 };
-        if (data.len == 1) return .{ .type = .incomplete, .len = 1 };
-
-        const after = data[1];
-        if (after == '[') {
-            var i: usize = 2;
-            while (i < data.len) : (i += 1) {
-                const c = data[i];
-                if (c >= 0x40 and c <= 0x7E) return .{ .type = .csi, .len = i + 1 };
-            }
-            return .{ .type = .incomplete, .len = data.len };
-        }
-        if (after == ']') {
-            var i: usize = 2;
-            while (i < data.len) : (i += 1) {
-                if (data[i] == '\x07') return .{ .type = .osc, .len = i + 1 };
-                if (i + 1 < data.len and data[i] == '\x1b' and data[i + 1] == '\\') return .{ .type = .osc, .len = i + 2 };
-            }
-            return .{ .type = .incomplete, .len = data.len };
-        }
-        if (after == 'P') {
-            var i: usize = 2;
-            while (i + 1 < data.len) : (i += 1) {
-                if (data[i] == '\x1b' and data[i + 1] == '\\') return .{ .type = .dcs, .len = i + 2 };
-            }
-            return .{ .type = .incomplete, .len = data.len };
-        }
-        if (after == '_') {
-            var i: usize = 2;
-            while (i < data.len) : (i += 1) {
-                if (data[i] == '\x07') return .{ .type = .apc, .len = i + 1 };
-                if (i + 1 < data.len and data[i] == '\x1b' and data[i + 1] == '\\') return .{ .type = .apc, .len = i + 2 };
-            }
-            return .{ .type = .incomplete, .len = data.len };
-        }
-        if (after == 'O') {
-            if (data.len >= 3) return .{ .type = .ss3, .len = 3 };
-            return .{ .type = .incomplete, .len = data.len };
-        }
-        return .{ .type = .single_char, .len = 2 };
-    }
 };
 
 /// Renderer state tracking for differential updates
+/// Maintains backward compatibility with line-based API
 pub const RendererState = struct {
     previous_lines: std.ArrayListUnmanaged([]const u8),
     previous_width: i32,
@@ -153,7 +120,7 @@ pub const Overlay = struct {
     z_index: i32,
 };
 
-/// Main render output buffer
+/// RenderOutput wraps a writer for terminal output
 pub const RenderOutput = struct {
     buffer: std.ArrayListUnmanaged(u8),
     allocator: std.mem.Allocator,
@@ -184,6 +151,21 @@ pub const RenderOutput = struct {
     }
 };
 
+/// Calculate visible width of a grapheme using vaxis
+pub fn graphemeWidth(str: []const u8, method: vaxis.gwidth.Method) u16 {
+    return vaxis.gwidth.gwidth(str, method);
+}
+
+/// Calculate visible width using unicode method (default) - returns u32 for backward compat
+pub fn visibleWidth(str: []const u8) u32 {
+    return @as(u32, graphemeWidth(str, .unicode));
+}
+
+/// Calculate visible width with allocator (backward compatible, allocator unused with vaxis)
+pub fn visibleWidthWithAllocator(_: std.mem.Allocator, str: []const u8) u32 {
+    return visibleWidth(str);
+}
+
 /// Extract cursor position from rendered lines (finds and removes CURSOR_MARKER)
 pub fn extractCursorPosition(allocator: std.mem.Allocator, lines: []const []const u8) struct { row: ?i32, col: ?i32, modified_lines: [][]u8 } {
     var result_lines = allocator.alloc([]u8, lines.len) catch return .{ .row = null, .col = null, .modified_lines = &[_][]u8{} };
@@ -191,16 +173,13 @@ pub fn extractCursorPosition(allocator: std.mem.Allocator, lines: []const []cons
     var found_col: ?i32 = null;
 
     for (lines, 0..) |line, row_idx| {
-        if (std.mem.indexOf(u8, line, ansi.CURSOR_MARKER)) |marker_pos| {
-            // Found cursor marker
+        if (std.mem.indexOf(u8, line, CURSOR_MARKER)) |marker_pos| {
             found_row = @intCast(row_idx);
-            // Calculate column (visible width before marker)
             const before_marker = line[0..marker_pos];
-            found_col = @intCast(width_mod.visibleWidthWithAllocator(allocator, before_marker));
+            found_col = @intCast(visibleWidth(before_marker));
 
-            // Remove marker from line
             const before = line[0..marker_pos];
-            const after = line[marker_pos + ansi.CURSOR_MARKER.len ..];
+            const after = line[marker_pos + CURSOR_MARKER.len ..];
             const new_line = allocator.alloc(u8, before.len + after.len) catch {
                 result_lines[row_idx] = allocator.dupe(u8, line) catch &[_]u8{};
                 continue;
@@ -222,10 +201,8 @@ pub fn applyLineResets(allocator: std.mem.Allocator, lines: []const []const u8) 
 
     for (lines, 0..) |line, i| {
         if (ansi.containsImage(line)) {
-            // Skip LINE_RESET for image lines
             result[i] = try allocator.dupe(u8, line);
         } else {
-            // Append LINE_RESET
             const new_len = line.len + ansi.LINE_RESET.len;
             result[i] = try allocator.alloc(u8, new_len);
             @memcpy(result[i][0..line.len], line);
@@ -246,7 +223,6 @@ pub fn compositeOverlays(allocator: std.mem.Allocator, base_lines: []const []con
         return result;
     }
 
-    // Sort overlays by z-index
     const sorted = try allocator.alloc(Overlay, overlays.len);
     defer allocator.free(sorted);
     @memcpy(sorted, overlays);
@@ -256,13 +232,11 @@ pub fn compositeOverlays(allocator: std.mem.Allocator, base_lines: []const []con
         }
     }.lessThan);
 
-    // Start with base lines
     var result = try allocator.alloc([]u8, base_lines.len);
     for (base_lines, 0..) |line, i| {
         result[i] = try allocator.dupe(u8, line);
     }
 
-    // Apply each overlay
     for (sorted) |overlay| {
         for (overlay.lines, 0..) |overlay_line, overlay_row_idx| {
             const target_row = overlay.row + @as(i32, @intCast(overlay_row_idx));
@@ -271,19 +245,16 @@ pub fn compositeOverlays(allocator: std.mem.Allocator, base_lines: []const []con
             const row_idx: usize = @intCast(target_row);
             const base = result[row_idx];
 
-            // Composite at column position
             const col: u32 = if (overlay.col >= 0) @intCast(overlay.col) else 0;
-            const overlay_width = width_mod.visibleWidthWithAllocator(allocator, overlay_line);
+            const overlay_width = visibleWidth(overlay_line);
 
-            // Slice base before and after overlay
-            const before = width_mod.sliceByColumn(allocator, base, 0, col) catch continue;
+            const before = sliceByColumn(allocator, base, 0, col) catch continue;
             defer allocator.free(before);
 
             const after_col = col + overlay_width;
-            const after = width_mod.sliceByColumn(allocator, base, after_col, 9999) catch continue;
+            const after = sliceByColumn(allocator, base, after_col, 9999) catch continue;
             defer allocator.free(after);
 
-            // Combine
             const new_len = before.len + overlay_line.len + after.len;
             const new_line = allocator.alloc(u8, new_len) catch continue;
             @memcpy(new_line[0..before.len], before);
@@ -298,11 +269,113 @@ pub fn compositeOverlays(allocator: std.mem.Allocator, base_lines: []const []con
     return result;
 }
 
+/// Slice text by visible column range
+pub fn sliceByColumn(allocator: std.mem.Allocator, text: []const u8, start_col: u32, end_col: u32) ![]u8 {
+    var result = std.ArrayListUnmanaged(u8){};
+    errdefer result.deinit(allocator);
+
+    var col: u32 = 0;
+    var i: usize = 0;
+    var in_range = false;
+
+    while (i < text.len) {
+        if (text[i] == '\x1b') {
+            const seq_len = findAnsiSequenceLen(text[i..]);
+            if (seq_len > 0) {
+                if (in_range or col >= start_col) {
+                    try result.appendSlice(allocator, text[i .. i + seq_len]);
+                }
+                i += seq_len;
+                continue;
+            }
+        }
+
+        const byte = text[i];
+        var char_width: u32 = 1;
+        var char_len: usize = 1;
+
+        if (byte >= 0x80) {
+            const decoded = decodeUtf8Len(text[i..]);
+            if (decoded.len > 0) {
+                char_len = decoded.len;
+                char_width = @as(u32, graphemeWidth(text[i .. i + char_len], .unicode));
+            }
+        } else if (byte == '\t') {
+            char_width = 3;
+        } else if (byte < 0x20) {
+            char_width = 0;
+        }
+
+        if (col < start_col and col + char_width > start_col) {
+            in_range = true;
+        } else if (col >= start_col and !in_range) {
+            in_range = true;
+        }
+
+        if (col >= end_col) {
+            break;
+        }
+
+        if (in_range and col + char_width <= end_col) {
+            try result.appendSlice(allocator, text[i .. i + char_len]);
+        } else if (in_range and col < end_col) {
+            try result.appendSlice(allocator, text[i .. i + char_len]);
+        }
+
+        col += char_width;
+        i += char_len;
+    }
+
+    return result.toOwnedSlice(allocator);
+}
+
+fn findAnsiSequenceLen(data: []const u8) usize {
+    if (data.len < 2 or data[0] != '\x1b') return 0;
+    const after = data[1];
+
+    if (after == '[') {
+        var i: usize = 2;
+        while (i < data.len) : (i += 1) {
+            const c = data[i];
+            if (c >= 0x40 and c <= 0x7E) return i + 1;
+        }
+        return 0;
+    }
+    if (after == ']') {
+        var i: usize = 2;
+        while (i < data.len) : (i += 1) {
+            if (data[i] == '\x07') return i + 1;
+            if (i + 1 < data.len and data[i] == '\x1b' and data[i + 1] == '\\') return i + 2;
+        }
+        return 0;
+    }
+    if (after == 'P' or after == '_') {
+        var i: usize = 2;
+        while (i < data.len) : (i += 1) {
+            if (data[i] == '\x07') return i + 1;
+            if (i + 1 < data.len and data[i] == '\x1b' and data[i + 1] == '\\') return i + 2;
+        }
+        return 0;
+    }
+    if (after == 'O' and data.len >= 3) return 3;
+    return 2;
+}
+
+fn decodeUtf8Len(bytes: []const u8) struct { len: usize } {
+    if (bytes.len == 0) return .{ .len = 0 };
+    const byte0 = bytes[0];
+    if (byte0 < 0x80) return .{ .len = 1 };
+    if (byte0 >= 0xC0 and byte0 < 0xE0) return .{ .len = if (bytes.len >= 2) 2 else 0 };
+    if (byte0 >= 0xE0 and byte0 < 0xF0) return .{ .len = if (bytes.len >= 3) 3 else 0 };
+    if (byte0 >= 0xF0 and byte0 < 0xF8) return .{ .len = if (bytes.len >= 4) 4 else 0 };
+    return .{ .len = 0 };
+}
+
 /// Determine render mode based on state
 pub const RenderMode = enum {
-    full, // First render or width changed
-    full_with_clear, // Width changed, need to clear
-    incremental, // Differential update
+    full,
+    full_with_clear,
+    incremental,
 };
 
 pub fn determineRenderMode(state: *const RendererState, new_width: i32) RenderMode {
@@ -319,19 +392,15 @@ pub fn determineRenderMode(state: *const RendererState, new_width: i32) RenderMo
 pub fn renderFull(output: *RenderOutput, lines: []const []const u8, clear: bool) !void {
     const w = output.writer();
 
-    // Start sync mode
     try w.writeAll(ansi.SYNC_START);
 
     if (clear) {
-        // Clear screen and home
         try w.writeAll(ansi.CLEAR_SCREEN);
         try w.writeAll(ansi.HOME);
     } else {
-        // Just home
         try w.writeAll(ansi.HOME);
     }
 
-    // Write all lines
     for (lines, 0..) |line, i| {
         try w.writeAll(line);
         if (i < lines.len - 1) {
@@ -339,10 +408,7 @@ pub fn renderFull(output: *RenderOutput, lines: []const []const u8, clear: bool)
         }
     }
 
-    // Clear to end of screen
     try w.writeAll(ansi.CLEAR_TO_EOS);
-
-    // End sync mode
     try w.writeAll(ansi.SYNC_END);
 }
 
@@ -356,10 +422,7 @@ pub fn renderIncremental(
 ) !void {
     const w = output.writer();
 
-    // Start sync mode
     try w.writeAll(ansi.SYNC_START);
-
-    // Home cursor
     try w.writeAll(ansi.HOME);
 
     const max_rows = @max(prev_lines.len, new_lines.len);
@@ -368,23 +431,18 @@ pub fn renderIncremental(
         const prev_line: []const u8 = if (row < prev_lines.len) prev_lines[row] else "";
         const new_line: []const u8 = if (row < new_lines.len) new_lines[row] else "";
 
-        // Compare lines (including ANSI - they need exact match)
         if (!std.mem.eql(u8, prev_line, new_line)) {
-            // Move to line
             if (row > 0) {
                 try ansi.cursorPosition(w, @intCast(row + 1), 1);
             }
-            // Clear and write new content
             try w.writeAll(ansi.CLEAR_LINE);
             try w.writeAll(new_line);
         } else if (row >= new_lines.len and row < prev_lines.len) {
-            // Line was removed
             try ansi.cursorPosition(w, @intCast(row + 1), 1);
             try w.writeAll(ansi.CLEAR_LINE);
         }
     }
 
-    // Clear any extra lines from previous render
     _ = allocator;
     const prev_max: usize = @intCast(@max(0, max_prev_rendered));
     if (new_lines.len < prev_max) {
@@ -394,7 +452,6 @@ pub fn renderIncremental(
         }
     }
 
-    // End sync mode
     try w.writeAll(ansi.SYNC_END);
 }
 
@@ -409,7 +466,7 @@ pub fn positionHardwareCursor(output: *RenderOutput, row: i32, col: i32) !void {
     }
 }
 
-/// Main render pipeline
+/// Main render pipeline (backward compatible)
 pub fn doRender(
     state: *RendererState,
     output: *RenderOutput,
@@ -419,14 +476,12 @@ pub fn doRender(
 ) !void {
     output.clear();
 
-    // 1. Composite overlays
     const composited = try compositeOverlays(state.allocator, new_lines, overlays);
     defer {
         for (composited) |line| state.allocator.free(line);
         state.allocator.free(composited);
     }
 
-    // 2. Extract cursor position
     const cursor_info = extractCursorPosition(state.allocator, composited);
     defer {
         for (cursor_info.modified_lines) |line| state.allocator.free(line);
@@ -436,14 +491,12 @@ pub fn doRender(
     if (cursor_info.row) |r| state.cursor_row = r;
     if (cursor_info.col) |c| state.cursor_col = c;
 
-    // 3. Apply line resets
     const reset_lines = try applyLineResets(state.allocator, cursor_info.modified_lines);
     defer {
         for (reset_lines) |line| state.allocator.free(line);
         state.allocator.free(reset_lines);
     }
 
-    // 4. Determine render mode and render
     const mode = determineRenderMode(state, new_width);
 
     switch (mode) {
@@ -458,10 +511,8 @@ pub fn doRender(
         ),
     }
 
-    // 5. Position hardware cursor for IME
     try positionHardwareCursor(output, state.cursor_row, state.cursor_col);
 
-    // 6. Update state
     state.clearPreviousLines();
     for (reset_lines) |line| {
         const copy = try state.allocator.dupe(u8, line);
@@ -472,6 +523,53 @@ pub fn doRender(
     state.hardware_cursor_row = state.cursor_row;
     state.hardware_cursor_col = state.cursor_col;
     state.clearRenderRequest();
+}
+
+// ============ Vaxis Cell API ============
+
+/// Print text segments to a window
+pub fn printSegments(win: Window, segments: []const Segment, opts: Window.PrintOptions) Window.PrintResult {
+    return win.print(segments, opts);
+}
+
+/// Print a single segment to a window
+pub fn printSegment(win: Window, segment: Segment, opts: Window.PrintOptions) Window.PrintResult {
+    return win.printSegment(segment, opts);
+}
+
+/// Write a cell to a window at the specified position
+pub fn writeCell(win: Window, col: u16, row: u16, cell: Cell) void {
+    win.writeCell(col, row, cell);
+}
+
+/// Fill a window with a cell
+pub fn fill(win: Window, cell: Cell) void {
+    win.fill(cell);
+}
+
+/// Clear a window (fill with default cell)
+pub fn clearWindow(win: Window) void {
+    win.clear();
+}
+
+/// Create a child window with optional border
+pub fn childWindow(win: Window, opts: Window.ChildOptions) Window {
+    return win.child(opts);
+}
+
+/// Show cursor at position in window
+pub fn showCursor(win: Window, col: u16, row: u16) void {
+    win.showCursor(col, row);
+}
+
+/// Hide cursor in window
+pub fn hideCursor(win: Window) void {
+    win.hideCursor();
+}
+
+/// Set cursor shape
+pub fn setCursorShape(win: Window, shape: Cell.CursorShape) void {
+    win.setCursorShape(shape);
 }
 
 // ============ Tests ============
@@ -505,7 +603,7 @@ test "extractCursorPosition found" {
     const allocator = std.testing.allocator;
     var lines = [_][]const u8{
         "Line 0",
-        "Pre" ++ ansi.CURSOR_MARKER ++ "Post",
+        "Pre" ++ CURSOR_MARKER ++ "Post",
         "Line 2",
     };
 
@@ -516,7 +614,7 @@ test "extractCursorPosition found" {
     }
 
     try std.testing.expectEqual(@as(?i32, 1), result.row);
-    try std.testing.expectEqual(@as(?i32, 3), result.col); // "Pre" = 3 cols
+    try std.testing.expectEqual(@as(?i32, 3), result.col);
     try std.testing.expectEqualStrings("PrePost", result.modified_lines[1]);
 }
 
@@ -576,7 +674,6 @@ test "determineRenderMode width change" {
     var state = RendererState.init(allocator);
     defer state.deinit();
 
-    // Simulate previous render
     const line = try allocator.dupe(u8, "test");
     try state.previous_lines.append(allocator, line);
     state.previous_width = 80;
@@ -635,7 +732,6 @@ test "renderIncremental same lines" {
 
     const result = output.getOutput();
     try std.testing.expect(std.mem.startsWith(u8, result, ansi.SYNC_START));
-    // Should not contain line content (no changes)
     try std.testing.expect(std.mem.indexOf(u8, result, "Same") == null);
 }
 
@@ -651,7 +747,6 @@ test "renderIncremental different lines" {
 
     const result = output.getOutput();
     try std.testing.expect(std.mem.indexOf(u8, result, "New") != null);
-    // "Same" should not be re-rendered
     try std.testing.expect(std.mem.indexOf(u8, result, "Same") == null);
 }
 
@@ -688,7 +783,6 @@ test "doRender full pipeline" {
 
     try doRender(&state, &output, &lines, 80, &[_]Overlay{});
 
-    // Verify state updated
     try std.testing.expectEqual(@as(usize, 2), state.previous_lines.items.len);
     try std.testing.expectEqual(@as(i32, 80), state.previous_width);
     try std.testing.expect(!state.isRenderRequested());
@@ -701,10 +795,78 @@ test "doRender with cursor marker" {
     var output = RenderOutput.init(allocator);
     defer output.deinit();
 
-    const lines = [_][]const u8{ "No cursor", "Cur" ++ ansi.CURSOR_MARKER ++ "sor here" };
+    const lines = [_][]const u8{ "No cursor", "Cur" ++ CURSOR_MARKER ++ "sor here" };
 
     try doRender(&state, &output, &lines, 80, &[_]Overlay{});
 
     try std.testing.expectEqual(@as(i32, 1), state.cursor_row);
     try std.testing.expectEqual(@as(i32, 3), state.cursor_col);
+}
+
+test "visibleWidth ASCII" {
+    const width = visibleWidth("Hello, World!");
+    try std.testing.expectEqual(@as(u32, 13), width);
+}
+
+test "visibleWidth empty" {
+    const width = visibleWidth("");
+    try std.testing.expectEqual(@as(u32, 0), width);
+}
+
+test "graphemeWidth with method" {
+    const width_unicode = graphemeWidth("a", .unicode);
+    const width_wcwidth = graphemeWidth("a", .wcwidth);
+    try std.testing.expectEqual(@as(u16, 1), width_unicode);
+    try std.testing.expectEqual(@as(u16, 1), width_wcwidth);
+}
+
+test "Cell creation" {
+    const cell: Cell = .{
+        .char = .{ .grapheme = "A", .width = 1 },
+        .style = .{ .bold = true },
+    };
+    try std.testing.expectEqualStrings("A", cell.char.grapheme);
+    try std.testing.expect(cell.style.bold);
+}
+
+test "Style with colors" {
+    const style: Style = .{
+        .fg = .{ .rgb = .{ 255, 0, 0 } },
+        .bg = .{ .index = 0 },
+        .bold = true,
+        .italic = true,
+    };
+    try std.testing.expect(style.bold);
+    try std.testing.expect(style.italic);
+    switch (style.fg) {
+        .rgb => |rgb| {
+            try std.testing.expectEqual(@as(u8, 255), rgb[0]);
+            try std.testing.expectEqual(@as(u8, 0), rgb[1]);
+        },
+        else => unreachable,
+    }
+}
+
+test "Segment creation" {
+    const segment: Segment = .{
+        .text = "Hello World",
+        .style = .{ .fg = .{ .index = 1 } },
+    };
+    try std.testing.expectEqualStrings("Hello World", segment.text);
+}
+
+test "Color equality" {
+    const c1: Color = .{ .rgb = .{ 255, 0, 0 } };
+    const c2: Color = .{ .rgb = .{ 255, 0, 0 } };
+    const c3: Color = .{ .rgb = .{ 0, 255, 0 } };
+    try std.testing.expect(Color.eql(c1, c2));
+    try std.testing.expect(!Color.eql(c1, c3));
+}
+
+test "Style equality" {
+    const s1: Style = .{ .bold = true, .fg = .{ .index = 1 } };
+    const s2: Style = .{ .bold = true, .fg = .{ .index = 1 } };
+    const s3: Style = .{ .bold = false, .fg = .{ .index = 1 } };
+    try std.testing.expect(s1.eql(s2));
+    try std.testing.expect(!s1.eql(s3));
 }
