@@ -46,3 +46,36 @@ export {
   type IPCRequest,
   type IPCResponse,
 } from './legacy-tool-ipc.js'
+
+// Agent tool system exports
+export {
+  createAgentTool,
+  createAgentTools,
+  AgentToolRegistry,
+  defaultAgentRegistry,
+  registerDefaultAgents,
+} from '../orchestrator/agents/agent-tool.js'
+
+export {
+  ClaudeAgentExecutor,
+} from '../orchestrator/agents/claude-agent.js'
+
+export {
+  CodexAgentExecutor,
+} from '../orchestrator/agents/codex-agent.js'
+
+export {
+  GeminiAgentExecutor,
+} from '../orchestrator/agents/gemini-agent.js'
+
+export type {
+  AgentProvider,
+  AgentToolConfig,
+  AgentInvocation,
+  AgentToolResult,
+  AgentExecutor,
+  AgentRegistry,
+  CreateAgentToolOptions,
+  AgentExecutionContext,
+  AgentUsage,
+} from '../orchestrator/agents/types.js'
