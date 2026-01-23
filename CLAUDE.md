@@ -29,6 +29,54 @@ As both an implementation and orchestrator agent you will often be prompting oth
 - Use subagents often to save context and to do things in parallel
 - Never use "You are a ______" persona prompts - they waste tokens. Just give direct instructions
 
+## Orchestration Anti-Patterns (CRITICAL)
+
+### Stop Conditions Are An Anti-Pattern
+
+Hill climbing never stops - it either fails to climb or hits diminishing returns. Don't ask "are we done?"
+
+```tsx
+// ❌ BAD
+<Ralph condition={() => !isDone()}>...</Ralph>
+
+// ✅ BETTER: Stop when no improvement in last N runs
+<Ralph condition={() => recentImprovements.slice(-5).some(i => i > 0)}>
+```
+
+### Over-Engineering Phases Reduces LLM Flexibility
+
+Agents are capable. Give them large tasks with related context. Don't micromanage into tiny steps.
+
+```tsx
+// ❌ BAD: Over-engineered
+<Phase><Claude>Analyze</Claude></Phase>
+<Phase><Claude>Plan</Claude></Phase>
+<Phase><Claude>Implement step 1</Claude></Phase>
+<Phase><Claude>Implement step 2</Claude></Phase>
+<Phase><Claude>Test</Claude></Phase>
+<Phase><Claude>Review</Claude></Phase>
+
+// ✅ BETTER: Single comprehensive prompt
+<Claude>{`Implement feature X with tests. Analyze patterns, follow conventions, 80% coverage.`}</Claude>
+
+// ✅ OR: Ralph for iteration
+<Ralph><Claude>{`Improve coverage to 80%. Report improvements.`}</Claude></Ralph>
+```
+
+### When Phases DO Make Sense
+
+Only when context completely shifts (different language, different codebase, no shared context):
+
+```tsx
+// ✅ GOOD: Distinct context shifts
+<Phase name="backend"><Claude>Implement Go API</Claude></Phase>
+<Phase name="frontend"><Claude>Implement React UI</Claude></Phase>
+```
+
+### Rule of Thumb
+
+If you're writing more than 3 phases, you're over-engineering. Give the agent a comprehensive prompt and let it ralph.
+
 ## Bun vs node.js
 
 Default to using Bun instead of Node.js.

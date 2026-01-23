@@ -28,6 +28,9 @@ const ProviderConfig = agent_mod.ProviderConfig;
 const AnthropicProvider = agent_mod.AnthropicProvider;
 const createAnthropicProvider = agent_mod.createAnthropicProvider;
 
+// Global context for event handler (one interactive mode per process)
+var g_interactive_mode: ?*InteractiveMode = null;
+
 pub const InteractiveMode = struct {
     allocator: Allocator,
     is_running: bool = false,
@@ -36,6 +39,7 @@ pub const InteractiveMode = struct {
     session_id: ?[]const u8 = null,
     is_busy: bool = false,
     pending_input: ?[]const u8 = null, // Queue input while busy
+    current_tool: ?[]const u8 = null, // Currently running tool name
 
     terminal: Terminal,
     renderer_state: RendererState,
@@ -213,7 +217,17 @@ pub const InteractiveMode = struct {
     }
 
     pub fn renderUI(self: *Self) !void {
+        self.renderUIInternal(false) catch {};
+    }
+
+    /// Force a full screen clear and render (used after agent calls)
+    pub fn renderUIFull(self: *Self) !void {
+        self.renderUIInternal(true) catch {};
+    }
+
+    fn renderUIInternal(self: *Self, force_clear: bool) !void {
         const width: u32 = self.terminal.columns;
+        debug.logRender("renderUI: width={d}, force_clear={any}", .{ width, force_clear });
 
         var all_lines = std.ArrayListUnmanaged([]const u8){};
         defer {
@@ -231,7 +245,9 @@ pub const InteractiveMode = struct {
         defer self.allocator.free(chat_lines);
         for (chat_lines) |line| try all_lines.append(self.allocator, line);
 
-        const input_line = try std.fmt.allocPrint(self.allocator, "> {s}", .{self.input_buffer.items});
+        // Add cursor marker to input line for proper cursor positioning
+        const cursor_marker = "\x1b_pi:c\x07"; // CURSOR_MARKER from renderer
+        const input_line = try std.fmt.allocPrint(self.allocator, "> {s}{s}", .{ self.input_buffer.items, cursor_marker });
         try all_lines.append(self.allocator, input_line);
 
         try all_lines.append(self.allocator, try self.allocator.dupe(u8, ""));
@@ -239,6 +255,13 @@ pub const InteractiveMode = struct {
         const status_lines = try self.status.renderWithAllocator(width, self.allocator);
         defer self.allocator.free(status_lines);
         for (status_lines) |line| try all_lines.append(self.allocator, line);
+
+        debug.logRender("renderUI: total lines={d}", .{all_lines.items.len});
+
+        // Force a full clear if requested (resets renderer state)
+        if (force_clear) {
+            self.renderer_state.previous_width = 0; // Force full_with_clear mode
+        }
 
         try renderer_mod.doRender(
             &self.renderer_state,
@@ -290,6 +313,7 @@ pub const InteractiveMode = struct {
             debug.logAgent("sending prompt to agent", .{});
 
             // Set up event handler to stream responses
+            g_interactive_mode = self;
             agent.on_event = handleAgentEvent;
 
             // Send message to agent
@@ -325,7 +349,10 @@ pub const InteractiveMode = struct {
             self.is_busy = false;
             self.status.setBusy(false);
             self.status.setCustomStatus(null);
-            self.renderer_state.requestRender();
+
+            // Force full screen clear after agent call to clean up any stray output
+            self.renderUIFull() catch {};
+            self.terminal.flush() catch {};
 
             // Process any pending input
             if (self.pending_input) |pending| {
@@ -338,9 +365,61 @@ pub const InteractiveMode = struct {
     }
 
     fn handleAgentEvent(event: AgentEvent) void {
-        // For now, we don't stream to the TUI - we collect the full response
-        // Future: integrate streaming updates to chat display
-        _ = event;
+        const self = g_interactive_mode orelse return;
+
+        switch (event.type) {
+            .tool_start => {
+                if (event.tool_name) |name| {
+                    debug.logAgent("tool_start: {s}", .{name});
+                    // Update status to show tool being used
+                    const status_msg = std.fmt.allocPrint(self.allocator, "Running: {s}...", .{name}) catch return;
+                    defer self.allocator.free(status_msg);
+                    self.status.setCustomStatus(status_msg);
+                    self.current_tool = name;
+
+                    // Add tool call to chat display
+                    self.chat.addToolCall(.{
+                        .id = event.tool_id orelse "",
+                        .name = name,
+                        .arguments = "",
+                    });
+
+                    // Render update
+                    self.renderUI() catch {};
+                    self.terminal.flush() catch {};
+                }
+            },
+            .tool_end => {
+                if (event.tool_name) |name| {
+                    debug.logAgent("tool_end: {s}", .{name});
+                    // Update tool result in chat
+                    if (event.tool_id) |id| {
+                        self.chat.updateToolResult(id, "✓ completed");
+                    }
+                    self.current_tool = null;
+                    self.status.setCustomStatus("Thinking...");
+
+                    // Render update
+                    self.renderUI() catch {};
+                    self.terminal.flush() catch {};
+                }
+            },
+            .turn_start => {
+                debug.logAgent("turn_start: {d}", .{event.turn});
+            },
+            .turn_end => {
+                debug.logAgent("turn_end: {d}", .{event.turn});
+            },
+            .agent_error => {
+                if (event.error_message) |err| {
+                    debug.logAgent("agent_error: {s}", .{err});
+                    self.chat.addSystemMessage(err);
+                    self.renderUI() catch {};
+                    self.terminal.flush() catch {};
+                }
+            },
+            else => {},
+        }
     }
 
     fn handleCommand(self: *Self, cmd: []const u8) void {
@@ -349,7 +428,9 @@ pub const InteractiveMode = struct {
             self.showHelp();
         } else if (std.mem.eql(u8, cmd, "clear")) {
             self.chat.clear();
-            self.renderer_state.requestRender();
+            // Force full screen clear to remove any stray content
+            self.renderUIFull() catch {};
+            self.terminal.flush() catch {};
         } else if (std.mem.eql(u8, cmd, "exit") or std.mem.eql(u8, cmd, "quit")) {
             self.is_running = false;
         } else if (std.mem.eql(u8, cmd, "model")) {
@@ -381,8 +462,9 @@ pub const InteractiveMode = struct {
         self.chat.addSystemMessage("Available commands:");
         self.chat.addSystemMessage("  /help   - Show this help");
         self.chat.addSystemMessage("  /clear  - Clear chat history");
-        self.chat.addSystemMessage("  /model  - Change model");
+        self.chat.addSystemMessage("  /model  - Show/change model");
         self.chat.addSystemMessage("  /exit   - Exit god-agent");
+        self.renderer_state.requestRender();
     }
 
     pub fn messageCount(self: *Self) usize {

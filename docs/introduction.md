@@ -73,26 +73,29 @@ By evolving a declarative plan rather than wiring up every agent interaction, Sm
 
 ## Quick Examples
 
-### Sequential Phases
+### Simple is Better (Anti-Pattern Warning)
+
+Most tasks don't need phases. Give agents comprehensive prompts:
 
 ```tsx
-import { SmithersProvider, Ralph, Phase, Step, Claude } from "smithers-orchestrator";
+// ✅ PREFERRED: Single Claude with comprehensive prompt
+<Claude>
+  Implement feature X with tests. Follow existing patterns.
+  Report: files changed, coverage delta.
+</Claude>
 
-<SmithersProvider db={db} executionId={executionId}>
-  <Ralph id="workflow" condition={() => phase !== 'done'} maxIterations={10}>
-    <Phase name="implement">
-      <Step name="code">
-        <Claude>Implement the feature</Claude>
-      </Step>
-      <Step name="test">
-        <Claude>Write tests</Claude>
-      </Step>
-    </Phase>
-    <Phase name="review">
-      <Claude>Review the changes</Claude>
-    </Phase>
-  </Ralph>
-</SmithersProvider>
+// ✅ ALSO GOOD: Ralph for iterative improvement
+<Ralph condition={() => recentImprovements.some(i => i > 0)} maxIterations={20}>
+  <Claude>Improve coverage. Report what improved.</Claude>
+</Ralph>
+```
+
+Use phases **only when context completely shifts** (different language, different codebase):
+
+```tsx
+// ✅ Phases for distinct context shifts
+<Phase name="backend"><Claude>Implement Go API</Claude></Phase>
+<Phase name="frontend"><Claude>Implement React UI</Claude></Phase>
 ```
 
 ### Parallel Agents

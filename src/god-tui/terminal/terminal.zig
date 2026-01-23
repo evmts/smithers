@@ -299,9 +299,9 @@ pub const Terminal = struct {
         raw.lflag.ISIG = false;
         raw.lflag.IEXTEN = false;
 
-        // Control characters: min 0, time 1 (100ms)
-        raw.cc[@intFromEnum(posix.V.MIN)] = 0;
-        raw.cc[@intFromEnum(posix.V.TIME)] = 1;
+        // Control characters: min 1 (block until at least 1 byte), time 0
+        raw.cc[@intFromEnum(posix.V.MIN)] = 1;
+        raw.cc[@intFromEnum(posix.V.TIME)] = 0;
 
         try posix.tcsetattr(fd, .NOW, raw);
         self.was_raw = true;

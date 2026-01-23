@@ -211,9 +211,65 @@ Optional summarization (large outputs) via Haiku:
 
 ---
 
+# Anti-Patterns (CRITICAL)
+
+## Stop Conditions Are An Anti-Pattern
+
+Hill climbing never stops - it either fails to climb or hits diminishing returns. Don't ask "are we done?"
+
+```tsx
+// ❌ BAD: Explicit "done" check
+<Ralph condition={() => !isDone()}>...</Ralph>
+
+// ✅ BETTER: Stop when no improvement in last N runs
+<Ralph condition={() => recentImprovements.slice(-5).some(i => i > 0)}>
+```
+
+## Over-Engineering Phases Reduces LLM Flexibility
+
+Agents are capable. Give them large tasks with related context. Don't micromanage into tiny steps.
+
+```tsx
+// ❌ BAD: Over-engineered into many phases
+<Phase><Claude>Analyze</Claude></Phase>
+<Phase><Claude>Plan</Claude></Phase>
+<Phase><Claude>Implement step 1</Claude></Phase>
+<Phase><Claude>Implement step 2</Claude></Phase>
+<Phase><Claude>Test</Claude></Phase>
+<Phase><Claude>Review</Claude></Phase>
+
+// ✅ BETTER: Single comprehensive prompt
+<Claude>{`Implement feature X with tests.
+Analyze patterns, follow conventions, ensure 80% coverage.
+Report: files changed, tests added, coverage delta.`}</Claude>
+
+// ✅ OR: Ralph for iterative improvement
+<Ralph condition={coverageBelow80} maxIterations={10}>
+  <Claude>{`Improve coverage to 80%. Report what you improved.`}</Claude>
+</Ralph>
+```
+
+## When Phases DO Make Sense
+
+Only when **context completely shifts** (different language, different codebase, no shared context):
+
+```tsx
+// ✅ GOOD: Distinct context shifts
+<Phase name="backend"><Claude>Implement Go API</Claude></Phase>
+<Phase name="frontend"><Claude>Implement React UI</Claude></Phase>
+```
+
+## Rule of Thumb
+
+**If you're writing more than 3 phases, you're over-engineering.** Give the agent a comprehensive prompt and let it ralph.
+
+---
+
 # Guardrails for agents generating Smithers code
 
-* Prefer **Phase/Step structure** for straight-line workflows; add `skipIf` for optional phases.
+* **Prefer single `<Claude>` with comprehensive prompt** over many phases for related tasks.
+* Use `<Ralph>` for iterative improvement with improvement-based stop conditions (not "done" checks).
+* Use phases only when context completely shifts (different language/codebase).
 * Use `db.state` for any branching/retry/human checkpoints.
 * Scope tool permissions per `<Claude>` call (`allowedTools`) and choose conservative `permissionMode` by default.
 * Never omit `maxIterations`.
