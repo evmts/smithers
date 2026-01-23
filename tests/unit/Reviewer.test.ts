@@ -205,9 +205,7 @@ describe('Reviewer Component', () => {
       const target = 'commit-abc123'
 
       // Mock state to indicate review in progress
-      mockDb.state.get.mockReturnValue({
-        [`review_${target}`]: 'in_progress'
-      })
+      mockDb.state.get.mockReturnValue('in_progress')
 
       const isReviewInProgress = mockDb.state.get(`review_${target}`) === 'in_progress'
 

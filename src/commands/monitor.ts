@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { OutputParser, StreamFormatter, LogWriter, summarizeWithHaiku } from '../monitor/index.js'
-import { ensureExecutable, findPreloadPath, resolveEntrypoint } from './cli-utils.js'
+import { ensureExecutable, resolveEntrypoint } from './cli-utils.js'
 
 interface MonitorOptions {
   file?: string

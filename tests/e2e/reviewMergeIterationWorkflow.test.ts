@@ -576,9 +576,9 @@ describe('End-to-End Review-Merge-Iteration Workflow', () => {
               break
             }
 
-            // If iteration succeeded
-            if (!hasCriticalIssues) {
-              workflow.phase = 'completed'
+            // If iteration succeeded (only on last iteration, let others continue failing)
+            if (!hasCriticalIssues || currentIteration > maxIterations) {
+              workflow.phase = currentIteration > maxIterations ? 'failed' : 'completed'
               break
             }
 
