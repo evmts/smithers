@@ -73,6 +73,14 @@ zig test session/session.zig        # 6 tests ✅
 - All modules integrated
 - Documentation updated
 
+### LLM Integration ✅
+- `agent/anthropic_provider.zig` - Anthropic API via curl with tool definitions
+- Tool definitions serialized in API requests (7 built-in tools)
+- Tool_use response parsing with JSON serialization
+- Agentic loop: executes tools and continues conversation
+- Tool results sent back as proper tool_result content blocks
+- Memory management for response strings and tool call data
+
 ---
 
 ## Module Breakdown
