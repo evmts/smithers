@@ -87,6 +87,13 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // Debug module
+    const debug_mod = b.createModule(.{
+        .root_source_file = b.path("debug.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Interactive mode module
     const interactive_mode_mod = b.createModule(.{
         .root_source_file = b.path("modes/interactive.zig"),
@@ -99,6 +106,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "header", .module = header_main_mod },
             .{ .name = "chat", .module = chat_main_mod },
             .{ .name = "status", .module = status_main_mod },
+            .{ .name = "debug", .module = debug_mod },
         },
     });
 
@@ -275,6 +283,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Debug module for modes tests
+    const debug_test_mod = b.createModule(.{
+        .root_source_file = b.path("debug.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Modes module tests
     const modes_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -288,6 +303,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "header", .module = header_ui_mod },
                 .{ .name = "chat", .module = chat_ui_mod },
                 .{ .name = "status", .module = status_ui_mod },
+                .{ .name = "debug", .module = debug_test_mod },
             },
         }),
     });

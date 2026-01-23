@@ -16,6 +16,7 @@ const chat_mod = @import("chat");
 const ChatContainer = chat_mod.ChatContainer;
 const status_mod = @import("status");
 const StatusBar = status_mod.StatusBar;
+const debug = @import("debug");
 
 const agent_mod = @import("agent");
 const Agent = agent_mod.Agent;
@@ -34,6 +35,7 @@ pub const InteractiveMode = struct {
     version: []const u8 = "0.1.0",
     session_id: ?[]const u8 = null,
     is_busy: bool = false,
+    pending_input: ?[]const u8 = null, // Queue input while busy
 
     terminal: Terminal,
     renderer_state: RendererState,
@@ -59,6 +61,9 @@ pub const InteractiveMode = struct {
     };
 
     pub fn init(allocator: Allocator) Self {
+        debug.init();
+        debug.log("InteractiveMode initializing", .{});
+
         var self = Self{
             .allocator = allocator,
             .terminal = Terminal.init(allocator),
@@ -74,6 +79,7 @@ pub const InteractiveMode = struct {
 
         // Initialize agent with Anthropic provider if available
         self.initAgent();
+        debug.log("InteractiveMode initialized, agent={any}", .{self.agent != null});
         return self;
     }
 
@@ -99,6 +105,10 @@ pub const InteractiveMode = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        debug.log("InteractiveMode deinit", .{});
+        if (self.pending_input) |pi| {
+            self.allocator.free(pi);
+        }
         if (self.agent) |agent| {
             agent.deinit();
             self.allocator.destroy(agent);
@@ -114,6 +124,7 @@ pub const InteractiveMode = struct {
         self.render_output.deinit();
         self.renderer_state.deinit();
         self.terminal.deinit();
+        debug.deinit();
     }
 
     pub fn setModel(self: *Self, new_model: []const u8) void {
@@ -242,10 +253,23 @@ pub const InteractiveMode = struct {
     }
 
     pub fn handleInput(self: *Self, input: []const u8) !void {
+        debug.log("handleInput: len={d}, busy={any}", .{ input.len, self.is_busy });
         if (input.len == 0) return;
 
         if (input[0] == '/') {
             self.handleCommand(input[1..]);
+            return;
+        }
+
+        // If busy, queue the input for later
+        if (self.is_busy) {
+            debug.log("handleInput: busy, queueing input", .{});
+            if (self.pending_input) |old| {
+                self.allocator.free(old);
+            }
+            self.pending_input = self.allocator.dupe(u8, input) catch null;
+            self.chat.addSystemMessage("(queued - waiting for response...)");
+            self.renderer_state.requestRender();
             return;
         }
 
@@ -256,29 +280,60 @@ pub const InteractiveMode = struct {
         if (self.agent) |agent| {
             self.is_busy = true;
             self.status.setBusy(true);
+            self.status.setCustomStatus("Thinking...");
             self.renderer_state.requestRender();
+
+            // Render immediately to show loading state
+            self.renderUI() catch {};
+            self.terminal.flush() catch {};
+
+            debug.logAgent("sending prompt to agent", .{});
 
             // Set up event handler to stream responses
             agent.on_event = handleAgentEvent;
 
             // Send message to agent
-            agent.prompt(Message.user(input)) catch {
+            agent.prompt(Message.user(input)) catch |err| {
+                debug.logAgent("agent.prompt error: {any}", .{err});
                 self.chat.addSystemMessage("Error: Failed to get response");
+                self.is_busy = false;
+                self.status.setBusy(false);
+                self.status.setCustomStatus(null);
+                self.renderer_state.requestRender();
+                return;
             };
+
+            debug.logAgent("agent.prompt completed, messages={d}", .{agent.messages.items.len});
 
             // Get the last assistant message and display it
             const messages = agent.messages.items;
+            var found_response = false;
             for (0..messages.len) |i| {
                 const msg = messages[messages.len - 1 - i];
                 if (msg.role == .assistant) {
+                    debug.logAgent("found assistant message, len={d}", .{msg.content.len});
                     self.chat.addAssistantMessage(msg.content);
+                    found_response = true;
                     break;
                 }
             }
 
+            if (!found_response) {
+                debug.logAgent("no assistant message found in {d} messages", .{messages.len});
+            }
+
             self.is_busy = false;
             self.status.setBusy(false);
+            self.status.setCustomStatus(null);
             self.renderer_state.requestRender();
+
+            // Process any pending input
+            if (self.pending_input) |pending| {
+                debug.log("processing pending input", .{});
+                self.pending_input = null;
+                defer self.allocator.free(pending);
+                self.handleInput(pending) catch {};
+            }
         }
     }
 
@@ -289,14 +344,36 @@ pub const InteractiveMode = struct {
     }
 
     fn handleCommand(self: *Self, cmd: []const u8) void {
+        debug.log("handleCommand: '{s}'", .{cmd});
         if (std.mem.eql(u8, cmd, "help")) {
             self.showHelp();
         } else if (std.mem.eql(u8, cmd, "clear")) {
             self.chat.clear();
+            self.renderer_state.requestRender();
         } else if (std.mem.eql(u8, cmd, "exit") or std.mem.eql(u8, cmd, "quit")) {
             self.is_running = false;
+        } else if (std.mem.eql(u8, cmd, "model")) {
+            // /model with no argument - show current model
+            const msg = std.fmt.allocPrint(self.allocator, "Current model: {s}. Use /model <name> to change.", .{self.model}) catch return;
+            defer self.allocator.free(msg);
+            self.chat.addSystemMessage(msg);
+            self.renderer_state.requestRender();
         } else if (std.mem.startsWith(u8, cmd, "model ")) {
-            self.setModel(cmd[6..]);
+            const new_model = std.mem.trim(u8, cmd[6..], " ");
+            if (new_model.len == 0) {
+                self.chat.addSystemMessage("Usage: /model <model-name>");
+            } else {
+                self.setModel(new_model);
+                const msg = std.fmt.allocPrint(self.allocator, "Model changed to: {s}", .{new_model}) catch return;
+                defer self.allocator.free(msg);
+                self.chat.addSystemMessage(msg);
+            }
+            self.renderer_state.requestRender();
+        } else {
+            const msg = std.fmt.allocPrint(self.allocator, "Unknown command: /{s}. Type /help for available commands.", .{cmd}) catch return;
+            defer self.allocator.free(msg);
+            self.chat.addSystemMessage(msg);
+            self.renderer_state.requestRender();
         }
     }
 
