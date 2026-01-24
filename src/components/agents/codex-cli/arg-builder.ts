@@ -26,7 +26,7 @@ function buildSandboxArgs(mode?: CodexSandboxMode): string[] {
  * - 'never' → --full-auto (runs without approval prompts)
  * - Other policies are ignored in exec mode (not supported)
  */
-function buildApprovalArgs(policy?: CodexApprovalPolicy): string[] {
+function buildApprovalArgs(_policy?: CodexApprovalPolicy): string[] {
   // codex exec doesn't support --ask-for-approval
   // The only approval-related flag is --full-auto
   return []

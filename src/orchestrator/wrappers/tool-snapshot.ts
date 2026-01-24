@@ -99,9 +99,11 @@ export interface ToolSnapshotWrapper {
 }
 
 export class ToolSnapshotError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  public override readonly cause?: unknown
+  constructor(message: string, cause?: unknown) {
     super(message)
     this.name = 'ToolSnapshotError'
+    this.cause = cause
   }
 }
 
@@ -115,9 +117,9 @@ const READ_ONLY_TOOLS = [
   'Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'TaskOutput'
 ] as const
 
-const WRITE_TOOLS = [
-  'Edit', 'Write', 'Bash', 'NotebookEdit', 'Task'
-] as const
+// const _WRITE_TOOLS = [
+//   'Edit', 'Write', 'Bash', 'NotebookEdit', 'Task'
+// ] as const
 
 export function createToolSnapshotWrapper(config: ToolSnapshotWrapperConfig): ToolSnapshotWrapper {
   const { snapshotSystem, repoStateTracker, logger } = config
@@ -240,7 +242,6 @@ export function createToolSnapshotWrapper(config: ToolSnapshotWrapperConfig): To
         try {
           snapshotBefore = await snapshotSystem.createSnapshot({
             description: options.description || `Before ${toolName} tool execution`,
-            context,
             includeUntracked: options.includeUntracked || false,
             ...options
           })
@@ -280,7 +281,6 @@ export function createToolSnapshotWrapper(config: ToolSnapshotWrapperConfig): To
           try {
             snapshotAfter = await snapshotSystem.createSnapshot({
               description: options.description || `After ${toolName} tool execution`,
-              context,
               includeUntracked: options.includeUntracked || false,
               ...options
             })
@@ -310,12 +310,15 @@ export function createToolSnapshotWrapper(config: ToolSnapshotWrapperConfig): To
             afterSnapshot: snapshotAfter?.changeId
           })
 
-          return {
+          const successResult: ToolCallResult<T> = {
             success: true,
             result,
-            snapshotBefore,
-            snapshotAfter
+            snapshotBefore
           }
+          if (snapshotAfter) {
+            successResult.snapshotAfter = snapshotAfter
+          }
+          return successResult
 
         } catch (toolError) {
           // Tool failed - rollback to before snapshot
@@ -350,13 +353,16 @@ export function createToolSnapshotWrapper(config: ToolSnapshotWrapperConfig): To
             rollbackError
           })
 
-          return {
+          const failResult: ToolCallResult<T> = {
             success: false,
             error: toolError instanceof Error ? toolError.message : String(toolError),
             snapshotBefore,
-            rolledBack,
-            rollbackError
+            rolledBack
           }
+          if (rollbackError) {
+            failResult.rollbackError = rollbackError
+          }
+          return failResult
         }
 
       } catch (error) {
@@ -414,13 +420,16 @@ export function createToolSnapshotWrapper(config: ToolSnapshotWrapperConfig): To
         const recentSnapshots = await snapshotSystem.listSnapshots(100)
         const pendingSnapshots = recentSnapshots.length
 
-        return {
+        const status: HealthStatus = {
           isHealthy,
           repoState: isHealthy ? 'clean' : 'dirty',
-          lastExecution: metrics.lastExecutionTime,
           pendingSnapshots,
           issues
         }
+        if (metrics.lastExecutionTime) {
+          status.lastExecution = metrics.lastExecutionTime
+        }
+        return status
       } catch (error) {
         logger?.error('Health status check failed', {
           error: error instanceof Error ? error.message : String(error)

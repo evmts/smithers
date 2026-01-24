@@ -72,7 +72,7 @@ export class StructuredOutputProcessor {
         validationResult = this.validate(transformedData, schema)
       }
 
-      return {
+      const output: ProcessedOutput = {
         valid: validationResult.valid,
         structured: validationResult.valid ? (validationResult.data || transformedData) : transformedData,
         raw: rawOutput,
@@ -81,8 +81,9 @@ export class StructuredOutputProcessor {
           transformationApplied: true,
           validationApplied: !!schema
         },
-        errors: validationResult.errors
+        errors: validationResult.errors || []
       }
+      return output
     } catch (error) {
       return {
         valid: false,
@@ -104,7 +105,7 @@ export class StructuredOutputProcessor {
     switch (type) {
       case 'object':
         if (!properties) {
-          return z.record(z.any())
+          return z.record(z.string(), z.any())
         }
 
         const objectSchema: Record<string, z.ZodSchema> = {}
@@ -128,31 +129,32 @@ export class StructuredOutputProcessor {
         return z.array(this.convertToZodSchema(items))
 
       case 'string':
-        let stringSchema = z.string()
         if (enumValues) {
-          stringSchema = z.enum(enumValues as [string, ...string[]])
+          return z.enum(enumValues as [string, ...string[]])
         }
-        return stringSchema
+        return z.string()
 
-      case 'number':
+      case 'number': {
         let numberSchema = z.number()
-        if (schema.minimum !== undefined) {
-          numberSchema = numberSchema.min(schema.minimum)
+        if (schema['minimum'] !== undefined) {
+          numberSchema = numberSchema.min(schema['minimum'])
         }
-        if (schema.maximum !== undefined) {
-          numberSchema = numberSchema.max(schema.maximum)
+        if (schema['maximum'] !== undefined) {
+          numberSchema = numberSchema.max(schema['maximum'])
         }
         return numberSchema
+      }
 
-      case 'integer':
+      case 'integer': {
         let intSchema = z.number().int()
-        if (schema.minimum !== undefined) {
-          intSchema = intSchema.min(schema.minimum)
+        if (schema['minimum'] !== undefined) {
+          intSchema = intSchema.min(schema['minimum'])
         }
-        if (schema.maximum !== undefined) {
-          intSchema = intSchema.max(schema.maximum)
+        if (schema['maximum'] !== undefined) {
+          intSchema = intSchema.max(schema['maximum'])
         }
         return intSchema
+      }
 
       case 'boolean':
         return z.boolean()

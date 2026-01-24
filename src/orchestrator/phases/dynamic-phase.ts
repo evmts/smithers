@@ -129,7 +129,7 @@ export class DynamicPhase {
 
   private async executeAgent(
     input: Record<string, any>,
-    context: WorkflowContext
+    _context: WorkflowContext
   ): Promise<PhaseOutput> {
     // This would integrate with the Anthropic SDK to execute an agent
     // For now, we'll simulate the execution
@@ -162,8 +162,8 @@ export class DynamicPhase {
   }
 
   private async executeScript(
-    input: Record<string, any>,
-    context: WorkflowContext
+    _input: Record<string, any>,
+    _context: WorkflowContext
   ): Promise<PhaseOutput> {
     // This would execute a script or command
     // For now, we'll simulate the execution
@@ -187,8 +187,8 @@ export class DynamicPhase {
   }
 
   private async executeManual(
-    input: Record<string, any>,
-    context: WorkflowContext
+    _input: Record<string, any>,
+    _context: WorkflowContext
   ): Promise<PhaseOutput> {
     // Manual phases require human intervention
     // This would typically wait for user input or approval
@@ -216,23 +216,26 @@ export class DynamicPhase {
       case 'never':
         return false
 
-      case 'output-contains':
-        const pattern = condition.config.pattern
+      case 'output-contains': {
+        const pattern = condition.config['pattern']
         if (!pattern) return false
         return output.raw.includes(pattern)
+      }
 
-      case 'structured-field-equals':
-        const field = condition.config.field
-        const expectedValue = condition.config.value
+      case 'structured-field-equals': {
+        const field = condition.config['field']
+        const expectedValue = condition.config['value']
         if (!field) return false
 
         const actualValue = this.getNestedValue(output.structured, field)
         return actualValue === expectedValue
+      }
 
-      case 'exit-code':
-        const expectedCode = condition.config.code
-        const actualCode = output.structured.exitCode
+      case 'exit-code': {
+        const expectedCode = condition.config['code']
+        const actualCode = output.structured['exitCode']
         return actualCode === expectedCode
+      }
 
       case 'composite':
         return this.evaluateCompositeCondition(condition, output)
@@ -247,21 +250,21 @@ export class DynamicPhase {
     condition: TransitionCondition,
     output: PhaseOutput
   ): boolean {
-    const operator = condition.config.operator || 'and'
-    const conditions = condition.config.conditions || []
+    const operator = condition.config['operator'] || 'and'
+    const conditions = condition.config['conditions'] || []
 
     if (conditions.length === 0) return true
 
-    const results = conditions.map((cond: TransitionCondition) =>
+    const results = conditions.map((cond: TransitionCondition): boolean =>
       this.evaluateCondition(cond, output)
     )
 
     switch (operator) {
       case 'and':
-        return results.every(result => result)
+        return results.every((result: boolean) => result)
 
       case 'or':
-        return results.some(result => result)
+        return results.some((result: boolean) => result)
 
       case 'not':
         return !results[0] // Only use first condition for 'not'

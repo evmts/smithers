@@ -442,7 +442,7 @@ describe('Step component', () => {
     test('step without registry completes after starting', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId} stopped>
+        <SmithersProvider db={db} executionId={executionId}>
           <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="P1">
               <Step name="test"><StepTaskRunner name="task1" delay={10} /></Step>
@@ -453,9 +453,10 @@ describe('Step component', () => {
 
       await new Promise(r => setTimeout(r, 150))
 
-      const tree = root.getTree()
-      const stepNode = findNodeByType(tree, 'step')
-      expect(stepNode?.props.status).toBe('completed')
+      // Check the database for completed step instead of the tree (which unmounts after Ralph completes)
+      const steps = db.steps.getByExecution(executionId)
+      const completedSteps = steps.filter(s => s.status === 'completed')
+      expect(completedSteps.length).toBeGreaterThanOrEqual(1)
       root.dispose()
     })
   })
@@ -581,7 +582,7 @@ describe('Step component', () => {
     test('standalone step completes after starting', async () => {
       const root = createSmithersRoot()
       await root.render(
-        <SmithersProvider db={db} executionId={executionId} stopped>
+        <SmithersProvider db={db} executionId={executionId}>
           <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="P1">
               <Step name="standalone"><StepTaskRunner name="task1" delay={10} /></Step>
@@ -592,9 +593,10 @@ describe('Step component', () => {
 
       await new Promise(r => setTimeout(r, 150))
 
-      const tree = root.getTree()
-      const stepNode = findNodeByType(tree, 'step')
-      expect(stepNode?.props.status).toBe('completed')
+      // Check the database for completed step instead of the tree (which unmounts after Ralph completes)
+      const steps = db.steps.getByExecution(executionId)
+      const completedSteps = steps.filter(s => s.status === 'completed')
+      expect(completedSteps.length).toBeGreaterThanOrEqual(1)
       root.dispose()
     })
   })

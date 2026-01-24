@@ -8,7 +8,6 @@ import type {
   JJSnapshot,
   SnapshotOptions,
   SnapshotContext,
-  ToolCallWrapper,
   ChangesetManager,
   RepoCleaner
 } from './types.js'

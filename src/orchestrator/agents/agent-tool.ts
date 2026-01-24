@@ -159,7 +159,7 @@ export function createAgentTool(
       // Merge config with any overrides
       const mergedConfig = {
         ...config,
-        ...(input.configOverrides || {})
+        ...input.configOverrides
       }
 
       // Create invocation
@@ -235,21 +235,21 @@ export function registerDefaultAgents(registry: AgentRegistry = defaultAgentRegi
   try {
     const { ClaudeAgentExecutor } = require('./claude-agent.js')
     registry.register('claude', new ClaudeAgentExecutor())
-  } catch (error) {
+  } catch {
     // Claude agent not available
   }
 
   try {
     const { CodexAgentExecutor } = require('./codex-agent.js')
     registry.register('codex', new CodexAgentExecutor())
-  } catch (error) {
+  } catch {
     // Codex agent not available
   }
 
   try {
     const { GeminiAgentExecutor } = require('./gemini-agent.js')
     registry.register('gemini', new GeminiAgentExecutor())
-  } catch (error) {
+  } catch {
     // Gemini agent not available
   }
 }

@@ -1,1 +1,0 @@
-"""Smithers-Py example orchestrations."""

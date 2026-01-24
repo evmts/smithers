@@ -1,7 +1,7 @@
 /**
  * Integration test for agent tool system
  */
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 import {
   createAgentTool,
   AgentToolRegistry,

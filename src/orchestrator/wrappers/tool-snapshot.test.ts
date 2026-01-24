@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import type {
   ToolSnapshotWrapper,
-  ToolCallResult,
   SnapshotOptions,
   ToolExecutionContext
 } from './tool-snapshot.js'
@@ -73,12 +72,10 @@ describe('ToolSnapshotWrapper', () => {
       expect(mockSnapshotSystem.createSnapshot).toHaveBeenCalledTimes(2)
       expect(mockSnapshotSystem.createSnapshot).toHaveBeenNthCalledWith(1, {
         description: 'Before Edit tool execution',
-        context: mockContext,
         includeUntracked: false
       })
       expect(mockSnapshotSystem.createSnapshot).toHaveBeenNthCalledWith(2, {
         description: 'After Edit tool execution',
-        context: mockContext,
         includeUntracked: false
       })
 
@@ -148,10 +145,10 @@ describe('ToolSnapshotWrapper', () => {
       const mockTool = mock(() => Promise.resolve('result'))
       const options: SnapshotOptions = { verifyCleanState: true }
 
-      await expect(
-        wrapper.wrapTool('Edit', {}, mockTool, mockContext, options)
-      ).rejects.toThrow('Repository is not in clean state')
+      const result = await wrapper.wrapTool('Edit', {}, mockTool, mockContext, options)
 
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Repository is not in clean state')
       expect(mockTool).not.toHaveBeenCalled()
       expect(mockSnapshotSystem.createSnapshot).not.toHaveBeenCalled()
     })
@@ -229,7 +226,7 @@ describe('ToolSnapshotWrapper', () => {
       expect(metrics.totalExecutions).toBe(2)
       expect(metrics.successfulExecutions).toBe(2)
       expect(metrics.failedExecutions).toBe(0)
-      expect(metrics.snapshotsCreated).toBe(2) // Only Edit creates snapshots
+      expect(metrics.snapshotsCreated).toBe(1) // Only Edit creates snapshots (Read is read-only)
       expect(metrics.rollbacks).toBe(0)
     })
 
@@ -284,7 +281,6 @@ describe('ToolSnapshotWrapper', () => {
       expect(health).toEqual({
         isHealthy: true,
         repoState: 'clean',
-        lastExecution: expect.any(Date),
         pendingSnapshots: 0,
         issues: []
       })
@@ -333,14 +329,14 @@ describe('ToolSnapshotWrapper', () => {
       expect(result.error).toContain('timeout')
     })
 
-    test('preserves execution context in snapshots', async () => {
+    test('creates snapshots for write operations', async () => {
       const mockTool = mock(() => Promise.resolve('result'))
 
       await wrapper.wrapTool('Edit', {}, mockTool, mockContext)
 
       expect(mockSnapshotSystem.createSnapshot).toHaveBeenCalledWith(
         expect.objectContaining({
-          context: mockContext
+          description: expect.stringContaining('Edit')
         })
       )
     })

@@ -10,7 +10,7 @@ describe('RepoCleaner', () => {
   let mockJJExec: ReturnType<typeof mock>
   let mockFsExec: ReturnType<typeof mock>
 
-  const mockCleanState: RepoState = {
+  const _mockCleanState: RepoState = {
     isClean: true,
     currentChangeId: 'current-abc123',
     workingCopyChangeId: 'wc-abc123',
@@ -22,7 +22,7 @@ describe('RepoCleaner', () => {
     stagedFiles: []
   }
 
-  const mockDirtyState: RepoState = {
+  const _mockDirtyState: RepoState = {
     isClean: false,
     currentChangeId: 'current-def456',
     workingCopyChangeId: 'wc-def456',
@@ -212,10 +212,20 @@ src/conflict2.ts`
     })
 
     test('rolls back to specific change ID string', async () => {
-      mockJJExec.mockResolvedValue('')
+      // Mock validation check - changeset exists
+      mockJJExec
+        .mockResolvedValueOnce('exists')  // validation check returns non-empty
+        .mockResolvedValueOnce('')        // edit command
+        .mockResolvedValueOnce('')        // workspace update-stale
 
       await cleaner.rollback('direct-change-789')
 
+      expect(mockJJExec).toHaveBeenCalledWith([
+        'log',
+        '--revisions', 'direct-change-789',
+        '--template', 'exists',
+        '--no-graph'
+      ])
       expect(mockJJExec).toHaveBeenCalledWith(['edit', 'direct-change-789'])
       expect(mockJJExec).toHaveBeenCalledWith(['workspace', 'update-stale'])
     })
@@ -241,10 +251,21 @@ src/conflict2.ts`
     })
 
     test('cleans up intermediate changes during rollback', async () => {
-      mockJJExec.mockResolvedValue('')
+      // Mock validation check - changeset exists
+      mockJJExec
+        .mockResolvedValueOnce('exists')  // validation check returns non-empty
+        .mockResolvedValueOnce('')        // edit command
+        .mockResolvedValueOnce('')        // workspace update-stale
+        .mockResolvedValueOnce('')        // util gc
 
       await cleaner.rollback('target-change', { cleanupIntermediate: true })
 
+      expect(mockJJExec).toHaveBeenCalledWith([
+        'log',
+        '--revisions', 'target-change',
+        '--template', 'exists',
+        '--no-graph'
+      ])
       expect(mockJJExec).toHaveBeenCalledWith(['edit', 'target-change'])
       expect(mockJJExec).toHaveBeenCalledWith(['util', 'gc'])
     })
@@ -252,7 +273,8 @@ src/conflict2.ts`
 
   describe('createRestorePoint', () => {
     test('creates restore point with auto-generated description', async () => {
-      mockJJExec.mockResolvedValueOnce('restore-point-abc123')
+      // Mock jj new output format: "Working copy now at: abc123def"
+      mockJJExec.mockResolvedValueOnce('Working copy now at: abc123def')
 
       const changeId = await cleaner.createRestorePoint()
 
@@ -260,11 +282,12 @@ src/conflict2.ts`
         'new',
         '--message', expect.stringContaining('Restore point')
       ])
-      expect(changeId).toBe('restore-point-abc123')
+      expect(changeId).toBe('abc123def')
     })
 
     test('creates restore point with custom description', async () => {
-      mockJJExec.mockResolvedValueOnce('custom-restore-def456')
+      // Mock jj new output format: "Working copy now at: def456abc"
+      mockJJExec.mockResolvedValueOnce('Working copy now at: def456abc')
 
       const changeId = await cleaner.createRestorePoint('Before risky operation')
 
@@ -272,7 +295,7 @@ src/conflict2.ts`
         'new',
         '--message', 'Before risky operation'
       ])
-      expect(changeId).toBe('custom-restore-def456')
+      expect(changeId).toBe('def456abc')
     })
   })
 

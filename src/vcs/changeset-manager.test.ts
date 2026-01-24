@@ -2,14 +2,14 @@
  * Tests for changeset manager - handles JJ changeset operations
  */
 
-import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test'
-import type { ChangesetManager, ChangesetInfo, JJSnapshot, SnapshotOptions } from './types.js'
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
+import type { ChangesetManager, ChangesetInfo } from './types.js'
 
 describe('ChangesetManager', () => {
   let manager: ChangesetManager
   let mockJJExec: ReturnType<typeof mock>
 
-  const mockChangesetInfo: ChangesetInfo = {
+  const _mockChangesetInfo: ChangesetInfo = {
     changeId: 'test-change-abc123',
     shortId: 'abc123',
     description: 'Test changeset',
@@ -30,6 +30,13 @@ describe('ChangesetManager', () => {
   beforeEach(async () => {
     // Mock jj command execution
     mockJJExec = mock(() => Promise.resolve(''))
+
+    // Create manager instance with mocked jjExec
+    const { createChangesetManager } = await import('./changeset-manager.js')
+    manager = createChangesetManager({
+      jjExec: mockJJExec,
+      workingDir: '/test/repo'
+    })
   })
 
   afterEach(() => {

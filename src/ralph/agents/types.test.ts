@@ -1,5 +1,4 @@
 import { describe, test, expect } from 'bun:test'
-import { z } from 'zod'
 import { AgentType, AgentInvocationRequest, AgentResponse, validateAgentType, validateInvocationRequest, AgentInvocationRequestSchema, AgentResponseSchema } from './types.js'
 
 describe('Agent Types', () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import type { OpenCodeProps } from './agents/types/opencode.js'
 import type { AgentResult } from './agents/types/execution.js'
 

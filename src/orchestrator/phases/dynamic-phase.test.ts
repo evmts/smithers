@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import { DynamicPhase } from './dynamic-phase.js'
-import type { WorkflowPhase, PhaseExecution, WorkflowContext } from '../types/workflow-types.js'
+import type { WorkflowPhase, WorkflowContext } from '../types/workflow-types.js'
 
 describe('DynamicPhase', () => {
   let phase: DynamicPhase

@@ -204,7 +204,7 @@ export class GeminiAgentExecutor implements AgentExecutor {
 
       const genAI = new GoogleGenerativeAI(context.env['GOOGLE_API_KEY']!)
       return genAI.getGenerativeModel({ model: config.model })
-    } catch (error) {
+    } catch {
       // Fallback to mock for testing or when SDK not available
       return this.createMockModel()
     }
@@ -262,12 +262,12 @@ export class GeminiAgentExecutor implements AgentExecutor {
     }
 
     // Add other provider-specific options
-    if (config.providerOptions?.topP !== undefined) {
-      generationConfig.topP = config.providerOptions.topP
+    if (config.providerOptions?.['topP'] !== undefined) {
+      generationConfig.topP = config.providerOptions['topP']
     }
 
-    if (config.providerOptions?.topK !== undefined) {
-      generationConfig.topK = config.providerOptions.topK
+    if (config.providerOptions?.['topK'] !== undefined) {
+      generationConfig.topK = config.providerOptions['topK']
     }
 
     if (Object.keys(generationConfig).length > 0) {
@@ -293,6 +293,14 @@ export class GeminiAgentExecutor implements AgentExecutor {
   private parseResponse(response: GenerateContentResponse): AgentToolResult {
     const candidate = response.response.candidates[0]
 
+    if (!candidate) {
+      return {
+        success: false,
+        error: 'No candidates in response',
+        usage: this.extractUsage(response.response.usageMetadata)
+      }
+    }
+
     // Check for safety blocking
     if (candidate.finishReason === 'SAFETY') {
       return {
@@ -317,14 +325,17 @@ export class GeminiAgentExecutor implements AgentExecutor {
     // Map finish reason to stop reason
     const stopReason = this.mapFinishReason(candidate.finishReason)
 
-    return {
+    const result: AgentToolResult = {
       success: true,
       content,
       usage: this.extractUsage(response.response.usageMetadata),
       turns: 1, // Gemini doesn't have multi-turn in a single call
-      stopReason,
       raw: response
     }
+    if (stopReason !== undefined) {
+      result.stopReason = stopReason
+    }
+    return result
   }
 
   /**

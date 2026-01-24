@@ -29,7 +29,7 @@ export interface ChangesetManagerConfig {
  * Create a changeset manager instance
  */
 export function createChangesetManager(config: ChangesetManagerConfig): ChangesetManager {
-  const { jjExec, workingDir, jjConfig = {} } = config
+  const { jjExec } = config
 
   return {
     async createChangeset(description?: string): Promise<string> {
@@ -44,8 +44,9 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
         // Extract change ID from output
         // JJ new outputs something like "Working copy now at: abc123def456"
         const changeIdMatch = output.match(/Working copy now at: (.+)/)
-        if (changeIdMatch) {
-          return changeIdMatch[1].trim()
+        const matchedId = changeIdMatch?.[1]
+        if (matchedId) {
+          return matchedId.trim()
         }
 
         // Check if the output itself is a change ID
@@ -106,7 +107,8 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
         const output = await jjExec(args)
         return parseChangesetOutput(JSON.parse(output))
       } catch (error: unknown) {
-        throw new JJSnapshotError(`Failed to list changesets: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to list changesets: ${err.message}`, err)
       }
     },
 
@@ -114,7 +116,8 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
       try {
         await jjExec(['edit', changeId])
       } catch (error: unknown) {
-        throw new JJSnapshotError(`Failed to edit changeset ${changeId}: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to edit changeset ${changeId}: ${err.message}`, err)
       }
     },
 
@@ -122,7 +125,8 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
       try {
         await jjExec(['abandon', changeId])
       } catch (error: unknown) {
-        throw new JJSnapshotError(`Failed to abandon changeset ${changeId}: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to abandon changeset ${changeId}: ${err.message}`, err)
       }
     },
 
@@ -135,9 +139,10 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
 
         await jjExec(args)
       } catch (error: unknown) {
+        const err = error as Error
         throw new JJSnapshotError(
-          `Failed to squash changeset ${sourceChangeId} into ${targetChangeId || 'parent'}: ${error.message}`,
-          error
+          `Failed to squash changeset ${sourceChangeId} into ${targetChangeId || 'parent'}: ${err.message}`,
+          err
         )
       }
     },
@@ -151,9 +156,10 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
 
         await jjExec(args)
       } catch (error: unknown) {
+        const err = error as Error
         throw new JJSnapshotError(
-          `Failed to describe changeset ${changeId || 'current'}: ${error.message}`,
-          error
+          `Failed to describe changeset ${changeId || 'current'}: ${err.message}`,
+          err
         )
       }
     },
@@ -172,9 +178,10 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
 
         return parseFileChanges(output)
       } catch (error: unknown) {
+        const err = error as Error
         throw new JJSnapshotError(
-          `Failed to get files for changeset ${changeId}: ${error.message}`,
-          error
+          `Failed to get files for changeset ${changeId}: ${err.message}`,
+          err
         )
       }
     },
@@ -188,7 +195,8 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
 
         await jjExec(args)
       } catch (error: unknown) {
-        throw new JJSnapshotError(`Failed to create bookmark ${name}: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to create bookmark ${name}: ${err.message}`, err)
       }
     },
 
@@ -196,7 +204,8 @@ export function createChangesetManager(config: ChangesetManagerConfig): Changese
       try {
         await jjExec(['bookmark', 'delete', name])
       } catch (error: unknown) {
-        throw new JJSnapshotError(`Failed to delete bookmark ${name}: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to delete bookmark ${name}: ${err.message}`, err)
       }
     }
   }
@@ -224,19 +233,24 @@ function getLogTemplate(): string {
  * Parse JJ log output into ChangesetInfo objects
  */
 export function parseChangesetOutput(rawData: RawChangesetData[]): ChangesetInfo[] {
-  return rawData.map(raw => ({
-    changeId: raw.change_id,
-    shortId: getShortChangeId(raw.change_id), // Use utility function
-    description: raw.description,
-    author: raw.author ? `${raw.author.name} <${raw.author.email}>` : 'Unknown Author',
-    timestamp: raw.committer ? new Date(raw.committer.timestamp) : new Date(),
-    isEmpty: raw.empty,
-    hasConflicts: raw.conflict,
-    parentIds: raw.parents.map(p => p.change_id),
-    bookmarks: raw.bookmarks?.map(b => b.name),
-    files: { modified: [], added: [], deleted: [] }, // Will be populated by getChangesetFiles
-    commitHash: raw.commit_id !== raw.change_id ? raw.commit_id : undefined
-  }))
+  return rawData.map(raw => {
+    const info: ChangesetInfo = {
+      changeId: raw.change_id,
+      shortId: getShortChangeId(raw.change_id), // Use utility function
+      description: raw.description,
+      author: raw.author ? `${raw.author.name} <${raw.author.email}>` : 'Unknown Author',
+      timestamp: raw.committer ? new Date(raw.committer.timestamp) : new Date(),
+      isEmpty: raw.empty,
+      hasConflicts: raw.conflict,
+      parentIds: raw.parents.map(p => p.change_id),
+      bookmarks: raw.bookmarks?.map(b => b.name),
+      files: { modified: [], added: [], deleted: [] } // Will be populated by getChangesetFiles
+    }
+    if (raw.commit_id !== raw.change_id) {
+      info.commitHash = raw.commit_id
+    }
+    return info
+  })
 }
 
 /**
@@ -274,7 +288,9 @@ export function parseFileChanges(showOutput: string): {
     const match = trimmed.match(/^([MADRC]+)\s+(.+)$/)
     if (!match) continue
 
-    const [, status, filePath] = match
+    const status = match[1]
+    const filePath = match[2]
+    if (!status || !filePath) continue
 
     if (status.includes('M')) {
       // Modified file
@@ -288,9 +304,11 @@ export function parseFileChanges(showOutput: string): {
     } else if (status.includes('R')) {
       // Renamed file - treat as delete old + add new
       const renameParts = filePath.split(' => ')
-      if (renameParts.length === 2) {
-        result.deleted.push(renameParts[0].trim())
-        result.added.push(renameParts[1].trim())
+      const oldFile = renameParts[0]
+      const newFile = renameParts[1]
+      if (renameParts.length === 2 && oldFile && newFile) {
+        result.deleted.push(oldFile.trim())
+        result.added.push(newFile.trim())
       }
     } else if (status.includes('C')) {
       // Copied file - treat as added
@@ -319,7 +337,7 @@ export function createJJExecutor(config: JJConfig): (args: string[]) => Promise<
     })
 
     try {
-      const result = await Promise.race([proc.exited, timeoutPromise])
+      await Promise.race([proc.exited, timeoutPromise])
 
       if (proc.exitCode !== 0) {
         const stderr = await new Response(proc.stderr).text()
@@ -354,8 +372,9 @@ export function validateChangesetId(changeId: string): boolean {
 export function getShortChangeId(changeId: string, length = 12): string {
   // Handle test change IDs that contain hyphens
   const parts = changeId.split('-')
-  if (parts.length > 1 && parts[0].length <= length) {
-    return parts[0] // Return first part if it's within length
+  const firstPart = parts[0]
+  if (parts.length > 1 && firstPart && firstPart.length <= length) {
+    return firstPart // Return first part if it's within length
   }
   return changeId.substring(0, Math.min(length, changeId.length))
 }

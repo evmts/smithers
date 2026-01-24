@@ -2,8 +2,7 @@ import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import type {
   CleanRepoChecker,
   RepoCleanState,
-  CleanCheckOptions,
-  CleanCheckResult
+  CleanCheckOptions
 } from './clean-repo-check.js'
 
 describe('CleanRepoChecker', () => {
@@ -45,6 +44,10 @@ describe('CleanRepoChecker', () => {
         success: true,
         stdout: '',
         stderr: ''
+      })),
+      getRoot: mock(() => Promise.resolve({
+        success: true,
+        root: '/test/repo'
       }))
     }
 
@@ -170,7 +173,7 @@ describe('CleanRepoChecker', () => {
 
   describe('enforceCleanState', () => {
     test('passes for clean repository', async () => {
-      await expect(checker.enforceCleanState()).resolves.not.toThrow()
+      await expect(checker.enforceCleanState()).resolves.toBeUndefined()
     })
 
     test('throws for dirty repository', async () => {
@@ -208,7 +211,7 @@ describe('CleanRepoChecker', () => {
 
       const options: CleanCheckOptions = { allowUntracked: true }
 
-      await expect(checker.enforceCleanState(options)).resolves.not.toThrow()
+      await expect(checker.enforceCleanState(options)).resolves.toBeUndefined()
     })
   })
 
@@ -360,22 +363,24 @@ describe('CleanRepoChecker', () => {
       expect(status.isClean).toBe(false)
       expect(status.recommendations).toContain('Commit or restore uncommitted changes')
       expect(status.recommendations).toContain('Resolve conflicts before proceeding')
-      expect(status.summary).toContain('Repository has issues')
+      expect(status.summary).toMatch(/Repository has \d+ issues?/)
     })
   })
 
   describe('waitForCleanState', () => {
     test('resolves immediately for clean repository', async () => {
-      await expect(checker.waitForCleanState(1000)).resolves.not.toThrow()
+      await expect(checker.waitForCleanState(1000)).resolves.toBeUndefined()
     })
 
     test('polls until repository becomes clean', async () => {
       let callCount = 0
       mockRepoStateTracker.getCurrentState.mockImplementation(() => {
         callCount++
+        const becomesClean = callCount > 2
         return Promise.resolve({
           ...cleanState,
-          isClean: callCount > 2 // Becomes clean after 2 calls
+          isClean: becomesClean,
+          hasUncommittedChanges: !becomesClean // This drives the isClean check
         })
       })
 
@@ -427,7 +432,7 @@ describe('CleanRepoChecker', () => {
         untrackedFiles: ['temp.log']
       })
 
-      const cleanupResult = await checker.cleanRepository({ dryRun: true })
+      const cleanupResult = await checker.cleanRepository({ dryRun: true, removeUntracked: true })
 
       expect(cleanupResult.actions).toContain('Would restore uncommitted changes')
       expect(cleanupResult.actions).toContain('Would remove untracked files: temp.log')
@@ -442,7 +447,9 @@ describe('CleanRepoChecker', () => {
         hasUncommittedChanges: true
       })
 
-      await expect(checker.cleanRepository()).rejects.toThrow('Failed to clean repository: Cleanup failed')
+      const result = await checker.cleanRepository()
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Failed to clean repository: Cleanup failed')
     })
   })
 

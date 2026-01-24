@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 import { DefaultPhaseEngine } from './phase-engine.ts'
 import { XMLPhaseParser } from './xml-parser.ts'
 import { DefaultTransitionManager } from './transition-manager.ts'
-import type { PhaseDefinition, PhaseExecution, PhaseContext } from './types.js'
+import type { PhaseDefinition, PhaseContext } from './types.js'
 
 describe('DefaultPhaseEngine', () => {
   let engine: DefaultPhaseEngine
@@ -239,7 +239,7 @@ describe('DefaultPhaseEngine', () => {
     test('filters by phase definition id', async () => {
       const otherDefinition = { ...mockDefinition, id: 'other-phase' }
       const exec1 = await engine.executePhase(mockDefinition)
-      const exec2 = await engine.executePhase(otherDefinition)
+      await engine.executePhase(otherDefinition)
 
       const filtered = await engine.listExecutions({
         phaseDefinitionId: 'test-phase'
@@ -261,8 +261,8 @@ describe('DefaultPhaseEngine', () => {
 
     test('respects offset parameter', async () => {
       const exec1 = await engine.executePhase(mockDefinition)
-      const exec2 = await engine.executePhase(mockDefinition)
-      const exec3 = await engine.executePhase(mockDefinition)
+      await engine.executePhase(mockDefinition)
+      await engine.executePhase(mockDefinition)
 
       const offset = await engine.listExecutions({ offset: 1, limit: 2 })
 

@@ -1,5 +1,4 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test'
-import { z } from 'zod'
 import { createAgentTool, createInvokeAgentTool } from './tool-interface.js'
 import type { AgentInvocationRequest, AgentResponse, Agent, AgentType } from './types.js'
 import type { SmithersToolContext } from '../../tools/types.js'
@@ -124,7 +123,7 @@ describe('Agent Tool Interface', () => {
 
   describe('createInvokeAgentTool', () => {
     test('creates generic agent invocation tool', () => {
-      const getAgent = mock((type: AgentType) => mockAgent)
+      const getAgent = mock((_type: AgentType) => mockAgent)
       const tool = createInvokeAgentTool(getAgent)
 
       expect(tool.name).toBe('invoke_agent')
@@ -133,7 +132,7 @@ describe('Agent Tool Interface', () => {
     })
 
     test('validates agent type in input', () => {
-      const getAgent = mock((type: AgentType) => mockAgent)
+      const getAgent = mock((_type: AgentType) => mockAgent)
       const tool = createInvokeAgentTool(getAgent)
 
       const validInput = {
@@ -197,7 +196,7 @@ describe('Agent Tool Interface', () => {
     })
 
     test('passes through all invocation parameters', async () => {
-      const getAgent = mock((type: AgentType) => mockAgent)
+      const getAgent = mock((_type: AgentType) => mockAgent)
       const tool = createInvokeAgentTool(getAgent)
 
       const input = {

@@ -122,7 +122,7 @@ describe('PhaseManager', () => {
     const startPhase = manager['phases'].get('start')!
     startPhase.execute = mockExecute
 
-    const result = await manager.executeCurrentPhase({})
+    await manager.executeCurrentPhase({})
 
     // Should automatically transition to next phase
     expect(manager.getCurrentPhase()).toBe('process')

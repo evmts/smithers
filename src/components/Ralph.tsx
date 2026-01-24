@@ -21,8 +21,8 @@ export function Ralph(props: RalphProps): ReactNode {
     condition: props.condition ?? (() => true),
     maxIterations: props.maxIterations ?? DEFAULT_MAX_ITERATIONS,
     children: props.children,
-    onIteration: props.onIteration,
-    onComplete: props.onComplete,
+    ...(props.onIteration && { onIteration: props.onIteration }),
+    ...(props.onComplete && { onComplete: props.onComplete }),
   }
   
   return <While {...whileProps} />

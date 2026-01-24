@@ -4,8 +4,7 @@ import type {
   PhaseTransition,
   WorkflowDefinition,
   PhaseExecution,
-  PhaseOutput,
-  WorkflowContext
+  PhaseOutput
 } from './workflow-types.js'
 
 describe('WorkflowTypes', () => {

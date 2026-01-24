@@ -10,8 +10,8 @@ import type {
   JJConfig,
   ParsedStatus
 } from './types.js'
-import { JJSnapshotError, RepositoryNotCleanError, RollbackFailedError } from './types.js'
-import { uuid, now } from '../db/utils.js'
+import { JJSnapshotError, RollbackFailedError } from './types.js'
+import { uuid } from '../db/utils.js'
 
 /**
  * Configuration for repo cleaner
@@ -34,7 +34,7 @@ export interface RepoCleanerConfig {
  * Create a repository cleaner instance
  */
 export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
-  const { jjExec, fsExec, workingDir, jjConfig = {} } = config
+  const { jjExec, fsExec } = config
 
   return {
     async verifyCleanState(): Promise<boolean> {
@@ -54,7 +54,8 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
                parsed.untrackedFiles.length === 0 &&
                parsed.conflictedFiles.length === 0
       } catch (error) {
-        throw new JJSnapshotError(`Failed to verify clean state: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to verify clean state: ${err.message}`, err)
       }
     },
 
@@ -95,7 +96,8 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
           branch: bookmarks[0] // Use first bookmark as primary branch
         }
       } catch (error) {
-        throw new JJSnapshotError(`Failed to get repository state: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to get repository state: ${err.message}`, err)
       }
     },
 
@@ -119,16 +121,19 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
                 try {
                   await fsExec(['rm', file])
                 } catch (fileError) {
-                  console.warn(`Failed to remove untracked file ${file}: ${fileError.message}`)
+                  const fe = fileError as Error
+                  console.warn(`Failed to remove untracked file ${file}: ${fe.message}`)
                 }
               }
             }
           } catch (error) {
-            console.warn(`Failed to get untracked files: ${error.message}`)
+            const err = error as Error
+            console.warn(`Failed to get untracked files: ${err.message}`)
           }
         }
       } catch (error) {
-        throw new JJSnapshotError(`Failed to clean repository: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to clean repository: ${err.message}`, err)
       }
     },
 
@@ -164,7 +169,8 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
               await jjExec(['bookmark', 'set', bookmark, '--revision', changeId])
             } catch (bookmarkError) {
               // Bookmark operations are non-critical, continue rollback
-              console.warn(`Failed to restore bookmark ${bookmark}: ${bookmarkError.message}`)
+              const be = bookmarkError as Error
+              console.warn(`Failed to restore bookmark ${bookmark}: ${be.message}`)
             }
           }
         }
@@ -176,7 +182,7 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
       } catch (error) {
         throw new RollbackFailedError(
           typeof target === 'string' ? target : target.changeId,
-          error
+          error as Error
         )
       }
     },
@@ -192,9 +198,11 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
 
         // Extract change ID from output
         const changeIdMatch = output.match(/Working copy now at: ([a-f0-9]+)/)
-        return changeIdMatch ? changeIdMatch[1] : `restore-${uuid()}`
+        const matchedId = changeIdMatch?.[1]
+        return matchedId ?? `restore-${uuid()}`
       } catch (error) {
-        throw new JJSnapshotError(`Failed to create restore point: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to create restore point: ${err.message}`, err)
       }
     },
 
@@ -210,7 +218,8 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
 
         return true
       } catch (error) {
-        console.error('Repository validation failed:', error.message)
+        const err = error as Error
+        console.error('Repository validation failed:', err.message)
         return false
       }
     },
@@ -221,7 +230,8 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
         const parsed = parseStatusOutput(statusOutput)
         return parsed.untrackedFiles
       } catch (error) {
-        throw new JJSnapshotError(`Failed to get untracked files: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to get untracked files: ${err.message}`, err)
       }
     },
 
@@ -240,7 +250,8 @@ export function createRepoCleaner(config: RepoCleanerConfig): RepoCleaner {
           await fsExec(['rm', file])
         }
       } catch (error) {
-        throw new JJSnapshotError(`Failed to remove untracked files: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to remove untracked files: ${err.message}`, err)
       }
     }
   }
@@ -286,7 +297,9 @@ export function parseStatusOutput(statusOutput: string): ParsedStatus {
     const match = trimmed.match(/^([?MADR]+)\s+(.+)$/)
     if (!match) continue
 
-    const [, status, filePath] = match
+    const status = match[1]
+    const filePath = match[2]
+    if (!status || !filePath) continue
 
     if (status.includes('M')) {
       // Modified file (M, MM)
@@ -303,9 +316,11 @@ export function parseStatusOutput(statusOutput: string): ParsedStatus {
     } else if (status.includes('R')) {
       // Renamed file - handle as delete + add
       const renameParts = filePath.split(' => ')
-      if (renameParts.length === 2) {
-        result.deletedFiles.push(renameParts[0].trim())
-        result.addedFiles.push(renameParts[1].trim())
+      const oldPath = renameParts[0]
+      const newPath = renameParts[1]
+      if (renameParts.length === 2 && oldPath && newPath) {
+        result.deletedFiles.push(oldPath.trim())
+        result.addedFiles.push(newPath.trim())
       }
     }
   }
@@ -331,7 +346,7 @@ export function createFSExecutor(config: JJConfig): (args: string[]) => Promise<
     })
 
     try {
-      const result = await Promise.race([proc.exited, timeoutPromise])
+      await Promise.race([proc.exited, timeoutPromise])
 
       if (proc.exitCode !== 0) {
         const stderr = await new Response(proc.stderr).text()
@@ -354,7 +369,7 @@ export async function validateJJRepository(jjExec: (args: string[]) => Promise<s
   try {
     await jjExec(['status'])
     return true
-  } catch (error) {
+  } catch {
     return false
   }
 }
@@ -367,7 +382,8 @@ export async function getRepositoryRoot(jjExec: (args: string[]) => Promise<stri
     const output = await jjExec(['workspace', 'root'])
     return output.trim()
   } catch (error) {
-    throw new JJSnapshotError(`Failed to get repository root: ${error.message}`, error)
+    const err = error as Error
+    throw new JJSnapshotError(`Failed to get repository root: ${err.message}`, err)
   }
 }
 
@@ -384,21 +400,24 @@ export async function checkRepositoryIntegrity(jjExec: (args: string[]) => Promi
     // Check basic repository access
     await jjExec(['status'])
   } catch (error) {
-    issues.push(`Cannot access repository: ${error.message}`)
+    const err = error as Error
+    issues.push(`Cannot access repository: ${err.message}`)
   }
 
   try {
     // Check for corrupted changesets
     await jjExec(['log', '--limit', '1'])
   } catch (error) {
-    issues.push(`Changeset history corrupted: ${error.message}`)
+    const err = error as Error
+    issues.push(`Changeset history corrupted: ${err.message}`)
   }
 
   try {
     // Check working copy consistency
     await jjExec(['workspace', 'update-stale'])
   } catch (error) {
-    issues.push(`Working copy inconsistent: ${error.message}`)
+    const err = error as Error
+    issues.push(`Working copy inconsistent: ${err.message}`)
   }
 
   return {

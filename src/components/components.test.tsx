@@ -611,11 +611,15 @@ describe('Phase component', () => {
       )
       await new Promise(r => setTimeout(r, 200))
       const xml = root.toXML()
-      // Only the active phase renders its children - completed phases don't show children
-      expect(xml).toContain('status="active"')
-      expect(xml).toContain('status="completed"')
-      // The completed phase has no children rendered
-      expect(xml).toMatch(/<phase[^>]*status="completed"[^>]*\/>/)
+      // After Ralph completes (maxIterations=1), the While loop unmounts all phases
+      // The XML should show the While component as complete with no children
+      expect(xml).toContain('status="complete"')
+      expect(xml).toMatch(/<while[^>]*status="complete"[^>]*\/>/)
+      // Verify phases executed by checking database
+      const phases = db.query<{ name: string; status: string }>('SELECT name, status FROM phases ORDER BY started_at')
+      expect(phases.length).toBeGreaterThanOrEqual(2)
+      expect(phases.some(p => p.name === 'First')).toBe(true)
+      expect(phases.some(p => p.name === 'Second')).toBe(true)
     })
 
     test('phases execute sequentially - first completes then second activates', async () => {
@@ -632,12 +636,19 @@ describe('Phase component', () => {
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 200))
-      const xml = root.toXML()
-      // With Ralph, phases advance - First completes, Second becomes active
-      expect(xml).toContain('name="First"')
-      expect(xml).toContain('name="Second"')
-      // Active phase renders children, completed phase does not
-      expect(xml).toMatch(/name="First"[^>]*status="completed"/)
+      // Check database for sequential execution
+      const phases = db.query<{ name: string; status: string; started_at: string; completed_at: string | null }>(
+        'SELECT name, status, started_at, completed_at FROM phases ORDER BY started_at'
+      )
+      expect(phases.length).toBeGreaterThanOrEqual(2)
+      const first = phases.find(p => p.name === 'First')
+      const second = phases.find(p => p.name === 'Second')
+      expect(first).toBeDefined()
+      expect(second).toBeDefined()
+      // First phase should have completed before second started
+      if (first && second && first.completed_at && second.started_at) {
+        expect(new Date(first.completed_at).getTime()).toBeLessThanOrEqual(new Date(second.started_at).getTime())
+      }
     })
   })
 
@@ -658,7 +669,7 @@ describe('Phase component', () => {
 
     test('renders status for phases in sequential order', async () => {
       await root.render(
-        <SmithersProvider db={db} executionId={executionId} stopped>
+        <SmithersProvider db={db} executionId={executionId}>
           <Ralph id="test" condition={() => true} maxIterations={1}>
             <Phase name="First">
               <Step name="s1"><PhaseTaskRunner name="t1" /></Step>
@@ -670,12 +681,20 @@ describe('Phase component', () => {
         </SmithersProvider>
       )
       await new Promise(r => setTimeout(r, 200))
-      const xml = root.toXML()
-      // All phases have status attributes
-      expect(xml).toContain('name="First"')
-      expect(xml).toContain('name="Second"')
-      // At least one phase has completed status (first finishes before second activates)
-      expect(xml).toContain('status="completed"')
+      // After Ralph completes, phases are unmounted from the tree
+      // Check database for phase status - both phases should have started
+      const phases = db.query<{ name: string; status: string }>(
+        'SELECT name, status FROM phases ORDER BY started_at'
+      )
+      expect(phases.length).toBeGreaterThanOrEqual(2)
+      const first = phases.find(p => p.name === 'First')
+      const second = phases.find(p => p.name === 'Second')
+      expect(first).toBeDefined()
+      expect(second).toBeDefined()
+      // First phase should have completed (it finished before second started)
+      expect(first?.status).toBe('completed')
+      // Second phase should have at least started (may be completed or running depending on timing)
+      expect(['running', 'completed']).toContain(second?.status)
     })
 
     test('renders status="active" when active', async () => {

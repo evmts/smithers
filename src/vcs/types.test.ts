@@ -8,9 +8,6 @@ import type {
   ChangesetInfo,
   RepoState,
   SnapshotOptions,
-  ChangesetManager,
-  RepoCleaner,
-  JJSnapshotSystem,
   ToolCallWrapper,
   SnapshotContext
 } from './types.js'
@@ -231,6 +228,6 @@ async function createSnapshot(options: SnapshotOptions): Promise<JJSnapshot> {
   }
 }
 
-async function rollback(changeId: string): Promise<void> {
+async function rollback(_changeId: string): Promise<void> {
   // Mock rollback
 }

@@ -98,7 +98,9 @@ export class PhaseManager {
           if (validTransitions.length > 0) {
             // Use highest priority transition
             const nextTransition = validTransitions[0]
-            await this.transitionTo(nextTransition.targetPhase)
+            if (nextTransition) {
+              await this.transitionTo(nextTransition.targetPhase)
+            }
           } else {
             // No valid transitions, workflow might be complete
             this.checkWorkflowCompletion()
@@ -171,15 +173,20 @@ export class PhaseManager {
       throw new Error('Phase manager not initialized')
     }
 
-    return {
+    const workflowStatus: WorkflowStatus = {
       workflowId: this.workflow.id,
       currentPhase: this.currentPhase,
       status: this.status,
-      startedAt: this.startedAt,
-      completedAt: this.completedAt,
       phases: Array.from(this.phaseStatuses.values()),
       executionHistory: this.executionHistory
     }
+    if (this.startedAt) {
+      workflowStatus.startedAt = this.startedAt
+    }
+    if (this.completedAt) {
+      workflowStatus.completedAt = this.completedAt
+    }
+    return workflowStatus
   }
 
   /**

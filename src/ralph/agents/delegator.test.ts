@@ -1,7 +1,7 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test'
 import { RoundRobinDelegator } from './delegator.js'
 import { AgentRegistry } from './registry.js'
-import type { Agent, AgentType, AgentInvocationRequest, AgentResponse, DelegationConfig } from './types.js'
+import type { Agent, AgentInvocationRequest, AgentResponse, DelegationConfig } from './types.js'
 import { DelegationStrategy } from './types.js'
 import type { SmithersDB } from '../../db/index.js'
 
@@ -130,7 +130,12 @@ describe('RoundRobinDelegator', () => {
         lastUsed: { claude: 1000, gemini: 2000, codex: 3000 }
       }
 
-      mockDb.db.get = mock(() => ({ value: JSON.stringify(savedState) }))
+      // Mock the prepared statement's get method to return saved state
+      mockDb.db.prepare = mock(() => ({
+        get: mock(() => ({ value: JSON.stringify(savedState) })),
+        run: mock(() => ({ changes: 1 })),
+        all: mock(() => [])
+      }))
 
       const newDelegator = new RoundRobinDelegator(registry, mockDb)
       const state = newDelegator.getState()

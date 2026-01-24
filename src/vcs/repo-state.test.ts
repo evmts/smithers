@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
-import type { RepoStateTracker, RepoState, RepoStateEvent } from './repo-state.js'
+import type { RepoStateTracker, RepoState } from './repo-state.js'
 
 describe('RepoStateTracker', () => {
   let tracker: RepoStateTracker
@@ -229,25 +229,27 @@ describe('RepoStateTracker', () => {
     test('triggers callback on state changes', async () => {
       const callback = mock()
 
-      // Mock initial state
-      mockJJWrapper.getChangeId.mockResolvedValueOnce({
-        success: true,
-        changeId: 'initial-123'
-      })
+      // Use poll interval longer than cache TTL (1000ms)
+      tracker.watchState(callback, { interval: 1100 })
 
-      tracker.watchState(callback, { interval: 100 })
+      // First call should be state-initialized
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(callback).toHaveBeenCalledTimes(1)
+      expect(callback.mock.calls[0][0].type).toBe('state-initialized')
 
       // Simulate state change
-      mockJJWrapper.getChangeId.mockResolvedValueOnce({
+      mockJJWrapper.getChangeId.mockResolvedValue({
         success: true,
         changeId: 'changed-456'
       })
 
-      // Wait for polling interval
-      await new Promise(resolve => setTimeout(resolve, 150))
+      // Wait for next polling interval (1100ms) + buffer
+      await new Promise(resolve => setTimeout(resolve, 1300))
 
-      expect(callback).toHaveBeenCalled()
-      const [eventData] = callback.mock.calls[0]
+      expect(callback.mock.calls.length).toBeGreaterThanOrEqual(2)
+      const changeEventIndex = callback.mock.calls.findIndex(call => call[0].type === 'state-changed')
+      expect(changeEventIndex).toBeGreaterThan(-1)
+      const [eventData] = callback.mock.calls[changeEventIndex]
       expect(eventData.type).toBe('state-changed')
       expect(eventData.diff.hasChanges).toBe(true)
     })
@@ -283,30 +285,43 @@ describe('RepoStateTracker', () => {
   })
 
   describe('stopWatching', () => {
-    test('stops state watching', () => {
+    test('stops state watching', async () => {
       const callback = mock()
 
       tracker.watchState(callback, { interval: 100 })
-      tracker.stopWatching()
 
-      // Verify polling is stopped (implementation detail)
+      // Wait for initial state callback
+      await new Promise(resolve => setTimeout(resolve, 50))
+
       expect(callback).toHaveBeenCalledWith(expect.objectContaining({
         type: 'state-initialized'
       }))
+
+      const callCountBeforeStop = callback.mock.calls.length
+
+      tracker.stopWatching()
+
+      // Wait to ensure no more callbacks occur
+      await new Promise(resolve => setTimeout(resolve, 150))
+
+      // Should not have been called again after stopping
+      expect(callback).toHaveBeenCalledTimes(callCountBeforeStop)
     })
   })
 
   describe('getLastSnapshot', () => {
     test('returns last snapshot information', async () => {
-      // Mock a state with snapshot info
-      mockJJWrapper.getChangeId.mockResolvedValueOnce({
-        success: true,
-        changeId: 'snap-123'
-      })
+      // Create a state with snapshot info
+      const stateWithSnapshot: RepoState = {
+        ...mockRepoState,
+        lastSnapshot: {
+          changeId: 'snap-123',
+          timestamp: new Date('2024-01-01T12:00:00Z'),
+          description: 'Test snapshot'
+        }
+      }
 
-      const state = await tracker.getCurrentState()
-
-      const snapshot = tracker.getLastSnapshot(state)
+      const snapshot = tracker.getLastSnapshot(stateWithSnapshot)
 
       expect(snapshot?.changeId).toBe('snap-123')
     })
@@ -358,15 +373,29 @@ describe('RepoStateTracker', () => {
     test('emits events through event bus', async () => {
       const callback = mock()
 
-      tracker.watchState(callback, { interval: 100 })
+      // Use poll interval longer than cache TTL (1000ms)
+      tracker.watchState(callback, { interval: 1100 })
+
+      // Wait for initial state
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      // Verify initial event was emitted
+      expect(mockEventBus.emit).toHaveBeenCalledWith(
+        'repo-state-initialized',
+        expect.objectContaining({
+          type: 'state-initialized',
+          currentState: expect.any(Object)
+        })
+      )
 
       // Simulate state change
-      mockJJWrapper.getChangeId.mockResolvedValueOnce({
+      mockJJWrapper.getChangeId.mockResolvedValue({
         success: true,
         changeId: 'new-change-789'
       })
 
-      await new Promise(resolve => setTimeout(resolve, 150))
+      // Wait for next poll interval (1100ms) + buffer
+      await new Promise(resolve => setTimeout(resolve, 1300))
 
       expect(mockEventBus.emit).toHaveBeenCalledWith(
         'repo-state-changed',
@@ -379,9 +408,15 @@ describe('RepoStateTracker', () => {
     })
 
     test('emits error events', async () => {
+      const callback = mock()
+
+      // Set up watcher which will handle errors and emit events
       mockJJWrapper.getStatus.mockRejectedValueOnce(new Error('Repository error'))
 
-      await expect(tracker.getCurrentState()).rejects.toThrow('Repository error')
+      tracker.watchState(callback, { interval: 100 })
+
+      // Wait for initial state fetch to fail
+      await new Promise(resolve => setTimeout(resolve, 50))
 
       expect(mockEventBus.emit).toHaveBeenCalledWith(
         'repo-state-error',
@@ -403,12 +438,12 @@ describe('RepoStateTracker', () => {
     })
 
     test('invalidates cache after timeout', async () => {
-      const state1 = await tracker.getCurrentState()
+      await tracker.getCurrentState()
 
-      // Wait for cache to expire
-      await new Promise(resolve => setTimeout(resolve, 100))
+      // Wait for cache to expire (cache TTL is 1000ms)
+      await new Promise(resolve => setTimeout(resolve, 1100))
 
-      const state2 = await tracker.getCurrentState()
+      await tracker.getCurrentState()
 
       // Should call JJ wrapper twice
       expect(mockJJWrapper.getStatus).toHaveBeenCalledTimes(2)

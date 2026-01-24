@@ -173,9 +173,11 @@ describe('PhaseRegistry registration', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} stopped>
-        <PhaseConsumer name="First" />
-        <PhaseConsumer name="Second" />
-        <PhaseConsumer name="Third" />
+        <PhaseRegistryProvider>
+          <PhaseConsumer name="First" />
+          <PhaseConsumer name="Second" />
+          <PhaseConsumer name="Third" />
+        </PhaseRegistryProvider>
       </SmithersProvider>
     )
 
@@ -195,8 +197,10 @@ describe('PhaseRegistry registration', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} stopped>
-        <PhaseConsumer name="Same" />
-        <PhaseConsumer name="Same" />
+        <PhaseRegistryProvider>
+          <PhaseConsumer name="Same" />
+          <PhaseConsumer name="Same" />
+        </PhaseRegistryProvider>
       </SmithersProvider>
     )
 
@@ -213,7 +217,9 @@ describe('PhaseRegistry registration', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} stopped>
-        <RegistryConsumer />
+        <PhaseRegistryProvider>
+          <RegistryConsumer />
+        </PhaseRegistryProvider>
       </SmithersProvider>
     )
 
@@ -279,8 +285,10 @@ describe('Phase active/completed state', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} stopped>
-        <PhaseChecker name="First" idx={0} />
-        <PhaseChecker name="Second" idx={1} />
+        <PhaseRegistryProvider>
+          <PhaseChecker name="First" idx={0} />
+          <PhaseChecker name="Second" idx={1} />
+        </PhaseRegistryProvider>
       </SmithersProvider>
     )
 
@@ -302,8 +310,10 @@ describe('Phase active/completed state', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} stopped>
-        <PhaseChecker name="First" idx={0} />
-        <PhaseChecker name="Second" idx={1} />
+        <PhaseRegistryProvider>
+          <PhaseChecker name="First" idx={0} />
+          <PhaseChecker name="Second" idx={1} />
+        </PhaseRegistryProvider>
       </SmithersProvider>
     )
 
@@ -323,7 +333,9 @@ describe('Phase active/completed state', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} stopped>
-        <PhaseChecker />
+        <PhaseRegistryProvider>
+          <PhaseChecker />
+        </PhaseRegistryProvider>
       </SmithersProvider>
     )
 
@@ -365,7 +377,9 @@ describe('advancePhase functionality', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} stopped>
-        <Advancer />
+        <PhaseRegistryProvider>
+          <Advancer />
+        </PhaseRegistryProvider>
       </SmithersProvider>
     )
 
@@ -391,7 +405,9 @@ describe('advancePhase functionality', () => {
 
     await root.render(
       <SmithersProvider db={db} executionId={executionId} stopped>
-        <SinglePhase />
+        <PhaseRegistryProvider>
+          <SinglePhase />
+        </PhaseRegistryProvider>
       </SmithersProvider>
     )
 

@@ -26,18 +26,23 @@ export class XmlParser {
     const config = this.parseConfig(phaseElement)
     const transitions = this.parseTransitionsFromElement(phaseElement)
 
-    const timeoutStr = this.getElementText(phaseElement, 'timeout') || config.timeout
+    const timeoutStr = this.getElementText(phaseElement, 'timeout') || config['timeout']
     const timeout = timeoutStr ? parseInt(timeoutStr, 10) : undefined
 
-    return {
+    const result: WorkflowPhase = {
       id,
       name,
-      description,
       type,
       config,
-      transitions,
-      timeout
+      transitions
     }
+    if (description) {
+      result.description = description
+    }
+    if (timeout !== undefined) {
+      result.timeout = timeout
+    }
+    return result
   }
 
   /**
@@ -74,15 +79,18 @@ export class XmlParser {
     const context = this.parseContext(workflowElement)
     const phases = this.parsePhasesFromElement(workflowElement)
 
-    return {
+    const workflow: WorkflowDefinition = {
       id,
       name,
-      description,
       version,
       phases,
       initialPhase,
       context
     }
+    if (description) {
+      workflow.description = description
+    }
+    return workflow
   }
 
   /**
@@ -153,7 +161,7 @@ export class XmlParser {
     // Get all child elements directly
     for (let i = 0; i < configElement.childNodes.length; i++) {
       const child = configElement.childNodes[i]
-      if (child.nodeType === 1) { // Element node
+      if (child && child.nodeType === 1) { // Element node
         const element = child as Element
         const key = element.tagName.toLowerCase()
         const value = element.textContent?.trim()
@@ -181,8 +189,10 @@ export class XmlParser {
 
     for (let i = 0; i < transitionElements.length; i++) {
       const transitionElement = transitionElements[i]
-      const transition = this.parseTransition(transitionElement)
-      transitions.push(transition)
+      if (transitionElement) {
+        const transition = this.parseTransition(transitionElement)
+        transitions.push(transition)
+      }
     }
 
     return transitions
@@ -220,28 +230,32 @@ export class XmlParser {
 
     // Parse condition-specific configuration
     switch (type) {
-      case 'output-contains':
+      case 'output-contains': {
         const pattern = this.getElementText(conditionElement, 'pattern')
-        if (pattern) config.pattern = pattern
+        if (pattern) config['pattern'] = pattern
         break
+      }
 
-      case 'structured-field-equals':
+      case 'structured-field-equals': {
         const field = this.getElementText(conditionElement, 'field')
         const value = this.getElementText(conditionElement, 'value')
-        if (field) config.field = field
-        if (value) config.value = this.parseValue(value)
+        if (field) config['field'] = field
+        if (value) config['value'] = this.parseValue(value)
         break
+      }
 
-      case 'exit-code':
+      case 'exit-code': {
         const code = this.getElementText(conditionElement, 'code')
-        if (code) config.code = parseInt(code, 10)
+        if (code) config['code'] = parseInt(code, 10)
         break
+      }
 
-      case 'composite':
+      case 'composite': {
         const operator = this.getElementText(conditionElement, 'operator') || 'and'
-        config.operator = operator
-        config.conditions = this.parseCompositeConditions(conditionElement)
+        config['operator'] = operator
+        config['conditions'] = this.parseCompositeConditions(conditionElement)
         break
+      }
 
       default:
         // For 'always', 'never', and other simple types, no config needed
@@ -260,6 +274,7 @@ export class XmlParser {
 
     for (let i = 0; i < conditionElements.length; i++) {
       const child = conditionElements[i]
+      if (!child) continue
       // Create a temporary transition element to parse the condition
       const doc = conditionElement.ownerDocument || new DOMParser().parseFromString('<transition></transition>', 'text/xml')
       const tempTransition = doc.createElement('transition')
@@ -286,6 +301,7 @@ export class XmlParser {
 
     for (let i = 0; i < phaseElements.length; i++) {
       const child = phaseElements[i]
+      if (!child) continue
       const phaseXml = new XMLSerializer().serializeToString(child)
       const phase = this.parsePhaseDefinition(phaseXml)
       phases.push(phase)
@@ -301,7 +317,9 @@ export class XmlParser {
     if (element.attributes) {
       for (let i = 0; i < element.attributes.length; i++) {
         const attr = element.attributes[i]
-        result[attr.name] = this.parseValue(attr.value)
+        if (attr) {
+          result[attr.name] = this.parseValue(attr.value)
+        }
       }
     }
 
@@ -309,7 +327,7 @@ export class XmlParser {
     const childElements: Element[] = []
     for (let i = 0; i < element.childNodes.length; i++) {
       const child = element.childNodes[i]
-      if (child.nodeType === 1) { // Element node
+      if (child && child.nodeType === 1) { // Element node
         childElements.push(child as Element)
       }
     }

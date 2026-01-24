@@ -16,7 +16,7 @@ import type {
 class MockAgentExecutor implements AgentExecutor {
   async execute(
     invocation: AgentInvocation,
-    context: AgentExecutionContext
+    _context: AgentExecutionContext
   ): Promise<AgentToolResult> {
     const { prompt } = invocation
 

@@ -13,13 +13,34 @@ import type {
   ToolCallResult,
   ChangesetManager,
   RepoCleaner,
-  VCSModuleIntegration,
-  READ_ONLY_TOOLS,
-  WRITE_TOOLS,
-  ToolName
+  VCSModuleIntegration
 } from './types.js'
 import { JJSnapshotError, RepositoryNotCleanError } from './types.js'
-import { uuid, now } from '../db/utils.js'
+import type { ChangesetInfo } from './types.js'
+import { uuid } from '../db/utils.js'
+
+/**
+ * Helper to create JJSnapshot from changeset info (handles optional fields correctly)
+ */
+function createSnapshotFromChangeset(changeset: ChangesetInfo): JJSnapshot {
+  const snapshot: JJSnapshot = {
+    id: uuid(),
+    changeId: changeset.changeId,
+    description: changeset.description,
+    timestamp: changeset.timestamp,
+    files: changeset.files,
+    hasConflicts: changeset.hasConflicts,
+    isEmpty: changeset.isEmpty
+  }
+  const parentId = changeset.parentIds[0]
+  if (parentId) {
+    snapshot.parentChangeId = parentId
+  }
+  if (changeset.bookmarks) {
+    snapshot.bookmarks = changeset.bookmarks
+  }
+  return snapshot
+}
 
 /**
  * Configuration for JJ snapshot system
@@ -57,7 +78,7 @@ export interface JJSnapshotSystemConfig {
  * Create a JJ snapshot system instance
  */
 export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapshotSystem {
-  const { changesetManager, repoCleaner, vcsModule, workingDir, options = {} } = config
+  const { changesetManager, repoCleaner, vcsModule, options = {} } = config
 
   const {
     snapshotDescriptionTemplate = 'Snapshot created at {timestamp}',
@@ -116,11 +137,16 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
           changeId,
           description,
           timestamp: new Date(),
-          parentChangeId: changesetInfo?.parentIds[0],
           files,
           hasConflicts: changesetInfo?.hasConflicts || false,
-          isEmpty,
-          bookmarks: changesetInfo?.bookmarks
+          isEmpty
+        }
+        const parentId = changesetInfo?.parentIds[0]
+        if (parentId) {
+          snapshot.parentChangeId = parentId
+        }
+        if (changesetInfo?.bookmarks) {
+          snapshot.bookmarks = changesetInfo.bookmarks
         }
 
         // Log to VCS module
@@ -141,7 +167,7 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
         // Auto-cleanup if requested - implement inline to avoid circular reference
         if (snapshotOptions.autoCleanup) {
           try {
-            const options = { ...defaultCleanupOptions, ...{} }
+            const options = { ...defaultCleanupOptions }
             const allSnapshots = await changesetManager.listChangesets()
 
             const snapshotsToCleanup: string[] = []
@@ -161,17 +187,20 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
               try {
                 await changesetManager.abandonChangeset(changeId)
               } catch (error) {
-                console.warn(`Failed to abandon changeset ${changeId}: ${error.message}`)
+                const err = error as Error
+                console.warn(`Failed to abandon changeset ${changeId}: ${err.message}`)
               }
             }
           } catch (cleanupError) {
-            console.warn(`Auto-cleanup failed: ${cleanupError.message}`)
+            const ce = cleanupError as Error
+            console.warn(`Auto-cleanup failed: ${ce.message}`)
           }
         }
 
         return snapshot
       } catch (error) {
-        throw new JJSnapshotError(`Failed to create snapshot: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to create snapshot: ${err.message}`, err)
       }
     },
 
@@ -187,19 +216,10 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
         }
 
         // Convert ChangesetInfo to JJSnapshot
-        return {
-          id: uuid(), // Generate ID since we don't store it separately
-          changeId: changesetInfo.changeId,
-          description: changesetInfo.description,
-          timestamp: changesetInfo.timestamp,
-          parentChangeId: changesetInfo.parentIds[0],
-          files: changesetInfo.files,
-          hasConflicts: changesetInfo.hasConflicts,
-          isEmpty: changesetInfo.isEmpty,
-          bookmarks: changesetInfo.bookmarks
-        }
+        return createSnapshotFromChangeset(changesetInfo)
       } catch (error) {
-        throw new JJSnapshotError(`Failed to get snapshot ${changeId}: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to get snapshot ${changeId}: ${err.message}`, err)
       }
     },
 
@@ -211,19 +231,10 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
       try {
         const changesets = await changesetManager.listChangesets(limit)
 
-        return changesets.map(changeset => ({
-          id: uuid(),
-          changeId: changeset.changeId,
-          description: changeset.description,
-          timestamp: changeset.timestamp,
-          parentChangeId: changeset.parentIds[0],
-          files: changeset.files,
-          hasConflicts: changeset.hasConflicts,
-          isEmpty: changeset.isEmpty,
-          bookmarks: changeset.bookmarks
-        }))
+        return changesets.map(changeset => createSnapshotFromChangeset(changeset))
       } catch (error) {
-        throw new JJSnapshotError(`Failed to list snapshots: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to list snapshots: ${err.message}`, err)
       }
     },
 
@@ -231,7 +242,8 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
       try {
         await repoCleaner.rollback(target, rollbackOptions)
       } catch (error) {
-        throw new JJSnapshotError(`Failed to rollback: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to rollback: ${err.message}`, err)
       }
     },
 
@@ -239,17 +251,7 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
       try {
         const options = { ...defaultCleanupOptions, ...cleanupOptions }
         const changesets = await changesetManager.listChangesets()
-        const allSnapshots = changesets.map(changeset => ({
-          id: uuid(),
-          changeId: changeset.changeId,
-          description: changeset.description,
-          timestamp: changeset.timestamp,
-          parentChangeId: changeset.parentIds[0],
-          files: changeset.files,
-          hasConflicts: changeset.hasConflicts,
-          isEmpty: changeset.isEmpty,
-          bookmarks: changeset.bookmarks
-        }))
+        const allSnapshots = changesets.map(changeset => createSnapshotFromChangeset(changeset))
 
         const snapshotsToCleanup: string[] = []
 
@@ -291,11 +293,13 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
           try {
             await changesetManager.abandonChangeset(changeId)
           } catch (error) {
-            console.warn(`Failed to abandon changeset ${changeId}: ${error.message}`)
+            const err = error as Error
+            console.warn(`Failed to abandon changeset ${changeId}: ${err.message}`)
           }
         }
       } catch (error) {
-        throw new JJSnapshotError(`Failed to cleanup snapshots: ${error.message}`, error)
+        const err = error as Error
+        throw new JJSnapshotError(`Failed to cleanup snapshots: ${err.message}`, err)
       }
     },
 
@@ -311,7 +315,8 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
           const result = await execute()
           return { success: true, result }
         } catch (error) {
-          return { success: false, error: error.message }
+          const err = error as Error
+          return { success: false, error: err.message }
         }
       }
 
@@ -331,11 +336,16 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
           changeId: beforeChangeId,
           description: beforeDescription,
           timestamp: new Date(),
-          parentChangeId: beforeChangesetInfo?.parentIds[0],
           files: beforeFiles,
           hasConflicts: beforeChangesetInfo?.hasConflicts || false,
-          isEmpty: beforeFiles.modified.length === 0 && beforeFiles.added.length === 0 && beforeFiles.deleted.length === 0,
-          bookmarks: beforeChangesetInfo?.bookmarks
+          isEmpty: beforeFiles.modified.length === 0 && beforeFiles.added.length === 0 && beforeFiles.deleted.length === 0
+        }
+        const beforeParentId = beforeChangesetInfo?.parentIds[0]
+        if (beforeParentId) {
+          snapshotBefore.parentChangeId = beforeParentId
+        }
+        if (beforeChangesetInfo?.bookmarks) {
+          snapshotBefore.bookmarks = beforeChangesetInfo.bookmarks
         }
 
         try {
@@ -353,11 +363,16 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
             changeId: afterChangeId,
             description: afterDescription,
             timestamp: new Date(),
-            parentChangeId: afterChangesetInfo?.parentIds[0],
             files: afterFiles,
             hasConflicts: afterChangesetInfo?.hasConflicts || false,
-            isEmpty: afterFiles.modified.length === 0 && afterFiles.added.length === 0 && afterFiles.deleted.length === 0,
-            bookmarks: afterChangesetInfo?.bookmarks
+            isEmpty: afterFiles.modified.length === 0 && afterFiles.added.length === 0 && afterFiles.deleted.length === 0
+          }
+          const afterParentId = afterChangesetInfo?.parentIds[0]
+          if (afterParentId) {
+            snapshotAfter.parentChangeId = afterParentId
+          }
+          if (afterChangesetInfo?.bookmarks) {
+            snapshotAfter.bookmarks = afterChangesetInfo.bookmarks
           }
 
           // Log successful tool call with context
@@ -376,12 +391,17 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
             }
           })
 
-          return {
+          const successResult: ToolCallResult<T> = {
             success: true,
-            result,
-            snapshotBefore,
-            snapshotAfter
+            result
           }
+          if (snapshotBefore) {
+            successResult.snapshotBefore = snapshotBefore
+          }
+          if (snapshotAfter) {
+            successResult.snapshotAfter = snapshotAfter
+          }
+          return successResult
         } catch (toolError) {
           // Tool failed - rollback to before snapshot
           if (snapshotBefore) {
@@ -400,28 +420,33 @@ export function createJJSnapshotSystem(config: JJSnapshotSystemConfig): JJSnapsh
               tool_name: toolName,
               tool_input: JSON.stringify(input),
               before_snapshot: snapshotBefore?.changeId,
-              error: toolError.message,
+              error: (toolError as Error).message,
               success: false,
               rolled_back: rolledBack
             }
           })
 
-          return {
+          const failResult: ToolCallResult<T> = {
             success: false,
-            error: toolError.message,
-            snapshotBefore,
+            error: (toolError as Error).message,
             rolledBack
           }
+          if (snapshotBefore) {
+            failResult.snapshotBefore = snapshotBefore
+          }
+          return failResult
         }
       } catch (snapshotError) {
         // Snapshot creation failed - still try to execute tool
-        console.warn(`Snapshot creation failed for ${toolName}: ${snapshotError.message}`)
+        const se = snapshotError as Error
+        console.warn(`Snapshot creation failed for ${toolName}: ${se.message}`)
 
         try {
           const result = await execute()
           return { success: true, result }
         } catch (error) {
-          return { success: false, error: error.message }
+          const err = error as Error
+          return { success: false, error: err.message }
         }
       }
     }

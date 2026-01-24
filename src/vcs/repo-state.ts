@@ -68,9 +68,11 @@ export interface RepoStateTracker {
 }
 
 export class RepoStateError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  public override readonly cause?: unknown
+  constructor(message: string, cause?: unknown) {
     super(message)
     this.name = 'RepoStateError'
+    this.cause = cause
   }
 }
 
@@ -149,7 +151,6 @@ export function createRepoStateTracker(
 
     const hasUncommittedChanges = modifiedFiles.length > 0 || stagedFiles.length > 0
     const hasConflicts = conflictedFiles.length > 0
-    const hasUntrackedFiles = untrackedFiles.length > 0
 
     const isClean = !hasUncommittedChanges && !hasConflicts
 
@@ -165,8 +166,7 @@ export function createRepoStateTracker(
       stagedFiles,
       metadata: {
         lastChecked: new Date(),
-        repoRoot: rootResult.success ? (rootResult.root || '') : '',
-        jjVersion: undefined // Could fetch with jj --version if needed
+        repoRoot: rootResult.success ? (rootResult.root || '') : ''
       }
     }
 
@@ -234,10 +234,10 @@ export function createRepoStateTracker(
       }
 
       // Compare last snapshot
-      if (previous.lastSnapshot?.changeId !== current.lastSnapshot?.changeId) {
-        changeDetails.lastSnapshot = {
-          from: previous.lastSnapshot?.changeId,
-          to: current.lastSnapshot?.changeId
+      if (previous['lastSnapshot']?.changeId !== current['lastSnapshot']?.changeId) {
+        changeDetails['lastSnapshot'] = {
+          from: previous['lastSnapshot']?.changeId,
+          to: current['lastSnapshot']?.changeId
         }
         hasChanges = true
       }

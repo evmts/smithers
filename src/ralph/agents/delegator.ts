@@ -157,7 +157,7 @@ export class RoundRobinDelegator {
     while (attempts < this.state.agentOrder.length) {
       const candidateAgent = this.state.agentOrder[this.state.currentIndex]
 
-      if (availableAgents.includes(candidateAgent)) {
+      if (candidateAgent && availableAgents.includes(candidateAgent)) {
         return candidateAgent
       }
 
@@ -166,7 +166,8 @@ export class RoundRobinDelegator {
     }
 
     // Fallback to first available agent
-    return availableAgents[0] || null
+    const firstAgent = availableAgents[0]
+    return firstAgent ?? null
   }
 
   /**
@@ -186,10 +187,8 @@ export class RoundRobinDelegator {
    */
   private loadState(): RoundRobinState {
     try {
-      const saved = this.db.db.get<{ value: string }>(
-        'SELECT value FROM state WHERE key = ?',
-        [RoundRobinDelegator.STATE_KEY]
-      )
+      const stmt = this.db.db.prepare('SELECT value FROM state WHERE key = ?')
+      const saved = stmt.get(RoundRobinDelegator.STATE_KEY) as { value: string } | null
 
       if (saved?.value) {
         const parsedState = JSON.parse(saved.value) as RoundRobinState
@@ -251,7 +250,6 @@ export class RoundRobinDelegator {
    */
   private updateAgentOrder(availableAgents: AgentType[]): void {
     if (!this.arraysEqual(this.state.agentOrder, availableAgents)) {
-      const oldOrder = [...this.state.agentOrder]
       this.state.agentOrder = availableAgents
 
       // Preserve failure counts and last used times for existing agents

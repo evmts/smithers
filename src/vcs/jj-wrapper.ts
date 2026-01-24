@@ -3,7 +3,8 @@
  * Provides direct interface to JJ commands with error handling and validation
  */
 
-import type { VCSStatus } from '../utils/vcs/types.js'
+// VCSStatus imported but not currently used
+// import type { VCSStatus } from '../utils/vcs/types.js'
 
 export interface JJResult {
   success: boolean
@@ -84,9 +85,13 @@ export interface JJWrapper {
 }
 
 export class JJWrapperError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  public override readonly cause?: unknown
+  constructor(message: string, cause?: unknown) {
     super(message)
     this.name = 'JJWrapperError'
+    if (cause) {
+      this.cause = cause
+    }
   }
 }
 
@@ -110,14 +115,9 @@ export function createJJWrapper(workingDir: string, jjPath = 'jj'): JJWrapper {
     }
   }
 
-  function buildCommand(args: string[]): string {
-    return `${jjPath} ${args.join(' ')}`
-  }
-
   return {
     async execute(args: string[], options: JJExecuteOptions = {}): Promise<JJResult> {
       try {
-        const command = buildCommand(args)
         const cwd = options.workingDir || workingDir
 
         const proc = Bun.spawn([jjPath, ...args], {
@@ -140,12 +140,13 @@ export function createJJWrapper(workingDir: string, jjPath = 'jj'): JJWrapper {
         const stdout = await new Response(proc.stdout).text()
         const stderr = await new Response(proc.stderr).text()
 
-        if (proc.exitCode !== 0) {
+        const exitCode = proc.exitCode ?? -1
+        if (exitCode !== 0) {
           return {
             success: false,
             stdout,
             stderr,
-            exitCode: proc.exitCode,
+            exitCode,
             error: stderr || 'Command failed'
           }
         }
@@ -205,18 +206,20 @@ export function createJJWrapper(workingDir: string, jjPath = 'jj'): JJWrapper {
 
     async getStatus(): Promise<JJResult & { output?: string }> {
       const result = await this.execute(['status'])
-      return {
-        ...result,
-        output: result.stdout
+      const resultWithOutput: JJResult & { output?: string } = { ...result }
+      if (result.stdout) {
+        resultWithOutput.output = result.stdout
       }
+      return resultWithOutput
     },
 
     async getDiffStats(): Promise<JJResult & { output?: string }> {
       const result = await this.execute(['diff', '--stat'])
-      return {
-        ...result,
-        output: result.stdout
+      const resultWithOutput: JJResult & { output?: string } = { ...result }
+      if (result.stdout) {
+        resultWithOutput.output = result.stdout
       }
+      return resultWithOutput
     },
 
     async getDiff(changeId?: string): Promise<JJResult & { output?: string }> {
@@ -226,10 +229,11 @@ export function createJJWrapper(workingDir: string, jjPath = 'jj'): JJWrapper {
         args.push('-r', changeId)
       }
       const result = await this.execute(args)
-      return {
-        ...result,
-        output: result.stdout
+      const resultWithOutput: JJResult & { output?: string } = { ...result }
+      if (result.stdout) {
+        resultWithOutput.output = result.stdout
       }
+      return resultWithOutput
     },
 
     async getChangedFiles(changeId: string): Promise<JJResult & { files?: string[] }> {

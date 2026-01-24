@@ -13,9 +13,9 @@ export class XMLPhaseParser {
       const nameMatch = xmlContent.match(/name="([^"]*)"/)
       const versionMatch = xmlContent.match(/version="([^"]*)"/)
 
-      const id = idMatch ? idMatch[1] : ''
-      const name = nameMatch ? nameMatch[1] : ''
-      const version = versionMatch ? versionMatch[1] : '1.0'
+      const id = idMatch?.[1] ?? ''
+      const name = nameMatch?.[1] ?? ''
+      const version = versionMatch?.[1] ?? '1.0'
 
       if (!id) {
         errors.push({

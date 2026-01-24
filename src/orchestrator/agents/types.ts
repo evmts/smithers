@@ -73,22 +73,22 @@ export interface AgentToolResult {
   success: boolean
 
   /** Content output from the agent (on success) */
-  content?: string
+  content?: string | undefined
 
   /** Error message (on failure) */
-  error?: string
+  error?: string | undefined
 
   /** Token usage statistics */
-  usage?: AgentUsage
+  usage?: AgentUsage | undefined
 
   /** Execution time in milliseconds */
-  executionTime?: number
+  executionTime?: number | undefined
 
   /** Number of turns taken */
-  turns?: number
+  turns?: number | undefined
 
   /** Reason for stopping */
-  stopReason?: 'completed' | 'max_turns' | 'timeout' | 'error'
+  stopReason?: 'completed' | 'max_turns' | 'timeout' | 'error' | undefined
 
   /** Raw response data */
   raw?: any

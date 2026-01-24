@@ -38,7 +38,7 @@ export class DefaultTransitionManager implements TransitionManager {
   canTransition(
     fromStepId: string,
     toStepId: string,
-    context: PhaseContext,
+    _context: PhaseContext,
     phaseDefinition: PhaseDefinition
   ): boolean {
     return phaseDefinition.transitions.some(
@@ -47,7 +47,7 @@ export class DefaultTransitionManager implements TransitionManager {
   }
 
   async executeTransition(
-    execution: PhaseExecution,
+    _execution: PhaseExecution,
     transition: PhaseTransition
   ): Promise<void> {
     // Mock implementation
@@ -56,7 +56,7 @@ export class DefaultTransitionManager implements TransitionManager {
 
   getAvailableTransitions(
     stepId: string,
-    context: PhaseContext,
+    _context: PhaseContext,
     phaseDefinition: PhaseDefinition
   ): PhaseTransition[] {
     return phaseDefinition.transitions.filter(t => t.from === stepId)
@@ -70,8 +70,14 @@ export class DefaultTransitionManager implements TransitionManager {
     switch (condition.type) {
       case 'result':
         return stepResult.result === condition.value
-      case 'state':
-        return context.state[Object.keys(context.state)[0]] === condition.value
+      case 'state': {
+        const stateKeys = Object.keys(context.state)
+        const firstKey = stateKeys[0]
+        if (firstKey) {
+          return context.state[firstKey] === condition.value
+        }
+        return false
+      }
       default:
         return true
     }

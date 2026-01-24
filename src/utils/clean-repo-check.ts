@@ -74,9 +74,13 @@ export interface CleanRepoChecker {
 }
 
 export class CleanRepoError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  public override readonly cause?: unknown
+  constructor(message: string, cause?: unknown) {
     super(message)
     this.name = 'CleanRepoError'
+    if (cause) {
+      this.cause = cause
+    }
   }
 }
 
@@ -226,7 +230,7 @@ export function createCleanRepoChecker(
                 actions.push('Created backup snapshot')
               }
             }
-          } catch (error) {
+          } catch {
             actions.push('Failed to create backup snapshot')
           }
         }
@@ -273,11 +277,14 @@ export function createCleanRepoChecker(
           }
         }
 
-        return {
+        const result: CleanupResult = {
           success: true,
-          actions,
-          backupChangeId
+          actions
         }
+        if (backupChangeId) {
+          result.backupChangeId = backupChangeId
+        }
+        return result
       } catch (error) {
         return {
           success: false,

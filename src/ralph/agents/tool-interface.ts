@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { SmithersTool, SmithersToolContext } from '../../tools/types.js'
+import type { SmithersTool } from '../../tools/types.js'
 import { AgentInvocationRequestSchema, AgentResponseSchema } from './types.js'
 import type { Agent, AgentType, AgentInvocationRequest, AgentResponse } from './types.js'
 
@@ -104,7 +104,7 @@ export function createInvokeAgentTool(
 
       try {
         context.log(`Retrieving ${input.agentType} agent for invocation`)
-        const agent = getAgent(input.agentType)
+        const agent = getAgent(input.agentType as AgentType)
 
         context.log(`Invoking ${input.agentType} agent with prompt: ${input.prompt.slice(0, 100)}...`)
 

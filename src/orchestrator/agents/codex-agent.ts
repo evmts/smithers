@@ -251,18 +251,26 @@ export class CodexAgentExecutor implements AgentExecutor {
       }
 
       // Success response
-      return {
+      const result: AgentToolResult = {
         success: true,
-        content: data.content,
-        usage: data.usage ? {
+        turns: data.turns || 1,
+        raw: data.raw
+      }
+      if (data.content !== undefined) {
+        result.content = data.content
+      }
+      if (data.usage) {
+        result.usage = {
           inputTokens: data.usage.input_tokens,
           outputTokens: data.usage.output_tokens,
           totalTokens: data.usage.total_tokens
-        } : undefined,
-        turns: data.turns || 1,
-        stopReason: this.mapStopReason(data.stop_reason),
-        raw: data.raw
+        }
       }
+      const stopReason = this.mapStopReason(data.stop_reason)
+      if (stopReason !== undefined) {
+        result.stopReason = stopReason
+      }
+      return result
 
     } catch (error) {
       return {

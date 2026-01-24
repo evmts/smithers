@@ -8,7 +8,6 @@ import type {
   StepExecution,
   AgentExecution,
   PhaseEvent,
-  XMLParseError,
   TransitionManager
 } from './types.js'
 import type { XMLPhaseParser } from './xml-parser.ts'
@@ -25,8 +24,10 @@ export class DefaultPhaseEngine implements PhaseEngine {
     private xmlParser: XMLPhaseParser,
     private transitionManager: TransitionManager
   ) {
-    // Subscribe to transition manager events
-    this.transitionManager.onEvent = (event) => this.emitEvent(event)
+    // Subscribe to transition manager events if supported
+    if ('onEvent' in this.transitionManager) {
+      (this.transitionManager as any).onEvent = (event: PhaseEvent) => this.emitEvent(event)
+    }
   }
 
   async loadDefinition(xml: string): Promise<PhaseDefinition> {
@@ -224,7 +225,7 @@ export class DefaultPhaseEngine implements PhaseEngine {
   private async executeStep(
     execution: PhaseExecution,
     step: PhaseStep,
-    definition: PhaseDefinition
+    _definition: PhaseDefinition
   ): Promise<StepExecution> {
     const stepExecution: StepExecution = {
       id: this.generateId(),
@@ -310,13 +311,13 @@ export class DefaultPhaseEngine implements PhaseEngine {
   private async executeActionStep(
     step: PhaseStep,
     stepExecution: StepExecution,
-    execution: PhaseExecution
+    _execution: PhaseExecution
   ): Promise<any> {
     // Mock action step execution
     const config = step.config || {}
 
     // Check for simulated errors
-    if (config.throwError || config.simulateError) {
+    if (config['throwError'] || config['simulateError']) {
       throw new Error('Simulated step error')
     }
 
@@ -334,12 +335,12 @@ export class DefaultPhaseEngine implements PhaseEngine {
 
   private async executeConditionStep(
     step: PhaseStep,
-    stepExecution: StepExecution,
-    execution: PhaseExecution
+    _stepExecution: StepExecution,
+    _execution: PhaseExecution
   ): Promise<any> {
     // Mock condition evaluation
     const config = step.config || {}
-    const conditionResult = config.condition !== false
+    const conditionResult = config['condition'] !== false
 
     return {
       status: 'completed',
@@ -350,8 +351,8 @@ export class DefaultPhaseEngine implements PhaseEngine {
 
   private async executeParallelStep(
     step: PhaseStep,
-    stepExecution: StepExecution,
-    execution: PhaseExecution
+    _stepExecution: StepExecution,
+    _execution: PhaseExecution
   ): Promise<any> {
     // Mock parallel execution
     const config = step.config || {}
@@ -367,8 +368,8 @@ export class DefaultPhaseEngine implements PhaseEngine {
 
   private async executeSequenceStep(
     step: PhaseStep,
-    stepExecution: StepExecution,
-    execution: PhaseExecution
+    _stepExecution: StepExecution,
+    _execution: PhaseExecution
   ): Promise<any> {
     // Mock sequence execution
     const config = step.config || {}

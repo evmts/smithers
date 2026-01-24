@@ -428,12 +428,14 @@ export type ToolName = ReadOnlyTool | WriteTool | string
  * Error types for JJ snapshot system
  */
 export class JJSnapshotError extends Error {
-  public readonly cause?: Error
+  public override readonly cause?: Error
 
   constructor(message: string, cause?: Error) {
     super(message)
     this.name = 'JJSnapshotError'
-    this.cause = cause
+    if (cause) {
+      this.cause = cause
+    }
   }
 }
 
