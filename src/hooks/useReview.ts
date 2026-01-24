@@ -3,10 +3,12 @@ import { z } from 'zod'
 import { useSmithers } from '../components/SmithersProvider.js'
 import { useExecutionScope } from '../components/ExecutionScope.js'
 import { addGitNotes } from '../utils/vcs.js'
-import type { ReviewTarget, ReviewResult, ReviewProps, ReviewIssue } from '../components/Review/types.js'
+import type { ReviewTarget, ReviewResult, ReviewProps, ReviewIssue, ReviewAgent } from '../components/Review/types.js'
 import { useMountedState, useExecutionMount } from '../reconciler/hooks.js'
 import { useVersionTracking } from '../reactive-sqlite/index.js'
 import { executeClaudeCLI } from '../components/agents/ClaudeCodeCLI.js'
+import { executeAmpCLI } from '../components/Amp.js'
+import { executeCodexCLI } from '../components/agents/codex-cli/executor.js'
 
 const ReviewIssueSchema = z.object({
   severity: z.enum(['critical', 'major', 'minor']),
@@ -146,18 +148,72 @@ Content to review (may be truncated):
 ${clippedContent}`
 }
 
-async function executeReview(prompt: string, model?: string): Promise<ReviewResult> {
-  const result = await executeClaudeCLI({
-    prompt,
-    ...(model && { model }),
-    outputFormat: 'text',
-    schema: ReviewResultSchema,
-  })
+async function executeReview(prompt: string, agent: ReviewAgent = 'claude', model?: string): Promise<ReviewResult> {
+  let output: string
+  let stopReason: string | undefined
+  let structured: unknown
 
-  if (result.stopReason === 'error' || !result.structured) {
-    const reason = result.stopReason === 'error'
-      ? result.output
-      : `Stopped: ${result.stopReason}. ${result.output}`
+  switch (agent) {
+    case 'claude': {
+      const result = await executeClaudeCLI({
+        prompt,
+        ...(model && { model }),
+        outputFormat: 'text',
+        schema: ReviewResultSchema,
+      })
+      output = result.output
+      stopReason = result.stopReason
+      structured = result.structured
+      break
+    }
+
+    case 'amp': {
+      const result = await executeAmpCLI({
+        prompt: `${prompt}\n\nReturn ONLY valid JSON matching: ${JSON.stringify(ReviewResultSchema.shape)}`,
+        mode: 'smart',
+        permissionMode: 'bypassPermissions',
+      })
+      output = result.output
+      stopReason = result.stopReason
+      // Parse JSON from output
+      try {
+        const jsonMatch = result.output.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          structured = ReviewResultSchema.parse(JSON.parse(jsonMatch[0]))
+        }
+      } catch {
+        structured = undefined
+      }
+      break
+    }
+
+    case 'codex': {
+      const result = await executeCodexCLI({
+        prompt: `${prompt}\n\nReturn ONLY valid JSON matching: ${JSON.stringify(ReviewResultSchema.shape)}`,
+        fullAuto: true,
+      })
+      output = result.output
+      stopReason = result.stopReason
+      // Parse JSON from output
+      try {
+        const jsonMatch = result.output.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          structured = ReviewResultSchema.parse(JSON.parse(jsonMatch[0]))
+        }
+      } catch {
+        structured = undefined
+      }
+      break
+    }
+
+    default:
+      throw new Error(`Unknown review agent: ${agent}`)
+  }
+
+  if (stopReason === 'error' || !structured) {
+    const reason = stopReason === 'error'
+      ? output
+      : `Stopped: ${stopReason}. ${output}`
     return {
       approved: false,
       summary: 'Review execution failed',
@@ -168,7 +224,7 @@ async function executeReview(prompt: string, model?: string): Promise<ReviewResu
     }
   }
 
-  return normalizeReviewResult(result.structured as z.infer<typeof ReviewResultSchema>)
+  return normalizeReviewResult(structured as z.infer<typeof ReviewResultSchema>)
 }
 
 async function postToGitHubPR(prNumber: string, review: ReviewResult): Promise<void> {
@@ -227,7 +283,7 @@ export function useReview(props: ReviewProps): UseReviewResult {
 
         const prompt = buildReviewPrompt(content, props.criteria)
 
-        const reviewResult = await executeReview(prompt, props.model)
+        const reviewResult = await executeReview(prompt, props.agent ?? 'claude', props.model)
 
         const reviewId = await smithers.db.vcs.logReview({
           target_type: props.target.type,

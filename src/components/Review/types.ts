@@ -29,11 +29,13 @@ export interface ReviewResult {
   issues: ReviewIssue[]
 }
 
+export type ReviewAgent = 'claude' | 'amp' | 'codex'
+
 export interface ReviewProps {
   /** What to review */
   target: ReviewTarget
-  /** Agent to use for review (currently only 'claude') */
-  agent?: 'claude'
+  /** Agent to use for review */
+  agent?: ReviewAgent
   /** Model to use */
   model?: string
   /** Stop orchestration if issues are found */
