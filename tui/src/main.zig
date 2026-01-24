@@ -26,6 +26,7 @@ fn fileLog(
 const EventLoop = @import("event_loop.zig").EventLoop;
 const Event = @import("event.zig").Event;
 const db = @import("db.zig");
+const streaming = @import("streaming.zig");
 const logo = @import("components/logo.zig");
 const Input = @import("components/input.zig").Input;
 const ChatHistory = @import("components/chat_history.zig").ChatHistory;
@@ -33,458 +34,25 @@ const Header = @import("ui/header.zig").Header;
 const StatusBar = @import("ui/status.zig").StatusBar;
 const ToolRegistry = @import("agent/tools/registry.zig").ToolRegistry;
 const ToolExecutor = @import("agent/tool_executor.zig").ToolExecutor;
+const Layout = @import("layout.zig").Layout;
+const help = @import("help.zig");
+const editor_utils = @import("editor.zig");
+const git_utils = @import("git.zig");
+const loading_mod = @import("loading.zig");
 
 pub const panic = vaxis.panic_handler;
 
-const spinner_frames = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+const spinner_frames = loading_mod.spinner_frames;
 
-// Layout constants
-const HEADER_HEIGHT: u16 = 1;
-const INPUT_HEIGHT: u16 = 5;
-const STATUS_HEIGHT: u16 = 1;
+const HEADER_HEIGHT = Layout.HEADER_HEIGHT;
+const INPUT_HEIGHT = Layout.INPUT_HEIGHT;
+const STATUS_HEIGHT = Layout.STATUS_HEIGHT;
+const help_message = help.INLINE_HELP;
 
-const help_message =
-    \\## Keybindings
-    \\
-    \\**Editing:** Ctrl+K kill→end | Ctrl+U kill→start | Ctrl+W kill word | Ctrl+Y yank
-    \\
-    \\**Navigation:** ↑/↓ scroll chat | PgUp/PgDn fast scroll | Ctrl+A line start | Alt+B/F word nav
-    \\
-    \\**Session:** Ctrl+B,c new tab | Ctrl+B,n/p next/prev | Ctrl+B,0-9 switch
-    \\
-    \\**Other:** Ctrl+E editor | Ctrl+L redraw | Ctrl+Z suspend | Esc interrupt
-    \\
-    \\## Commands
-    \\
-    \\- `/help` - Show this help
-    \\- `/clear` - Clear chat history
-    \\- `/new` - Start new conversation
-    \\- `/model` - Show current AI model
-    \\- `/status` - Show session status
-    \\- `/diff` - Show git diff
-    \\- `/exit` - Exit the application
-;
-
-/// Open external editor for composing a message
-fn openExternalEditor(alloc: std.mem.Allocator, event_loop: *EventLoop, input: *Input) ![]u8 {
-    const editor_cmd = std.posix.getenv("EDITOR") orelse std.posix.getenv("VISUAL") orelse "vi";
-    
-    // Create temp file with current input content
-    const tmp_path = "/tmp/smithers-edit.txt";
-    {
-        const file = try std.fs.createFileAbsolute(tmp_path, .{});
-        defer file.close();
-        
-        const current_text = try input.getText();
-        defer alloc.free(current_text);
-        if (current_text.len > 0) {
-            try file.writeAll(current_text);
-        }
-    }
-    
-    // Exit alt screen and restore terminal
-    try event_loop.vx.exitAltScreen(event_loop.tty.writer());
-    event_loop.loop.stop();
-    event_loop.tty.deinit();
-    
-    // Run the editor
-    var child = std.process.Child.init(&.{ editor_cmd, tmp_path }, alloc);
-    child.stdin_behavior = .Inherit;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    
-    try child.spawn();
-    _ = try child.wait();
-    
-    // Restore terminal
-    event_loop.tty = try vaxis.Tty.init(&event_loop.tty_buffer);
-    event_loop.loop = .{ .tty = &event_loop.tty, .vaxis = &event_loop.vx };
-    try event_loop.loop.init();
-    try event_loop.loop.start();
-    try event_loop.vx.enterAltScreen(event_loop.tty.writer());
-    
-    // Read the edited content
-    const file = try std.fs.openFileAbsolute(tmp_path, .{});
-    defer file.close();
-    const content = try file.readToEndAlloc(alloc, 1024 * 1024);
-    
-    // Clear input after successful edit
-    input.clear();
-    
-    // Clean up temp file
-    std.fs.deleteFileAbsolute(tmp_path) catch {};
-    
-    // Trim trailing whitespace
-    const trimmed = std.mem.trimRight(u8, content, " \t\n\r");
-    if (trimmed.len < content.len) {
-        const result = try alloc.dupe(u8, trimmed);
-        alloc.free(content);
-        return result;
-    }
-    
-    return content;
-}
-
-/// Run git diff and return the output
-fn runGitDiff(alloc: std.mem.Allocator) ![]u8 {
-    var child = std.process.Child.init(&.{ "git", "diff", "--stat" }, alloc);
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
-    
-    try child.spawn();
-    const result = try child.wait();
-    
-    if (result.Exited == 0) {
-        if (child.stdout) |stdout| {
-            const output = try stdout.readToEndAlloc(alloc, 64 * 1024);
-            if (output.len == 0) {
-                alloc.free(output);
-                return try alloc.dupe(u8, "");
-            }
-            return output;
-        }
-    }
-    
-    // Try to get full diff if stat was empty
-    var child2 = std.process.Child.init(&.{ "git", "diff" }, alloc);
-    child2.stdout_behavior = .Pipe;
-    child2.stderr_behavior = .Pipe;
-    
-    try child2.spawn();
-    _ = try child2.wait();
-    
-    if (child2.stdout) |stdout| {
-        const output = try stdout.readToEndAlloc(alloc, 64 * 1024);
-        // Truncate if too long
-        if (output.len > 4096) {
-            const truncated = try std.fmt.allocPrint(alloc, "{s}\n\n... (truncated, {d} bytes total)", .{output[0..4000], output.len});
-            alloc.free(output);
-            return truncated;
-        }
-        return output;
-    }
-    
-    return try alloc.dupe(u8, "");
-}
-
-const ToolCallInfo = struct {
-    id: []const u8,
-    name: []const u8,
-    input_json: []const u8,
-};
-
-const StreamingState = struct {
-    child: ?std.process.Child = null,
-    message_id: ?i64 = null,
-    accumulated_text: std.ArrayListUnmanaged(u8) = .{},
-    tool_calls: std.ArrayListUnmanaged(ToolCallInfo) = .{},
-    current_tool_id: ?[]const u8 = null,
-    current_tool_name: ?[]const u8 = null,
-    current_tool_input: std.ArrayListUnmanaged(u8) = .{},
-    line_buffer: [8192]u8 = undefined,
-    line_pos: usize = 0,
-    is_done: bool = false,
-    stop_reason: ?[]const u8 = null,
-    alloc: std.mem.Allocator,
-
-    fn init(alloc: std.mem.Allocator) StreamingState {
-        return .{ .alloc = alloc, .current_tool_input = .{} };
-    }
-
-    fn deinit(self: *StreamingState) void {
-        self.cleanup();
-    }
-
-    fn startStream(self: *StreamingState, api_key: []const u8, request_body: []const u8) !void {
-        const auth_header = try std.fmt.allocPrint(self.alloc, "x-api-key: {s}", .{api_key});
-        defer self.alloc.free(auth_header);
-
-        var child = std.process.Child.init(&.{
-            "curl", "-s", "-N", "-X", "POST", "https://api.anthropic.com/v1/messages",
-            "-H", "content-type: application/json",
-            "-H", "anthropic-version: 2023-06-01",
-            "-H", auth_header,
-            "-d", request_body,
-        }, self.alloc);
-        child.stdout_behavior = .Pipe;
-        child.stderr_behavior = .Pipe;
-
-        try child.spawn();
-
-        // Set stdout to non-blocking
-        if (child.stdout) |stdout| {
-            const fd = stdout.handle;
-            const F_GETFL = 3;
-            const F_SETFL = 4;
-            const O_NONBLOCK: usize = 0x0004; // macOS value
-            const flags = std.posix.fcntl(fd, F_GETFL, 0) catch 0;
-            _ = std.posix.fcntl(fd, F_SETFL, flags | O_NONBLOCK) catch {};
-        }
-
-        self.child = child;
-        self.is_done = false;
-        self.line_pos = 0;
-    }
-
-    /// Poll for new data. Returns true if streaming is complete.
-    fn poll(self: *StreamingState) !bool {
-        const child = &(self.child orelse return true);
-        const stdout = child.stdout orelse return true;
-
-        // Try to read available data (non-blocking)
-        var buf: [4096]u8 = undefined;
-        const bytes_read = stdout.read(&buf) catch |err| {
-            if (err == error.WouldBlock) return false;
-            // EOF or error - check if process exited
-            const term = child.wait() catch return true;
-            _ = term;
-            self.is_done = true;
-            return true;
-        };
-
-        if (bytes_read == 0) {
-            // EOF - process done
-            _ = child.wait() catch {};
-            self.is_done = true;
-            return true;
-        }
-
-        // Process received data byte by byte looking for newlines
-        for (buf[0..bytes_read]) |byte| {
-            if (byte == '\n') {
-                // Process the line
-                const line = self.line_buffer[0..self.line_pos];
-                try self.processLine(line);
-                self.line_pos = 0;
-            } else if (self.line_pos < self.line_buffer.len - 1) {
-                self.line_buffer[self.line_pos] = byte;
-                self.line_pos += 1;
-            }
-        }
-
-        return false;
-    }
-
-    fn processLine(self: *StreamingState, line: []const u8) !void {
-        // SSE format: "data: {...}"
-        if (!std.mem.startsWith(u8, line, "data: ")) return;
-        const data = line[6..];
-        if (std.mem.eql(u8, data, "[DONE]")) {
-            self.is_done = true;
-            return;
-        }
-
-        // Parse JSON event
-        const parsed = std.json.parseFromSlice(std.json.Value, self.alloc, data, .{}) catch return;
-        defer parsed.deinit();
-
-        if (parsed.value != .object) return;
-
-        const type_val = parsed.value.object.get("type") orelse return;
-        if (type_val != .string) return;
-        const event_type = type_val.string;
-
-        // Handle message_delta for stop_reason
-        if (std.mem.eql(u8, event_type, "message_delta")) {
-            if (parsed.value.object.get("delta")) |delta| {
-                if (delta == .object) {
-                    if (delta.object.get("stop_reason")) |sr| {
-                        if (sr == .string) {
-                            self.stop_reason = self.alloc.dupe(u8, sr.string) catch null;
-                        }
-                    }
-                }
-            }
-            return;
-        }
-
-        // Handle content_block_start for tool_use
-        if (std.mem.eql(u8, event_type, "content_block_start")) {
-            if (parsed.value.object.get("content_block")) |block| {
-                if (block == .object) {
-                    if (block.object.get("type")) |bt| {
-                        if (bt == .string and std.mem.eql(u8, bt.string, "tool_use")) {
-                            // Start of a tool call
-                            if (block.object.get("id")) |id| {
-                                if (id == .string) {
-                                    self.current_tool_id = self.alloc.dupe(u8, id.string) catch null;
-                                }
-                            }
-                            if (block.object.get("name")) |name| {
-                                if (name == .string) {
-                                    self.current_tool_name = self.alloc.dupe(u8, name.string) catch null;
-                                }
-                            }
-                            self.current_tool_input.clearRetainingCapacity();
-                        }
-                    }
-                }
-            }
-            return;
-        }
-
-        // Handle content_block_delta
-        if (std.mem.eql(u8, event_type, "content_block_delta")) {
-            const delta = parsed.value.object.get("delta") orelse return;
-            if (delta != .object) return;
-
-            if (delta.object.get("type")) |dt| {
-                if (dt == .string) {
-                    if (std.mem.eql(u8, dt.string, "text_delta")) {
-                        // Text content
-                        if (delta.object.get("text")) |text| {
-                            if (text == .string) {
-                                try self.accumulated_text.appendSlice(self.alloc, text.string);
-                            }
-                        }
-                    } else if (std.mem.eql(u8, dt.string, "input_json_delta")) {
-                        // Tool input JSON fragment
-                        if (delta.object.get("partial_json")) |pj| {
-                            if (pj == .string) {
-                                try self.current_tool_input.appendSlice(self.alloc, pj.string);
-                            }
-                        }
-                    }
-                }
-            }
-            return;
-        }
-
-        // Handle content_block_stop - finalize tool call
-        if (std.mem.eql(u8, event_type, "content_block_stop")) {
-            if (self.current_tool_id != null and self.current_tool_name != null) {
-                try self.tool_calls.append(self.alloc, .{
-                    .id = self.current_tool_id.?,
-                    .name = self.current_tool_name.?,
-                    .input_json = try self.alloc.dupe(u8, self.current_tool_input.items),
-                });
-                self.current_tool_id = null;
-                self.current_tool_name = null;
-                self.current_tool_input.clearRetainingCapacity();
-            }
-            return;
-        }
-    }
-
-    fn getText(self: *StreamingState) []const u8 {
-        return self.accumulated_text.items;
-    }
-
-    fn hasToolCalls(self: *StreamingState) bool {
-        return self.tool_calls.items.len > 0;
-    }
-
-    fn cleanup(self: *StreamingState) void {
-        if (self.child) |*child| {
-            _ = child.kill() catch {};
-            _ = child.wait() catch {};
-        }
-        self.child = null;
-        self.accumulated_text.deinit(self.alloc);
-        self.accumulated_text = .{};
-        for (self.tool_calls.items) |tc| {
-            self.alloc.free(tc.id);
-            self.alloc.free(tc.name);
-            self.alloc.free(tc.input_json);
-        }
-        self.tool_calls.deinit(self.alloc);
-        self.tool_calls = .{};
-        self.current_tool_input.deinit(self.alloc);
-        self.current_tool_input = .{};
-        if (self.current_tool_id) |id| self.alloc.free(id);
-        if (self.current_tool_name) |name| self.alloc.free(name);
-        if (self.stop_reason) |sr| self.alloc.free(sr);
-        self.current_tool_id = null;
-        self.current_tool_name = null;
-        self.stop_reason = null;
-        self.message_id = null;
-        self.is_done = false;
-        self.line_pos = 0;
-    }
-};
-
-/// Stored tool result for building continuation
-const ToolResultInfo = struct {
-    tool_id: []const u8,
-    tool_name: []const u8,
-    content: []const u8,
-    success: bool,
-    input_json: []const u8,
-};
-
-const LoadingState = struct {
-    is_loading: bool = false,
-    start_time: i64 = 0,
-    spinner_frame: usize = 0,
-    pending_query: ?[]const u8 = null,
-    streaming: ?StreamingState = null,
-    /// Pending tool continuation - JSON for next API call
-    pending_continuation: ?[]const u8 = null,
-    
-    // Async tool execution state
-    tool_executor: ?ToolExecutor = null,
-    /// Queue of tools waiting to execute
-    pending_tools: std.ArrayListUnmanaged(ToolCallInfo) = .{},
-    /// Current tool index being executed
-    current_tool_idx: usize = 0,
-    /// Collected tool results
-    tool_results: std.ArrayListUnmanaged(ToolResultInfo) = .{},
-    /// Assistant content JSON being built
-    assistant_content_json: ?[]const u8 = null,
-
-    fn startLoading(self: *LoadingState) void {
-        self.is_loading = true;
-        self.start_time = std.time.milliTimestamp();
-        self.spinner_frame = 0;
-    }
-
-    fn tick(self: *LoadingState) void {
-        if (self.is_loading) {
-            self.spinner_frame = (self.spinner_frame + 1) % spinner_frames.len;
-        }
-    }
-
-    fn getSpinner(self: *LoadingState) []const u8 {
-        return spinner_frames[self.spinner_frame];
-    }
-    
-    fn hasToolsToExecute(self: *LoadingState) bool {
-        return self.pending_tools.items.len > 0 and self.current_tool_idx < self.pending_tools.items.len;
-    }
-    
-    fn isExecutingTool(self: *LoadingState) bool {
-        if (self.tool_executor) |*exec| {
-            return exec.isRunning();
-        }
-        return false;
-    }
-
-    fn cleanup(self: *LoadingState, alloc: std.mem.Allocator) void {
-        if (self.pending_query) |q| alloc.free(q);
-        self.pending_query = null;
-        if (self.pending_continuation) |c| alloc.free(c);
-        self.pending_continuation = null;
-        if (self.streaming) |*s| s.cleanup();
-        self.streaming = null;
-        if (self.tool_executor) |*exec| exec.deinit();
-        self.tool_executor = null;
-        // Free tool results
-        for (self.tool_results.items) |tr| {
-            alloc.free(tr.tool_id);
-            alloc.free(tr.tool_name);
-            alloc.free(tr.content);
-            alloc.free(tr.input_json);
-        }
-        self.tool_results.deinit(alloc);
-        self.tool_results = .{};
-        self.pending_tools.deinit(alloc);
-        self.pending_tools = .{};
-        self.current_tool_idx = 0;
-        if (self.assistant_content_json) |a| alloc.free(a);
-        self.assistant_content_json = null;
-        self.is_loading = false;
-    }
-};
+const ToolCallInfo = streaming.ToolCallInfo;
+const StreamingState = streaming.StreamingState;
+const ToolResultInfo = loading_mod.ToolResultInfo;
+const LoadingState = loading_mod.LoadingState;
 
 pub fn main() !void {
     // Open log file
@@ -611,7 +179,7 @@ pub fn main() !void {
                     
                     // Ctrl+E - open external editor for input
                     if (key.matches('e', .{ .ctrl = true })) {
-                        if (openExternalEditor(alloc, &event_loop, &input)) |edited_text| {
+                        if (editor_utils.openExternalEditor(alloc, &event_loop, &input)) |edited_text| {
                             defer alloc.free(edited_text);
                             if (edited_text.len > 0) {
                                 // Submit the edited text as a message
@@ -801,7 +369,7 @@ pub fn main() !void {
                                 try chat_history.reload(&database);
                             } else if (std.mem.eql(u8, command, "/diff")) {
                                 // Run git diff and display result
-                                const diff_result = runGitDiff(alloc) catch |err| blk: {
+                                const diff_result = git_utils.runGitDiff(alloc) catch |err| blk: {
                                     break :blk try std.fmt.allocPrint(alloc, "Error running git diff: {s}", .{@errorName(err)});
                                 };
                                 defer alloc.free(diff_result);

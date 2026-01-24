@@ -3,7 +3,7 @@ const vaxis = @import("vaxis");
 /// Layout constants and styling for the TUI
 pub const Layout = struct {
     /// Chat input area height
-    pub const INPUT_HEIGHT = 3;
+    pub const INPUT_HEIGHT = 5;
     
     /// Header height  
     pub const HEADER_HEIGHT = 1;
@@ -53,6 +53,36 @@ pub const Colors = struct {
     pub const ASSISTANT_MESSAGE = vaxis.Color{ .rgb = .{ 0xAA, 0xFF, 0x77 } };
     pub const SYSTEM_MESSAGE = vaxis.Color{ .rgb = .{ 0xFF, 0xAA, 0x77 } };
     pub const TOOL_MESSAGE = vaxis.Color{ .rgb = .{ 0xFF, 0x77, 0xAA } };
+
+    // ANSI 256 indexed colors for terminal rendering
+    pub const Indexed = struct {
+        // Chat history colors
+        pub const USER_BAR: u8 = 10;
+        pub const USER_TEXT: u8 = 10;
+        pub const ASSISTANT_TEXT: u8 = 15;
+        pub const SYSTEM_TEXT: u8 = 214;
+        pub const DIM: u8 = 243;
+        pub const CODE: u8 = 14;
+        pub const HEADING: u8 = 75;
+        pub const LINK: u8 = 12;
+        pub const QUOTE: u8 = 2;
+        pub const SELECTION_BG: u8 = 24;
+
+        // Header colors
+        pub const HEADER_BG: u8 = 235;
+        pub const TITLE: u8 = 75;
+        pub const SEPARATOR: u8 = 243;
+        pub const MODEL: u8 = 114;
+        pub const TAB: u8 = 252;
+        pub const TAB_ACTIVE: u8 = 75;
+        pub const TAB_BG_ACTIVE: u8 = 238;
+
+        // Status bar colors
+        pub const STATUS_BG: u8 = 236;
+        pub const STATUS_FG: u8 = 252;
+        pub const KEY_HINT: u8 = 75;
+        pub const SPINNER: u8 = 114;
+    };
 };
 
 /// Style presets for common UI elements

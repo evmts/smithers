@@ -72,6 +72,29 @@ pub const HELP_MESSAGE =
     \\
 ;
 
+/// Inline help message for status bar / quick display
+pub const INLINE_HELP =
+    \\## Keybindings
+    \\
+    \\**Editing:** Ctrl+K kill→end | Ctrl+U kill→start | Ctrl+W kill word | Ctrl+Y yank
+    \\
+    \\**Navigation:** ↑/↓ scroll chat | PgUp/PgDn fast scroll | Ctrl+A line start | Alt+B/F word nav
+    \\
+    \\**Session:** Ctrl+B,c new tab | Ctrl+B,n/p next/prev | Ctrl+B,0-9 switch
+    \\
+    \\**Other:** Ctrl+E editor | Ctrl+L redraw | Ctrl+Z suspend | Esc interrupt
+    \\
+    \\## Commands
+    \\
+    \\- `/help` - Show this help
+    \\- `/clear` - Clear chat history
+    \\- `/new` - Start new conversation
+    \\- `/model` - Show current AI model
+    \\- `/status` - Show session status
+    \\- `/diff` - Show git diff
+    \\- `/exit` - Exit the application
+;
+
 /// Quick reference for keyboard shortcuts
 pub const SHORTCUTS_SUMMARY =
     \\Quick Reference:

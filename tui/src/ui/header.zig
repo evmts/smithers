@@ -4,14 +4,15 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const db = @import("../db.zig");
+const Colors = @import("../layout.zig").Colors;
 
-const bg_color: u8 = 235; // Dark background for header bar
-const title_color: u8 = 75; // Blue
-const separator_color: u8 = 243; // Dim gray
-const model_color: u8 = 114; // Green
-const tab_color: u8 = 252; // Light gray
-const tab_active_color: u8 = 75; // Blue (active tab)
-const tab_bg_active: u8 = 238; // Slightly lighter bg for active
+const bg_color = Colors.Indexed.HEADER_BG;
+const title_color = Colors.Indexed.TITLE;
+const separator_color = Colors.Indexed.SEPARATOR;
+const model_color = Colors.Indexed.MODEL;
+const tab_color = Colors.Indexed.TAB;
+const tab_active_color = Colors.Indexed.TAB_ACTIVE;
+const tab_bg_active = Colors.Indexed.TAB_BG_ACTIVE;
 
 pub const Header = struct {
     version: []const u8,

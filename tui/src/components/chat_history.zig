@@ -3,18 +3,18 @@ const vaxis = @import("vaxis");
 const db = @import("../db.zig");
 const md = @import("../markdown/parser.zig");
 const Selection = @import("../selection.zig").Selection;
+const Colors = @import("../layout.zig").Colors;
 
-// Colors using ANSI 256 indexed colors
-const user_bar_color: u8 = 10; // Bright green
-const user_text_color: u8 = 10; // Bright green
-const assistant_text_color: u8 = 15; // White/default
-const system_text_color: u8 = 214; // Yellow/orange
-const dim_color: u8 = 243; // Dim gray
-const code_color: u8 = 14; // Cyan for code
-const heading_color: u8 = 75; // Blue for headings
-const link_color: u8 = 12; // Bright blue for links
-const quote_color: u8 = 2; // Green for blockquotes
-const selection_bg: u8 = 24; // Dark blue for selection background
+const user_bar_color = Colors.Indexed.USER_BAR;
+const user_text_color = Colors.Indexed.USER_TEXT;
+const assistant_text_color = Colors.Indexed.ASSISTANT_TEXT;
+const system_text_color = Colors.Indexed.SYSTEM_TEXT;
+const dim_color = Colors.Indexed.DIM;
+const code_color = Colors.Indexed.CODE;
+const heading_color = Colors.Indexed.HEADING;
+const link_color = Colors.Indexed.LINK;
+const quote_color = Colors.Indexed.QUOTE;
+const selection_bg = Colors.Indexed.SELECTION_BG;
 
 /// Chat history display component
 pub const ChatHistory = struct {

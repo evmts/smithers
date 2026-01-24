@@ -3,13 +3,13 @@
 
 const std = @import("std");
 const vaxis = @import("vaxis");
+const loading_mod = @import("../loading.zig");
+const Colors = @import("../layout.zig").Colors;
 
-const bg_color: u8 = 236; // Dark gray background
-const fg_color: u8 = 252; // Light gray foreground
-const key_color: u8 = 75; // Blue for key hints
-const spinner_color: u8 = 114; // Green for spinner
-
-const SPINNER_FRAMES = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+const bg_color = Colors.Indexed.STATUS_BG;
+const fg_color = Colors.Indexed.STATUS_FG;
+const key_color = Colors.Indexed.KEY_HINT;
+const spinner_color = Colors.Indexed.SPINNER;
 
 const HintEntry = struct { key: []const u8, desc: []const u8 };
 
@@ -32,7 +32,7 @@ pub const StatusBar = struct {
     }
 
     pub fn tickSpinner(self: *Self) void {
-        self.spinner_frame = @intCast((self.spinner_frame + 1) % SPINNER_FRAMES.len);
+        self.spinner_frame = @intCast((self.spinner_frame + 1) % loading_mod.spinner_frames.len);
     }
 
     pub fn setCustomStatus(self: *Self, status: ?[]const u8) void {
@@ -113,7 +113,7 @@ pub const StatusBar = struct {
 
         if (self.custom_status) |status| {
             if (self.is_busy) {
-                const frame = SPINNER_FRAMES[self.spinner_frame];
+                const frame = loading_mod.spinner_frames[self.spinner_frame];
                 _ = win.child(.{ .x_off = x, .y_off = 0, .width = 2, .height = 1 })
                     .printSegment(.{ .text = frame, .style = spin_style }, .{});
                 x += 2;
@@ -122,7 +122,7 @@ pub const StatusBar = struct {
             _ = win.child(.{ .x_off = x, .y_off = 0, .width = status_len, .height = 1 })
                 .printSegment(.{ .text = status[0..status_len], .style = bar_style }, .{});
         } else if (self.is_busy) {
-            const frame = SPINNER_FRAMES[self.spinner_frame];
+            const frame = loading_mod.spinner_frames[self.spinner_frame];
             _ = win.child(.{ .x_off = x, .y_off = 0, .width = 2, .height = 1 })
                 .printSegment(.{ .text = frame, .style = spin_style }, .{});
             x += 2;
