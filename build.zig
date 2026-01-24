@@ -4,27 +4,34 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Import god-tui as a dependency
-    const god_tui_dep = b.dependency("god_tui", .{
+    // Import smithers-tui as a dependency (Zig 0.15.x compatible)
+    const smithers_tui_dep = b.dependency("smithers_tui", .{
         .target = target,
         .optimize = optimize,
     });
 
-    // Install the god-agent executable to zig-out/bin/
-    const exe = god_tui_dep.artifact("god-agent");
-    b.installArtifact(exe);
+    // Install the smithers-tui executable to zig-out/bin/
+    const smithers_tui = smithers_tui_dep.artifact("smithers-tui");
+    b.installArtifact(smithers_tui);
 
-    // Run step - inherit stdio for TTY support
-    // NOTE: Interactive mode requires running the binary directly:
-    //   zig build && ./zig-out/bin/god-agent
-    // The `zig build run` command doesn't properly allocate a TTY.
-    const run_cmd = b.addRunArtifact(exe);
+    // Run step for smithers-tui (default)
+    const run_cmd = b.addRunArtifact(smithers_tui);
     run_cmd.step.dependOn(b.getInstallStep());
     run_cmd.stdio = .inherit;
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run god-agent (use ./zig-out/bin/god-agent for interactive mode)");
+    const run_step = b.step("run", "Run smithers-tui (use ./zig-out/bin/smithers-tui for interactive mode)");
     run_step.dependOn(&run_cmd.step);
+
+    // Test step
+    const smithers_tui_tests = b.addTest(.{
+        .root_module = smithers_tui.root_module,
+    });
+    const test_step = b.step("test", "Run smithers-tui tests");
+    test_step.dependOn(&b.addRunArtifact(smithers_tui_tests).step);
+
+    // NOTE: god-tui (src/god-tui) requires Zig 0.16+
+    // It's excluded from this build since we're on Zig 0.15.x
 }

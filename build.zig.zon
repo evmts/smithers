@@ -2,8 +2,8 @@
     .name = .smithers,
     .version = "0.3.0",
     .dependencies = .{
-        .god_tui = .{
-            .path = "src/god-tui",
+        .smithers_tui = .{
+            .path = "tui",
         },
     },
     .paths = .{""},
