@@ -19,25 +19,25 @@ pub const Action = union(enum) {
     start_ai_query: []const u8,
 };
 
-/// KeyContext generic over Renderer and Loading types
-pub fn KeyContext(comptime R: type, comptime Loading: type) type {
+/// KeyContext generic over Renderer, Loading, Database, and EventLoop types
+pub fn KeyContext(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type) type {
     return struct {
         input: *input_mod.Input(R),
         chat_history: *chat_history_mod.ChatHistory(R),
-        database: *db.Database(@import("sqlite").Db),
+        database: *Db,
         status_bar: *status_bar_mod.StatusBar(R),
-        event_loop: *event_loop_mod.EventLoop(@import("vaxis").Vaxis, @import("vaxis").Tty),
+        event_loop: *EvLoop,
         loading: *Loading,
         has_ai: bool,
     };
 }
 
-/// KeyHandler generic over Renderer and Loading types
-pub fn KeyHandler(comptime R: type, comptime Loading: type) type {
+/// KeyHandler generic over Renderer, Loading, Database, and EventLoop types
+pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type) type {
     const Key = R.Key;
     const Event = event_mod.Event(R);
     return struct {
-        pub const Context = KeyContext(R, Loading);
+        pub const Context = KeyContext(R, Loading, Db, EvLoop);
         const Self = @This();
 
         alloc: std.mem.Allocator,
@@ -145,7 +145,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type) type {
                 // n - next tab
                 if (key.codepoint == 'n') {
                     const sessions = try ctx.database.getSessions(self.alloc);
-                    defer db.DefaultDatabase.freeSessions(self.alloc, sessions);
+                    defer Db.freeSessions(self.alloc, sessions);
                     if (sessions.len > 1) {
                         const current = ctx.database.getCurrentSessionId();
                         var next_id: ?i64 = null;
@@ -166,7 +166,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type) type {
                 // p - previous tab
                 if (key.codepoint == 'p') {
                     const sessions = try ctx.database.getSessions(self.alloc);
-                    defer db.DefaultDatabase.freeSessions(self.alloc, sessions);
+                    defer Db.freeSessions(self.alloc, sessions);
                     if (sessions.len > 1) {
                         const current = ctx.database.getCurrentSessionId();
                         var prev_id: ?i64 = null;
@@ -192,7 +192,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type) type {
                 if (key.codepoint >= '0' and key.codepoint <= '9') {
                     const tab_num = if (key.codepoint == '0') 9 else key.codepoint - '1';
                     const sessions = try ctx.database.getSessions(self.alloc);
-                    defer db.DefaultDatabase.freeSessions(self.alloc, sessions);
+                    defer Db.freeSessions(self.alloc, sessions);
                     if (tab_num < sessions.len) {
                         ctx.database.switchSession(sessions[tab_num].id);
                         try ctx.chat_history.reload(ctx.database);
@@ -238,7 +238,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type) type {
                         try ctx.chat_history.reload(ctx.database);
                     } else if (std.mem.eql(u8, command, "/status")) {
                         const msgs = try ctx.database.getMessages(self.alloc);
-                        defer db.DefaultDatabase.freeMessages(self.alloc, msgs);
+                        defer Db.freeMessages(self.alloc, msgs);
                         const status_msg = try std.fmt.allocPrint(
                             self.alloc,
                             "Session: {d} | Messages: {d} | AI: {s}",

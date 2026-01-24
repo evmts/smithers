@@ -5,17 +5,21 @@ const sqlite = @import("sqlite");
 const app_mod = @import("app.zig");
 const db = @import("db.zig");
 const event_loop_mod = @import("event_loop.zig");
+const event_mod = @import("event.zig");
 const renderer_mod = @import("rendering/renderer.zig");
 const anthropic = @import("agent/anthropic_provider.zig");
 const environment_mod = @import("environment.zig");
 const clock_mod = @import("clock.zig");
 const tool_executor_mod = @import("agent/tool_executor.zig");
 
+const ProductionRenderer = renderer_mod.Renderer(renderer_mod.VaxisBackend);
+const ProductionEvent = event_mod.Event(ProductionRenderer);
+
 /// Production App - all dependencies explicitly wired
 const App = app_mod.App(
     db.Database(sqlite.Db),
-    event_loop_mod.EventLoop(vaxis.Vaxis, vaxis.Tty),
-    renderer_mod.Renderer(renderer_mod.VaxisBackend),
+    event_loop_mod.EventLoop(vaxis.Vaxis, vaxis.Tty, ProductionEvent),
+    ProductionRenderer,
     anthropic.AnthropicStreamingProvider,
     environment_mod.Environment(environment_mod.PosixEnv),
     clock_mod.Clock(clock_mod.StdClock),
@@ -25,7 +29,7 @@ const App = app_mod.App(
 var log_file: ?std.fs.File = null;
 
 pub const std_options: std.Options = .{
-    .log_level = .warn,
+    .log_level = .debug,
     .logFn = fileLog,
 };
 

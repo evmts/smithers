@@ -9,13 +9,14 @@ const status_mod = @import("../ui/status.zig");
 const Layout = @import("../layout.zig").Layout;
 const key_handler_mod = @import("../keys/handler.zig");
 
-/// FrameRenderer generic over Renderer and Loading types
-pub fn FrameRenderer(comptime R: type, comptime Loading: type) type {
+/// FrameRenderer generic over Renderer, Loading, Database, and EventLoop types
+pub fn FrameRenderer(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type) type {
     const Input = input_mod.Input(R);
     const ChatHistory = chat_history_mod.ChatHistory(R);
     const Header = header_mod.Header(R);
     const StatusBar = status_mod.StatusBar(R);
-    const KeyHandler = key_handler_mod.KeyHandler(R, Loading);
+    const KeyHandler = key_handler_mod.KeyHandler(R, Loading, Db, EvLoop);
+    const Logo = logo.Logo(R);
 
     return struct {
         pub const RenderContext = struct {
@@ -23,7 +24,7 @@ pub fn FrameRenderer(comptime R: type, comptime Loading: type) type {
             chat_history: *ChatHistory,
             input: *Input,
             status_bar: *StatusBar,
-            database: *db.Database(@import("sqlite").Db),
+            database: *Db,
             loading: *const Loading,
             key_handler: *const KeyHandler,
         };
@@ -46,7 +47,7 @@ pub fn FrameRenderer(comptime R: type, comptime Loading: type) type {
                 ctx.chat_history.draw(chat_renderer);
             } else {
                 const content_renderer = renderer.subRegion(0, Layout.HEADER_HEIGHT, renderer.width(), chat_height);
-                logo.draw(content_renderer);
+                Logo.draw(content_renderer);
             }
 
             const now = std.time.milliTimestamp();

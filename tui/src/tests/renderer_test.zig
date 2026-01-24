@@ -282,20 +282,22 @@ test "VaxisBackend exports Winsize type" {
 }
 
 // ============================================================================
-// DefaultRenderer Tests
+// Renderer(VaxisBackend) Tests
 // ============================================================================
 
-test "DefaultRenderer is Renderer with VaxisBackend" {
-    _ = renderer_mod.DefaultRenderer;
+test "Renderer(VaxisBackend) can be instantiated" {
+    const VaxisRenderer = renderer_mod.Renderer(renderer_mod.VaxisBackend);
+    _ = VaxisRenderer;
 }
 
-test "DefaultRenderer has same type exports as VaxisBackend" {
-    try std.testing.expect(renderer_mod.DefaultRenderer.Window == renderer_mod.VaxisBackend.Window);
-    try std.testing.expect(renderer_mod.DefaultRenderer.Color == renderer_mod.VaxisBackend.Color);
-    try std.testing.expect(renderer_mod.DefaultRenderer.Style == renderer_mod.VaxisBackend.Style);
-    try std.testing.expect(renderer_mod.DefaultRenderer.Key == renderer_mod.VaxisBackend.Key);
-    try std.testing.expect(renderer_mod.DefaultRenderer.Mouse == renderer_mod.VaxisBackend.Mouse);
-    try std.testing.expect(renderer_mod.DefaultRenderer.Winsize == renderer_mod.VaxisBackend.Winsize);
+test "Renderer(VaxisBackend) has same type exports as VaxisBackend" {
+    const VaxisRenderer = renderer_mod.Renderer(renderer_mod.VaxisBackend);
+    try std.testing.expect(VaxisRenderer.Window == renderer_mod.VaxisBackend.Window);
+    try std.testing.expect(VaxisRenderer.Color == renderer_mod.VaxisBackend.Color);
+    try std.testing.expect(VaxisRenderer.Style == renderer_mod.VaxisBackend.Style);
+    try std.testing.expect(VaxisRenderer.Key == renderer_mod.VaxisBackend.Key);
+    try std.testing.expect(VaxisRenderer.Mouse == renderer_mod.VaxisBackend.Mouse);
+    try std.testing.expect(VaxisRenderer.Winsize == renderer_mod.VaxisBackend.Winsize);
 }
 
 // ============================================================================

@@ -43,8 +43,7 @@ pub const SystemClipboard = struct {
     }
 };
 
-/// Default production clipboard
-pub const DefaultClipboard = Clipboard(SystemClipboard);
+
 
 /// Test mock clipboard that stores copied text
 pub const MockClipboard = struct {

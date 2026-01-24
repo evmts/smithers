@@ -1,5 +1,3 @@
-const DefaultRenderer = @import("rendering/renderer.zig").DefaultRenderer;
-
 /// Generic Event type parameterized by Renderer
 pub fn Event(comptime R: type) type {
     return union(enum) {
@@ -24,6 +22,3 @@ pub fn Event(comptime R: type) type {
         }
     };
 }
-
-/// Default event type using DefaultRenderer
-pub const DefaultEvent = Event(DefaultRenderer);

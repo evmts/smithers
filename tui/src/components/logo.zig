@@ -43,9 +43,4 @@ pub fn Logo(comptime R: type) type {
     };
 }
 
-/// Default logo using DefaultRenderer
-pub fn draw(renderer: @import("../rendering/renderer.zig").DefaultRenderer) void {
-    Logo(@import("../rendering/renderer.zig").DefaultRenderer).draw(renderer);
-}
 
-pub const DefaultLogo = Logo(@import("../rendering/renderer.zig").DefaultRenderer);

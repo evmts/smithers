@@ -24,8 +24,7 @@ pub const StdClock = struct {
     }
 };
 
-/// Default production clock
-pub const DefaultClock = Clock(StdClock);
+
 
 /// Test mock clock with controllable time
 pub const MockClock = struct {

@@ -1,5 +1,5 @@
 const std = @import("std");
-const DefaultEvent = @import("../event.zig").DefaultEvent;
+const event_mod = @import("../event.zig");
 const Editor = @import("../editor/editor.zig").Editor;
 
 const border_color = .{ 0x7a, 0xa2, 0xf7 }; // Blue
@@ -24,6 +24,8 @@ const commands = [_][]const u8{
 
 /// Generic chat input component with bordered text box and full editor features
 pub fn Input(comptime R: type) type {
+    const InputEvent = event_mod.Event(R);
+
     return struct {
         editor: Editor,
         allocator: std.mem.Allocator,
@@ -65,7 +67,7 @@ pub fn Input(comptime R: type) type {
         }
 
         /// Handle keyboard input, returns command if enter was pressed
-        pub fn handleEvent(self: *Self, event: DefaultEvent) !?[]const u8 {
+        pub fn handleEvent(self: *Self, event: InputEvent) !?[]const u8 {
             switch (event) {
                 .key_press => |key| {
                     // Tab - apply autocomplete
@@ -323,4 +325,4 @@ pub fn Input(comptime R: type) type {
     };
 }
 
-pub const DefaultInput = Input(@import("../rendering/renderer.zig").DefaultRenderer);
+

@@ -448,7 +448,4 @@ test "StatusBar narrow width truncates status" {
     try std.testing.expect(found_truncated);
 }
 
-test "DefaultStatusBar type exists" {
-    const DefaultBar = status.DefaultStatusBar;
-    _ = DefaultBar;
-}
+

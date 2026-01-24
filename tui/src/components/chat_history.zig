@@ -2,22 +2,24 @@ const std = @import("std");
 const db = @import("../db.zig");
 const md = @import("../markdown/parser.zig");
 const selection_mod = @import("../selection.zig");
-const Selection = selection_mod.DefaultSelection;
-const Colors = @import("../layout.zig").DefaultColors;
-
-const user_bar_color = Colors.Indexed.USER_BAR;
-const user_text_color = Colors.Indexed.USER_TEXT;
-const assistant_text_color = Colors.Indexed.ASSISTANT_TEXT;
-const system_text_color = Colors.Indexed.SYSTEM_TEXT;
-const dim_color = Colors.Indexed.DIM;
-const code_color = Colors.Indexed.CODE;
-const heading_color = Colors.Indexed.HEADING;
-const link_color = Colors.Indexed.LINK;
-const quote_color = Colors.Indexed.QUOTE;
-const selection_bg = Colors.Indexed.SELECTION_BG;
+const clipboard_mod = @import("../clipboard.zig");
+const layout = @import("../layout.zig");
 
 /// Generic chat history display component
 pub fn ChatHistory(comptime R: type) type {
+    const Colors = layout.Colors(R);
+    const Selection = selection_mod.Selection(clipboard_mod.Clipboard(clipboard_mod.SystemClipboard));
+
+    const user_bar_color = Colors.Indexed.USER_BAR;
+    const user_text_color = Colors.Indexed.USER_TEXT;
+    const assistant_text_color = Colors.Indexed.ASSISTANT_TEXT;
+    const system_text_color = Colors.Indexed.SYSTEM_TEXT;
+    const dim_color = Colors.Indexed.DIM;
+    const code_color = Colors.Indexed.CODE;
+    const heading_color = Colors.Indexed.HEADING;
+    const link_color = Colors.Indexed.LINK;
+    const quote_color = Colors.Indexed.QUOTE;
+    const selection_bg = Colors.Indexed.SELECTION_BG;
     return struct {
         allocator: std.mem.Allocator,
         messages: []db.Message,
@@ -45,12 +47,12 @@ pub fn ChatHistory(comptime R: type) type {
 
         fn freeMessages(self: *Self) void {
             if (self.messages.len > 0) {
-                db.DefaultDatabase.freeMessages(self.allocator, self.messages);
+                freeMessagesSlice(self.allocator, self.messages);
                 self.messages = &[_]db.Message{};
             }
         }
 
-        pub fn reload(self: *Self, database: *db.DefaultDatabase) !void {
+        pub fn reload(self: *Self, database: anytype) !void {
             self.freeMessages();
             self.messages = try database.getMessages(self.allocator);
             self.scrollToBottom();
@@ -601,4 +603,12 @@ pub fn ChatHistory(comptime R: type) type {
     };
 }
 
-pub const DefaultChatHistory = ChatHistory(@import("../rendering/renderer.zig").DefaultRenderer);
+/// Free a messages slice (standalone helper to avoid type dependency)
+fn freeMessagesSlice(allocator: std.mem.Allocator, messages: []db.Message) void {
+    for (messages) |msg| {
+        allocator.free(msg.content);
+        if (msg.tool_name) |tn| allocator.free(tn);
+        if (msg.tool_input) |ti| allocator.free(ti);
+    }
+    allocator.free(messages);
+}

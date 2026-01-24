@@ -29,9 +29,6 @@ pub const PosixEnv = struct {
     }
 };
 
-/// Default production environment
-pub const DefaultEnvironment = Environment(PosixEnv);
-
 /// Test mock environment with controllable values
 pub const MockEnv = struct {
     var values: std.StringHashMapUnmanaged([:0]const u8) = .{};
@@ -60,7 +57,8 @@ pub const MockEnv = struct {
 };
 
 test "Environment basics" {
-    // Just verify the interface compiles
-    const home = DefaultEnvironment.home();
+    // Just verify the interface compiles with explicit type
+    const ProdEnv = Environment(PosixEnv);
+    const home = ProdEnv.home();
     _ = home; // May or may not exist
 }

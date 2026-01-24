@@ -290,14 +290,11 @@ pub fn CommandPopup(comptime R: type) type {
     };
 }
 
-pub const DefaultCommandPopup = CommandPopup(renderer_mod.DefaultRenderer);
-
-// Legacy alias for compatibility
-pub const DefaultRenderer = renderer_mod.DefaultRenderer;
-
 test "CommandPopup visibility" {
     const testing = std.testing;
-    var popup = DefaultCommandPopup.init(testing.allocator);
+    const TestRenderer = @import("../testing/mock_renderer.zig").MockRenderer;
+    const TestPopup = CommandPopup(TestRenderer);
+    var popup = TestPopup.init(testing.allocator);
     defer popup.deinit();
 
     try testing.expect(!popup.isVisible());
@@ -311,7 +308,9 @@ test "CommandPopup visibility" {
 
 test "CommandPopup filtering" {
     const testing = std.testing;
-    var popup = DefaultCommandPopup.init(testing.allocator);
+    const TestRenderer = @import("../testing/mock_renderer.zig").MockRenderer;
+    const TestPopup = CommandPopup(TestRenderer);
+    var popup = TestPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -333,56 +332,64 @@ test "CommandPopup filtering" {
 
 test "CommandPopup selection" {
     const testing = std.testing;
-    var popup = DefaultCommandPopup.init(testing.allocator);
+    const TestRenderer = @import("../testing/mock_renderer.zig").MockRenderer;
+    const TestPopup = CommandPopup(TestRenderer);
+    var popup = TestPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
     try testing.expect(popup.selectedCommand() != null);
 
-    _ = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.down });
+    _ = popup.handleKey(.{ .codepoint = TestRenderer.Key.down });
     const cmd1 = popup.selectedCommand();
     try testing.expect(cmd1 != null);
 
-    _ = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.up });
+    _ = popup.handleKey(.{ .codepoint = TestRenderer.Key.up });
     const cmd2 = popup.selectedCommand();
     try testing.expect(cmd2 != null);
 }
 
 test "CommandPopup enter selects command" {
     const testing = std.testing;
-    var popup = DefaultCommandPopup.init(testing.allocator);
+    const TestRenderer = @import("../testing/mock_renderer.zig").MockRenderer;
+    const TestPopup = CommandPopup(TestRenderer);
+    var popup = TestPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
     const first_cmd = popup.selectedCommand();
     try testing.expect(first_cmd != null);
 
-    const selected = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.enter });
+    const selected = popup.handleKey(.{ .codepoint = TestRenderer.Key.enter });
     try testing.expect(selected != null);
     try testing.expect(!popup.isVisible());
 }
 
 test "CommandPopup escape dismisses" {
     const testing = std.testing;
-    var popup = DefaultCommandPopup.init(testing.allocator);
+    const TestRenderer = @import("../testing/mock_renderer.zig").MockRenderer;
+    const TestPopup = CommandPopup(TestRenderer);
+    var popup = TestPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
     try testing.expect(popup.isVisible());
 
-    _ = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.escape });
+    _ = popup.handleKey(.{ .codepoint = TestRenderer.Key.escape });
     try testing.expect(!popup.isVisible());
 }
 
 test "CommandPopup tab autocomplete" {
     const testing = std.testing;
-    var popup = DefaultCommandPopup.init(testing.allocator);
+    const TestRenderer = @import("../testing/mock_renderer.zig").MockRenderer;
+    const TestPopup = CommandPopup(TestRenderer);
+    var popup = TestPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("mo");
     const autocomplete = popup.getAutocomplete();
     try testing.expect(autocomplete != null);
 
-    const selected = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.tab });
+    const selected = popup.handleKey(.{ .codepoint = TestRenderer.Key.tab });
     try testing.expect(selected != null);
 }

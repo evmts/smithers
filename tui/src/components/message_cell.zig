@@ -190,7 +190,7 @@ fn countLines(text: []const u8, width: u16) u16 {
     return lines;
 }
 
-pub const DefaultMessageCell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+
 
 // Tests
 test "countLines single line" {
@@ -210,69 +210,66 @@ test "countLines empty" {
     try std.testing.expectEqual(@as(u16, 1), countLines("", 80));
 }
 
+const TestMockRenderer = struct {
+    pub const Color = struct { index: u8 = 0 };
+    pub const Style = struct { fg: Color = .{} };
+};
+const TestCell = MessageCell(TestMockRenderer);
+
 test "MessageCell init user" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .user, "Hello world");
+    var cell = TestCell.init(std.testing.allocator, .user, "Hello world");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.user, cell.role);
     try std.testing.expectEqualStrings("Hello world", cell.content);
 }
 
 test "MessageCell init assistant" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .assistant, "Response text");
+    var cell = TestCell.init(std.testing.allocator, .assistant, "Response text");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.assistant, cell.role);
 }
 
 test "MessageCell init system" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .system, "System message");
+    var cell = TestCell.init(std.testing.allocator, .system, "System message");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.system, cell.role);
 }
 
 test "MessageCell init tool_call" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .tool_call, "read_file(path)");
+    var cell = TestCell.init(std.testing.allocator, .tool_call, "read_file(path)");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.tool_call, cell.role);
 }
 
 test "MessageCell init tool_result" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .tool_result, "file contents");
+    var cell = TestCell.init(std.testing.allocator, .tool_result, "file contents");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.tool_result, cell.role);
 }
 
 test "MessageCell getHeight user" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .user, "Short message");
+    var cell = TestCell.init(std.testing.allocator, .user, "Short message");
     defer cell.deinit();
     const height = cell.getHeight(80);
     try std.testing.expectEqual(@as(u16, 1), height);
 }
 
 test "MessageCell getHeight system always 1" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .system, "System message that is quite long");
+    var cell = TestCell.init(std.testing.allocator, .system, "System message that is quite long");
     defer cell.deinit();
     const height = cell.getHeight(80);
     try std.testing.expectEqual(@as(u16, 1), height);
 }
 
 test "MessageCell getHeight with wrapping" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .user, "This is a longer message that should wrap across multiple lines when width is small");
+    var cell = TestCell.init(std.testing.allocator, .user, "This is a longer message that should wrap across multiple lines when width is small");
     defer cell.deinit();
     const height = cell.getHeight(20);
     try std.testing.expect(height > 1);
 }
 
 test "MessageCell setStreaming" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .assistant, "Initial");
+    var cell = TestCell.init(std.testing.allocator, .assistant, "Initial");
     defer cell.deinit();
 
     cell.setStreaming("Streaming content...");
@@ -283,8 +280,7 @@ test "MessageCell setStreaming" {
 }
 
 test "MessageCell streaming height" {
-    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
-    var cell = Cell.init(std.testing.allocator, .assistant, "Short");
+    var cell = TestCell.init(std.testing.allocator, .assistant, "Short");
     defer cell.deinit();
 
     const initial_height = cell.getHeight(80);

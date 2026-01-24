@@ -287,6 +287,3 @@ pub fn Database(comptime SqliteDb: type) type {
         }
     };
 }
-
-/// Default concrete type for production use
-pub const DefaultDatabase = Database(@import("sqlite").Db);

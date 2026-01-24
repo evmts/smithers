@@ -83,10 +83,7 @@ pub const StdFs = struct {
     }
 };
 
-/// Default production filesystem
-pub const DefaultFilesystem = Filesystem(StdFs);
-
 test "Filesystem interface compiles" {
-    // Just ensure interface compiles
-    _ = DefaultFilesystem;
+    // Just ensure interface compiles with explicit type
+    _ = Filesystem(StdFs);
 }

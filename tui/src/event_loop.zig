@@ -1,15 +1,13 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-const event = @import("event.zig");
-const DefaultEvent = event.DefaultEvent;
 
 /// Generic EventLoop for dependency injection of terminal backend
-pub fn EventLoop(comptime Vaxis: type, comptime Tty: type) type {
+pub fn EventLoop(comptime Vaxis: type, comptime Tty: type, comptime Event: type) type {
     return struct {
         allocator: std.mem.Allocator,
         tty: Tty,
         vx: Vaxis,
-        loop: vaxis.Loop(DefaultEvent),
+        loop: vaxis.Loop(Event),
         tty_buffer: [1024]u8,
 
         const Self = @This();
@@ -58,11 +56,11 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type) type {
             self.loop.stop();
         }
 
-        pub fn nextEvent(self: *Self) DefaultEvent {
+        pub fn nextEvent(self: *Self) Event {
             return self.loop.nextEvent();
         }
 
-        pub fn tryEvent(self: *Self) ?DefaultEvent {
+        pub fn tryEvent(self: *Self) ?Event {
             return self.loop.tryEvent();
         }
 
@@ -104,5 +102,5 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type) type {
     };
 }
 
-/// Default concrete type for production use
-pub const DefaultEventLoop = EventLoop(vaxis.Vaxis, vaxis.Tty);
+
+

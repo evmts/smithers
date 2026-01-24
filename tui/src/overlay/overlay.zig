@@ -220,14 +220,7 @@ pub fn Overlay(comptime R: type) type {
     };
 }
 
-pub const DefaultOverlay = Overlay(renderer_mod.DefaultRenderer);
 
-// Legacy aliases for compatibility
-pub const DefaultRenderer = renderer_mod.DefaultRenderer;
-pub const DrawCallback = DefaultOverlay.DrawCallback;
-pub const Entry = DefaultOverlay.Entry;
-pub const Stack = DefaultOverlay.Stack;
-pub const Options = DefaultOverlay.Options;
 
 // ============ Resolved Layout ============
 
@@ -356,8 +349,45 @@ test "Anchor corner positioning" {
     try std.testing.expectEqual(@as(u16, 63), Anchor.bottom_right.resolveCol(20, 80, 3)); // 3 + 80 - 20 = 63
 }
 
+// Mock renderer for tests
+const MockRenderer = struct {
+    w: u16 = 100,
+    h: u16 = 50,
+
+    pub const Color = struct { rgb: struct { u8, u8, u8 } = .{ 0, 0, 0 } };
+    pub const Style = struct { fg: ?Color = null, bg: ?Color = null };
+    pub const Window = struct {};
+
+    window: Window = .{},
+
+    pub fn init(_: Window) MockRenderer {
+        return .{};
+    }
+
+    pub fn width(self: MockRenderer) u16 {
+        return self.w;
+    }
+
+    pub fn height(self: MockRenderer) u16 {
+        return self.h;
+    }
+
+    pub fn subRegion(self: MockRenderer, _: u16, _: u16, sw: u16, sh: u16) MockRenderer {
+        return .{ .w = sw, .h = sh };
+    }
+
+    pub fn drawText(_: MockRenderer, _: u16, _: u16, _: []const u8, _: Style) void {}
+    pub fn drawCell(_: MockRenderer, _: u16, _: u16, _: []const u8, _: Style) void {}
+    pub fn fill(_: MockRenderer, _: u16, _: u16, _: u16, _: u16, _: []const u8, _: Style) void {}
+};
+
+const TestOverlay = Overlay(MockRenderer);
+const TestOptions = TestOverlay.Options;
+const TestStack = TestOverlay.Stack;
+const TestEntry = TestOverlay.Entry;
+
 test "ResolvedLayout basic center" {
-    const options = Options{};
+    const options = TestOptions{};
     const layout = ResolvedLayout.resolve(options, 10, 100, 50);
 
     try std.testing.expectEqual(@as(u16, 80), layout.width); // min(80, 100)
@@ -366,7 +396,7 @@ test "ResolvedLayout basic center" {
 }
 
 test "ResolvedLayout with margins" {
-    const options = Options{
+    const options = TestOptions{
         .margin = .{ .top = 5, .right = 10, .bottom = 5, .left = 10 },
     };
     const layout = ResolvedLayout.resolve(options, 10, 100, 50);
@@ -378,7 +408,7 @@ test "ResolvedLayout with margins" {
 }
 
 test "ResolvedLayout with width percent" {
-    const options = Options{
+    const options = TestOptions{
         .width = .{ .percent = 50 },
     };
     const layout = ResolvedLayout.resolve(options, 10, 100, 50);
@@ -388,7 +418,7 @@ test "ResolvedLayout with width percent" {
 }
 
 test "ResolvedLayout with offsets" {
-    const options = Options{
+    const options = TestOptions{
         .offset_x = 5,
         .offset_y = -3,
     };
@@ -399,7 +429,7 @@ test "ResolvedLayout with offsets" {
 }
 
 test "ResolvedLayout clamps to bounds" {
-    const options = Options{
+    const options = TestOptions{
         .offset_x = 1000,
         .offset_y = 1000,
     };
@@ -412,11 +442,11 @@ test "ResolvedLayout clamps to bounds" {
 
 test "Stack push/pop" {
     const allocator = std.testing.allocator;
-    var stack = Stack.init(allocator);
+    var stack = TestStack.init(allocator);
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
+        fn f(_: MockRenderer, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});
@@ -434,11 +464,11 @@ test "Stack push/pop" {
 
 test "Stack z-order" {
     const allocator = std.testing.allocator;
-    var stack = Stack.init(allocator);
+    var stack = TestStack.init(allocator);
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
+        fn f(_: MockRenderer, _: ?*anyopaque) void {}
     }.f;
 
     const e1 = try stack.push(dummy_draw, null, .{});
@@ -452,11 +482,11 @@ test "Stack z-order" {
 
 test "Stack visibility" {
     const allocator = std.testing.allocator;
-    var stack = Stack.init(allocator);
+    var stack = TestStack.init(allocator);
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
+        fn f(_: MockRenderer, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});
@@ -481,7 +511,7 @@ test "Stack visibility" {
 
 test "Entry visibility with callback" {
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
+        fn f(_: MockRenderer, _: ?*anyopaque) void {}
     }.f;
 
     const small_term_callback = struct {
@@ -490,7 +520,7 @@ test "Entry visibility with callback" {
         }
     }.cb;
 
-    var entry = Entry{
+    var entry = TestEntry{
         .draw_fn = dummy_draw,
         .ctx = null,
         .options = .{ .visible = small_term_callback },
@@ -502,7 +532,7 @@ test "Entry visibility with callback" {
 }
 
 test "Anchor cursor positioning" {
-    const options = Options{
+    const options = TestOptions{
         .anchor = .cursor,
         .cursor_x = 25,
         .cursor_y = 10,
@@ -517,11 +547,11 @@ test "Anchor cursor positioning" {
 
 test "Stack remove" {
     const allocator = std.testing.allocator;
-    var stack = Stack.init(allocator);
+    var stack = TestStack.init(allocator);
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
+        fn f(_: MockRenderer, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});

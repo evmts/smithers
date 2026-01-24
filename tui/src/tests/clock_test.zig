@@ -3,7 +3,6 @@ const clock_mod = @import("../clock.zig");
 const Clock = clock_mod.Clock;
 const StdClock = clock_mod.StdClock;
 const MockClock = clock_mod.MockClock;
-const DefaultClock = clock_mod.DefaultClock;
 
 test "StdClock returns non-zero timestamp" {
     const ts = StdClock.milliTimestamp();
@@ -100,8 +99,9 @@ test "Clock DI interface works with StdClock" {
     try std.testing.expect(ts > 0);
 }
 
-test "DefaultClock is Clock(StdClock)" {
-    const ts = DefaultClock.milliTimestamp();
+test "Clock(StdClock) returns valid timestamp" {
+    const ProdClock = Clock(StdClock);
+    const ts = ProdClock.milliTimestamp();
     try std.testing.expect(ts > 0);
 }
 

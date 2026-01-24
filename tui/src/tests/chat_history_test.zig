@@ -552,11 +552,11 @@ test "ChatHistory selection across scroll change" {
 }
 
 // ============================================================================
-// DefaultChatHistory Type Tests
+// ChatHistory Type Tests
 // ============================================================================
 
-test "DefaultChatHistory type exists" {
-    _ = chat_history_mod.DefaultChatHistory;
+test "ChatHistory can be instantiated with MockRenderer" {
+    _ = TestChatHistory;
 }
 
 // ============================================================================

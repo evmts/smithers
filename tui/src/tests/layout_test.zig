@@ -344,11 +344,3 @@ test "Styles generic instantiation works with MockRenderer" {
     _ = S.header;
     _ = S.user_message;
 }
-
-test "DefaultColors exists and compiles" {
-    _ = layout.DefaultColors;
-}
-
-test "DefaultStyles exists and compiles" {
-    _ = layout.DefaultStyles;
-}

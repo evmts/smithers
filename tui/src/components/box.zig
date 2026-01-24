@@ -140,4 +140,4 @@ pub fn Box(comptime R: type) type {
     };
 }
 
-pub const DefaultBox = Box(@import("../rendering/renderer.zig").DefaultRenderer);
+

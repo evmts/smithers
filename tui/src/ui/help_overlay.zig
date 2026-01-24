@@ -100,5 +100,3 @@ pub fn HelpOverlay(comptime R: type) type {
         }
     };
 }
-
-pub const DefaultHelpOverlay = HelpOverlay(@import("../rendering/renderer.zig").DefaultRenderer);

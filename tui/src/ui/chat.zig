@@ -109,10 +109,8 @@ pub fn ChatContainer(comptime R: type) type {
             self.chat_history.scrollToBottom();
         }
 
-        pub fn reload(self: *Self, database: *db.DefaultDatabase) !void {
+        pub fn reload(self: *Self, database: anytype) !void {
             try self.chat_history.reload(database);
         }
     };
 }
-
-pub const DefaultChatContainer = ChatContainer(@import("../rendering/renderer.zig").DefaultRenderer);

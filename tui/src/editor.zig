@@ -1,9 +1,8 @@
 const std = @import("std");
-const EventLoop = @import("event_loop.zig").DefaultEventLoop;
-const DefaultInput = @import("components/input.zig").DefaultInput;
 
 /// Open external editor for composing a message
-pub fn openExternalEditor(alloc: std.mem.Allocator, event_loop: *EventLoop, input: *DefaultInput) ![]u8 {
+/// Uses anytype for DI - works with any EventLoop and Input implementations
+pub fn openExternalEditor(alloc: std.mem.Allocator, event_loop: anytype, input: anytype) ![]u8 {
     const editor_cmd = std.posix.getenv("EDITOR") orelse std.posix.getenv("VISUAL") orelse "vi";
 
     // Create temp file with current input content

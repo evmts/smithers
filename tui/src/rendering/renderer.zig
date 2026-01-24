@@ -16,6 +16,7 @@ pub fn Renderer(comptime Backend: type) type {
         pub const Key = Backend.Key;
         pub const Mouse = Backend.Mouse;
         pub const Winsize = Backend.Winsize;
+        pub const Clipboard = Backend.Clipboard;
 
         pub fn init(window: Backend.Window) Self {
             return .{ .window = window };
@@ -109,6 +110,8 @@ pub fn Renderer(comptime Backend: type) type {
     };
 }
 
+const clipboard_mod = @import("../clipboard.zig");
+
 /// Vaxis backend types
 pub const VaxisBackend = struct {
     pub const Window = vaxis.Window;
@@ -117,6 +120,6 @@ pub const VaxisBackend = struct {
     pub const Key = vaxis.Key;
     pub const Mouse = vaxis.Mouse;
     pub const Winsize = vaxis.Winsize;
+    pub const Clipboard = clipboard_mod.SystemClipboard;
 };
 
-pub const DefaultRenderer = Renderer(VaxisBackend);

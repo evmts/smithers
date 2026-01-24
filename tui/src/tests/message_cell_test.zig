@@ -545,11 +545,11 @@ test "MessageCell.draw with minimal width" {
 }
 
 // ============================================================================
-// DefaultMessageCell Type Tests
+// MessageCell Type Tests
 // ============================================================================
 
-test "DefaultMessageCell type exists" {
-    _ = message_cell.DefaultMessageCell;
+test "MessageCell can be instantiated with MockRenderer" {
+    _ = TestMessageCell;
 }
 
 // ============================================================================

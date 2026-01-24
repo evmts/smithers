@@ -353,11 +353,11 @@ test "Box.draw without title does not draw text" {
 }
 
 // ============================================================================
-// DefaultBox Tests
+// Box Type Tests
 // ============================================================================
 
-test "DefaultBox type exists" {
-    _ = box.DefaultBox;
+test "Box can be instantiated with MockRenderer" {
+    _ = TestBox;
 }
 
 // ============================================================================

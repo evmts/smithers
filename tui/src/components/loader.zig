@@ -111,4 +111,4 @@ pub fn Loader(comptime R: type) type {
     };
 }
 
-pub const DefaultLoader = Loader(@import("../rendering/renderer.zig").DefaultRenderer);
+

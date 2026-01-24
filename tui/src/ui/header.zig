@@ -2,18 +2,11 @@
 // Display: Smithers │ claude-sonnet-4 │ [1:main] [2:chat] [3:code]
 
 const std = @import("std");
-const db = @import("../db.zig");
-const Colors = @import("../layout.zig").DefaultColors;
-
-const bg_color = Colors.Indexed.HEADER_BG;
-const title_color = Colors.Indexed.TITLE;
-const separator_color = Colors.Indexed.SEPARATOR;
-const model_color = Colors.Indexed.MODEL;
-const tab_color = Colors.Indexed.TAB;
-const tab_active_color = Colors.Indexed.TAB_ACTIVE;
-const tab_bg_active = Colors.Indexed.TAB_BG_ACTIVE;
+const layout = @import("../layout.zig");
 
 pub fn Header(comptime R: type) type {
+    const Colors = layout.Colors(R);
+
     return struct {
         version: []const u8,
         model: []const u8,
@@ -21,6 +14,11 @@ pub fn Header(comptime R: type) type {
 
         const Self = @This();
         const SEPARATOR = " │ ";
+
+        const bg_color = Colors.Indexed.HEADER_BG;
+        const title_color = Colors.Indexed.TITLE;
+        const separator_color = Colors.Indexed.SEPARATOR;
+        const model_color = Colors.Indexed.MODEL;
 
         pub fn init(allocator: std.mem.Allocator, version: []const u8, model: []const u8) Self {
             return .{
@@ -34,7 +32,7 @@ pub fn Header(comptime R: type) type {
             self.model = model;
         }
 
-        pub fn draw(self: *const Self, renderer: R, database: *db.DefaultDatabase) void {
+        pub fn draw(self: *const Self, renderer: R, database: anytype) void {
             const bar_style: R.Style = .{ .bg = .{ .index = bg_color } };
             const title_style: R.Style = .{
                 .fg = .{ .index = title_color },
@@ -77,5 +75,3 @@ pub fn Header(comptime R: type) type {
         }
     };
 }
-
-pub const DefaultHeader = Header(@import("../rendering/renderer.zig").DefaultRenderer);

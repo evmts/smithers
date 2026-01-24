@@ -1,5 +1,3 @@
-const DefaultRenderer = @import("rendering/renderer.zig").DefaultRenderer;
-
 /// Layout constants and styling for the TUI
 pub const Layout = struct {
     /// Chat input area height
@@ -87,8 +85,6 @@ pub fn Colors(comptime R: type) type {
     };
 }
 
-pub const DefaultColors = Colors(DefaultRenderer);
-
 /// Style presets for common UI elements (generic over Renderer)
 pub fn Styles(comptime R: type) type {
     const C = Colors(R);
@@ -145,5 +141,3 @@ pub fn Styles(comptime R: type) type {
         };
     };
 }
-
-pub const DefaultStyles = Styles(DefaultRenderer);

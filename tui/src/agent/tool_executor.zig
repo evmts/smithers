@@ -125,8 +125,7 @@ pub const BuiltinRegistryFactory = struct {
     }
 };
 
-/// Default production executor
-pub const DefaultToolExecutor = ToolExecutor(BuiltinRegistryFactory);
+
 
 /// Mock registry factory for testing - returns empty registry
 pub const MockRegistryFactory = struct {

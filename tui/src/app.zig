@@ -26,14 +26,14 @@ pub fn App(
     comptime ToolExec: type,
 ) type {
     const Loading = loading_mod.LoadingState(Clk, ToolExec);
-    const KeyHandler = key_handler_mod.KeyHandler(R, Loading);
-    const KeyContext = key_handler_mod.KeyContext(R, Loading);
+    const KeyHandler = key_handler_mod.KeyHandler(R, Loading, Db, EvLoop);
+    const KeyContext = key_handler_mod.KeyContext(R, Loading, Db, EvLoop);
     const MouseHandler = mouse_handler_mod.MouseHandler(R);
     const Input = input_mod.Input(R);
     const ChatHistory = chat_history_mod.ChatHistory(R);
     const Header = header_mod.Header(R);
     const StatusBar = status_bar_mod.StatusBar(R);
-    const Frame = frame_mod.FrameRenderer(R, Loading);
+    const Frame = frame_mod.FrameRenderer(R, Loading, Db, EvLoop);
     const AgentLoopT = loop_mod.AgentLoop(Agent, Loading, ToolExec);
 
     return struct {
@@ -126,12 +126,15 @@ pub fn App(
         }
 
         pub fn run(self: *Self) !void {
+            std.log.debug("app.run: starting main loop", .{});
             while (true) {
+                std.log.debug("app.run: top of loop, is_loading={}", .{self.loading.is_loading});
                 const maybe_event = if (self.loading.is_loading)
                     self.event_loop.tryEvent()
                 else
                     self.event_loop.nextEvent();
 
+                std.log.debug("app.run: maybe_event is null={}", .{maybe_event == null});
                 if (maybe_event) |event| {
                     std.log.debug("app: got event", .{});
                     switch (event) {

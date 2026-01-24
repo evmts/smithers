@@ -248,9 +248,9 @@ test "Selection copyToClipboard multiple calls" {
     try std.testing.expectEqual(@as(usize, 2), clipboard_mod.MockClipboard.getCopyCount());
 }
 
-test "DefaultSelection type exists" {
-    // Verify the default type alias works
-    const sel = selection_mod.DefaultSelection.init();
+test "Selection type can be instantiated with MockClipboard" {
+    const TestSelection = selection_mod.Selection(clipboard_mod.MockClipboard);
+    const sel = TestSelection.init();
     try std.testing.expect(!sel.is_selecting);
 }
 

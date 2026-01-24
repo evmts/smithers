@@ -113,16 +113,14 @@ pub fn Selection(comptime Clip: type) type {
     };
 }
 
-/// Default selection using system clipboard
-pub const DefaultSelection = Selection(clipboard_mod.DefaultClipboard);
-
 /// Legacy copyToClipboard for backwards compatibility
 pub fn copyToClipboard(allocator: std.mem.Allocator, text: []const u8) !void {
-    return clipboard_mod.DefaultClipboard.copy(allocator, text);
+    return clipboard_mod.Clipboard(clipboard_mod.SystemClipboard).copy(allocator, text);
 }
 
 test "Selection bounds" {
-    var sel = DefaultSelection.init();
+    const TestSelection = Selection(clipboard_mod.MockClipboard);
+    var sel = TestSelection.init();
     sel.start(5, 10, 0);
     sel.update(15, 12, 0);
 
@@ -134,7 +132,8 @@ test "Selection bounds" {
 }
 
 test "Selection with scroll offset" {
-    var sel = DefaultSelection.init();
+    const TestSelection = Selection(clipboard_mod.MockClipboard);
+    var sel = TestSelection.init();
     sel.start(5, 5, 10);
     sel.update(15, 8, 10);
 

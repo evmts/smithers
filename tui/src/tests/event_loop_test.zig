@@ -366,8 +366,8 @@ test "EventLoop generic instantiation compiles" {
     _ = event_loop_mod.EventLoop;
 }
 
-test "DefaultEventLoop type exists" {
-    _ = event_loop_mod.DefaultEventLoop;
+test "EventLoop can be instantiated with mock types" {
+    _ = TestableEventLoop;
 }
 
 test "EventLoop generic with mock types compiles" {

@@ -714,6 +714,7 @@ test "Database is generic over SQLite backend" {
     try std.testing.expect(@TypeOf(MockDatabase) == type);
 }
 
-test "DefaultDatabase is Database with real sqlite" {
-    try std.testing.expect(db.DefaultDatabase == db.Database(@import("sqlite").Db));
+test "Database can be instantiated with real sqlite" {
+    const RealDatabase = db.Database(@import("sqlite").Db);
+    try std.testing.expect(@TypeOf(RealDatabase) == type);
 }

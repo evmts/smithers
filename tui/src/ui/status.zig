@@ -3,16 +3,16 @@
 
 const std = @import("std");
 const loading_mod = @import("../loading.zig");
-const Colors = @import("../layout.zig").DefaultColors;
-
-const bg_color = Colors.Indexed.STATUS_BG;
-const fg_color = Colors.Indexed.STATUS_FG;
-const key_color = Colors.Indexed.KEY_HINT;
-const spinner_color = Colors.Indexed.SPINNER;
+const layout = @import("../layout.zig");
 
 const HintEntry = struct { key: []const u8, desc: []const u8 };
 
 pub fn StatusBar(comptime R: type) type {
+    const C = layout.Colors(R);
+    const bg_color = C.Indexed.STATUS_BG;
+    const fg_color = C.Indexed.STATUS_FG;
+    const key_color = C.Indexed.KEY_HINT;
+    const spinner_color = C.Indexed.SPINNER;
     return struct {
         custom_status: ?[]const u8 = null,
         is_busy: bool = false,
@@ -164,5 +164,3 @@ pub fn StatusBar(comptime R: type) type {
         }
     };
 }
-
-pub const DefaultStatusBar = StatusBar(@import("../rendering/renderer.zig").DefaultRenderer);

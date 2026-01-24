@@ -1,5 +1,4 @@
 const std = @import("std");
-const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 const chat_history_mod = @import("../components/chat_history.zig");
 const Layout = @import("../layout.zig").Layout;
@@ -50,5 +49,3 @@ pub fn MouseHandler(comptime R: type) type {
         }
     };
 }
-
-pub const DefaultMouseHandler = MouseHandler(DefaultRenderer);
