@@ -146,15 +146,15 @@ describe('prompt building', () => {
     expect(args).toContain('Be helpful')
   })
 
-  test('maxTurns is passed to buildAmpArgs', () => {
+  test('maxTurns is NOT passed to buildAmpArgs (amp CLI does not support it)', () => {
     const options: AmpCLIExecutionOptions = {
       prompt: 'test',
       maxTurns: 5,
     }
 
     const args = buildAmpArgs(options)
-    expect(args).toContain('--max-turns')
-    expect(args).toContain('5')
+    // maxTurns is handled via prompt injection, not CLI flag
+    expect(args).not.toContain('--max-turns')
   })
 })
 
@@ -170,8 +170,8 @@ describe('arg-builder integration', () => {
     expect(args).toContain('--stream-json')
     expect(args).toContain('--mode')
     expect(args).toContain('smart')
-    expect(args).toContain('--max-turns')
-    expect(args).toContain('5')
+    // maxTurns not passed as CLI flag
+    expect(args).not.toContain('--max-turns')
   })
 
   test('builds args with all options', () => {
@@ -196,8 +196,8 @@ describe('arg-builder integration', () => {
     expect(args).toContain('--stream-json')
     expect(args).toContain('--mode')
     expect(args).toContain('rush')
-    expect(args).toContain('--max-turns')
-    expect(args).toContain('10')
+    // maxTurns not passed as CLI flag (handled via prompt injection)
+    expect(args).not.toContain('--max-turns')
     expect(args).toContain('--dangerously-allow-all')
     expect(args).toContain('--system-prompt')
     expect(args).toContain('Be helpful')

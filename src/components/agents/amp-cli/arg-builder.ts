@@ -37,9 +37,8 @@ export function buildAmpArgs(options: AmpCLIExecutionOptions): string[] {
     args.push('--mode', modeMap[options.mode] ?? options.mode)
   }
 
-  if (options.maxTurns !== undefined) {
-    args.push('--max-turns', String(options.maxTurns))
-  }
+  // Note: maxTurns is handled via prompt injection in executor.ts
+  // The amp CLI doesn't support --max-turns flag
 
   if (options.systemPrompt) {
     args.push('--system-prompt', options.systemPrompt)

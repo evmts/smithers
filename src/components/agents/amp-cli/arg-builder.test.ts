@@ -54,24 +54,18 @@ describe('buildAmpArgs', () => {
   })
 
   describe('maxTurns handling', () => {
-    test('adds max-turns flag', () => {
+    test('does not add max-turns flag (amp CLI does not support it)', () => {
       const args = buildAmpArgs({ prompt: 'test', maxTurns: 5 })
 
-      expect(args).toContain('--max-turns')
-      expect(args).toContain('5')
+      // maxTurns is handled via prompt injection in executor, not CLI flag
+      expect(args).not.toContain('--max-turns')
     })
 
-    test('handles zero maxTurns', () => {
+    test('maxTurns is ignored in arg builder', () => {
       const args = buildAmpArgs({ prompt: 'test', maxTurns: 0 })
 
-      expect(args).toContain('--max-turns')
-      expect(args).toContain('0')
-    })
-
-    test('omits max-turns flag when undefined', () => {
-      const args = buildAmpArgs({ prompt: 'test' })
-
       expect(args).not.toContain('--max-turns')
+      expect(args).not.toContain('0')
     })
   })
 
@@ -198,8 +192,8 @@ describe('buildAmpArgs', () => {
       expect(args).toContain('--stream-json')
       expect(args).toContain('--mode')
       expect(args).toContain('smart')
-      expect(args).toContain('--max-turns')
-      expect(args).toContain('10')
+      // maxTurns is NOT passed as CLI flag (handled via prompt injection)
+      expect(args).not.toContain('--max-turns')
       expect(args).toContain('--dangerously-allow-all')
       expect(args).toContain('--system-prompt')
       expect(args).toContain('Be concise')
