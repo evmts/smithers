@@ -76,8 +76,8 @@ pub fn App(
 
             var event_loop = try EvLoop.init(alloc);
             errdefer event_loop.deinit();
-
-            try event_loop.start();
+            // NOTE: Don't call start() here - event_loop will be moved when Self is returned
+            // start() must be called in run() when self has a stable address
 
             var input = Input.init(alloc);
             errdefer input.deinit();
@@ -127,6 +127,9 @@ pub fn App(
         }
 
         pub fn run(self: *Self) !void {
+            // Start event loop here when self has stable address (not in init())
+            try self.event_loop.start();
+
             obs.global.logSimple(.info, @src(), "app.run", "starting main loop");
             std.log.debug("app.run: starting main loop", .{});
             var loop_count: u64 = 0;
