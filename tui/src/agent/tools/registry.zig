@@ -217,13 +217,13 @@ pub const ToolRegistry = struct {
     }
 
     /// Get all tool names for API
-    pub fn names(self: *Self, allocator: Allocator) [][]const u8 {
-        var result = std.ArrayList([]const u8).init(allocator);
+    pub fn names(self: *Self, alloc: Allocator) [][]const u8 {
+        var result = std.ArrayListUnmanaged([]const u8){};
         var iter = self.tools.keyIterator();
         while (iter.next()) |key| {
-            result.append(key.*) catch {};
+            result.append(alloc, key.*) catch {};
         }
-        return result.toOwnedSlice() catch &.{};
+        return result.toOwnedSlice(alloc) catch &.{};
     }
 };
 

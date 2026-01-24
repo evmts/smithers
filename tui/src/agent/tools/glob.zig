@@ -116,7 +116,7 @@ fn executeBasicGlob(ctx: ToolContext, pattern: []const u8, search_path: []const 
     return ToolResult.ok(output.toOwnedSlice(ctx.allocator) catch "");
 }
 
-fn matchesPattern(path: []const u8, pattern: []const u8) bool {
+pub fn matchesPattern(path: []const u8, pattern: []const u8) bool {
     // Handle common glob patterns
     if (std.mem.startsWith(u8, pattern, "*.")) {
         // Extension match: *.zig
@@ -126,7 +126,7 @@ fn matchesPattern(path: []const u8, pattern: []const u8) bool {
 
     if (std.mem.startsWith(u8, pattern, "**/*.")) {
         // Recursive extension: **/*.zig
-        const ext = pattern[3..]; // .zig
+        const ext = pattern[4..]; // .zig
         return std.mem.endsWith(u8, path, ext);
     }
 

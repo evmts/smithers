@@ -52,7 +52,7 @@ pub const PrintMode = struct {
         try writeStdout("\n");
     }
 
-    fn getResponse(self: *Self, prompt: []const u8) ![]const u8 {
+    pub fn getResponse(self: *Self, prompt: []const u8) ![]const u8 {
         // Check for API key - if available, would call real API
         const api_key = posix.getenv("ANTHROPIC_API_KEY");
         if (api_key != null and api_key.?.len > 0) {

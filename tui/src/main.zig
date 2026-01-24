@@ -73,10 +73,13 @@ test {
     // _ = @import("tests/logger_test.zig"); // TODO: Fix for Zig 0.15.2 File.Writer API change
     // _ = @import("tests/write_file_test.zig"); // TODO: Fix for Zig 0.15.2 API changes
     _ = @import("tests/bash_tool_test.zig");
+    _ = @import("tests/agent_test.zig");
     _ = @import("tests/grep_test.zig");
     // _ = @import("tests/glob_test.zig"); // TODO: Fix bus error in freeResult
     // _ = @import("tests/mouse_test.zig"); // TODO: Fix for Zig 0.15.2 API changes
     // _ = @import("tests/kill_ring_test.zig"); // TODO: Fix for Zig 0.15.2 API changes
     _ = @import("tests/editor_module_test.zig");
-    // _ = @import("tests/message_cell_test.zig"); // TODO: Fix pointer type mismatch
+    _ = @import("tests/message_cell_test.zig");
+    _ = @import("tests/print_test.zig");
+    _ = @import("tests/interactive_test.zig");
 }

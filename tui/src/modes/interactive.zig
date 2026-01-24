@@ -5,13 +5,13 @@ const std = @import("std");
 const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 const Allocator = std.mem.Allocator;
 
-const EventLoop = @import("../event_loop.zig").EventLoop;
+const EventLoop = @import("../event_loop.zig").DefaultEventLoop;
 const Event = @import("../event.zig").Event;
 const db = @import("../db.zig");
 const Database = db.DefaultDatabase;
 const Editor = @import("../editor/editor.zig").Editor;
-const Input = @import("../components/input.zig").Input;
-const ChatHistory = @import("../components/chat_history.zig").ChatHistory;
+const Input = @import("../components/input.zig").DefaultInput;
+const ChatHistory = @import("../components/chat_history.zig").DefaultChatHistory;
 const logo = @import("../components/logo.zig");
 const SlashCommand = @import("../commands/slash_command.zig").SlashCommand;
 const builtInSlashCommands = @import("../commands/slash_command.zig").builtInSlashCommands;
