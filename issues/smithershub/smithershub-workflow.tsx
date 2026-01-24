@@ -10,17 +10,10 @@ import {
   Phase,
   Step,
   Parallel,
-  Worktree,
   Each,
-  If,
   useSmithers,
-  useWorktree,
-  type AgentResult,
 } from "smithers-orchestrator";
-import { useQueryValue } from "smithers-orchestrator/db";
-import { useTasks, usePlannerResult } from "./src/hooks";
-import { TaskPlanner as TaskPlannerComponent } from "./src/components/TaskPlanner";
-import type { ExecutionPlan } from "./src/hooks/useTasks";
+import { useQuery, useQueryValue } from "smithers-orchestrator/db";
 
 interface DelegatedTask {
   id: string;
@@ -28,13 +21,6 @@ interface DelegatedTask {
   description: string;
   files: string[];
   tests: { e2e: string[]; integration: string[]; unit: string[] };
-}
-
-interface MergeQueueEntry {
-  worktree: string;
-  branch: string;
-  timestamp: number;
-  status: "pending" | "merging" | "merged" | "failed";
 }
 
 interface Docs {
@@ -49,40 +35,28 @@ const DOCS_DIR = import.meta.dir;
 
 async function loadDocs(): Promise<Docs> {
   const [PRD, ENGINEERING, DESIGN, WORKFLOW, NEW_FEATURES] = await Promise.all([
-    Bun.file(`${DOCS_DIR}/PRD.md`).text(),
-    Bun.file(`${DOCS_DIR}/ENGINEERING.md`).text(),
-    Bun.file(`${DOCS_DIR}/DESIGN.md`).text(),
-    Bun.file(`${DOCS_DIR}/WORKFLOW.md`).text(),
-    Bun.file(`${DOCS_DIR}/NEW_FEATURES_DESIGN.md`).text(),
+    Bun.file(`${DOCS_DIR}/PRD.md`).text().catch(() => ""),
+    Bun.file(`${DOCS_DIR}/ENGINEERING.md`).text().catch(() => ""),
+    Bun.file(`${DOCS_DIR}/DESIGN.md`).text().catch(() => ""),
+    Bun.file(`${DOCS_DIR}/WORKFLOW.md`).text().catch(() => ""),
+    Bun.file(`${DOCS_DIR}/NEW_FEATURES.md`).text().catch(() => ""),
   ]);
   return { PRD, ENGINEERING, DESIGN, WORKFLOW, NEW_FEATURES };
 }
 
 function createPlanningPrompt(docs: Docs): string {
   return `
-<prd>
-${docs.PRD}
-</prd>
-
-<engineering>
-${docs.ENGINEERING}
-</engineering>
-
-<design>
-${docs.DESIGN}
-</design>
-
-<workflow>
-${docs.WORKFLOW}
-</workflow>
-
-<new_features>
-${docs.NEW_FEATURES}
-</new_features>
+<documents>
+<prd>${docs.PRD}</prd>
+<engineering>${docs.ENGINEERING}</engineering>
+<design>${docs.DESIGN}</design>
+<workflow>${docs.WORKFLOW}</workflow>
+<new_features>${docs.NEW_FEATURES}</new_features>
+</documents>
 
 <task>
-Analyze current state. Plan exactly 3 parallelizable tasks.
-Tasks must be independent (no shared file modifications).
+Analyze the documents and create exactly 3 parallelizable implementation tasks.
+Each task must be independent and completable by a single agent.
 </task>
 
 <output_format>
@@ -92,285 +66,131 @@ JSON array of 3 tasks:
 `;
 }
 
-const REVIEW_PROMPT = `
-<criteria>
-1. Matches PRD requirements
-2. Follows ENGINEERING.md architecture
-3. Follows DESIGN.md guidelines
-4. Sufficient tests (E2E, integration, unit)
-5. Clean and maintainable
-</criteria>
+// Hook to get planned tasks from the planner agent's output
+function usePlannedTasks(): { tasks: DelegatedTask[]; isPlanning: boolean } {
+  const { reactiveDb } = useSmithers();
 
-<output>{"verdict":"LGTM"|"REQUEST_CHANGES","comments":[],"blocking_issues":[]}</output>
-`;
+  // Query for a completed planner agent result - use useQuery to get the full row
+  const { data: plannerRows } = useQuery<{ result: string }>(
+    reactiveDb,
+    `SELECT result FROM agents
+     WHERE result LIKE '%task-1%' AND result LIKE '%task-2%' AND result LIKE '%task-3%'
+     AND status = 'completed'
+     ORDER BY created_at DESC LIMIT 1`,
+    []
+  );
 
-function useTaskPlannerSystem() {
-  const { db } = useSmithers();
-  const tasksHook = useTasks({ db: db.db as any });
-  const plannerHook = usePlannerResult();
+  // Check if planner is currently running
+  const runningResult = useQueryValue<number>(
+    reactiveDb,
+    `SELECT COUNT(*) as c FROM agents WHERE status = 'running'`,
+    []
+  );
 
-  return {
-    tasksHook,
-    plannerHook,
-    // Legacy compatibility: map new system to old DelegatedTask format
-    getLegacyTasks: (): DelegatedTask[] => {
-      const tasks = tasksHook.getTasksByStatus('completed');
-      return tasks.slice(0, 3).map((task, index) => ({
-        id: task.id,
-        branch: `feature/${task.title.toLowerCase().replace(/\s+/g, '-')}`,
-        description: task.description || task.title,
-        files: [], // Would be populated from task metadata
-        tests: { e2e: [], integration: [], unit: [] } // Would be populated from task metadata
-      }));
+  const plannerResult = plannerRows?.[0]?.result;
+  const isPlanning = (runningResult ?? 0) > 0;
+
+  console.log(`[usePlannedTasks] plannerRows.length=${plannerRows?.length ?? 0}, result=${plannerResult ? `${plannerResult.length} chars` : 'null'}, isPlanning=${isPlanning}`);
+
+  if (!plannerResult) {
+    return { tasks: [], isPlanning };
+  }
+
+  // Parse JSON from the planner output (it may have markdown around it)
+  try {
+    const jsonMatch = plannerResult.match(/```json\s*([\s\S]*?)```/);
+    const jsonStr = jsonMatch ? jsonMatch[1] : plannerResult;
+    const parsed = JSON.parse(jsonStr.trim());
+    if (Array.isArray(parsed) && parsed.length >= 3) {
+      console.log(`[usePlannedTasks] Parsed ${parsed.length} tasks from planner output`);
+      return { tasks: parsed.slice(0, 3), isPlanning: false };
     }
-  };
-}
+  } catch (e) {
+    console.error('[usePlannedTasks] Failed to parse planner output:', e);
+  }
 
-function useMergeQueue() {
-  const { db } = useSmithers();
-  return {
-    queue: db.state.get<MergeQueueEntry[]>("mergeQueue") ?? [],
-    add: (entry: MergeQueueEntry) => {
-      const queue = db.state.get<MergeQueueEntry[]>("mergeQueue") ?? [];
-      db.state.set("mergeQueue", [...queue, entry], "queue_add");
-    },
-    update: (worktree: string, status: MergeQueueEntry["status"]) => {
-      const queue = db.state.get<MergeQueueEntry[]>("mergeQueue") ?? [];
-      db.state.set("mergeQueue", queue.map(e => 
-        e.worktree === worktree ? { ...e, status } : e
-      ), "queue_update");
-    },
-  };
-}
-
-function useTestGate() {
-  const passedRef = useRef(false);
-  return {
-    passed: passedRef.current,
-    markPassed: () => { passedRef.current = true; },
-    condition: () => !passedRef.current,
-  };
+  return { tasks: [], isPlanning };
 }
 
 function TaskPlannerAgent({ prompt }: { prompt: string }): ReactNode {
   return (
     <Claude
       model="sonnet"
-      systemPrompt="Lead architect. Output valid JSON only."
+      systemPrompt="Lead architect. Output valid JSON only. Wrap JSON in ```json code block."
     >
       {prompt}
     </Claude>
   );
 }
 
-function EnhancedTaskPlanner({ planningPrompt }: { planningPrompt: string }): ReactNode {
-  const { db } = useSmithers();
-
-  // Mock agent system for task execution
-  const mockAgentSystem = {
-    async executePlan(plan: ExecutionPlan) {
-      // Integrate with existing Claude agents
-      return {
-        id: `execution-${Date.now()}`,
-        planId: plan.id,
-        status: 'completed' as const,
-        results: plan.phases.flatMap(phase =>
-          phase.tasks.map(taskId => ({
-            taskId,
-            status: 'completed' as const,
-            output: `Task ${taskId} completed via Claude agent`,
-            executionTime: 1000 + Math.floor(Math.random() * 4000)
-          }))
-        ),
-        summary: `Successfully executed ${plan.phases.length} phases`,
-        metrics: {
-          totalDuration: 5000,
-          tasksCompleted: plan.phases.flatMap(p => p.tasks).length,
-          tasksError: 0,
-          successRate: 1.0
-        },
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString()
-      };
-    },
-
-    getAvailableAgents: () => [
-      { id: 'claude-sonnet', name: 'Claude Sonnet', capabilities: ['implementation', 'analysis', 'testing'] },
-      { id: 'claude-opus', name: 'Claude Opus', capabilities: ['complex-reasoning', 'architecture', 'review'] },
-      { id: 'claude-haiku', name: 'Claude Haiku', capabilities: ['quick-tasks', 'simple-fixes', 'validation'] }
-    ]
-  };
-
-  return (
-    <TaskPlannerComponent
-      db={db.db as any}
-      agentSystem={mockAgentSystem}
-      enableRealTimeUpdates={true}
-      onTaskCreate={(task) => {
-        console.log('Task created:', task.title);
-      }}
-      onPlanExecute={(plan) => {
-        console.log('Executing plan:', plan.title);
-      }}
-    />
-  );
-}
-
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
 function Implementer({ task, timeout = ONE_HOUR_MS }: { task: DelegatedTask; timeout?: number }): ReactNode {
+  console.log(`[Implementer] Starting task: ${task.id} - ${task.description}`);
   return (
     <Claude
       model="sonnet"
-      systemPrompt={`Implementing: ${task.description}`}
+      systemPrompt={`Senior engineer. Implement the task. Follow TDD. Run tests after.`}
       permissionMode="bypassPermissions"
       timeout={timeout}
-      outputFormat="stream-json"
-      onProgress={(chunk) => process.stdout.write(chunk)}
     >
       {`
-<task>${JSON.stringify(task, null, 2)}</task>
+<task>
+ID: ${task.id}
+Branch: ${task.branch}
+Description: ${task.description}
+Files to modify: ${task.files.join(", ")}
+</task>
+
 <rules>
-1. TDD: tests first
-2. Only modify assigned files: ${task.files.join(", ")}
-3. Run tests after
+1. Write tests first (TDD)
+2. Only modify the assigned files
+3. Run tests after implementation
+4. Ensure all tests pass
 </rules>
+
+<output>
+When done, output a summary of:
+- Files modified
+- Tests written
+- Test results
+</output>
       `}
     </Claude>
   );
 }
 
-function Reviewer({ label }: { label: string }): ReactNode {
-  return (
-    <Claude model="sonnet" systemPrompt={`Reviewer: ${label}`}>
-      {REVIEW_PROMPT}
-    </Claude>
-  );
-}
-
-function TestRunner({ cwd, onPass, onFail }: { 
-  cwd: string; 
-  onPass: () => void; 
-  onFail: () => void;
-}): ReactNode {
-  const hasRunRef = useRef(false);
-
-  if (!hasRunRef.current) {
-    hasRunRef.current = true;
-    Bun.spawn(["bun", "test"], { cwd })
-      .exited.then((code) => {
-        if (code === 0) onPass();
-        else onFail();
-      });
-  }
-
-  return null;
-}
-
-function Committer({ message }: { message: string }): ReactNode {
-  return (
-    <Claude
-      model="sonnet"
-      systemPrompt="Commit changes."
-      permissionMode="bypassPermissions"
-    >
-      {`jj commit -m "${message}"`}
-    </Claude>
-  );
-}
-
-function Merger({ branch, onResult }: { 
-  branch: string; 
-  onResult: (success: boolean) => void;
-}): ReactNode {
-  const hasRunRef = useRef(false);
-
-  if (!hasRunRef.current) {
-    hasRunRef.current = true;
-    Bun.spawn(["jj", "rebase", "-b", branch, "-d", "main"])
-      .exited.then((code) => onResult(code === 0));
-  }
-
-  return null;
-}
-
 function SmithersHubWorkflow({ planningPrompt }: { planningPrompt: string }): ReactNode {
-  const taskPlannerSystem = useTaskPlannerSystem();
-  const legacyTasks = taskPlannerSystem.getLegacyTasks();
-  const allPlanned = legacyTasks.length === 3;
+  const { tasks, isPlanning } = usePlannedTasks();
+  const allPlanned = tasks.length >= 3;
 
-  // Check if we have active plans being executed
-  const hasActivePlans = taskPlannerSystem.plannerHook.isExecuting;
-
-  console.log(`[Workflow] legacyTasks.length=${legacyTasks.length}, allPlanned=${allPlanned}, hasActivePlans=${hasActivePlans}`);
+  console.log(`[Workflow] tasks=${tasks.length}, allPlanned=${allPlanned}, isPlanning=${isPlanning}`);
 
   return (
     <Ralph
       id="smithershub"
-      condition={() => true}  // Infinite loop until manually stopped
-      maxIterations={1000}
+      condition={() => !allPlanned}  // Stop when we have planned tasks
+      maxIterations={10}
     >
-      <Phase name="modern-planning">
-        <Step name="enhanced-task-planner">
-          <If condition={() => !hasActivePlans}>
-            <EnhancedTaskPlanner planningPrompt={planningPrompt} />
-          </If>
-        </Step>
-      </Phase>
-
-      <Phase name="legacy-planning">
+      <Phase name="plan">
         <Step name="delegate-tasks">
-          {!allPlanned && <TaskPlannerAgent prompt={planningPrompt} />}
+          {!allPlanned && !isPlanning && <TaskPlannerAgent prompt={planningPrompt} />}
         </Step>
       </Phase>
 
-      <Phase name="execute-legacy">
-        <If condition={() => allPlanned}>
-          <Parallel>
-            <Each items={legacyTasks}>
-              {(task) => (
-                <Step key={task.id} name={`implement-${task.id}`}>
-                  <Implementer task={task} />
-                </Step>
-              )}
-            </Each>
-          </Parallel>
-        </If>
-      </Phase>
-
-      <Phase name="execute-modern">
-        <Step name="modern-execution-monitor">
-          <If condition={() => hasActivePlans}>
-            <ModernExecutionMonitor />
-          </If>
-        </Step>
+      <Phase name="execute" skipIf={() => !allPlanned}>
+        <Parallel>
+          <Each items={tasks}>
+            {(task) => (
+              <Step key={task.id} name={`implement-${task.id}`}>
+                <Implementer task={task} />
+              </Step>
+            )}
+          </Each>
+        </Parallel>
       </Phase>
     </Ralph>
   );
-}
-
-function ModernExecutionMonitor(): ReactNode {
-  const taskPlannerSystem = useTaskPlannerSystem();
-  const progress = taskPlannerSystem.plannerHook.progress;
-
-  // Log progress for monitoring
-  if (progress.current) {
-    console.log(`[Modern Execution] ${progress.completed}/${progress.total}: ${progress.current}`);
-  }
-
-  // Handle execution completion
-  if (taskPlannerSystem.plannerHook.result) {
-    const result = taskPlannerSystem.plannerHook.result;
-    console.log(`[Modern Execution] Completed: ${result.summary}`);
-    console.log(`[Modern Execution] Success rate: ${(result.metrics.successRate * 100).toFixed(1)}%`);
-  }
-
-  // Handle execution errors
-  if (taskPlannerSystem.plannerHook.error) {
-    console.error(`[Modern Execution] Error: ${taskPlannerSystem.plannerHook.error}`);
-  }
-
-  return null; // This is a monitoring component, no UI needed in workflow
 }
 
 async function main(): Promise<void> {
