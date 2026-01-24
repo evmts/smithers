@@ -1,18 +1,24 @@
 const std = @import("std");
 const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
-const ChatHistory = @import("../components/chat_history.zig").ChatHistory;
+const chat_history_mod = @import("../components/chat_history.zig");
 const Layout = @import("../layout.zig").Layout;
 const selection_mod = @import("../selection.zig");
 
-pub const MouseHandler = struct {
-    alloc: std.mem.Allocator,
+pub fn MouseHandler(comptime R: type) type {
+    const Mouse = R.Mouse;
+    const ChatHistory = chat_history_mod.ChatHistory(R);
 
-    pub fn init(alloc: std.mem.Allocator) MouseHandler {
-        return .{ .alloc = alloc };
-    }
+    return struct {
+        const Self = @This();
 
-    pub fn handleMouse(self: *MouseHandler, mouse: DefaultRenderer.Mouse, chat_history: *ChatHistory) void {
+        alloc: std.mem.Allocator,
+
+        pub fn init(alloc: std.mem.Allocator) Self {
+            return .{ .alloc = alloc };
+        }
+
+        pub fn handleMouse(self: *Self, mouse: Mouse, chat_history: *ChatHistory) void {
         // Handle scroll wheel
         if (mouse.button == .wheel_up) {
             chat_history.scrollUp(3);
@@ -41,5 +47,8 @@ pub const MouseHandler = struct {
                 }
             }
         }
-    }
-};
+        }
+    };
+}
+
+pub const DefaultMouseHandler = MouseHandler(DefaultRenderer);

@@ -2,7 +2,7 @@
 // Stack-based overlays with vaxis rendering, positioning, and focus management
 
 const std = @import("std");
-const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
+const renderer_mod = @import("../rendering/renderer.zig");
 const Allocator = std.mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
@@ -81,30 +81,153 @@ pub const Margin = struct {
 // ============ Overlay Options ============
 
 pub const VisibilityCallback = *const fn (term_width: u16, term_height: u16) bool;
-pub const DrawCallback = *const fn (renderer: DefaultRenderer, ctx: ?*anyopaque) void;
 
-pub const Options = struct {
-    width: ?SizeValue = null,
-    height: ?SizeValue = null,
-    min_width: ?u16 = null,
-    max_height: ?SizeValue = null,
+pub fn Overlay(comptime R: type) type {
+    return struct {
+        const OverlaySelf = @This();
+        pub const DrawCallback = *const fn (renderer: R, ctx: ?*anyopaque) void;
 
-    anchor: Anchor = .center,
-    offset_x: i16 = 0,
-    offset_y: i16 = 0,
+        pub const Options = struct {
+            width: ?SizeValue = null,
+            height: ?SizeValue = null,
+            min_width: ?u16 = null,
+            max_height: ?SizeValue = null,
 
-    // For cursor-relative positioning
-    cursor_x: ?u16 = null,
-    cursor_y: ?u16 = null,
+            anchor: Anchor = .center,
+            offset_x: i16 = 0,
+            offset_y: i16 = 0,
 
-    // Explicit row/col override
-    row: ?SizeValue = null,
-    col: ?SizeValue = null,
+            // For cursor-relative positioning
+            cursor_x: ?u16 = null,
+            cursor_y: ?u16 = null,
 
-    margin: Margin = .{},
+            // Explicit row/col override
+            row: ?SizeValue = null,
+            col: ?SizeValue = null,
 
-    visible: ?VisibilityCallback = null,
-};
+            margin: Margin = .{},
+
+            visible: ?VisibilityCallback = null,
+        };
+
+        pub const Entry = struct {
+            draw_fn: OverlaySelf.DrawCallback,
+            ctx: ?*anyopaque,
+            options: OverlaySelf.Options,
+            hidden: bool,
+            z_order: u16,
+
+            pub fn isVisible(self: *const @This(), term_width: u16, term_height: u16) bool {
+                if (self.hidden) return false;
+                if (self.options.visible) |visible_fn| {
+                    return visible_fn(term_width, term_height);
+                }
+                return true;
+            }
+        };
+
+        pub const Stack = struct {
+            entries: ArrayListUnmanaged(OverlaySelf.Entry),
+            allocator: Allocator,
+            next_z: u16,
+
+            const Self = @This();
+
+            pub fn init(allocator: Allocator) Self {
+                return .{
+                    .entries = .{},
+                    .allocator = allocator,
+                    .next_z = 0,
+                };
+            }
+
+            pub fn deinit(self: *Self) void {
+                self.entries.deinit(self.allocator);
+            }
+
+            pub fn push(self: *Self, draw_fn: OverlaySelf.DrawCallback, ctx: ?*anyopaque, options: OverlaySelf.Options) !*OverlaySelf.Entry {
+                const z = self.next_z;
+                self.next_z += 1;
+                try self.entries.append(self.allocator, .{
+                    .draw_fn = draw_fn,
+                    .ctx = ctx,
+                    .options = options,
+                    .hidden = false,
+                    .z_order = z,
+                });
+                return &self.entries.items[self.entries.items.len - 1];
+            }
+
+            pub fn pop(self: *Self) ?OverlaySelf.Entry {
+                return self.entries.popOrNull();
+            }
+
+            pub fn remove(self: *Self, entry: *OverlaySelf.Entry) bool {
+                for (self.entries.items, 0..) |*e, i| {
+                    if (e == entry) {
+                        _ = self.entries.orderedRemove(i);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            pub fn getTopmostVisible(self: *const Self, term_width: u16, term_height: u16) ?*const OverlaySelf.Entry {
+                var topmost: ?*const OverlaySelf.Entry = null;
+                for (self.entries.items) |*entry| {
+                    if (entry.isVisible(term_width, term_height)) {
+                        if (topmost == null or entry.z_order > topmost.?.z_order) {
+                            topmost = entry;
+                        }
+                    }
+                }
+                return topmost;
+            }
+
+            pub fn isEmpty(self: *const Self) bool {
+                return self.entries.items.len == 0;
+            }
+
+            pub fn count(self: *const Self) usize {
+                return self.entries.items.len;
+            }
+
+            /// Draw all visible overlays in z-order using Renderer
+            pub fn draw(self: *Self, renderer: R) void {
+                const term_width = renderer.width();
+                const term_height = renderer.height();
+
+                // Draw overlays in z-order (lowest first, so topmost renders last)
+                for (self.entries.items) |*entry| {
+                    if (!entry.isVisible(term_width, term_height)) continue;
+
+                    // Default content height - caller can set explicit height
+                    const content_height: u16 = if (entry.options.height) |h|
+                        h.resolve(term_height)
+                    else
+                        10; // Sensible default
+
+                    const layout = ResolvedLayout.resolve(entry.options, content_height, term_width, term_height);
+
+                    // Create sub-region renderer for overlay
+                    const overlay_renderer = renderer.subRegion(layout.col, layout.row, layout.width, layout.height);
+
+                    // Call draw callback
+                    entry.draw_fn(overlay_renderer, entry.ctx);
+                }
+            }
+        };
+    };
+}
+
+pub const DefaultOverlay = Overlay(renderer_mod.DefaultRenderer);
+
+// Legacy aliases for compatibility
+pub const DefaultRenderer = renderer_mod.DefaultRenderer;
+pub const DrawCallback = DefaultOverlay.DrawCallback;
+pub const Entry = DefaultOverlay.Entry;
+pub const Stack = DefaultOverlay.Stack;
+pub const Options = DefaultOverlay.Options;
 
 // ============ Resolved Layout ============
 
@@ -196,124 +319,6 @@ pub const ResolvedLayout = struct {
             .row = @intCast(@max(0, resolved_row)),
             .col = @intCast(@max(0, resolved_col)),
         };
-    }
-};
-
-// ============ Overlay Entry ============
-
-pub const Entry = struct {
-    draw_fn: DrawCallback,
-    ctx: ?*anyopaque,
-    options: Options,
-    hidden: bool,
-    z_order: u16,
-
-    pub fn isVisible(self: *const Entry, term_width: u16, term_height: u16) bool {
-        if (self.hidden) return false;
-        if (self.options.visible) |visible_fn| {
-            return visible_fn(term_width, term_height);
-        }
-        return true;
-    }
-};
-
-// ============ Overlay Stack ============
-
-pub const Stack = struct {
-    entries: ArrayListUnmanaged(Entry),
-    allocator: Allocator,
-    next_z: u16,
-
-    const Self = @This();
-
-    pub fn init(allocator: Allocator) Self {
-        return .{
-            .entries = .{},
-            .allocator = allocator,
-            .next_z = 0,
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.entries.deinit(self.allocator);
-    }
-
-    pub fn push(self: *Self, draw_fn: DrawCallback, ctx: ?*anyopaque, options: Options) !*Entry {
-        const z = self.next_z;
-        self.next_z += 1;
-        try self.entries.append(self.allocator, .{
-            .draw_fn = draw_fn,
-            .ctx = ctx,
-            .options = options,
-            .hidden = false,
-            .z_order = z,
-        });
-        return &self.entries.items[self.entries.items.len - 1];
-    }
-
-    pub fn pop(self: *Self) ?Entry {
-        if (self.entries.items.len == 0) return null;
-        return self.entries.pop();
-    }
-
-    pub fn remove(self: *Self, entry: *Entry) bool {
-        const ptr_addr = @intFromPtr(entry);
-        for (self.entries.items, 0..) |*e, i| {
-            if (@intFromPtr(e) == ptr_addr) {
-                _ = self.entries.orderedRemove(i);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    pub fn setHidden(self: *Self, entry: *Entry, hidden: bool) void {
-        _ = self;
-        entry.hidden = hidden;
-    }
-
-    pub fn getTopmostVisible(self: *Self, term_width: u16, term_height: u16) ?*Entry {
-        var i = self.entries.items.len;
-        while (i > 0) {
-            i -= 1;
-            if (self.entries.items[i].isVisible(term_width, term_height)) {
-                return &self.entries.items[i];
-            }
-        }
-        return null;
-    }
-
-    pub fn isEmpty(self: *const Self) bool {
-        return self.entries.items.len == 0;
-    }
-
-    pub fn count(self: *const Self) usize {
-        return self.entries.items.len;
-    }
-
-    /// Draw all visible overlays in z-order using Renderer
-    pub fn draw(self: *Self, renderer: DefaultRenderer) void {
-        const term_width = renderer.width();
-        const term_height = renderer.height();
-
-        // Draw overlays in z-order (lowest first, so topmost renders last)
-        for (self.entries.items) |*entry| {
-            if (!entry.isVisible(term_width, term_height)) continue;
-
-            // Default content height - caller can set explicit height
-            const content_height: u16 = if (entry.options.height) |h|
-                h.resolve(term_height)
-            else
-                10; // Sensible default
-
-            const layout = ResolvedLayout.resolve(entry.options, content_height, term_width, term_height);
-
-            // Create sub-region renderer for overlay
-            const overlay_renderer = renderer.subRegion(layout.col, layout.row, layout.width, layout.height);
-
-            // Call draw callback
-            entry.draw_fn(overlay_renderer, entry.ctx);
-        }
     }
 };
 

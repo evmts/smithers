@@ -2,7 +2,6 @@
 // Container with borders and optional title
 
 const std = @import("std");
-const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 const default_border_color: u8 = 240;
 
@@ -46,94 +45,99 @@ pub const BoxStyle = struct {
     title_color: u8 = 75, // Blue
 };
 
-pub const Box = struct {
-    style: BoxStyle = .{},
+/// Generic box component
+pub fn Box(comptime R: type) type {
+    return struct {
+        style: BoxStyle = .{},
 
-    const Self = @This();
+        const Self = @This();
 
-    pub fn init() Self {
-        return .{};
-    }
-
-    pub fn initWithStyle(style: BoxStyle) Self {
-        return .{ .style = style };
-    }
-
-    pub fn setStyle(self: *Self, style: BoxStyle) void {
-        self.style = style;
-    }
-
-    pub fn setTitle(self: *Self, title: ?[]const u8) void {
-        self.style.title = title;
-    }
-
-    pub fn draw(self: *const Self, renderer: DefaultRenderer) void {
-        if (self.style.border == .none) return;
-        const win_width = renderer.width();
-        const win_height = renderer.height();
-        if (win_width < 2 or win_height < 2) return;
-
-        const chars = self.style.border.chars();
-        const border_style: DefaultRenderer.Style = .{ .fg = .{ .index = self.style.border_color } };
-        const title_style: DefaultRenderer.Style = .{
-            .fg = .{ .index = self.style.title_color },
-            .bold = true,
-        };
-
-        // Top border
-        renderer.drawCell(0, 0, chars.tl, border_style);
-
-        var x: u16 = 1;
-
-        // Title if present
-        if (self.style.title) |title| {
-            renderer.drawCell(x, 0, chars.h, border_style);
-            x += 1;
-
-            const title_len: u16 = @intCast(@min(title.len, win_width -| 6));
-            renderer.drawText(x, 0, title[0..title_len], title_style);
-            x += title_len;
-
-            renderer.drawCell(x, 0, chars.h, border_style);
-            x += 1;
+        pub fn init() Self {
+            return .{};
         }
 
-        // Fill remaining top border
-        while (x < win_width -| 1) : (x += 1) {
-            renderer.drawCell(x, 0, chars.h, border_style);
+        pub fn initWithStyle(style: BoxStyle) Self {
+            return .{ .style = style };
         }
 
-        renderer.drawCell(win_width -| 1, 0, chars.tr, border_style);
-
-        // Side borders
-        for (1..win_height -| 1) |y| {
-            renderer.drawCell(0, @intCast(y), chars.v, border_style);
-            renderer.drawCell(win_width -| 1, @intCast(y), chars.v, border_style);
+        pub fn setStyle(self: *Self, style: BoxStyle) void {
+            self.style = style;
         }
 
-        // Bottom border
-        const bottom_y: u16 = win_height -| 1;
-        renderer.drawCell(0, bottom_y, chars.bl, border_style);
-
-        for (1..win_width -| 1) |bx| {
-            renderer.drawCell(@intCast(bx), bottom_y, chars.h, border_style);
+        pub fn setTitle(self: *Self, title: ?[]const u8) void {
+            self.style.title = title;
         }
 
-        renderer.drawCell(win_width -| 1, bottom_y, chars.br, border_style);
-    }
+        pub fn draw(self: *const Self, renderer: R) void {
+            if (self.style.border == .none) return;
+            const win_width = renderer.width();
+            const win_height = renderer.height();
+            if (win_width < 2 or win_height < 2) return;
 
-    pub fn contentRegion(self: *const Self, renderer: DefaultRenderer) DefaultRenderer {
-        const border_offset: u16 = if (self.style.border != .none) 1 else 0;
-        const x_off = border_offset + self.style.padding_left;
-        const y_off = border_offset + self.style.padding_top;
-        const w = renderer.width() -| (border_offset * 2) -| self.style.padding_left -| self.style.padding_right;
-        const h = renderer.height() -| (border_offset * 2) -| self.style.padding_top -| self.style.padding_bottom;
+            const chars = self.style.border.chars();
+            const border_style: R.Style = .{ .fg = .{ .index = self.style.border_color } };
+            const title_style: R.Style = .{
+                .fg = .{ .index = self.style.title_color },
+                .bold = true,
+            };
 
-        return renderer.subRegion(
-            x_off,
-            y_off,
-            if (w > 0) w else 1,
-            if (h > 0) h else 1,
-        );
-    }
-};
+            // Top border
+            renderer.drawCell(0, 0, chars.tl, border_style);
+
+            var x: u16 = 1;
+
+            // Title if present
+            if (self.style.title) |title| {
+                renderer.drawCell(x, 0, chars.h, border_style);
+                x += 1;
+
+                const title_len: u16 = @intCast(@min(title.len, win_width -| 6));
+                renderer.drawText(x, 0, title[0..title_len], title_style);
+                x += title_len;
+
+                renderer.drawCell(x, 0, chars.h, border_style);
+                x += 1;
+            }
+
+            // Fill remaining top border
+            while (x < win_width -| 1) : (x += 1) {
+                renderer.drawCell(x, 0, chars.h, border_style);
+            }
+
+            renderer.drawCell(win_width -| 1, 0, chars.tr, border_style);
+
+            // Side borders
+            for (1..win_height -| 1) |y| {
+                renderer.drawCell(0, @intCast(y), chars.v, border_style);
+                renderer.drawCell(win_width -| 1, @intCast(y), chars.v, border_style);
+            }
+
+            // Bottom border
+            const bottom_y: u16 = win_height -| 1;
+            renderer.drawCell(0, bottom_y, chars.bl, border_style);
+
+            for (1..win_width -| 1) |bx| {
+                renderer.drawCell(@intCast(bx), bottom_y, chars.h, border_style);
+            }
+
+            renderer.drawCell(win_width -| 1, bottom_y, chars.br, border_style);
+        }
+
+        pub fn contentRegion(self: *const Self, renderer: R) R {
+            const border_offset: u16 = if (self.style.border != .none) 1 else 0;
+            const x_off = border_offset + self.style.padding_left;
+            const y_off = border_offset + self.style.padding_top;
+            const w = renderer.width() -| (border_offset * 2) -| self.style.padding_left -| self.style.padding_right;
+            const h = renderer.height() -| (border_offset * 2) -| self.style.padding_top -| self.style.padding_bottom;
+
+            return renderer.subRegion(
+                x_off,
+                y_off,
+                if (w > 0) w else 1,
+                if (h > 0) h else 1,
+            );
+        }
+    };
+}
+
+pub const DefaultBox = Box(@import("../rendering/renderer.zig").DefaultRenderer);

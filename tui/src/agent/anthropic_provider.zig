@@ -1,5 +1,6 @@
 // Anthropic Provider - makes HTTP calls to the Anthropic API via curl
 // Implements ProviderInterface for real LLM calls
+// Also implements the AgentProvider interface for AgentLoop
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -17,6 +18,9 @@ const Context = provider.Context;
 const StopReason = provider.StopReason;
 const ToolCall = provider.ToolCall;
 const InputType = provider.InputType;
+
+const provider_interface = @import("provider_interface.zig");
+const ToolCallInfo = provider_interface.ToolCallInfo;
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -573,4 +577,227 @@ test "getDefaultModel returns valid model" {
     const model = getDefaultModel();
     try std.testing.expectEqualStrings("claude-sonnet-4-20250514", model.id);
     try std.testing.expectEqual(provider.Api.anthropic_messages, model.api);
+}
+
+// ============ AgentProvider Interface Implementation ============
+// This implements the comptime generic interface for AgentLoop
+
+pub const AnthropicStreamingProvider = struct {
+    pub const StreamingState = struct {
+        child: ?std.process.Child = null,
+        message_id: ?i64 = null,
+        accumulated_text: ArrayListUnmanaged(u8) = .{},
+        tool_calls: ArrayListUnmanaged(ToolCallInfo) = .{},
+        current_tool_id: ?[]const u8 = null,
+        current_tool_name: ?[]const u8 = null,
+        current_tool_input: ArrayListUnmanaged(u8) = .{},
+        line_buffer: [8192]u8 = undefined,
+        line_pos: usize = 0,
+        is_done: bool = false,
+        stop_reason: ?[]const u8 = null,
+        alloc: Allocator,
+
+        pub fn init(alloc: Allocator) StreamingState {
+            return .{ .alloc = alloc, .current_tool_input = .{} };
+        }
+
+        fn processLine(self: *StreamingState, line: []const u8) !void {
+            if (!std.mem.startsWith(u8, line, "data: ")) return;
+            const data = line[6..];
+            if (std.mem.eql(u8, data, "[DONE]")) {
+                self.is_done = true;
+                return;
+            }
+
+            const parsed = json.parseFromSlice(json.Value, self.alloc, data, .{}) catch return;
+            defer parsed.deinit();
+
+            if (parsed.value != .object) return;
+
+            const type_val = parsed.value.object.get("type") orelse return;
+            if (type_val != .string) return;
+            const event_type = type_val.string;
+
+            if (std.mem.eql(u8, event_type, "message_delta")) {
+                if (parsed.value.object.get("delta")) |delta| {
+                    if (delta == .object) {
+                        if (delta.object.get("stop_reason")) |sr| {
+                            if (sr == .string) {
+                                self.stop_reason = self.alloc.dupe(u8, sr.string) catch null;
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (std.mem.eql(u8, event_type, "content_block_start")) {
+                if (parsed.value.object.get("content_block")) |block| {
+                    if (block == .object) {
+                        if (block.object.get("type")) |bt| {
+                            if (bt == .string and std.mem.eql(u8, bt.string, "tool_use")) {
+                                if (block.object.get("id")) |id| {
+                                    if (id == .string) {
+                                        self.current_tool_id = self.alloc.dupe(u8, id.string) catch null;
+                                    }
+                                }
+                                if (block.object.get("name")) |name| {
+                                    if (name == .string) {
+                                        self.current_tool_name = self.alloc.dupe(u8, name.string) catch null;
+                                    }
+                                }
+                                self.current_tool_input.clearRetainingCapacity();
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (std.mem.eql(u8, event_type, "content_block_delta")) {
+                const delta = parsed.value.object.get("delta") orelse return;
+                if (delta != .object) return;
+
+                if (delta.object.get("type")) |dt| {
+                    if (dt == .string) {
+                        if (std.mem.eql(u8, dt.string, "text_delta")) {
+                            if (delta.object.get("text")) |text| {
+                                if (text == .string) {
+                                    try self.accumulated_text.appendSlice(self.alloc, text.string);
+                                }
+                            }
+                        } else if (std.mem.eql(u8, dt.string, "input_json_delta")) {
+                            if (delta.object.get("partial_json")) |pj| {
+                                if (pj == .string) {
+                                    try self.current_tool_input.appendSlice(self.alloc, pj.string);
+                                }
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (std.mem.eql(u8, event_type, "content_block_stop")) {
+                if (self.current_tool_id != null and self.current_tool_name != null) {
+                    try self.tool_calls.append(self.alloc, .{
+                        .id = self.current_tool_id.?,
+                        .name = self.current_tool_name.?,
+                        .input_json = try self.alloc.dupe(u8, self.current_tool_input.items),
+                    });
+                    self.current_tool_id = null;
+                    self.current_tool_name = null;
+                    self.current_tool_input.clearRetainingCapacity();
+                }
+                return;
+            }
+        }
+    };
+
+    pub fn startStream(alloc: Allocator, api_key: []const u8, request_body: []const u8) !StreamingState {
+        var state = StreamingState.init(alloc);
+
+        const auth_header = try std.fmt.allocPrint(alloc, "x-api-key: {s}", .{api_key});
+        defer alloc.free(auth_header);
+
+        var child = std.process.Child.init(&.{
+            "curl", "-s", "-N", "-X", "POST", ANTHROPIC_API_URL,
+            "-H", "content-type: application/json",
+            "-H", "anthropic-version: " ++ ANTHROPIC_VERSION,
+            "-H", auth_header,
+            "-d", request_body,
+        }, alloc);
+        child.stdout_behavior = .Pipe;
+        child.stderr_behavior = .Pipe;
+
+        try child.spawn();
+
+        if (child.stdout) |stdout| {
+            const fd = stdout.handle;
+            const F_GETFL = 3;
+            const F_SETFL = 4;
+            const O_NONBLOCK: usize = 0x0004;
+            const flags = std.posix.fcntl(fd, F_GETFL, 0) catch 0;
+            _ = std.posix.fcntl(fd, F_SETFL, flags | O_NONBLOCK) catch {};
+        }
+
+        state.child = child;
+        state.is_done = false;
+        state.line_pos = 0;
+
+        return state;
+    }
+
+    pub fn poll(state: *StreamingState) !bool {
+        const child = state.child orelse return true;
+        const stdout = child.stdout orelse return true;
+
+        var buf: [4096]u8 = undefined;
+        const bytes_read = stdout.read(&buf) catch |err| {
+            if (err == error.WouldBlock) return false;
+            return true;
+        };
+
+        if (bytes_read == 0) {
+            if (state.is_done) return true;
+            return false;
+        }
+
+        for (buf[0..bytes_read]) |byte| {
+            if (byte == '\n') {
+                const line = state.line_buffer[0..state.line_pos];
+                try state.processLine(line);
+                state.line_pos = 0;
+            } else if (state.line_pos < state.line_buffer.len - 1) {
+                state.line_buffer[state.line_pos] = byte;
+                state.line_pos += 1;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn getText(state: *StreamingState) []const u8 {
+        return state.accumulated_text.items;
+    }
+
+    pub fn hasToolCalls(state: *StreamingState) bool {
+        return state.tool_calls.items.len > 0;
+    }
+
+    pub fn getToolCalls(state: *StreamingState) []const ToolCallInfo {
+        return state.tool_calls.items;
+    }
+
+    pub fn cleanup(state: *StreamingState, _: Allocator) void {
+        if (state.child) |*child| {
+            _ = child.kill() catch {};
+            _ = child.wait() catch {};
+        }
+        state.child = null;
+        state.accumulated_text.deinit(state.alloc);
+        state.accumulated_text = .{};
+        for (state.tool_calls.items) |tc| {
+            state.alloc.free(tc.id);
+            state.alloc.free(tc.name);
+            state.alloc.free(tc.input_json);
+        }
+        state.tool_calls.deinit(state.alloc);
+        state.tool_calls = .{};
+        state.current_tool_input.deinit(state.alloc);
+        state.current_tool_input = .{};
+        if (state.current_tool_id) |id| state.alloc.free(id);
+        if (state.current_tool_name) |name| state.alloc.free(name);
+        if (state.stop_reason) |sr| state.alloc.free(sr);
+        state.current_tool_id = null;
+        state.current_tool_name = null;
+        state.stop_reason = null;
+        state.message_id = null;
+        state.is_done = false;
+        state.line_pos = 0;
+    }
+};
+
+test "AnthropicStreamingProvider interface validation" {
+    provider_interface.validateProviderInterface(AnthropicStreamingProvider);
 }

@@ -3,18 +3,27 @@ const std = @import("std");
 const db = @import("db.zig");
 const loading_mod = @import("loading.zig");
 
-const Input = @import("components/input.zig").Input;
-const ChatHistory = @import("components/chat_history.zig").ChatHistory;
-const Header = @import("ui/header.zig").Header;
-const StatusBar = @import("ui/status.zig").StatusBar;
-const KeyHandler = @import("keys/handler.zig").KeyHandler;
-const KeyContext = @import("keys/handler.zig").KeyContext;
-const MouseHandler = @import("keys/mouse.zig").MouseHandler;
+const input_mod = @import("components/input.zig");
+const chat_history_mod = @import("components/chat_history.zig");
+const header_mod = @import("ui/header.zig");
+const status_bar_mod = @import("ui/status.zig");
+const key_handler_mod = @import("keys/handler.zig");
+const mouse_handler_mod = @import("keys/mouse.zig");
 const AgentLoop = @import("agent/loop.zig").AgentLoop;
 const FrameRenderer = @import("rendering/frame.zig").FrameRenderer;
 
-/// Generic App for full dependency injection of database and event loop
-pub fn App(comptime Db: type, comptime EvLoop: type) type {
+/// Generic App for full dependency injection of database, event loop, renderer, and agent
+pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime Agent: type) type {
+    const KeyHandler = key_handler_mod.KeyHandler(R);
+    const KeyContext = key_handler_mod.KeyContext(R);
+    const MouseHandler = mouse_handler_mod.MouseHandler(R);
+    const Input = input_mod.Input(R);
+    const ChatHistory = chat_history_mod.ChatHistory(R);
+    const Header = header_mod.Header(R);
+    const StatusBar = status_bar_mod.StatusBar(R);
+    const Frame = FrameRenderer(R);
+    const AgentLoopT = AgentLoop(Agent);
+
     return struct {
         alloc: std.mem.Allocator,
         database: Db,
@@ -26,7 +35,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type) type {
         loading: loading_mod.LoadingState,
         key_handler: KeyHandler,
         mouse_handler: MouseHandler,
-        agent_loop: AgentLoop,
+        agent_loop: AgentLoopT,
         has_ai: bool,
         last_tick: i64,
         db_path: [:0]const u8,
@@ -80,7 +89,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type) type {
             var loading = loading_mod.LoadingState{};
             const key_handler = KeyHandler.init(alloc);
             const mouse_handler = MouseHandler.init(alloc);
-            const agent_loop = AgentLoop.init(alloc, &loading);
+            const agent_loop = AgentLoopT.init(alloc, &loading);
 
             return Self{
                 .alloc = alloc,
@@ -171,7 +180,8 @@ pub fn App(comptime Db: type, comptime EvLoop: type) type {
 
                 // Render
                 const win = self.event_loop.window();
-                var render_ctx = FrameRenderer.RenderContext{
+                const renderer = R.init(win);
+                var render_ctx = Frame.RenderContext{
                     .header = &self.header,
                     .chat_history = &self.chat_history,
                     .input = &self.input,
@@ -180,7 +190,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type) type {
                     .loading = &self.loading,
                     .key_handler = &self.key_handler,
                 };
-                FrameRenderer.render(win, &render_ctx);
+                Frame.render(renderer, &render_ctx);
 
                 try self.event_loop.render();
 
@@ -194,4 +204,9 @@ pub fn App(comptime Db: type, comptime EvLoop: type) type {
 }
 
 /// Default concrete type for production use
-pub const DefaultApp = App(db.DefaultDatabase, @import("event_loop.zig").DefaultEventLoop);
+pub const DefaultApp = App(
+    db.DefaultDatabase,
+    @import("event_loop.zig").DefaultEventLoop,
+    @import("rendering/renderer.zig").DefaultRenderer,
+    @import("agent/anthropic_provider.zig").AnthropicStreamingProvider,
+);

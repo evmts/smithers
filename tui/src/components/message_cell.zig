@@ -1,5 +1,4 @@
 const std = @import("std");
-const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 // ANSI 256 indexed colors (matching chat_history.zig)
 const user_bar_color: u8 = 10; // Bright green
@@ -18,152 +17,155 @@ pub const MessageRole = enum {
     tool_result,
 };
 
-pub const MessageCell = struct {
-    allocator: std.mem.Allocator,
-    role: MessageRole,
-    content: []const u8,
-    owned_content: bool,
-    streaming_text: ?[]const u8,
-    owned_streaming: bool,
+/// Generic message cell component
+pub fn MessageCell(comptime R: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        role: MessageRole,
+        content: []const u8,
+        owned_content: bool,
+        streaming_text: ?[]const u8,
+        owned_streaming: bool,
 
-    const Self = @This();
+        const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, role: MessageRole, content: []const u8) Self {
-        const owned = allocator.dupe(u8, content) catch content;
-        return .{
-            .allocator = allocator,
-            .role = role,
-            .content = owned,
-            .owned_content = owned.ptr != content.ptr,
-            .streaming_text = null,
-            .owned_streaming = false,
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        if (self.owned_content) {
-            self.allocator.free(self.content);
+        pub fn init(allocator: std.mem.Allocator, role: MessageRole, content: []const u8) Self {
+            const owned = allocator.dupe(u8, content) catch content;
+            return .{
+                .allocator = allocator,
+                .role = role,
+                .content = owned,
+                .owned_content = owned.ptr != content.ptr,
+                .streaming_text = null,
+                .owned_streaming = false,
+            };
         }
-        if (self.owned_streaming) {
-            if (self.streaming_text) |st| {
-                self.allocator.free(st);
+
+        pub fn deinit(self: *Self) void {
+            if (self.owned_content) {
+                self.allocator.free(self.content);
+            }
+            if (self.owned_streaming) {
+                if (self.streaming_text) |st| {
+                    self.allocator.free(st);
+                }
             }
         }
-    }
 
-    pub fn setStreaming(self: *Self, streaming_text: []const u8) void {
-        if (self.owned_streaming) {
-            if (self.streaming_text) |st| {
-                self.allocator.free(st);
+        pub fn setStreaming(self: *Self, streaming_text: []const u8) void {
+            if (self.owned_streaming) {
+                if (self.streaming_text) |st| {
+                    self.allocator.free(st);
+                }
+            }
+            const owned = self.allocator.dupe(u8, streaming_text) catch streaming_text;
+            self.streaming_text = owned;
+            self.owned_streaming = owned.ptr != streaming_text.ptr;
+        }
+
+        pub fn clearStreaming(self: *Self) void {
+            if (self.owned_streaming) {
+                if (self.streaming_text) |st| {
+                    self.allocator.free(st);
+                }
+            }
+            self.streaming_text = null;
+            self.owned_streaming = false;
+        }
+
+        pub fn getDisplayContent(self: *const Self) []const u8 {
+            return self.streaming_text orelse self.content;
+        }
+
+        pub fn getHeight(self: *const Self, width: u16) u16 {
+            const text = self.getDisplayContent();
+            const text_width = self.getTextWidth(width);
+            return switch (self.role) {
+                .system => 1,
+                else => countLines(text, text_width),
+            };
+        }
+
+        fn getTextWidth(self: *const Self, width: u16) u16 {
+            _ = self;
+            return if (width > 6) width - 6 else 1;
+        }
+
+        pub fn draw(self: *const Self, renderer: R) void {
+            const text_width = self.getTextWidth(renderer.width());
+            const content = self.getDisplayContent();
+            const content_lines = countLines(content, text_width);
+
+            switch (self.role) {
+                .user => self.drawUser(renderer, content, content_lines, text_width),
+                .assistant => self.drawAssistant(renderer, content, content_lines, text_width),
+                .system => self.drawSystem(renderer, content),
+                .tool_call => self.drawToolCall(renderer, content, content_lines, text_width),
+                .tool_result => self.drawToolResult(renderer, content, content_lines, text_width),
             }
         }
-        const owned = self.allocator.dupe(u8, streaming_text) catch streaming_text;
-        self.streaming_text = owned;
-        self.owned_streaming = owned.ptr != streaming_text.ptr;
-    }
 
-    pub fn clearStreaming(self: *Self) void {
-        if (self.owned_streaming) {
-            if (self.streaming_text) |st| {
-                self.allocator.free(st);
+        fn drawUser(self: *const Self, renderer: R, content: []const u8, content_lines: u16, text_width: u16) void {
+            _ = self;
+            const bar_style: R.Style = .{ .fg = .{ .index = user_bar_color } };
+            const text_style: R.Style = .{ .fg = .{ .index = user_text_color } };
+
+            var row: u16 = 0;
+            while (row < content_lines) : (row += 1) {
+                renderer.drawCell(2, row, "│", bar_style);
             }
-        }
-        self.streaming_text = null;
-        self.owned_streaming = false;
-    }
 
-    pub fn getDisplayContent(self: *const Self) []const u8 {
-        return self.streaming_text orelse self.content;
-    }
-
-    pub fn getHeight(self: *const Self, width: u16) u16 {
-        const text = self.getDisplayContent();
-        const text_width = self.getTextWidth(width);
-        return switch (self.role) {
-            .system => 1,
-            else => countLines(text, text_width),
-        };
-    }
-
-    fn getTextWidth(self: *const Self, width: u16) u16 {
-        _ = self;
-        return if (width > 6) width - 6 else 1;
-    }
-
-    pub fn draw(self: *const Self, renderer: DefaultRenderer) void {
-        const text_width = self.getTextWidth(renderer.width());
-        const content = self.getDisplayContent();
-        const content_lines = countLines(content, text_width);
-
-        switch (self.role) {
-            .user => self.drawUser(renderer, content, content_lines, text_width),
-            .assistant => self.drawAssistant(renderer, content, content_lines, text_width),
-            .system => self.drawSystem(renderer, content),
-            .tool_call => self.drawToolCall(renderer, content, content_lines, text_width),
-            .tool_result => self.drawToolResult(renderer, content, content_lines, text_width),
-        }
-    }
-
-    fn drawUser(self: *const Self, renderer: DefaultRenderer, content: []const u8, content_lines: u16, text_width: u16) void {
-        _ = self;
-        const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_bar_color } };
-        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_text_color } };
-
-        var row: u16 = 0;
-        while (row < content_lines) : (row += 1) {
-            renderer.drawCell(2, row, "│", bar_style);
+            const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
+            _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
         }
 
-        const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
-        _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
-    }
+        fn drawAssistant(self: *const Self, renderer: R, content: []const u8, content_lines: u16, text_width: u16) void {
+            _ = self;
+            const text_style: R.Style = .{ .fg = .{ .index = assistant_text_color } };
 
-    fn drawAssistant(self: *const Self, renderer: DefaultRenderer, content: []const u8, content_lines: u16, text_width: u16) void {
-        _ = self;
-        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = assistant_text_color } };
-
-        const text_renderer = renderer.subRegion(2, 0, text_width + 2, content_lines);
-        _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
-    }
-
-    fn drawSystem(self: *const Self, renderer: DefaultRenderer, content: []const u8) void {
-        _ = self;
-        const msg_len: u16 = @intCast(@min(content.len, renderer.width() -| 4));
-        const x_off: u16 = if (renderer.width() > msg_len) (renderer.width() - msg_len) / 2 else 2;
-
-        const sys_renderer = renderer.subRegion(x_off, 0, msg_len, 1);
-        const style: DefaultRenderer.Style = .{ .fg = .{ .index = system_text_color } };
-        _ = sys_renderer.window.printSegment(.{ .text = content, .style = style }, .{});
-    }
-
-    fn drawToolCall(self: *const Self, renderer: DefaultRenderer, content: []const u8, content_lines: u16, text_width: u16) void {
-        _ = self;
-        const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_call_color } };
-        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_call_color } };
-
-        var row: u16 = 0;
-        while (row < content_lines) : (row += 1) {
-            renderer.drawCell(2, row, "▶", bar_style);
+            const text_renderer = renderer.subRegion(2, 0, text_width + 2, content_lines);
+            _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
         }
 
-        const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
-        _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
-    }
+        fn drawSystem(self: *const Self, renderer: R, content: []const u8) void {
+            _ = self;
+            const msg_len: u16 = @intCast(@min(content.len, renderer.width() -| 4));
+            const x_off: u16 = if (renderer.width() > msg_len) (renderer.width() - msg_len) / 2 else 2;
 
-    fn drawToolResult(self: *const Self, renderer: DefaultRenderer, content: []const u8, content_lines: u16, text_width: u16) void {
-        _ = self;
-        const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_result_color } };
-        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = dim_color } };
-
-        var row: u16 = 0;
-        while (row < content_lines) : (row += 1) {
-            renderer.drawCell(2, row, "◀", bar_style);
+            const sys_renderer = renderer.subRegion(x_off, 0, msg_len, 1);
+            const style: R.Style = .{ .fg = .{ .index = system_text_color } };
+            _ = sys_renderer.window.printSegment(.{ .text = content, .style = style }, .{});
         }
 
-        const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
-        _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
-    }
-};
+        fn drawToolCall(self: *const Self, renderer: R, content: []const u8, content_lines: u16, text_width: u16) void {
+            _ = self;
+            const bar_style: R.Style = .{ .fg = .{ .index = tool_call_color } };
+            const text_style: R.Style = .{ .fg = .{ .index = tool_call_color } };
+
+            var row: u16 = 0;
+            while (row < content_lines) : (row += 1) {
+                renderer.drawCell(2, row, "▶", bar_style);
+            }
+
+            const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
+            _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
+        }
+
+        fn drawToolResult(self: *const Self, renderer: R, content: []const u8, content_lines: u16, text_width: u16) void {
+            _ = self;
+            const bar_style: R.Style = .{ .fg = .{ .index = tool_result_color } };
+            const text_style: R.Style = .{ .fg = .{ .index = dim_color } };
+
+            var row: u16 = 0;
+            while (row < content_lines) : (row += 1) {
+                renderer.drawCell(2, row, "◀", bar_style);
+            }
+
+            const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
+            _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
+        }
+    };
+}
 
 fn countLines(text: []const u8, width: u16) u16 {
     if (width == 0) return 1;
@@ -188,6 +190,8 @@ fn countLines(text: []const u8, width: u16) u16 {
     return lines;
 }
 
+pub const DefaultMessageCell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+
 // Tests
 test "countLines single line" {
     try std.testing.expectEqual(@as(u16, 1), countLines("hello", 80));
@@ -207,59 +211,68 @@ test "countLines empty" {
 }
 
 test "MessageCell init user" {
-    var cell = MessageCell.init(std.testing.allocator, .user, "Hello world");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .user, "Hello world");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.user, cell.role);
     try std.testing.expectEqualStrings("Hello world", cell.content);
 }
 
 test "MessageCell init assistant" {
-    var cell = MessageCell.init(std.testing.allocator, .assistant, "Response text");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .assistant, "Response text");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.assistant, cell.role);
 }
 
 test "MessageCell init system" {
-    var cell = MessageCell.init(std.testing.allocator, .system, "System message");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .system, "System message");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.system, cell.role);
 }
 
 test "MessageCell init tool_call" {
-    var cell = MessageCell.init(std.testing.allocator, .tool_call, "read_file(path)");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .tool_call, "read_file(path)");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.tool_call, cell.role);
 }
 
 test "MessageCell init tool_result" {
-    var cell = MessageCell.init(std.testing.allocator, .tool_result, "file contents");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .tool_result, "file contents");
     defer cell.deinit();
     try std.testing.expectEqual(MessageRole.tool_result, cell.role);
 }
 
 test "MessageCell getHeight user" {
-    var cell = MessageCell.init(std.testing.allocator, .user, "Short message");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .user, "Short message");
     defer cell.deinit();
     const height = cell.getHeight(80);
     try std.testing.expectEqual(@as(u16, 1), height);
 }
 
 test "MessageCell getHeight system always 1" {
-    var cell = MessageCell.init(std.testing.allocator, .system, "System message that is quite long");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .system, "System message that is quite long");
     defer cell.deinit();
     const height = cell.getHeight(80);
     try std.testing.expectEqual(@as(u16, 1), height);
 }
 
 test "MessageCell getHeight with wrapping" {
-    var cell = MessageCell.init(std.testing.allocator, .user, "This is a longer message that should wrap across multiple lines when width is small");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .user, "This is a longer message that should wrap across multiple lines when width is small");
     defer cell.deinit();
     const height = cell.getHeight(20);
     try std.testing.expect(height > 1);
 }
 
 test "MessageCell setStreaming" {
-    var cell = MessageCell.init(std.testing.allocator, .assistant, "Initial");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .assistant, "Initial");
     defer cell.deinit();
 
     cell.setStreaming("Streaming content...");
@@ -270,7 +283,8 @@ test "MessageCell setStreaming" {
 }
 
 test "MessageCell streaming height" {
-    var cell = MessageCell.init(std.testing.allocator, .assistant, "Short");
+    const Cell = MessageCell(@import("../rendering/renderer.zig").DefaultRenderer);
+    var cell = Cell.init(std.testing.allocator, .assistant, "Short");
     defer cell.deinit();
 
     const initial_height = cell.getHeight(80);
