@@ -265,13 +265,61 @@ Only when **context completely shifts** (different language, different codebase,
 
 ---
 
+# Agent Components
+
+## Claude
+
+Claude CLI agent for AI tasks.
+
+```tsx
+<Claude 
+  model="sonnet"              // "sonnet" | "opus" | "haiku"
+  allowedTools={["Read", "Bash"]}
+  maxTurns={10}
+  permissionMode="bypassPermissions"
+>
+  Your prompt here
+</Claude>
+```
+
+## Amp
+
+Amp CLI agent (alternative to Claude CLI). Uses `amp` CLI under the hood.
+
+```tsx
+<Amp
+  mode="smart"                // "smart" (SOTA) | "rush" (faster/cheaper)
+  maxTurns={50}               // handled via prompt, not CLI flag
+  permissionMode="bypassPermissions"
+  systemPrompt="Be concise"
+  labels={["feature", "urgent"]}
+>
+  Your prompt here
+</Amp>
+```
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `children` | `ReactNode` | - | The prompt text |
+| `mode` | `'smart' \| 'rush'` | `'smart'` | Agent mode |
+| `maxTurns` | `number` | - | Turn limit (prompt-injected) |
+| `systemPrompt` | `string` | - | System prompt |
+| `permissionMode` | `'default' \| 'acceptEdits' \| 'bypassPermissions'` | `'default'` | Permission handling |
+| `timeout` | `number` | - | Timeout in ms |
+| `cwd` | `string` | - | Working directory |
+| `continueThread` | `boolean` | - | Continue from last thread |
+| `resumeThread` | `string` | - | Resume specific thread ID |
+| `labels` | `string[]` | - | Thread labels |
+
+---
+
 # Guardrails for agents generating Smithers code
 
 * **Prefer single `<Claude>` with comprehensive prompt** over many phases for related tasks.
 * Use `<Ralph>` for iterative improvement with improvement-based stop conditions (not "done" checks).
 * Use phases only when context completely shifts (different language/codebase).
 * Use `db.state` for any branching/retry/human checkpoints.
-* Scope tool permissions per `<Claude>` call (`allowedTools`) and choose conservative `permissionMode` by default.
+* Scope tool permissions per `<Claude>` or `<Amp>` call and choose conservative `permissionMode` by default.
 * Never omit `maxIterations`.
 
 ---
