@@ -49,6 +49,11 @@
 - `SCREAMING_SNAKE_CASE` for compile-time constants
 - Descriptive names over short abbreviations
 
+### Imports
+- **No local aliases for imported types** - Use full paths like `streaming.ToolCallInfo` instead of `const ToolCallInfo = streaming.ToolCallInfo`
+- Aliases obscure where things come from; verbose paths improve auditability
+- Exception: Very frequently used types in a single file where verbosity hurts readability
+
 ### Dependencies
 - Minimize external dependencies
 - Keep vendor code isolated and well-documented

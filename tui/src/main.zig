@@ -42,18 +42,6 @@ const loading_mod = @import("loading.zig");
 
 pub const panic = vaxis.panic_handler;
 
-const spinner_frames = loading_mod.spinner_frames;
-
-const HEADER_HEIGHT = Layout.HEADER_HEIGHT;
-const INPUT_HEIGHT = Layout.INPUT_HEIGHT;
-const STATUS_HEIGHT = Layout.STATUS_HEIGHT;
-const help_message = help.INLINE_HELP;
-
-const ToolCallInfo = streaming.ToolCallInfo;
-const StreamingState = streaming.StreamingState;
-const ToolResultInfo = loading_mod.ToolResultInfo;
-const LoadingState = loading_mod.LoadingState;
-
 pub fn main() !void {
     // Open log file
     log_file = std.fs.createFileAbsolute("/tmp/smithers-tui.log", .{ .truncate = true }) catch null;
@@ -108,7 +96,7 @@ pub fn main() !void {
     const header = Header.init(alloc, "0.1.0", if (has_ai) "claude-sonnet-4" else "demo-mode");
     var status_bar = StatusBar.init();
 
-    var loading = LoadingState{};
+    var loading = loading_mod.LoadingState{};
     var last_ctrl_c: i64 = 0;
     var prefix_mode: bool = false; // tmux-style Ctrl+B prefix mode
 
@@ -140,7 +128,7 @@ pub fn main() !void {
                     else if (mouse.button == .left) {
                         const col: u16 = if (mouse.col >= 0) @intCast(mouse.col) else 0;
                         // Adjust row for header offset
-                        const raw_row: i16 = mouse.row - @as(i16, HEADER_HEIGHT);
+                        const raw_row: i16 = mouse.row - @as(i16, Layout.HEADER_HEIGHT);
                         const row: u16 = if (raw_row >= 0) @intCast(raw_row) else 0;
                         
                         if (mouse.type == .press) {
@@ -211,7 +199,7 @@ pub fn main() !void {
                     // ? - show help message when input empty (ephemeral)
                     if (key.text) |text| {
                         if (text.len == 1 and text[0] == '?' and input.isEmpty()) {
-                            _ = try database.addEphemeralMessage(.assistant, help_message);
+                            _ = try database.addEphemeralMessage(.assistant, help.INLINE_HELP);
                             try chat_history.reload(&database);
                         }
                     }
@@ -353,7 +341,7 @@ pub fn main() !void {
                                 _ = try database.addMessage(.system, "Started new conversation.");
                                 try chat_history.reload(&database);
                             } else if (std.mem.eql(u8, command, "/help")) {
-                                _ = try database.addEphemeralMessage(.assistant, help_message);
+                                _ = try database.addEphemeralMessage(.assistant, help.INLINE_HELP);
                                 try chat_history.reload(&database);
                             } else if (std.mem.eql(u8, command, "/model")) {
                                 _ = try database.addEphemeralMessage(.system, "Current model: claude-sonnet-4-20250514");
@@ -453,7 +441,7 @@ pub fn main() !void {
                 try chat_history.reload(&database);
 
                 // Initialize streaming state
-                loading.streaming = StreamingState.init(alloc);
+                loading.streaming = streaming.StreamingState.init(alloc);
                 loading.streaming.?.message_id = msg_id;
                 loading.streaming.?.startStream(api_key, request_body) catch |err| {
                     _ = std.log.err("Failed to start stream: {s}", .{@errorName(err)});
@@ -501,7 +489,7 @@ pub fn main() !void {
                 try chat_history.reload(&database);
 
                 // Initialize streaming state
-                loading.streaming = StreamingState.init(alloc);
+                loading.streaming = streaming.StreamingState.init(alloc);
                 loading.streaming.?.message_id = msg_id;
                 loading.streaming.?.startStream(api_key, request_body) catch |err| {
                     _ = std.log.err("Failed to start continuation stream: {s}", .{@errorName(err)});
@@ -764,17 +752,17 @@ pub fn main() !void {
         const height = win.height;
 
         // Layout: header, chat area, input box, status bar
-        const chrome_height = HEADER_HEIGHT + INPUT_HEIGHT + STATUS_HEIGHT;
+        const chrome_height = Layout.HEADER_HEIGHT + Layout.INPUT_HEIGHT + Layout.STATUS_HEIGHT;
         const chat_height: u16 = if (height > chrome_height) height - chrome_height else 1;
-        const input_y: u16 = HEADER_HEIGHT + chat_height;
-        const status_bar_y: u16 = input_y + INPUT_HEIGHT;
+        const input_y: u16 = Layout.HEADER_HEIGHT + chat_height;
+        const status_bar_y: u16 = input_y + Layout.INPUT_HEIGHT;
         
         // Draw header at top
         const header_win = win.child(.{
             .x_off = 0,
             .y_off = 0,
             .width = win.width,
-            .height = HEADER_HEIGHT,
+            .height = Layout.HEADER_HEIGHT,
         });
         header.draw(header_win, &database);
         
@@ -782,7 +770,7 @@ pub fn main() !void {
         if (chat_history.hasConversation() or loading.is_loading) {
             const chat_win = win.child(.{
                 .x_off = 0,
-                .y_off = HEADER_HEIGHT,
+                .y_off = Layout.HEADER_HEIGHT,
                 .width = win.width,
                 .height = chat_height,
             });
@@ -790,7 +778,7 @@ pub fn main() !void {
         } else {
             const content_win = win.child(.{
                 .x_off = 0,
-                .y_off = HEADER_HEIGHT,
+                .y_off = Layout.HEADER_HEIGHT,
                 .width = win.width,
                 .height = chat_height,
             });
@@ -821,7 +809,7 @@ pub fn main() !void {
             .x_off = 0,
             .y_off = input_y,
             .width = win.width,
-            .height = INPUT_HEIGHT,
+            .height = Layout.INPUT_HEIGHT,
         });
         input.drawInWindow(input_win);
 
