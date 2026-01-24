@@ -1,8 +1,27 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-const ProductionApp = @import("app.zig").ProductionApp;
+const sqlite = @import("sqlite");
 
-// File-based logging
+const app_mod = @import("app.zig");
+const db = @import("db.zig");
+const event_loop_mod = @import("event_loop.zig");
+const renderer_mod = @import("rendering/renderer.zig");
+const anthropic = @import("agent/anthropic_provider.zig");
+const environment_mod = @import("environment.zig");
+const clock_mod = @import("clock.zig");
+const tool_executor_mod = @import("agent/tool_executor.zig");
+
+/// Production App - all dependencies explicitly wired
+const App = app_mod.App(
+    db.Database(sqlite.Db),
+    event_loop_mod.EventLoop(vaxis.Vaxis, vaxis.Tty),
+    renderer_mod.Renderer(renderer_mod.VaxisBackend),
+    anthropic.AnthropicStreamingProvider,
+    environment_mod.Environment(environment_mod.PosixEnv),
+    clock_mod.Clock(clock_mod.StdClock),
+    tool_executor_mod.ToolExecutor(tool_executor_mod.BuiltinRegistryFactory),
+);
+
 var log_file: ?std.fs.File = null;
 
 pub const std_options: std.Options = .{
@@ -27,7 +46,6 @@ fn fileLog(
 pub const panic = vaxis.panic_handler;
 
 pub fn main() !void {
-    // Open log file
     log_file = std.fs.createFileAbsolute("/tmp/smithers-tui.log", .{ .truncate = true }) catch null;
     defer if (log_file) |f| f.close();
 
@@ -36,7 +54,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var app = try ProductionApp.init(gpa.allocator());
+    var app = try App.init(gpa.allocator());
     defer app.deinit();
     try app.run();
 }

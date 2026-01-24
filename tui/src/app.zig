@@ -204,14 +204,3 @@ pub fn App(
         }
     };
 }
-
-/// Production wiring - all concrete types explicitly specified
-pub const ProductionApp = App(
-    db.Database(@import("sqlite").Db),
-    @import("event_loop.zig").EventLoop(@import("vaxis").Vaxis, @import("vaxis").Tty),
-    @import("rendering/renderer.zig").Renderer(@import("rendering/renderer.zig").VaxisBackend),
-    @import("agent/anthropic_provider.zig").AnthropicStreamingProvider,
-    environment_mod.Environment(environment_mod.PosixEnv),
-    clock_mod.Clock(clock_mod.StdClock),
-    tool_executor_mod.ToolExecutor(tool_executor_mod.BuiltinRegistryFactory),
-);
