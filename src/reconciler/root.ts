@@ -16,7 +16,13 @@ function isThenable(value: unknown): value is Promise<ReactNode> {
 }
 
 export interface SmithersRoot {
-  mount(App: () => ReactNode | Promise<ReactNode>): Promise<void>
+  /**
+   * Mount a component or element to the root.
+   * Accepts either:
+   * - A component function: () => <MyApp />
+   * - A JSX element directly: <MyApp />
+   */
+  mount(AppOrElement: (() => ReactNode | Promise<ReactNode>) | ReactNode): Promise<void>
   render(element: ReactNode): Promise<void>
   getTree(): SmithersNode
   dispose(): void
@@ -77,7 +83,7 @@ export function createSmithersRoot(): SmithersRoot {
   }
 
   return {
-    async mount(App: () => ReactNode | Promise<ReactNode>): Promise<void> {
+    async mount(AppOrElement: (() => ReactNode | Promise<ReactNode>) | ReactNode): Promise<void> {
       if (fiberRoot) {
         SmithersReconciler.updateContainer(null, fiberRoot, null, () => {})
       }
@@ -98,11 +104,17 @@ export function createSmithersRoot(): SmithersRoot {
 
       let element: ReactNode
       try {
-        const result = App()
-        if (isThenable(result)) {
-          element = await result
+        // Accept both component functions and JSX elements directly
+        if (typeof AppOrElement === 'function') {
+          const result = AppOrElement()
+          if (isThenable(result)) {
+            element = await result
+          } else {
+            element = result as ReactNode
+          }
         } else {
-          element = result as ReactNode
+          // It's already a ReactNode (JSX element)
+          element = AppOrElement
         }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
