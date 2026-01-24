@@ -12,7 +12,9 @@
     ".": "./dist/src/index.js",
     "./jsx-runtime": "./dist/src/reconciler/jsx-runtime.js",
     "./jsx-dev-runtime": "./dist/src/reconciler/jsx-runtime.js",
+    "./components": "./dist/src/components/index.js",
     "./db": "./dist/src/db/index.js",
+    "./hooks": "./dist/src/hooks/index.js",
     "./supersmithers": "./dist/src/supersmithers/index.js",
     "./supersmithers/runtime": "./dist/src/supersmithers/runtime.js",
     "./supersmithers/register": "./dist/src/supersmithers/register.js"
