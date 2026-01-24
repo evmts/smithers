@@ -28,7 +28,8 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type, comptime Event: type)
             errdefer self.vx.deinit(allocator, self.tty.writer());
 
             self.loop = .{ .tty = &self.tty, .vaxis = &self.vx };
-            try self.loop.init();
+            // NOTE: Don't call loop.init() here - pointers become dangling after return
+            // loop.init() must be called in start() after struct has stable address
 
             return self;
         }
@@ -41,6 +42,10 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type, comptime Event: type)
         }
 
         pub fn start(self: *Self) !void {
+            // Re-point loop to stable self address (init() creates dangling ptrs)
+            self.loop.tty = &self.tty;
+            self.loop.vaxis = &self.vx;
+            try self.loop.init(); // Register signal handlers with stable ptr
             try self.loop.start();
             try self.vx.enterAltScreen(self.tty.writer());
             try self.vx.setMouseMode(self.tty.writer(), true);
