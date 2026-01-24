@@ -1,0 +1,3 @@
+[tools]
+zig = "0.15.1"
+hyperfine = "1.19.0"

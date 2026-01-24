@@ -1,0 +1,9 @@
+.{
+    .name = .sqlite,
+    .version = "3.49.2",
+    .paths = .{
+        "sqlite3.c",
+        "sqlite3.h",
+        "sqlite3ext.h",
+    },
+}

@@ -1,0 +1,21 @@
+.{
+    .name = .vaxis,
+    .fingerprint = 0x14fbbb94fc556305,
+    .version = "0.5.1",
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{
+        .zigimg = .{
+            .path = "deps/zigimg",
+        },
+        .uucode = .{
+            .path = "deps/uucode",
+        },
+    },
+    .paths = .{
+        "LICENSE",
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "deps",
+    },
+}

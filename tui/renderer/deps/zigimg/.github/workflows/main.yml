@@ -1,0 +1,34 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{matrix.os}}
+    steps:
+      - name: Prepare git
+        run: |-
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - name: Checkout zigimg
+        uses: actions/checkout@v3
+        with:
+          path: zigimg
+      - name: Checkout test-suite fixtures
+        uses: actions/checkout@v3
+        with:
+          repository: zigimg/test-suite
+          path: test-suite
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: AST Verify
+        run: zig fmt --check --ast-check src/
+        working-directory: zigimg
+      - name: Run test suite
+        run: zig build test
+        working-directory: zigimg

@@ -1,0 +1,322 @@
+const std = @import("std");
+
+const Image = @import("../Image.zig");
+const FormatInterface = @import("../FormatInterface.zig");
+const color = @import("../color.zig");
+const PixelFormat = @import("../pixel_format.zig").PixelFormat;
+const PixelFormatConverter = @import("../PixelFormatConverter.zig");
+const io = @import("../io.zig");
+
+const FrameHeader = @import("./jpeg/FrameHeader.zig");
+const JFIFHeader = @import("./jpeg/JFIFHeader.zig");
+
+const Markers = @import("./jpeg/utils.zig").Markers;
+const QuantizationTable = @import("./jpeg/quantization.zig").Table;
+
+const HuffmanReader = @import("./jpeg/huffman.zig").Reader;
+const HuffmanTable = @import("./jpeg/huffman.zig").Table;
+const Frame = @import("./jpeg/Frame.zig");
+const Scan = @import("./jpeg/Scan.zig");
+const JPEGWriter = @import("./jpeg/writer.zig").JPEGWriter;
+
+// TODO: Precisions other than 8-bit
+
+// TODO: Hierarchical mode of JPEG compression.
+
+const JPEG_DEBUG = false;
+
+pub const JPEG = struct {
+    frame: ?Frame = null,
+    allocator: std.mem.Allocator,
+    quantization_tables: [4]?QuantizationTable = @splat(null),
+    dc_huffman_tables: [4]?HuffmanTable = @splat(null),
+    ac_huffman_tables: [4]?HuffmanTable = @splat(null),
+    restart_interval: u16 = 0,
+
+    pub const EncoderOptions = struct {
+        /// JPEG quality (1-100, where 100 is highest quality)
+        quality: u8 = 75,
+        /// Whether to auto-convert unsupported pixel formats
+        auto_convert: bool = false,
+    };
+
+    pub fn init(allocator: std.mem.Allocator) JPEG {
+        return .{
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *JPEG) void {
+        if (self.frame) |*frame| {
+            frame.deinit();
+        }
+    }
+
+    fn parseDefineQuantizationTables(self: *JPEG, reader: *std.Io.Reader) Image.ReadError!void {
+        var segment_size = try reader.takeInt(u16, .big);
+        if (JPEG_DEBUG) std.debug.print("DefineQuantizationTables: segment size = 0x{X}\n", .{segment_size});
+        segment_size -= 2;
+
+        while (segment_size > 0) {
+            const precision_and_destination = try reader.takeByte();
+            const table_precision = precision_and_destination >> 4;
+            const table_destination = precision_and_destination & 0b11;
+
+            const quantization_table = try QuantizationTable.read(table_precision, reader);
+            switch (quantization_table) {
+                .q8 => segment_size -= 64 + 1,
+                .q16 => segment_size -= 128 + 1,
+            }
+
+            self.quantization_tables[table_destination] = quantization_table;
+            if (JPEG_DEBUG) std.debug.print("  Table with precision {} installed at {}\n", .{ table_precision, table_destination });
+        }
+    }
+
+    fn parseScan(self: *JPEG, read_stream: *io.ReadStream) Image.ReadError!void {
+        if (self.frame) |frame| {
+            try Scan.performScan(&frame, self.restart_interval, read_stream);
+        } else {
+            return Image.ReadError.InvalidData;
+        }
+    }
+
+    fn initializePixels(self: *JPEG, pixels_opt: *?color.PixelStorage) Image.ReadError!void {
+        if (self.frame) |frame| {
+            var pixel_format: PixelFormat = undefined;
+            switch (frame.frame_header.components.len) {
+                1 => pixel_format = .grayscale8,
+                3 => pixel_format = .rgb24,
+                else => unreachable,
+            }
+
+            const pixel_count = @as(usize, @intCast(frame.frame_header.width)) * @as(usize, @intCast(frame.frame_header.height));
+            pixels_opt.* = try color.PixelStorage.init(self.allocator, pixel_format, pixel_count);
+        } else {
+            return Image.ReadError.InvalidData;
+        }
+    }
+
+    pub fn read(self: *JPEG, read_stream: *io.ReadStream, pixels_opt: *?color.PixelStorage) Image.ReadError!Frame {
+        errdefer {
+            if (pixels_opt.*) |pixels| {
+                pixels.deinit(self.allocator);
+                pixels_opt.* = null;
+            }
+        }
+
+        const reader = read_stream.reader();
+        var marker = try reader.takeInt(u16, .big);
+
+        if (marker != @intFromEnum(Markers.start_of_image)) {
+            return Image.ReadError.InvalidData;
+        }
+
+        while (marker != @intFromEnum(Markers.end_of_image)) {
+            marker = try reader.takeInt(u16, .big);
+
+            if (JPEG_DEBUG) std.debug.print("Parsing marker value: 0x{X}\n", .{marker});
+
+            switch (@as(Markers, @enumFromInt(marker))) {
+                .sof0, .sof2 => { // Baseline DCT, progressive DCT Huffman coding
+                    if (self.frame != null) {
+                        return Image.Error.Unsupported;
+                    }
+
+                    self.frame = try Frame.read(self.allocator, @enumFromInt(marker), &self.quantization_tables, &self.dc_huffman_tables, &self.ac_huffman_tables, reader);
+                    try self.initializePixels(pixels_opt);
+                },
+
+                .sof1 => return Image.Error.Unsupported, // extended sequential DCT Huffman coding
+                .sof3 => return Image.Error.Unsupported, // lossless (sequential) Huffman coding
+                .sof5 => return Image.Error.Unsupported,
+                .sof6 => return Image.Error.Unsupported,
+                .sof7 => return Image.Error.Unsupported,
+                .sof9 => return Image.Error.Unsupported, // extended sequential DCT arithmetic coding
+                .sof10 => return Image.Error.Unsupported, // progressive DCT arithmetic coding
+                .sof11 => return Image.Error.Unsupported, // lossless (sequential) arithmetic coding
+                .sof13 => return Image.Error.Unsupported,
+                .sof14 => return Image.Error.Unsupported,
+                .sof15 => return Image.Error.Unsupported,
+                .define_huffman_tables => {
+                    try self.parseDefineHuffmanTables(reader);
+                },
+                .start_of_scan => {
+                    try self.parseScan(read_stream);
+                },
+
+                .define_quantization_tables => {
+                    try self.parseDefineQuantizationTables(reader);
+                },
+
+                .comment => {
+                    if (JPEG_DEBUG) std.debug.print("Skipping comment segment\n", .{});
+
+                    const comment_length = try reader.takeInt(u16, .big);
+                    try read_stream.seekBy(comment_length - 2);
+                },
+
+                .app0, .app1, .app2, .app3, .app4, .app5, .app6, .app7, .app8, .app9, .app10, .app11, .app12, .app13, .app14, .app15 => {
+                    if (JPEG_DEBUG) std.debug.print("Skipping application data segment\n", .{});
+                    const application_data_length = try reader.takeInt(u16, .big);
+                    try read_stream.seekBy(application_data_length - 2);
+                },
+                .define_restart_interval => {
+                    try self.parseDefineRestartInterval(reader);
+                },
+                .restart0, .restart1, .restart2, .restart3, .restart4, .restart5, .restart6, .restart7 => {
+                    continue;
+                },
+                .end_of_image => {
+                    continue;
+                },
+                else => {
+                    return Image.ReadError.InvalidData;
+                },
+            }
+        }
+
+        if (self.frame) |*frame| {
+            try frame.dequantizeBlocks();
+            frame.idctBlocks();
+            try frame.renderToPixels(&pixels_opt.*.?);
+
+            return frame.*;
+        }
+
+        return Image.ReadError.InvalidData;
+    }
+
+    // Format interface
+    pub fn formatInterface() FormatInterface {
+        return FormatInterface{
+            .formatDetect = formatDetect,
+            .readImage = readImage,
+            .writeImage = writeImage,
+        };
+    }
+
+    fn formatDetect(read_stream: *io.ReadStream) Image.ReadError!bool {
+        const reader = read_stream.reader();
+        const maybe_start_of_image = try reader.peekInt(u16, .big);
+        return maybe_start_of_image == @intFromEnum(Markers.start_of_image);
+    }
+
+    fn readImage(allocator: std.mem.Allocator, read_stream: *io.ReadStream) Image.ReadError!Image {
+        var result = Image{};
+        errdefer result.deinit(allocator);
+
+        var jpeg = JPEG.init(allocator);
+        defer jpeg.deinit();
+
+        var pixels_opt: ?color.PixelStorage = null;
+
+        const frame = try jpeg.read(read_stream, &pixels_opt);
+
+        result.width = frame.frame_header.width;
+        result.height = frame.frame_header.height;
+
+        if (pixels_opt) |pixels| {
+            result.pixels = pixels;
+        } else {
+            return Image.ReadError.InvalidData;
+        }
+
+        return result;
+    }
+
+    fn writeImage(
+        allocator: std.mem.Allocator,
+        write_stream: *io.WriteStream,
+        image: Image,
+        encoder_options: Image.EncoderOptions,
+    ) Image.WriteError!void {
+        // Extract JPEG-specific encoder options
+        const jpeg_options = encoder_options.jpeg;
+
+        // Validate quality parameter
+        if (jpeg_options.quality == 0 or jpeg_options.quality > 100) {
+            return Image.WriteError.InvalidData;
+        }
+
+        // Determine if format conversion is needed
+        var converted_image = image;
+        var needs_cleanup = false;
+        defer if (needs_cleanup) converted_image.pixels.deinit(allocator);
+
+        const current_format = std.meta.activeTag(image.pixels);
+        const target_format: PixelFormat = switch (current_format) {
+            .grayscale8, .rgb24 => current_format,
+            // Grayscale variants convert to grayscale8
+            .grayscale1, .grayscale2, .grayscale4, .grayscale16, .grayscale8Alpha, .grayscale16Alpha => .grayscale8,
+            // Everything else converts to rgb24
+            else => .rgb24,
+        };
+
+        // Convert format if needed
+        if (jpeg_options.auto_convert and target_format != current_format) {
+            converted_image.pixels = PixelFormatConverter.convert(allocator, &image.pixels, target_format) catch |err| {
+                return switch (err) {
+                    error.NoConversionNeeded => Image.WriteError.InvalidData,
+                    error.NoConversionAvailable => Image.WriteError.InvalidData,
+                    error.QuantizeError => Image.WriteError.InvalidData,
+                    error.Unsupported => Image.WriteError.InvalidData,
+                    error.OutOfMemory => error.OutOfMemory,
+                };
+            };
+            needs_cleanup = true;
+        }
+
+        // Get the writer from the write stream
+        const writer = write_stream.writer();
+
+        // Create JPEG writer
+        var jpeg_writer = JPEGWriter.init(writer);
+
+        // Encode the converted image
+        try jpeg_writer.encode(converted_image.pixels, converted_image.width, converted_image.height, jpeg_options.quality);
+
+        // Flush the write stream to ensure all data is written
+        try write_stream.flush();
+    }
+
+    fn parseDefineHuffmanTables(self: *JPEG, reader: *std.Io.Reader) Image.ReadError!void {
+        var segment_size = try reader.takeInt(u16, .big);
+        if (JPEG_DEBUG) std.debug.print("DefineHuffmanTables: segment size = 0x{X}\n", .{segment_size});
+        segment_size -= 2;
+
+        while (segment_size > 0) {
+            const class_and_destination = try reader.takeByte();
+            const table_class = class_and_destination >> 4;
+            const table_destination = class_and_destination & 0x0F;
+
+            const huffman_table = try HuffmanTable.read(self.allocator, table_class, reader);
+
+            if (table_class == 0) {
+                if (self.dc_huffman_tables[table_destination]) |*old_huffman_table| {
+                    old_huffman_table.deinit();
+                }
+                self.dc_huffman_tables[table_destination] = huffman_table;
+            } else {
+                if (self.ac_huffman_tables[table_destination]) |*old_huffman_table| {
+                    old_huffman_table.deinit();
+                }
+                self.ac_huffman_tables[table_destination] = huffman_table;
+            }
+
+            if (JPEG_DEBUG) std.debug.print("  Table with class {} installed at {}\n", .{ table_class, table_destination });
+
+            // Class+Destination + code counts + code table
+            segment_size -= 1 + 16 + @as(u16, @intCast(huffman_table.code_map.count()));
+        }
+    }
+
+    fn parseDefineRestartInterval(self: *JPEG, reader: *std.Io.Reader) !void {
+        const segment_length = try reader.takeInt(u16, .big);
+        std.debug.assert(segment_length - 4 == 0);
+
+        self.restart_interval = try reader.takeInt(u16, .big);
+
+        if (JPEG_DEBUG) std.debug.print("Restart Interval: {}\n", .{self.restart_interval});
+    }
+};

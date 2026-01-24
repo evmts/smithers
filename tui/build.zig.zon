@@ -1,0 +1,21 @@
+.{
+    .name = .smithers_tui,
+    .fingerprint = 0xb7549699c919439d,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{
+        .vaxis = .{
+            .path = "renderer",
+        },
+        .sqlite = .{
+            .path = "sqlite",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "renderer",
+        "sqlite",
+    },
+}
