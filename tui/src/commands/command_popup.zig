@@ -168,26 +168,26 @@ pub const CommandPopup = struct {
     }
 
     /// Draw the popup above the input area
-    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
+    pub fn draw(self: *Self, renderer: DefaultRenderer) void {
         if (!self.visible) return;
 
         const items = self.filtered_commands.items;
         if (items.len == 0) {
-            self.drawNoMatches(win);
+            self.drawNoMatches(renderer);
             return;
         }
 
         const visible_count: u16 = @intCast(@min(MAX_POPUP_ROWS, items.len));
         const popup_height: u16 = visible_count + 2;
-        const popup_width: u16 = @min(50, win.width -| 4);
+        const popup_width: u16 = @min(50, renderer.width() -| 4);
 
-        if (win.height < popup_height + 1) return;
+        if (renderer.height() < popup_height + 1) return;
 
-        const popup_y: u16 = win.height -| popup_height -| 1;
+        const popup_y: u16 = renderer.height() -| popup_height -| 1;
         const popup_x: u16 = 2;
 
         const border_style: DefaultRenderer.Style = .{ .fg = border_color };
-        const popup_win = win.child(.{
+        const popup_win = renderer.window.child(.{
             .x_off = popup_x,
             .y_off = popup_y,
             .width = popup_width,
@@ -197,45 +197,33 @@ pub const CommandPopup = struct {
                 .style = border_style,
             },
         });
+        const popup_renderer = DefaultRenderer.init(popup_win);
 
         const range = self.select_list.visibleRange();
         var row: u16 = 0;
         for (range.start..range.end) |i| {
             const item = items[i];
             const is_selected = self.select_list.isSelected(i);
-            self.drawRow(popup_win, row, item, is_selected);
+            self.drawRow(popup_renderer, row, item, is_selected);
             row += 1;
         }
     }
 
-    fn drawRow(self: *Self, win: DefaultRenderer.Window, row: u16, item: FilteredCommand, is_selected: bool) void {
+    fn drawRow(self: *Self, renderer: DefaultRenderer, row: u16, item: FilteredCommand, is_selected: bool) void {
         _ = self;
         const cmd_name = item.cmd.command();
         const description = item.cmd.description();
 
-        const row_win = win.child(.{
-            .x_off = 0,
-            .y_off = row,
-            .width = win.width,
-            .height = 1,
-        });
+        const row_renderer = renderer.subRegion(0, row, renderer.width(), 1);
 
         if (is_selected) {
-            for (0..row_win.width) |x| {
-                row_win.writeCell(@intCast(x), 0, .{
-                    .char = .{ .grapheme = " ", .width = 1 },
-                    .style = .{ .bg = selected_bg },
-                });
-            }
+            row_renderer.fill(0, 0, row_renderer.width(), 1, " ", .{ .bg = selected_bg });
         }
 
         var x: u16 = 1;
-        row_win.writeCell(x, 0, .{
-            .char = .{ .grapheme = "/", .width = 1 },
-            .style = .{
-                .fg = command_color,
-                .bg = if (is_selected) selected_bg else .default,
-            },
+        row_renderer.drawCell(x, 0, "/", .{
+            .fg = command_color,
+            .bg = if (is_selected) selected_bg else .default,
         });
         x += 1;
 
@@ -247,13 +235,10 @@ pub const CommandPopup = struct {
 
             const fg = if (in_match) highlight_color else command_color;
             const char_buf: [1]u8 = .{c};
-            row_win.writeCell(x, 0, .{
-                .char = .{ .grapheme = &char_buf, .width = 1 },
-                .style = .{
-                    .fg = fg,
-                    .bg = if (is_selected) selected_bg else .default,
-                    .bold = in_match,
-                },
+            row_renderer.drawCell(x, 0, &char_buf, .{
+                .fg = fg,
+                .bg = if (is_selected) selected_bg else .default,
+                .bold = in_match,
             });
             x += 1;
         }
@@ -264,34 +249,29 @@ pub const CommandPopup = struct {
             .fg = desc_color,
             .bg = if (is_selected) selected_bg else .default,
         };
-        const max_desc_len = if (row_win.width > x + 2) row_win.width - x - 2 else 0;
+        const max_desc_len = if (row_renderer.width() > x + 2) row_renderer.width() - x - 2 else 0;
         const desc_to_show = if (description.len > max_desc_len)
             description[0..max_desc_len]
         else
             description;
 
-        const desc_win = row_win.child(.{
-            .x_off = x,
-            .y_off = 0,
-            .width = @intCast(desc_to_show.len),
-            .height = 1,
-        });
-        _ = desc_win.printSegment(.{ .text = desc_to_show, .style = desc_style }, .{});
+        const desc_renderer = row_renderer.subRegion(x, 0, @intCast(desc_to_show.len), 1);
+        desc_renderer.drawText(0, 0, desc_to_show, desc_style);
     }
 
-    fn drawNoMatches(self: *Self, win: DefaultRenderer.Window) void {
+    fn drawNoMatches(self: *Self, renderer: DefaultRenderer) void {
         _ = self;
         const msg = "no matches";
         const popup_height: u16 = 3;
         const popup_width: u16 = @intCast(msg.len + 4);
 
-        if (win.height < popup_height + 1) return;
+        if (renderer.height() < popup_height + 1) return;
 
-        const popup_y: u16 = win.height -| popup_height -| 1;
+        const popup_y: u16 = renderer.height() -| popup_height -| 1;
         const popup_x: u16 = 2;
 
         const border_style: DefaultRenderer.Style = .{ .fg = border_color };
-        const popup_win = win.child(.{
+        const popup_win = renderer.window.child(.{
             .x_off = popup_x,
             .y_off = popup_y,
             .width = popup_width,
@@ -301,9 +281,10 @@ pub const CommandPopup = struct {
                 .style = border_style,
             },
         });
+        const popup_renderer = DefaultRenderer.init(popup_win);
 
         const style: DefaultRenderer.Style = .{ .fg = desc_color };
-        _ = popup_win.printSegment(.{ .text = msg, .style = style }, .{});
+        popup_renderer.drawText(0, 0, msg, style);
     }
 };
 

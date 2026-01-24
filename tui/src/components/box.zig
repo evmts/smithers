@@ -67,9 +67,11 @@ pub const Box = struct {
         self.style.title = title;
     }
 
-    pub fn draw(self: *const Self, win: DefaultRenderer.Window) void {
+    pub fn draw(self: *const Self, renderer: DefaultRenderer) void {
         if (self.style.border == .none) return;
-        if (win.width < 2 or win.height < 2) return;
+        const win_width = renderer.width();
+        const win_height = renderer.height();
+        if (win_width < 2 or win_height < 2) return;
 
         const chars = self.style.border.chars();
         const border_style: DefaultRenderer.Style = .{ .fg = .{ .index = self.style.border_color } };
@@ -79,90 +81,59 @@ pub const Box = struct {
         };
 
         // Top border
-        win.writeCell(0, 0, .{
-            .char = .{ .grapheme = chars.tl, .width = 1 },
-            .style = border_style,
-        });
+        renderer.drawCell(0, 0, chars.tl, border_style);
 
         var x: u16 = 1;
 
         // Title if present
         if (self.style.title) |title| {
-            win.writeCell(x, 0, .{
-                .char = .{ .grapheme = chars.h, .width = 1 },
-                .style = border_style,
-            });
+            renderer.drawCell(x, 0, chars.h, border_style);
             x += 1;
 
-            const title_len: u16 = @intCast(@min(title.len, win.width -| 6));
-            _ = win.child(.{ .x_off = x, .y_off = 0, .width = title_len, .height = 1 })
-                .printSegment(.{ .text = title[0..title_len], .style = title_style }, .{});
+            const title_len: u16 = @intCast(@min(title.len, win_width -| 6));
+            renderer.drawText(x, 0, title[0..title_len], title_style);
             x += title_len;
 
-            win.writeCell(x, 0, .{
-                .char = .{ .grapheme = chars.h, .width = 1 },
-                .style = border_style,
-            });
+            renderer.drawCell(x, 0, chars.h, border_style);
             x += 1;
         }
 
         // Fill remaining top border
-        while (x < win.width -| 1) : (x += 1) {
-            win.writeCell(x, 0, .{
-                .char = .{ .grapheme = chars.h, .width = 1 },
-                .style = border_style,
-            });
+        while (x < win_width -| 1) : (x += 1) {
+            renderer.drawCell(x, 0, chars.h, border_style);
         }
 
-        win.writeCell(win.width -| 1, 0, .{
-            .char = .{ .grapheme = chars.tr, .width = 1 },
-            .style = border_style,
-        });
+        renderer.drawCell(win_width -| 1, 0, chars.tr, border_style);
 
         // Side borders
-        for (1..win.height -| 1) |y| {
-            win.writeCell(0, @intCast(y), .{
-                .char = .{ .grapheme = chars.v, .width = 1 },
-                .style = border_style,
-            });
-            win.writeCell(win.width -| 1, @intCast(y), .{
-                .char = .{ .grapheme = chars.v, .width = 1 },
-                .style = border_style,
-            });
+        for (1..win_height -| 1) |y| {
+            renderer.drawCell(0, @intCast(y), chars.v, border_style);
+            renderer.drawCell(win_width -| 1, @intCast(y), chars.v, border_style);
         }
 
         // Bottom border
-        const bottom_y: u16 = win.height -| 1;
-        win.writeCell(0, bottom_y, .{
-            .char = .{ .grapheme = chars.bl, .width = 1 },
-            .style = border_style,
-        });
+        const bottom_y: u16 = win_height -| 1;
+        renderer.drawCell(0, bottom_y, chars.bl, border_style);
 
-        for (1..win.width -| 1) |bx| {
-            win.writeCell(@intCast(bx), bottom_y, .{
-                .char = .{ .grapheme = chars.h, .width = 1 },
-                .style = border_style,
-            });
+        for (1..win_width -| 1) |bx| {
+            renderer.drawCell(@intCast(bx), bottom_y, chars.h, border_style);
         }
 
-        win.writeCell(win.width -| 1, bottom_y, .{
-            .char = .{ .grapheme = chars.br, .width = 1 },
-            .style = border_style,
-        });
+        renderer.drawCell(win_width -| 1, bottom_y, chars.br, border_style);
     }
 
-    pub fn contentWindow(self: *const Self, win: DefaultRenderer.Window) DefaultRenderer.Window {
+    pub fn contentRegion(self: *const Self, renderer: DefaultRenderer) DefaultRenderer {
         const border_offset: u16 = if (self.style.border != .none) 1 else 0;
         const x_off = border_offset + self.style.padding_left;
         const y_off = border_offset + self.style.padding_top;
-        const w = win.width -| (border_offset * 2) -| self.style.padding_left -| self.style.padding_right;
-        const h = win.height -| (border_offset * 2) -| self.style.padding_top -| self.style.padding_bottom;
+        const w = renderer.width() -| (border_offset * 2) -| self.style.padding_left -| self.style.padding_right;
+        const h = renderer.height() -| (border_offset * 2) -| self.style.padding_top -| self.style.padding_bottom;
 
-        return win.child(.{
-            .x_off = x_off,
-            .y_off = y_off,
-            .width = if (w > 0) w else 1,
-            .height = if (h > 0) h else 1,
-        });
+        return renderer.subRegion(
+            x_off,
+            y_off,
+            if (w > 0) w else 1,
+            if (h > 0) h else 1,
+        );
     }
 };

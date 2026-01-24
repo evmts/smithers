@@ -23,8 +23,8 @@ pub const ChatHistory = struct {
     scroll_offset: u16,
     /// Current selection state
     selection: Selection,
-    /// Last rendered window for text extraction
-    last_window: ?DefaultRenderer.Window,
+    /// Last rendered renderer for text extraction
+    last_renderer: ?DefaultRenderer,
 
     const Self = @This();
 
@@ -34,7 +34,7 @@ pub const ChatHistory = struct {
             .messages = &[_]db.Message{},
             .scroll_offset = 0,
             .selection = Selection.init(),
-            .last_window = null,
+            .last_renderer = null,
         };
     }
 
@@ -148,22 +148,23 @@ pub const ChatHistory = struct {
         return self.selection.is_selecting;
     }
 
-    /// Get selected text - extracts from stored last_window after draw
+    /// Get selected text - extracts from stored last_renderer after draw
     pub fn getSelectedText(self: *Self) ?[]const u8 {
         if (!self.selection.has_selection) return null;
-        if (self.last_window == null) return null;
+        if (self.last_renderer == null) return null;
 
-        const win = self.last_window.?;
+        const renderer = self.last_renderer.?;
+        const win = renderer.window;
         // Get bounds in screen space
         const bounds = self.selection.getScreenBounds(self.scroll_offset);
         var result = std.ArrayListUnmanaged(u8){};
 
         // Iterate over visible rows only
         var row_i32: i32 = if (bounds.min_y < 0) 0 else bounds.min_y;
-        while (row_i32 <= bounds.max_y and row_i32 < win.height) : (row_i32 += 1) {
+        while (row_i32 <= bounds.max_y and row_i32 < renderer.height()) : (row_i32 += 1) {
             const row: u16 = @intCast(row_i32);
             var start_col: u16 = 0;
-            var end_col: u16 = win.width;
+            var end_col: u16 = renderer.width();
 
             if (bounds.min_y == bounds.max_y) {
                 start_col = bounds.min_x;
@@ -182,9 +183,9 @@ pub const ChatHistory = struct {
                 end_col = sel_end + 1;
             }
 
-            // Extract text from cells
+            // Extract text from cells (use underlying window for readCell)
             var col: u16 = start_col;
-            while (col < end_col and col < win.width) : (col += 1) {
+            while (col < end_col and col < renderer.width()) : (col += 1) {
                 if (win.readCell(col, row)) |cell| {
                     if (cell.char.grapheme.len > 0 and cell.char.grapheme[0] != 0) {
                         result.appendSlice(self.allocator, cell.char.grapheme) catch {};
@@ -201,33 +202,24 @@ pub const ChatHistory = struct {
         return result.toOwnedSlice(self.allocator) catch null;
     }
 
-    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
-        // Store window for text extraction
-        self.last_window = win;
+    pub fn draw(self: *Self, renderer: DefaultRenderer) void {
+        // Store renderer for text extraction
+        self.last_renderer = renderer;
 
         if (self.messages.len == 0) {
             const empty_msg = "No messages yet. Start chatting!";
             const msg_len: u16 = @intCast(empty_msg.len);
-            const x: u16 = if (win.width > msg_len) (win.width - msg_len) / 2 else 0;
-            const y: u16 = win.height / 2;
+            const x: u16 = if (renderer.width() > msg_len) (renderer.width() - msg_len) / 2 else 0;
+            const y: u16 = renderer.height() / 2;
             
-            const empty_win = win.child(.{
-                .x_off = x,
-                .y_off = y,
-                .width = msg_len,
-                .height = 1,
-            });
-            _ = empty_win.printSegment(.{
-                .text = empty_msg,
-                .style = .{ .fg = .{ .index = dim_color } },
-            }, .{});
+            renderer.drawText(x, y, empty_msg, .{ .fg = .{ .index = dim_color } });
             return;
         }
 
-        const text_width: u16 = if (win.width > 6) win.width - 6 else 1;
+        const text_width: u16 = if (renderer.width() > 6) renderer.width() - 6 else 1;
         
         // Render messages from bottom up
-        var y: i32 = @as(i32, win.height) - 1 + @as(i32, self.scroll_offset);
+        var y: i32 = @as(i32, renderer.height()) - 1 + @as(i32, self.scroll_offset);
         
         var i: usize = self.messages.len;
         while (i > 0) : (i -= 1) {
@@ -240,22 +232,22 @@ pub const ChatHistory = struct {
             
             // Skip if entirely above or below viewport
             if (y + msg_height <= 0) continue;
-            if (y >= win.height) continue;
+            if (y >= renderer.height()) continue;
             
             // Calculate partial rendering params
             const skip_lines: u16 = if (y < 0) @intCast(-y) else 0;
             const win_y: u16 = if (y < 0) 0 else @intCast(y);
-            self.drawMessage(win, msg, win_y, text_width, skip_lines);
+            self.drawMessage(renderer, msg, win_y, text_width, skip_lines);
         }
 
         // Apply selection highlighting as overlay
         if (self.selection.has_selection or self.selection.is_selecting) {
-            self.applySelectionHighlight(win);
+            self.applySelectionHighlight(renderer);
         }
     }
 
     /// Apply reverse video to selected cells
-    fn applySelectionHighlight(self: *Self, win: DefaultRenderer.Window) void {
+    fn applySelectionHighlight(self: *Self, renderer: DefaultRenderer) void {
         // Get bounds in screen space (adjusted for current scroll)
         const content_bounds = self.selection.getBounds();
         const bounds = self.selection.getScreenBounds(self.scroll_offset);
@@ -265,12 +257,13 @@ pub const ChatHistory = struct {
             bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y,
         });
 
+        const win = renderer.window;
         // Only process visible rows
         var row_i32: i32 = if (bounds.min_y < 0) 0 else bounds.min_y;
-        while (row_i32 <= bounds.max_y and row_i32 < win.height) : (row_i32 += 1) {
+        while (row_i32 <= bounds.max_y and row_i32 < renderer.height()) : (row_i32 += 1) {
             const row: u16 = @intCast(row_i32);
             var start_col: u16 = 0;
-            var end_col: u16 = win.width;
+            var end_col: u16 = renderer.width();
 
             if (bounds.min_y == bounds.max_y) {
                 // Single line
@@ -293,8 +286,8 @@ pub const ChatHistory = struct {
             }
 
             var col: u16 = start_col;
-            while (col < end_col and col < win.width) : (col += 1) {
-                // Read current cell and apply reverse
+            while (col < end_col and col < renderer.width()) : (col += 1) {
+                // Read current cell and apply reverse (use underlying window for readCell/writeCell)
                 if (win.readCell(col, row)) |cell| {
                     var new_style = cell.style;
                     new_style.reverse = true;
@@ -308,15 +301,15 @@ pub const ChatHistory = struct {
         }
     }
 
-    fn drawMessage(self: *Self, win: DefaultRenderer.Window, msg: db.Message, y: u16, text_width: u16, skip_lines: u16) void {
+    fn drawMessage(self: *Self, renderer: DefaultRenderer, msg: db.Message, y: u16, text_width: u16, skip_lines: u16) void {
         const content_lines = countLines(msg.content, text_width);
         
         switch (msg.role) {
             .user => {
-                self.drawUserMessage(win, msg.content, y, text_width, content_lines, skip_lines);
+                self.drawUserMessage(renderer, msg.content, y, text_width, content_lines, skip_lines);
             },
             .assistant => {
-                self.drawMarkdownMessage(win, msg.content, y, text_width, skip_lines);
+                self.drawMarkdownMessage(renderer, msg.content, y, text_width, skip_lines);
             },
             .system => {
                 // Check if this is a tool-related message
@@ -330,47 +323,36 @@ pub const ChatHistory = struct {
                 } else false;
 
                 if (is_markdown) {
-                    self.drawMarkdownMessage(win, msg.content, y, text_width, skip_lines);
+                    self.drawMarkdownMessage(renderer, msg.content, y, text_width, skip_lines);
                 } else if (is_read_file) {
                     // Non-markdown file: render with line numbers
-                    self.drawCodeWithLineNumbers(win, msg.content, y, text_width, skip_lines);
+                    self.drawCodeWithLineNumbers(renderer, msg.content, y, text_width, skip_lines);
                 } else if (std.mem.indexOf(u8, msg.content, "\n") != null) {
                     // Multi-line: render with markdown like assistant
-                    self.drawMarkdownMessage(win, msg.content, y, text_width, skip_lines);
+                    self.drawMarkdownMessage(renderer, msg.content, y, text_width, skip_lines);
                 } else if (is_tool_msg) {
                     // Tool-related single line: left-aligned (skip if above viewport)
                     if (skip_lines == 0) {
-                        const sys_win = win.child(.{
-                            .x_off = 2,
-                            .y_off = y,
-                            .width = text_width,
-                            .height = 1,
-                        });
+                        const sys_renderer = renderer.subRegion(2, y, text_width, 1);
                         const style: DefaultRenderer.Style = .{ .fg = .{ .index = system_text_color } };
-                        _ = sys_win.printSegment(.{ .text = msg.content, .style = style }, .{});
+                        sys_renderer.drawText(0, 0, msg.content, style);
                     }
                 } else {
                     // Single line status message: centered (skip if above viewport)
                     if (skip_lines == 0) {
-                        const msg_len: u16 = @intCast(@min(msg.content.len, win.width -| 4));
-                        const x_off: u16 = if (win.width > msg_len) (win.width - msg_len) / 2 else 2;
+                        const msg_len: u16 = @intCast(@min(msg.content.len, renderer.width() -| 4));
+                        const x_off: u16 = if (renderer.width() > msg_len) (renderer.width() - msg_len) / 2 else 2;
 
-                        const sys_win = win.child(.{
-                            .x_off = x_off,
-                            .y_off = y,
-                            .width = msg_len,
-                            .height = 1,
-                        });
-
+                        const sys_renderer = renderer.subRegion(x_off, y, msg_len, 1);
                         const style: DefaultRenderer.Style = .{ .fg = .{ .index = system_text_color } };
-                        _ = sys_win.printSegment(.{ .text = msg.content, .style = style }, .{});
+                        sys_renderer.drawText(0, 0, msg.content, style);
                     }
                 }
             },
         }
     }
 
-    fn drawUserMessage(self: *Self, win: DefaultRenderer.Window, content: []const u8, y: u16, text_width: u16, content_lines: u16, skip_lines: u16) void {
+    fn drawUserMessage(self: *Self, renderer: DefaultRenderer, content: []const u8, y: u16, text_width: u16, content_lines: u16, skip_lines: u16) void {
         _ = self;
         const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_bar_color } };
         const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_text_color } };
@@ -379,30 +361,23 @@ pub const ChatHistory = struct {
         var row: u16 = skip_lines;
         while (row < content_lines) : (row += 1) {
             const win_row = y + row - skip_lines;
-            if (win_row >= win.height) break;
-            win.writeCell(2, win_row, .{
-                .char = .{ .grapheme = "│", .width = 1 },
-                .style = bar_style,
-            });
+            if (win_row >= renderer.height()) break;
+            renderer.drawCell(2, win_row, "│", bar_style);
         }
 
         // For partial rendering, we need to find the text that corresponds to visible lines
-        // Use a child window that clips appropriately
+        // Use a sub-renderer that clips appropriately
         const visible_lines = content_lines -| skip_lines;
         if (visible_lines > 0) {
-            const text_win = win.child(.{
-                .x_off = 4,
-                .y_off = y,
-                .width = text_width,
-                .height = @min(visible_lines, win.height -| y),
-            });
+            const text_renderer = renderer.subRegion(4, y, text_width, @min(visible_lines, renderer.height() -| y));
             // Skip to the right starting point in text by counting wrapped lines
             const start_text = skipWrappedLines(content, text_width, skip_lines);
-            _ = text_win.printSegment(.{ .text = start_text, .style = text_style }, .{ .wrap = .word });
+            // For word wrapping, use underlying window's printSegment
+            _ = text_renderer.window.printSegment(.{ .text = start_text, .style = text_style }, .{ .wrap = .word });
         }
     }
 
-    fn drawMarkdownMessage(self: *Self, win: DefaultRenderer.Window, content: []const u8, y: u16, text_width: u16, skip_lines: u16) void {
+    fn drawMarkdownMessage(self: *Self, renderer: DefaultRenderer, content: []const u8, y: u16, text_width: u16, skip_lines: u16) void {
         // Trim trailing whitespace to avoid extra blank lines
         const trimmed = std.mem.trimRight(u8, content, " \t\n\r");
         var parser = md.MarkdownParser.init(self.allocator);
@@ -411,14 +386,10 @@ pub const ChatHistory = struct {
             const total_lines = countLines(content, text_width);
             const visible_lines = total_lines -| skip_lines;
             if (visible_lines > 0) {
-                const text_win = win.child(.{
-                    .x_off = 2,
-                    .y_off = y,
-                    .width = text_width + 2,
-                    .height = @min(visible_lines, win.height -| y),
-                });
+                const text_renderer = renderer.subRegion(2, y, text_width + 2, @min(visible_lines, renderer.height() -| y));
                 const start_text = skipWrappedLines(content, text_width, skip_lines);
-                _ = text_win.printSegment(.{
+                // For word wrapping, use underlying window's printSegment
+                _ = text_renderer.window.printSegment(.{
                     .text = start_text,
                     .style = .{ .fg = .{ .index = assistant_text_color } },
                 }, .{ .wrap = .word });
@@ -435,7 +406,7 @@ pub const ChatHistory = struct {
             // Skip lines that are above viewport
             if (line_idx < skip_lines) continue;
 
-            if (row >= win.height) break;
+            if (row >= renderer.height()) break;
 
             // Calculate x offset based on line type
             var x_off: u16 = 2;
@@ -469,36 +440,21 @@ pub const ChatHistory = struct {
 
             // Draw prefix if any
             if (prefix) |p| {
-                const prefix_win = win.child(.{
-                    .x_off = x_off,
-                    .y_off = row,
-                    .width = @intCast(p.len),
-                    .height = 1,
-                });
-                _ = prefix_win.printSegment(.{ .text = p, .style = prefix_style }, .{});
+                renderer.drawText(x_off, row, p, prefix_style);
                 x_off += @intCast(p.len);
             }
 
             // Draw spans
             var col: u16 = x_off;
             for (line.spans) |span| {
-                if (col >= win.width) break;
+                if (col >= renderer.width()) break;
 
                 const style = self.mdStyleToVaxis(span.style, line.line_type);
-                const remaining_width = win.width -| col;
+                const remaining_width = renderer.width() -| col;
                 const span_len: u16 = @intCast(@min(span.text.len, remaining_width));
 
                 if (span_len > 0) {
-                    const span_win = win.child(.{
-                        .x_off = col,
-                        .y_off = row,
-                        .width = span_len,
-                        .height = 1,
-                    });
-                    _ = span_win.printSegment(.{
-                        .text = span.text[0..span_len],
-                        .style = style,
-                    }, .{});
+                    renderer.drawText(col, row, span.text[0..span_len], style);
                     col += span_len;
                 }
             }
@@ -534,7 +490,7 @@ pub const ChatHistory = struct {
         return result;
     }
 
-    fn drawCodeWithLineNumbers(self: *Self, win: DefaultRenderer.Window, content: []const u8, y: u16, text_width: u16, skip_lines: u16) void {
+    fn drawCodeWithLineNumbers(self: *Self, renderer: DefaultRenderer, content: []const u8, y: u16, text_width: u16, skip_lines: u16) void {
         _ = self;
         const line_num_width: u16 = 6; // "00001 " = 6 chars
         const code_width = if (text_width > line_num_width) text_width - line_num_width else 1;
@@ -556,28 +512,16 @@ pub const ChatHistory = struct {
             // Skip lines that are above viewport
             if (line_idx < skip_lines) continue;
 
-            if (row >= win.height) break;
+            if (row >= renderer.height()) break;
 
             // Draw line number
             var num_buf: [8]u8 = undefined;
             const num_str = std.fmt.bufPrint(&num_buf, "{d:>5} ", .{line_num}) catch "     ";
-            const num_win = win.child(.{
-                .x_off = 2,
-                .y_off = row,
-                .width = line_num_width,
-                .height = 1,
-            });
-            _ = num_win.printSegment(.{ .text = num_str, .style = line_num_style }, .{});
+            renderer.drawText(2, row, num_str, line_num_style);
 
             // Draw code content
-            const code_win = win.child(.{
-                .x_off = 2 + line_num_width,
-                .y_off = row,
-                .width = code_width,
-                .height = 1,
-            });
             const display_line = if (line.len > code_width) line[0..code_width] else line;
-            _ = code_win.printSegment(.{ .text = display_line, .style = code_style }, .{});
+            renderer.drawText(2 + line_num_width, row, display_line, code_style);
 
             row += 1;
         }

@@ -34,7 +34,7 @@ pub const Header = struct {
         self.model = model;
     }
 
-    pub fn draw(self: *const Self, win: DefaultRenderer.Window, database: *db.DefaultDatabase) void {
+    pub fn draw(self: *const Self, renderer: DefaultRenderer, database: *db.DefaultDatabase) void {
         const bar_style: DefaultRenderer.Style = .{ .bg = .{ .index = bg_color } };
         const title_style: DefaultRenderer.Style = .{
             .fg = .{ .index = title_color },
@@ -46,37 +46,27 @@ pub const Header = struct {
         const default_style: DefaultRenderer.Style = .{ .bg = .{ .index = bg_color } };
 
         // Fill header background
-        for (0..win.width) |col| {
-            win.writeCell(@intCast(col), 0, .{
-                .char = .{ .grapheme = " ", .width = 1 },
-                .style = bar_style,
-            });
-        }
+        renderer.fill(0, 0, renderer.width(), 1, " ", bar_style);
 
         var x: u16 = 1;
 
         // "Smithers vX.X.X"
         const title = "Smithers";
-        _ = win.child(.{ .x_off = x, .y_off = 0, .width = @intCast(title.len), .height = 1 })
-            .printSegment(.{ .text = title, .style = title_style }, .{});
+        renderer.drawText(x, 0, title, title_style);
         x += @intCast(title.len);
 
         const ver_prefix = " v";
-        _ = win.child(.{ .x_off = x, .y_off = 0, .width = @intCast(ver_prefix.len), .height = 1 })
-            .printSegment(.{ .text = ver_prefix, .style = default_style }, .{});
+        renderer.drawText(x, 0, ver_prefix, default_style);
         x += @intCast(ver_prefix.len);
 
-        _ = win.child(.{ .x_off = x, .y_off = 0, .width = @intCast(self.version.len), .height = 1 })
-            .printSegment(.{ .text = self.version, .style = default_style }, .{});
+        renderer.drawText(x, 0, self.version, default_style);
         x += @intCast(self.version.len);
 
         // Separator + model
-        _ = win.child(.{ .x_off = x, .y_off = 0, .width = @intCast(SEPARATOR.len), .height = 1 })
-            .printSegment(.{ .text = SEPARATOR, .style = sep_style }, .{});
+        renderer.drawText(x, 0, SEPARATOR, sep_style);
         x += @intCast(SEPARATOR.len);
 
-        _ = win.child(.{ .x_off = x, .y_off = 0, .width = @intCast(self.model.len), .height = 1 })
-            .printSegment(.{ .text = self.model, .style = model_style }, .{});
+        renderer.drawText(x, 0, self.model, model_style);
 
         // Skip tabs for now to avoid segfault from dangling session.name pointers
         _ = database;

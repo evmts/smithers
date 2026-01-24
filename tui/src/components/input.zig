@@ -238,38 +238,29 @@ pub const Input = struct {
         self.editor.clear() catch {};
     }
 
-    /// Draw the input box into a specific window region (for layout control)
-    pub fn drawInWindow(self: *Self, win: DefaultRenderer.Window) void {
-        const box_width: u16 = if (win.width > 4) win.width - 4 else win.width;
+    /// Draw the input box using renderer (for layout control)
+    pub fn drawInWindow(self: *Self, renderer: DefaultRenderer) void {
+        const box_width: u16 = if (renderer.width() > 4) renderer.width() - 4 else renderer.width();
         const box_x: u16 = 2;
 
         const border_style: DefaultRenderer.Style = .{ .fg = .{ .rgb = border_color } };
 
         // Input box with border (height 4 = 2 lines + top/bottom border)
-        const input_win = win.child(.{
-            .x_off = box_x,
-            .y_off = 0,
-            .width = box_width,
-            .height = if (win.height >= 4) 4 else win.height,
-            .border = .{
-                .where = .all,
-                .style = border_style,
-            },
-        });
+        const input_renderer = renderer.subRegionWithBorder(
+            box_x,
+            0,
+            box_width,
+            if (renderer.height() >= 4) 4 else renderer.height(),
+            border_style,
+        );
 
         // Draw prompt
         const prompt_style: DefaultRenderer.Style = .{ .fg = .{ .rgb = prompt_color } };
-        input_win.writeCell(0, 0, .{
-            .char = .{ .grapheme = ">", .width = 1 },
-            .style = prompt_style,
-        });
-        input_win.writeCell(1, 0, .{
-            .char = .{ .grapheme = " ", .width = 1 },
-            .style = prompt_style,
-        });
+        input_renderer.drawCell(0, 0, ">", prompt_style);
+        input_renderer.drawCell(1, 0, " ", prompt_style);
 
         // Text area dimensions
-        const text_width = if (input_win.width > 3) input_win.width - 3 else 1;
+        const text_width = if (input_renderer.width() > 3) input_renderer.width() - 3 else 1;
         const text_height: u16 = 2;
 
         // Draw editor content
@@ -281,16 +272,7 @@ pub const Input = struct {
             if (self.editor.getLine(row)) |line| {
                 const display_len: u16 = @intCast(@min(line.len, text_width));
                 if (display_len > 0) {
-                    const line_win = input_win.child(.{
-                        .x_off = 2,
-                        .y_off = row,
-                        .width = display_len,
-                        .height = 1,
-                    });
-                    _ = line_win.printSegment(.{
-                        .text = line[0..display_len],
-                        .style = text_style,
-                    }, .{});
+                    _ = input_renderer.printSegment(2, row, line[0..display_len], text_style);
                 }
             }
         }
@@ -309,12 +291,9 @@ pub const Input = struct {
                 }
             }
 
-            input_win.writeCell(2 + cursor_x, cursor_y, .{
-                .char = .{ .grapheme = cursor_char, .width = 1 },
-                .style = .{
-                    .fg = .{ .index = 0 }, // Black text
-                    .bg = .{ .index = cursor_color }, // Blue background
-                },
+            input_renderer.drawCell(2 + cursor_x, cursor_y, cursor_char, .{
+                .fg = .{ .index = 0 }, // Black text
+                .bg = .{ .index = cursor_color }, // Blue background
             });
         }
 
@@ -331,24 +310,14 @@ pub const Input = struct {
 
                 if (cursor_x < text_width) {
                     const ghost_len: u16 = @intCast(@min(ghost_suffix.len, text_width - cursor_x));
-                    const ghost_win = input_win.child(.{
-                        .x_off = 2 + cursor_x,
-                        .y_off = 0,
-                        .width = ghost_len,
-                        .height = 1,
-                    });
-                    _ = ghost_win.printSegment(.{
-                        .text = ghost_suffix[0..ghost_len],
-                        .style = ghost_style,
-                    }, .{});
+                    _ = input_renderer.printSegment(2 + cursor_x, 0, ghost_suffix[0..ghost_len], ghost_style);
                 }
             }
         }
-
     }
 
     /// Legacy draw method (unused, kept for compatibility)
-    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
-        self.drawInWindow(win);
+    pub fn draw(self: *Self, renderer: DefaultRenderer) void {
+        self.drawInWindow(renderer);
     }
 };

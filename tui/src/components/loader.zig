@@ -74,33 +74,29 @@ pub const Loader = struct {
         return SPINNER_FRAMES[self.frame_index];
     }
 
-    pub fn draw(self: *const Self, win: DefaultRenderer.Window) void {
+    pub fn draw(self: *const Self, renderer: DefaultRenderer) void {
         const spin_style: DefaultRenderer.Style = .{ .fg = .{ .index = self.style.color } };
         const text_style: DefaultRenderer.Style = .{};
+        const win_width = renderer.width();
 
         var x: u16 = 0;
 
         if (self.style.label) |label| {
             if (self.style.label_position == .left) {
-                const label_len: u16 = @intCast(@min(label.len, win.width -| 3));
-                _ = win.child(.{ .x_off = x, .y_off = 0, .width = label_len, .height = 1 })
-                    .printSegment(.{ .text = label[0..label_len], .style = text_style }, .{});
+                const label_len: u16 = @intCast(@min(label.len, win_width -| 3));
+                renderer.drawText(x, 0, label[0..label_len], text_style);
                 x += label_len + 1;
 
-                _ = win.child(.{ .x_off = x, .y_off = 0, .width = 2, .height = 1 })
-                    .printSegment(.{ .text = self.currentFrame(), .style = spin_style }, .{});
+                renderer.drawText(x, 0, self.currentFrame(), spin_style);
             } else {
-                _ = win.child(.{ .x_off = x, .y_off = 0, .width = 2, .height = 1 })
-                    .printSegment(.{ .text = self.currentFrame(), .style = spin_style }, .{});
+                renderer.drawText(x, 0, self.currentFrame(), spin_style);
                 x += 2;
 
-                const label_len: u16 = @intCast(@min(label.len, win.width -| x));
-                _ = win.child(.{ .x_off = x, .y_off = 0, .width = label_len, .height = 1 })
-                    .printSegment(.{ .text = label[0..label_len], .style = text_style }, .{});
+                const label_len: u16 = @intCast(@min(label.len, win_width -| x));
+                renderer.drawText(x, 0, label[0..label_len], text_style);
             }
         } else {
-            _ = win.child(.{ .x_off = 0, .y_off = 0, .width = 2, .height = 1 })
-                .printSegment(.{ .text = self.currentFrame(), .style = spin_style }, .{});
+            renderer.drawText(0, 0, self.currentFrame(), spin_style);
         }
     }
 

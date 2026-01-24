@@ -307,54 +307,41 @@ pub const InteractiveMode = struct {
 
     fn render(self: *Self) !void {
         const win = self.event_loop.window();
-        win.clear();
+        const renderer = DefaultRenderer.init(win);
+        renderer.clear();
 
-        const height = win.height;
+        const height = renderer.height();
 
         // Layout: chat area, status bar (1 line), input box (6 lines)
         const status_bar_y: u16 = if (height > 8) height - 7 else 1;
         const chat_height: u16 = status_bar_y;
 
         if (self.chat_history.messages.len > 0 or self.is_busy) {
-            const chat_win = win.child(.{
-                .x_off = 0,
-                .y_off = 0,
-                .width = win.width,
-                .height = chat_height,
-            });
-            self.chat_history.draw(chat_win);
+            const chat_renderer = renderer.subRegion(0, 0, renderer.width(), chat_height);
+            self.chat_history.draw(chat_renderer);
         } else {
-            logo.draw(win);
+            logo.draw(renderer);
         }
 
         // Status bar - single line between chat and input
-        const status_win = win.child(.{
-            .x_off = 0,
-            .y_off = status_bar_y,
-            .width = win.width,
-            .height = 1,
-        });
+        const status_renderer = renderer.subRegion(0, status_bar_y, renderer.width(), 1);
 
         if (self.is_busy) {
             const spinner = self.getSpinner();
             const loading_text = " Smithers is thinking...";
             const style: DefaultRenderer.Style = .{ .fg = .{ .index = 12 } }; // Bright blue
 
-            status_win.writeCell(2, 0, .{
-                .char = .{ .grapheme = spinner, .width = 2 },
-                .style = style,
-            });
+            status_renderer.drawCell(2, 0, spinner, style);
 
-            const text_win = status_win.child(.{
-                .x_off = 4,
-                .y_off = 0,
-                .width = status_win.width -| 6,
-                .height = 1,
-            });
-            _ = text_win.printSegment(.{ .text = loading_text, .style = style }, .{});
+            const text_renderer = status_renderer.subRegion(4, 0, status_renderer.width() -| 6, 1);
+            text_renderer.drawText(0, 0, loading_text, style);
         }
 
-        self.input.draw(win);
+        // Input box at bottom
+        const input_height: u16 = 6;
+        const input_y: u16 = if (height > input_height) height - input_height else 0;
+        const input_renderer = renderer.subRegion(0, input_y, renderer.width(), input_height);
+        self.input.draw(input_renderer);
 
         try self.event_loop.render();
     }

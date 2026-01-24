@@ -22,39 +22,25 @@ pub const FrameRenderer = struct {
     };
 
     pub fn render(win: DefaultRenderer.Window, ctx: *RenderContext) void {
-        win.clear();
+        const renderer = DefaultRenderer.init(win);
+        renderer.clear();
 
-        const height = win.height;
+        const height = renderer.height();
 
         const chrome_height = Layout.HEADER_HEIGHT + Layout.INPUT_HEIGHT + Layout.STATUS_HEIGHT;
         const chat_height: u16 = if (height > chrome_height) height - chrome_height else 1;
         const input_y: u16 = Layout.HEADER_HEIGHT + chat_height;
         const status_bar_y: u16 = input_y + Layout.INPUT_HEIGHT;
 
-        const header_win = win.child(.{
-            .x_off = 0,
-            .y_off = 0,
-            .width = win.width,
-            .height = Layout.HEADER_HEIGHT,
-        });
-        ctx.header.draw(header_win, ctx.database);
+        const header_renderer = renderer.subRegion(0, 0, renderer.width(), Layout.HEADER_HEIGHT);
+        ctx.header.draw(header_renderer, ctx.database);
 
         if (ctx.chat_history.hasConversation() or ctx.loading.is_loading) {
-            const chat_win = win.child(.{
-                .x_off = 0,
-                .y_off = Layout.HEADER_HEIGHT,
-                .width = win.width,
-                .height = chat_height,
-            });
-            ctx.chat_history.draw(chat_win);
+            const chat_renderer = renderer.subRegion(0, Layout.HEADER_HEIGHT, renderer.width(), chat_height);
+            ctx.chat_history.draw(chat_renderer);
         } else {
-            const content_win = win.child(.{
-                .x_off = 0,
-                .y_off = Layout.HEADER_HEIGHT,
-                .width = win.width,
-                .height = chat_height,
-            });
-            logo.draw(content_win);
+            const content_renderer = renderer.subRegion(0, Layout.HEADER_HEIGHT, renderer.width(), chat_height);
+            logo.draw(content_renderer);
         }
 
         const now = std.time.milliTimestamp();
@@ -67,20 +53,15 @@ pub const FrameRenderer = struct {
         }
 
         const actual_status_height = ctx.status_bar.getHeight();
-        const status_win = win.child(.{
-            .x_off = 0,
-            .y_off = if (actual_status_height > 1) status_bar_y -| (actual_status_height - 1) else status_bar_y,
-            .width = win.width,
-            .height = actual_status_height,
-        });
-        ctx.status_bar.draw(status_win);
+        const status_renderer = renderer.subRegion(
+            0,
+            if (actual_status_height > 1) status_bar_y -| (actual_status_height - 1) else status_bar_y,
+            renderer.width(),
+            actual_status_height,
+        );
+        ctx.status_bar.draw(status_renderer);
 
-        const input_win = win.child(.{
-            .x_off = 0,
-            .y_off = input_y,
-            .width = win.width,
-            .height = Layout.INPUT_HEIGHT,
-        });
-        ctx.input.drawInWindow(input_win);
+        const input_renderer = renderer.subRegion(0, input_y, renderer.width(), Layout.INPUT_HEIGHT);
+        ctx.input.drawInWindow(input_renderer);
     }
 };

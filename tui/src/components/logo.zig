@@ -18,9 +18,9 @@ const logo_color = .{ 0x7a, 0xa2, 0xf7 }; // Blue
 const subtitle_color = .{ 0x73, 0xda, 0xca }; // Teal
 
 /// Draw the Smithers logo centered in the window
-pub fn draw(win: DefaultRenderer.Window) void {
-    const win_width = win.width;
-    const win_height = win.height;
+pub fn draw(renderer: DefaultRenderer) void {
+    const win_width = renderer.width();
+    const win_height = renderer.height();
 
     // Calculate centered position (upper third of screen)
     const logo_y: u16 = if (win_height > height + 10) (win_height - height) / 3 else 1;
@@ -28,13 +28,8 @@ pub fn draw(win: DefaultRenderer.Window) void {
 
     const logo_style: DefaultRenderer.Style = .{ .fg = .{ .rgb = logo_color } };
 
-    const logo_win = win.child(.{
-        .x_off = logo_x,
-        .y_off = logo_y,
-        .width = width,
-        .height = height,
-    });
-    _ = logo_win.printSegment(.{ .text = ascii_art, .style = logo_style }, .{ .wrap = .grapheme });
+    const logo_renderer = renderer.subRegion(logo_x, logo_y, width, height);
+    _ = logo_renderer.window.printSegment(.{ .text = ascii_art, .style = logo_style }, .{ .wrap = .grapheme });
 
     // Draw subtitle below logo
     const subtitle_len: u16 = @intCast(subtitle.len);
@@ -42,11 +37,5 @@ pub fn draw(win: DefaultRenderer.Window) void {
     const subtitle_x: u16 = if (win_width > subtitle_len) (win_width - subtitle_len) / 2 else 0;
     const subtitle_style: DefaultRenderer.Style = .{ .fg = .{ .rgb = subtitle_color } };
 
-    const subtitle_win = win.child(.{
-        .x_off = subtitle_x,
-        .y_off = subtitle_y,
-        .width = subtitle_len,
-        .height = 1,
-    });
-    _ = subtitle_win.printSegment(.{ .text = subtitle, .style = subtitle_style }, .{});
+    renderer.drawText(subtitle_x, subtitle_y, subtitle, subtitle_style);
 }

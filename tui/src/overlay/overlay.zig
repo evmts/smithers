@@ -81,7 +81,7 @@ pub const Margin = struct {
 // ============ Overlay Options ============
 
 pub const VisibilityCallback = *const fn (term_width: u16, term_height: u16) bool;
-pub const DrawCallback = *const fn (win: DefaultRenderer.Window, ctx: ?*anyopaque) void;
+pub const DrawCallback = *const fn (renderer: DefaultRenderer, ctx: ?*anyopaque) void;
 
 pub const Options = struct {
     width: ?SizeValue = null,
@@ -291,10 +291,10 @@ pub const Stack = struct {
         return self.entries.items.len;
     }
 
-    /// Draw all visible overlays in z-order using Window.child()
-    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
-        const term_width = win.width;
-        const term_height = win.height;
+    /// Draw all visible overlays in z-order using Renderer
+    pub fn draw(self: *Self, renderer: DefaultRenderer) void {
+        const term_width = renderer.width();
+        const term_height = renderer.height();
 
         // Draw overlays in z-order (lowest first, so topmost renders last)
         for (self.entries.items) |*entry| {
@@ -308,16 +308,11 @@ pub const Stack = struct {
 
             const layout = ResolvedLayout.resolve(entry.options, content_height, term_width, term_height);
 
-            // Create child window for overlay
-            const overlay_win = win.child(.{
-                .x_off = layout.col,
-                .y_off = layout.row,
-                .width = .{ .limit = layout.width },
-                .height = .{ .limit = layout.height },
-            });
+            // Create sub-region renderer for overlay
+            const overlay_renderer = renderer.subRegion(layout.col, layout.row, layout.width, layout.height);
 
             // Call draw callback
-            entry.draw_fn(overlay_win, entry.ctx);
+            entry.draw_fn(overlay_renderer, entry.ctx);
         }
     }
 };
@@ -416,7 +411,7 @@ test "Stack push/pop" {
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});
@@ -438,7 +433,7 @@ test "Stack z-order" {
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
     }.f;
 
     const e1 = try stack.push(dummy_draw, null, .{});
@@ -456,7 +451,7 @@ test "Stack visibility" {
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});
@@ -481,7 +476,7 @@ test "Stack visibility" {
 
 test "Entry visibility with callback" {
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
     }.f;
 
     const small_term_callback = struct {
@@ -521,7 +516,7 @@ test "Stack remove" {
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});

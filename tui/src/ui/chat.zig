@@ -30,9 +30,9 @@ pub const ChatContainer = struct {
         self.show_border = show;
     }
 
-    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
+    pub fn draw(self: *Self, renderer: DefaultRenderer) void {
         if (!self.show_border) {
-            self.chat_history.draw(win);
+            self.chat_history.draw(renderer);
             return;
         }
 
@@ -43,94 +43,58 @@ pub const ChatContainer = struct {
         };
 
         // Draw top border with optional title
-        self.drawTopBorder(win, border_style, title_style);
+        self.drawTopBorder(renderer, border_style, title_style);
 
         // Draw side borders
-        for (1..win.height -| 1) |y| {
-            win.writeCell(0, @intCast(y), .{
-                .char = .{ .grapheme = "│", .width = 1 },
-                .style = border_style,
-            });
-            win.writeCell(win.width -| 1, @intCast(y), .{
-                .char = .{ .grapheme = "│", .width = 1 },
-                .style = border_style,
-            });
+        for (1..renderer.height() -| 1) |y| {
+            renderer.drawCell(0, @intCast(y), "│", border_style);
+            renderer.drawCell(renderer.width() -| 1, @intCast(y), "│", border_style);
         }
 
         // Draw bottom border
-        self.drawBottomBorder(win, border_style);
+        self.drawBottomBorder(renderer, border_style);
 
         // Draw chat content inside border
-        const content_win = win.child(.{
-            .x_off = 1,
-            .y_off = 1,
-            .width = win.width -| 2,
-            .height = win.height -| 2,
-        });
-        self.chat_history.draw(content_win);
+        const content_renderer = renderer.subRegion(1, 1, renderer.width() -| 2, renderer.height() -| 2);
+        self.chat_history.draw(content_renderer);
     }
 
-    fn drawTopBorder(self: *const Self, win: DefaultRenderer.Window, border_style: DefaultRenderer.Style, title_style: DefaultRenderer.Style) void {
-        win.writeCell(0, 0, .{
-            .char = .{ .grapheme = "╭", .width = 1 },
-            .style = border_style,
-        });
+    fn drawTopBorder(self: *const Self, renderer: DefaultRenderer, border_style: DefaultRenderer.Style, title_style: DefaultRenderer.Style) void {
+        renderer.drawCell(0, 0, "╭", border_style);
 
         var x: u16 = 1;
 
         // Title if present
         if (self.title) |title| {
-            win.writeCell(x, 0, .{
-                .char = .{ .grapheme = "─", .width = 1 },
-                .style = border_style,
-            });
+            renderer.drawCell(x, 0, "─", border_style);
             x += 1;
 
-            const title_len: u16 = @intCast(@min(title.len, win.width -| 6));
-            _ = win.child(.{ .x_off = x, .y_off = 0, .width = title_len, .height = 1 })
-                .printSegment(.{ .text = title[0..title_len], .style = title_style }, .{});
+            const title_len: u16 = @intCast(@min(title.len, renderer.width() -| 6));
+            renderer.drawText(x, 0, title[0..title_len], title_style);
             x += title_len;
 
-            win.writeCell(x, 0, .{
-                .char = .{ .grapheme = "─", .width = 1 },
-                .style = border_style,
-            });
+            renderer.drawCell(x, 0, "─", border_style);
             x += 1;
         }
 
         // Fill remaining with horizontal line
-        while (x < win.width -| 1) : (x += 1) {
-            win.writeCell(x, 0, .{
-                .char = .{ .grapheme = "─", .width = 1 },
-                .style = border_style,
-            });
+        while (x < renderer.width() -| 1) : (x += 1) {
+            renderer.drawCell(x, 0, "─", border_style);
         }
 
-        win.writeCell(win.width -| 1, 0, .{
-            .char = .{ .grapheme = "╮", .width = 1 },
-            .style = border_style,
-        });
+        renderer.drawCell(renderer.width() -| 1, 0, "╮", border_style);
     }
 
-    fn drawBottomBorder(_: *const Self, win: DefaultRenderer.Window, border_style: DefaultRenderer.Style) void {
-        const y: u16 = win.height -| 1;
+    fn drawBottomBorder(_: *const Self, renderer: DefaultRenderer, border_style: DefaultRenderer.Style) void {
+        const y: u16 = renderer.height() -| 1;
 
-        win.writeCell(0, y, .{
-            .char = .{ .grapheme = "╰", .width = 1 },
-            .style = border_style,
-        });
+        renderer.drawCell(0, y, "╰", border_style);
 
-        for (1..win.width -| 1) |x| {
-            win.writeCell(@intCast(x), y, .{
-                .char = .{ .grapheme = "─", .width = 1 },
-                .style = border_style,
-            });
+        for (1..renderer.width() -| 1) |x| {
+            renderer.drawCell(@intCast(x), y, "─", border_style);
         }
 
-        win.writeCell(win.width -| 1, y, .{
-            .char = .{ .grapheme = "╯", .width = 1 },
-            .style = border_style,
-        });
+        renderer.drawCell(renderer.width() -| 1, y, "╯", border_style);
     }
 
     pub fn scrollUp(self: *Self, lines: u16) void {

@@ -90,114 +90,78 @@ pub const MessageCell = struct {
         return if (width > 6) width - 6 else 1;
     }
 
-    pub fn draw(self: *const Self, win: DefaultRenderer.Window) void {
-        const text_width = self.getTextWidth(win.width);
+    pub fn draw(self: *const Self, renderer: DefaultRenderer) void {
+        const text_width = self.getTextWidth(renderer.width());
         const content = self.getDisplayContent();
         const content_lines = countLines(content, text_width);
 
         switch (self.role) {
-            .user => self.drawUser(win, content, content_lines, text_width),
-            .assistant => self.drawAssistant(win, content, content_lines, text_width),
-            .system => self.drawSystem(win, content),
-            .tool_call => self.drawToolCall(win, content, content_lines, text_width),
-            .tool_result => self.drawToolResult(win, content, content_lines, text_width),
+            .user => self.drawUser(renderer, content, content_lines, text_width),
+            .assistant => self.drawAssistant(renderer, content, content_lines, text_width),
+            .system => self.drawSystem(renderer, content),
+            .tool_call => self.drawToolCall(renderer, content, content_lines, text_width),
+            .tool_result => self.drawToolResult(renderer, content, content_lines, text_width),
         }
     }
 
-    fn drawUser(self: *const Self, win: DefaultRenderer.Window, content: []const u8, content_lines: u16, text_width: u16) void {
+    fn drawUser(self: *const Self, renderer: DefaultRenderer, content: []const u8, content_lines: u16, text_width: u16) void {
         _ = self;
         const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_bar_color } };
         const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_text_color } };
 
         var row: u16 = 0;
         while (row < content_lines) : (row += 1) {
-            win.writeCell(2, row, .{
-                .char = .{ .grapheme = "│", .width = 1 },
-                .style = bar_style,
-            });
+            renderer.drawCell(2, row, "│", bar_style);
         }
 
-        const text_win = win.child(.{
-            .x_off = 4,
-            .y_off = 0,
-            .width = text_width,
-            .height = content_lines,
-        });
-        _ = text_win.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
+        const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
+        _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
     }
 
-    fn drawAssistant(self: *const Self, win: DefaultRenderer.Window, content: []const u8, content_lines: u16, text_width: u16) void {
+    fn drawAssistant(self: *const Self, renderer: DefaultRenderer, content: []const u8, content_lines: u16, text_width: u16) void {
         _ = self;
-        // TODO: Use markdown parser from ../markdown/parser.zig when available
         const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = assistant_text_color } };
 
-        const text_win = win.child(.{
-            .x_off = 2,
-            .y_off = 0,
-            .width = text_width + 2,
-            .height = content_lines,
-        });
-        _ = text_win.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
+        const text_renderer = renderer.subRegion(2, 0, text_width + 2, content_lines);
+        _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
     }
 
-    fn drawSystem(self: *const Self, win: DefaultRenderer.Window, content: []const u8) void {
+    fn drawSystem(self: *const Self, renderer: DefaultRenderer, content: []const u8) void {
         _ = self;
-        const msg_len: u16 = @intCast(@min(content.len, win.width -| 4));
-        const x_off: u16 = if (win.width > msg_len) (win.width - msg_len) / 2 else 2;
+        const msg_len: u16 = @intCast(@min(content.len, renderer.width() -| 4));
+        const x_off: u16 = if (renderer.width() > msg_len) (renderer.width() - msg_len) / 2 else 2;
 
-        const sys_win = win.child(.{
-            .x_off = x_off,
-            .y_off = 0,
-            .width = msg_len,
-            .height = 1,
-        });
-
+        const sys_renderer = renderer.subRegion(x_off, 0, msg_len, 1);
         const style: DefaultRenderer.Style = .{ .fg = .{ .index = system_text_color } };
-        _ = sys_win.printSegment(.{ .text = content, .style = style }, .{});
+        _ = sys_renderer.window.printSegment(.{ .text = content, .style = style }, .{});
     }
 
-    fn drawToolCall(self: *const Self, win: DefaultRenderer.Window, content: []const u8, content_lines: u16, text_width: u16) void {
+    fn drawToolCall(self: *const Self, renderer: DefaultRenderer, content: []const u8, content_lines: u16, text_width: u16) void {
         _ = self;
         const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_call_color } };
         const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_call_color } };
 
         var row: u16 = 0;
         while (row < content_lines) : (row += 1) {
-            win.writeCell(2, row, .{
-                .char = .{ .grapheme = "▶", .width = 1 },
-                .style = bar_style,
-            });
+            renderer.drawCell(2, row, "▶", bar_style);
         }
 
-        const text_win = win.child(.{
-            .x_off = 4,
-            .y_off = 0,
-            .width = text_width,
-            .height = content_lines,
-        });
-        _ = text_win.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
+        const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
+        _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
     }
 
-    fn drawToolResult(self: *const Self, win: DefaultRenderer.Window, content: []const u8, content_lines: u16, text_width: u16) void {
+    fn drawToolResult(self: *const Self, renderer: DefaultRenderer, content: []const u8, content_lines: u16, text_width: u16) void {
         _ = self;
         const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_result_color } };
         const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = dim_color } };
 
         var row: u16 = 0;
         while (row < content_lines) : (row += 1) {
-            win.writeCell(2, row, .{
-                .char = .{ .grapheme = "◀", .width = 1 },
-                .style = bar_style,
-            });
+            renderer.drawCell(2, row, "◀", bar_style);
         }
 
-        const text_win = win.child(.{
-            .x_off = 4,
-            .y_off = 0,
-            .width = text_width,
-            .height = content_lines,
-        });
-        _ = text_win.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
+        const text_renderer = renderer.subRegion(4, 0, text_width, content_lines);
+        _ = text_renderer.window.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
     }
 };
 
