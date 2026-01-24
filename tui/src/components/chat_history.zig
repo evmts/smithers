@@ -1,9 +1,9 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 const db = @import("../db.zig");
 const md = @import("../markdown/parser.zig");
 const Selection = @import("../selection.zig").Selection;
-const Colors = @import("../layout.zig").Colors;
+const Colors = @import("../layout.zig").DefaultColors;
 
 const user_bar_color = Colors.Indexed.USER_BAR;
 const user_text_color = Colors.Indexed.USER_TEXT;
@@ -24,7 +24,7 @@ pub const ChatHistory = struct {
     /// Current selection state
     selection: Selection,
     /// Last rendered window for text extraction
-    last_window: ?vaxis.Window,
+    last_window: ?DefaultRenderer.Window,
 
     const Self = @This();
 
@@ -201,7 +201,7 @@ pub const ChatHistory = struct {
         return result.toOwnedSlice(self.allocator) catch null;
     }
 
-    pub fn draw(self: *Self, win: vaxis.Window) void {
+    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
         // Store window for text extraction
         self.last_window = win;
 
@@ -255,7 +255,7 @@ pub const ChatHistory = struct {
     }
 
     /// Apply reverse video to selected cells
-    fn applySelectionHighlight(self: *Self, win: vaxis.Window) void {
+    fn applySelectionHighlight(self: *Self, win: DefaultRenderer.Window) void {
         // Get bounds in screen space (adjusted for current scroll)
         const content_bounds = self.selection.getBounds();
         const bounds = self.selection.getScreenBounds(self.scroll_offset);
@@ -308,7 +308,7 @@ pub const ChatHistory = struct {
         }
     }
 
-    fn drawMessage(self: *Self, win: vaxis.Window, msg: db.Message, y: u16, text_width: u16, skip_lines: u16) void {
+    fn drawMessage(self: *Self, win: DefaultRenderer.Window, msg: db.Message, y: u16, text_width: u16, skip_lines: u16) void {
         const content_lines = countLines(msg.content, text_width);
         
         switch (msg.role) {
@@ -346,7 +346,7 @@ pub const ChatHistory = struct {
                             .width = text_width,
                             .height = 1,
                         });
-                        const style: vaxis.Style = .{ .fg = .{ .index = system_text_color } };
+                        const style: DefaultRenderer.Style = .{ .fg = .{ .index = system_text_color } };
                         _ = sys_win.printSegment(.{ .text = msg.content, .style = style }, .{});
                     }
                 } else {
@@ -362,7 +362,7 @@ pub const ChatHistory = struct {
                             .height = 1,
                         });
 
-                        const style: vaxis.Style = .{ .fg = .{ .index = system_text_color } };
+                        const style: DefaultRenderer.Style = .{ .fg = .{ .index = system_text_color } };
                         _ = sys_win.printSegment(.{ .text = msg.content, .style = style }, .{});
                     }
                 }
@@ -370,10 +370,10 @@ pub const ChatHistory = struct {
         }
     }
 
-    fn drawUserMessage(self: *Self, win: vaxis.Window, content: []const u8, y: u16, text_width: u16, content_lines: u16, skip_lines: u16) void {
+    fn drawUserMessage(self: *Self, win: DefaultRenderer.Window, content: []const u8, y: u16, text_width: u16, content_lines: u16, skip_lines: u16) void {
         _ = self;
-        const bar_style: vaxis.Style = .{ .fg = .{ .index = user_bar_color } };
-        const text_style: vaxis.Style = .{ .fg = .{ .index = user_text_color } };
+        const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_bar_color } };
+        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_text_color } };
 
         // Draw vertical bar for visible lines only
         var row: u16 = skip_lines;
@@ -402,7 +402,7 @@ pub const ChatHistory = struct {
         }
     }
 
-    fn drawMarkdownMessage(self: *Self, win: vaxis.Window, content: []const u8, y: u16, text_width: u16, skip_lines: u16) void {
+    fn drawMarkdownMessage(self: *Self, win: DefaultRenderer.Window, content: []const u8, y: u16, text_width: u16, skip_lines: u16) void {
         // Trim trailing whitespace to avoid extra blank lines
         const trimmed = std.mem.trimRight(u8, content, " \t\n\r");
         var parser = md.MarkdownParser.init(self.allocator);
@@ -440,7 +440,7 @@ pub const ChatHistory = struct {
             // Calculate x offset based on line type
             var x_off: u16 = 2;
             var prefix: ?[]const u8 = null;
-            var prefix_style: vaxis.Style = .{};
+            var prefix_style: DefaultRenderer.Style = .{};
 
             switch (line.line_type) {
                 .blockquote => {
@@ -506,9 +506,9 @@ pub const ChatHistory = struct {
         }
     }
 
-    fn mdStyleToVaxis(self: *Self, style: md.Style, line_type: md.LineType) vaxis.Style {
+    fn mdStyleToVaxis(self: *Self, style: md.Style, line_type: md.LineType) DefaultRenderer.Style {
         _ = self;
-        var result: vaxis.Style = .{};
+        var result: DefaultRenderer.Style = .{};
 
         // Set color based on style and line type
         if (style.color == md.Color.cyan) {
@@ -534,13 +534,13 @@ pub const ChatHistory = struct {
         return result;
     }
 
-    fn drawCodeWithLineNumbers(self: *Self, win: vaxis.Window, content: []const u8, y: u16, text_width: u16, skip_lines: u16) void {
+    fn drawCodeWithLineNumbers(self: *Self, win: DefaultRenderer.Window, content: []const u8, y: u16, text_width: u16, skip_lines: u16) void {
         _ = self;
         const line_num_width: u16 = 6; // "00001 " = 6 chars
         const code_width = if (text_width > line_num_width) text_width - line_num_width else 1;
 
-        const line_num_style: vaxis.Style = .{ .fg = .{ .index = dim_color } };
-        const code_style: vaxis.Style = .{ .fg = .{ .index = code_color } };
+        const line_num_style: DefaultRenderer.Style = .{ .fg = .{ .index = dim_color } };
+        const code_style: DefaultRenderer.Style = .{ .fg = .{ .index = code_color } };
 
         var line_iter = std.mem.splitScalar(u8, content, '\n');
         var row: u16 = y;

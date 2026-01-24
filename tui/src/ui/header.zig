@@ -2,9 +2,9 @@
 // Display: Smithers │ claude-sonnet-4 │ [1:main] [2:chat] [3:code]
 
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 const db = @import("../db.zig");
-const Colors = @import("../layout.zig").Colors;
+const Colors = @import("../layout.zig").DefaultColors;
 
 const bg_color = Colors.Indexed.HEADER_BG;
 const title_color = Colors.Indexed.TITLE;
@@ -34,16 +34,16 @@ pub const Header = struct {
         self.model = model;
     }
 
-    pub fn draw(self: *const Self, win: vaxis.Window, database: *db.DefaultDatabase) void {
-        const bar_style: vaxis.Style = .{ .bg = .{ .index = bg_color } };
-        const title_style: vaxis.Style = .{
+    pub fn draw(self: *const Self, win: DefaultRenderer.Window, database: *db.DefaultDatabase) void {
+        const bar_style: DefaultRenderer.Style = .{ .bg = .{ .index = bg_color } };
+        const title_style: DefaultRenderer.Style = .{
             .fg = .{ .index = title_color },
             .bg = .{ .index = bg_color },
             .bold = true,
         };
-        const sep_style: vaxis.Style = .{ .fg = .{ .index = separator_color }, .bg = .{ .index = bg_color } };
-        const model_style: vaxis.Style = .{ .fg = .{ .index = model_color }, .bg = .{ .index = bg_color } };
-        const default_style: vaxis.Style = .{ .bg = .{ .index = bg_color } };
+        const sep_style: DefaultRenderer.Style = .{ .fg = .{ .index = separator_color }, .bg = .{ .index = bg_color } };
+        const model_style: DefaultRenderer.Style = .{ .fg = .{ .index = model_color }, .bg = .{ .index = bg_color } };
+        const default_style: DefaultRenderer.Style = .{ .bg = .{ .index = bg_color } };
 
         // Fill header background
         for (0..win.width) |col| {

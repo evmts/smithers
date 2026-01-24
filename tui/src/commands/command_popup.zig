@@ -1,16 +1,16 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 const SelectList = @import("select_list.zig").SelectList;
 const SlashCommand = @import("slash_command.zig").SlashCommand;
 const builtInSlashCommands = @import("slash_command.zig").builtInSlashCommands;
 
 const MAX_POPUP_ROWS: usize = 8;
 
-const border_color = vaxis.Color{ .rgb = .{ 0x7a, 0xa2, 0xf7 } };
-const selected_bg = vaxis.Color{ .rgb = .{ 0x3d, 0x59, 0xa1 } };
-const command_color = vaxis.Color{ .rgb = .{ 0xbb, 0x9a, 0xf7 } };
-const desc_color = vaxis.Color{ .rgb = .{ 0x56, 0x5f, 0x89 } };
-const highlight_color = vaxis.Color{ .rgb = .{ 0xff, 0x9e, 0x64 } };
+const border_color = DefaultRenderer.Color{ .rgb = .{ 0x7a, 0xa2, 0xf7 } };
+const selected_bg = DefaultRenderer.Color{ .rgb = .{ 0x3d, 0x59, 0xa1 } };
+const command_color = DefaultRenderer.Color{ .rgb = .{ 0xbb, 0x9a, 0xf7 } };
+const desc_color = DefaultRenderer.Color{ .rgb = .{ 0x56, 0x5f, 0x89 } };
+const highlight_color = DefaultRenderer.Color{ .rgb = .{ 0xff, 0x9e, 0x64 } };
 
 /// Filtered command item with display info
 pub const FilteredCommand = struct {
@@ -113,25 +113,25 @@ pub const CommandPopup = struct {
     }
 
     /// Handle navigation key, returns selected command if Enter pressed
-    pub fn handleKey(self: *Self, key: vaxis.Key) ?SlashCommand {
+    pub fn handleKey(self: *Self, key: DefaultRenderer.Key) ?SlashCommand {
         if (!self.visible) return null;
 
-        if (key.matches(vaxis.Key.escape, .{})) {
+        if (key.matches(DefaultRenderer.Key.escape, .{})) {
             self.hide();
             return null;
         }
 
-        if (key.matches(vaxis.Key.up, .{})) {
+        if (key.matches(DefaultRenderer.Key.up, .{})) {
             self.select_list.moveUp();
             return null;
         }
 
-        if (key.matches(vaxis.Key.down, .{})) {
+        if (key.matches(DefaultRenderer.Key.down, .{})) {
             self.select_list.moveDown();
             return null;
         }
 
-        if (key.matches(vaxis.Key.enter, .{})) {
+        if (key.matches(DefaultRenderer.Key.enter, .{})) {
             if (self.select_list.selectedItem()) |item| {
                 self.hide();
                 return item.cmd;
@@ -139,7 +139,7 @@ pub const CommandPopup = struct {
             return null;
         }
 
-        if (key.matches(vaxis.Key.tab, .{})) {
+        if (key.matches(DefaultRenderer.Key.tab, .{})) {
             if (self.select_list.selectedItem()) |item| {
                 return item.cmd;
             }
@@ -168,7 +168,7 @@ pub const CommandPopup = struct {
     }
 
     /// Draw the popup above the input area
-    pub fn draw(self: *Self, win: vaxis.Window) void {
+    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
         if (!self.visible) return;
 
         const items = self.filtered_commands.items;
@@ -186,7 +186,7 @@ pub const CommandPopup = struct {
         const popup_y: u16 = win.height -| popup_height -| 1;
         const popup_x: u16 = 2;
 
-        const border_style: vaxis.Style = .{ .fg = border_color };
+        const border_style: DefaultRenderer.Style = .{ .fg = border_color };
         const popup_win = win.child(.{
             .x_off = popup_x,
             .y_off = popup_y,
@@ -208,7 +208,7 @@ pub const CommandPopup = struct {
         }
     }
 
-    fn drawRow(self: *Self, win: vaxis.Window, row: u16, item: FilteredCommand, is_selected: bool) void {
+    fn drawRow(self: *Self, win: DefaultRenderer.Window, row: u16, item: FilteredCommand, is_selected: bool) void {
         _ = self;
         const cmd_name = item.cmd.command();
         const description = item.cmd.description();
@@ -260,7 +260,7 @@ pub const CommandPopup = struct {
 
         x += 2;
 
-        const desc_style: vaxis.Style = .{
+        const desc_style: DefaultRenderer.Style = .{
             .fg = desc_color,
             .bg = if (is_selected) selected_bg else .default,
         };
@@ -279,7 +279,7 @@ pub const CommandPopup = struct {
         _ = desc_win.printSegment(.{ .text = desc_to_show, .style = desc_style }, .{});
     }
 
-    fn drawNoMatches(self: *Self, win: vaxis.Window) void {
+    fn drawNoMatches(self: *Self, win: DefaultRenderer.Window) void {
         _ = self;
         const msg = "no matches";
         const popup_height: u16 = 3;
@@ -290,7 +290,7 @@ pub const CommandPopup = struct {
         const popup_y: u16 = win.height -| popup_height -| 1;
         const popup_x: u16 = 2;
 
-        const border_style: vaxis.Style = .{ .fg = border_color };
+        const border_style: DefaultRenderer.Style = .{ .fg = border_color };
         const popup_win = win.child(.{
             .x_off = popup_x,
             .y_off = popup_y,
@@ -302,7 +302,7 @@ pub const CommandPopup = struct {
             },
         });
 
-        const style: vaxis.Style = .{ .fg = desc_color };
+        const style: DefaultRenderer.Style = .{ .fg = desc_color };
         _ = popup_win.printSegment(.{ .text = msg, .style = style }, .{});
     }
 };
@@ -351,11 +351,11 @@ test "CommandPopup selection" {
     try popup.show("");
     try testing.expect(popup.selectedCommand() != null);
 
-    _ = popup.handleKey(.{ .codepoint = vaxis.Key.down });
+    _ = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.down });
     const cmd1 = popup.selectedCommand();
     try testing.expect(cmd1 != null);
 
-    _ = popup.handleKey(.{ .codepoint = vaxis.Key.up });
+    _ = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.up });
     const cmd2 = popup.selectedCommand();
     try testing.expect(cmd2 != null);
 }
@@ -369,7 +369,7 @@ test "CommandPopup enter selects command" {
     const first_cmd = popup.selectedCommand();
     try testing.expect(first_cmd != null);
 
-    const selected = popup.handleKey(.{ .codepoint = vaxis.Key.enter });
+    const selected = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.enter });
     try testing.expect(selected != null);
     try testing.expect(!popup.isVisible());
 }
@@ -382,7 +382,7 @@ test "CommandPopup escape dismisses" {
     try popup.show("");
     try testing.expect(popup.isVisible());
 
-    _ = popup.handleKey(.{ .codepoint = vaxis.Key.escape });
+    _ = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.escape });
     try testing.expect(!popup.isVisible());
 }
 
@@ -395,6 +395,6 @@ test "CommandPopup tab autocomplete" {
     const autocomplete = popup.getAutocomplete();
     try testing.expect(autocomplete != null);
 
-    const selected = popup.handleKey(.{ .codepoint = vaxis.Key.tab });
+    const selected = popup.handleKey(.{ .codepoint = DefaultRenderer.Key.tab });
     try testing.expect(selected != null);
 }

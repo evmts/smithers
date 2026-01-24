@@ -2,7 +2,7 @@
 // Braille spinner animation with 80ms frame interval
 
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 pub const SPINNER_FRAMES = [_][]const u8{
     "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
@@ -74,9 +74,9 @@ pub const Loader = struct {
         return SPINNER_FRAMES[self.frame_index];
     }
 
-    pub fn draw(self: *const Self, win: vaxis.Window) void {
-        const spin_style: vaxis.Style = .{ .fg = .{ .index = self.style.color } };
-        const text_style: vaxis.Style = .{};
+    pub fn draw(self: *const Self, win: DefaultRenderer.Window) void {
+        const spin_style: DefaultRenderer.Style = .{ .fg = .{ .index = self.style.color } };
+        const text_style: DefaultRenderer.Style = .{};
 
         var x: u16 = 0;
 

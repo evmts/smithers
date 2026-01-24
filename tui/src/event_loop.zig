@@ -1,6 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-const Event = @import("event.zig").Event;
+const event = @import("event.zig");
+const DefaultEvent = event.DefaultEvent;
 
 /// Generic EventLoop for dependency injection of terminal backend
 pub fn EventLoop(comptime Vaxis: type, comptime Tty: type) type {
@@ -8,7 +9,7 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type) type {
         allocator: std.mem.Allocator,
         tty: Tty,
         vx: Vaxis,
-        loop: vaxis.Loop(Event),
+        loop: vaxis.Loop(DefaultEvent),
         tty_buffer: [1024]u8,
 
         const Self = @This();
@@ -57,11 +58,11 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type) type {
             self.loop.stop();
         }
 
-        pub fn nextEvent(self: *Self) Event {
+        pub fn nextEvent(self: *Self) DefaultEvent {
             return self.loop.nextEvent();
         }
 
-        pub fn tryEvent(self: *Self) ?Event {
+        pub fn tryEvent(self: *Self) ?DefaultEvent {
             return self.loop.tryEvent();
         }
 
@@ -85,6 +86,15 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type) type {
             self.tty.deinit();
             const pid: i32 = 0;
             _ = std.c.kill(pid, std.posix.SIG.TSTP);
+            self.tty = try Tty.init(&self.tty_buffer);
+            self.loop = .{ .tty = &self.tty, .vaxis = &self.vx };
+            try self.loop.init();
+            try self.loop.start();
+            try self.vx.enterAltScreen(self.tty.writer());
+        }
+
+        /// Reinitialize TTY after external process (e.g., editor)
+        pub fn reinitTty(self: *Self) !void {
             self.tty = try Tty.init(&self.tty_buffer);
             self.loop = .{ .tty = &self.tty, .vaxis = &self.vx };
             try self.loop.init();

@@ -2,7 +2,7 @@
 // Wraps chat history display with container styling
 
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 const ChatHistory = @import("../components/chat_history.zig").ChatHistory;
 const db = @import("../db.zig");
 
@@ -30,14 +30,14 @@ pub const ChatContainer = struct {
         self.show_border = show;
     }
 
-    pub fn draw(self: *Self, win: vaxis.Window) void {
+    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
         if (!self.show_border) {
             self.chat_history.draw(win);
             return;
         }
 
-        const border_style: vaxis.Style = .{ .fg = .{ .index = border_color } };
-        const title_style: vaxis.Style = .{
+        const border_style: DefaultRenderer.Style = .{ .fg = .{ .index = border_color } };
+        const title_style: DefaultRenderer.Style = .{
             .fg = .{ .index = title_color },
             .bold = true,
         };
@@ -70,7 +70,7 @@ pub const ChatContainer = struct {
         self.chat_history.draw(content_win);
     }
 
-    fn drawTopBorder(self: *const Self, win: vaxis.Window, border_style: vaxis.Style, title_style: vaxis.Style) void {
+    fn drawTopBorder(self: *const Self, win: DefaultRenderer.Window, border_style: DefaultRenderer.Style, title_style: DefaultRenderer.Style) void {
         win.writeCell(0, 0, .{
             .char = .{ .grapheme = "╭", .width = 1 },
             .style = border_style,
@@ -112,7 +112,7 @@ pub const ChatContainer = struct {
         });
     }
 
-    fn drawBottomBorder(_: *const Self, win: vaxis.Window, border_style: vaxis.Style) void {
+    fn drawBottomBorder(_: *const Self, win: DefaultRenderer.Window, border_style: DefaultRenderer.Style) void {
         const y: u16 = win.height -| 1;
 
         win.writeCell(0, y, .{

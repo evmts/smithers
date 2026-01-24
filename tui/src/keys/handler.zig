@@ -1,5 +1,5 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 const Input = @import("../components/input.zig").Input;
 const ChatHistory = @import("../components/chat_history.zig").ChatHistory;
@@ -10,7 +10,7 @@ const loading_mod = @import("../loading.zig");
 const help = @import("../help.zig");
 const editor_utils = @import("../editor.zig");
 const git_utils = @import("../git.zig");
-const Event = @import("../event.zig").Event;
+const DefaultEvent = @import("../event.zig").DefaultEvent;
 
 pub const KeyContext = struct {
     input: *Input,
@@ -40,7 +40,7 @@ pub const KeyHandler = struct {
         return .{ .alloc = alloc };
     }
 
-    pub fn handleKey(self: *KeyHandler, key: vaxis.Key, ctx: *KeyContext) !Action {
+    pub fn handleKey(self: *KeyHandler, key: DefaultRenderer.Key, ctx: *KeyContext) !Action {
         // Ctrl+Z to suspend (like vim)
         if (key.matches('z', .{ .ctrl = true })) {
             return .suspend_tui;
@@ -68,7 +68,7 @@ pub const KeyHandler = struct {
         }
 
         // Escape - dismiss help or interrupt loading
-        if (key.matches(vaxis.Key.escape, .{})) {
+        if (key.matches(DefaultRenderer.Key.escape, .{})) {
             if (ctx.status_bar.isHelpVisible()) {
                 ctx.status_bar.hideHelp();
                 return .none;
@@ -198,19 +198,19 @@ pub const KeyHandler = struct {
 
         if (!ctx.loading.is_loading) {
             // Arrow keys scroll 5 lines (~1 message), PageUp/PageDown scroll faster
-            if (key.matches(vaxis.Key.up, .{})) {
+            if (key.matches(DefaultRenderer.Key.up, .{})) {
                 ctx.chat_history.scrollUp(5);
                 return .none;
-            } else if (key.matches(vaxis.Key.down, .{})) {
+            } else if (key.matches(DefaultRenderer.Key.down, .{})) {
                 ctx.chat_history.scrollDown(5);
                 return .none;
-            } else if (key.matches(vaxis.Key.page_up, .{})) {
+            } else if (key.matches(DefaultRenderer.Key.page_up, .{})) {
                 ctx.chat_history.scrollUp(20);
                 return .none;
-            } else if (key.matches(vaxis.Key.page_down, .{})) {
+            } else if (key.matches(DefaultRenderer.Key.page_down, .{})) {
                 ctx.chat_history.scrollDown(20);
                 return .none;
-            } else if (try ctx.input.handleEvent(Event{ .key_press = key })) |command| {
+            } else if (try ctx.input.handleEvent(DefaultEvent{ .key_press = key })) |command| {
                 defer self.alloc.free(command);
 
                 if (std.mem.eql(u8, command, "/exit")) {

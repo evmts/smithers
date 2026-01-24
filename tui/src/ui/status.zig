@@ -2,9 +2,9 @@
 // Display: Ctrl+C: cancel │ /: commands │ ↑↓: history
 
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 const loading_mod = @import("../loading.zig");
-const Colors = @import("../layout.zig").Colors;
+const Colors = @import("../layout.zig").DefaultColors;
 
 const bg_color = Colors.Indexed.STATUS_BG;
 const fg_color = Colors.Indexed.STATUS_FG;
@@ -55,17 +55,17 @@ pub const StatusBar = struct {
         return if (self.show_help) 4 else 1;
     }
 
-    pub fn draw(self: *const Self, win: vaxis.Window) void {
-        const bar_style: vaxis.Style = .{
+    pub fn draw(self: *const Self, win: DefaultRenderer.Window) void {
+        const bar_style: DefaultRenderer.Style = .{
             .bg = .{ .index = bg_color },
             .fg = .{ .index = fg_color },
         };
-        const key_style: vaxis.Style = .{
+        const key_style: DefaultRenderer.Style = .{
             .bg = .{ .index = bg_color },
             .fg = .{ .index = key_color },
             .bold = true,
         };
-        const spin_style: vaxis.Style = .{
+        const spin_style: DefaultRenderer.Style = .{
             .bg = .{ .index = bg_color },
             .fg = .{ .index = spinner_color },
         };
@@ -159,7 +159,7 @@ pub const StatusBar = struct {
         }
     }
 
-    fn drawHelpRow(self: *const Self, win: vaxis.Window, row: u16, hints: []const HintEntry, key_style: vaxis.Style, bar_style: vaxis.Style) void {
+    fn drawHelpRow(self: *const Self, win: DefaultRenderer.Window, row: u16, hints: []const HintEntry, key_style: DefaultRenderer.Style, bar_style: DefaultRenderer.Style) void {
         _ = self;
         var x: u16 = 2;
         for (hints) |hint| {

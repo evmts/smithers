@@ -2,7 +2,7 @@
 // Container with borders and optional title
 
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 const default_border_color: u8 = 240;
 
@@ -67,13 +67,13 @@ pub const Box = struct {
         self.style.title = title;
     }
 
-    pub fn draw(self: *const Self, win: vaxis.Window) void {
+    pub fn draw(self: *const Self, win: DefaultRenderer.Window) void {
         if (self.style.border == .none) return;
         if (win.width < 2 or win.height < 2) return;
 
         const chars = self.style.border.chars();
-        const border_style: vaxis.Style = .{ .fg = .{ .index = self.style.border_color } };
-        const title_style: vaxis.Style = .{
+        const border_style: DefaultRenderer.Style = .{ .fg = .{ .index = self.style.border_color } };
+        const title_style: DefaultRenderer.Style = .{
             .fg = .{ .index = self.style.title_color },
             .bold = true,
         };
@@ -151,7 +151,7 @@ pub const Box = struct {
         });
     }
 
-    pub fn contentWindow(self: *const Self, win: vaxis.Window) vaxis.Window {
+    pub fn contentWindow(self: *const Self, win: DefaultRenderer.Window) DefaultRenderer.Window {
         const border_offset: u16 = if (self.style.border != .none) 1 else 0;
         const x_off = border_offset + self.style.padding_left;
         const y_off = border_offset + self.style.padding_top;

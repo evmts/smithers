@@ -1,5 +1,4 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
 const EventLoop = @import("event_loop.zig").DefaultEventLoop;
 const Input = @import("components/input.zig").Input;
 
@@ -35,11 +34,7 @@ pub fn openExternalEditor(alloc: std.mem.Allocator, event_loop: *EventLoop, inpu
     _ = try child.wait();
 
     // Restore terminal
-    event_loop.tty = try vaxis.Tty.init(&event_loop.tty_buffer);
-    event_loop.loop = .{ .tty = &event_loop.tty, .vaxis = &event_loop.vx };
-    try event_loop.loop.init();
-    try event_loop.loop.start();
-    try event_loop.vx.enterAltScreen(event_loop.tty.writer());
+    try event_loop.reinitTty();
 
     // Read the edited content
     const file = try std.fs.openFileAbsolute(tmp_path, .{});

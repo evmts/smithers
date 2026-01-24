@@ -1,5 +1,5 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("renderer.zig").DefaultRenderer;
 const db = @import("../db.zig");
 const logo = @import("../components/logo.zig");
 const Input = @import("../components/input.zig").Input;
@@ -21,7 +21,7 @@ pub const FrameRenderer = struct {
         key_handler: *const KeyHandler,
     };
 
-    pub fn render(win: vaxis.Window, ctx: *RenderContext) void {
+    pub fn render(win: DefaultRenderer.Window, ctx: *RenderContext) void {
         win.clear();
 
         const height = win.height;

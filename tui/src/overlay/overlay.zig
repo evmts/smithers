@@ -2,7 +2,7 @@
 // Stack-based overlays with vaxis rendering, positioning, and focus management
 
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 const Allocator = std.mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
@@ -81,7 +81,7 @@ pub const Margin = struct {
 // ============ Overlay Options ============
 
 pub const VisibilityCallback = *const fn (term_width: u16, term_height: u16) bool;
-pub const DrawCallback = *const fn (win: vaxis.Window, ctx: ?*anyopaque) void;
+pub const DrawCallback = *const fn (win: DefaultRenderer.Window, ctx: ?*anyopaque) void;
 
 pub const Options = struct {
     width: ?SizeValue = null,
@@ -291,8 +291,8 @@ pub const Stack = struct {
         return self.entries.items.len;
     }
 
-    /// Draw all visible overlays in z-order using vaxis.Window.child()
-    pub fn draw(self: *Self, win: vaxis.Window) void {
+    /// Draw all visible overlays in z-order using Window.child()
+    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
         const term_width = win.width;
         const term_height = win.height;
 
@@ -416,7 +416,7 @@ test "Stack push/pop" {
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: vaxis.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});
@@ -438,7 +438,7 @@ test "Stack z-order" {
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: vaxis.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
     }.f;
 
     const e1 = try stack.push(dummy_draw, null, .{});
@@ -456,7 +456,7 @@ test "Stack visibility" {
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: vaxis.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});
@@ -481,7 +481,7 @@ test "Stack visibility" {
 
 test "Entry visibility with callback" {
     const dummy_draw = struct {
-        fn f(_: vaxis.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
     }.f;
 
     const small_term_callback = struct {
@@ -521,7 +521,7 @@ test "Stack remove" {
     defer stack.deinit();
 
     const dummy_draw = struct {
-        fn f(_: vaxis.Window, _: ?*anyopaque) void {}
+        fn f(_: DefaultRenderer.Window, _: ?*anyopaque) void {}
     }.f;
 
     _ = try stack.push(dummy_draw, null, .{});

@@ -1,5 +1,5 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 // ANSI 256 indexed colors (matching chat_history.zig)
 const user_bar_color: u8 = 10; // Bright green
@@ -90,7 +90,7 @@ pub const MessageCell = struct {
         return if (width > 6) width - 6 else 1;
     }
 
-    pub fn draw(self: *const Self, win: vaxis.Window) void {
+    pub fn draw(self: *const Self, win: DefaultRenderer.Window) void {
         const text_width = self.getTextWidth(win.width);
         const content = self.getDisplayContent();
         const content_lines = countLines(content, text_width);
@@ -104,10 +104,10 @@ pub const MessageCell = struct {
         }
     }
 
-    fn drawUser(self: *const Self, win: vaxis.Window, content: []const u8, content_lines: u16, text_width: u16) void {
+    fn drawUser(self: *const Self, win: DefaultRenderer.Window, content: []const u8, content_lines: u16, text_width: u16) void {
         _ = self;
-        const bar_style: vaxis.Style = .{ .fg = .{ .index = user_bar_color } };
-        const text_style: vaxis.Style = .{ .fg = .{ .index = user_text_color } };
+        const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_bar_color } };
+        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = user_text_color } };
 
         var row: u16 = 0;
         while (row < content_lines) : (row += 1) {
@@ -126,10 +126,10 @@ pub const MessageCell = struct {
         _ = text_win.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
     }
 
-    fn drawAssistant(self: *const Self, win: vaxis.Window, content: []const u8, content_lines: u16, text_width: u16) void {
+    fn drawAssistant(self: *const Self, win: DefaultRenderer.Window, content: []const u8, content_lines: u16, text_width: u16) void {
         _ = self;
         // TODO: Use markdown parser from ../markdown/parser.zig when available
-        const text_style: vaxis.Style = .{ .fg = .{ .index = assistant_text_color } };
+        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = assistant_text_color } };
 
         const text_win = win.child(.{
             .x_off = 2,
@@ -140,7 +140,7 @@ pub const MessageCell = struct {
         _ = text_win.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
     }
 
-    fn drawSystem(self: *const Self, win: vaxis.Window, content: []const u8) void {
+    fn drawSystem(self: *const Self, win: DefaultRenderer.Window, content: []const u8) void {
         _ = self;
         const msg_len: u16 = @intCast(@min(content.len, win.width -| 4));
         const x_off: u16 = if (win.width > msg_len) (win.width - msg_len) / 2 else 2;
@@ -152,14 +152,14 @@ pub const MessageCell = struct {
             .height = 1,
         });
 
-        const style: vaxis.Style = .{ .fg = .{ .index = system_text_color } };
+        const style: DefaultRenderer.Style = .{ .fg = .{ .index = system_text_color } };
         _ = sys_win.printSegment(.{ .text = content, .style = style }, .{});
     }
 
-    fn drawToolCall(self: *const Self, win: vaxis.Window, content: []const u8, content_lines: u16, text_width: u16) void {
+    fn drawToolCall(self: *const Self, win: DefaultRenderer.Window, content: []const u8, content_lines: u16, text_width: u16) void {
         _ = self;
-        const bar_style: vaxis.Style = .{ .fg = .{ .index = tool_call_color } };
-        const text_style: vaxis.Style = .{ .fg = .{ .index = tool_call_color } };
+        const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_call_color } };
+        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_call_color } };
 
         var row: u16 = 0;
         while (row < content_lines) : (row += 1) {
@@ -178,10 +178,10 @@ pub const MessageCell = struct {
         _ = text_win.printSegment(.{ .text = content, .style = text_style }, .{ .wrap = .word });
     }
 
-    fn drawToolResult(self: *const Self, win: vaxis.Window, content: []const u8, content_lines: u16, text_width: u16) void {
+    fn drawToolResult(self: *const Self, win: DefaultRenderer.Window, content: []const u8, content_lines: u16, text_width: u16) void {
         _ = self;
-        const bar_style: vaxis.Style = .{ .fg = .{ .index = tool_result_color } };
-        const text_style: vaxis.Style = .{ .fg = .{ .index = dim_color } };
+        const bar_style: DefaultRenderer.Style = .{ .fg = .{ .index = tool_result_color } };
+        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = dim_color } };
 
         var row: u16 = 0;
         while (row < content_lines) : (row += 1) {

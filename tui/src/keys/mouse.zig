@@ -1,5 +1,5 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 const ChatHistory = @import("../components/chat_history.zig").ChatHistory;
 const Layout = @import("../layout.zig").Layout;
@@ -12,7 +12,7 @@ pub const MouseHandler = struct {
         return .{ .alloc = alloc };
     }
 
-    pub fn handleMouse(self: *MouseHandler, mouse: vaxis.Mouse, chat_history: *ChatHistory) void {
+    pub fn handleMouse(self: *MouseHandler, mouse: DefaultRenderer.Mouse, chat_history: *ChatHistory) void {
         // Handle scroll wheel
         if (mouse.button == .wheel_up) {
             chat_history.scrollUp(3);

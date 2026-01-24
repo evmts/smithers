@@ -1,6 +1,6 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
-const Event = @import("../event.zig").Event;
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
+const DefaultEvent = @import("../event.zig").DefaultEvent;
 const Editor = @import("../editor/editor.zig").Editor;
 
 const border_color = .{ 0x7a, 0xa2, 0xf7 }; // Blue
@@ -65,17 +65,17 @@ pub const Input = struct {
     }
 
     /// Handle keyboard input, returns command if enter was pressed
-    pub fn handleEvent(self: *Self, event: Event) !?[]const u8 {
+    pub fn handleEvent(self: *Self, event: DefaultEvent) !?[]const u8 {
         switch (event) {
             .key_press => |key| {
                 // Tab - apply autocomplete
-                if (key.matches(vaxis.Key.tab, .{})) {
+                if (key.matches(DefaultRenderer.Key.tab, .{})) {
                     try self.applyAutocomplete();
                     return null;
                 }
 
                 // Enter - submit
-                if (key.matches(vaxis.Key.enter, .{})) {
+                if (key.matches(DefaultRenderer.Key.enter, .{})) {
                     // If there's an autocomplete match, apply it first
                     if (self.getAutocomplete()) |cmd| {
                         const result = try self.allocator.dupe(u8, cmd);
@@ -149,7 +149,7 @@ pub const Input = struct {
                 }
 
                 // Up arrow - history up (only if on first line)
-                if (key.matches(vaxis.Key.up, .{})) {
+                if (key.matches(DefaultRenderer.Key.up, .{})) {
                     if (self.editor.cursor_line == 0) {
                         try self.editor.historyUp();
                     } else {
@@ -159,7 +159,7 @@ pub const Input = struct {
                 }
 
                 // Down arrow - history down (only if on last line)
-                if (key.matches(vaxis.Key.down, .{})) {
+                if (key.matches(DefaultRenderer.Key.down, .{})) {
                     if (self.editor.cursor_line == self.editor.lineCount() - 1) {
                         try self.editor.historyDown();
                     } else {
@@ -169,37 +169,37 @@ pub const Input = struct {
                 }
 
                 // Left arrow
-                if (key.matches(vaxis.Key.left, .{})) {
+                if (key.matches(DefaultRenderer.Key.left, .{})) {
                     self.editor.moveLeft();
                     return null;
                 }
 
                 // Right arrow
-                if (key.matches(vaxis.Key.right, .{})) {
+                if (key.matches(DefaultRenderer.Key.right, .{})) {
                     self.editor.moveRight();
                     return null;
                 }
 
                 // Home
-                if (key.matches(vaxis.Key.home, .{})) {
+                if (key.matches(DefaultRenderer.Key.home, .{})) {
                     self.editor.moveLineStart();
                     return null;
                 }
 
                 // End
-                if (key.matches(vaxis.Key.end, .{})) {
+                if (key.matches(DefaultRenderer.Key.end, .{})) {
                     self.editor.moveLineEnd();
                     return null;
                 }
 
                 // Backspace
-                if (key.matches(vaxis.Key.backspace, .{})) {
+                if (key.matches(DefaultRenderer.Key.backspace, .{})) {
                     try self.editor.deleteCharBackward();
                     return null;
                 }
 
                 // Delete
-                if (key.matches(vaxis.Key.delete, .{})) {
+                if (key.matches(DefaultRenderer.Key.delete, .{})) {
                     try self.editor.deleteCharForward();
                     return null;
                 }
@@ -239,11 +239,11 @@ pub const Input = struct {
     }
 
     /// Draw the input box into a specific window region (for layout control)
-    pub fn drawInWindow(self: *Self, win: vaxis.Window) void {
+    pub fn drawInWindow(self: *Self, win: DefaultRenderer.Window) void {
         const box_width: u16 = if (win.width > 4) win.width - 4 else win.width;
         const box_x: u16 = 2;
 
-        const border_style: vaxis.Style = .{ .fg = .{ .rgb = border_color } };
+        const border_style: DefaultRenderer.Style = .{ .fg = .{ .rgb = border_color } };
 
         // Input box with border (height 4 = 2 lines + top/bottom border)
         const input_win = win.child(.{
@@ -258,7 +258,7 @@ pub const Input = struct {
         });
 
         // Draw prompt
-        const prompt_style: vaxis.Style = .{ .fg = .{ .rgb = prompt_color } };
+        const prompt_style: DefaultRenderer.Style = .{ .fg = .{ .rgb = prompt_color } };
         input_win.writeCell(0, 0, .{
             .char = .{ .grapheme = ">", .width = 1 },
             .style = prompt_style,
@@ -273,7 +273,7 @@ pub const Input = struct {
         const text_height: u16 = 2;
 
         // Draw editor content
-        const text_style: vaxis.Style = .{ .fg = .{ .index = text_color } };
+        const text_style: DefaultRenderer.Style = .{ .fg = .{ .index = text_color } };
         var row: u16 = 0;
         const line_count = self.editor.lineCount();
 
@@ -325,7 +325,7 @@ pub const Input = struct {
                 const ghost_suffix = cmd[first_line.len..];
                 const cursor_x: u16 = @intCast(@min(first_line.len, text_width));
 
-                const ghost_style: vaxis.Style = .{
+                const ghost_style: DefaultRenderer.Style = .{
                     .fg = .{ .index = 8 }, // Bright black/gray
                 };
 
@@ -348,7 +348,7 @@ pub const Input = struct {
     }
 
     /// Legacy draw method (unused, kept for compatibility)
-    pub fn draw(self: *Self, win: vaxis.Window) void {
+    pub fn draw(self: *Self, win: DefaultRenderer.Window) void {
         self.drawInWindow(win);
     }
 };

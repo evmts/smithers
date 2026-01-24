@@ -2,7 +2,7 @@
 // Ties together: EventLoop, Editor, ChatHistory, Input, Database, SlashCommands
 
 const std = @import("std");
-const vaxis = @import("vaxis");
+const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 const Allocator = std.mem.Allocator;
 
 const EventLoop = @import("../event_loop.zig").EventLoop;
@@ -149,19 +149,19 @@ pub const InteractiveMode = struct {
                 }
 
                 // Scrolling
-                if (key.matches(vaxis.Key.page_up, .{})) {
+                if (key.matches(DefaultRenderer.Key.page_up, .{})) {
                     self.chat_history.scrollUp(5);
                     return;
                 }
-                if (key.matches(vaxis.Key.page_down, .{})) {
+                if (key.matches(DefaultRenderer.Key.page_down, .{})) {
                     self.chat_history.scrollDown(5);
                     return;
                 }
-                if (key.matches(vaxis.Key.up, .{})) {
+                if (key.matches(DefaultRenderer.Key.up, .{})) {
                     self.chat_history.scrollUp(1);
                     return;
                 }
-                if (key.matches(vaxis.Key.down, .{})) {
+                if (key.matches(DefaultRenderer.Key.down, .{})) {
                     self.chat_history.scrollDown(1);
                     return;
                 }
@@ -338,7 +338,7 @@ pub const InteractiveMode = struct {
         if (self.is_busy) {
             const spinner = self.getSpinner();
             const loading_text = " Smithers is thinking...";
-            const style: vaxis.Style = .{ .fg = .{ .index = 12 } }; // Bright blue
+            const style: DefaultRenderer.Style = .{ .fg = .{ .index = 12 } }; // Bright blue
 
             status_win.writeCell(2, 0, .{
                 .char = .{ .grapheme = spinner, .width = 2 },
