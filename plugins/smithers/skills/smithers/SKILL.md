@@ -45,14 +45,7 @@ JSX workflow engine for Claude Code: **render → execute active nodes → persi
 bun add smithers-orchestrator
 ```
 
-`bunfig.toml`
-
-```toml
-[dev]
-jsx = "react"
-```
-
-`tsconfig.json`
+**Option A: tsconfig.json (recommended)**
 
 ```json
 {
@@ -61,6 +54,21 @@ jsx = "react"
     "jsxImportSource": "smithers-orchestrator"
   }
 }
+```
+
+**Option B: Per-file pragma**
+
+If not using tsconfig, add this pragma at the top of each .tsx file:
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+```
+
+**bunfig.toml (optional, for dev mode)**
+
+```toml
+[dev]
+jsx = "react"
 ```
 
 ---
