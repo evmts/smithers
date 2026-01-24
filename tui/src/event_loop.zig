@@ -1,5 +1,6 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
+const obs = @import("obs.zig");
 
 /// Generic EventLoop for dependency injection of terminal backend
 pub fn EventLoop(comptime Vaxis: type, comptime Tty: type, comptime Event: type) type {
@@ -9,6 +10,7 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type, comptime Event: type)
         vx: Vaxis,
         loop: vaxis.Loop(Event),
         tty_buffer: [1024]u8,
+        last_trace_id: obs.TraceId = 0,
 
         const Self = @This();
 
@@ -62,11 +64,48 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type, comptime Event: type)
         }
 
         pub fn nextEvent(self: *Self) Event {
-            return self.loop.nextEvent();
+            const ev = self.loop.nextEvent();
+            self.traceEvent(ev, "nextEvent");
+            return ev;
         }
 
         pub fn tryEvent(self: *Self) ?Event {
-            return self.loop.tryEvent();
+            const ev = self.loop.tryEvent();
+            if (ev) |e| {
+                self.traceEvent(e, "tryEvent");
+            }
+            return ev;
+        }
+
+        /// Get last trace ID for correlation
+        pub fn lastTraceId(self: *Self) obs.TraceId {
+            return self.last_trace_id;
+        }
+
+        fn traceEvent(self: *Self, ev: Event, source: []const u8) void {
+            if (!obs.global.enabled(.debug)) return;
+
+            self.last_trace_id = obs.global.newTrace();
+            var buf: [128]u8 = undefined;
+            var fbs = std.io.fixedBufferStream(&buf);
+            const w = fbs.writer();
+
+            switch (ev) {
+                .key_press => |key| {
+                    w.print("key cp={d} text={s}", .{
+                        key.codepoint,
+                        if (key.text) |t| t else "(null)",
+                    }) catch {};
+                },
+                .mouse => |m| {
+                    w.print("mouse x={d} y={d}", .{ m.col, m.row }) catch {};
+                },
+                .winsize => |ws| {
+                    w.print("winsize {d}x{d}", .{ ws.cols, ws.rows }) catch {};
+                },
+            }
+
+            obs.global.log(.debug, self.last_trace_id, 0, @src(), source, buf[0..fbs.pos]);
         }
 
         pub fn resize(self: *Self, ws: vaxis.Winsize) !void {

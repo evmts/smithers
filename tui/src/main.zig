@@ -11,6 +11,7 @@ const anthropic = @import("agent/anthropic_provider.zig");
 const environment_mod = @import("environment.zig");
 const clock_mod = @import("clock.zig");
 const tool_executor_mod = @import("agent/tool_executor.zig");
+const obs = @import("obs.zig");
 
 const ProductionRenderer = renderer_mod.Renderer(renderer_mod.VaxisBackend);
 const ProductionEvent = event_mod.Event(ProductionRenderer);
@@ -50,16 +51,24 @@ fn fileLog(
 pub const panic = vaxis.panic_handler;
 
 pub fn main() !void {
+    // Initialize observability first (reads SMITHERS_DEBUG_LEVEL)
+    obs.initGlobal();
+    defer obs.deinitGlobal();
+
     log_file = std.fs.createFileAbsolute("/tmp/smithers-tui.log", .{ .truncate = true }) catch null;
     defer if (log_file) |f| f.close();
 
+    obs.global.logSimple(.info, @src(), "startup", "=== Smithers TUI starting ===");
     std.log.debug("=== Smithers TUI starting ===", .{});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
+    obs.global.logSimple(.debug, @src(), "init", "Creating App...");
     var app = try App.init(gpa.allocator());
     defer app.deinit();
+
+    obs.global.logSimple(.info, @src(), "run", "Starting main loop");
     try app.run();
 }
 
@@ -86,4 +95,5 @@ test {
     _ = @import("tests/message_cell_test.zig");
     _ = @import("tests/print_test.zig");
     _ = @import("tests/interactive_test.zig");
+    _ = @import("obs.zig");
 }

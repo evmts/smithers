@@ -5,6 +5,7 @@ const loading_mod = @import("loading.zig");
 const environment_mod = @import("environment.zig");
 const clock_mod = @import("clock.zig");
 const tool_executor_mod = @import("agent/tool_executor.zig");
+const obs = @import("obs.zig");
 
 const input_mod = @import("components/input.zig");
 const chat_history_mod = @import("components/chat_history.zig");
@@ -126,30 +127,44 @@ pub fn App(
         }
 
         pub fn run(self: *Self) !void {
+            obs.global.logSimple(.info, @src(), "app.run", "starting main loop");
             std.log.debug("app.run: starting main loop", .{});
+            var loop_count: u64 = 0;
             while (true) {
-                std.log.debug("app.run: top of loop, is_loading={}", .{self.loading.is_loading});
+                loop_count += 1;
+                if (obs.global.enabled(.trace)) {
+                    var buf: [64]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&buf, "loop #{d} is_loading={}", .{ loop_count, self.loading.is_loading }) catch "loop";
+                    obs.global.logSimple(.trace, @src(), "app.loop", msg);
+                }
+
                 const maybe_event = if (self.loading.is_loading)
                     self.event_loop.tryEvent()
                 else
                     self.event_loop.nextEvent();
 
-                std.log.debug("app.run: maybe_event is null={}", .{maybe_event == null});
                 if (maybe_event) |event| {
-                    std.log.debug("app: got event", .{});
+                    const tid = self.event_loop.lastTraceId();
+                    var span = obs.global.spanBegin(tid, null, @src(), "app.handle_event");
+                    defer obs.global.spanEnd(&span, @src());
+
                     switch (event) {
                         .winsize => |ws| {
-                            std.log.debug("app: winsize event", .{});
+                            obs.global.log(.debug, tid, span.span_id, @src(), "event.winsize", "resize");
                             try self.event_loop.resize(ws);
                         },
                         .mouse => |mouse| {
-                            self.mouse_handler.handleMouse(mouse, &self.chat_history);
+                            _ = mouse;
+                            obs.global.log(.trace, tid, span.span_id, @src(), "event.mouse", "mouse");
+                            self.mouse_handler.handleMouse(event.mouse, &self.chat_history);
                         },
                         .key_press => |key| {
-                            std.log.debug("app: key_press codepoint={d} text_is_null={}", .{ key.codepoint, key.text == null });
-                            if (key.text) |t| {
-                                std.log.debug("app: text='{s}' len={d} ptr={*}", .{ t, t.len, t.ptr });
-                            }
+                            var kbuf: [64]u8 = undefined;
+                            const kmsg = std.fmt.bufPrint(&kbuf, "cp={d} text={s}", .{
+                                key.codepoint,
+                                if (key.text) |t| t else "(null)",
+                            }) catch "key";
+                            obs.global.log(.debug, tid, span.span_id, @src(), "event.key_press", kmsg);
 
                             var ctx = KeyContext{
                                 .input = &self.input,
@@ -162,6 +177,8 @@ pub fn App(
                             };
 
                             const action = try self.key_handler.handleKey(key, &ctx);
+                            obs.global.log(.debug, tid, span.span_id, @src(), "key.action", @tagName(action));
+
                             switch (action) {
                                 .exit => return,
                                 .suspend_tui => try self.event_loop.suspendTui(),
