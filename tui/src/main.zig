@@ -37,6 +37,8 @@ const Layout = @import("layout.zig").Layout;
 const loading_mod = @import("loading.zig");
 const KeyHandler = @import("keys/handler.zig").KeyHandler;
 const KeyContext = @import("keys/handler.zig").KeyContext;
+const MouseHandler = @import("keys/mouse.zig").MouseHandler;
+const FrameRenderer = @import("rendering/frame.zig").FrameRenderer;
 
 pub const panic = vaxis.panic_handler;
 
@@ -96,6 +98,7 @@ pub fn main() !void {
 
     var loading = loading_mod.LoadingState{};
     var key_handler = KeyHandler.init(alloc);
+    var mouse_handler = MouseHandler.init(alloc);
     var agent_loop = AgentLoop.init(alloc, &loading);
 
     // Main event loop
@@ -116,35 +119,7 @@ pub fn main() !void {
                     try event_loop.resize(ws);
                 },
                 .mouse => |mouse| {
-                    // Handle scroll wheel
-                    if (mouse.button == .wheel_up) {
-                        chat_history.scrollUp(3);
-                    } else if (mouse.button == .wheel_down) {
-                        chat_history.scrollDown(3);
-                    }
-                    // Handle text selection
-                    else if (mouse.button == .left) {
-                        const col: u16 = if (mouse.col >= 0) @intCast(mouse.col) else 0;
-                        // Adjust row for header offset
-                        const raw_row: i16 = mouse.row - @as(i16, Layout.HEADER_HEIGHT);
-                        const row: u16 = if (raw_row >= 0) @intCast(raw_row) else 0;
-                        
-                        if (mouse.type == .press) {
-                            // Start selection
-                            chat_history.startSelection(col, row);
-                        } else if (mouse.type == .drag) {
-                            // Drag - update selection
-                            chat_history.updateSelection(col, row);
-                        } else if (mouse.type == .release) {
-                            // End selection and copy if we have one
-                            chat_history.endSelection();
-                            if (chat_history.getSelectedText()) |text| {
-                                defer alloc.free(text);
-                                const selection_mod = @import("selection.zig");
-                                selection_mod.copyToClipboard(alloc, text) catch {};
-                            }
-                        }
-                    }
+                    mouse_handler.handleMouse(mouse, &chat_history);
                 },
                 .key_press => |key| {
                     std.log.debug("main: key_press codepoint={d} text_is_null={}", .{key.codepoint, key.text == null});
@@ -191,71 +166,16 @@ pub fn main() !void {
 
         // Render
         const win = event_loop.window();
-        win.clear();
-
-        const height = win.height;
-
-        // Layout: header, chat area, input box, status bar
-        const chrome_height = Layout.HEADER_HEIGHT + Layout.INPUT_HEIGHT + Layout.STATUS_HEIGHT;
-        const chat_height: u16 = if (height > chrome_height) height - chrome_height else 1;
-        const input_y: u16 = Layout.HEADER_HEIGHT + chat_height;
-        const status_bar_y: u16 = input_y + Layout.INPUT_HEIGHT;
-        
-        // Draw header at top
-        const header_win = win.child(.{
-            .x_off = 0,
-            .y_off = 0,
-            .width = win.width,
-            .height = Layout.HEADER_HEIGHT,
-        });
-        header.draw(header_win, &database);
-        
-        // Draw chat area or logo
-        if (chat_history.hasConversation() or loading.is_loading) {
-            const chat_win = win.child(.{
-                .x_off = 0,
-                .y_off = Layout.HEADER_HEIGHT,
-                .width = win.width,
-                .height = chat_height,
-            });
-            chat_history.draw(chat_win);
-        } else {
-            const content_win = win.child(.{
-                .x_off = 0,
-                .y_off = Layout.HEADER_HEIGHT,
-                .width = win.width,
-                .height = chat_height,
-            });
-            logo.draw(content_win);
-        }
-
-        // Status bar at bottom
-        if (loading.is_loading) {
-            status_bar.setCustomStatus(" Smithers is thinking...");
-        } else if (now - key_handler.last_ctrl_c < 1500 and key_handler.last_ctrl_c > 0) {
-            status_bar.setCustomStatus(" Press Ctrl+C again to exit, or Ctrl+D");
-        } else {
-            status_bar.setCustomStatus(null);
-        }
-        
-        // Draw status bar
-        const actual_status_height = status_bar.getHeight();
-        const status_win = win.child(.{
-            .x_off = 0,
-            .y_off = if (actual_status_height > 1) status_bar_y -| (actual_status_height - 1) else status_bar_y,
-            .width = win.width,
-            .height = actual_status_height,
-        });
-        status_bar.draw(status_win);
-
-        // Draw input at bottom
-        const input_win = win.child(.{
-            .x_off = 0,
-            .y_off = input_y,
-            .width = win.width,
-            .height = Layout.INPUT_HEIGHT,
-        });
-        input.drawInWindow(input_win);
+        var render_ctx = FrameRenderer.RenderContext{
+            .header = &header,
+            .chat_history = &chat_history,
+            .input = &input,
+            .status_bar = &status_bar,
+            .database = &database,
+            .loading = &loading,
+            .key_handler = &key_handler,
+        };
+        FrameRenderer.render(win, &render_ctx);
 
         try event_loop.render();
 
