@@ -26,7 +26,7 @@ pub const AgentLoop = struct {
         };
     }
 
-    pub fn tick(self: *AgentLoop, database: *db.Database, chat_history: *ChatHistory) !bool {
+    pub fn tick(self: *AgentLoop, database: *db.DefaultDatabase, chat_history: *ChatHistory) !bool {
         var should_continue = true;
 
         // Start streaming if we have a pending query but no active stream
@@ -65,7 +65,7 @@ pub const AgentLoop = struct {
         return should_continue;
     }
 
-    fn start_query_stream(self: *AgentLoop, database: *db.Database, chat_history: *ChatHistory) !bool {
+    fn start_query_stream(self: *AgentLoop, database: *db.DefaultDatabase, chat_history: *ChatHistory) !bool {
         const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
             _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
             self.loading.cleanup(self.alloc);
@@ -75,7 +75,7 @@ pub const AgentLoop = struct {
 
         // Build messages JSON from DB
         const messages = database.getMessages(self.alloc) catch @constCast(&[_]db.Message{});
-        defer if (messages.len > 0) db.Database.freeMessages(self.alloc, messages);
+        defer if (messages.len > 0) db.DefaultDatabase.freeMessages(self.alloc, messages);
 
         var msg_buf = std.ArrayListUnmanaged(u8){};
         defer msg_buf.deinit(self.alloc);
@@ -121,7 +121,7 @@ pub const AgentLoop = struct {
         return true;
     }
 
-    fn start_continuation_stream(self: *AgentLoop, database: *db.Database, chat_history: *ChatHistory) !bool {
+    fn start_continuation_stream(self: *AgentLoop, database: *db.DefaultDatabase, chat_history: *ChatHistory) !bool {
         const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
             _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
             self.loading.cleanup(self.alloc);
@@ -156,7 +156,7 @@ pub const AgentLoop = struct {
         return true;
     }
 
-    fn poll_active_stream(self: *AgentLoop, database: *db.Database, chat_history: *ChatHistory) !void {
+    fn poll_active_stream(self: *AgentLoop, database: *db.DefaultDatabase, chat_history: *ChatHistory) !void {
         var stream = &self.loading.streaming.?;
         const is_done = stream.poll() catch true;
         const text = stream.getText();
@@ -233,7 +233,7 @@ pub const AgentLoop = struct {
         }
     }
 
-    fn start_tool_execution(self: *AgentLoop, database: *db.Database, chat_history: *ChatHistory) !void {
+    fn start_tool_execution(self: *AgentLoop, database: *db.DefaultDatabase, chat_history: *ChatHistory) !void {
         const tc = self.loading.pending_tools.items[self.loading.current_tool_idx];
 
         // Show tool execution in chat
@@ -248,7 +248,7 @@ pub const AgentLoop = struct {
         }
     }
 
-    fn poll_tool_completion(self: *AgentLoop, database: *db.Database, chat_history: *ChatHistory) !void {
+    fn poll_tool_completion(self: *AgentLoop, database: *db.DefaultDatabase, chat_history: *ChatHistory) !void {
         var exec = &self.loading.tool_executor.?;
         if (exec.poll()) |result| {
             const result_content = if (result.result.success)
@@ -306,7 +306,7 @@ pub const AgentLoop = struct {
         }
     }
 
-    fn build_continuation_request(self: *AgentLoop, database: *db.Database) !void {
+    fn build_continuation_request(self: *AgentLoop, database: *db.DefaultDatabase) !void {
         // Build continuation request
         var tool_results_json = std.ArrayListUnmanaged(u8){};
         defer tool_results_json.deinit(self.alloc);
@@ -326,7 +326,7 @@ pub const AgentLoop = struct {
 
         // Build full message history
         const messages = database.getMessages(self.alloc) catch @constCast(&[_]db.Message{});
-        defer if (messages.len > 0) db.Database.freeMessages(self.alloc, messages);
+        defer if (messages.len > 0) db.DefaultDatabase.freeMessages(self.alloc, messages);
 
         var msg_buf = std.ArrayListUnmanaged(u8){};
         defer msg_buf.deinit(self.alloc);

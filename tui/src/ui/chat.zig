@@ -145,7 +145,7 @@ pub const ChatContainer = struct {
         self.chat_history.scrollToBottom();
     }
 
-    pub fn reload(self: *Self, database: *db.Database) !void {
+    pub fn reload(self: *Self, database: *db.DefaultDatabase) !void {
         try self.chat_history.reload(database);
     }
 };

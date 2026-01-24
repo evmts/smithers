@@ -16,7 +16,7 @@ pub const FrameRenderer = struct {
         chat_history: *ChatHistory,
         input: *Input,
         status_bar: *StatusBar,
-        database: *db.Database,
+        database: *db.DefaultDatabase,
         loading: *const loading_mod.LoadingState,
         key_handler: *const KeyHandler,
     };

@@ -44,12 +44,12 @@ pub const ChatHistory = struct {
 
     fn freeMessages(self: *Self) void {
         if (self.messages.len > 0) {
-            db.Database.freeMessages(self.allocator, self.messages);
+            db.DefaultDatabase.freeMessages(self.allocator, self.messages);
             self.messages = &[_]db.Message{};
         }
     }
 
-    pub fn reload(self: *Self, database: *db.Database) !void {
+    pub fn reload(self: *Self, database: *db.DefaultDatabase) !void {
         self.freeMessages();
         self.messages = try database.getMessages(self.allocator);
         self.scrollToBottom();

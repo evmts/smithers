@@ -34,7 +34,7 @@ pub const Header = struct {
         self.model = model;
     }
 
-    pub fn draw(self: *const Self, win: vaxis.Window, database: *db.Database) void {
+    pub fn draw(self: *const Self, win: vaxis.Window, database: *db.DefaultDatabase) void {
         const bar_style: vaxis.Style = .{ .bg = .{ .index = bg_color } };
         const title_style: vaxis.Style = .{
             .fg = .{ .index = title_color },

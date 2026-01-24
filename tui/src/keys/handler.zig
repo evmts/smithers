@@ -5,7 +5,7 @@ const Input = @import("../components/input.zig").Input;
 const ChatHistory = @import("../components/chat_history.zig").ChatHistory;
 const db = @import("../db.zig");
 const StatusBar = @import("../ui/status.zig").StatusBar;
-const EventLoop = @import("../event_loop.zig").EventLoop;
+const EventLoop = @import("../event_loop.zig").DefaultEventLoop;
 const loading_mod = @import("../loading.zig");
 const help = @import("../help.zig");
 const editor_utils = @import("../editor.zig");
@@ -15,7 +15,7 @@ const Event = @import("../event.zig").Event;
 pub const KeyContext = struct {
     input: *Input,
     chat_history: *ChatHistory,
-    database: *db.Database,
+    database: *db.DefaultDatabase,
     status_bar: *StatusBar,
     event_loop: *EventLoop,
     loading: *loading_mod.LoadingState,
@@ -137,7 +137,7 @@ pub const KeyHandler = struct {
             // n - next tab
             if (key.codepoint == 'n') {
                 const sessions = try ctx.database.getSessions(self.alloc);
-                defer db.Database.freeSessions(self.alloc, sessions);
+                defer db.DefaultDatabase.freeSessions(self.alloc, sessions);
                 if (sessions.len > 1) {
                     const current = ctx.database.getCurrentSessionId();
                     var next_id: ?i64 = null;
@@ -158,7 +158,7 @@ pub const KeyHandler = struct {
             // p - previous tab
             if (key.codepoint == 'p') {
                 const sessions = try ctx.database.getSessions(self.alloc);
-                defer db.Database.freeSessions(self.alloc, sessions);
+                defer db.DefaultDatabase.freeSessions(self.alloc, sessions);
                 if (sessions.len > 1) {
                     const current = ctx.database.getCurrentSessionId();
                     var prev_id: ?i64 = null;
@@ -184,7 +184,7 @@ pub const KeyHandler = struct {
             if (key.codepoint >= '0' and key.codepoint <= '9') {
                 const tab_num = if (key.codepoint == '0') 9 else key.codepoint - '1';
                 const sessions = try ctx.database.getSessions(self.alloc);
-                defer db.Database.freeSessions(self.alloc, sessions);
+                defer db.DefaultDatabase.freeSessions(self.alloc, sessions);
                 if (tab_num < sessions.len) {
                     ctx.database.switchSession(sessions[tab_num].id);
                     try ctx.chat_history.reload(ctx.database);
@@ -230,7 +230,7 @@ pub const KeyHandler = struct {
                     try ctx.chat_history.reload(ctx.database);
                 } else if (std.mem.eql(u8, command, "/status")) {
                     const msgs = try ctx.database.getMessages(self.alloc);
-                    defer db.Database.freeMessages(self.alloc, msgs);
+                    defer db.DefaultDatabase.freeMessages(self.alloc, msgs);
                     const status_msg = try std.fmt.allocPrint(
                         self.alloc,
                         "Session: {d} | Messages: {d} | AI: {s}",

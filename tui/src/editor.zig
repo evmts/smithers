@@ -1,6 +1,6 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-const EventLoop = @import("event_loop.zig").EventLoop;
+const EventLoop = @import("event_loop.zig").DefaultEventLoop;
 const Input = @import("components/input.zig").Input;
 
 /// Open external editor for composing a message
