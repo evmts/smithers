@@ -63,4 +63,20 @@ test {
     _ = @import("commands/select_list.zig");
     _ = @import("commands/command_popup.zig");
     _ = @import("commands/slash_command.zig");
+    _ = @import("tests/command_popup_test.zig");
+    _ = @import("tests/event_test.zig");
+    _ = @import("tests/tool_executor_test.zig");
+    _ = @import("tests/provider_interface_test.zig");
+    _ = @import("tests/registry_test.zig");
+    _ = @import("tests/markdown_syntax_test.zig");
+    _ = @import("tests/layout_test.zig");
+    // _ = @import("tests/logger_test.zig"); // TODO: Fix for Zig 0.15.2 File.Writer API change
+    // _ = @import("tests/write_file_test.zig"); // TODO: Fix for Zig 0.15.2 API changes
+    _ = @import("tests/bash_tool_test.zig");
+    _ = @import("tests/grep_test.zig");
+    // _ = @import("tests/glob_test.zig"); // TODO: Fix bus error in freeResult
+    // _ = @import("tests/mouse_test.zig"); // TODO: Fix for Zig 0.15.2 API changes
+    // _ = @import("tests/kill_ring_test.zig"); // TODO: Fix for Zig 0.15.2 API changes
+    _ = @import("tests/editor_module_test.zig");
+    // _ = @import("tests/message_cell_test.zig"); // TODO: Fix pointer type mismatch
 }
