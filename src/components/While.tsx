@@ -3,6 +3,7 @@ import { useRef, useMemo, createContext, useContext } from 'react'
 import { useSmithers } from './SmithersProvider.js'
 import { useMount } from '../reconciler/hooks.js'
 import { useQueryValue } from '../reactive-sqlite/hooks/useQueryValue.js'
+import { PhaseRegistryProvider } from './PhaseRegistry.js'
 
 export const DEFAULT_MAX_ITERATIONS = 10
 
@@ -132,7 +133,9 @@ export function While(props: WhileProps): ReactNode {
     <while id={whileId} iteration={iterationValue} status={statusValue} maxIterations={maxIterations}>
       {isRunning && (
         <WhileIterationContext.Provider value={contextValue}>
-          {props.children}
+          <PhaseRegistryProvider>
+            {props.children}
+          </PhaseRegistryProvider>
         </WhileIterationContext.Provider>
       )}
     </while>

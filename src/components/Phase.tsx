@@ -120,10 +120,12 @@ export function Phase(props: PhaseProps): ReactNode {
   }, [isActive, isSkipped, hasError, executionEnabled, props.name, ralphCount, db, props.onStart, props.onComplete, log])
 
   const handleAllStepsComplete = useCallback(() => {
-    if (registry?.isPhaseActive(myIndex)) {
+    const isActive = registry?.isPhaseActive(myIndex)
+    console.log(`[Phase:${props.name}] handleAllStepsComplete`, JSON.stringify({ myIndex, isActive, hasRegistry: !!registry }))
+    if (isActive) {
       registry?.advancePhase()
     }
-  }, [registry, myIndex])
+  }, [registry, myIndex, props.name])
 
   const shouldRenderChildren = isActive && !isSkipped
 

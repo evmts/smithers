@@ -3,7 +3,6 @@ import type { SmithersDB } from '../db/index.js'
 import type { ReactiveDatabase } from '../reactive-sqlite/index.js'
 import { DatabaseProvider } from '../reactive-sqlite/hooks/context.js'
 import { useQueryValue } from '../reactive-sqlite/index.js'
-import { PhaseRegistryProvider } from './PhaseRegistry.js'
 import { useMount, useUnmount } from '../reconciler/hooks.js'
 import { useCaptureRenderFrame } from '../hooks/useCaptureRenderFrame.js'
 import { jjSnapshot } from '../utils/vcs.js'
@@ -271,9 +270,7 @@ export function SmithersProvider(props: SmithersProviderProps): ReactNode {
     <OrchestrationTokenContext.Provider value={orchestrationToken}>
       <SmithersContext.Provider value={value}>
         <DatabaseProvider db={reactiveDb}>
-          <PhaseRegistryProvider>
-            {props.children}
-          </PhaseRegistryProvider>
+          {props.children}
         </DatabaseProvider>
       </SmithersContext.Provider>
     </OrchestrationTokenContext.Provider>

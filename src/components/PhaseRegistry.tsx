@@ -104,13 +104,19 @@ export function PhaseRegistryProvider(props: PhaseRegistryProviderProps): ReactN
   // Advance to next phase (or signal Ralph iteration complete if all phases done)
   const advancePhase = useCallback(() => {
     const nextIndex = currentPhaseIndex + 1
+    console.log(`[PhaseRegistry] advancePhase`, JSON.stringify({
+      currentPhaseIndex,
+      nextIndex,
+      totalPhases: phasesRef.current.length,
+      hasSignaledComplete: hasSignaledCompleteRef.current,
+      hasRalphCtx: !!ralphCtx
+    }))
     if (nextIndex < phasesRef.current.length) {
       db.state.set('currentPhaseIndex', nextIndex, 'phase_advance')
       hasSignaledCompleteRef.current = false
     } else if (!hasSignaledCompleteRef.current) {
       // All phases complete - signal Ralph to re-evaluate condition
-      // Note: We don't reset currentPhaseIndex here as that causes infinite loops.
-      // The Ralph iteration mechanism will handle the reset via useMount on next iteration.
+      console.log(`[PhaseRegistry] All phases complete, signaling Ralph`)
       hasSignaledCompleteRef.current = true
       if (ralphCtx) {
         ralphCtx.signalComplete()
