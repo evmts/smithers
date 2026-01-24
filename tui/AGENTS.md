@@ -1,210 +1,236 @@
 # TUI Development Guide
 
-## Git
-
-Always use `--no-verify` to skip TypeScript pre-commit hooks (TUI is Zig-only):
-```bash
-git commit --no-verify -m "message"
-```
-
-## Overview
-
-Zig-based terminal UI for Smithers using vaxis renderer. SQLite is the single source of truth for all state.
-
-## Build & Test
+## Quick Reference
 
 ```bash
-cd tui
-zig build          # Build
-zig build test     # Run tests
-zig-out/bin/smithers-tui  # Run TUI
+zig build              # Build
+zig build test         # Run tests  
+zig build run          # Run (use ./zig-out/bin/smithers-tui for interactive)
+zig build debug        # Run with SMITHERS_DEBUG_LEVEL=trace
+git commit --no-verify # Skip TS pre-commit hooks (TUI is Zig-only)
 ```
-
-Logs written to `/tmp/smithers-tui.log`
 
 ## Architecture
 
 ```
-tui/
-├── src/
-│   ├── main.zig              # Entry point, event loop, streaming state
-│   ├── db.zig                # SQLite wrapper - messages, sessions
-│   ├── event_loop.zig        # Vaxis event loop integration
-│   ├── event.zig             # Event types
-│   ├── agent/
-│   │   ├── anthropic_provider.zig  # Anthropic API (streaming + blocking)
-│   │   └── provider.zig            # Provider interface
-│   ├── components/
-│   │   ├── input.zig         # Text input widget
-│   │   ├── chat_history.zig  # Message display with scrolling
-│   │   └── logo.zig          # ASCII logo
-│   └── ui/
-│       ├── header.zig        # Top bar (model, session tabs)
-│       └── status.zig        # Bottom status bar
-├── renderer/                 # Forked vaxis renderer
-├── sqlite/                   # SQLite zig bindings
-└── build.zig
+┌─────────────────────────────────────────────────────────────────┐
+│ main.zig                                                        │
+│   └─ App (comptime DI: Db, EventLoop, Renderer, Agent, ...)    │
+│        ├─ event_loop.start() ─► vaxis.Loop (input thread)      │
+│        └─ run() loop:                                           │
+│             nextEvent() ─► KeyHandler ─► action ─► state change │
+│             agent_loop.tick() ─► streaming AI                   │
+│             Frame.render() ─► vaxis output                      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Key Patterns
+### Core Files
 
-### State Management
-- **All state in SQLite** - no in-memory state except ephemeral UI (cursor pos, scroll offset)
-- Messages table: `id, session_id, role, content, timestamp, ephemeral, tool_name, tool_input`
-- Sessions table: `id, name, created_at`
-- Use `database.addMessage()` / `database.addToolResult()` / `database.updateMessageContent()` / `database.getMessages()`
+| File | Purpose |
+|------|---------|
+| `main.zig` | Entry, production type wiring, test imports |
+| `app.zig` | `App(Db,EventLoop,Renderer,Agent,Env,Clock,ToolExec)` - main loop |
+| `event_loop.zig` | `EventLoop(Vaxis,Tty,Event)` - wraps vaxis.Loop |
+| `event.zig` | `Event(Renderer)` - key_press/mouse/winsize union |
+| `obs.zig` | Observability - JSON logging, tracing, ring buffer |
+| `db.zig` | `Database(SqliteDb)` - messages, sessions |
 
-### Tool Result Storage
-- Tool results store metadata: `tool_name` (e.g., "read_file") and `tool_input` (e.g., file path)
-- This enables render-time decisions (e.g., markdown rendering for `.md` files)
-- **Store raw content** - formatting like line numbers added at render time, not in DB
-- Use `database.addToolResult(tool_name, tool_input, content)` for tool outputs
+### Dependency Injection Pattern
 
-### Streaming AI Responses
-`StreamingState` in main.zig handles non-blocking streaming:
-1. Spawns curl with `-N` (no buffer) and `stream:true`
-2. Sets stdout to O_NONBLOCK via fcntl
-3. Polls each frame with `stream.poll()` - returns immediately
-4. Parses SSE `data: {...}` events for `content_block_delta`
-5. Updates message in DB, reloads chat_history
+All major types are **comptime generic** for testability:
 
-### Event Loop
 ```zig
-while (true) {
-    // 1. Process vaxis events (keyboard, resize)
-    // 2. Poll streaming if active
-    // 3. Update spinner animation
-    // 4. Render frame
-}
+// Production (main.zig)
+const App = app_mod.App(
+    db.Database(sqlite.Db),
+    event_loop_mod.EventLoop(vaxis.Vaxis, vaxis.Tty, ProductionEvent),
+    renderer_mod.Renderer(renderer_mod.VaxisBackend),
+    anthropic.AnthropicStreamingProvider,
+    environment_mod.Environment(environment_mod.PosixEnv),
+    clock_mod.Clock(clock_mod.StdClock),
+    tool_executor_mod.ToolExecutor(tool_executor_mod.BuiltinRegistryFactory),
+);
+
+// Tests use mocks: MockRenderer, MockDatabase, etc.
 ```
 
-### Component Pattern
-Components are structs with:
-- `init(allocator, ...)` - constructor
-- `deinit()` - cleanup
-- `draw(window)` - render to vaxis window
-- Optional event handlers
+**Critical:** Structs returned by value have pointer stability issues. Call `start()`/`init()` methods in `run()` after struct has stable address, not in `init()`.
 
-## Keybindings
+## Directory Structure
 
-| Key | Action |
-|-----|--------|
-| Enter | Send message |
-| Ctrl+C (2x) | Exit |
-| Ctrl+D | Exit |
-| Ctrl+E | Open $EDITOR |
-| Ctrl+B,c | New tab |
-| Ctrl+B,n/p | Next/prev tab |
-| Ctrl+B,0-9 | Switch to tab |
-| PageUp/Down | Scroll history |
-| Escape | Cancel/interrupt |
+```
+src/
+├── agent/           # AI providers, tool execution, agent loop
+├── commands/        # Slash commands, command popup
+├── components/      # Input, chat_history, logo
+├── editor/          # Text editor integration
+├── extensions/      # Plugin system
+├── keys/            # KeyHandler, MouseHandler, bindings
+├── markdown/        # Markdown parser/renderer
+├── modes/           # UI modes (normal, command, etc.)
+├── overlay/         # Modal overlays
+├── rendering/       # Renderer abstraction, frame composition
+├── session/         # Session management
+├── testing/         # Mock types for tests
+├── tests/           # Test files
+└── ui/              # Header, status bar, layout
+```
 
-## Commands
+## State Management
 
-`/help`, `/clear`, `/new`, `/model`, `/status`, `/diff`, `/exit`
+**SQLite is single source of truth.** No useState-style in-memory state.
+
+```zig
+// Messages table
+database.addMessage(.user, "hello")
+database.addToolResult("read_file", "/path", content)
+database.updateMessageContent(id, new_content)
+database.getMessages(session_id)
+
+// After mutation, reload UI
+try chat_history.reload(&database);
+```
+
+**Ephemeral UI state only:** cursor position, scroll offset, loading spinners.
+
+## Observability (Debugging)
+
+```bash
+SMITHERS_DEBUG_LEVEL=trace ./zig-out/bin/smithers-tui
+# or
+zig build debug
+```
+
+Logs to `/tmp/smithers-debug.log` (JSON Lines):
+
+```json
+{"ts":1737...,"lvl":"debug","tid":1,"sid":2,"type":"event.key_press","msg":"cp=97 text=a"}
+```
+
+### Instrumenting Code
+
+```zig
+const obs = @import("obs.zig");
+
+// Simple log
+obs.global.logSimple(.debug, @src(), "event.type", "message");
+
+// With trace correlation
+const tid = self.event_loop.lastTraceId();
+obs.global.log(.debug, tid, span_id, @src(), "event.type", "msg");
+
+// Spans for timing
+var span = obs.global.spanBegin(tid, null, @src(), "operation");
+defer obs.global.spanEnd(&span, @src());
+```
 
 ## Adding Features
 
 ### New Component
-1. Create `src/components/foo.zig` or `src/ui/foo.zig`
-2. Implement init/deinit/draw pattern
-3. Import in main.zig, instantiate, call draw in render loop
-
-### New Command
-In main.zig, find the command handling block:
 ```zig
-if (std.mem.eql(u8, command, "/mycommand")) {
-    // Handle command
-    _ = try database.addMessage(.system, "Response");
-    try chat_history.reload(&database);
+// src/components/foo.zig
+pub fn Foo(comptime R: type) type {
+    return struct {
+        pub fn init(alloc: Allocator) Self { ... }
+        pub fn deinit(self: *Self) void { ... }
+        pub fn draw(self: *Self, renderer: R) void { ... }
+    };
 }
 ```
 
-### New API Feature
-1. Add to `anthropic_provider.zig` if Anthropic-specific
-2. Or add to `provider.zig` interface for multi-provider support
-3. Handle in main.zig event loop
-
-## Debugging
-
-### SQLite Database
-Database location: `~/.smithers/chat.db`
-
-Query messages:
-```bash
-sqlite3 ~/.smithers/chat.db "SELECT id, role, tool_name, tool_input, substr(content, 1, 80) FROM messages ORDER BY id DESC LIMIT 10;"
-```
-
-Clear chat history:
-```bash
-sqlite3 ~/.smithers/chat.db "DELETE FROM messages;"
-```
-
-Check schema:
-```bash
-sqlite3 ~/.smithers/chat.db ".schema messages"
-```
-
-### Schema Migrations
-When adding new columns, add migration in `db.zig` init:
+### New Tool
 ```zig
-// Silently add column if it doesn't exist
-db.exec("ALTER TABLE messages ADD COLUMN new_col TEXT", .{}, .{}) catch {};
+// src/agent/tools/my_tool.zig
+pub const MyTool = struct {
+    pub fn execute(args: Args) !Result { ... }
+};
+
+// Register in tool_executor.zig BuiltinRegistryFactory
 ```
 
-### TTY Errors
-`zig build run` fails with `/dev/tty` errors when stdout is piped. Run binary directly:
+### New Keybinding
+```zig
+// src/keys/handler.zig - in handleKey()
+if (key.matches('x', .{ .ctrl = true })) {
+    return .{ .custom_action = ... };
+}
+```
+
+## Testing
+
+```zig
+// Use mock types from src/testing/
+const MockRenderer = @import("testing/mock_renderer.zig").MockRenderer;
+const MockDb = @import("testing/mock_db.zig").MockDatabase;
+
+test "my feature" {
+    var renderer = MockRenderer{};
+    // ...
+}
+```
+
+Add test imports to `main.zig`:
+```zig
+test {
+    _ = @import("tests/my_test.zig");
+}
+```
+
+## Common Pitfalls
+
+### Pointer Stability (CRITICAL)
+```zig
+// ❌ BAD - pointers dangle after return
+pub fn init() Self {
+    var self = Self{};
+    self.inner.ptr = &self.data;  // Points to stack!
+    return self;  // self moves, ptr dangles
+}
+
+// ✅ GOOD - set pointers after struct is stable
+pub fn start(self: *Self) void {
+    self.inner.ptr = &self.data;  // self has stable address
+}
+```
+
+### Zig 0.15 File API
+```zig
+// ❌ Old API
+f.writer().print(...)
+
+// ✅ New API  
+const written = std.fmt.bufPrint(&buf, ...) catch return;
+_ = f.write(written) catch {};
+```
+
+### TTY Access
+`zig build run` fails when stdout is piped. Run binary directly:
 ```bash
-zig build && ./zig-out/bin/smithers-tui
+./zig-out/bin/smithers-tui
 ```
 
-## Common Issues
+## Upcoming Features
 
-### fcntl Constants
-macOS-specific values used for non-blocking I/O:
-```zig
-const F_GETFL = 3;
-const F_SETFL = 4;
-const O_NONBLOCK: usize = 0x0004;
-```
+Areas being developed - coordinate before making changes:
 
-### JSON Encoding
-Use `std.json.Stringify.valueAlloc()` for proper escaping:
-```zig
-const escaped = std.json.Stringify.valueAlloc(alloc, content, .{}) catch continue;
-defer alloc.free(escaped);
-```
-
-### Memory Management
-- Always `defer alloc.free()` for allocated strings
-- Use `ArrayListUnmanaged` with explicit allocator
-- Chat history owns message content - freed in `freeMessages()`
-
-### Markdown Rendering
-- `src/markdown/parser.zig` - parses markdown into styled spans
-- `chat_history.zig` uses `drawMarkdownMessage()` for assistant messages and markdown files
-- `drawCodeWithLineNumbers()` adds line numbers at render time for non-markdown files
-- Rendering decisions based on `tool_name`/`tool_input` metadata (e.g., `.md` files get markdown styling)
+| Feature | Description |
+|---------|-------------|
+| **jj snapshots** | Jujutsu-based automatic state snapshots |
+| **Subagents** | Spawn child agents for parallel tasks |
+| **Smithers scripts** | `.smithers` script execution |
+| **Worktrees** | Git worktree management |
+| **Reviews** | Code review workflow |
 
 ## Dependencies
 
-- vaxis (vendored in `renderer/`) - terminal rendering, forked from libvaxis
-- sqlite (vendored in `sqlite/`) - SQLite Zig bindings
-- std.process.Child - curl subprocess for API calls
+All vendored (no package manager):
+- `renderer/` - forked libvaxis
+- `sqlite/` - SQLite Zig bindings
 
-All dependencies are vendored - no external package manager needed.
+## Reference
 
-## Reference Implementations
-
-Git submodules in `reference/` - use for patterns, API examples, architecture inspiration:
-
-| Project | Path | Description |
-|---------|------|-------------|
-| **Pi** | `reference/pi-mono/` | Primary reference. TypeScript AI agent framework |
-| **Codex** | `reference/codex/` | OpenAI's CLI agent. Rust TUI at `codex-rs/tui/` |
-| **OpenCode** | `reference/opencode/` | Go-based AI coding assistant |
-
-### Key TUI References
-
-- `reference/codex/codex-rs/tui/` - Rust/ratatui TUI implementation, see `styles.md` for conventions
-- `reference/pi-mono/packages/` - TypeScript packages for agent orchestration
+| Resource | Path |
+|----------|------|
+| Codex TUI (Rust) | `reference/codex/codex-rs/tui/` |
+| Pi (TS agents) | `reference/pi-mono/packages/` |
+| OpenCode (Go) | `reference/opencode/` |
