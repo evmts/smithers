@@ -24,7 +24,7 @@ pub fn FrameRenderer(comptime R: type) type {
             input: *Input,
             status_bar: *StatusBar,
             database: *db.DefaultDatabase,
-            loading: *const loading_mod.LoadingState,
+            loading: *const loading_mod.DefaultLoadingState,
             key_handler: *const KeyHandler,
         };
 

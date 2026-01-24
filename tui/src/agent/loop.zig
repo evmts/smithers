@@ -2,7 +2,8 @@ const std = @import("std");
 const db = @import("../db.zig");
 const loading_mod = @import("../loading.zig");
 const DefaultChatHistory = @import("../components/chat_history.zig").DefaultChatHistory;
-const ToolExecutor = @import("tool_executor.zig").ToolExecutor;
+const tool_executor_mod = @import("tool_executor.zig");
+const ToolExecutor = tool_executor_mod.DefaultToolExecutor;
 const provider_interface = @import("provider_interface.zig");
 const ToolCallInfo = provider_interface.ToolCallInfo;
 const anthropic = @import("anthropic_provider.zig");
@@ -26,10 +27,10 @@ pub fn AgentLoop(comptime Provider: type) type {
         const Self = @This();
 
         alloc: std.mem.Allocator,
-        loading: *loading_mod.LoadingState,
+        loading: *loading_mod.DefaultLoadingState,
         streaming: ?ProviderApi.StreamingState = null,
 
-        pub fn init(alloc: std.mem.Allocator, loading: *loading_mod.LoadingState) Self {
+        pub fn init(alloc: std.mem.Allocator, loading: *loading_mod.DefaultLoadingState) Self {
             return .{
                 .alloc = alloc,
                 .loading = loading,

@@ -1,7 +1,8 @@
 const std = @import("std");
 const db = @import("../db.zig");
 const md = @import("../markdown/parser.zig");
-const Selection = @import("../selection.zig").Selection;
+const selection_mod = @import("../selection.zig");
+const Selection = selection_mod.DefaultSelection;
 const Colors = @import("../layout.zig").DefaultColors;
 
 const user_bar_color = Colors.Indexed.USER_BAR;

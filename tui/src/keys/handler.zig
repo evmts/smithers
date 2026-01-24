@@ -28,7 +28,7 @@ pub fn KeyContext(comptime R: type) type {
         database: *db.DefaultDatabase,
         status_bar: *status_bar_mod.StatusBar(R),
         event_loop: *EventLoop,
-        loading: *loading_mod.LoadingState,
+        loading: *loading_mod.DefaultLoadingState,
         has_ai: bool,
     };
 }

@@ -2,6 +2,8 @@ const std = @import("std");
 
 const db = @import("db.zig");
 const loading_mod = @import("loading.zig");
+const environment_mod = @import("environment.zig");
+const clock_mod = @import("clock.zig");
 
 const input_mod = @import("components/input.zig");
 const chat_history_mod = @import("components/chat_history.zig");
@@ -12,8 +14,8 @@ const mouse_handler_mod = @import("keys/mouse.zig");
 const AgentLoop = @import("agent/loop.zig").AgentLoop;
 const FrameRenderer = @import("rendering/frame.zig").FrameRenderer;
 
-/// Generic App for full dependency injection of database, event loop, renderer, and agent
-pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime Agent: type) type {
+/// Generic App for full dependency injection of database, event loop, renderer, agent, environment, and clock
+pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime Agent: type, comptime Env: type, comptime Clk: type) type {
     const KeyHandler = key_handler_mod.KeyHandler(R);
     const KeyContext = key_handler_mod.KeyContext(R);
     const MouseHandler = mouse_handler_mod.MouseHandler(R);
@@ -32,7 +34,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
         chat_history: ChatHistory,
         header: Header,
         status_bar: StatusBar,
-        loading: loading_mod.LoadingState,
+        loading: loading_mod.DefaultLoadingState,
         key_handler: KeyHandler,
         mouse_handler: MouseHandler,
         agent_loop: AgentLoopT,
@@ -44,7 +46,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
 
         pub fn init(alloc: std.mem.Allocator) !Self {
             // Use file-based database in ~/.smithers/
-            const home = std.posix.getenv("HOME") orelse "/tmp";
+            const home = Env.home() orelse "/tmp";
             const db_path_slice = try std.fmt.allocPrint(alloc, "{s}/.smithers/chat.db", .{home});
             defer alloc.free(db_path_slice);
             const db_path = try alloc.dupeZ(u8, db_path_slice);
@@ -78,7 +80,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
             // Load existing chat history
             try chat_history.reload(&database);
 
-            const has_ai = std.posix.getenv("ANTHROPIC_API_KEY") != null;
+            const has_ai = Env.anthropicApiKey() != null;
             if (!has_ai) {
                 _ = database.addMessage(.system, "Note: ANTHROPIC_API_KEY not set. Running in demo mode.") catch {};
             }
@@ -86,7 +88,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
             const header = Header.init(alloc, "0.1.0", if (has_ai) "claude-sonnet-4" else "demo-mode");
             const status_bar = StatusBar.init();
 
-            var loading = loading_mod.LoadingState{};
+            var loading = loading_mod.DefaultLoadingState{};
             const key_handler = KeyHandler.init(alloc);
             const mouse_handler = MouseHandler.init(alloc);
             const agent_loop = AgentLoopT.init(alloc, &loading);
@@ -104,7 +106,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
                 .mouse_handler = mouse_handler,
                 .agent_loop = agent_loop,
                 .has_ai = has_ai,
-                .last_tick = std.time.milliTimestamp(),
+                .last_tick = Clk.milliTimestamp(),
                 .db_path = db_path,
             };
         }
@@ -168,7 +170,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
                 _ = try self.agent_loop.tick(&self.database, &self.chat_history);
 
                 // Tick spinner animation
-                const now = std.time.milliTimestamp();
+                const now = Clk.milliTimestamp();
                 if (now - self.last_tick >= 80) {
                     self.loading.tick();
                     self.status_bar.tickSpinner();
@@ -196,7 +198,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
 
                 // Small sleep to avoid busy loop
                 if (self.loading.is_loading) {
-                    std.Thread.sleep(16 * std.time.ns_per_ms);
+                    Clk.sleep(16 * std.time.ns_per_ms);
                 }
             }
         }
@@ -209,4 +211,6 @@ pub const DefaultApp = App(
     @import("event_loop.zig").DefaultEventLoop,
     @import("rendering/renderer.zig").DefaultRenderer,
     @import("agent/anthropic_provider.zig").AnthropicStreamingProvider,
+    environment_mod.DefaultEnvironment,
+    clock_mod.DefaultClock,
 );
