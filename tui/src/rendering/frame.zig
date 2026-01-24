@@ -7,15 +7,15 @@ const chat_history_mod = @import("../components/chat_history.zig");
 const header_mod = @import("../ui/header.zig");
 const status_mod = @import("../ui/status.zig");
 const Layout = @import("../layout.zig").Layout;
-const loading_mod = @import("../loading.zig");
 const key_handler_mod = @import("../keys/handler.zig");
 
-pub fn FrameRenderer(comptime R: type) type {
+/// FrameRenderer generic over Renderer and Loading types
+pub fn FrameRenderer(comptime R: type, comptime Loading: type) type {
     const Input = input_mod.Input(R);
     const ChatHistory = chat_history_mod.ChatHistory(R);
     const Header = header_mod.Header(R);
     const StatusBar = status_mod.StatusBar(R);
-    const KeyHandler = key_handler_mod.KeyHandler(R);
+    const KeyHandler = key_handler_mod.KeyHandler(R, Loading);
 
     return struct {
         pub const RenderContext = struct {
@@ -23,8 +23,8 @@ pub fn FrameRenderer(comptime R: type) type {
             chat_history: *ChatHistory,
             input: *Input,
             status_bar: *StatusBar,
-            database: *db.DefaultDatabase,
-            loading: *const loading_mod.DefaultLoadingState,
+            database: *db.Database(@import("sqlite").Db),
+            loading: *const Loading,
             key_handler: *const KeyHandler,
         };
 
@@ -72,5 +72,3 @@ pub fn FrameRenderer(comptime R: type) type {
         }
     };
 }
-
-pub const DefaultFrameRenderer = FrameRenderer(renderer_mod.DefaultRenderer);

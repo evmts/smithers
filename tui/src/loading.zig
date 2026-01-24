@@ -13,8 +13,8 @@ pub const ToolResultInfo = struct {
     input_json: []const u8,
 };
 
-/// LoadingState generic over Clock implementation
-pub fn LoadingState(comptime Clk: type) type {
+/// LoadingState generic over Clock and ToolExecutor
+pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
     return struct {
         is_loading: bool = false,
         start_time: i64 = 0,
@@ -23,7 +23,7 @@ pub fn LoadingState(comptime Clk: type) type {
         streaming: ?streaming.StreamingState = null,
         pending_continuation: ?[]const u8 = null,
 
-        tool_executor: ?tool_executor_mod.DefaultToolExecutor = null,
+        tool_executor: ?ToolExec = null,
         pending_tools: std.ArrayListUnmanaged(streaming.ToolCallInfo) = .{},
         current_tool_idx: usize = 0,
         tool_results: std.ArrayListUnmanaged(ToolResultInfo) = .{},
@@ -83,12 +83,19 @@ pub fn LoadingState(comptime Clk: type) type {
             self.is_loading = false;
         }
 
-        /// Get current timestamp via injected clock
         pub fn now() i64 {
             return Clk.milliTimestamp();
+        }
+
+        /// Create a new tool executor instance
+        pub fn createToolExecutor(alloc: std.mem.Allocator) ToolExec {
+            return ToolExec.init(alloc);
         }
     };
 }
 
-/// Default LoadingState using system clock
-pub const DefaultLoadingState = LoadingState(clock_mod.DefaultClock);
+/// Production LoadingState wiring
+pub const ProductionLoadingState = LoadingState(
+    clock_mod.StdClock,
+    tool_executor_mod.ToolExecutor(tool_executor_mod.BuiltinRegistryFactory),
+);

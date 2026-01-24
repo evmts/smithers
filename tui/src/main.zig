@@ -1,6 +1,6 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
-const DefaultApp = @import("app.zig").DefaultApp;
+const ProductionApp = @import("app.zig").ProductionApp;
 
 // File-based logging
 var log_file: ?std.fs.File = null;
@@ -36,7 +36,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var app = try DefaultApp.init(gpa.allocator());
+    var app = try ProductionApp.init(gpa.allocator());
     defer app.deinit();
     try app.run();
 }

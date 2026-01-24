@@ -4,6 +4,7 @@ const db = @import("db.zig");
 const loading_mod = @import("loading.zig");
 const environment_mod = @import("environment.zig");
 const clock_mod = @import("clock.zig");
+const tool_executor_mod = @import("agent/tool_executor.zig");
 
 const input_mod = @import("components/input.zig");
 const chat_history_mod = @import("components/chat_history.zig");
@@ -11,20 +12,29 @@ const header_mod = @import("ui/header.zig");
 const status_bar_mod = @import("ui/status.zig");
 const key_handler_mod = @import("keys/handler.zig");
 const mouse_handler_mod = @import("keys/mouse.zig");
-const AgentLoop = @import("agent/loop.zig").AgentLoop;
-const FrameRenderer = @import("rendering/frame.zig").FrameRenderer;
+const loop_mod = @import("agent/loop.zig");
+const frame_mod = @import("rendering/frame.zig");
 
-/// Generic App for full dependency injection of database, event loop, renderer, agent, environment, and clock
-pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime Agent: type, comptime Env: type, comptime Clk: type) type {
-    const KeyHandler = key_handler_mod.KeyHandler(R);
-    const KeyContext = key_handler_mod.KeyContext(R);
+/// Full dependency injection - all types are explicit comptime params
+pub fn App(
+    comptime Db: type,
+    comptime EvLoop: type,
+    comptime R: type,
+    comptime Agent: type,
+    comptime Env: type,
+    comptime Clk: type,
+    comptime ToolExec: type,
+) type {
+    const Loading = loading_mod.LoadingState(Clk, ToolExec);
+    const KeyHandler = key_handler_mod.KeyHandler(R, Loading);
+    const KeyContext = key_handler_mod.KeyContext(R, Loading);
     const MouseHandler = mouse_handler_mod.MouseHandler(R);
     const Input = input_mod.Input(R);
     const ChatHistory = chat_history_mod.ChatHistory(R);
     const Header = header_mod.Header(R);
     const StatusBar = status_bar_mod.StatusBar(R);
-    const Frame = FrameRenderer(R);
-    const AgentLoopT = AgentLoop(Agent);
+    const Frame = frame_mod.FrameRenderer(R, Loading);
+    const AgentLoopT = loop_mod.AgentLoop(Agent, Loading, ToolExec);
 
     return struct {
         alloc: std.mem.Allocator,
@@ -34,7 +44,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
         chat_history: ChatHistory,
         header: Header,
         status_bar: StatusBar,
-        loading: loading_mod.DefaultLoadingState,
+        loading: Loading,
         key_handler: KeyHandler,
         mouse_handler: MouseHandler,
         agent_loop: AgentLoopT,
@@ -45,14 +55,12 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
         const Self = @This();
 
         pub fn init(alloc: std.mem.Allocator) !Self {
-            // Use file-based database in ~/.smithers/
             const home = Env.home() orelse "/tmp";
             const db_path_slice = try std.fmt.allocPrint(alloc, "{s}/.smithers/chat.db", .{home});
             defer alloc.free(db_path_slice);
             const db_path = try alloc.dupeZ(u8, db_path_slice);
             errdefer alloc.free(db_path);
 
-            // Ensure directory exists
             const dir_path = try std.fmt.allocPrint(alloc, "{s}/.smithers", .{home});
             defer alloc.free(dir_path);
             std.fs.makeDirAbsolute(dir_path) catch |err| switch (err) {
@@ -63,7 +71,6 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
             var database = try Db.init(alloc, db_path);
             errdefer database.deinit();
 
-            // Clean up ephemeral messages from previous sessions
             try database.deleteEphemeralMessages();
 
             var event_loop = try EvLoop.init(alloc);
@@ -77,7 +84,6 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
             var chat_history = ChatHistory.init(alloc);
             errdefer chat_history.deinit();
 
-            // Load existing chat history
             try chat_history.reload(&database);
 
             const has_ai = Env.anthropicApiKey() != null;
@@ -88,7 +94,7 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
             const header = Header.init(alloc, "0.1.0", if (has_ai) "claude-sonnet-4" else "demo-mode");
             const status_bar = StatusBar.init();
 
-            var loading = loading_mod.DefaultLoadingState{};
+            var loading = Loading{};
             const key_handler = KeyHandler.init(alloc);
             const mouse_handler = MouseHandler.init(alloc);
             const agent_loop = AgentLoopT.init(alloc, &loading);
@@ -121,7 +127,6 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
 
         pub fn run(self: *Self) !void {
             while (true) {
-                // Poll for events (non-blocking when loading)
                 const maybe_event = if (self.loading.is_loading)
                     self.event_loop.tryEvent()
                 else
@@ -166,10 +171,8 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
                     }
                 }
 
-                // Process agent loop (streaming, tool execution, continuations)
                 _ = try self.agent_loop.tick(&self.database, &self.chat_history);
 
-                // Tick spinner animation
                 const now = Clk.milliTimestamp();
                 if (now - self.last_tick >= 80) {
                     self.loading.tick();
@@ -177,10 +180,8 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
                     self.last_tick = now;
                 }
 
-                // Sync status bar busy state with loading
                 self.status_bar.setBusy(self.loading.is_loading);
 
-                // Render
                 const win = self.event_loop.window();
                 const renderer = R.init(win);
                 var render_ctx = Frame.RenderContext{
@@ -196,7 +197,6 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
 
                 try self.event_loop.render();
 
-                // Small sleep to avoid busy loop
                 if (self.loading.is_loading) {
                     Clk.sleep(16 * std.time.ns_per_ms);
                 }
@@ -205,12 +205,13 @@ pub fn App(comptime Db: type, comptime EvLoop: type, comptime R: type, comptime 
     };
 }
 
-/// Default concrete type for production use
-pub const DefaultApp = App(
-    db.DefaultDatabase,
-    @import("event_loop.zig").DefaultEventLoop,
-    @import("rendering/renderer.zig").DefaultRenderer,
+/// Production wiring - all concrete types explicitly specified
+pub const ProductionApp = App(
+    db.Database(@import("sqlite").Db),
+    @import("event_loop.zig").EventLoop(@import("vaxis").Vaxis, @import("vaxis").Tty),
+    @import("rendering/renderer.zig").Renderer(@import("rendering/renderer.zig").VaxisBackend),
     @import("agent/anthropic_provider.zig").AnthropicStreamingProvider,
-    environment_mod.DefaultEnvironment,
-    clock_mod.DefaultClock,
+    environment_mod.Environment(environment_mod.PosixEnv),
+    clock_mod.Clock(clock_mod.StdClock),
+    tool_executor_mod.ToolExecutor(tool_executor_mod.BuiltinRegistryFactory),
 );

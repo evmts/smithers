@@ -1,13 +1,9 @@
 const std = @import("std");
 const db = @import("../db.zig");
-const loading_mod = @import("../loading.zig");
-const DefaultChatHistory = @import("../components/chat_history.zig").DefaultChatHistory;
+const chat_history_mod = @import("../components/chat_history.zig");
 const tool_executor_mod = @import("tool_executor.zig");
-const ToolExecutor = tool_executor_mod.DefaultToolExecutor;
 const provider_interface = @import("provider_interface.zig");
 const ToolCallInfo = provider_interface.ToolCallInfo;
-const anthropic = @import("anthropic_provider.zig");
-const AnthropicStreamingProvider = anthropic.AnthropicStreamingProvider;
 
 pub const tools_json =
     \\[{"name":"read_file","description":"Read contents of a file with line numbers. Use offset/limit for pagination.","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"File path to read"},"offset":{"type":"integer","description":"Line to start from (0-indexed)"},"limit":{"type":"integer","description":"Max lines to read"}},"required":["path"]}},
@@ -19,25 +15,27 @@ pub const tools_json =
     \\{"name":"list_dir","description":"List directory contents with optional depth","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"Directory path"},"depth":{"type":"integer","description":"Recursion depth (1-3)"}}}}]
 ;
 
-/// Generic AgentLoop over any provider implementing the AgentProvider interface
-pub fn AgentLoop(comptime Provider: type) type {
+/// Generic AgentLoop over Provider, Loading, and ToolExecutor types
+pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolExec: type) type {
     const ProviderApi = provider_interface.AgentProvider(Provider);
+    const ChatHistory = chat_history_mod.ChatHistory(@import("../rendering/renderer.zig").Renderer(@import("../rendering/renderer.zig").VaxisBackend));
+    const Database = db.Database(@import("sqlite").Db);
 
     return struct {
         const Self = @This();
 
         alloc: std.mem.Allocator,
-        loading: *loading_mod.DefaultLoadingState,
+        loading: *Loading,
         streaming: ?ProviderApi.StreamingState = null,
 
-        pub fn init(alloc: std.mem.Allocator, loading: *loading_mod.DefaultLoadingState) Self {
+        pub fn init(alloc: std.mem.Allocator, loading: *Loading) Self {
             return .{
                 .alloc = alloc,
                 .loading = loading,
             };
         }
 
-        pub fn tick(self: *Self, database: *db.DefaultDatabase, chat_history: *DefaultChatHistory) !bool {
+        pub fn tick(self: *Self, database: *Database, chat_history: *ChatHistory) !bool {
             var should_continue = true;
 
             // Start streaming if we have a pending query but no active stream
@@ -76,7 +74,7 @@ pub fn AgentLoop(comptime Provider: type) type {
             return should_continue;
         }
 
-        fn start_query_stream(self: *Self, database: *db.DefaultDatabase, chat_history: *DefaultChatHistory) !bool {
+        fn start_query_stream(self: *Self, database: *Database, chat_history: *ChatHistory) !bool {
             const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
                 _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
                 self.loading.cleanup(self.alloc);
@@ -86,7 +84,7 @@ pub fn AgentLoop(comptime Provider: type) type {
 
             // Build messages JSON from DB
             const messages = database.getMessages(self.alloc) catch @constCast(&[_]db.Message{});
-            defer if (messages.len > 0) db.DefaultDatabase.freeMessages(self.alloc, messages);
+            defer if (messages.len > 0) Database.freeMessages(self.alloc, messages);
 
             var msg_buf = std.ArrayListUnmanaged(u8){};
             defer msg_buf.deinit(self.alloc);
@@ -131,7 +129,7 @@ pub fn AgentLoop(comptime Provider: type) type {
             return true;
         }
 
-        fn start_continuation_stream(self: *Self, database: *db.DefaultDatabase, chat_history: *DefaultChatHistory) !bool {
+        fn start_continuation_stream(self: *Self, database: *Database, chat_history: *ChatHistory) !bool {
             const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
                 _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
                 self.loading.cleanup(self.alloc);
@@ -165,7 +163,7 @@ pub fn AgentLoop(comptime Provider: type) type {
             return true;
         }
 
-        fn poll_active_stream(self: *Self, database: *db.DefaultDatabase, chat_history: *DefaultChatHistory) !void {
+        fn poll_active_stream(self: *Self, database: *Database, chat_history: *ChatHistory) !void {
             const stream = &self.streaming.?;
             const is_done = ProviderApi.poll(stream) catch true;
             const text = ProviderApi.getText(stream);
@@ -232,7 +230,7 @@ pub fn AgentLoop(comptime Provider: type) type {
                     self.loading.current_tool_idx = 0;
 
                     // Initialize tool executor
-                    self.loading.tool_executor = ToolExecutor.init(self.alloc);
+                    self.loading.tool_executor = ToolExec.init(self.alloc);
 
                     // Clean up stream but keep loading state active
                     ProviderApi.cleanup(stream, self.alloc);
@@ -243,7 +241,7 @@ pub fn AgentLoop(comptime Provider: type) type {
             }
         }
 
-        fn start_tool_execution(self: *Self, database: *db.DefaultDatabase, chat_history: *DefaultChatHistory) !void {
+        fn start_tool_execution(self: *Self, database: *Database, chat_history: *ChatHistory) !void {
             const tc = self.loading.pending_tools.items[self.loading.current_tool_idx];
 
             // Show tool execution in chat
@@ -258,7 +256,7 @@ pub fn AgentLoop(comptime Provider: type) type {
             }
         }
 
-        fn poll_tool_completion(self: *Self, database: *db.DefaultDatabase, chat_history: *DefaultChatHistory) !void {
+        fn poll_tool_completion(self: *Self, database: *Database, chat_history: *ChatHistory) !void {
             var exec = &self.loading.tool_executor.?;
             if (exec.poll()) |result| {
                 const result_content = if (result.result.success)
@@ -316,7 +314,7 @@ pub fn AgentLoop(comptime Provider: type) type {
             }
         }
 
-        fn build_continuation_request(self: *Self, database: *db.DefaultDatabase) !void {
+        fn build_continuation_request(self: *Self, database: *Database) !void {
             // Build continuation request
             var tool_results_json = std.ArrayListUnmanaged(u8){};
             defer tool_results_json.deinit(self.alloc);
@@ -336,7 +334,7 @@ pub fn AgentLoop(comptime Provider: type) type {
 
             // Build full message history
             const messages = database.getMessages(self.alloc) catch @constCast(&[_]db.Message{});
-            defer if (messages.len > 0) db.DefaultDatabase.freeMessages(self.alloc, messages);
+            defer if (messages.len > 0) Database.freeMessages(self.alloc, messages);
 
             var msg_buf = std.ArrayListUnmanaged(u8){};
             defer msg_buf.deinit(self.alloc);
@@ -400,6 +398,5 @@ pub fn AgentLoop(comptime Provider: type) type {
     };
 }
 
-/// Default AgentLoop using Anthropic provider
-pub const DefaultAgentLoop = AgentLoop(AnthropicStreamingProvider);
+
 

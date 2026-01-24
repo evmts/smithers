@@ -1,12 +1,10 @@
 const std = @import("std");
-const DefaultRenderer = @import("../rendering/renderer.zig").DefaultRenderer;
 
 const input_mod = @import("../components/input.zig");
 const chat_history_mod = @import("../components/chat_history.zig");
 const db = @import("../db.zig");
 const status_bar_mod = @import("../ui/status.zig");
-const EventLoop = @import("../event_loop.zig").DefaultEventLoop;
-const loading_mod = @import("../loading.zig");
+const event_loop_mod = @import("../event_loop.zig");
 const help = @import("../help.zig");
 const editor_utils = @import("../editor.zig");
 const git_utils = @import("../git.zig");
@@ -21,23 +19,25 @@ pub const Action = union(enum) {
     start_ai_query: []const u8,
 };
 
-pub fn KeyContext(comptime R: type) type {
+/// KeyContext generic over Renderer and Loading types
+pub fn KeyContext(comptime R: type, comptime Loading: type) type {
     return struct {
         input: *input_mod.Input(R),
         chat_history: *chat_history_mod.ChatHistory(R),
-        database: *db.DefaultDatabase,
+        database: *db.Database(@import("sqlite").Db),
         status_bar: *status_bar_mod.StatusBar(R),
-        event_loop: *EventLoop,
-        loading: *loading_mod.DefaultLoadingState,
+        event_loop: *event_loop_mod.EventLoop(@import("vaxis").Vaxis, @import("vaxis").Tty),
+        loading: *Loading,
         has_ai: bool,
     };
 }
 
-pub fn KeyHandler(comptime R: type) type {
+/// KeyHandler generic over Renderer and Loading types
+pub fn KeyHandler(comptime R: type, comptime Loading: type) type {
     const Key = R.Key;
     const Event = event_mod.Event(R);
     return struct {
-        pub const Context = KeyContext(R);
+        pub const Context = KeyContext(R, Loading);
         const Self = @This();
 
         alloc: std.mem.Allocator,
@@ -279,4 +279,4 @@ pub fn KeyHandler(comptime R: type) type {
     };
 }
 
-pub const DefaultKeyHandler = KeyHandler(DefaultRenderer);
+
