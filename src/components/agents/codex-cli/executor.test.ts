@@ -307,8 +307,8 @@ describe('CLI execution options validation', () => {
     }
   })
 
-  test('all approval policies are valid', () => {
-    const policies = ['untrusted', 'on-failure', 'on-request', 'never'] as const
+  test('approval policies do not add --ask-for-approval (not supported in exec mode)', () => {
+    const policies = ['untrusted', 'on-failure', 'on-request'] as const
 
     for (const policy of policies) {
       const options: CodexCLIExecutionOptions = {
@@ -317,9 +317,19 @@ describe('CLI execution options validation', () => {
       }
 
       const args = buildCodexArgs(options)
-      expect(args).toContain('--ask-for-approval')
-      expect(args).toContain(policy)
+      // codex exec doesn't support --ask-for-approval
+      expect(args).not.toContain('--ask-for-approval')
     }
+  })
+
+  test('never approval policy adds --full-auto', () => {
+    const options: CodexCLIExecutionOptions = {
+      prompt: 'test',
+      approvalPolicy: 'never',
+    }
+
+    const args = buildCodexArgs(options)
+    expect(args).toContain('--full-auto')
   })
 })
 

@@ -21,10 +21,15 @@ function buildSandboxArgs(mode?: CodexSandboxMode): string[] {
 
 /**
  * Build approval arguments based on policy
+ * Note: `codex exec` doesn't support --ask-for-approval directly.
+ * Approval policies are mapped to available exec flags:
+ * - 'never' → --full-auto (runs without approval prompts)
+ * - Other policies are ignored in exec mode (not supported)
  */
 function buildApprovalArgs(policy?: CodexApprovalPolicy): string[] {
-  if (!policy) return []
-  return ['--ask-for-approval', policy]
+  // codex exec doesn't support --ask-for-approval
+  // The only approval-related flag is --full-auto
+  return []
 }
 
 /**
@@ -42,11 +47,12 @@ export function buildCodexArgs(options: CodexCLIExecutionOptions): string[] {
   // Sandbox mode
   args.push(...buildSandboxArgs(options.sandboxMode))
 
-  // Approval policy
+  // Approval policy handling for exec mode
+  // codex exec doesn't have --ask-for-approval, but has --full-auto
   args.push(...buildApprovalArgs(options.approvalPolicy))
 
-  // Full auto mode
-  if (options.fullAuto) {
+  // Full auto mode (also triggered by approvalPolicy: 'never')
+  if (options.fullAuto || options.approvalPolicy === 'never') {
     args.push('--full-auto')
   }
 

@@ -92,32 +92,32 @@ describe('buildCodexArgs', () => {
   })
 
   describe('approval policy handling', () => {
-    test('adds approval flag for untrusted', () => {
+    // Note: codex exec doesn't support --ask-for-approval
+    // Approval policies are mapped to available exec flags
+
+    test('ignores untrusted policy (not supported in exec mode)', () => {
       const args = buildCodexArgs({ prompt: 'test', approvalPolicy: 'untrusted' })
 
-      expect(args).toContain('--ask-for-approval')
-      expect(args).toContain('untrusted')
+      expect(args).not.toContain('--ask-for-approval')
     })
 
-    test('adds approval flag for on-failure', () => {
+    test('ignores on-failure policy (not supported in exec mode)', () => {
       const args = buildCodexArgs({ prompt: 'test', approvalPolicy: 'on-failure' })
 
-      expect(args).toContain('--ask-for-approval')
-      expect(args).toContain('on-failure')
+      expect(args).not.toContain('--ask-for-approval')
     })
 
-    test('adds approval flag for on-request', () => {
+    test('ignores on-request policy (not supported in exec mode)', () => {
       const args = buildCodexArgs({ prompt: 'test', approvalPolicy: 'on-request' })
 
-      expect(args).toContain('--ask-for-approval')
-      expect(args).toContain('on-request')
+      expect(args).not.toContain('--ask-for-approval')
     })
 
-    test('adds approval flag for never', () => {
+    test('maps never policy to --full-auto', () => {
       const args = buildCodexArgs({ prompt: 'test', approvalPolicy: 'never' })
 
-      expect(args).toContain('--ask-for-approval')
-      expect(args).toContain('never')
+      expect(args).not.toContain('--ask-for-approval')
+      expect(args).toContain('--full-auto')
     })
 
     test('omits approval flag when not specified', () => {
@@ -354,7 +354,7 @@ describe('buildCodexArgs', () => {
         prompt: 'implement feature',
         model: 'o4-mini',
         sandboxMode: 'workspace-write',
-        approvalPolicy: 'on-request',
+        approvalPolicy: 'never', // maps to --full-auto
         cwd: '/project',
         addDirs: ['/tmp'],
         json: true,
@@ -366,8 +366,10 @@ describe('buildCodexArgs', () => {
       expect(args).toContain('o4-mini')
       expect(args).toContain('--sandbox')
       expect(args).toContain('workspace-write')
-      expect(args).toContain('--ask-for-approval')
-      expect(args).toContain('on-request')
+      // codex exec doesn't support --ask-for-approval
+      expect(args).not.toContain('--ask-for-approval')
+      // 'never' policy maps to --full-auto
+      expect(args).toContain('--full-auto')
       expect(args).toContain('--cd')
       expect(args).toContain('/project')
       expect(args).toContain('--add-dir')
