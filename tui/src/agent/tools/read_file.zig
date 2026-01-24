@@ -46,6 +46,7 @@ fn executeReadFile(ctx: ToolContext) ToolResult {
     const content = file.readToEndAlloc(ctx.allocator, max_size) catch {
         return ToolResult.err("Failed to read file (file too large?)");
     };
+    defer ctx.allocator.free(content);
 
     // Split into lines
     var lines = std.ArrayListUnmanaged([]const u8){};
@@ -105,6 +106,7 @@ fn executeReadFile(ctx: ToolContext) ToolResult {
             "(Output truncated at {d} bytes. Use 'offset' parameter to read beyond line {d})",
             .{ truncate.MAX_BYTES, offset + lines_written },
         ) catch "";
+        defer ctx.allocator.free(notice);
         output.appendSlice(ctx.allocator, notice) catch {};
     } else if (has_more) {
         const notice = std.fmt.allocPrint(
@@ -112,6 +114,7 @@ fn executeReadFile(ctx: ToolContext) ToolResult {
             "(File has more lines. Use 'offset' parameter to read beyond line {d})",
             .{ end_line },
         ) catch "";
+        defer ctx.allocator.free(notice);
         output.appendSlice(ctx.allocator, notice) catch {};
     } else {
         const notice = std.fmt.allocPrint(
@@ -119,6 +122,7 @@ fn executeReadFile(ctx: ToolContext) ToolResult {
             "(End of file - total {d} lines)",
             .{total_lines},
         ) catch "";
+        defer ctx.allocator.free(notice);
         output.appendSlice(ctx.allocator, notice) catch {};
     }
 

@@ -35,6 +35,7 @@ fn executeGlob(ctx: ToolContext) ToolResult {
 
     if (child.stdout) |stdout_file| {
         const content = stdout_file.readToEndAlloc(ctx.allocator, 1024 * 1024) catch "";
+        defer ctx.allocator.free(content);
         stdout_list.appendSlice(ctx.allocator, content) catch {};
     }
 

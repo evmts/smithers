@@ -47,6 +47,7 @@ fn executeGrep(ctx: ToolContext) ToolResult {
 
     if (child.stdout) |stdout_file| {
         const content = stdout_file.readToEndAlloc(ctx.allocator, 1024 * 1024) catch "";
+        defer ctx.allocator.free(content);
         stdout_list.appendSlice(ctx.allocator, content) catch {};
     }
 
@@ -106,6 +107,7 @@ fn executeGrep(ctx: ToolContext) ToolResult {
             "  Line {s}: {s}\n",
             .{ line_num, display_content },
         ) catch continue;
+        defer ctx.allocator.free(formatted);
         output.appendSlice(ctx.allocator, formatted) catch {};
         match_count += 1;
     }
@@ -177,6 +179,7 @@ fn executeBasicGrep(ctx: ToolContext, pattern: []const u8, search_path: []const 
                     "  Line {d}: {s}\n",
                     .{ line_num, display },
                 ) catch continue;
+                defer ctx.allocator.free(formatted);
                 output.appendSlice(ctx.allocator, formatted) catch {};
                 match_count += 1;
 

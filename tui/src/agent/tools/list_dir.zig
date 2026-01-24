@@ -32,7 +32,13 @@ fn executeListDir(ctx: ToolContext) ToolResult {
 
     // Collect entries
     var entries = std.ArrayListUnmanaged(Entry){};
-    defer entries.deinit(ctx.allocator);
+    defer {
+        for (entries.items) |entry| {
+            ctx.allocator.free(entry.name);
+            ctx.allocator.free(entry.sort_key);
+        }
+        entries.deinit(ctx.allocator);
+    }
 
     collectEntries(ctx.allocator, dir, "", depth, &entries, &entry_count, MAX_ENTRIES) catch {
         return ToolResult.err("Failed to read directory");

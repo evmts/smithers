@@ -38,6 +38,7 @@ fn executeEditFile(ctx: ToolContext) ToolResult {
         return ToolResult.err("Failed to read file");
     };
     file.close();
+    defer ctx.allocator.free(content);
 
     // Find old_str - check for multiple occurrences
     const first_idx = std.mem.indexOf(u8, content, old_str);
@@ -79,6 +80,7 @@ fn executeEditFile(ctx: ToolContext) ToolResult {
         }) catch {
             return ToolResult.err("Failed to create new content");
         };
+        defer ctx.allocator.free(new_content);
 
         const write_file = std.fs.cwd().createFile(path, .{}) catch {
             return ToolResult.err("Failed to open file for writing");
@@ -102,6 +104,7 @@ fn executeEditFile(ctx: ToolContext) ToolResult {
     const new_content = std.mem.replaceOwned(u8, ctx.allocator, content, old_str, new_str) catch {
         return ToolResult.err("Failed to replace content");
     };
+    defer ctx.allocator.free(new_content);
 
     // Verify something changed
     if (std.mem.eql(u8, content, new_content)) {

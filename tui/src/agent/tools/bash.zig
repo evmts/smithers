@@ -59,6 +59,7 @@ fn executeBash(ctx: ToolContext) ToolResult {
     // Read stderr
     if (child.stderr) |stderr_file| {
         const content = stderr_file.readToEndAlloc(ctx.allocator, MAX_OUTPUT_SIZE) catch "";
+        defer if (content.len > 0) ctx.allocator.free(content);
         stderr_list.appendSlice(ctx.allocator, content) catch {};
     }
 
@@ -68,6 +69,7 @@ fn executeBash(ctx: ToolContext) ToolResult {
 
     // Combine output
     var combined = std.ArrayListUnmanaged(u8){};
+    defer combined.deinit(ctx.allocator);
     combined.appendSlice(ctx.allocator, stdout_list.items) catch {};
     if (stderr_list.items.len > 0) {
         if (combined.items.len > 0) {
@@ -94,6 +96,7 @@ fn executeBash(ctx: ToolContext) ToolResult {
                 "\n\n[Showing last {d} of {d} lines]",
                 .{ trunc_result.output_lines, trunc_result.total_lines },
             ) catch "";
+            defer if (notice.len > 0) ctx.allocator.free(notice);
             output.appendSlice(ctx.allocator, notice) catch {};
             return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch "", null);
         }
@@ -103,6 +106,7 @@ fn executeBash(ctx: ToolContext) ToolResult {
         var output = std.ArrayListUnmanaged(u8){};
         output.appendSlice(ctx.allocator, trunc_result.content) catch {};
         const notice = std.fmt.allocPrint(ctx.allocator, "\n\nCommand exited with code {d}", .{exit_code}) catch "";
+        defer if (notice.len > 0) ctx.allocator.free(notice);
         output.appendSlice(ctx.allocator, notice) catch {};
         return ToolResult.err(output.toOwnedSlice(ctx.allocator) catch "Command failed");
     }
