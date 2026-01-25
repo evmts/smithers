@@ -287,10 +287,26 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     // Initialize tool executor
                     self.loading.tool_executor = ToolExec.init(self.alloc);
 
+                    // Persist to SQLite for crash recovery
+                    const run_id = database.createAgentRun() catch null;
+                    self.loading.agent_run_id = run_id;
+                    if (run_id) |rid| {
+                        database.updateAgentRunStatus(rid, .tools) catch {};
+                        database.updateAgentRunAssistantContent(rid, self.loading.assistant_content_json) catch {};
+                        // Serialize pending_tools to JSON for persistence
+                        const tools_json_str = self.serializePendingTools(scratch) catch null;
+                        database.updateAgentRunTools(rid, tools_json_str, 0) catch {};
+                    }
+
                     // Clean up stream but keep loading state active
                     ProviderApi.cleanup(stream, self.alloc);
                     self.streaming = null;
                 } else {
+                    // Complete any active run
+                    if (self.loading.agent_run_id) |rid| {
+                        database.completeAgentRun(rid) catch {};
+                        self.loading.agent_run_id = null;
+                    }
                     self.loading.cleanup(self.alloc);
                 }
                 state_changed = true;
@@ -364,6 +380,13 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
                 self.loading.current_tool_idx += 1;
 
+                // Persist progress to SQLite for crash recovery
+                if (self.loading.agent_run_id) |rid| {
+                    database.updateAgentRunTools(rid, null, @intCast(self.loading.current_tool_idx)) catch {};
+                    const results_json = self.serializeToolResults(scratch) catch null;
+                    database.updateAgentRunResults(rid, results_json) catch {};
+                }
+
                 // Check if all tools done
                 if (!self.loading.hasToolsToExecute()) {
                     try self.build_continuation_request(database);
@@ -428,6 +451,12 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             self.loading.pending_continuation = try self.alloc.dupe(u8, msg_buf.items);
             self.loading.start_time = std.time.milliTimestamp();
 
+            // Mark agent run complete in SQLite (tools finished, now continuing)
+            if (self.loading.agent_run_id) |rid| {
+                database.completeAgentRun(rid) catch {};
+                self.loading.agent_run_id = null;
+            }
+
             // Clean up tool execution state
             if (self.loading.tool_executor) |*e| e.deinit();
             self.loading.tool_executor = null;
@@ -448,6 +477,42 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             self.loading.pending_tools = .{};
             if (self.loading.assistant_content_json) |a| self.alloc.free(a);
             self.loading.assistant_content_json = null;
+        }
+
+        /// Serialize pending_tools to JSON for DB persistence
+        fn serializePendingTools(self: *Self, alloc: std.mem.Allocator) ![]const u8 {
+            var buf = std.ArrayListUnmanaged(u8){};
+            try buf.append(alloc, '[');
+            var first = true;
+            for (self.loading.pending_tools.items) |pt| {
+                if (!first) try buf.append(alloc, ',');
+                first = false;
+                const escaped_input = std.json.Stringify.valueAlloc(alloc, pt.input_json, .{}) catch "\"\"";
+                const item = std.fmt.allocPrint(alloc,
+                    \\{{"id":"{s}","name":"{s}","input_json":{s}}}
+                , .{ pt.id, pt.name, escaped_input }) catch continue;
+                try buf.appendSlice(alloc, item);
+            }
+            try buf.append(alloc, ']');
+            return buf.items;
+        }
+
+        /// Serialize tool_results to JSON for DB persistence
+        fn serializeToolResults(self: *Self, alloc: std.mem.Allocator) ![]const u8 {
+            var buf = std.ArrayListUnmanaged(u8){};
+            try buf.append(alloc, '[');
+            var first = true;
+            for (self.loading.tool_results.items) |tr| {
+                if (!first) try buf.append(alloc, ',');
+                first = false;
+                const escaped_content = std.json.Stringify.valueAlloc(alloc, tr.content, .{}) catch "\"\"";
+                const item = std.fmt.allocPrint(alloc,
+                    \\{{"tool_id":"{s}","tool_name":"{s}","content":{s},"success":{s}}}
+                , .{ tr.tool_id, tr.tool_name, escaped_content, if (tr.success) "true" else "false" }) catch continue;
+                try buf.appendSlice(alloc, item);
+            }
+            try buf.append(alloc, ']');
+            return buf.items;
         }
     };
 }

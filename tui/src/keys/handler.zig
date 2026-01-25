@@ -83,6 +83,10 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                     return .none;
                 }
                 if (ctx.loading.isLoading()) {
+                    // Mark agent run as failed in SQLite before cleanup
+                    if (ctx.loading.agent_run_id) |rid| {
+                        ctx.database.failAgentRun(rid) catch {};
+                    }
                     ctx.loading.cleanup(self.alloc);
                     _ = try ctx.database.addMessage(.system, "Interrupted.");
                     try ctx.chat_history.reload(ctx.database);

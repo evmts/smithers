@@ -40,6 +40,34 @@ pub const MessageStatus = enum {
     }
 };
 
+/// Agent run status for crash recovery
+pub const AgentRunStatus = enum {
+    pending, // waiting to start
+    streaming, // receiving AI response
+    tools, // executing tools
+    complete, // finished successfully
+    error_state, // failed (can't use 'error' - reserved)
+
+    pub fn toString(self: AgentRunStatus) [:0]const u8 {
+        return switch (self) {
+            .pending => "pending",
+            .streaming => "streaming",
+            .tools => "tools",
+            .complete => "complete",
+            .error_state => "error",
+        };
+    }
+
+    pub fn fromString(s: []const u8) AgentRunStatus {
+        if (std.mem.eql(u8, s, "pending")) return .pending;
+        if (std.mem.eql(u8, s, "streaming")) return .streaming;
+        if (std.mem.eql(u8, s, "tools")) return .tools;
+        if (std.mem.eql(u8, s, "complete")) return .complete;
+        if (std.mem.eql(u8, s, "error")) return .error_state;
+        return .pending;
+    }
+};
+
 /// A chat message
 pub const Message = struct {
     id: i64,
@@ -75,6 +103,31 @@ const SessionRow = struct {
     id: i64,
     name: []const u8,
     created_at: i64,
+};
+
+/// An agent run (tool execution state for crash recovery)
+pub const AgentRun = struct {
+    id: i64,
+    session_id: i64,
+    status: AgentRunStatus,
+    pending_tools_json: ?[]const u8,
+    current_tool_idx: i64,
+    tool_results_json: ?[]const u8,
+    assistant_content_json: ?[]const u8,
+    created_at: i64,
+    updated_at: i64,
+};
+
+const AgentRunRow = struct {
+    id: i64,
+    session_id: i64,
+    status: []const u8,
+    pending_tools_json: ?[]const u8,
+    current_tool_idx: i64,
+    tool_results_json: ?[]const u8,
+    assistant_content_json: ?[]const u8,
+    created_at: i64,
+    updated_at: i64,
 };
 
 /// Generic Database for chat history, parameterized over SQLite backend
@@ -120,6 +173,21 @@ pub fn Database(comptime SqliteDb: type) type {
             db.exec("ALTER TABLE messages ADD COLUMN tool_name TEXT", .{}, .{}) catch {};
             db.exec("ALTER TABLE messages ADD COLUMN tool_input TEXT", .{}, .{}) catch {};
             db.exec("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'", .{}, .{}) catch {};
+
+            // Create agent_runs table for crash recovery
+            try db.exec(
+                \\CREATE TABLE IF NOT EXISTS agent_runs (
+                \\    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                \\    session_id INTEGER NOT NULL,
+                \\    status TEXT NOT NULL DEFAULT 'pending',
+                \\    pending_tools_json TEXT,
+                \\    current_tool_idx INTEGER NOT NULL DEFAULT 0,
+                \\    tool_results_json TEXT,
+                \\    assistant_content_json TEXT,
+                \\    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                \\    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+                \\)
+            , .{}, .{});
 
             // Ensure at least one session exists
             var count_stmt = try db.prepare("SELECT COUNT(*) FROM sessions");
@@ -354,6 +422,102 @@ pub fn Database(comptime SqliteDb: type) type {
                 if (msg.tool_input) |ti| allocator.free(ti);
             }
             allocator.free(messages);
+        }
+
+        // ============ Agent Run Management (crash recovery) ============
+
+        /// Create a new agent run for current session
+        pub fn createAgentRun(self: *Self) !i64 {
+            try self.db.exec(
+                "INSERT INTO agent_runs (session_id, status) VALUES (?, 'pending')",
+                .{},
+                .{self.current_session_id},
+            );
+            return self.db.getLastInsertRowID();
+        }
+
+        /// Get active (non-complete) agent run for current session
+        pub fn getActiveAgentRun(self: *Self, allocator: std.mem.Allocator) !?AgentRun {
+            var stmt = try self.db.prepare(
+                "SELECT id, session_id, status, pending_tools_json, current_tool_idx, tool_results_json, assistant_content_json, created_at, updated_at FROM agent_runs WHERE session_id = ? AND status NOT IN ('complete', 'error') ORDER BY id DESC LIMIT 1",
+            );
+            defer stmt.deinit();
+
+            if (try stmt.oneAlloc(AgentRunRow, allocator, .{}, .{self.current_session_id})) |row| {
+                return AgentRun{
+                    .id = row.id,
+                    .session_id = row.session_id,
+                    .status = AgentRunStatus.fromString(row.status),
+                    .pending_tools_json = row.pending_tools_json,
+                    .current_tool_idx = row.current_tool_idx,
+                    .tool_results_json = row.tool_results_json,
+                    .assistant_content_json = row.assistant_content_json,
+                    .created_at = row.created_at,
+                    .updated_at = row.updated_at,
+                };
+            }
+            return null;
+        }
+
+        /// Update agent run status
+        pub fn updateAgentRunStatus(self: *Self, run_id: i64, status: AgentRunStatus) !void {
+            try self.db.exec(
+                "UPDATE agent_runs SET status = ?, updated_at = strftime('%s', 'now') WHERE id = ?",
+                .{},
+                .{ status.toString(), run_id },
+            );
+        }
+
+        /// Update agent run pending tools
+        pub fn updateAgentRunTools(self: *Self, run_id: i64, pending_tools_json: ?[]const u8, current_idx: i64) !void {
+            try self.db.exec(
+                "UPDATE agent_runs SET pending_tools_json = ?, current_tool_idx = ?, updated_at = strftime('%s', 'now') WHERE id = ?",
+                .{},
+                .{ pending_tools_json, current_idx, run_id },
+            );
+        }
+
+        /// Update agent run tool results
+        pub fn updateAgentRunResults(self: *Self, run_id: i64, tool_results_json: ?[]const u8) !void {
+            try self.db.exec(
+                "UPDATE agent_runs SET tool_results_json = ?, updated_at = strftime('%s', 'now') WHERE id = ?",
+                .{},
+                .{ tool_results_json, run_id },
+            );
+        }
+
+        /// Update agent run assistant content (for continuation)
+        pub fn updateAgentRunAssistantContent(self: *Self, run_id: i64, assistant_content_json: ?[]const u8) !void {
+            try self.db.exec(
+                "UPDATE agent_runs SET assistant_content_json = ?, updated_at = strftime('%s', 'now') WHERE id = ?",
+                .{},
+                .{ assistant_content_json, run_id },
+            );
+        }
+
+        /// Mark agent run complete
+        pub fn completeAgentRun(self: *Self, run_id: i64) !void {
+            try self.db.exec(
+                "UPDATE agent_runs SET status = 'complete', pending_tools_json = NULL, tool_results_json = NULL, assistant_content_json = NULL, updated_at = strftime('%s', 'now') WHERE id = ?",
+                .{},
+                .{run_id},
+            );
+        }
+
+        /// Mark agent run as error
+        pub fn failAgentRun(self: *Self, run_id: i64) !void {
+            try self.db.exec(
+                "UPDATE agent_runs SET status = 'error', updated_at = strftime('%s', 'now') WHERE id = ?",
+                .{},
+                .{run_id},
+            );
+        }
+
+        /// Free agent run (if it has allocated strings)
+        pub fn freeAgentRun(allocator: std.mem.Allocator, run: AgentRun) void {
+            if (run.pending_tools_json) |p| allocator.free(p);
+            if (run.tool_results_json) |r| allocator.free(r);
+            if (run.assistant_content_json) |a| allocator.free(a);
         }
     };
 }

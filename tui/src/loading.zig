@@ -16,6 +16,7 @@ pub const ToolResultInfo = struct {
 /// LoadingState generic over Clock and ToolExecutor
 /// Thread-safety: is_loading is atomic for safe cross-thread reads.
 /// Other fields should only be accessed under mutex (via AgentThread).
+/// Tool execution state is persisted to SQLite agent_runs table for crash recovery.
 pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
     return struct {
         /// Atomic for thread-safe reads from main thread
@@ -31,6 +32,9 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
         current_tool_idx: usize = 0,
         tool_results: std.ArrayListUnmanaged(ToolResultInfo) = .{},
         assistant_content_json: ?[]const u8 = null,
+
+        /// SQLite agent_run ID for crash recovery (null if no active run)
+        agent_run_id: ?i64 = null,
 
         const Self = @This();
 
@@ -83,11 +87,17 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
             }
             self.tool_results.deinit(alloc);
             self.tool_results = .{};
+            for (self.pending_tools.items) |pt| {
+                alloc.free(pt.id);
+                alloc.free(pt.name);
+                alloc.free(pt.input_json);
+            }
             self.pending_tools.deinit(alloc);
             self.pending_tools = .{};
             self.current_tool_idx = 0;
             if (self.assistant_content_json) |a| alloc.free(a);
             self.assistant_content_json = null;
+            self.agent_run_id = null;
             self.is_loading_atomic.store(false, .release);
         }
 

@@ -87,6 +87,9 @@ pub fn AgentThread(
         fn threadMain(self: *Self) void {
             obs.global.logSimple(.info, @src(), "agent_thread", "started");
 
+            // Check for interrupted agent runs on startup (crash recovery)
+            self.recoverInterruptedRun();
+
             while (!self.should_stop.load(.acquire)) {
                 var did_work = false;
 
@@ -169,6 +172,27 @@ pub fn AgentThread(
 
         pub fn unlockForRead(self: *Self) void {
             self.mutex.unlock();
+        }
+
+        /// Check for and recover interrupted agent runs on startup
+        fn recoverInterruptedRun(self: *Self) void {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+
+            const maybe_run = self.database.getActiveAgentRun(self.alloc) catch null;
+            if (maybe_run) |run| {
+                defer Database.freeAgentRun(self.alloc, run);
+
+                obs.global.logSimple(.info, @src(), "agent_thread.recovery", "found interrupted run");
+
+                // For now, just mark interrupted runs as error and notify user
+                // Full recovery would parse the JSON and resume tool execution
+                self.database.failAgentRun(run.id) catch {};
+
+                const msg = "Previous agent run was interrupted. Starting fresh.";
+                _ = self.database.addMessage(.system, msg) catch {};
+                self.notifyStateChanged();
+            }
         }
     };
 }
