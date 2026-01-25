@@ -14,10 +14,28 @@ export interface TimelineEvent {
 const EVENTS_KEY = 'tui:timeline:events'
 const EMPTY_EVENTS: TimelineEvent[] = []
 
+function isValidSmithersDB(db: unknown): db is SmithersDB {
+  return (
+    db != null &&
+    typeof db === 'object' &&
+    'execution' in db &&
+    db.execution != null &&
+    typeof db.execution === 'object' &&
+    'current' in db.execution &&
+    typeof db.execution.current === 'function' &&
+    'query' in db &&
+    typeof db.query === 'function'
+  )
+}
+
 export function usePollEvents(db: SmithersDB): TimelineEvent[] {
   const [events, setEvents] = useTuiState<TimelineEvent[]>(EVENTS_KEY, EMPTY_EVENTS)
 
   useEffectOnValueChange(db, () => {
+    if (!isValidSmithersDB(db)) {
+      return
+    }
+
     const pollEvents = () => {
       try {
         const execution = db.execution.current()

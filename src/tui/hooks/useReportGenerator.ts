@@ -6,6 +6,15 @@ import { useTuiState } from '../state.js'
 
 const REPORT_INTERVAL_MS = 10 * 60 * 1000 // 10 minutes
 
+function isValidSmithersDB(db: unknown): db is SmithersDB {
+  return (
+    db != null &&
+    typeof db === 'object' &&
+    'query' in db &&
+    typeof db.query === 'function'
+  )
+}
+
 export interface UseReportGeneratorResult {
   reports: Report[]
   isGenerating: boolean
@@ -39,6 +48,10 @@ export function useReportGenerator(db: SmithersDB): UseReportGeneratorResult {
   }, [db, setIsGenerating, setReports, setLastGeneratedAt])
 
   useEffectOnValueChange(db, () => {
+    if (!isValidSmithersDB(db)) {
+      return
+    }
+
     const loadReports = () => {
       try {
         const dbReports = db.query<Report>(
