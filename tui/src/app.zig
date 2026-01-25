@@ -6,6 +6,7 @@ const environment_mod = @import("environment.zig");
 const clock_mod = @import("clock.zig");
 const tool_executor_mod = @import("agent/tool_executor.zig");
 const obs = @import("obs.zig");
+const agent_thread_mod = @import("agent_thread.zig");
 
 const input_mod = @import("components/input.zig");
 const chat_history_mod = @import("components/chat_history.zig");
@@ -36,6 +37,7 @@ pub fn App(
     const StatusBar = status_bar_mod.StatusBar(R);
     const Frame = frame_mod.FrameRenderer(R, Loading, Db, EvLoop);
     const AgentLoopT = loop_mod.AgentLoop(Agent, Loading, ToolExec, R);
+    const AgentThreadT = agent_thread_mod.AgentThread(AgentLoopT, Loading, Db, ChatHistory);
 
     return struct {
         alloc: std.mem.Allocator,
@@ -48,7 +50,7 @@ pub fn App(
         loading: Loading,
         key_handler: KeyHandler,
         mouse_handler: MouseHandler,
-        agent_loop: AgentLoopT,
+        agent_thread: AgentThreadT,
         has_ai: bool,
         last_tick: i64,
         db_path: [:0]const u8,
@@ -98,8 +100,8 @@ pub fn App(
             const loading = Loading{};
             const key_handler = KeyHandler.init(alloc);
             const mouse_handler = MouseHandler.init(alloc);
-            // NOTE: agent_loop.loading pointer is set in run() after Self has stable address
-            const agent_loop = AgentLoopT.init(alloc, undefined);
+            // NOTE: agent_thread pointers are set in run() after Self has stable address
+            const agent_thread = AgentThreadT.init(alloc, undefined, undefined, undefined);
 
             return Self{
                 .alloc = alloc,
@@ -112,7 +114,7 @@ pub fn App(
                 .loading = loading,
                 .key_handler = key_handler,
                 .mouse_handler = mouse_handler,
-                .agent_loop = agent_loop,
+                .agent_thread = agent_thread,
                 .has_ai = has_ai,
                 .last_tick = Clk.milliTimestamp(),
                 .db_path = db_path,
@@ -120,6 +122,7 @@ pub fn App(
         }
 
         pub fn deinit(self: *Self) void {
+            self.agent_thread.deinit();
             self.chat_history.deinit();
             self.input.deinit();
             self.event_loop.deinit();
@@ -131,22 +134,35 @@ pub fn App(
             // Start event loop here when self has stable address (not in init())
             try self.event_loop.start();
 
-            // Fix pointer stability: agent_loop.loading must point to self.loading
-            // (not the stack-local loading from init())
-            self.agent_loop.loading = &self.loading;
+            // Fix pointer stability: agent_thread pointers must point to self fields
+            // (not the stack-local values from init())
+            self.agent_thread.loading = &self.loading;
+            self.agent_thread.database = &self.database;
+            self.agent_thread.chat_history = &self.chat_history;
+            self.agent_thread.agent_loop.loading = &self.loading;
 
-            obs.global.logSimple(.info, @src(), "app.run", "starting main loop");
+            // Start agent thread
+            try self.agent_thread.start();
+            defer self.agent_thread.deinit();
+
+            obs.global.logSimple(.info, @src(), "app.run", "starting main loop (threaded)");
             std.log.debug("app.run: starting main loop", .{});
             var loop_count: u64 = 0;
             while (true) {
                 loop_count += 1;
                 if (obs.global.enabled(.trace)) {
                     var buf: [64]u8 = undefined;
-                    const msg = std.fmt.bufPrint(&buf, "loop #{d} is_loading={}", .{ loop_count, self.loading.is_loading }) catch "loop";
+                    const msg = std.fmt.bufPrint(&buf, "loop #{d} is_loading={}", .{ loop_count, self.loading.isLoading() }) catch "loop";
                     obs.global.logSimple(.trace, @src(), "app.loop", msg);
                 }
 
-                const maybe_event = if (self.loading.is_loading)
+                // Check if agent thread updated state - reload chat from DB
+                if (self.agent_thread.consumeStateChanged()) {
+                    self.chat_history.reload(&self.database) catch {};
+                }
+
+                // Main thread: poll for events (non-blocking when loading to stay responsive)
+                const maybe_event = if (self.loading.isLoading())
                     self.event_loop.tryEvent()
                 else
                     self.event_loop.nextEvent();
@@ -192,15 +208,22 @@ pub fn App(
                                 .suspend_tui => try self.event_loop.suspendTui(),
                                 .redraw => try self.event_loop.render(),
                                 .reload_chat => try self.chat_history.reload(&self.database),
-                                .start_ai_query => |_| {},
+                                .start_ai_query => |_| {
+                                    // Wake agent thread to process new query
+                                    self.agent_thread.wakeForWork();
+                                },
                                 .none => {},
+                            }
+
+                            // If a query was submitted, wake the agent thread
+                            if (self.loading.pending_query != null) {
+                                self.agent_thread.wakeForWork();
                             }
                         },
                     }
                 }
 
-                _ = try self.agent_loop.tick(&self.database, &self.chat_history);
-
+                // Main thread: update spinners (UI-only, no blocking)
                 const now = Clk.milliTimestamp();
                 if (now - self.last_tick >= 80) {
                     self.loading.tick();
@@ -208,8 +231,9 @@ pub fn App(
                     self.last_tick = now;
                 }
 
-                self.status_bar.setBusy(self.loading.is_loading);
+                self.status_bar.setBusy(self.loading.isLoading());
 
+                // Main thread: render frame
                 const win = self.event_loop.window();
                 const renderer = R.init(win);
                 var render_ctx = Frame.RenderContext{
@@ -225,7 +249,8 @@ pub fn App(
 
                 try self.event_loop.render();
 
-                if (self.loading.is_loading) {
+                // When loading, sleep briefly to not spin CPU (agent thread does the work)
+                if (self.loading.isLoading()) {
                     Clk.sleep(16 * std.time.ns_per_ms);
                 }
             }

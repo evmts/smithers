@@ -34,7 +34,7 @@ const TestLoadingState = loading_mod.LoadingState(clock_mod.MockClock, MockToolE
 test "LoadingState initial state" {
     var state = TestLoadingState{};
 
-    try std.testing.expect(!state.is_loading);
+    try std.testing.expect(!state.isLoading());
     try std.testing.expectEqual(@as(i64, 0), state.start_time);
     try std.testing.expectEqual(@as(usize, 0), state.spinner_frame);
     try std.testing.expect(state.pending_query == null);
@@ -54,14 +54,14 @@ test "LoadingState startLoading sets timestamp" {
     var state = TestLoadingState{};
     state.startLoading();
 
-    try std.testing.expect(state.is_loading);
+    try std.testing.expect(state.isLoading());
     try std.testing.expectEqual(@as(i64, 12345), state.start_time);
     try std.testing.expectEqual(@as(usize, 0), state.spinner_frame);
 }
 
 test "LoadingState tick cycles spinner" {
     var state = TestLoadingState{};
-    state.is_loading = true;
+    state.startLoading(); // Use startLoading instead of direct field access
 
     try std.testing.expectEqual(@as(usize, 0), state.spinner_frame);
 
@@ -77,7 +77,7 @@ test "LoadingState tick cycles spinner" {
 
 test "LoadingState tick does nothing when not loading" {
     var state = TestLoadingState{};
-    state.is_loading = false;
+    // Default state is not loading
 
     state.tick();
     try std.testing.expectEqual(@as(usize, 0), state.spinner_frame);
@@ -88,7 +88,7 @@ test "LoadingState tick does nothing when not loading" {
 
 test "LoadingState spinner wraps around" {
     var state = TestLoadingState{};
-    state.is_loading = true;
+    state.startLoading();
 
     // spinner_frames has 10 frames (indices 0-9)
     const num_frames = loading_mod.spinner_frames.len;
@@ -215,13 +215,13 @@ test "LoadingState cleanup frees resources" {
     // Set up tool_executor
     state.tool_executor = MockToolExecutor.init(alloc);
 
-    state.is_loading = true;
+    state.startLoading();
 
     // Cleanup should free all resources
     state.cleanup(alloc);
 
     // Verify state is reset
-    try std.testing.expect(!state.is_loading);
+    try std.testing.expect(!state.isLoading());
     try std.testing.expect(state.pending_query == null);
     try std.testing.expect(state.pending_continuation == null);
     try std.testing.expect(state.streaming == null);
@@ -239,7 +239,7 @@ test "LoadingState cleanup handles null fields" {
     // Should not crash when all fields are null/empty
     state.cleanup(alloc);
 
-    try std.testing.expect(!state.is_loading);
+    try std.testing.expect(!state.isLoading());
 }
 
 test "LoadingState now uses injected clock" {

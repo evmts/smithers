@@ -14,9 +14,12 @@ pub const ToolResultInfo = struct {
 };
 
 /// LoadingState generic over Clock and ToolExecutor
+/// Thread-safety: is_loading is atomic for safe cross-thread reads.
+/// Other fields should only be accessed under mutex (via AgentThread).
 pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
     return struct {
-        is_loading: bool = false,
+        /// Atomic for thread-safe reads from main thread
+        is_loading_atomic: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         start_time: i64 = 0,
         spinner_frame: usize = 0,
         pending_query: ?[]const u8 = null,
@@ -31,14 +34,19 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
 
         const Self = @This();
 
+        /// Thread-safe read of is_loading
+        pub fn isLoading(self: *const Self) bool {
+            return self.is_loading_atomic.load(.acquire);
+        }
+
         pub fn startLoading(self: *Self) void {
-            self.is_loading = true;
+            self.is_loading_atomic.store(true, .release);
             self.start_time = Clk.milliTimestamp();
             self.spinner_frame = 0;
         }
 
         pub fn tick(self: *Self) void {
-            if (self.is_loading) {
+            if (self.is_loading_atomic.load(.acquire)) {
                 self.spinner_frame = (self.spinner_frame + 1) % spinner_frames.len;
             }
         }
@@ -80,7 +88,7 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
             self.current_tool_idx = 0;
             if (self.assistant_content_json) |a| alloc.free(a);
             self.assistant_content_json = null;
-            self.is_loading = false;
+            self.is_loading_atomic.store(false, .release);
         }
 
         pub fn now() i64 {

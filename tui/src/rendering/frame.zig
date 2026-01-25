@@ -42,7 +42,7 @@ pub fn FrameRenderer(comptime R: type, comptime Loading: type, comptime Db: type
             const header_renderer = renderer.subRegion(0, 0, renderer.width(), Layout.HEADER_HEIGHT);
             ctx.header.draw(header_renderer, ctx.database);
 
-            if (ctx.chat_history.hasConversation() or ctx.loading.is_loading) {
+            if (ctx.chat_history.hasConversation() or ctx.loading.isLoading()) {
                 const chat_renderer = renderer.subRegion(0, Layout.HEADER_HEIGHT, renderer.width(), chat_height);
                 ctx.chat_history.draw(chat_renderer);
             } else {
@@ -51,7 +51,7 @@ pub fn FrameRenderer(comptime R: type, comptime Loading: type, comptime Db: type
             }
 
             const now = std.time.milliTimestamp();
-            if (ctx.loading.is_loading) {
+            if (ctx.loading.isLoading()) {
                 ctx.status_bar.setCustomStatus(" Smithers is thinking...");
             } else if (now - ctx.key_handler.last_ctrl_c < 1500 and ctx.key_handler.last_ctrl_c > 0) {
                 ctx.status_bar.setCustomStatus(" Press Ctrl+C again to exit, or Ctrl+D");

@@ -1,6 +1,5 @@
 const std = @import("std");
 const db = @import("../db.zig");
-const chat_history_mod = @import("../components/chat_history.zig");
 const tool_executor_mod = @import("tool_executor.zig");
 const provider_interface = @import("provider_interface.zig");
 const ToolCallInfo = provider_interface.ToolCallInfo;
@@ -17,9 +16,10 @@ pub const tools_json =
 ;
 
 /// Generic AgentLoop over Provider, Loading, ToolExecutor, and Renderer types
+/// Note: R (Renderer) type is kept for API compatibility but not used internally
 pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolExec: type, comptime R: type) type {
+    _ = R; // Renderer not needed - agent thread only updates DB, main thread renders
     const ProviderApi = provider_interface.AgentProvider(Provider);
-    const ChatHistory = chat_history_mod.ChatHistory(R);
     const Database = db.Database(@import("sqlite").Db);
 
     return struct {
@@ -36,21 +36,22 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             };
         }
 
-        pub fn tick(self: *Self, database: *Database, chat_history: *ChatHistory) !bool {
-            var should_continue = true;
+        /// Tick returns true if state changed (main thread should reload chat_history)
+        pub fn tick(self: *Self, database: *Database) !bool {
+            var state_changed = false;
 
             const has_query = self.loading.pending_query != null;
             const has_stream = self.streaming != null;
             const start_time = self.loading.start_time;
 
             // Log tick state periodically (every ~1 second based on tick rate)
-            if (has_query or has_stream or self.loading.is_loading) {
+            if (has_query or has_stream or self.loading.isLoading()) {
                 var buf: [256]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "query={} stream={} start_time={d} is_loading={}", .{
                     has_query,
                     has_stream,
                     start_time,
-                    self.loading.is_loading,
+                    self.loading.isLoading(),
                 }) catch "tick";
                 obs.global.logSimple(.debug, @src(), "agent.tick", msg);
             }
@@ -60,10 +61,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 const elapsed = std.time.milliTimestamp() - start_time;
                 if (elapsed >= 50) {
                     obs.global.logSimple(.debug, @src(), "agent.start_stream", "starting query stream");
-                    const started = try self.start_query_stream(database, chat_history);
+                    const started = try self.start_query_stream(database);
+                    state_changed = true;
                     if (!started) {
                         obs.global.logSimple(.warn, @src(), "agent.start_stream", "failed to start");
-                        should_continue = false;
                     }
                 }
             }
@@ -73,38 +74,40 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 const elapsed = std.time.milliTimestamp() - start_time;
                 if (elapsed >= 50) {
                     obs.global.logSimple(.debug, @src(), "agent.continuation", "starting continuation stream");
-                    const started = try self.start_continuation_stream(database, chat_history);
-                    if (!started) should_continue = false;
+                    _ = try self.start_continuation_stream(database);
+                    state_changed = true;
                 }
             }
 
             // Poll active stream for new data
             if (self.streaming != null) {
                 obs.global.logSimple(.debug, @src(), "agent.poll", "calling poll_active_stream");
-                try self.poll_active_stream(database, chat_history);
+                const stream_changed = try self.poll_active_stream(database);
+                state_changed = state_changed or stream_changed;
             }
 
             // Start next tool execution if we have pending tools and not currently running one
             if (self.loading.hasToolsToExecute() and !self.loading.isExecutingTool()) {
-                try self.start_tool_execution(database, chat_history);
+                try self.start_tool_execution(database);
+                state_changed = true;
             }
 
             // Poll for tool completion
             if (self.loading.tool_executor != null) {
-                try self.poll_tool_completion(database, chat_history);
+                const tool_changed = try self.poll_tool_completion(database);
+                state_changed = state_changed or tool_changed;
             }
 
-            return should_continue;
+            return state_changed;
         }
 
-        fn start_query_stream(self: *Self, database: *Database, chat_history: *ChatHistory) !bool {
+        fn start_query_stream(self: *Self, database: *Database) !bool {
             obs.global.logSimple(.debug, @src(), "agent.query_stream", "checking api key");
 
             const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
                 obs.global.logSimple(.warn, @src(), "agent.query_stream", "ANTHROPIC_API_KEY not set");
                 _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
                 self.loading.cleanup(self.alloc);
-                try chat_history.reload(database);
                 return false;
             };
 
@@ -142,7 +145,6 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
             // Create placeholder message for streaming response
             const msg_id = try database.addMessage(.assistant, "▌");
-            try chat_history.reload(database);
 
             obs.global.logSimple(.debug, @src(), "agent.query_stream", "calling ProviderApi.startStream");
 
@@ -153,7 +155,6 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 obs.global.logSimple(.err, @src(), "agent.query_stream", err_msg);
                 try database.updateMessageContent(msg_id, "Error: Failed to start API request");
                 self.loading.cleanup(self.alloc);
-                try chat_history.reload(database);
                 return false;
             };
             self.streaming.?.message_id = msg_id;
@@ -167,11 +168,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             return true;
         }
 
-        fn start_continuation_stream(self: *Self, database: *Database, chat_history: *ChatHistory) !bool {
+        fn start_continuation_stream(self: *Self, database: *Database) !bool {
             const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
                 _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
                 self.loading.cleanup(self.alloc);
-                try chat_history.reload(database);
                 return false;
             };
 
@@ -182,14 +182,12 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
             // Create placeholder message for continuation response
             const msg_id = try database.addMessage(.assistant, "▌");
-            try chat_history.reload(database);
 
             // Initialize streaming state using provider interface
             self.streaming = ProviderApi.startStream(self.alloc, api_key, request_body) catch |err| {
                 _ = std.log.err("Failed to start continuation stream: {s}", .{@errorName(err)});
                 try database.updateMessageContent(msg_id, "Error: Failed to continue after tool execution");
                 self.loading.cleanup(self.alloc);
-                try chat_history.reload(database);
                 return false;
             };
             self.streaming.?.message_id = msg_id;
@@ -201,7 +199,9 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             return true;
         }
 
-        fn poll_active_stream(self: *Self, database: *Database, chat_history: *ChatHistory) !void {
+        /// Returns true if state changed (DB was updated)
+        fn poll_active_stream(self: *Self, database: *Database) !bool {
+            var state_changed = false;
             const stream = &self.streaming.?;
             obs.global.logSimple(.debug, @src(), "agent.poll_stream", "calling ProviderApi.poll");
             const is_done = ProviderApi.poll(stream) catch |err| {
@@ -225,10 +225,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     };
                     database.updateMessageContent(msg_id, display_text) catch {};
                     if (!is_done and display_text.ptr != text.ptr) self.alloc.free(display_text);
-                    try chat_history.reload(database);
+                    state_changed = true;
                 } else if (is_done and !ProviderApi.hasToolCalls(stream)) {
                     database.updateMessageContent(msg_id, "No response from AI.") catch {};
-                    try chat_history.reload(database);
+                    state_changed = true;
                 }
             }
 
@@ -285,17 +285,19 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 } else {
                     self.loading.cleanup(self.alloc);
                 }
+                state_changed = true;
             }
+
+            return state_changed;
         }
 
-        fn start_tool_execution(self: *Self, database: *Database, chat_history: *ChatHistory) !void {
+        fn start_tool_execution(self: *Self, database: *Database) !void {
             const tc = self.loading.pending_tools.items[self.loading.current_tool_idx];
 
             // Show tool execution in chat
             const tool_msg = std.fmt.allocPrint(self.alloc, "🔧 Executing: {s}", .{tc.name}) catch "";
             defer self.alloc.free(tool_msg);
             _ = database.addMessage(.system, tool_msg) catch {};
-            try chat_history.reload(database);
 
             // Start async execution
             if (self.loading.tool_executor) |*exec| {
@@ -303,7 +305,8 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             }
         }
 
-        fn poll_tool_completion(self: *Self, database: *Database, chat_history: *ChatHistory) !void {
+        /// Returns true if state changed (tool completed)
+        fn poll_tool_completion(self: *Self, database: *Database) !bool {
             var exec = &self.loading.tool_executor.?;
             if (exec.poll()) |result| {
                 const result_content = if (result.result.success)
@@ -340,7 +343,6 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     }
 
                     _ = database.addToolResult(tc.name, tool_input_str, result_msg) catch {};
-                    try chat_history.reload(database);
                 }
 
                 // Store result for continuation
@@ -358,7 +360,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 if (!self.loading.hasToolsToExecute()) {
                     try self.build_continuation_request(database);
                 }
+
+                return true;
             }
+            return false;
         }
 
         fn build_continuation_request(self: *Self, database: *Database) !void {

@@ -59,7 +59,7 @@ pub fn runCli(alloc: std.mem.Allocator, prompt: []const u8) !void {
     loading.startLoading();
 
     std.debug.print("Loading state: is_loading={} start_time={d}\n", .{
-        loading.is_loading,
+        loading.isLoading(),
         loading.start_time,
     });
 
@@ -73,7 +73,7 @@ pub fn runCli(alloc: std.mem.Allocator, prompt: []const u8) !void {
 
     std.debug.print("\n--- Starting agent loop ---\n", .{});
 
-    while (loading.is_loading) {
+    while (loading.isLoading()) {
         tick_count += 1;
         const elapsed = std.time.milliTimestamp() - start;
 
@@ -86,7 +86,7 @@ pub fn runCli(alloc: std.mem.Allocator, prompt: []const u8) !void {
         if (tick_count % 100 == 0) {
             std.debug.print("tick #{d}: is_loading={} stream={} pending_q={} pending_cont={} tools={d}/{d} elapsed={d}ms\n", .{
                 tick_count,
-                loading.is_loading,
+                loading.isLoading(),
                 agent_loop.streaming != null,
                 loading.pending_query != null,
                 loading.pending_continuation != null,
@@ -96,10 +96,15 @@ pub fn runCli(alloc: std.mem.Allocator, prompt: []const u8) !void {
             });
         }
 
-        _ = agent_loop.tick(&database, &chat_history) catch |err| {
+        const state_changed = agent_loop.tick(&database) catch |err| {
             std.debug.print("tick error: {s}\n", .{@errorName(err)});
             break;
         };
+
+        // Reload chat history from DB when state changes (CLI is single-threaded)
+        if (state_changed) {
+            chat_history.reload(&database) catch {};
+        }
 
         // Check streaming state
         if (agent_loop.streaming) |*stream| {

@@ -82,7 +82,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                     ctx.status_bar.hideHelp();
                     return .none;
                 }
-                if (ctx.loading.is_loading) {
+                if (ctx.loading.isLoading()) {
                     ctx.loading.cleanup(self.alloc);
                     _ = try ctx.database.addMessage(.system, "Interrupted.");
                     try ctx.chat_history.reload(ctx.database);
@@ -205,7 +205,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                 return .none;
             }
 
-            if (!ctx.loading.is_loading) {
+            if (!ctx.loading.isLoading()) {
                 // Arrow keys scroll 5 lines (~1 message), PageUp/PageDown scroll faster
                 if (key.matches(Key.up, .{})) {
                     ctx.chat_history.scrollUp(5);
@@ -272,7 +272,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                             ctx.loading.pending_query = try self.alloc.dupe(u8, command);
                             ctx.loading.startLoading();
                             var buf2: [128]u8 = undefined;
-                            const msg2 = std.fmt.bufPrint(&buf2, "after startLoading: is_loading={} start_time={d}", .{ ctx.loading.is_loading, ctx.loading.start_time }) catch "?";
+                            const msg2 = std.fmt.bufPrint(&buf2, "after startLoading: is_loading={} start_time={d}", .{ ctx.loading.isLoading(), ctx.loading.start_time }) catch "?";
                             obs.global.logSimple(.debug, @src(), "keys.submit", msg2);
                         } else {
                             obs.global.logSimple(.debug, @src(), "keys.submit", "demo mode - no AI");

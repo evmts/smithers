@@ -105,15 +105,19 @@ const MockRenderer = struct {
 };
 
 const MockLoading = struct {
-    is_loading: bool = false,
+    is_loading_val: bool = false,
     pending_query: ?[]const u8 = null,
 
+    pub fn isLoading(self: *const MockLoading) bool {
+        return self.is_loading_val;
+    }
+
     pub fn startLoading(self: *MockLoading) void {
-        self.is_loading = true;
+        self.is_loading_val = true;
     }
 
     pub fn stopLoading(self: *MockLoading) void {
-        self.is_loading = false;
+        self.is_loading_val = false;
     }
 };
 
@@ -316,15 +320,15 @@ test "Input subregion positioned correctly" {
 // ============================================================================
 
 test "Loading state sets thinking status" {
-    const loading = MockLoading{ .is_loading = true };
+    const loading = MockLoading{ .is_loading_val = true };
     const expected_status = " Smithers is thinking...";
-    try std.testing.expect(loading.is_loading);
+    try std.testing.expect(loading.isLoading());
     try std.testing.expectEqualStrings(" Smithers is thinking...", expected_status);
 }
 
 test "Non-loading state allows custom status" {
-    const loading = MockLoading{ .is_loading = false };
-    try std.testing.expect(!loading.is_loading);
+    const loading = MockLoading{ .is_loading_val = false };
+    try std.testing.expect(!loading.isLoading());
 }
 
 // ============================================================================
