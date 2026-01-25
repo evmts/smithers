@@ -27,8 +27,8 @@ pub fn ChatHistory(comptime R: type) type {
         scroll_offset: u16,
         /// Current selection state
         selection: Selection,
-        /// Last rendered renderer for text extraction
-        last_renderer: ?R,
+        /// Last rendered renderer for text extraction (pointer to avoid copying window internals)
+        last_renderer: ?*const R,
 
         const Self = @This();
 
@@ -152,7 +152,7 @@ pub fn ChatHistory(comptime R: type) type {
             if (!self.selection.has_selection) return null;
             if (self.last_renderer == null) return null;
 
-            const renderer = self.last_renderer.?;
+            const renderer = self.last_renderer.?.*;
             const win = renderer.window;
             // Get bounds in screen space
             const bounds = self.selection.getScreenBounds(self.scroll_offset);
@@ -201,8 +201,8 @@ pub fn ChatHistory(comptime R: type) type {
             return result.toOwnedSlice(self.allocator) catch null;
         }
 
-        pub fn draw(self: *Self, renderer: R) void {
-            // Store renderer for text extraction
+        pub fn draw(self: *Self, renderer: *const R) void {
+            // Store renderer pointer for text extraction (pointer avoids copying window internals)
             self.last_renderer = renderer;
 
             if (self.messages.len == 0) {
@@ -236,12 +236,12 @@ pub fn ChatHistory(comptime R: type) type {
                 // Calculate partial rendering params
                 const skip_lines: u16 = if (y < 0) @intCast(-y) else 0;
                 const win_y: u16 = if (y < 0) 0 else @intCast(y);
-                self.drawMessage(renderer, msg, win_y, text_width, skip_lines);
+                self.drawMessage(renderer.*, msg, win_y, text_width, skip_lines);
             }
 
             // Apply selection highlighting as overlay
             if (self.selection.has_selection or self.selection.is_selecting) {
-                self.applySelectionHighlight(renderer);
+                self.applySelectionHighlight(renderer.*);
             }
         }
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const obs = @import("obs.zig");
 
 /// Message role in conversation
 pub const Role = enum {
@@ -45,6 +46,7 @@ pub const AgentRunStatus = enum {
     pending, // waiting to start
     streaming, // receiving AI response
     tools, // executing tools
+    continuing, // continuation stream after tool execution
     complete, // finished successfully
     error_state, // failed (can't use 'error' - reserved)
 
@@ -53,6 +55,7 @@ pub const AgentRunStatus = enum {
             .pending => "pending",
             .streaming => "streaming",
             .tools => "tools",
+            .continuing => "continuing",
             .complete => "complete",
             .error_state => "error",
         };
@@ -62,6 +65,7 @@ pub const AgentRunStatus = enum {
         if (std.mem.eql(u8, s, "pending")) return .pending;
         if (std.mem.eql(u8, s, "streaming")) return .streaming;
         if (std.mem.eql(u8, s, "tools")) return .tools;
+        if (std.mem.eql(u8, s, "continuing")) return .continuing;
         if (std.mem.eql(u8, s, "complete")) return .complete;
         if (std.mem.eql(u8, s, "error")) return .error_state;
         return .pending;
@@ -170,9 +174,22 @@ pub fn Database(comptime SqliteDb: type) type {
             , .{}, .{});
 
             // Migration: add columns if they don't exist
-            db.exec("ALTER TABLE messages ADD COLUMN tool_name TEXT", .{}, .{}) catch {};
-            db.exec("ALTER TABLE messages ADD COLUMN tool_input TEXT", .{}, .{}) catch {};
-            db.exec("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'", .{}, .{}) catch {};
+            // SQLiteError is expected for "duplicate column" - log other errors
+            db.exec("ALTER TABLE messages ADD COLUMN tool_name TEXT", .{}, .{}) catch |err| {
+                if (err != error.SQLiteError) {
+                    obs.global.logSimple(.err, @src(), "db.migration", @errorName(err));
+                }
+            };
+            db.exec("ALTER TABLE messages ADD COLUMN tool_input TEXT", .{}, .{}) catch |err| {
+                if (err != error.SQLiteError) {
+                    obs.global.logSimple(.err, @src(), "db.migration", @errorName(err));
+                }
+            };
+            db.exec("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'", .{}, .{}) catch |err| {
+                if (err != error.SQLiteError) {
+                    obs.global.logSimple(.err, @src(), "db.migration", @errorName(err));
+                }
+            };
 
             // Create agent_runs table for crash recovery
             try db.exec(

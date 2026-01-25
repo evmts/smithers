@@ -53,6 +53,7 @@ pub fn App(
         agent_thread: AgentThreadT,
         has_ai: bool,
         last_tick: i64,
+        last_reload: i64 = 0,
         db_path: [:0]const u8,
 
         const Self = @This();
@@ -156,12 +157,18 @@ pub fn App(
                 }
 
                 // Check if agent thread updated state - reload chat from DB (with mutex)
+                // Debounce reloads during streaming to reduce DB contention (max every 100ms)
                 if (self.agent_thread.consumeStateChanged()) {
-                    self.agent_thread.lockForRead();
-                    defer self.agent_thread.unlockForRead();
-                    self.chat_history.reload(&self.database) catch |err| {
-                        obs.global.logSimple(.err, @src(), "chat_history.reload", @errorName(err));
-                    };
+                    const now = Clk.milliTimestamp();
+                    const should_reload = !self.loading.isLoading() or (now - self.last_reload >= 100);
+                    if (should_reload) {
+                        self.agent_thread.lockDb();
+                        defer self.agent_thread.unlockDb();
+                        self.chat_history.reload(&self.database) catch |err| {
+                            obs.global.logSimple(.err, @src(), "chat_history.reload", @errorName(err));
+                        };
+                        self.last_reload = now;
+                    }
                 }
 
                 // Main thread: poll for events (non-blocking when loading to stay responsive)
@@ -212,8 +219,8 @@ pub fn App(
                                 .suspend_tui => try self.event_loop.suspendTui(),
                                 .redraw => try self.event_loop.render(),
                                 .reload_chat => {
-                                    self.agent_thread.lockForRead();
-                                    defer self.agent_thread.unlockForRead();
+                                    self.agent_thread.lockDb();
+                                    defer self.agent_thread.unlockDb();
                                     try self.chat_history.reload(&self.database);
                                 },
                                 .start_ai_query => {

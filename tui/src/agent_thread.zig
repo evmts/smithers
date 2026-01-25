@@ -174,12 +174,13 @@ pub fn AgentThread(
             obs.global.logSimple(.info, @src(), "agent_thread", "stopped");
         }
 
-        /// Lock for main thread to safely read loading state
-        pub fn lockForRead(self: *Self) void {
+        /// Lock for main thread to safely access DB/Loading state.
+        /// This is a simple mutex (not RW lock) - both reads and writes require locking.
+        pub fn lockDb(self: *Self) void {
             self.mutex.lock();
         }
 
-        pub fn unlockForRead(self: *Self) void {
+        pub fn unlockDb(self: *Self) void {
             self.mutex.unlock();
         }
 

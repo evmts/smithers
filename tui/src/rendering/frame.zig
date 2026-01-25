@@ -43,8 +43,8 @@ pub fn FrameRenderer(comptime R: type, comptime Loading: type, comptime Db: type
             ctx.header.draw(header_renderer, ctx.database);
 
             if (ctx.chat_history.hasConversation() or ctx.loading.isLoading()) {
-                const chat_renderer = renderer.subRegion(0, Layout.HEADER_HEIGHT, renderer.width(), chat_height);
-                ctx.chat_history.draw(chat_renderer);
+                var chat_renderer = renderer.subRegion(0, Layout.HEADER_HEIGHT, renderer.width(), chat_height);
+                ctx.chat_history.draw(&chat_renderer);
             } else {
                 const content_renderer = renderer.subRegion(0, Layout.HEADER_HEIGHT, renderer.width(), chat_height);
                 Logo.draw(content_renderer);

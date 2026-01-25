@@ -153,7 +153,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             const scratch = self.scratch.allocator();
 
             // Build messages JSON from DB (use scratch - freed at tick end)
-            const messages = database.getMessages(scratch) catch @constCast(&[_]db.Message{});
+            const messages = database.getMessages(scratch) catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.getMessages", @errorName(err));
+                    return false;
+                };
             // No defer free needed - scratch arena handles it
 
             var msg_buf = std.ArrayListUnmanaged(u8){};
@@ -471,7 +474,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             }
 
             // Build full message history
-            const messages = database.getMessages(scratch) catch @constCast(&[_]db.Message{});
+            const messages = database.getMessages(scratch) catch |err| {
+                obs.global.logSimple(.err, @src(), "db.getMessages", @errorName(err));
+                return err;
+            };
 
             var msg_buf = std.ArrayListUnmanaged(u8){};
             try msg_buf.append(scratch, '[');
@@ -506,12 +512,13 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             self.loading.pending_continuation = try self.alloc.dupe(u8, msg_buf.items);
             self.loading.start_time = std.time.milliTimestamp();
 
-            // Mark agent run complete in SQLite (tools finished, now continuing)
+            // Mark agent run as continuing (NOT complete - stream hasn't finished yet)
+            // The run will be marked complete when continuation stream finishes in poll_active_stream
             if (self.loading.agent_run_id) |rid| {
-                database.completeAgentRun(rid) catch |err| {
-                    obs.global.logSimple(.err, @src(), "db.completeAgentRun", @errorName(err));
+                database.updateAgentRunStatus(rid, .continuing) catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.updateAgentRunStatus", @errorName(err));
                 };
-                self.loading.agent_run_id = null;
+                // Keep agent_run_id so we can mark complete when continuation finishes
             }
 
             // Clean up tool execution state
@@ -536,7 +543,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             self.loading.assistant_content_json = null;
         }
 
-        /// Serialize pending_tools to JSON for DB persistence
+        /// Serialize pending_tools to JSON for DB persistence.
+        /// SAFETY: The returned slice uses scratch arena memory. The caller must pass this
+        /// to db.exec() synchronously before the arena is reset. SQLite uses SQLITE_STATIC
+        /// for slice bindings, so the data must outlive the exec call.
         fn serializePendingTools(self: *Self, alloc: std.mem.Allocator) ![]const u8 {
             var buf = std.ArrayListUnmanaged(u8){};
             try buf.append(alloc, '[');
@@ -554,7 +564,8 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             return buf.items;
         }
 
-        /// Serialize tool_results to JSON for DB persistence
+        /// Serialize tool_results to JSON for DB persistence.
+        /// SAFETY: See serializePendingTools - same arena lifetime requirements apply.
         fn serializeToolResults(self: *Self, alloc: std.mem.Allocator) ![]const u8 {
             var buf = std.ArrayListUnmanaged(u8){};
             try buf.append(alloc, '[');

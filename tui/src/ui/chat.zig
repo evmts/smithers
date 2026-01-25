@@ -33,7 +33,7 @@ pub fn ChatContainer(comptime R: type) type {
 
         pub fn draw(self: *Self, renderer: R) void {
             if (!self.show_border) {
-                self.chat_history.draw(renderer);
+                self.chat_history.draw(&renderer);
                 return;
             }
 
@@ -56,8 +56,8 @@ pub fn ChatContainer(comptime R: type) type {
             self.drawBottomBorder(renderer, border_style);
 
             // Draw chat content inside border
-            const content_renderer = renderer.subRegion(1, 1, renderer.width() -| 2, renderer.height() -| 2);
-            self.chat_history.draw(content_renderer);
+            var content_renderer = renderer.subRegion(1, 1, renderer.width() -| 2, renderer.height() -| 2);
+            self.chat_history.draw(&content_renderer);
         }
 
         fn drawTopBorder(self: *const Self, renderer: R, border_style: R.Style, title_style: R.Style) void {

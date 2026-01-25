@@ -325,8 +325,8 @@ pub fn InteractiveMode(
             const chat_height: u16 = status_bar_y;
 
             if (self.chat_history.messages.len > 0 or self.is_busy) {
-                const chat_renderer = renderer.subRegion(0, 0, renderer.width(), chat_height);
-                self.chat_history.draw(chat_renderer);
+                var chat_renderer = renderer.subRegion(0, 0, renderer.width(), chat_height);
+                self.chat_history.draw(&chat_renderer);
             } else {
                 Logo.draw(renderer);
             }
