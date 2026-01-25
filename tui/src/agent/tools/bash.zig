@@ -120,7 +120,7 @@ fn executeBash(ctx: ToolContext) ToolResult {
                 return ToolResult.err("Out of memory formatting output");
             }, null);
         }
-        return ToolResult.ok(trunc_result.content);
+        return ToolResult.okOwned(trunc_result.content);
     } else {
         // Command failed - include exit code
         var output = std.ArrayListUnmanaged(u8){};
@@ -134,7 +134,7 @@ fn executeBash(ctx: ToolContext) ToolResult {
         output.appendSlice(ctx.allocator, notice) catch {
             return ToolResult.err("Out of memory formatting error output");
         };
-        return ToolResult.err(output.toOwnedSlice(ctx.allocator) catch "Command failed");
+        return ToolResult.errOwned(output.toOwnedSlice(ctx.allocator) catch "Command failed");
     }
 }
 

@@ -29,6 +29,13 @@ pub fn ToolExecutor(comptime RegistryFactory: type) type {
             tool_name: []const u8,
             result: ToolResult,
             input_value: ?std.json.Value = null,
+
+            /// Free all allocated memory in this result
+            pub fn deinit(self: *ThreadResult, allocator: std.mem.Allocator) void {
+                allocator.free(self.tool_id);
+                allocator.free(self.tool_name);
+                self.result.deinit(allocator);
+            }
         };
 
         pub fn init(allocator: std.mem.Allocator) Self {

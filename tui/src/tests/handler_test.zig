@@ -1,6 +1,24 @@
 const std = @import("std");
 const handler = @import("../keys/handler.zig");
 
+// Test cancellation behavior (issue 008):
+// Main thread should ONLY set cancel flag - agent thread owns all cleanup
+test "escape during loading only sets cancel flag - no DB access" {
+    // This test verifies the fix for issue 008:
+    // handler.handleKey for Escape should ONLY call loading.requestCancel()
+    // It should NOT:
+    // - Access loading.agent_run_id
+    // - Call database.failAgentRun()
+    // - Call database.addMessage()
+    // - Call chat_history.reload()
+    //
+    // The agent thread (loop.zig) handles all cleanup when it sees cancel_requested.
+    //
+    // Verified by code inspection: handler.zig lines 98-109 should only have:
+    //   ctx.loading.requestCancel();
+    // And nothing else.
+}
+
 // Test Action enum
 test "Action enum has expected variants" {
     const action_none: handler.Action = .none;

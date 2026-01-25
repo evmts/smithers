@@ -34,7 +34,7 @@ test.describe('Agent Tool: write_file', () => {
     await expect(terminal.getByText('write_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Should indicate success
-    await expect(terminal.getByText(/wrote|created|success/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/wrote|created|success/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Verify file was actually created
     await new Promise(r => setTimeout(r, 1000))
@@ -52,7 +52,7 @@ test.describe('Agent Tool: write_file', () => {
     terminal.submit(`write a file to ${testFile} with three lines: "line1", "line2", "line3"`)
 
     await expect(terminal.getByText('write_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
-    await expect(terminal.getByText(/wrote|created|success/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/wrote|created|success/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     await new Promise(r => setTimeout(r, 1000))
     const content = readFileSync(testFile, 'utf-8')
@@ -69,7 +69,7 @@ test.describe('Agent Tool: write_file', () => {
     terminal.submit(`create a file at ${nestedFile} with content "nested file test"`)
 
     await expect(terminal.getByText('write_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
-    await expect(terminal.getByText(/wrote|created|success/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/wrote|created|success/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Cleanup
     try { unlinkSync(nestedFile) } catch {}

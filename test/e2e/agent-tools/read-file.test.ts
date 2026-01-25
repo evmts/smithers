@@ -40,7 +40,7 @@ test.describe('Agent Tool: read_file', () => {
 
     await expect(terminal.getByText('read_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see some content from README
-    await expect(terminal.getByText(/README|Smithers|#/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/README|Smithers|#/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('handles nonexistent file gracefully', async ({ terminal }) => {
@@ -50,7 +50,7 @@ test.describe('Agent Tool: read_file', () => {
 
     await expect(terminal.getByText('read_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see error
-    await expect(terminal.getByText(/not found|no such|error|does not exist/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/not found|no such|error|does not exist/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('reads zig source file', async ({ terminal }) => {
@@ -60,6 +60,6 @@ test.describe('Agent Tool: read_file', () => {
 
     await expect(terminal.getByText('read_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see imports from main.zig
-    await expect(terminal.getByText(/import|std|vaxis/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/import|std|vaxis/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 })

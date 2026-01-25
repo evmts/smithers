@@ -11,9 +11,16 @@ pub const ToolResult = struct {
     truncated: bool = false,
     /// Path to full output if truncated
     full_output_path: ?[]const u8 = null,
+    /// Whether content/error_message/full_output_path are owned (allocated) and need freeing
+    owned: bool = false,
 
     pub fn ok(content: []const u8) ToolResult {
         return .{ .success = true, .content = content };
+    }
+
+    /// Create success result with owned (allocated) content
+    pub fn okOwned(content: []const u8) ToolResult {
+        return .{ .success = true, .content = content, .owned = true };
     }
 
     pub fn okTruncated(content: []const u8, full_path: ?[]const u8) ToolResult {
@@ -22,11 +29,27 @@ pub const ToolResult = struct {
             .content = content,
             .truncated = true,
             .full_output_path = full_path,
+            .owned = true,
         };
     }
 
     pub fn err(message: []const u8) ToolResult {
         return .{ .success = false, .content = "", .error_message = message };
+    }
+
+    /// Create error result with owned (allocated) error message
+    pub fn errOwned(message: []const u8) ToolResult {
+        return .{ .success = false, .content = "", .error_message = message, .owned = true };
+    }
+
+    /// Free all allocated memory in this result (only if owned)
+    pub fn deinit(self: *ToolResult, allocator: Allocator) void {
+        if (self.owned) {
+            if (self.content.len > 0) allocator.free(self.content);
+            if (self.error_message) |e| allocator.free(e);
+            if (self.full_output_path) |p| allocator.free(p);
+        }
+        self.* = .{ .success = false, .content = "" };
     }
 };
 

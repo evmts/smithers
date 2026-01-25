@@ -48,6 +48,14 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             // Check for cancellation request from main thread
             if (self.loading.isCancelRequested()) {
                 obs.global.logSimple(.info, @src(), "agent.tick", "cancel requested - cleaning up");
+
+                // Mark agent run as failed in SQLite (agent thread owns all DB writes)
+                if (self.loading.agent_run_id) |rid| {
+                    database.failAgentRun(rid) catch {};
+                }
+                // Add interrupted message to chat
+                _ = database.addMessage(.system, "Interrupted.") catch {};
+
                 // Cleanup streaming (kills curl process)
                 if (self.streaming) |*stream| {
                     ProviderApi.cleanup(stream, self.alloc);
@@ -353,6 +361,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             const scratch = self.scratch.allocator();
 
             if (exec.poll()) |result| {
+                // Cleanup the ToolResult after we're done (tool_id/tool_name ownership transfers to tool_results)
+                var tool_result = result.result;
+                defer tool_result.deinit(self.alloc);
+
                 const result_content = if (result.result.success)
                     result.result.content
                 else

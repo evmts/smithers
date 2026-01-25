@@ -35,7 +35,7 @@ test.describe('Agent Tool: edit_file', () => {
     await expect(terminal.getByText('edit_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Should indicate success
-    await expect(terminal.getByText(/edited|replaced|success|updated/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/edited|replaced|success|updated/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Verify the edit was made
     await new Promise(r => setTimeout(r, 1000))
@@ -57,7 +57,7 @@ test.describe('Agent Tool: edit_file', () => {
     terminal.submit(`in ${testFile}, replace the function "old" with a function called "new" that returns 2`)
 
     await expect(terminal.getByText('edit_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
-    await expect(terminal.getByText(/edited|replaced|success|updated/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/edited|replaced|success|updated/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     await new Promise(r => setTimeout(r, 1000))
     const content = readFileSync(testFile, 'utf-8')
@@ -76,7 +76,7 @@ test.describe('Agent Tool: edit_file', () => {
 
     await expect(terminal.getByText('edit_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see error about string not found
-    await expect(terminal.getByText(/not found|no match|error|couldn't find/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/not found|no match|error|couldn't find/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     try { unlinkSync(testFile) } catch {}
   })
 })

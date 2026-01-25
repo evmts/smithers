@@ -35,7 +35,7 @@ test.describe('Agent Multi-Tool Integration', () => {
     await expect(terminal.getByText('read_file', { full: true, strict: false })).toBeVisible({ timeout: 45000 })
 
     // Should see content from bash.zig
-    await expect(terminal.getByText(/std|import|bash/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/std|import|bash/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('chains grep then read_file', async ({ terminal }) => {
@@ -44,7 +44,7 @@ test.describe('Agent Multi-Tool Integration', () => {
     terminal.submit('find where "pub fn deinit" is defined in tui/src/app.zig and show me that function')
 
     // Should use grep to find, then read to show
-    await expect(terminal.getByText(/grep|read_file/i, { full: true, strict: false })).toBeVisible({ timeout: 45000 })
+    await expect(terminal.getByText(/grep|read_file/gi, { full: true, strict: false })).toBeVisible({ timeout: 45000 })
 
     // Should show deinit function
     await expect(terminal.getByText('deinit', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
@@ -73,10 +73,10 @@ test.describe('Agent Multi-Tool Integration', () => {
     terminal.submit('analyze the tui/src directory structure - list main directories and count zig files')
 
     // Should use list_dir and possibly glob/bash
-    await expect(terminal.getByText(/list_dir|glob|bash/i, { full: true, strict: false })).toBeVisible({ timeout: 45000 })
+    await expect(terminal.getByText(/list_dir|glob|bash/gi, { full: true, strict: false })).toBeVisible({ timeout: 45000 })
 
     // Should report on structure
-    await expect(terminal.getByText(/agent|components|keys|zig/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/agent|components|keys|zig/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('error recovery across tools', async ({ terminal }) => {
@@ -91,7 +91,7 @@ test.describe('Agent Multi-Tool Integration', () => {
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 45000 })
 
     // Should show directory contents
-    await expect(terminal.getByText(/package\.json|README/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/package\.json|README/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 })
 
@@ -120,7 +120,7 @@ test.describe('Agent Tool Streaming', () => {
     terminal.keyEscape()
 
     // Should see interruption
-    await expect(terminal.getByText(/interrupt|cancel|stop/i, { full: true, strict: false })).toBeVisible({ timeout: 10000 })
+    await expect(terminal.getByText(/interrupt|cancel|stop/gi, { full: true, strict: false })).toBeVisible({ timeout: 10000 })
   })
 })
 
@@ -140,7 +140,7 @@ test.describe('Agent Context Awareness', () => {
     terminal.submit('now find where app_mod is defined')
 
     // Should search based on previous context
-    await expect(terminal.getByText(/grep|read_file/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/grep|read_file/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     await expect(terminal.getByText('app', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 })

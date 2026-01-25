@@ -30,7 +30,7 @@ test.describe('Agent Tool: grep', () => {
     await expect(terminal.getByText('grep', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Should find the init function
-    await expect(terminal.getByText(/init|App/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/init|App/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('searches with regex pattern', async ({ terminal }) => {
@@ -60,7 +60,7 @@ test.describe('Agent Tool: grep', () => {
 
     await expect(terminal.getByText('grep', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should indicate no matches
-    await expect(terminal.getByText(/no match|not found|0 matches|no results/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/no match|not found|0 matches|no results/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('searches case-insensitively when requested', async ({ terminal }) => {
@@ -70,6 +70,6 @@ test.describe('Agent Tool: grep', () => {
 
     await expect(terminal.getByText('grep', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should find allocator references
-    await expect(terminal.getByText(/alloc/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/alloc/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 })

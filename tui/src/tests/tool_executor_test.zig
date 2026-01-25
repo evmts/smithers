@@ -56,14 +56,13 @@ test "ToolExecutor execute and poll cycle" {
     }
 
     try std.testing.expect(result != null);
-    const r = result.?;
+    var r = result.?;
     try std.testing.expectEqualStrings("test-id-123", r.tool_id);
     try std.testing.expectEqualStrings("mock_tool", r.tool_name);
     try std.testing.expect(r.result.success);
     try std.testing.expectEqualStrings("mock result", r.result.content);
 
-    std.testing.allocator.free(r.tool_id);
-    std.testing.allocator.free(r.tool_name);
+    r.deinit(std.testing.allocator);
 }
 
 test "ToolExecutor error when already running" {
@@ -85,8 +84,7 @@ test "ToolExecutor error when already running" {
         }
     }
 
-    std.testing.allocator.free(result.?.tool_id);
-    std.testing.allocator.free(result.?.tool_name);
+    result.?.deinit(std.testing.allocator);
 }
 
 test "ToolExecutor deinit joins thread" {
@@ -104,8 +102,7 @@ test "ToolExecutor deinit joins thread" {
         }
     }
 
-    std.testing.allocator.free(result.?.tool_id);
-    std.testing.allocator.free(result.?.tool_name);
+    result.?.deinit(std.testing.allocator);
 
     exec.deinit();
 
@@ -131,12 +128,11 @@ test "ToolExecutor with custom mock result" {
     }
 
     try std.testing.expect(result != null);
-    const r = result.?;
+    var r = result.?;
     try std.testing.expect(!r.result.success);
     try std.testing.expectEqualStrings("custom error", r.result.error_message.?);
 
-    std.testing.allocator.free(r.tool_id);
-    std.testing.allocator.free(r.tool_name);
+    r.deinit(std.testing.allocator);
 }
 
 test "ThreadResult structure" {
@@ -172,8 +168,7 @@ test "ToolExecutor poll clears result after returning" {
     const second_poll = exec.poll();
     try std.testing.expect(second_poll == null);
 
-    std.testing.allocator.free(result.?.tool_id);
-    std.testing.allocator.free(result.?.tool_name);
+    result.?.deinit(std.testing.allocator);
 }
 
 test "ToolExecutor isRunning true during execution" {
@@ -194,6 +189,5 @@ test "ToolExecutor isRunning true during execution" {
 
     try std.testing.expect(!exec.isRunning());
 
-    std.testing.allocator.free(result.?.tool_id);
-    std.testing.allocator.free(result.?.tool_name);
+    result.?.deinit(std.testing.allocator);
 }

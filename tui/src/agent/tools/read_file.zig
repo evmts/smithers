@@ -67,8 +67,8 @@ fn executeReadFile(ctx: ToolContext) ToolResult {
             ctx.allocator,
             "Offset {d} is beyond end of file ({d} lines total)",
             .{ offset, total_lines },
-        ) catch "Offset beyond end of file";
-        return ToolResult.err(msg);
+        ) catch return ToolResult.err("Offset beyond end of file");
+        return ToolResult.errOwned(msg);
     }
 
     // Build output - raw content without line numbers (line numbers added at render time)
@@ -131,7 +131,7 @@ fn executeReadFile(ctx: ToolContext) ToolResult {
     if (has_more) {
         return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch "", null);
     }
-    return ToolResult.ok(output.toOwnedSlice(ctx.allocator) catch "");
+    return ToolResult.okOwned(output.toOwnedSlice(ctx.allocator) catch "");
 }
 
 pub const tool = Tool{

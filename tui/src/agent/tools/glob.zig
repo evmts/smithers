@@ -71,7 +71,7 @@ fn executeGlob(ctx: ToolContext) ToolResult {
         return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch "", null);
     }
 
-    return ToolResult.ok(output.toOwnedSlice(ctx.allocator) catch "");
+    return ToolResult.okOwned(output.toOwnedSlice(ctx.allocator) catch "");
 }
 
 fn executeBasicGlob(ctx: ToolContext, pattern: []const u8, search_path: []const u8) ToolResult {
@@ -113,7 +113,7 @@ fn executeBasicGlob(ctx: ToolContext, pattern: []const u8, search_path: []const 
         return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch "", null);
     }
 
-    return ToolResult.ok(output.toOwnedSlice(ctx.allocator) catch "");
+    return ToolResult.okOwned(output.toOwnedSlice(ctx.allocator) catch "");
 }
 
 pub fn matchesPattern(path: []const u8, pattern: []const u8) bool {

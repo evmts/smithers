@@ -129,7 +129,7 @@ fn executeGrep(ctx: ToolContext) ToolResult {
         return ToolResult.okTruncated(final.toOwnedSlice(ctx.allocator) catch "", null);
     }
 
-    return ToolResult.ok(final.toOwnedSlice(ctx.allocator) catch "");
+    return ToolResult.okOwned(final.toOwnedSlice(ctx.allocator) catch "");
 }
 
 fn executeBasicGrep(ctx: ToolContext, pattern: []const u8, search_path: []const u8) ToolResult {
@@ -200,7 +200,7 @@ fn executeBasicGrep(ctx: ToolContext, pattern: []const u8, search_path: []const 
     final.appendSlice(ctx.allocator, header) catch {};
     final.appendSlice(ctx.allocator, output.items) catch {};
 
-    return ToolResult.ok(final.toOwnedSlice(ctx.allocator) catch "");
+    return ToolResult.okOwned(final.toOwnedSlice(ctx.allocator) catch "");
 }
 
 pub const tool = Tool{

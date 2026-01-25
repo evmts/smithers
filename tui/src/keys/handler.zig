@@ -96,16 +96,10 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                     return .none;
                 }
                 if (ctx.loading.isLoading()) {
-                    // Signal agent thread to cancel (it will cleanup streaming)
+                    // Signal agent thread to cancel - it owns ALL cleanup
+                    // (DB writes, agent_run state, "Interrupted" message)
+                    // See issue 008: cancellation ownership must be single-threaded
                     ctx.loading.requestCancel();
-                    // Mark agent run as failed in SQLite (with mutex)
-                    ctx.agent_thread.lockForRead();
-                    if (ctx.loading.agent_run_id) |rid| {
-                        ctx.database.failAgentRun(rid) catch {};
-                    }
-                    _ = try ctx.database.addMessage(.system, "Interrupted.");
-                    try ctx.chat_history.reload(ctx.database);
-                    ctx.agent_thread.unlockForRead();
                 }
                 return .none;
             }

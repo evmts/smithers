@@ -98,7 +98,7 @@ fn executeListDir(ctx: ToolContext) ToolResult {
         }, null);
     }
 
-    return ToolResult.ok(output.toOwnedSlice(ctx.allocator) catch {
+    return ToolResult.okOwned(output.toOwnedSlice(ctx.allocator) catch {
         return ToolResult.err("Out of memory formatting output");
     });
 }

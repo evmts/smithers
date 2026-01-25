@@ -40,7 +40,7 @@ test.describe('Agent Tool: list_dir', () => {
 
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see zig files
-    await expect(terminal.getByText(/\.zig|main|app/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/\.zig|main|app/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('lists nested directory', async ({ terminal }) => {
@@ -50,7 +50,7 @@ test.describe('Agent Tool: list_dir', () => {
 
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see tool files
-    await expect(terminal.getByText(/bash|grep|read_file/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/bash|grep|read_file/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('handles nonexistent directory', async ({ terminal }) => {
@@ -60,7 +60,7 @@ test.describe('Agent Tool: list_dir', () => {
 
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see error
-    await expect(terminal.getByText(/not found|no such|error|does not exist/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/not found|no such|error|does not exist/gi, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
   })
 
   test('shows directories with trailing slash', async ({ terminal }) => {
