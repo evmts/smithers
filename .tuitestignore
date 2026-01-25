@@ -1,0 +1,9 @@
+reference/
+node_modules/
+.git/
+dist/
+zig-out/
+.tui-test/
+.zig-cache/
+tui/.zig-cache/
+tui/zig-out/
