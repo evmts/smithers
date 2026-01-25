@@ -316,6 +316,8 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         /// Returns true if state changed (tool completed)
         fn poll_tool_completion(self: *Self, database: *Database) !bool {
             var exec = &self.loading.tool_executor.?;
+            const scratch = self.scratch.allocator();
+
             if (exec.poll()) |result| {
                 const result_content = if (result.result.success)
                     result.result.content
@@ -324,23 +326,21 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
                 // Add tool result to chat
                 if (result_content.len > 0) {
+                    // Temp allocs use scratch - freed at tick end
                     const display_content = if (result_content.len > 2000) blk: {
-                        const truncated = std.fmt.allocPrint(self.alloc, "{s}\n\n... ({d} bytes total)", .{ result_content[0..1500], result_content.len }) catch result_content;
+                        const truncated = std.fmt.allocPrint(scratch, "{s}\n\n... ({d} bytes total)", .{ result_content[0..1500], result_content.len }) catch result_content;
                         break :blk truncated;
                     } else result_content;
-                    defer if (display_content.ptr != result_content.ptr) self.alloc.free(display_content);
 
                     const status_icon: []const u8 = if (result.result.success) "✓" else "✗";
                     const trimmed_content = std.mem.trimRight(u8, display_content, " \t\n\r");
-                    const result_msg = std.fmt.allocPrint(self.alloc, "{s} {s}:\n{s}", .{ status_icon, result.tool_name, trimmed_content }) catch "";
-                    defer self.alloc.free(result_msg);
+                    const result_msg = std.fmt.allocPrint(scratch, "{s} {s}:\n{s}", .{ status_icon, result.tool_name, trimmed_content }) catch "";
 
                     // Get path for read_file markdown rendering
                     const tc = self.loading.pending_tools.items[self.loading.current_tool_idx];
                     var tool_input_str: []const u8 = "";
                     if (std.mem.eql(u8, tc.name, "read_file")) {
-                        const maybe_parsed = std.json.parseFromSlice(std.json.Value, self.alloc, tc.input_json, .{}) catch null;
-                        defer if (maybe_parsed) |p| p.deinit();
+                        const maybe_parsed = std.json.parseFromSlice(std.json.Value, scratch, tc.input_json, .{}) catch null;
                         if (maybe_parsed) |p| {
                             if (p.value.object.get("path")) |path_val| {
                                 if (path_val == .string) {
@@ -353,7 +353,7 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     _ = database.addToolResult(tc.name, tool_input_str, result_msg) catch {};
                 }
 
-                // Store result for continuation
+                // Store result for continuation (self.alloc - outlives tick)
                 try self.loading.tool_results.append(self.alloc, .{
                     .tool_id = result.tool_id,
                     .tool_name = result.tool_name,
