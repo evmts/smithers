@@ -198,8 +198,7 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             obs.global.logSimple(.debug, @src(), "agent.query_stream", "stream started successfully");
 
             // Clear pending query now that stream is started
-            if (self.loading.pending_query) |q| self.alloc.free(q);
-            self.loading.pending_query = null;
+            self.loading.clearPendingQuery(self.alloc);
 
             return true;
         }

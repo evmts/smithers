@@ -52,7 +52,7 @@ pub fn runCli(alloc: std.mem.Allocator, prompt: []const u8) !void {
 
     // Create loading state
     var loading = Loading{};
-    loading.pending_query = try alloc.dupe(u8, prompt);
+    loading.setPendingQuery(try alloc.dupe(u8, prompt));
     loading.startLoading();
 
     std.debug.print("Loading state: is_loading={} start_time={d}\n", .{

@@ -19,7 +19,7 @@ pub const ToolResultInfo = struct {
 };
 
 /// LoadingState generic over Clock and ToolExecutor
-/// Thread-safety: is_loading is atomic for safe cross-thread reads.
+/// Thread-safety: is_loading and has_pending_work are atomic for safe cross-thread reads.
 /// Other fields should only be accessed under mutex (via AgentThread).
 /// Tool execution state is persisted to SQLite agent_runs table for crash recovery.
 pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
@@ -28,6 +28,8 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
         is_loading_atomic: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         /// Atomic cancel flag - main thread sets, agent thread reads and cleans up
         cancel_requested: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        /// Atomic flag for pending work - safe for main thread to check without mutex
+        has_pending_work_atomic: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         start_time: i64 = 0,
         spinner_frame: usize = 0,
         pending_query: ?[]const u8 = null,
@@ -64,6 +66,43 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
         /// Check if cancel was requested (called from agent thread)
         pub fn isCancelRequested(self: *const Self) bool {
             return self.cancel_requested.load(.acquire);
+        }
+
+        /// Thread-safe check for pending work (safe for main thread without mutex)
+        pub fn hasPendingWork(self: *const Self) bool {
+            return self.has_pending_work_atomic.load(.acquire);
+        }
+
+        /// Set pending query atomically (updates both field and atomic flag)
+        pub fn setPendingQuery(self: *Self, query: []const u8) void {
+            self.pending_query = query;
+            self.has_pending_work_atomic.store(true, .release);
+        }
+
+        /// Clear pending query atomically
+        pub fn clearPendingQuery(self: *Self, alloc: std.mem.Allocator) void {
+            if (self.pending_query) |q| alloc.free(q);
+            self.pending_query = null;
+            self.updatePendingWorkFlag();
+        }
+
+        /// Set pending continuation atomically (updates both field and atomic flag)
+        pub fn setPendingContinuation(self: *Self, continuation: []const u8) void {
+            self.pending_continuation = continuation;
+            self.has_pending_work_atomic.store(true, .release);
+        }
+
+        /// Clear pending continuation atomically
+        pub fn clearPendingContinuation(self: *Self, alloc: std.mem.Allocator) void {
+            if (self.pending_continuation) |c| alloc.free(c);
+            self.pending_continuation = null;
+            self.updatePendingWorkFlag();
+        }
+
+        /// Update atomic flag based on current state
+        fn updatePendingWorkFlag(self: *Self) void {
+            const has_work = self.pending_query != null or self.pending_continuation != null;
+            self.has_pending_work_atomic.store(has_work, .release);
         }
 
         pub fn tick(self: *Self) void {
@@ -115,6 +154,7 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
             self.agent_run_id = null;
             self.is_loading_atomic.store(false, .release);
             self.cancel_requested.store(false, .release);
+            self.has_pending_work_atomic.store(false, .release);
         }
 
         pub fn now() i64 {

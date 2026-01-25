@@ -1,0 +1,148 @@
+---
+title: Best Practices
+description: Guidelines for effective Smithers orchestrations
+---
+
+# Best Practices
+
+## Give Agents Large Tasks
+
+Agents are capable. Give them large tasks with related context. Don't micromanage into tiny steps.
+
+```tsx
+// ❌ BAD: Over-engineered micro-steps
+<Phase><Claude>Analyze the codebase</Claude></Phase>
+<Phase><Claude>Create a plan</Claude></Phase>
+<Phase><Claude>Implement step 1</Claude></Phase>
+<Phase><Claude>Implement step 2</Claude></Phase>
+<Phase><Claude>Write tests</Claude></Phase>
+<Phase><Claude>Review changes</Claude></Phase>
+
+// ✅ GOOD: Single comprehensive prompt
+<Claude>{`
+  Implement feature X with tests. 
+  Analyze existing patterns, follow conventions, target 80% coverage.
+`}</Claude>
+```
+
+## Anti-Pattern: Over-Engineering Phases
+
+More phases ≠ better orchestration. Each phase adds overhead and fragments context.
+
+```tsx
+// ❌ BAD: 6 phases for one feature
+<Phase name="analyze"><Claude>Read the code</Claude></Phase>
+<Phase name="plan"><Claude>Make a plan</Claude></Phase>
+<Phase name="scaffold"><Claude>Create files</Claude></Phase>
+<Phase name="implement"><Claude>Write code</Claude></Phase>
+<Phase name="test"><Claude>Add tests</Claude></Phase>
+<Phase name="review"><Claude>Check work</Claude></Phase>
+
+// ✅ GOOD: Let the agent handle the workflow
+<Claude>{`
+  Implement user authentication with JWT tokens.
+  Follow existing patterns in src/auth/. Include unit tests.
+  Validate by running the test suite.
+`}</Claude>
+
+// ✅ ALSO GOOD: Use Ralph for iteration
+<Ralph condition={() => coverage < 80}>
+  <Claude>{`Improve test coverage. Current: ${coverage}%. Target: 80%.`}</Claude>
+</Ralph>
+```
+
+## Anti-Pattern: Stop Conditions
+
+Hill climbing never stops—it either fails to climb or hits diminishing returns. Don't ask "are we done?"
+
+```tsx
+// ❌ BAD: Vague stop condition
+<Ralph condition={() => !isDone()}>
+  <Claude>Keep improving until done</Claude>
+</Ralph>
+
+// ✅ GOOD: Stop when no improvement in last N runs
+<Ralph condition={() => recentImprovements.slice(-5).some(i => i > 0)}>
+  <Claude>{`
+    Improve performance. Report metrics delta.
+    Current: ${metrics}
+  `}</Claude>
+</Ralph>
+
+// ✅ GOOD: Concrete measurable target
+<Ralph condition={() => testsPassing < totalTests}>
+  <Claude>{`Fix failing tests. ${testsPassing}/${totalTests} passing.`}</Claude>
+</Ralph>
+```
+
+## When Phases DO Make Sense
+
+Phases are appropriate when context **completely shifts**—different language, different codebase, no shared context:
+
+```tsx
+// ✅ GOOD: Distinct context shifts
+<Phase name="backend">
+  <Claude>Implement the Go API endpoints for user management</Claude>
+</Phase>
+<Phase name="frontend">
+  <Claude>Build React components that consume the user API</Claude>
+</Phase>
+<Phase name="infrastructure">
+  <Claude>Write Terraform for the deployment pipeline</Claude>
+</Phase>
+```
+
+Each phase operates in a completely different domain. The frontend agent doesn't need the Go implementation details in context.
+
+## Validation & Testing
+
+Always emphasize validation. Agents should verify their changes work:
+
+```tsx
+<Claude>{`
+  Implement the payment processing module.
+  
+  Validation requirements:
+  - All existing tests must pass
+  - Add unit tests for new functions (80% coverage minimum)
+  - Run integration tests against test Stripe API
+  - Verify error handling for network failures
+`}</Claude>
+```
+
+Include explicit validation steps in your prompts. Don't assume the agent will test—tell it to.
+
+## Reporting
+
+Think about what information you need from agent runs. Request specific reports:
+
+```tsx
+<Claude>{`
+  Refactor the authentication module to use async/await.
+  
+  Report at completion:
+  - Files modified (with line count changes)
+  - Functions refactored
+  - Test results before/after
+  - Any breaking changes to public API
+`}</Claude>
+```
+
+Good reports enable:
+- Debugging failed orchestrations
+- Tracking progress across phases
+- Building dashboards and metrics
+
+## Rule of Thumb
+
+**If you're writing more than 3 phases, you're over-engineering.**
+
+Give the agent a comprehensive prompt and let it ralph.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  1-2 phases  │  ✅ Probably fine                        │
+│  3 phases    │  ⚠️  Consider consolidating              │
+│  4+ phases   │  ❌ Over-engineered, simplify            │
+└─────────────────────────────────────────────────────────┘
+```

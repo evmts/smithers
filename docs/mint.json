@@ -74,6 +74,7 @@
         "components/amp",
         "components/claude",
         "components/codex",
+        "components/opencode",
         "components/smithers",
         "components/phase",
         "components/phase-registry",

@@ -81,7 +81,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                         try ctx.chat_history.reload(ctx.database);
                         ctx.agent_thread.unlockForRead();
                         if (ctx.has_ai) {
-                            ctx.loading.pending_query = try self.alloc.dupe(u8, edited_text);
+                            ctx.loading.setPendingQuery(try self.alloc.dupe(u8, edited_text));
                             ctx.loading.startLoading();
                         }
                     }
@@ -316,7 +316,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                             var buf: [128]u8 = undefined;
                             const msg = std.fmt.bufPrint(&buf, "setting pending_query len={d} has_ai=true", .{command.len}) catch "?";
                             obs.global.logSimple(.debug, @src(), "keys.submit", msg);
-                            ctx.loading.pending_query = try self.alloc.dupe(u8, command);
+                            ctx.loading.setPendingQuery(try self.alloc.dupe(u8, command));
                             ctx.loading.startLoading();
                             return .start_ai_query;
                         } else {

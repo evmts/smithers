@@ -223,8 +223,8 @@ pub fn App(
                                 .none => {},
                             }
 
-                            // If a query was submitted, wake the agent thread
-                            if (self.loading.pending_query != null) {
+                            // If a query was submitted, wake the agent thread (atomic check, no lock needed)
+                            if (self.loading.hasPendingWork()) {
                                 self.agent_thread.wakeForWork();
                             }
                         },

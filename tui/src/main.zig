@@ -116,6 +116,7 @@ test {
     _ = @import("tests/registry_test.zig");
     _ = @import("tests/markdown_syntax_test.zig");
     _ = @import("tests/layout_test.zig");
+    _ = @import("tests/loading_test.zig");
     // _ = @import("tests/logger_test.zig"); // TODO: Fix for Zig 0.15.2 File.Writer API change
     // _ = @import("tests/write_file_test.zig"); // TODO: Fix for Zig 0.15.2 API changes
     _ = @import("tests/bash_tool_test.zig");

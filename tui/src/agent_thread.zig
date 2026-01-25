@@ -143,8 +143,9 @@ pub fn AgentThread(
                             };
 
                             // Set as pending query for agent loop
-                            self.loading.pending_query = self.alloc.dupe(u8, msg.content) catch null;
-                            if (self.loading.pending_query != null) {
+                            const query = self.alloc.dupe(u8, msg.content) catch null;
+                            if (query) |q| {
+                                self.loading.setPendingQuery(q);
                                 self.loading.startLoading();
                             }
 

@@ -1,0 +1,359 @@
+---
+title: OpenCode
+description: Execute prompts via OpenCode SDK with 75+ LLM providers
+---
+
+# OpenCode
+
+Execute prompts via the OpenCode SDK. Supports OpenCode Zen models and 75+ LLM providers including Big Pickle (free stealth), GPT-5.2, Claude Sonnet 4.5, Gemini 3 Pro, and more.
+
+```tsx
+import { OpenCode } from "smithers-orchestrator"
+```
+
+```tsx
+<OpenCode model="opencode/big-pickle">
+  Analyze this codebase and suggest improvements
+</OpenCode>
+```
+
+## Basic Usage
+
+```tsx
+// Use Big Pickle (free stealth model)
+<OpenCode model="opencode/big-pickle">
+  Analyze this codebase and suggest improvements
+</OpenCode>
+
+// Use GPT-5.2 via OpenCode Zen
+<OpenCode model="opencode/gpt-5.2-codex" agent="coder">
+  Implement the feature described in the task
+</OpenCode>
+
+// Use Claude directly
+<OpenCode model="anthropic/claude-sonnet-4-5">
+  Review this pull request
+</OpenCode>
+```
+
+## Props
+
+### Model Configuration
+
+<ParamField path="model" type="OpenCodeModel" default="opencode default">
+  OpenCode model to use in format "provider/model".
+
+  ```tsx
+  <OpenCode model="opencode/big-pickle">Free stealth model</OpenCode>
+  <OpenCode model="opencode/gpt-5.2-codex">GPT-5.2 via Zen</OpenCode>
+  <OpenCode model="anthropic/claude-sonnet-4-5">Claude direct</OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="agent" type="'default' | 'planner' | 'coder' | string">
+  Agent to use for this session. Corresponds to `.opencode/agents/{name}.md`.
+
+  ```tsx
+  <OpenCode agent="coder">Implementation task</OpenCode>
+  <OpenCode agent="planner">Planning task</OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="maxTurns" type="number">
+  Maximum number of agentic turns (tool use cycles).
+
+  ```tsx
+  <OpenCode maxTurns={10}>Limited iteration task</OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens for the response.
+
+  ```tsx
+  <OpenCode maxTokens={4096}>Task with token limit</OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Timeout in milliseconds.
+
+  ```tsx
+  <OpenCode timeout={60000}>Task with 1 minute timeout</OpenCode>
+  ```
+</ParamField>
+
+### System Prompt
+
+<ParamField path="systemPrompt" type="string">
+  Custom system prompt override.
+
+  ```tsx
+  <OpenCode systemPrompt="You are a security expert. Focus on vulnerabilities.">
+    Review this code.
+  </OpenCode>
+  ```
+</ParamField>
+
+### Permission & Tool Configuration
+
+<ParamField path="permissionMode" type="'auto' | 'ask' | 'deny'" default="ask">
+  Permission handling for tool calls.
+
+  - `auto`: auto-approve based on opencode.json permissions
+  - `ask`: prompt for permission (default)
+  - `deny`: deny all permission requests
+
+  ```tsx
+  <OpenCode permissionMode="auto">Auto-approve tools</OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="toolConfig" type="Record<string, boolean>">
+  Tool configuration overrides. Map of tool name to enabled/disabled.
+
+  ```tsx
+  <OpenCode toolConfig={{ bash: true, write: false }}>
+    Allow bash, disable write
+  </OpenCode>
+  ```
+</ParamField>
+
+### Execution Configuration
+
+<ParamField path="cwd" type="string">
+  Working directory for the session.
+
+  ```tsx
+  <OpenCode cwd="/path/to/project">
+    Run in specific directory.
+  </OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="resumeSession" type="string">
+  Continue from an existing session ID.
+
+  ```tsx
+  <OpenCode resumeSession="session-abc123">Continue this session.</OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="middleware" type="SmithersMiddleware[]">
+  Middleware applied to this OpenCode execution.
+  Provider middleware are prepended automatically.
+
+  ```tsx
+  <OpenCode middleware={[loggingMiddleware, rateLimitMiddleware]}>
+    Task with middleware.
+  </OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="tailLogCount" type="number" default="10">
+  Number of tail log entries to display during execution.
+</ParamField>
+
+<ParamField path="tailLogLines" type="number" default="10">
+  Number of lines to show per tail log entry.
+</ParamField>
+
+### Server Configuration
+
+<ParamField path="hostname" type="string" default="127.0.0.1">
+  OpenCode server hostname.
+</ParamField>
+
+<ParamField path="port" type="number" default="4096">
+  OpenCode server port.
+</ParamField>
+
+<ParamField path="serverTimeout" type="number" default="10000">
+  Server startup timeout in milliseconds.
+</ParamField>
+
+### Structured Output
+
+<ParamField path="schema" type="ZodSchema">
+  Zod schema for structured output validation.
+
+  ```tsx
+  const ResultSchema = z.object({
+    summary: z.string(),
+    issues: z.array(z.string()),
+  });
+
+  <OpenCode schema={ResultSchema}>
+    Return structured analysis.
+  </OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="schemaRetries" type="number" default="2">
+  Maximum retries for schema validation failures.
+</ParamField>
+
+<ParamField path="validate" type="(result: AgentResult) => boolean | Promise<boolean>">
+  Custom validation function.
+
+  ```tsx
+  <OpenCode validate={(result) => result.output.includes("DONE")}>
+    Must include completion marker.
+  </OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="retryOnValidationFailure" type="boolean" default="false">
+  Retry if validation fails.
+</ParamField>
+
+<ParamField path="maxRetries" type="number">
+  Maximum retry attempts.
+</ParamField>
+
+### Callbacks
+
+<ParamField path="onFinished" type="(result: AgentResult) => void">
+  Called when agent finishes successfully.
+
+  ```tsx
+  <OpenCode onFinished={(r) => console.log(r.output)}>Task</OpenCode>
+  ```
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Called when agent encounters an error.
+</ParamField>
+
+<ParamField path="onToolCall" type="(tool: string, input: any) => void">
+  Called when agent makes a tool call.
+</ParamField>
+
+<ParamField path="onProgress" type="(message: string) => void">
+  Called for progress updates.
+</ParamField>
+
+### Reporting
+
+<ParamField path="reportingEnabled" type="boolean" default="true">
+  Enable database reporting for this agent.
+</ParamField>
+
+<ParamField path="recordStreamEvents" type="boolean" default="true">
+  Record stream events to the database when reporting is enabled.
+</ParamField>
+
+## Models
+
+OpenCode supports 75+ LLM providers. Common models:
+
+| Model | Description |
+|-------|-------------|
+| `opencode/big-pickle` | Free stealth model |
+| `opencode/gpt-5.2` | GPT-5.2 via OpenCode Zen |
+| `opencode/gpt-5.2-codex` | GPT-5.2 Codex variant |
+| `opencode/gpt-5.1-codex` | GPT-5.1 Codex |
+| `opencode/claude-sonnet-4-5` | Claude Sonnet 4.5 via Zen |
+| `opencode/claude-opus-4-5` | Claude Opus 4.5 via Zen |
+| `opencode/gemini-3-pro` | Gemini 3 Pro via Zen |
+| `opencode/grok-code` | Grok Code |
+| `opencode/kimi-k2` | Kimi K2 |
+| `opencode/qwen3-coder` | Qwen3 Coder |
+| `anthropic/claude-sonnet-4-20250514` | Claude direct via Anthropic |
+| `anthropic/claude-opus-4-20250514` | Claude Opus direct |
+| `openai/gpt-5.2` | GPT-5.2 direct via OpenAI |
+| `google/gemini-3-pro` | Gemini 3 Pro direct |
+
+## AgentResult Type
+
+```tsx
+interface AgentResult<T = any> {
+  output: string;              // Raw text output
+  structured?: T;              // Validated structured output
+  tokensUsed: {
+    input: number;
+    output: number;
+  };
+  turnsUsed: number;
+  stopReason: 'completed' | 'stop_condition' | 'error' | 'cancelled';
+  durationMs: number;
+  exitCode?: number;
+  sessionId?: string;
+}
+```
+
+## Structured Output with Zod
+
+```tsx
+import { z } from 'zod';
+
+const AnalysisSchema = z.object({
+  summary: z.string(),
+  issues: z.array(z.object({
+    severity: z.enum(['low', 'medium', 'high', 'critical']),
+    file: z.string(),
+    description: z.string(),
+  })),
+});
+
+<OpenCode
+  model="opencode/gpt-5.2-codex"
+  schema={AnalysisSchema}
+  onFinished={(result) => {
+    for (const issue of result.structured.issues) {
+      console.log(`[${issue.severity}] ${issue.file}: ${issue.description}`);
+    }
+  }}
+>
+  Analyze this codebase for security issues.
+</OpenCode>
+```
+
+## Agent Types
+
+Use different agents for specialized tasks:
+
+```tsx
+// Default agent
+<OpenCode model="opencode/big-pickle">
+  General task
+</OpenCode>
+
+// Coder agent - optimized for implementation
+<OpenCode model="opencode/gpt-5.2-codex" agent="coder">
+  Implement the feature
+</OpenCode>
+
+// Planner agent - optimized for planning
+<OpenCode model="opencode/big-pickle" agent="planner">
+  Create a plan for the migration
+</OpenCode>
+```
+
+## Error Handling
+
+```tsx
+<OpenCode
+  model="opencode/big-pickle"
+  maxRetries={3}
+  retryOnValidationFailure
+  onError={(err) => console.error("Failed:", err.message)}
+  onFinished={(r) => console.log("Success:", r.output)}
+>
+  Complete the task.
+</OpenCode>
+```
+
+## Related
+
+<CardGroup cols={3}>
+  <Card title="Claude Component" icon="robot" href="/components/claude">
+    Claude Code CLI integration
+  </Card>
+  <Card title="Codex Component" icon="code" href="/components/codex">
+    OpenAI Codex integration
+  </Card>
+  <Card title="Structured Output Guide" icon="code" href="/guides/structured-output">
+    Deep dive into Zod schemas
+  </Card>
+</CardGroup>

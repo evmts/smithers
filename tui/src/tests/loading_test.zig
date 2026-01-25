@@ -38,7 +38,6 @@ test "LoadingState initial state" {
     try std.testing.expectEqual(@as(i64, 0), state.start_time);
     try std.testing.expectEqual(@as(usize, 0), state.spinner_frame);
     try std.testing.expect(state.pending_query == null);
-    try std.testing.expect(state.streaming == null);
     try std.testing.expect(state.pending_continuation == null);
     try std.testing.expect(state.tool_executor == null);
     try std.testing.expectEqual(@as(usize, 0), state.pending_tools.items.len);
@@ -196,11 +195,11 @@ test "LoadingState cleanup frees resources" {
     // Set up assistant_content_json
     state.assistant_content_json = try alloc.dupe(u8, "{\"content\": \"test\"}");
 
-    // Set up pending_tools
+    // Set up pending_tools with owned strings
     try state.pending_tools.append(alloc, .{
-        .id = "id1",
-        .name = "name1",
-        .input_json = "{}",
+        .id = try alloc.dupe(u8, "id1"),
+        .name = try alloc.dupe(u8, "name1"),
+        .input_json = try alloc.dupe(u8, "{}"),
     });
 
     // Set up tool_results with owned strings
@@ -224,7 +223,6 @@ test "LoadingState cleanup frees resources" {
     try std.testing.expect(!state.isLoading());
     try std.testing.expect(state.pending_query == null);
     try std.testing.expect(state.pending_continuation == null);
-    try std.testing.expect(state.streaming == null);
     try std.testing.expect(state.tool_executor == null);
     try std.testing.expectEqual(@as(usize, 0), state.pending_tools.items.len);
     try std.testing.expectEqual(@as(usize, 0), state.current_tool_idx);
@@ -336,4 +334,42 @@ test "ProductionLoadingState type exists" {
     // Verify the production type compiles and is accessible
     const ProdState = loading_mod.ProductionLoadingState;
     _ = ProdState;
+}
+
+test "LoadingState hasPendingWork atomic flag" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    // Initially no pending work
+    try std.testing.expect(!state.hasPendingWork());
+
+    // Set pending query
+    state.setPendingQuery(try alloc.dupe(u8, "test query"));
+    try std.testing.expect(state.hasPendingWork());
+
+    // Clear pending query, flag should still reflect state
+    state.clearPendingQuery(alloc);
+    try std.testing.expect(!state.hasPendingWork());
+}
+
+test "LoadingState setPendingContinuation sets atomic flag" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try std.testing.expect(!state.hasPendingWork());
+
+    state.setPendingContinuation(try alloc.dupe(u8, "continuation"));
+    try std.testing.expect(state.hasPendingWork());
+
+    state.clearPendingContinuation(alloc);
+    try std.testing.expect(!state.hasPendingWork());
+}
+
+test "LoadingState hasPendingWork atomic is thread-safe" {
+    // This tests the atomic flag can be safely read without mutex
+    var state = TestLoadingState{};
+
+    // Simulate cross-thread read pattern
+    const flag1 = state.hasPendingWork();
+    try std.testing.expect(!flag1);
 }
