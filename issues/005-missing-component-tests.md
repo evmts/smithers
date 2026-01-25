@@ -6,11 +6,11 @@
 
 ## Problem
 
-14 components have no tests:
+13 components have no tests:
 
 | Component | Purpose | Priority |
 |-----------|---------|----------|
-| `ExecutionScope.tsx` | Execution gating | HIGH |
+| ~~`ExecutionScope.tsx`~~ | ~~Execution gating~~ | ~~HIGH~~ ✅ (19 tests added) |
 | `WorktreeProvider.tsx` | Worktree context | MEDIUM |
 | `Codex.tsx` | Codex agent | MEDIUM |
 | `ClaudeApi.tsx` | Claude API agent | MEDIUM |
@@ -27,19 +27,15 @@
 
 ## Required Tests
 
-### ExecutionScope.tsx (HIGH)
+### ExecutionScope.tsx (HIGH) ✅ COMPLETED
 
-```typescript
-describe('ExecutionScope', () => {
-  test('provides enabled=true by default')
-  test('provides enabled=false when disabled')
-  test('provides scopeId')
-  test('child scope inherits parent scopeId')
-  test('useExecutionScope returns context')
-  test('useExecutionEffect runs when enabled')
-  test('useExecutionEffect skips when disabled')
-})
-```
+Tests added in `src/components/ExecutionScope.test.tsx` - 19 tests covering:
+- Module exports (3 tests)
+- Provider context (8 tests) 
+- useExecutionScope hook (1 test)
+- useExecutionEffect hook (3 tests)
+- Type tests (2 tests)
+- Integration tests (2 tests)
 
 ### WorktreeProvider.tsx (MEDIUM)
 
@@ -134,7 +130,7 @@ describe('Stop', () => {
 
 ## Acceptance Criteria
 
-- [ ] All 14 components have basic tests
-- [ ] HIGH priority components have comprehensive tests
+- [ ] All 14 components have basic tests (1/14 done)
+- [x] HIGH priority components have comprehensive tests (ExecutionScope: 19 tests)
 - [ ] Error cases covered for each component
 - [ ] Integration with SmithersProvider tested
