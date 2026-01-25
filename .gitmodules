@@ -19,6 +19,6 @@
 [submodule "reference/libvaxis"]
 	path = reference/libvaxis
 	url = git@github.com:rockorager/libvaxis.git
-[submodule "reference/tui-tester"]
-	path = reference/tui-tester
-	url = https://github.com/luxquant/tui-tester.git
+[submodule "reference/tui-test"]
+	path = reference/tui-test
+	url = https://github.com/microsoft/tui-test.git
