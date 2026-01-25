@@ -652,3 +652,77 @@ test "ToolRegistry register overwrites existing tool" {
     const result = reg.execute("tool", .null);
     try std.testing.expectEqualStrings("updated", result.content);
 }
+
+// ============================================================================
+// ToolResult.details_json Tests (Issue 008)
+// ============================================================================
+
+test "ToolResult ok has null details_json by default" {
+    const result = ToolResult.ok("content");
+    try std.testing.expect(result.details_json == null);
+}
+
+test "ToolResult okOwned has null details_json by default" {
+    const allocator = std.testing.allocator;
+    const content = try allocator.dupe(u8, "owned content");
+    var result = ToolResult.okOwned(content);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.details_json == null);
+    try std.testing.expect(result.owned);
+}
+
+test "ToolResult okOwnedWithDetails sets details_json" {
+    const allocator = std.testing.allocator;
+    const content = try allocator.dupe(u8, "content");
+    const details = try allocator.dupe(u8, "{\"diff\": \"+ line\", \"first_changed_line\": 42}");
+    var result = ToolResult.okOwnedWithDetails(content, details);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.success);
+    try std.testing.expectEqualStrings("content", result.content);
+    try std.testing.expectEqualStrings("{\"diff\": \"+ line\", \"first_changed_line\": 42}", result.details_json.?);
+    try std.testing.expect(result.owned);
+}
+
+test "ToolResult okTruncatedWithDetails sets both truncated and details" {
+    const allocator = std.testing.allocator;
+    const content = try allocator.dupe(u8, "partial");
+    const path = try allocator.dupe(u8, "/tmp/full.txt");
+    const details = try allocator.dupe(u8, "{\"total_lines\": 1000, \"truncated\": true}");
+    var result = ToolResult.okTruncatedWithDetails(content, path, details);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.success);
+    try std.testing.expect(result.truncated);
+    try std.testing.expectEqualStrings("/tmp/full.txt", result.full_output_path.?);
+    try std.testing.expectEqualStrings("{\"total_lines\": 1000, \"truncated\": true}", result.details_json.?);
+    try std.testing.expect(result.owned);
+}
+
+test "ToolResult deinit frees details_json when owned" {
+    const allocator = std.testing.allocator;
+    const content = try allocator.dupe(u8, "c");
+    const details = try allocator.dupe(u8, "{}");
+    var result = ToolResult.okOwnedWithDetails(content, details);
+
+    result.deinit(allocator);
+
+    try std.testing.expect(!result.success);
+    try std.testing.expectEqualStrings("", result.content);
+}
+
+test "ToolResult err has null details_json" {
+    const result = ToolResult.err("error");
+    try std.testing.expect(result.details_json == null);
+}
+
+test "ToolResult errOwned has null details_json" {
+    const allocator = std.testing.allocator;
+    const msg = try allocator.dupe(u8, "error message");
+    var result = ToolResult.errOwned(msg);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.details_json == null);
+    try std.testing.expect(!result.success);
+}

@@ -191,10 +191,11 @@ test "Message default values" {
 // ============================================================================
 
 test "ThinkingLevel enum has correct variants" {
-    try std.testing.expectEqual(@as(u2, 0), @intFromEnum(ThinkingLevel.off));
-    try std.testing.expectEqual(@as(u2, 1), @intFromEnum(ThinkingLevel.low));
-    try std.testing.expectEqual(@as(u2, 2), @intFromEnum(ThinkingLevel.medium));
-    try std.testing.expectEqual(@as(u2, 3), @intFromEnum(ThinkingLevel.high));
+    try std.testing.expectEqual(@as(u3, 0), @intFromEnum(ThinkingLevel.off));
+    try std.testing.expectEqual(@as(u3, 1), @intFromEnum(ThinkingLevel.minimal));
+    try std.testing.expectEqual(@as(u3, 2), @intFromEnum(ThinkingLevel.low));
+    try std.testing.expectEqual(@as(u3, 3), @intFromEnum(ThinkingLevel.medium));
+    try std.testing.expectEqual(@as(u3, 4), @intFromEnum(ThinkingLevel.high));
 }
 
 test "ThinkingLevel comparison" {
@@ -207,13 +208,54 @@ test "ThinkingLevel comparison" {
 
 test "ThinkingLevel ordering via int conversion" {
     const off_val = @intFromEnum(ThinkingLevel.off);
+    const minimal_val = @intFromEnum(ThinkingLevel.minimal);
     const low_val = @intFromEnum(ThinkingLevel.low);
     const medium_val = @intFromEnum(ThinkingLevel.medium);
     const high_val = @intFromEnum(ThinkingLevel.high);
 
-    try std.testing.expect(off_val < low_val);
+    try std.testing.expect(off_val < minimal_val);
+    try std.testing.expect(minimal_val < low_val);
     try std.testing.expect(low_val < medium_val);
     try std.testing.expect(medium_val < high_val);
+}
+
+test "ThinkingLevel.budgetTokens returns correct values" {
+    try std.testing.expectEqual(@as(u32, 0), ThinkingLevel.off.budgetTokens());
+    try std.testing.expectEqual(@as(u32, 1024), ThinkingLevel.minimal.budgetTokens());
+    try std.testing.expectEqual(@as(u32, 2048), ThinkingLevel.low.budgetTokens());
+    try std.testing.expectEqual(@as(u32, 8192), ThinkingLevel.medium.budgetTokens());
+    try std.testing.expectEqual(@as(u32, 16384), ThinkingLevel.high.budgetTokens());
+}
+
+test "ThinkingLevel.isEnabled" {
+    try std.testing.expect(!ThinkingLevel.off.isEnabled());
+    try std.testing.expect(ThinkingLevel.minimal.isEnabled());
+    try std.testing.expect(ThinkingLevel.low.isEnabled());
+    try std.testing.expect(ThinkingLevel.medium.isEnabled());
+    try std.testing.expect(ThinkingLevel.high.isEnabled());
+}
+
+test "ThinkingLevel.toString" {
+    try std.testing.expectEqualStrings("off", ThinkingLevel.off.toString());
+    try std.testing.expectEqualStrings("minimal", ThinkingLevel.minimal.toString());
+    try std.testing.expectEqualStrings("low", ThinkingLevel.low.toString());
+    try std.testing.expectEqualStrings("medium", ThinkingLevel.medium.toString());
+    try std.testing.expectEqualStrings("high", ThinkingLevel.high.toString());
+}
+
+test "ThinkingLevel.parse valid inputs" {
+    try std.testing.expectEqual(ThinkingLevel.off, ThinkingLevel.parse("off").?);
+    try std.testing.expectEqual(ThinkingLevel.minimal, ThinkingLevel.parse("minimal").?);
+    try std.testing.expectEqual(ThinkingLevel.low, ThinkingLevel.parse("low").?);
+    try std.testing.expectEqual(ThinkingLevel.medium, ThinkingLevel.parse("medium").?);
+    try std.testing.expectEqual(ThinkingLevel.high, ThinkingLevel.parse("high").?);
+}
+
+test "ThinkingLevel.parse invalid inputs" {
+    try std.testing.expect(ThinkingLevel.parse("invalid") == null);
+    try std.testing.expect(ThinkingLevel.parse("") == null);
+    try std.testing.expect(ThinkingLevel.parse("OFF") == null);
+    try std.testing.expect(ThinkingLevel.parse("xhigh") == null);
 }
 
 // ============================================================================
