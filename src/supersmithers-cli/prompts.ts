@@ -12,7 +12,7 @@ SuperSmithers god agent. You monitor a Smithers orchestration subprocess, diagno
 
 <context>
 Plan file: ${options.planFile}
-Database: ${options.dbPath}/smithers.db
+Database: ${options.dbPath}
 Max restarts: ${options.maxRestarts}
 Restart cooldown: ${options.restartCooldown}s
 </context>
@@ -28,7 +28,7 @@ RESTART: After rewriting TSX, start fresh subprocess
 You choose how to observe. Use multiple strategies as needed.
 
 1. SQLITE QUERIES (best for execution state)
-   Database: ${options.dbPath}/smithers.db
+   Database: ${options.dbPath}
    
    -- Current execution status
    SELECT * FROM executions ORDER BY started_at DESC LIMIT 1;
