@@ -108,14 +108,16 @@ pub fn AgentThread(
 
                 // If we have active work, tick the agent loop
                 if (has_query or has_continuation or has_stream or has_tools or is_executing or is_loading) {
-                    self.mutex.lock();
-                    const state_changed = self.agent_loop.tick(self.database) catch |err| blk: {
-                        var buf: [64]u8 = undefined;
-                        const msg = std.fmt.bufPrint(&buf, "tick error: {s}", .{@errorName(err)}) catch "error";
-                        obs.global.logSimple(.err, @src(), "agent_thread", msg);
-                        break :blk false;
+                    const state_changed = blk: {
+                        self.mutex.lock();
+                        defer self.mutex.unlock();
+                        break :blk self.agent_loop.tick(self.database) catch |err| err_blk: {
+                            var buf: [64]u8 = undefined;
+                            const msg = std.fmt.bufPrint(&buf, "tick error: {s}", .{@errorName(err)}) catch "error";
+                            obs.global.logSimple(.err, @src(), "agent_thread", msg);
+                            break :err_blk false;
+                        };
                     };
-                    self.mutex.unlock();
 
                     did_work = true;
                     if (state_changed) {
@@ -123,29 +125,32 @@ pub fn AgentThread(
                     }
                 } else {
                     // No active work - check for pending messages in DB queue
-                    self.mutex.lock();
-                    const pending_msg = self.database.getNextPendingMessage(self.alloc) catch null;
-                    self.mutex.unlock();
+                    const pending_msg = pending_blk: {
+                        self.mutex.lock();
+                        defer self.mutex.unlock();
+                        break :pending_blk self.database.getNextPendingMessage(self.alloc) catch null;
+                    };
 
                     if (pending_msg) |msg| {
                         obs.global.logSimple(.debug, @src(), "agent_thread", "processing pending message");
-                        self.mutex.lock();
+                        {
+                            self.mutex.lock();
+                            defer self.mutex.unlock();
 
-                        // Mark as sent in DB
-                        self.database.markMessageSent(msg.id) catch {};
+                            // Mark as sent in DB
+                            self.database.markMessageSent(msg.id) catch {};
 
-                        // Set as pending query for agent loop
-                        self.loading.pending_query = self.alloc.dupe(u8, msg.content) catch null;
-                        if (self.loading.pending_query != null) {
-                            self.loading.startLoading();
+                            // Set as pending query for agent loop
+                            self.loading.pending_query = self.alloc.dupe(u8, msg.content) catch null;
+                            if (self.loading.pending_query != null) {
+                                self.loading.startLoading();
+                            }
+
+                            // Free the message content we got from DB
+                            self.alloc.free(msg.content);
+                            if (msg.tool_name) |tn| self.alloc.free(tn);
+                            if (msg.tool_input) |ti| self.alloc.free(ti);
                         }
-
-                        // Free the message content we got from DB
-                        self.alloc.free(msg.content);
-                        if (msg.tool_name) |tn| self.alloc.free(tn);
-                        if (msg.tool_input) |ti| self.alloc.free(ti);
-
-                        self.mutex.unlock();
                         self.notifyStateChanged();
                         did_work = true;
                     }
@@ -154,9 +159,9 @@ pub fn AgentThread(
                 if (!did_work) {
                     // No work - wait for signal or timeout
                     self.mutex.lock();
+                    defer self.mutex.unlock();
                     // Wait with timeout so we can check stop flag and pending messages periodically
                     self.work_available.timedWait(&self.mutex, 50 * std.time.ns_per_ms) catch {};
-                    self.mutex.unlock();
                 } else {
                     // Small yield between active ticks to not spin too fast
                     std.Thread.sleep(5 * std.time.ns_per_ms);

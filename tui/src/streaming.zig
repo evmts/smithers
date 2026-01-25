@@ -109,6 +109,7 @@ pub const StreamingState = struct {
                 if (delta == .object) {
                     if (delta.object.get("stop_reason")) |sr| {
                         if (sr == .string) {
+                            if (self.stop_reason) |old| self.alloc.free(old);
                             self.stop_reason = self.alloc.dupe(u8, sr.string) catch null;
                         }
                     }
@@ -124,11 +125,13 @@ pub const StreamingState = struct {
                         if (bt == .string and std.mem.eql(u8, bt.string, "tool_use")) {
                             if (block.object.get("id")) |id| {
                                 if (id == .string) {
+                                    if (self.current_tool_id) |old| self.alloc.free(old);
                                     self.current_tool_id = self.alloc.dupe(u8, id.string) catch null;
                                 }
                             }
                             if (block.object.get("name")) |name| {
                                 if (name == .string) {
+                                    if (self.current_tool_name) |old| self.alloc.free(old);
                                     self.current_tool_name = self.alloc.dupe(u8, name.string) catch null;
                                 }
                             }
