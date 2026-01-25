@@ -336,6 +336,48 @@ fn countDigits(n: usize) usize {
     return count;
 }
 
+/// Build JSON details for edit tool: {"diff": "...", "first_changed_line": N}
+pub fn buildEditDetailsJson(allocator: std.mem.Allocator, diff: []const u8, first_line: ?usize) ![]const u8 {
+    var result: std.ArrayList(u8) = .empty;
+    errdefer result.deinit(allocator);
+
+    try result.appendSlice(allocator, "{\"diff\":");
+    try appendJsonString(allocator, &result, diff);
+
+    if (first_line) |line| {
+        var buf: [32]u8 = undefined;
+        const line_str = std.fmt.bufPrint(&buf, ",\"first_changed_line\":{d}", .{line}) catch unreachable;
+        try result.appendSlice(allocator, line_str);
+    }
+
+    try result.append(allocator, '}');
+    return result.toOwnedSlice(allocator);
+}
+
+/// Append a JSON-escaped string
+pub fn appendJsonString(allocator: std.mem.Allocator, result: *std.ArrayList(u8), s: []const u8) !void {
+    try result.append(allocator, '"');
+    for (s) |c| {
+        switch (c) {
+            '"' => try result.appendSlice(allocator, "\\\""),
+            '\\' => try result.appendSlice(allocator, "\\\\"),
+            '\n' => try result.appendSlice(allocator, "\\n"),
+            '\r' => try result.appendSlice(allocator, "\\r"),
+            '\t' => try result.appendSlice(allocator, "\\t"),
+            else => {
+                if (c < 0x20) {
+                    var buf: [6]u8 = undefined;
+                    const hex = std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c}) catch continue;
+                    try result.appendSlice(allocator, hex);
+                } else {
+                    try result.append(allocator, c);
+                }
+            },
+        }
+    }
+    try result.append(allocator, '"');
+}
+
 test "detectLineEnding" {
     try std.testing.expectEqual(LineEnding.lf, detectLineEnding("hello\nworld"));
     try std.testing.expectEqual(LineEnding.crlf, detectLineEnding("hello\r\nworld"));
@@ -437,4 +479,39 @@ test "generateDiff" {
     try std.testing.expect(result.first_changed_line != null);
     try std.testing.expect(std.mem.indexOf(u8, result.diff, "-") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.diff, "+") != null);
+}
+
+test "buildEditDetailsJson with first_changed_line" {
+    const allocator = std.testing.allocator;
+
+    const details = try buildEditDetailsJson(allocator, "-1 old\n+1 new", 1);
+    defer allocator.free(details);
+
+    try std.testing.expect(std.mem.indexOf(u8, details, "\"diff\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, details, "\\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, details, "\"first_changed_line\":1") != null);
+}
+
+test "buildEditDetailsJson without first_changed_line" {
+    const allocator = std.testing.allocator;
+
+    const details = try buildEditDetailsJson(allocator, "no changes", null);
+    defer allocator.free(details);
+
+    try std.testing.expect(std.mem.indexOf(u8, details, "\"diff\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, details, "first_changed_line") == null);
+}
+
+test "appendJsonString escapes special characters" {
+    const allocator = std.testing.allocator;
+    var result: std.ArrayList(u8) = .empty;
+    defer result.deinit(allocator);
+
+    try appendJsonString(allocator, &result, "line1\nline2\ttab\"quote\\backslash");
+
+    const str = result.items;
+    try std.testing.expect(std.mem.indexOf(u8, str, "\\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, str, "\\t") != null);
+    try std.testing.expect(std.mem.indexOf(u8, str, "\\\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, str, "\\\\") != null);
 }
