@@ -302,6 +302,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     ProviderApi.cleanup(stream, self.alloc);
                     self.streaming = null;
                 } else {
+                    // No tool calls - stream complete, clean up
+                    ProviderApi.cleanup(stream, self.alloc);
+                    self.streaming = null;
+
                     // Complete any active run
                     if (self.loading.agent_run_id) |rid| {
                         database.completeAgentRun(rid) catch {};
