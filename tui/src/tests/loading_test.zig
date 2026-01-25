@@ -336,6 +336,49 @@ test "ProductionLoadingState type exists" {
     _ = ProdState;
 }
 
+// ============================================================================
+// Thread Safety Tests (Issue 1 fix)
+// ============================================================================
+
+test "LoadingState requestCancel is atomic" {
+    var state = TestLoadingState{};
+
+    // Initially not cancelled
+    try std.testing.expect(!state.isCancelRequested());
+
+    // Request cancel (atomic operation)
+    state.requestCancel();
+
+    // Verify cancelled
+    try std.testing.expect(state.isCancelRequested());
+}
+
+test "LoadingState cancel flag cleared on startLoading" {
+    var state = TestLoadingState{};
+
+    state.requestCancel();
+    try std.testing.expect(state.isCancelRequested());
+
+    // startLoading should reset cancel flag
+    state.startLoading();
+    try std.testing.expect(!state.isCancelRequested());
+}
+
+test "LoadingState isLoading is atomic" {
+    var state = TestLoadingState{};
+
+    // Initially not loading (atomic read)
+    try std.testing.expect(!state.isLoading());
+
+    // Start loading (sets atomic flag)
+    state.startLoading();
+    try std.testing.expect(state.isLoading());
+
+    // Cleanup clears atomic flag
+    state.cleanup(std.testing.allocator);
+    try std.testing.expect(!state.isLoading());
+}
+
 test "LoadingState hasPendingWork atomic flag" {
     const alloc = std.testing.allocator;
     var state = TestLoadingState{};

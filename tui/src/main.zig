@@ -129,5 +129,6 @@ test {
     _ = @import("tests/message_cell_test.zig");
     _ = @import("tests/print_test.zig");
     _ = @import("tests/interactive_test.zig");
+    _ = @import("tests/thread_safety_test.zig");
     _ = @import("obs.zig");
 }
