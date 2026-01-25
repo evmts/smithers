@@ -2,7 +2,28 @@
 
 **Priority:** HIGH  
 **Effort:** L (1-2 days)  
-**Category:** Test Coverage
+**Category:** Test Coverage  
+**Status:** In Progress
+
+## Progress
+
+Agent execution E2E tests added in `src/components/agents/claude-cli/e2e.test.ts`:
+
+| Test | Status |
+|------|--------|
+| Claude executes simple prompt and returns result | ✅ (skips without API key) |
+| Claude handles structured JSON output | ✅ (skips without API key) |
+| Claude respects maxTurns=1 limit | ✅ (skips without API key) |
+| Claude tracks token usage | ✅ (skips without API key) |
+| Claude returns durationMs | ✅ (skips without API key) |
+| handles very short timeout gracefully | ✅ |
+| handles empty prompt | ✅ |
+
+## Remaining Work
+
+- [ ] Full workflow E2E test (Phase → Step → Claude)
+- [ ] VCS integration tests (Git/JJ)
+- [ ] CI configuration with secrets
 
 ## Problem
 
@@ -12,15 +33,6 @@ Current E2E tests in `evals/` use `SMITHERS_MOCK_MODE` which prevents actual CLI
 2. Test real error scenarios
 3. Verify full workflow completion
 4. Test retry/recovery behavior
-
-## Current State
-
-```typescript
-// evals/04-agent-claude.test.tsx
-// Uses SMITHERS_MOCK_MODE - Claude never actually runs
-```
-
-The evals test component rendering and XML structure, not actual execution.
 
 ## Required E2E Tests
 
@@ -171,8 +183,8 @@ e2e-tests:
 
 ## Acceptance Criteria
 
-- [ ] At least 5 real E2E tests (no mocks)
-- [ ] Tests skip gracefully without API key
+- [x] At least 5 real E2E tests (no mocks) - 7 tests in e2e.test.ts
+- [x] Tests skip gracefully without API key
 - [ ] Full workflow test passes
-- [ ] Error recovery tested
+- [x] Error recovery tested - timeout and empty prompt
 - [ ] CI runs E2E tests (with secrets)

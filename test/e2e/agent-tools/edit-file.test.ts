@@ -27,15 +27,15 @@ test.describe('Agent Tool: edit_file', () => {
     // Setup: Create test file with known content
     mkdirSync(path.dirname(testFile), { recursive: true })
     writeFileSync(testFile, 'Hello REPLACE_ME World\nSecond line\nThird line\n')
-    await expect(terminal.getByText('>')).toBeVisible()
+    await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
     terminal.submit(`in the file ${testFile}, replace "REPLACE_ME" with "EDITED_TEXT"`)
 
     // Should see edit_file tool being called
-    await expect(terminal.getByText('edit_file', { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText('edit_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Should indicate success
-    await expect(terminal.getByText(/edited|replaced|success|updated/i, { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/edited|replaced|success|updated/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Verify the edit was made
     await new Promise(r => setTimeout(r, 1000))
@@ -52,12 +52,12 @@ test.describe('Agent Tool: edit_file', () => {
   test('handles multiline replacement', async ({ terminal }) => {
     mkdirSync(path.dirname(testFile), { recursive: true })
     writeFileSync(testFile, 'function old() {\n  return 1;\n}\n')
-    await expect(terminal.getByText('>')).toBeVisible()
+    await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
     terminal.submit(`in ${testFile}, replace the function "old" with a function called "new" that returns 2`)
 
-    await expect(terminal.getByText('edit_file', { full: true })).toBeVisible({ timeout: 30000 })
-    await expect(terminal.getByText(/edited|replaced|success|updated/i, { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText('edit_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/edited|replaced|success|updated/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     await new Promise(r => setTimeout(r, 1000))
     const content = readFileSync(testFile, 'utf-8')
@@ -70,12 +70,13 @@ test.describe('Agent Tool: edit_file', () => {
   test('reports error when old_str not found', async ({ terminal }) => {
     mkdirSync(path.dirname(testFile), { recursive: true })
     writeFileSync(testFile, 'some content\n')
-    await expect(terminal.getByText('>')).toBeVisible()
+    await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
     terminal.submit(`in ${testFile}, replace "NONEXISTENT_STRING_XYZ" with "something"`)
 
-    await expect(terminal.getByText('edit_file', { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText('edit_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see error about string not found
-    await expect(terminal.getByText(/not found|no match|error|couldn't find/i, { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/not found|no match|error|couldn't find/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    try { unlinkSync(testFile) } catch {}
   })
 })

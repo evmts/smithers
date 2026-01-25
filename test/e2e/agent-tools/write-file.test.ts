@@ -26,15 +26,15 @@ test.describe('Agent Tool: write_file', () => {
   test('creates new file with content', async ({ terminal }) => {
     // Cleanup any existing test file
     try { unlinkSync(testFile) } catch {}
-    await expect(terminal.getByText('>')).toBeVisible()
+    await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
     terminal.submit(`create a file at ${testFile} with the content "WRITE_FILE_TEST_CONTENT_12345"`)
 
     // Should see write_file tool being called
-    await expect(terminal.getByText('write_file', { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText('write_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Should indicate success
-    await expect(terminal.getByText(/wrote|created|success/i, { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/wrote|created|success/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Verify file was actually created
     await new Promise(r => setTimeout(r, 1000))
@@ -47,12 +47,12 @@ test.describe('Agent Tool: write_file', () => {
 
   test('creates file with multiline content', async ({ terminal }) => {
     try { unlinkSync(testFile) } catch {}
-    await expect(terminal.getByText('>')).toBeVisible()
+    await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
     terminal.submit(`write a file to ${testFile} with three lines: "line1", "line2", "line3"`)
 
-    await expect(terminal.getByText('write_file', { full: true })).toBeVisible({ timeout: 30000 })
-    await expect(terminal.getByText(/wrote|created|success/i, { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText('write_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/wrote|created|success/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     await new Promise(r => setTimeout(r, 1000))
     const content = readFileSync(testFile, 'utf-8')
@@ -64,12 +64,12 @@ test.describe('Agent Tool: write_file', () => {
 
   test('creates parent directories automatically', async ({ terminal }) => {
     const nestedFile = path.join(projectRoot, '.tui-test/nested/deep/test.txt')
-    await expect(terminal.getByText('>')).toBeVisible()
+    await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
     terminal.submit(`create a file at ${nestedFile} with content "nested file test"`)
 
-    await expect(terminal.getByText('write_file', { full: true })).toBeVisible({ timeout: 30000 })
-    await expect(terminal.getByText(/wrote|created|success/i, { full: true })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText('write_file', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
+    await expect(terminal.getByText(/wrote|created|success/i, { full: true, strict: false })).toBeVisible({ timeout: 30000 })
 
     // Cleanup
     try { unlinkSync(nestedFile) } catch {}

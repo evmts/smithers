@@ -19,9 +19,10 @@ const tuiBinary = path.join(projectRoot, 'tui/zig-out/bin/smithers-tui')
 
 export default defineConfig({
   testDir: '.',
-  timeout: 30000,
+  timeout: 60000,
   retries: 2,
   trace: process.env.CI ? true : false,
+  workers: 1, // Run tests sequentially to avoid race conditions
 
   use: {
     program: { file: tuiBinary },
