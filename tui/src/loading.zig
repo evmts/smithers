@@ -21,6 +21,8 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
     return struct {
         /// Atomic for thread-safe reads from main thread
         is_loading_atomic: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        /// Atomic cancel flag - main thread sets, agent thread reads and cleans up
+        cancel_requested: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         start_time: i64 = 0,
         spinner_frame: usize = 0,
         pending_query: ?[]const u8 = null,
@@ -45,8 +47,19 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
 
         pub fn startLoading(self: *Self) void {
             self.is_loading_atomic.store(true, .release);
+            self.cancel_requested.store(false, .release);
             self.start_time = Clk.milliTimestamp();
             self.spinner_frame = 0;
+        }
+
+        /// Request cancellation (thread-safe, called from main thread)
+        pub fn requestCancel(self: *Self) void {
+            self.cancel_requested.store(true, .release);
+        }
+
+        /// Check if cancel was requested (called from agent thread)
+        pub fn isCancelRequested(self: *const Self) bool {
+            return self.cancel_requested.load(.acquire);
         }
 
         pub fn tick(self: *Self) void {
@@ -99,6 +112,7 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
             self.assistant_content_json = null;
             self.agent_run_id = null;
             self.is_loading_atomic.store(false, .release);
+            self.cancel_requested.store(false, .release);
         }
 
         pub fn now() i64 {

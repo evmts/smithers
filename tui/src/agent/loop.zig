@@ -47,6 +47,22 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         pub fn tick(self: *Self, database: *Database) !bool {
             var state_changed = false;
 
+            // Check for cancellation request from main thread
+            if (self.loading.isCancelRequested()) {
+                obs.global.logSimple(.info, @src(), "agent.tick", "cancel requested - cleaning up");
+                // Cleanup streaming (kills curl process)
+                if (self.streaming) |*stream| {
+                    ProviderApi.cleanup(stream, self.alloc);
+                    self.streaming = null;
+                }
+                // Full cleanup of loading state
+                self.loading.cleanup(self.alloc);
+                state_changed = true;
+                // Reset scratch and return early
+                _ = self.scratch.reset(.retain_capacity);
+                return state_changed;
+            }
+
             const has_query = self.loading.pending_query != null;
             const has_stream = self.streaming != null;
             const start_time = self.loading.start_time;
