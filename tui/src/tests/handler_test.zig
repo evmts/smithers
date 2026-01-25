@@ -8,14 +8,14 @@ test "Action enum has expected variants" {
     const action_suspend: handler.Action = .suspend_tui;
     const action_redraw: handler.Action = .redraw;
     const action_reload: handler.Action = .reload_chat;
-    const action_query: handler.Action = .{ .start_ai_query = "test" };
+    const action_query: handler.Action = .start_ai_query;
 
     try std.testing.expect(action_none == .none);
     try std.testing.expect(action_exit == .exit);
     try std.testing.expect(action_suspend == .suspend_tui);
     try std.testing.expect(action_redraw == .redraw);
     try std.testing.expect(action_reload == .reload_chat);
-    try std.testing.expectEqualStrings("test", action_query.start_ai_query);
+    try std.testing.expect(action_query == .start_ai_query);
 }
 
 test "Action variants are distinct" {
@@ -25,6 +25,7 @@ test "Action variants are distinct" {
         .suspend_tui,
         .redraw,
         .reload_chat,
+        .start_ai_query,
     };
 
     for (actions, 0..) |a, i| {
@@ -38,30 +39,11 @@ test "Action variants are distinct" {
     }
 }
 
-test "start_ai_query holds query text" {
-    const query = "Hello, world!";
-    const action: handler.Action = .{ .start_ai_query = query };
+test "start_ai_query is a simple tag" {
+    const action: handler.Action = .start_ai_query;
 
     switch (action) {
-        .start_ai_query => |q| try std.testing.expectEqualStrings(query, q),
-        else => try std.testing.expect(false),
-    }
-}
-
-test "start_ai_query with empty string" {
-    const action: handler.Action = .{ .start_ai_query = "" };
-
-    switch (action) {
-        .start_ai_query => |q| try std.testing.expectEqual(@as(usize, 0), q.len),
-        else => try std.testing.expect(false),
-    }
-}
-
-test "start_ai_query with unicode" {
-    const action: handler.Action = .{ .start_ai_query = "こんにちは 🎉" };
-
-    switch (action) {
-        .start_ai_query => |q| try std.testing.expect(q.len > 0),
+        .start_ai_query => {},
         else => try std.testing.expect(false),
     }
 }
@@ -82,6 +64,6 @@ test "Action switch exhaustive" {
 }
 
 test "Action memory size is reasonable" {
-    // Action should fit in a small space (union with slice pointer)
-    try std.testing.expect(@sizeOf(handler.Action) <= 24);
+    // Action is now a simple enum with no payload
+    try std.testing.expect(@sizeOf(handler.Action) <= 8);
 }

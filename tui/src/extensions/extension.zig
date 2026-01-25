@@ -36,8 +36,16 @@ pub const EventType = enum {
 pub const Event = struct {
     type: EventType,
     data: ?*anyopaque = null,
+    data_type_hash: u64 = 0,
+
+    pub fn setData(self: *Event, comptime T: type, ptr: *T) void {
+        self.data = ptr;
+        self.data_type_hash = comptime std.hash.Wyhash.hash(0, @typeName(T));
+    }
 
     pub fn getData(self: *const Event, comptime T: type) ?*T {
+        const expected = comptime std.hash.Wyhash.hash(0, @typeName(T));
+        if (self.data_type_hash != expected) return null;
         if (self.data) |d| {
             return @ptrCast(@alignCast(d));
         }

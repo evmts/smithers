@@ -119,7 +119,7 @@ pub const COMMANDS = [_]struct { name: []const u8, description: []const u8 }{
 /// Format a list of available commands
 pub fn formatCommands(allocator: std.mem.Allocator) ![]u8 {
     var result = std.ArrayList(u8).init(allocator);
-    defer result.deinit();
+    errdefer result.deinit();
     
     try result.appendSlice("Available Commands:\n");
     for (COMMANDS) |cmd| {

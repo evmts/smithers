@@ -166,12 +166,23 @@ test "ExtensionContext UI callbacks" {
 
 test "Event.getData" {
     var data: u32 = 42;
-    const event = Event{
+    var event = Event{
         .type = .tool_call,
-        .data = @ptrCast(&data),
     };
+    event.setData(u32, &data);
 
     const retrieved = event.getData(u32);
     try std.testing.expect(retrieved != null);
     try std.testing.expectEqual(@as(u32, 42), retrieved.?.*);
+}
+
+test "Event.getData returns null for wrong type" {
+    var data: u32 = 42;
+    var event = Event{
+        .type = .tool_call,
+    };
+    event.setData(u32, &data);
+
+    const retrieved = event.getData(i64);
+    try std.testing.expect(retrieved == null);
 }

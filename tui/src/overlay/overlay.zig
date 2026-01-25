@@ -127,7 +127,7 @@ pub fn Overlay(comptime R: type) type {
         };
 
         pub const Stack = struct {
-            entries: ArrayListUnmanaged(OverlaySelf.Entry),
+            entries: ArrayListUnmanaged(*OverlaySelf.Entry),
             allocator: Allocator,
             next_z: u16,
 
@@ -142,30 +142,37 @@ pub fn Overlay(comptime R: type) type {
             }
 
             pub fn deinit(self: *Self) void {
+                for (self.entries.items) |e| self.allocator.destroy(e);
                 self.entries.deinit(self.allocator);
             }
 
             pub fn push(self: *Self, draw_fn: OverlaySelf.DrawCallback, ctx: ?*anyopaque, options: OverlaySelf.Options) !*OverlaySelf.Entry {
                 const z = self.next_z;
                 self.next_z += 1;
-                try self.entries.append(self.allocator, .{
+                const e = try self.allocator.create(OverlaySelf.Entry);
+                e.* = .{
                     .draw_fn = draw_fn,
                     .ctx = ctx,
                     .options = options,
                     .hidden = false,
                     .z_order = z,
-                });
-                return &self.entries.items[self.entries.items.len - 1];
+                };
+                try self.entries.append(self.allocator, e);
+                return e;
             }
 
             pub fn pop(self: *Self) ?OverlaySelf.Entry {
-                return self.entries.popOrNull();
+                const e = self.entries.popOrNull() orelse return null;
+                const value = e.*;
+                self.allocator.destroy(e);
+                return value;
             }
 
             pub fn remove(self: *Self, entry: *OverlaySelf.Entry) bool {
-                for (self.entries.items, 0..) |*e, i| {
+                for (self.entries.items, 0..) |e, i| {
                     if (e == entry) {
                         _ = self.entries.orderedRemove(i);
+                        self.allocator.destroy(entry);
                         return true;
                     }
                 }
@@ -174,7 +181,7 @@ pub fn Overlay(comptime R: type) type {
 
             pub fn getTopmostVisible(self: *const Self, term_width: u16, term_height: u16) ?*const OverlaySelf.Entry {
                 var topmost: ?*const OverlaySelf.Entry = null;
-                for (self.entries.items) |*entry| {
+                for (self.entries.items) |entry| {
                     if (entry.isVisible(term_width, term_height)) {
                         if (topmost == null or entry.z_order > topmost.?.z_order) {
                             topmost = entry;
@@ -198,7 +205,7 @@ pub fn Overlay(comptime R: type) type {
                 const term_height = renderer.height();
 
                 // Draw overlays in z-order (lowest first, so topmost renders last)
-                for (self.entries.items) |*entry| {
+                for (self.entries.items) |entry| {
                     if (!entry.isVisible(term_width, term_height)) continue;
 
                     // Default content height - caller can set explicit height
@@ -351,13 +358,12 @@ test "Anchor corner positioning" {
 
 // Mock renderer for tests
 const MockRenderer = struct {
-    w: u16 = 100,
-    h: u16 = 50,
-
     pub const Color = struct { rgb: struct { u8, u8, u8 } = .{ 0, 0, 0 } };
     pub const Style = struct { fg: ?Color = null, bg: ?Color = null };
     pub const Window = struct {};
 
+    w: u16 = 100,
+    h: u16 = 50,
     window: Window = .{},
 
     pub fn init(_: Window) MockRenderer {

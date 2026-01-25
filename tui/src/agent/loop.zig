@@ -15,12 +15,10 @@ pub const tools_json =
     \\{"name":"list_dir","description":"List directory contents with optional depth","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"Directory path"},"depth":{"type":"integer","description":"Recursion depth (1-3)"}}}}]
 ;
 
-/// Generic AgentLoop over Provider, Loading, ToolExecutor, and Renderer types
-/// Note: R (Renderer) type is kept for API compatibility but not used internally
-pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolExec: type, comptime R: type) type {
-    _ = R; // Renderer not needed - agent thread only updates DB, main thread renders
+/// Generic AgentLoop over Provider, Loading, ToolExecutor, and Database types
+/// Database is passed as comptime param for proper DI (enables testing with mock DB)
+pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolExec: type, comptime Database: type) type {
     const ProviderApi = provider_interface.AgentProvider(Provider);
-    const Database = db.Database(@import("sqlite").Db);
 
     return struct {
         const Self = @This();

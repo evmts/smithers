@@ -2,21 +2,22 @@
 // Wraps chat history display with container styling
 
 const std = @import("std");
-const ChatHistory = @import("../components/chat_history.zig").ChatHistory;
 const db = @import("../db.zig");
 
 const border_color: u8 = 240; // Gray border
 const title_color: u8 = 75; // Blue title
 
 pub fn ChatContainer(comptime R: type) type {
+    const ChatHistoryT = @import("../components/chat_history.zig").ChatHistory(R);
+
     return struct {
-        chat_history: *ChatHistory,
+        chat_history: *ChatHistoryT,
         title: ?[]const u8 = null,
         show_border: bool = true,
 
         const Self = @This();
 
-        pub fn init(chat_history: *ChatHistory) Self {
+        pub fn init(chat_history: *ChatHistoryT) Self {
             return .{
                 .chat_history = chat_history,
             };

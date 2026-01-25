@@ -17,11 +17,11 @@ pub const Action = union(enum) {
     suspend_tui,
     redraw,
     reload_chat,
-    start_ai_query: []const u8,
+    start_ai_query,
 };
 
 /// KeyContext generic over Renderer, Loading, Database, and EventLoop types
-pub fn KeyContext(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type) type {
+pub fn KeyContext(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type, comptime AgentThreadT: type) type {
     return struct {
         input: *input_mod.Input(R),
         chat_history: *chat_history_mod.ChatHistory(R),
@@ -29,16 +29,27 @@ pub fn KeyContext(comptime R: type, comptime Loading: type, comptime Db: type, c
         status_bar: *status_bar_mod.StatusBar(R),
         event_loop: *EvLoop,
         loading: *Loading,
+        agent_thread: *AgentThreadT,
         has_ai: bool,
+
+        const Self = @This();
+
+        /// Execute a database operation while holding the agent thread mutex.
+        /// This ensures thread-safe access to SQLite from the main thread.
+        pub fn withDbLock(self: *Self, comptime func: anytype, args: anytype) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
+            self.agent_thread.lockForRead();
+            defer self.agent_thread.unlockForRead();
+            return @call(.auto, func, args);
+        }
     };
 }
 
 /// KeyHandler generic over Renderer, Loading, Database, and EventLoop types
-pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type) type {
+pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type, comptime AgentThreadT: type) type {
     const Key = R.Key;
     const Event = event_mod.Event(R);
     return struct {
-        pub const Context = KeyContext(R, Loading, Db, EvLoop);
+        pub const Context = KeyContext(R, Loading, Db, EvLoop, AgentThreadT);
         const Self = @This();
 
         alloc: std.mem.Allocator,
@@ -65,8 +76,10 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                 if (editor_utils.openExternalEditor(self.alloc, ctx.event_loop, ctx.input)) |edited_text| {
                     defer self.alloc.free(edited_text);
                     if (edited_text.len > 0) {
+                        ctx.agent_thread.lockForRead();
                         _ = try ctx.database.addMessage(.user, edited_text);
                         try ctx.chat_history.reload(ctx.database);
+                        ctx.agent_thread.unlockForRead();
                         if (ctx.has_ai) {
                             ctx.loading.pending_query = try self.alloc.dupe(u8, edited_text);
                             ctx.loading.startLoading();
@@ -85,12 +98,14 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                 if (ctx.loading.isLoading()) {
                     // Signal agent thread to cancel (it will cleanup streaming)
                     ctx.loading.requestCancel();
-                    // Mark agent run as failed in SQLite
+                    // Mark agent run as failed in SQLite (with mutex)
+                    ctx.agent_thread.lockForRead();
                     if (ctx.loading.agent_run_id) |rid| {
                         ctx.database.failAgentRun(rid) catch {};
                     }
                     _ = try ctx.database.addMessage(.system, "Interrupted.");
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                 }
                 return .none;
             }
@@ -98,8 +113,10 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
             // ? - show help message when input empty (ephemeral)
             if (key.text) |text| {
                 if (text.len == 1 and text[0] == '?' and ctx.input.isEmpty()) {
+                    ctx.agent_thread.lockForRead();
                     _ = try ctx.database.addEphemeralMessage(.assistant, help.INLINE_HELP);
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                 }
             }
 
@@ -139,17 +156,20 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
 
                 // c - new tab
                 if (key.codepoint == 'c') {
+                    ctx.agent_thread.lockForRead();
                     const count = try ctx.database.getSessionCount();
                     var name_buf: [16]u8 = undefined;
                     const name = std.fmt.bufPrint(&name_buf, "tab-{d}", .{count + 1}) catch "new";
                     const new_id = try ctx.database.createSession(name);
                     ctx.database.switchSession(new_id);
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                     return .none;
                 }
 
                 // n - next tab
                 if (key.codepoint == 'n') {
+                    ctx.agent_thread.lockForRead();
                     const sessions = try ctx.database.getSessions(self.alloc);
                     defer Db.freeSessions(self.alloc, sessions);
                     if (sessions.len > 1) {
@@ -166,11 +186,13 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                         ctx.database.switchSession(next_id orelse first_id orelse current);
                         try ctx.chat_history.reload(ctx.database);
                     }
+                    ctx.agent_thread.unlockForRead();
                     return .none;
                 }
 
                 // p - previous tab
                 if (key.codepoint == 'p') {
+                    ctx.agent_thread.lockForRead();
                     const sessions = try ctx.database.getSessions(self.alloc);
                     defer Db.freeSessions(self.alloc, sessions);
                     if (sessions.len > 1) {
@@ -191,11 +213,13 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                             try ctx.chat_history.reload(ctx.database);
                         }
                     }
+                    ctx.agent_thread.unlockForRead();
                     return .none;
                 }
 
                 // 0-9 - switch to tab by number
                 if (key.codepoint >= '0' and key.codepoint <= '9') {
+                    ctx.agent_thread.lockForRead();
                     const tab_num = if (key.codepoint == '0') 9 else key.codepoint - '1';
                     const sessions = try ctx.database.getSessions(self.alloc);
                     defer Db.freeSessions(self.alloc, sessions);
@@ -203,6 +227,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                         ctx.database.switchSession(sessions[tab_num].id);
                         try ctx.chat_history.reload(ctx.database);
                     }
+                    ctx.agent_thread.unlockForRead();
                     return .none;
                 }
 
@@ -229,19 +254,28 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                 if (std.mem.eql(u8, command, "/exit")) {
                     return .exit;
                 } else if (std.mem.eql(u8, command, "/clear")) {
+                    ctx.agent_thread.lockForRead();
                     try ctx.database.clearMessages();
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                 } else if (std.mem.eql(u8, command, "/new")) {
+                    ctx.agent_thread.lockForRead();
                     try ctx.database.clearMessages();
                     _ = try ctx.database.addMessage(.system, "Started new conversation.");
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                 } else if (std.mem.eql(u8, command, "/help")) {
+                    ctx.agent_thread.lockForRead();
                     _ = try ctx.database.addEphemeralMessage(.assistant, help.INLINE_HELP);
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                 } else if (std.mem.eql(u8, command, "/model")) {
+                    ctx.agent_thread.lockForRead();
                     _ = try ctx.database.addEphemeralMessage(.system, "Current model: claude-sonnet-4-20250514");
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                 } else if (std.mem.eql(u8, command, "/status")) {
+                    ctx.agent_thread.lockForRead();
                     const msgs = try ctx.database.getMessages(self.alloc);
                     defer Db.freeMessages(self.alloc, msgs);
                     const status_msg = try std.fmt.allocPrint(
@@ -252,17 +286,20 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                     defer self.alloc.free(status_msg);
                     _ = try ctx.database.addEphemeralMessage(.system, status_msg);
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                 } else if (std.mem.eql(u8, command, "/diff")) {
                     const diff_result = git_utils.runGitDiff(self.alloc) catch |err| blk: {
                         break :blk try std.fmt.allocPrint(self.alloc, "Error running git diff: {s}", .{@errorName(err)});
                     };
                     defer self.alloc.free(diff_result);
+                    ctx.agent_thread.lockForRead();
                     if (diff_result.len > 0) {
                         _ = try ctx.database.addEphemeralMessage(.assistant, diff_result);
                     } else {
                         _ = try ctx.database.addEphemeralMessage(.system, "No uncommitted changes.");
                     }
                     try ctx.chat_history.reload(ctx.database);
+                    ctx.agent_thread.unlockForRead();
                 } else {
                     // Regular message submission
                     obs.global.logSimple(.debug, @src(), "keys.submit", "user submitted message");
@@ -270,12 +307,16 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                     if (ctx.loading.isLoading()) {
                         // AI is busy - queue as pending message (shows gray in UI)
                         obs.global.logSimple(.debug, @src(), "keys.submit", "queueing as pending (AI busy)");
+                        ctx.agent_thread.lockForRead();
                         _ = try ctx.database.addPendingMessage(.user, command);
                         try ctx.chat_history.reload(ctx.database);
+                        ctx.agent_thread.unlockForRead();
                     } else {
                         // AI is idle - send immediately
+                        ctx.agent_thread.lockForRead();
                         _ = try ctx.database.addMessage(.user, command);
                         try ctx.chat_history.reload(ctx.database);
+                        ctx.agent_thread.unlockForRead();
 
                         if (ctx.has_ai) {
                             var buf: [128]u8 = undefined;
@@ -283,11 +324,13 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                             obs.global.logSimple(.debug, @src(), "keys.submit", msg);
                             ctx.loading.pending_query = try self.alloc.dupe(u8, command);
                             ctx.loading.startLoading();
-                            return .{ .start_ai_query = command };
+                            return .start_ai_query;
                         } else {
                             obs.global.logSimple(.debug, @src(), "keys.submit", "demo mode - no AI");
+                            ctx.agent_thread.lockForRead();
                             _ = try ctx.database.addMessage(.assistant, "I'm running in demo mode (no API key). Set ANTHROPIC_API_KEY to enable AI responses.");
                             try ctx.chat_history.reload(ctx.database);
+                            ctx.agent_thread.unlockForRead();
                         }
                     }
                 }

@@ -138,7 +138,7 @@ pub const Entry = union(EntryType) {
 pub const Session = struct {
     header: SessionHeader,
     entries: ArrayListUnmanaged(Entry),
-    index: std.StringHashMapUnmanaged(*Entry),
+    index: std.StringHashMapUnmanaged(usize),
     leaf_id: ?[]const u8 = null,
     allocator: Allocator,
 
@@ -164,15 +164,15 @@ pub const Session = struct {
     }
 
     pub fn addEntry(self: *Self, entry: Entry) !void {
+        const idx = self.entries.items.len;
         try self.entries.append(self.allocator, entry);
-        const ptr = &self.entries.items[self.entries.items.len - 1];
 
-        if (ptr.getId()) |id| {
-            try self.index.put(self.allocator, id, ptr);
+        if (self.entries.items[idx].getId()) |id| {
+            try self.index.put(self.allocator, id, idx);
         }
 
         if (self.leaf_id) |l| self.allocator.free(l);
-        if (ptr.getId()) |id| {
+        if (self.entries.items[idx].getId()) |id| {
             self.leaf_id = try self.allocator.dupe(u8, id);
         } else {
             self.leaf_id = null;
@@ -180,28 +180,29 @@ pub const Session = struct {
     }
 
     pub fn getEntry(self: *const Self, id: []const u8) ?*Entry {
-        return self.index.get(id);
+        const idx = self.index.get(id) orelse return null;
+        return @constCast(&self.entries.items[idx]);
     }
 
     pub fn getBranch(self: *const Self) ![]Entry {
         if (self.leaf_id == null) return &[_]Entry{};
 
-        var path = ArrayListUnmanaged(*Entry){};
+        var path = ArrayListUnmanaged(usize){};
         defer path.deinit(self.allocator);
 
         var current_id: ?[]const u8 = self.leaf_id;
         while (current_id) |id| {
-            if (self.index.get(id)) |entry| {
-                try path.append(self.allocator, entry);
-                current_id = entry.getParentId();
+            if (self.index.get(id)) |idx| {
+                try path.append(self.allocator, idx);
+                current_id = self.entries.items[idx].getParentId();
             } else {
                 break;
             }
         }
 
         var result = try self.allocator.alloc(Entry, path.items.len);
-        for (path.items, 0..) |entry, i| {
-            result[path.items.len - 1 - i] = entry.*;
+        for (path.items, 0..) |idx, i| {
+            result[path.items.len - 1 - i] = self.entries.items[idx];
         }
 
         return result;
@@ -294,7 +295,7 @@ pub const SessionManager = struct {
         var lines = std.mem.splitScalar(u8, content, '\n');
         var header: ?SessionHeader = null;
         var entries = ArrayListUnmanaged(Entry){};
-        var index = std.StringHashMapUnmanaged(*Entry){};
+        var index = std.StringHashMapUnmanaged(usize){};
 
         while (lines.next()) |line| {
             if (line.len == 0) continue;
@@ -305,10 +306,10 @@ pub const SessionManager = struct {
                 if (e == .session) {
                     header = e.session;
                 } else {
+                    const idx = entries.items.len;
                     try entries.append(self.allocator, e);
-                    const ptr = &entries.items[entries.items.len - 1];
-                    if (ptr.getId()) |entry_id| {
-                        try index.put(self.allocator, entry_id, ptr);
+                    if (entries.items[idx].getId()) |entry_id| {
+                        try index.put(self.allocator, entry_id, idx);
                     }
                 }
             }

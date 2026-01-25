@@ -18,7 +18,7 @@ const Database = db.Database(sqlite.Db);
 const Clock = clock_mod.Clock(clock_mod.StdClock);
 const ToolExec = tool_executor_mod.ToolExecutor(tool_executor_mod.BuiltinRegistryFactory);
 const Loading = loading_mod.LoadingState(Clock, ToolExec);
-const AgentLoop = loop_mod.AgentLoop(anthropic.AnthropicStreamingProvider, Loading, ToolExec, StdoutRenderer);
+const AgentLoop = loop_mod.AgentLoop(anthropic.AnthropicStreamingProvider, Loading, ToolExec, Database);
 const ChatHistory = chat_history_mod.ChatHistory(StdoutRenderer);
 
 pub fn runCli(alloc: std.mem.Allocator, prompt: []const u8) !void {

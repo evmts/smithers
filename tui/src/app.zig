@@ -28,16 +28,16 @@ pub fn App(
     comptime ToolExec: type,
 ) type {
     const Loading = loading_mod.LoadingState(Clk, ToolExec);
-    const KeyHandler = key_handler_mod.KeyHandler(R, Loading, Db, EvLoop);
-    const KeyContext = key_handler_mod.KeyContext(R, Loading, Db, EvLoop);
+    const ChatHistory = chat_history_mod.ChatHistory(R);
+    const AgentLoopT = loop_mod.AgentLoop(Agent, Loading, ToolExec, Db);
+    const AgentThreadT = agent_thread_mod.AgentThread(AgentLoopT, Loading, Db, ChatHistory);
+    const KeyHandler = key_handler_mod.KeyHandler(R, Loading, Db, EvLoop, AgentThreadT);
+    const KeyContext = key_handler_mod.KeyContext(R, Loading, Db, EvLoop, AgentThreadT);
     const MouseHandler = mouse_handler_mod.MouseHandler(R);
     const Input = input_mod.Input(R);
-    const ChatHistory = chat_history_mod.ChatHistory(R);
     const Header = header_mod.Header(R);
     const StatusBar = status_bar_mod.StatusBar(R);
-    const Frame = frame_mod.FrameRenderer(R, Loading, Db, EvLoop);
-    const AgentLoopT = loop_mod.AgentLoop(Agent, Loading, ToolExec, R);
-    const AgentThreadT = agent_thread_mod.AgentThread(AgentLoopT, Loading, Db, ChatHistory);
+    const Frame = frame_mod.FrameRenderer(R, Loading, Db, EvLoop, AgentThreadT);
 
     return struct {
         alloc: std.mem.Allocator,
@@ -141,9 +141,8 @@ pub fn App(
             self.agent_thread.chat_history = &self.chat_history;
             self.agent_thread.agent_loop.loading = &self.loading;
 
-            // Start agent thread
+            // Start agent thread (deinit handled by App.deinit())
             try self.agent_thread.start();
-            defer self.agent_thread.deinit();
 
             obs.global.logSimple(.info, @src(), "app.run", "starting main loop (threaded)");
             std.log.debug("app.run: starting main loop", .{});
@@ -156,8 +155,10 @@ pub fn App(
                     obs.global.logSimple(.trace, @src(), "app.loop", msg);
                 }
 
-                // Check if agent thread updated state - reload chat from DB
+                // Check if agent thread updated state - reload chat from DB (with mutex)
                 if (self.agent_thread.consumeStateChanged()) {
+                    self.agent_thread.lockForRead();
+                    defer self.agent_thread.unlockForRead();
                     self.chat_history.reload(&self.database) catch {};
                 }
 
@@ -197,6 +198,7 @@ pub fn App(
                                 .status_bar = &self.status_bar,
                                 .event_loop = &self.event_loop,
                                 .loading = &self.loading,
+                                .agent_thread = &self.agent_thread,
                                 .has_ai = self.has_ai,
                             };
 
@@ -207,8 +209,12 @@ pub fn App(
                                 .exit => return,
                                 .suspend_tui => try self.event_loop.suspendTui(),
                                 .redraw => try self.event_loop.render(),
-                                .reload_chat => try self.chat_history.reload(&self.database),
-                                .start_ai_query => |_| {
+                                .reload_chat => {
+                                    self.agent_thread.lockForRead();
+                                    defer self.agent_thread.unlockForRead();
+                                    try self.chat_history.reload(&self.database);
+                                },
+                                .start_ai_query => {
                                     // Wake agent thread to process new query
                                     self.agent_thread.wakeForWork();
                                 },

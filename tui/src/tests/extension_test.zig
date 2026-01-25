@@ -55,13 +55,23 @@ test "Event getData returns null for null data" {
 
 test "Event getData returns typed pointer" {
     var value: u32 = 42;
-    const event = extension.Event{
+    var event = extension.Event{
         .type = .context,
-        .data = @ptrCast(&value),
     };
+    event.setData(u32, &value);
     const ptr = event.getData(u32);
     try std.testing.expect(ptr != null);
     try std.testing.expectEqual(@as(u32, 42), ptr.?.*);
+}
+
+test "Event getData returns null for wrong type" {
+    var value: u32 = 42;
+    var event = extension.Event{
+        .type = .context,
+    };
+    event.setData(u32, &value);
+    const ptr = event.getData(i64);
+    try std.testing.expect(ptr == null);
 }
 
 // ============ EventResult tests ============
@@ -148,7 +158,7 @@ test "EventType size is minimal" {
 }
 
 test "Event size is reasonable" {
-    try std.testing.expect(@sizeOf(extension.Event) <= 24);
+    try std.testing.expect(@sizeOf(extension.Event) <= 32);
 }
 
 test "EventResult size is reasonable" {

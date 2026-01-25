@@ -9,13 +9,13 @@ const status_mod = @import("../ui/status.zig");
 const Layout = @import("../layout.zig").Layout;
 const key_handler_mod = @import("../keys/handler.zig");
 
-/// FrameRenderer generic over Renderer, Loading, Database, and EventLoop types
-pub fn FrameRenderer(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type) type {
+/// FrameRenderer generic over Renderer, Loading, Database, EventLoop, and AgentThread types
+pub fn FrameRenderer(comptime R: type, comptime Loading: type, comptime Db: type, comptime EvLoop: type, comptime AgentThreadT: type) type {
     const Input = input_mod.Input(R);
     const ChatHistory = chat_history_mod.ChatHistory(R);
     const Header = header_mod.Header(R);
     const StatusBar = status_mod.StatusBar(R);
-    const KeyHandler = key_handler_mod.KeyHandler(R, Loading, Db, EvLoop);
+    const KeyHandler = key_handler_mod.KeyHandler(R, Loading, Db, EvLoop, AgentThreadT);
     const Logo = logo.Logo(R);
 
     return struct {

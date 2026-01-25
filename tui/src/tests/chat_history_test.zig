@@ -71,7 +71,7 @@ const MockRenderer = struct {
     w: u16 = 80,
     h: u16 = 24,
     window: MockWindow,
-    draw_calls: std.ArrayList(DrawCall),
+    draw_calls: *std.ArrayList(DrawCall),
 
     const DrawCall = struct {
         x: u16,
@@ -84,17 +84,21 @@ const MockRenderer = struct {
     pub const Window = MockWindow;
 
     pub fn init(allocator: std.mem.Allocator, width: u16, height: u16) MockRenderer {
+        const draw_calls = allocator.create(std.ArrayList(DrawCall)) catch @panic("OOM");
+        draw_calls.* = std.ArrayList(DrawCall).init(allocator);
         return .{
             .w = width,
             .h = height,
             .window = MockWindow.init(allocator, width, height),
-            .draw_calls = std.ArrayList(DrawCall).init(allocator),
+            .draw_calls = draw_calls,
         };
     }
 
     pub fn deinit(self: *MockRenderer) void {
+        const allocator = self.draw_calls.allocator;
         self.window.deinit();
         self.draw_calls.deinit();
+        allocator.destroy(self.draw_calls);
     }
 
     pub fn width(self: MockRenderer) u16 {
@@ -114,12 +118,10 @@ const MockRenderer = struct {
     }
 
     pub fn subRegion(self: MockRenderer, _: u16, _: u16, w: u16, h: u16) MockRenderer {
-        return .{
-            .w = w,
-            .h = h,
-            .window = self.window,
-            .draw_calls = self.draw_calls,
-        };
+        var r = self;
+        r.w = w;
+        r.h = h;
+        return r;
     }
 };
 

@@ -24,7 +24,7 @@ fn deleteTempFile(name: []const u8) void {
     dir.deleteFile(name) catch {};
 }
 
-fn tempPath(name: []const u8) []const u8 {
+fn tempPath(comptime name: []const u8) []const u8 {
     // Build path at comptime for test file names
     return "/tmp/" ++ name;
 }

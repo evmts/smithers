@@ -63,6 +63,7 @@ pub fn AgentThread(
         }
 
         pub fn deinit(self: *Self) void {
+            if (self.thread == null) return; // already cleaned up (idempotent)
             self.stop();
             self.join();
         }
