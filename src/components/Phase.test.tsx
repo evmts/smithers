@@ -978,3 +978,71 @@ describe('Phase index exports', () => {
     expect(index.Phase).toBeDefined()
   })
 })
+
+// ============================================================================
+// STEPLESS PHASE COMPLETION (Issue #53)
+// ============================================================================
+
+describe('Stepless phase completion', () => {
+  let db: SmithersDB
+  let root: SmithersRoot
+  let executionId: string
+
+  beforeEach(() => {
+    db = createSmithersDB({ reset: true })
+    executionId = db.execution.start('test-stepless', 'test.tsx')
+    root = createSmithersRoot()
+  })
+
+  afterEach(() => {
+    root.dispose()
+    db.close()
+  })
+
+  test('phase with direct task (no Step wrapper) completes and advances', async () => {
+    let secondPhaseStarted = false
+
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Ralph id="stepless-test" condition={() => true} maxIterations={1}>
+          <Phase name="FirstPhase">
+            <PhaseTaskRunner name="direct-task" delay={30} />
+          </Phase>
+          <Phase name="SecondPhase" onStart={() => { secondPhaseStarted = true }}>
+            <task>Second phase content</task>
+          </Phase>
+        </Ralph>
+      </SmithersProvider>
+    )
+
+    // Wait for first phase task to complete and second phase to start
+    await new Promise(r => setTimeout(r, 200))
+
+    // Verify second phase started (phase advanced after stepless completion)
+    expect(secondPhaseStarted).toBe(true)
+  })
+
+  test('phase with multiple direct tasks completes when all finish', async () => {
+    let nextPhaseStarted = false
+
+    await root.render(
+      <SmithersProvider db={db} executionId={executionId}>
+        <Ralph id="multi-stepless-test" condition={() => true} maxIterations={1}>
+          <Phase name="MultiTaskPhase">
+            <PhaseTaskRunner name="task1" delay={20} />
+            <PhaseTaskRunner name="task2" delay={40} />
+          </Phase>
+          <Phase name="NextPhase" onStart={() => { nextPhaseStarted = true }}>
+            <task>Next phase content</task>
+          </Phase>
+        </Ralph>
+      </SmithersProvider>
+    )
+
+    // Wait for all tasks to complete and phase to advance
+    await new Promise(r => setTimeout(r, 200))
+
+    // Verify next phase started (proves stepless phase completed)
+    expect(nextPhaseStarted).toBe(true)
+  })
+})

@@ -4,6 +4,7 @@ import { useQueryValue } from '../reactive-sqlite/index.js'
 import { useEffectOnValueChange } from '../reconciler/hooks.js'
 import { createLogger } from '../debug/index.js'
 import { useRequireRalph } from './While.js'
+import { ExecutionScopeProvider } from './ExecutionScope.js'
 
 export interface StepRegistryContextValue {
   registerStep: (name: string) => number
@@ -40,18 +41,22 @@ export interface StepRegistryProviderProps {
 }
 
 export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNode {
-  useRequireRalph('StepRegistryProvider')
-  const { db, reactiveDb, executionEnabled } = useSmithers()
+  const ralphCtx = useRequireRalph('StepRegistryProvider')
+  const { db, reactiveDb, executionEnabled, executionId } = useSmithers()
   const isParallel = props.isParallel ?? false
   const registryEnabled = props.enabled ?? true
   const completionEnabled = executionEnabled && registryEnabled
   const stateKey = `stepIndex_${props.phaseId ?? 'default'}`
+  const ralphIteration = ralphCtx.iteration
 
   const stepsRef = useRef<string[]>([])
   const completedStepsRef = useRef<Set<number>>(new Set())
   const hasInitializedRef = useRef(false)
   const hasNotifiedAllCompleteRef = useRef(false)
-  const hasWarnedNoStepsRef = useRef(false)
+  
+  // Create a unique scope ID for this phase to track tasks without Step wrappers
+  const phaseScopeIdRef = useRef<string>(crypto.randomUUID())
+  const phaseScopeId = phaseScopeIdRef.current
 
   const log = useMemo(() => createLogger('StepRegistryProvider', { phaseId: props.phaseId }), [props.phaseId])
 
@@ -60,6 +65,20 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     `SELECT CAST(value AS INTEGER) as idx FROM state WHERE key = ?`,
     [stateKey],
     { skip: isParallel }
+  )
+
+  // Track tasks running directly in this phase (no Step wrapper)
+  // These are tasks with our scope_id that aren't steps themselves
+  const { data: runningSteplessTaskCount } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND iteration = ? AND scope_id = ? AND status = 'running' AND component_type NOT IN ('step', 'while_init', 'while_condition')`,
+    [executionId, ralphIteration, phaseScopeId]
+  )
+
+  const { data: totalSteplessTaskCount } = useQueryValue<number>(
+    reactiveDb,
+    `SELECT COUNT(*) as count FROM tasks WHERE execution_id = ? AND iteration = ? AND scope_id = ? AND component_type NOT IN ('step', 'while_init', 'while_condition')`,
+    [executionId, ralphIteration, phaseScopeId]
   )
 
   const currentStepIndex = isParallel ? -1 : (dbStepIndex ?? 0)
@@ -93,11 +112,8 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     if (!completionEnabled || hasNotifiedAllCompleteRef.current) return
     const totalSteps = stepsRef.current.length
 
+    // No steps registered - will be handled by stepless task tracking
     if (totalSteps === 0) {
-      if (!hasWarnedNoStepsRef.current) {
-        hasWarnedNoStepsRef.current = true
-        log.warn('Phase has no Steps - wrap children in <Step>')
-      }
       return
     }
 
@@ -107,7 +123,26 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
       hasNotifiedAllCompleteRef.current = true
       props.onAllStepsComplete?.()
     }
-  }, [completionEnabled, currentStepIndex, isParallel, log, props.onAllStepsComplete])
+  }, [completionEnabled, currentStepIndex, isParallel, props.onAllStepsComplete])
+  
+  // Handle phases with no Step wrappers - complete when all direct tasks finish
+  const maybeNotifySteplessComplete = useCallback(() => {
+    if (!completionEnabled || hasNotifiedAllCompleteRef.current) return
+    const totalSteps = stepsRef.current.length
+    
+    // Only apply to stepless phases
+    if (totalSteps > 0) return
+    
+    const running = runningSteplessTaskCount ?? 0
+    const total = totalSteplessTaskCount ?? 0
+    
+    // Complete when tasks have run and all finished
+    if (total > 0 && running === 0) {
+      hasNotifiedAllCompleteRef.current = true
+      log.info('Stepless phase complete', { total, phaseScopeId })
+      props.onAllStepsComplete?.()
+    }
+  }, [completionEnabled, runningSteplessTaskCount, totalSteplessTaskCount, log, phaseScopeId, props.onAllStepsComplete])
 
   const sequentialCompletionToken = completionEnabled && !isParallel
     ? `${currentStepIndex}/${registeredStepCount}`
@@ -125,6 +160,15 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
     if (!isParallel) return
     maybeNotifyAllComplete(completedStepsRef.current.size)
   }, [isParallel, maybeNotifyAllComplete, parallelCompletionToken])
+
+  // Track stepless task completion (when Phase has no Step children)
+  const steplessCompletionToken = completionEnabled 
+    ? `${runningSteplessTaskCount ?? -1}/${totalSteplessTaskCount ?? -1}/${registeredStepCount}`
+    : 'disabled'
+  
+  useEffectOnValueChange(steplessCompletionToken, () => {
+    maybeNotifySteplessComplete()
+  }, [maybeNotifySteplessComplete, steplessCompletionToken])
 
   const advanceStep = useCallback(() => {
     if (isParallel) return
@@ -165,7 +209,9 @@ export function StepRegistryProvider(props: StepRegistryProviderProps): ReactNod
 
   return (
     <StepRegistryContext.Provider value={value}>
-      {props.children}
+      <ExecutionScopeProvider enabled={true} scopeId={phaseScopeId}>
+        {props.children}
+      </ExecutionScopeProvider>
     </StepRegistryContext.Provider>
   )
 }
