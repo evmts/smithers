@@ -1,0 +1,47 @@
+// TUI Test Snapshot v1
+
+exports[`Day 14: Autocomplete Tab Completion › tab completes partial command "/h" to "/help" | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  Hello! I see you're testing messages. Is this related to checking the input performance in the TUI you mentioned earli│
+│                                                                                                                        │
+│  If you're still experiencing that janky/laggy typing feeling, we could look deeper into:                              │
+│  •   The terminal rendering loop                                                                                       │
+│  •   Input buffering mechanisms                                                                                        │
+│  •   Whether it's doing synchronous vs asynchronous I/O                                                                │
+│                                                                                                                        │
+│  Or if you need something else, just let me know!                                                                      │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  Hello! 👋                                                                                                              │
+│                                                                                                                        │
+│  Is the input feeling smoother now, or are you still experiencing that jankiness you mentioned earlier in the TUI?     │
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  Hello! I see you're testing the TUI input in demo mode.                                                               │
+│                                                                                                                        │
+│  Are you still experiencing the jankiness/lag when typing? This would be a good opportunity to observe:                │
+│                                                                                                                        │
+│  ·  Input responsiveness - how quickly characters appear after keystrokes                                              │
+│  ·  Consistency - whether some characters lag more than others                                                         │
+│  ·  System behavior - if the lag correlates with any background processing                                             │
+│                                                                                                                        │
+│  If the input▌                                                                                                         │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │> /help                                                                                                           │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+

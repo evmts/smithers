@@ -1,0 +1,272 @@
+// TUI Test Snapshot v1
+
+exports[`Day 43: Send to AI › submit message shows loading indicator then response | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│  You're absolutely right to be skeptical! Let me look for the actual performance bottlenecks that would cause noticeabl│
+│                                                                                                                        │
+│  Real Performance Killers:                                                                                             │
+│                                                                                                                        │
+│  1. Synchronous Rendering on Every Keystroke                                                                           │
+│  If the app is doing a full terminal redraw (clearing screen, repositioning cursor) on every character, that's expensiv│
+│                                                                                                                        │
+│  2. Blocking I/O in Event Loop                                                                                         │
+│  Terminal read/write operations that block the main thread.                                                            │
+│                                                                                                                        │
+│  3. Inefficient Terminal Control Sequences                                                                             │
+│  Sending many escape sequences instead of batching them.                                                               │
+│                                                                                                                        │
+│  4. No Input Buffering/Debouncing                                                                                      │
+│  Processing each keystroke individually instead of batching rapid input.                                               │
+│                                                                                                                        │
+│  5. Memory Allocator Pressure                                                                                          │
+│  If the allocator is frequently hitting the OS for memory, that could cause stutters.                                  │
+│                                                                                                                        │
+│  The most likely culprits for actual perceptible lag are:                                                              │
+│                                                                                                                        │
+│  ·  Terminal I/O blocking - Each keystroke triggering immediate terminal writes                                        │
+│  ·  Full screen redraws instead of incremental updates                                                                 │
+│  ·  Inefficient escape sequence usage                                                                                  │
+│                                                                                                                        │
+│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                                                                                                        │
+│  Can you tell me:                                                                                                      │
+│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
+│  •   Is it worse with longer text or consistent regardless?                                                            │
+│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 45: Queue While Busy › messages queued during loading | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│  •   Inefficient screen updates (full redraws vs incremental)                                                          │
+│  •   Terminal emulator buffering issues                                                                                │
+│  •   Event processing bottlenecks in the main loop                                                                     │
+│                                                                                                                        │
+│  The string/memory operations we discussed earlier are typically nanosecond-level fast, so the lag is almost certainly │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│  Hello!                                                                                                                │
+│                                                                                                                        │
+│  I see you're testing "trigger error" - are you trying to:                                                             │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain▌                │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different▌                                         │
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 46: Streaming Response › response streams incrementally | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│  Real Performance Killers:                                                                                             │
+│                                                                                                                        │
+│  1. Synchronous Rendering on Every Keystroke                                                                           │
+│  If the app is doing a full terminal redraw (clearing screen, repositioning cursor) on every character, that's expensiv│
+│                                                                                                                        │
+│  2. Blocking I/O in Event Loop                                                                                         │
+│  Terminal read/write operations that block the main thread.                                                            │
+│                                                                                                                        │
+│  3. Inefficient Terminal Control Sequences                                                                             │
+│  Sending many escape sequences instead of batching them.                                                               │
+│                                                                                                                        │
+│  4. No Input Buffering/Debouncing                                                                                      │
+│  Processing each keystroke individually instead of batching rapid input.                                               │
+│                                                                                                                        │
+│  5. Memory Allocator Pressure                                                                                          │
+│  If the allocator is frequently hitting the OS for memory, that could cause stutters.                                  │
+│                                                                                                                        │
+│  The most likely culprits for actual perceptible lag are:                                                              │
+│                                                                                                                        │
+│  ·  Terminal I/O blocking - Each keystroke triggering immediate terminal writes                                        │
+│  ·  Full screen redraws instead of incremental updates                                                                 │
+│  ·  Inefficient escape sequence usage                                                                                  │
+│                                                                                                                        │
+│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                                                                                                        │
+│  Can you tell me:                                                                                                      │
+│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
+│  •   Is it worse with longer text or consistent regardless?                                                            │
+│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ⠋  Smithers is thinking...                                                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 46: Streaming Response › response streams incrementally | 1 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│  3. Inefficient Terminal Control Sequences                                                                             │
+│  Sending many escape sequences instead of batching them.                                                               │
+│                                                                                                                        │
+│  4. No Input Buffering/Debouncing                                                                                      │
+│  Processing each keystroke individually instead of batching rapid input.                                               │
+│                                                                                                                        │
+│  5. Memory Allocator Pressure                                                                                          │
+│  If the allocator is frequently hitting the OS for memory, that could cause stutters.                                  │
+│                                                                                                                        │
+│  The most likely culprits for actual perceptible lag are:                                                              │
+│                                                                                                                        │
+│  ·  Terminal I/O blocking - Each keystroke triggering immediate terminal writes                                        │
+│  ·  Full screen redraws instead of incremental updates                                                                 │
+│  ·  Inefficient escape sequence usage                                                                                  │
+│                                                                                                                        │
+│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                                                                                                        │
+│  Can you tell me:                                                                                                      │
+│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
+│  •   Is it worse with longer text or consistent regardless?                                                            │
+│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ⠹  Smithers is thinking...                                                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 50: Long Response Auto-Scroll › auto-scrolls during long streaming response | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│  You're absolutely right to be skeptical! Let me look for the actual performance bottlenecks that would cause noticeabl│
+│                                                                                                                        │
+│  Real Performance Killers:                                                                                             │
+│                                                                                                                        │
+│  1. Synchronous Rendering on Every Keystroke                                                                           │
+│  If the app is doing a full terminal redraw (clearing screen, repositioning cursor) on every character, that's expensiv│
+│                                                                                                                        │
+│  2. Blocking I/O in Event Loop                                                                                         │
+│  Terminal read/write operations that block the main thread.                                                            │
+│                                                                                                                        │
+│  3. Inefficient Terminal Control Sequences                                                                             │
+│  Sending many escape sequences instead of batching them.                                                               │
+│                                                                                                                        │
+│  4. No Input Buffering/Debouncing                                                                                      │
+│  Processing each keystroke individually instead of batching rapid input.                                               │
+│                                                                                                                        │
+│  5. Memory Allocator Pressure                                                                                          │
+│  If the allocator is frequently hitting the OS for memory, that could cause stutters.                                  │
+│                                                                                                                        │
+│  The most likely culprits for actual perceptible lag are:                                                              │
+│                                                                                                                        │
+│  ·  Terminal I/O blocking - Each keystroke triggering immediate terminal writes                                        │
+│  ·  Full screen redraws instead of incremental updates                                                                 │
+│  ·  Inefficient escape sequence usage                                                                                  │
+│                                                                                                                        │
+│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                                                                                                        │
+│  Can you tell me:                                                                                                      │
+│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
+│  •   Is it worse with longer text or consistent regardless?                                                            │
+│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │> write a very long detailed response about pro                                                                   │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 50: Long Response Auto-Scroll › auto-scrolls during long streaming response | 1 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│  ·  Full screen redraws instead of incremental updates                                                                 │
+│  ·  Inefficient escape sequence usage                                                                                  │
+│                                                                                                                        │
+│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                                                                                                        │
+│  Can you tell me:                                                                                                      │
+│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
+│  •   Is it worse with longer text or consistent regardless?                                                            │
+│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ ell me a long story                                                                                                 │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                     Interrupted.                                                       │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ⠋  Smithers is thinking...                                                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+

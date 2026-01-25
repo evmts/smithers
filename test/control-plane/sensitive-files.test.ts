@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { glob, isSensitiveFile } from '../../src/control-plane/glob'
-import { grep, isSensitiveFile as grepIsSensitiveFile } from '../../src/control-plane/grep'
+import { glob } from '../../src/control-plane/glob'
+import { grep } from '../../src/control-plane/grep'
+import { isSensitiveFile } from '../../src/control-plane/security'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -124,32 +125,32 @@ describe('Sensitive file filtering', () => {
 
   describe('grep - sensitive file filtering', () => {
     it('should NOT search .env file contents', async () => {
-      const results = await grep({ pattern: 'SECRET', cwd: tempDir })
+      const result = await grep({ pattern: 'SECRET', cwd: tempDir })
       
-      const envMatches = results.filter(r => r.file.includes('.env'))
+      const envMatches = result.matches.filter(r => r.file.includes('.env'))
       expect(envMatches).toHaveLength(0)
     })
 
     it('should NOT return matches from key files', async () => {
-      const results = await grep({ pattern: 'BEGIN', cwd: tempDir })
+      const result = await grep({ pattern: 'BEGIN', cwd: tempDir })
       
-      const keyMatches = results.filter(r => 
+      const keyMatches = result.matches.filter(r => 
         r.file.endsWith('.pem') || r.file.endsWith('.key')
       )
       expect(keyMatches).toHaveLength(0)
     })
 
     it('should NOT return matches from SSH keys', async () => {
-      const results = await grep({ pattern: 'ssh', cwd: tempDir })
+      const result = await grep({ pattern: 'ssh', cwd: tempDir })
       
-      const sshMatches = results.filter(r => r.file.includes('id_rsa'))
+      const sshMatches = result.matches.filter(r => r.file.includes('id_rsa'))
       expect(sshMatches).toHaveLength(0)
     })
 
     it('should NOT return matches from credential files', async () => {
-      const results = await grep({ pattern: 'token', cwd: tempDir })
+      const result = await grep({ pattern: 'token', cwd: tempDir })
       
-      const credMatches = results.filter(r => 
+      const credMatches = result.matches.filter(r => 
         r.file.includes('.npmrc') || 
         r.file.includes('.git-credentials') ||
         r.file.includes('.netrc')
@@ -158,16 +159,16 @@ describe('Sensitive file filtering', () => {
     })
 
     it('should return matches from non-sensitive files', async () => {
-      const results = await grep({ pattern: 'hello', cwd: tempDir })
+      const result = await grep({ pattern: 'hello', cwd: tempDir })
       
-      expect(results.some(r => r.file === 'index.ts')).toBe(true)
+      expect(result.matches.some(r => r.file === 'index.ts')).toBe(true)
     })
 
-    it('grep isSensitiveFile should work the same as glob version', () => {
-      expect(grepIsSensitiveFile('.env')).toBe(true)
-      expect(grepIsSensitiveFile('.env.local')).toBe(true)
-      expect(grepIsSensitiveFile('server.pem')).toBe(true)
-      expect(grepIsSensitiveFile('index.ts')).toBe(false)
+    it('isSensitiveFile detects various sensitive file types', () => {
+      expect(isSensitiveFile('.env')).toBe(true)
+      expect(isSensitiveFile('.env.local')).toBe(true)
+      expect(isSensitiveFile('server.pem')).toBe(true)
+      expect(isSensitiveFile('index.ts')).toBe(false)
     })
   })
 })

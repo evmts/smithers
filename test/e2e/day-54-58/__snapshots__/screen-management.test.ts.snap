@@ -1,0 +1,92 @@
+// TUI Test Snapshot v1
+
+exports[`Day 54: Screen Redraw › Ctrl+L triggers clean redraw | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ こ ん に ち は                                                                                                           │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ café résumé naïve                                                                                                   │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 55: Terminal Resize › adapts layout when resized | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ test message                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
