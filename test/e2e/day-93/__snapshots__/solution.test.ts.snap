@@ -1,0 +1,47 @@
+// TUI Test Snapshot v1
+
+exports[`Day 93: Empty Submit › empty submit does nothing and does not crash | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ 🎉 celebration time 🚀                                                                                                │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ read file package.json                                                                                              │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ Hello 世 界  🌍 مرحبا                                                                                                  │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+

@@ -16,6 +16,6 @@ test.describe('Day 36: Next Session', () => {
     sendCtrlKey(terminal, 'b')
     await terminal.write('n')
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

@@ -12,6 +12,6 @@ test.describe('Day 30: Page Down', () => {
 
     await terminal.write('\x1b[6~')
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

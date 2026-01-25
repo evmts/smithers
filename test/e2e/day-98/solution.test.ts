@@ -20,7 +20,11 @@ test.describe('Day 98: Special Characters', () => {
   test('handles null byte without crash', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
+    terminal.write('test')
+    await new Promise(r => setTimeout(r, 100))
     terminal.write('\x00')
+    await new Promise(r => setTimeout(r, 100))
+    terminal.write('after')
 
     await new Promise(r => setTimeout(r, 300))
 
@@ -30,7 +34,11 @@ test.describe('Day 98: Special Characters', () => {
   test('handles escape character without crash', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
+    terminal.write('before')
+    await new Promise(r => setTimeout(r, 100))
     terminal.write('\x1b')
+    await new Promise(r => setTimeout(r, 100))
+    terminal.write('after')
 
     await new Promise(r => setTimeout(r, 300))
 
@@ -40,7 +48,14 @@ test.describe('Day 98: Special Characters', () => {
   test('handles mixed special characters', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
-    terminal.write('\x00\x1b\x07\x08')
+    terminal.write('start')
+    await new Promise(r => setTimeout(r, 50))
+    terminal.write('\x00')
+    terminal.write('\x1b')
+    terminal.write('\x07')
+    terminal.write('\x08')
+    await new Promise(r => setTimeout(r, 50))
+    terminal.write('end')
 
     await new Promise(r => setTimeout(r, 300))
 
@@ -50,7 +65,13 @@ test.describe('Day 98: Special Characters', () => {
   test('handles control characters mixed with text', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
-    terminal.write('Hello\x00World\x1bTest\x07End')
+    terminal.write('Hello')
+    terminal.write('\x00')
+    terminal.write('World')
+    terminal.write('\x1b')
+    terminal.write('Test')
+    terminal.write('\x07')
+    terminal.write('End')
 
     await new Promise(r => setTimeout(r, 300))
 
@@ -61,7 +82,8 @@ test.describe('Day 98: Special Characters', () => {
     await expect(terminal.getByText('>')).toBeVisible()
 
     terminal.write('\x07\x07\x07')
-    terminal.write('ABC\x08\x08\x08')
+    terminal.write('ABC')
+    terminal.write('\x08\x08\x08')
 
     await new Promise(r => setTimeout(r, 300))
 

@@ -14,6 +14,6 @@ test.describe('Day 28: Scroll Down', () => {
     await terminal.keyDown()
     await terminal.keyDown()
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

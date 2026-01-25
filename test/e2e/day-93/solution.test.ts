@@ -20,7 +20,7 @@ test.describe('Day 93: Empty Submit', () => {
   test('empty submit does nothing and does not crash', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
-    terminal.submit()
+    await terminal.submit()
 
     await new Promise(r => setTimeout(r, 500))
 
@@ -32,7 +32,7 @@ test.describe('Day 93: Empty Submit', () => {
     await expect(terminal.getByText('>')).toBeVisible()
 
     for (let i = 0; i < 5; i++) {
-      terminal.submit()
+      await terminal.submit()
       await new Promise(r => setTimeout(r, 100))
     }
 

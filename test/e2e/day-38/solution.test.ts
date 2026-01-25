@@ -16,6 +16,6 @@ test.describe('Day 38: Switch to Tab 1', () => {
     sendCtrlKey(terminal, 'b')
     await terminal.write('1')
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

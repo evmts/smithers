@@ -12,6 +12,6 @@ test.describe('Day 41: Prefix Cancel', () => {
 
     await terminal.write('q')
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

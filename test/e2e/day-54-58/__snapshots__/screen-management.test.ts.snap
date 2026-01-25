@@ -3,29 +3,29 @@
 exports[`Day 54: Screen Redraw › Ctrl+L triggers clean redraw | 1`] = String.raw`
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Smithers v0.1.0 │   demo-mode                                                                                          │
-│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
-│                                                                                                                        │
-│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
-│                                                                                                                        │
-│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
-│                                                                                                                        │
-│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
-│                                                                                                                        │
-│  │ こ ん に ち は                                                                                                           │
+│  │ write a very long detailed response about programming                                                               │
 │                                                                                                                        │
 │  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │  │ hello                                                                                                               │
 │                                                                                                                        │
 │  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  │ café résumé naïve                                                                                                   │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
 │                                                                                                                        │
 │  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  │ write a very long detailed response about programming                                                               │
+│  │ first message                                                                                                       │
 │                                                                                                                        │
-│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
@@ -45,40 +45,493 @@ exports[`Day 54: Screen Redraw › Ctrl+L triggers clean redraw | 1`] = String.r
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 `;
 
+exports[`Day 54: Screen Redraw › Ctrl+L triggers clean redraw | 1 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ first message                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │> some i                                                                                                          │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
 exports[`Day 55: Terminal Resize › adapts layout when resized | 1`] = String.raw`
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Smithers v0.1.0 │   demo-mode                                                                                          │
-│  ·  Test error handling in the TUI application?                                                                        │
-│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│  │ first message                                                                                                       │
 │                                                                                                                        │
-│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
 │                                                                                                                        │
-│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 55: Terminal Resize › adapts layout when resized | 1 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│            Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                      │
 │                                                                                                                        │
-│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
-│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
-│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│            Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                      │
 │                                                                                                                        │
-│  If you're still experiencing input lag, it would be helpful to know:                                                  │
-│  •   Does it happen with all text or specific phrases?                                                                 │
-│  •   Is the lag consistent or intermittent?                                                                            │
-│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│            Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                      │
 │                                                                                                                        │
-│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│  │ write a very long detailed response about programming                                                               │
 │                                                                                                                        │
-│  │ hello in demo mode                                                                                                  │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI respon                                        │
 │                                                                                                                        │
-│  ▌                                                                                                                     │
+│            Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                      │
 │                                                                                                                        │
-│  │ tell me a long story                                                                                                │
 │                                                                                                                        │
-│  ▌                                                                                                                     │
+│  ╭──────────────────────────────────────────────────────────────────────────╮                                          │
+│  │>                                                                         │                                          │
+│  │                                                                          │                                          │
+│  ╰──────────────────────────────────────────────────────────────────────────╯                                          │
 │                                                                                                                        │
-│  │ test message                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 55: Terminal Resize › adapts layout when resized | 1 2`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  │ first message                                                                                                       │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 56: Minimum Size Handling › handles very small terminal gracefully | 1`] = String.raw`
+╭────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  Note: ANTHROPIC_API_KEY not set. R                                                                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────╮                                                                                  │
+│  │>                                 │                                                                                  │
+│  │                                  │                                                                                  │
+│  ╰──────────────────────────────────╯                                                                                  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │                                                                                             │
+╰────────────────────────────────────────╯
+`;
+
+exports[`Day 56: Minimum Size Handling › handles very small terminal gracefully | 1 1`] = String.raw`
+╭──────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                                                                                                        │
+│  ╭────────────────────────╮                                                                                            │
+│  │>                       │                                                                                            │
+│  │                        │                                                                                            │
+│  ╰────────────────────────╯                                                                                            │
+│                                                                                                                        │
+│ ? help │   Esc interrupt                                                                                               │
+╰──────────────────────────────╯
+`;
+
+exports[`Day 57: Large Terminal Size › uses space efficiently in large terminal | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                                                                                                          │
+│  │ trigger error                                                                                                                                                                                       │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│  │ hello                                                                                                                                                                                               │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│  │ write a very long detailed response about programming                                                                                                                                               │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│  │ hello                                                                                                                                                                                               │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│  │ hello                                                                                                                                                                                               │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│  │ first message                                                                                                                                                                                       │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                                                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                                                                                                 │  │
+│  │                                                                                                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                                                                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 57: Large Terminal Size › uses space efficiently in large terminal | 1 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                                                                                                          │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│  │ write a very long detailed response about programming                                                                                                                                               │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│  │ hello                                                                                                                                                                                               │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│  │ hello                                                                                                                                                                                               │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│  │ first message                                                                                                                                                                                       │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│                                                                        Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                                                          │
+│                                                                                                                                                                                                        │
+│  │ こ ん に ち は                                                                                                                                                                                           │
+│                                                                                                                                                                                                        │
+│  │ trigger error                                                                                                                                                                                       │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│  │ hello                                                                                                                                                                                               │
+│                                                                                                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                                                                                                    │
+│                                                                                                                                                                                                        │
+│                                                                                                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                                                                                                 │  │
+│  │                                                                                                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                                                                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 58: Unicode Rendering › handles combining characters | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│???:?:?: 0x102b0799f in _sqlite.Db.exec__anon_23131 (???)                                                               │
+│???:?:?: 0x102b07c2b in _db.Database(sqlite.Db).addMessageEx (???)                                                      │
+│???:?:?: 0x102b07e23 in _db.Database(sqlite.Db).addMessage (???)                                                        │
+│???:?:?: 0x102b37277 in _keys.handler.KeyHandler(rendering.renderer.Renderer(rendering.renderer.VaxisBackend),loading.Lo│
+│adingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db.│
+│Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.renderer.Renderer(rendering.renderer.V│
+│axisBackend))),agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvider,loading│
+│.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),│
+│agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.LoadingStat│
+│e(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db.Database(│
+│sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend)))).handleKey│
+│ (???)                                                                                                                  │
+│???:?:?: 0x102b4909f in _app.App(db.Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.re│
+│nderer.Renderer(rendering.renderer.VaxisBackend))),rendering.renderer.Renderer(rendering.renderer.VaxisBackend),agent.an│
+│thropic_provider.AnthropicStreamingProvider,environment.Environment(environment.PosixEnv),clock.Clock(clock.StdClock),ag│
+│ent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)).run (???)                                   │
+│???:?:?: 0x102a6ffff in _main.panic_handler (???)                                                                       │
+│???:?:?: 0x102a6c123 in _builtin.panic__struct_2538.panic (???)                                                         │
+│???:?:?: 0x102ac8453 in _Thread.Mutex.lock (???)                                                                        │
+│???:?:?: 0x102b7e327 in _agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvid│
+│er,loading.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistry│
+│Factory)),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.L│
+│oadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db│
+│.Database(sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend))).│
+│stop (???)                                                                                                              │
+│???:?:?: 0x102b67d77 in _agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvid│
+│er,loading.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistry│
+│Factory)),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.L│
+│oadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db│
+│.Database(sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend))).│
+│deinit (???)                                                                                                            │
+│???:?:?: 0x102b4baeb in _app.App(db.Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.re│
+│nderer.Renderer(rendering.renderer.VaxisBackend))),rendering.renderer.Renderer(rendering.renderer.VaxisBackend),agent.an│
+│thropic_provider.AnthropicStreamingProvider,environment.Environment(environment.PosixEnv),clock.Clock(clock.StdClock),ag│
+│ent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)).deinit (???)                                │
+│???:?:?: 0x102b4b567 in _main.main (???)                                                                                │
+│???:?:?: 0x102b4bdab in _main (???)                                                                                     │
+│???:?:?: 0x1982a8273 in ??? (???)                                                                                       │
+│???:?:?: 0x88547fffffffffff in ??? (???)                                                                                │
+│                                                                                                                        │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 58: Unicode Rendering › renders unicode and emoji correctly | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ first message                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ こ ん に ち は                                                                                                           │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 58: Unicode Rendering › renders unicode and emoji correctly | 1 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  │ first message                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ こ ん に ち は                                                                                                           │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ 🎉 celebration time 🚀                                                          s.                                    │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 58: Unicode Rendering › renders unicode and emoji correctly | 1 2`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ こ ん に ち は                                                                                                           │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ 🎉 celebration time 🚀                                                                                                │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ Hello 世 界  🌍 مرحبا                                                            s.                                    │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
 │                                                                                                                        │
 │  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │

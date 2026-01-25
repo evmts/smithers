@@ -1,0 +1,542 @@
+// TUI Test Snapshot v1
+
+exports[`Days 66-72: Markdown Rendering › Day 66: Code blocks render with border and highlighting | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 66-72: Markdown Rendering › Day 67: Inline code renders with background color | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 66-72: Markdown Rendering › Day 68: Headings render bold and colored | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 66-72: Markdown Rendering › Day 69: Lists render with bullets and indentation | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 66-72: Markdown Rendering › Day 70: Links render underlined | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 66-72: Markdown Rendering › Day 71: Bold and italic text styled correctly | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 66-72: Markdown Rendering › Day 72: Blockquotes render with quoted style | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 73-78: Status Bar & Header › Day 73: Header shows logo and session info | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 73-78: Status Bar & Header › Day 75: Loading spinner visible during AI call | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 73-78: Status Bar & Header › Day 76: Model name displayed in header | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 73-78: Status Bar & Header › Day 77: Token count visible after response | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Days 73-78: Status Bar & Header › Day 78: Error state shown in status | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│                                                                                                                        │
+│  ·  Reproduce a specific error you've encountered while typing?                                                        │
+│  ·  Test error handling in the TUI application?                                                                        │
+│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                                                                                                        │
+│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain the jankiness yo│
+│                                                                                                                        │
+│  What kind of error are you trying to trigger, or what error behavior have you observed?▌                              │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│                                                                                                                        │
+│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
+│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
+│  ·  Testing error handling - seeing how the application responds to different inputs?                                  │
+│                                                                                                                        │
+│  If you're still experiencing input lag, it would be helpful to know:                                                  │
+│  •   Does it happen with all text or specific phrases?                                                                 │
+│  •   Is the lag consistent or intermittent?                                                                            │
+│  •   Are you seeing any actual errors when typing "trigger error"?                                                     │
+│                                                                                                                        │
+│  This info would help pinpoint whether it's a rendering issue, input processing bottleneck, or something else entirely.│
+│                                                                                                                        │
+│  │ hello in demo mode                                                                                                  │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│  │ tell me a long story                                                                                                │
+│                                                                                                                        │
+│  ▌                                                                                                                     │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+

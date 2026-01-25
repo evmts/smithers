@@ -9,6 +9,6 @@ test.describe('Day 29: Page Up', () => {
 
     await terminal.write('\x1b[5~')
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

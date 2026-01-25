@@ -7,20 +7,20 @@ test.use({
   columns: 120,
 })
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 test.describe('Day 43: Send to AI', () => {
   test('submit message shows loading indicator then response', async ({ terminal }) => {
-    // Wait for TUI to initialize
     await expect(terminal.getByText('>')).toBeVisible()
 
     // Submit a message
     await terminal.submit('hello')
 
     // Should show loading indicator (spinner or "thinking")
-    // The exact text depends on TUI implementation - checking for common patterns
     await expect(terminal).toMatchSnapshot('after-submit')
 
     // Wait for response (in demo mode, should be fast)
-    await terminal.waitForIdle({ timeout: 5000 })
+    await delay(2000)
 
     // Should have some response content visible
     await expect(terminal).toMatchSnapshot('after-response')
@@ -38,7 +38,7 @@ test.describe('Day 44: Cancel AI Request', () => {
     await terminal.keyEscape()
 
     // Wait a moment for the cancellation to process
-    await terminal.waitForIdle({ timeout: 2000 })
+    await delay(1000)
 
     // Should show interrupted/cancelled state or return to idle
     await expect(terminal).toMatchSnapshot('after-cancel')
@@ -52,13 +52,13 @@ test.describe('Day 45: Queue While Busy', () => {
     // Submit first message
     await terminal.submit('first message')
 
-    // Try to submit second message immediately (while potentially still loading)
+    // Try to write second message immediately (while potentially still loading)
     await terminal.write('second message')
 
     // Take snapshot to show queue behavior
     await expect(terminal).toMatchSnapshot('during-queue')
 
-    await terminal.waitForIdle({ timeout: 5000 })
+    await delay(3000)
     await expect(terminal).toMatchSnapshot('after-queue-processed')
   })
 })
@@ -71,14 +71,13 @@ test.describe('Day 46: Streaming Response', () => {
     await terminal.submit('hello')
 
     // Take snapshots during streaming to capture incremental updates
-    // Small delay to catch mid-stream
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await delay(100)
     await expect(terminal).toMatchSnapshot('mid-stream-1')
 
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await delay(500)
     await expect(terminal).toMatchSnapshot('mid-stream-2')
 
-    await terminal.waitForIdle({ timeout: 5000 })
+    await delay(2000)
     await expect(terminal).toMatchSnapshot('stream-complete')
   })
 })
@@ -90,7 +89,7 @@ test.describe('Day 47: Tool Call Display', () => {
     // Request that would trigger a tool call (file read)
     await terminal.submit('read file package.json')
 
-    await terminal.waitForIdle({ timeout: 5000 })
+    await delay(3000)
 
     // Should show tool call indicator or result
     await expect(terminal).toMatchSnapshot('after-tool-call')
@@ -102,10 +101,9 @@ test.describe('Day 48: Error Handling', () => {
     await expect(terminal.getByText('>')).toBeVisible()
 
     // In demo mode, this should still work
-    // Real error scenarios would require mock injection
     await terminal.submit('trigger error')
 
-    await terminal.waitForIdle({ timeout: 5000 })
+    await delay(2000)
 
     // Should show error message or graceful fallback
     await expect(terminal).toMatchSnapshot('error-handling')
@@ -117,10 +115,13 @@ test.describe('Day 49: Demo Mode', () => {
     // TUI should start in demo mode when no ANTHROPIC_API_KEY
     await expect(terminal.getByText('>')).toBeVisible()
 
+    // Check for demo mode indicator (use strict: false since "demo" appears multiple times)
+    await expect(terminal.getByText('demo-mode', { strict: false })).toBeVisible()
+
     // Submit message - should get demo response
     await terminal.submit('hello in demo mode')
 
-    await terminal.waitForIdle({ timeout: 5000 })
+    await delay(2000)
 
     // Should show demo response (not error about missing API key)
     await expect(terminal).toMatchSnapshot('demo-mode-response')
@@ -135,13 +136,13 @@ test.describe('Day 50: Long Response Auto-Scroll', () => {
     await terminal.submit('write a very long detailed response about programming')
 
     // Capture snapshots at intervals to verify scrolling
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    await delay(500)
     await expect(terminal).toMatchSnapshot('long-response-1')
 
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    await delay(1000)
     await expect(terminal).toMatchSnapshot('long-response-2')
 
-    await terminal.waitForIdle({ timeout: 10000 })
+    await delay(3000)
     await expect(terminal).toMatchSnapshot('long-response-final')
   })
 })

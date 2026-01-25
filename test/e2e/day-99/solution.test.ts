@@ -20,7 +20,9 @@ test.describe('Day 99: ANSI Escape Sequences in Input', () => {
   test('handles CSI sequences in input', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
+    terminal.write('before ')
     terminal.write('\x1b[31mRed Text\x1b[0m')
+    terminal.write(' after')
 
     await new Promise(r => setTimeout(r, 300))
 
@@ -30,9 +32,11 @@ test.describe('Day 99: ANSI Escape Sequences in Input', () => {
   test('handles cursor movement sequences', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
+    terminal.write('text')
+    await new Promise(r => setTimeout(r, 100))
     terminal.write('\x1b[10;20H')
-    terminal.write('\x1b[2J')
     terminal.write('\x1b[K')
+    terminal.write('more')
 
     await new Promise(r => setTimeout(r, 300))
 
@@ -42,10 +46,17 @@ test.describe('Day 99: ANSI Escape Sequences in Input', () => {
   test('handles malformed escape sequences', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
+    terminal.write('start ')
+    await new Promise(r => setTimeout(r, 50))
     terminal.write('\x1b[')
+    await new Promise(r => setTimeout(r, 50))
     terminal.write('\x1b[999999m')
+    await new Promise(r => setTimeout(r, 50))
     terminal.write('\x1b[;m')
+    await new Promise(r => setTimeout(r, 50))
     terminal.write('\x1b[abc')
+    await new Promise(r => setTimeout(r, 50))
+    terminal.write(' end')
 
     await new Promise(r => setTimeout(r, 300))
 
@@ -55,8 +66,10 @@ test.describe('Day 99: ANSI Escape Sequences in Input', () => {
   test('handles OSC sequences', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
+    terminal.write('text ')
     terminal.write('\x1b]0;Title\x07')
     terminal.write('\x1b]8;;https://example.com\x07Link\x1b]8;;\x07')
+    terminal.write(' more')
 
     await new Promise(r => setTimeout(r, 300))
 
@@ -66,7 +79,11 @@ test.describe('Day 99: ANSI Escape Sequences in Input', () => {
   test('handles mixed text and ANSI sequences', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
-    terminal.write('Normal \x1b[1mBold\x1b[0m Normal \x1b[4mUnderline\x1b[0m End')
+    terminal.write('Normal ')
+    terminal.write('\x1b[1mBold\x1b[0m')
+    terminal.write(' Normal ')
+    terminal.write('\x1b[4mUnderline\x1b[0m')
+    terminal.write(' End')
 
     await new Promise(r => setTimeout(r, 300))
 

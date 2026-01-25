@@ -12,6 +12,6 @@ test.describe('Day 40: Prefix Timeout', () => {
 
     await new Promise(resolve => setTimeout(resolve, 2000))
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

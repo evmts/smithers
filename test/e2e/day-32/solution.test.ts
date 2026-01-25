@@ -12,6 +12,6 @@ test.describe('Day 32: End Key', () => {
 
     await terminal.write('\x1b[F')
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

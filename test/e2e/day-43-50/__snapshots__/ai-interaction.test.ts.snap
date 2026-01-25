@@ -2,42 +2,132 @@
 
 exports[`Day 43: Send to AI › submit message shows loading indicator then response | 1`] = String.raw`
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
-│  You're absolutely right to be skeptical! Let me look for the actual performance bottlenecks that would cause noticeabl│
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  Real Performance Killers:                                                                                             │
+│  │ trigger error                                                                                                       │
 │                                                                                                                        │
-│  1. Synchronous Rendering on Every Keystroke                                                                           │
-│  If the app is doing a full terminal redraw (clearing screen, repositioning cursor) on every character, that's expensiv│
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  2. Blocking I/O in Event Loop                                                                                         │
-│  Terminal read/write operations that block the main thread.                                                            │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  3. Inefficient Terminal Control Sequences                                                                             │
-│  Sending many escape sequences instead of batching them.                                                               │
+│  │ hello                                                                                                               │
 │                                                                                                                        │
-│  4. No Input Buffering/Debouncing                                                                                      │
-│  Processing each keystroke individually instead of batching rapid input.                                               │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  5. Memory Allocator Pressure                                                                                          │
-│  If the allocator is frequently hitting the OS for memory, that could cause stutters.                                  │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  The most likely culprits for actual perceptible lag are:                                                              │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  ·  Terminal I/O blocking - Each keystroke triggering immediate terminal writes                                        │
-│  ·  Full screen redraws instead of incremental updates                                                                 │
-│  ·  Inefficient escape sequence usage                                                                                  │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  Can you tell me:                                                                                                      │
-│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
-│  •   Is it worse with longer text or consistent regardless?                                                            │
-│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │                                                                                                                        │
 │  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
 │  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 43: Send to AI › submit message shows loading indicator then response | 1 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 44: Cancel AI Request › escape during loading cancels request | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │> ell me a l                                                                                                      │  │
 │  │                                                                                                                  │  │
 │  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
 │                                                                                                                        │
@@ -47,38 +137,38 @@ exports[`Day 43: Send to AI › submit message shows loading indicator then resp
 
 exports[`Day 45: Queue While Busy › messages queued during loading | 1`] = String.raw`
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
-│  •   Inefficient screen updates (full redraws vs incremental)                                                          │
-│  •   Terminal emulator buffering issues                                                                                │
-│  •   Event processing bottlenecks in the main loop                                                                     │
-│                                                                                                                        │
-│  The string/memory operations we discussed earlier are typically nanosecond-level fast, so the lag is almost certainly │
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │  │ hello                                                                                                               │
 │                                                                                                                        │
-│  │ trigger error                                                                                                       │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  Hello!                                                                                                                │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  I see you're testing "trigger error" - are you trying to:                                                             │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  ·  Reproduce a specific error you've encountered while typing?                                                        │
-│  ·  Test error handling in the TUI application?                                                                        │
-│  ·  See if certain input patterns cause crashes or hangs?                                                              │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  If you're experiencing actual errors or crashes when typing in the TUI, that could definitely explain▌                │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  I see you're testing different inputs including "trigger error". Are you:                                             │
+│  │ write a very long detailed response about programming                                                               │
 │                                                                                                                        │
-│  ·  Testing input responsiveness - seeing if typing feels smoother or still janky?                                     │
-│  ·  Trying to reproduce an error - does typing "trigger error" actually cause issues in the TUI?                       │
-│  ·  Testing error handling - seeing how the application responds to different▌                                         │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  │ hello in demo mode                                                                                                  │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  ▌                                                                                                                     │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │                                                                                                                        │
 │  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
@@ -90,85 +180,130 @@ exports[`Day 45: Queue While Busy › messages queued during loading | 1`] = Str
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 `;
 
+exports[`Day 45: Queue While Busy › messages queued during loading | 1 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│???:?:?: 0x10089799f in _sqlite.Db.exec__anon_23131 (???)                                                               │
+│???:?:?: 0x100897c2b in _db.Database(sqlite.Db).addMessageEx (???)                                                      │
+│???:?:?: 0x100897e23 in _db.Database(sqlite.Db).addMessage (???)                                                        │
+│???:?:?: 0x1008c75eb in _keys.handler.KeyHandler(rendering.renderer.Renderer(rendering.renderer.VaxisBackend),loading.Lo│
+│adingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db.│
+│Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.renderer.Renderer(rendering.renderer.V│
+│axisBackend))),agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvider,loading│
+│.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),│
+│agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.LoadingStat│
+│e(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db.Database(│
+│sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend)))).handleKey│
+│ (???)                                                                                                                  │
+│???:?:?: 0x1008d909f in _app.App(db.Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.re│
+│nderer.Renderer(rendering.renderer.VaxisBackend))),rendering.renderer.Renderer(rendering.renderer.VaxisBackend),agent.an│
+│thropic_provider.AnthropicStreamingProvider,environment.Environment(environment.PosixEnv),clock.Clock(clock.StdClock),ag│
+│ent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)).run (???)                                   │
+│???:?:?: 0x1007fffff in _main.panic_handler (???)                                                                       │
+│???:?:?: 0x1007fc123 in _builtin.panic__struct_2538.panic (???)                                                         │
+│???:?:?: 0x100858453 in _Thread.Mutex.lock (???)                                                                        │
+│???:?:?: 0x10090e327 in _agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvid│
+│er,loading.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistry│
+│Factory)),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.L│
+│oadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db│
+│.Database(sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend))).│
+│stop (???)                                                                                                              │
+│???:?:?: 0x1008f7d77 in _agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvid│
+│er,loading.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistry│
+│Factory)),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.L│
+│oadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db│
+│.Database(sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend))).│
+│deinit (???)                                                                                                            │
+│???:?:?: 0x1008dbaeb in _app.App(db.Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.re│
+│nderer.Renderer(rendering.renderer.VaxisBackend))),rendering.renderer.Renderer(rendering.renderer.VaxisBackend),agent.an│
+│thropic_provider.AnthropicStreamingProvider,environment.Environment(environment.PosixEnv),clock.Clock(clock.StdClock),ag│
+│ent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)).deinit (???)                                │
+│???:?:?: 0x1008db567 in _main.main (???)                                                                                │
+│???:?:?: 0x1008dbdab in _main (???)                                                                                     │
+│???:?:?: 0x1982a8273 in ??? (???)                                                                                       │
+│???:?:?: 0x15787fffffffffff in ??? (???)                                                                                │
+│                                                                                                                        │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
 exports[`Day 46: Streaming Response › response streams incrementally | 1`] = String.raw`
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
-│  Real Performance Killers:                                                                                             │
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  │ hello                                                                                                               │
 │                                                                                                                        │
-│  1. Synchronous Rendering on Every Keystroke                                                                           │
-│  If the app is doing a full terminal redraw (clearing screen, repositioning cursor) on every character, that's expensiv│
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  2. Blocking I/O in Event Loop                                                                                         │
-│  Terminal read/write operations that block the main thread.                                                            │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  3. Inefficient Terminal Control Sequences                                                                             │
-│  Sending many escape sequences instead of batching them.                                                               │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  4. No Input Buffering/Debouncing                                                                                      │
-│  Processing each keystroke individually instead of batching rapid input.                                               │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  5. Memory Allocator Pressure                                                                                          │
-│  If the allocator is frequently hitting the OS for memory, that could cause stutters.                                  │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  The most likely culprits for actual perceptible lag are:                                                              │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  ·  Terminal I/O blocking - Each keystroke triggering immediate terminal writes                                        │
-│  ·  Full screen redraws instead of incremental updates                                                                 │
-│  ·  Inefficient escape sequence usage                                                                                  │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│  │ write a very long detailed response about programming                                                               │
 │                                                                                                                        │
-│  Can you tell me:                                                                                                      │
-│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
-│  •   Is it worse with longer text or consistent regardless?                                                            │
-│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │  │ hello                                                                                                               │
 │                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
 │                                                                                                                        │
 │  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
-│  │>                                                                                                                 │  │
+│  │> he                                                                                                              │  │
 │  │                                                                                                                  │  │
 │  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
 │                                                                                                                        │
-│ ⠋  Smithers is thinking...                                                                                             │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 `;
 
 exports[`Day 46: Streaming Response › response streams incrementally | 1 1`] = String.raw`
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
-│  3. Inefficient Terminal Control Sequences                                                                             │
-│  Sending many escape sequences instead of batching them.                                                               │
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  4. No Input Buffering/Debouncing                                                                                      │
-│  Processing each keystroke individually instead of batching rapid input.                                               │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  5. Memory Allocator Pressure                                                                                          │
-│  If the allocator is frequently hitting the OS for memory, that could cause stutters.                                  │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  The most likely culprits for actual perceptible lag are:                                                              │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  ·  Terminal I/O blocking - Each keystroke triggering immediate terminal writes                                        │
-│  ·  Full screen redraws instead of incremental updates                                                                 │
-│  ·  Inefficient escape sequence usage                                                                                  │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  Can you tell me:                                                                                                      │
-│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
-│  •   Is it worse with longer text or consistent regardless?                                                            │
-│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │  │ hello                                                                                                               │
 │                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
 │  │ hello                                                                                                               │
 │                                                                                                                        │
-│  │ trigger error                                                                                                       │
-│                                                                                                                        │
-│  ▌                                                                                                                     │
-│                                                                                                                        │
-│  ▌                                                                                                                     │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
 │                                                                                                                        │
 │  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
@@ -176,48 +311,228 @@ exports[`Day 46: Streaming Response › response streams incrementally | 1 1`] =
 │  │                                                                                                                  │  │
 │  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
 │                                                                                                                        │
-│ ⠹  Smithers is thinking...                                                                                             │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 46: Streaming Response › response streams incrementally | 1 2`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 47: Tool Call Display › tool calls are shown in UI | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│???:?:?: 0x102e9399f in _sqlite.Db.exec__anon_23131 (???)                                                               │
+│???:?:?: 0x102e93c2b in _db.Database(sqlite.Db).addMessageEx (???)                                                      │
+│???:?:?: 0x102e93e23 in _db.Database(sqlite.Db).addMessage (???)                                                        │
+│???:?:?: 0x102ec3277 in _keys.handler.KeyHandler(rendering.renderer.Renderer(rendering.renderer.VaxisBackend),loading.Lo│
+│adingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db.│
+│Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.renderer.Renderer(rendering.renderer.V│
+│axisBackend))),agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvider,loading│
+│.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),│
+│agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.LoadingStat│
+│e(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db.Database(│
+│sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend)))).handleKey│
+│ (???)                                                                                                                  │
+│???:?:?: 0x102ed509f in _app.App(db.Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.re│
+│nderer.Renderer(rendering.renderer.VaxisBackend))),rendering.renderer.Renderer(rendering.renderer.VaxisBackend),agent.an│
+│thropic_provider.AnthropicStreamingProvider,environment.Environment(environment.PosixEnv),clock.Clock(clock.StdClock),ag│
+│ent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)).run (???)                                   │
+│???:?:?: 0x102dfbfff in _main.panic_handler (???)                                                                       │
+│???:?:?: 0x102df8123 in _builtin.panic__struct_2538.panic (???)                                                         │
+│???:?:?: 0x102e54453 in _Thread.Mutex.lock (???)                                                                        │
+│???:?:?: 0x102f0a327 in _agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvid│
+│er,loading.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistry│
+│Factory)),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.L│
+│oadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db│
+│.Database(sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend))).│
+│stop (???)                                                                                                              │
+│???:?:?: 0x102ef3d77 in _agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvid│
+│er,loading.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistry│
+│Factory)),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.L│
+│oadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db│
+│.Database(sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend))).│
+│deinit (???)                                                                                                            │
+│???:?:?: 0x102ed7aeb in _app.App(db.Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.re│
+│nderer.Renderer(rendering.renderer.VaxisBackend))),rendering.renderer.Renderer(rendering.renderer.VaxisBackend),agent.an│
+│thropic_provider.AnthropicStreamingProvider,environment.Environment(environment.PosixEnv),clock.Clock(clock.StdClock),ag│
+│ent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)).deinit (???)                                │
+│???:?:?: 0x102ed7567 in _main.main (???)                                                                                │
+│???:?:?: 0x102ed7dab in _main (???)                                                                                     │
+│???:?:?: 0x1982a8273 in ??? (???)                                                                                       │
+│???:?:?: 0x4a33ffffffffffff in ??? (???)                                                                                │
+│                                                                                                                        │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 48: Error Handling › API errors display gracefully | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ first message                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ こ ん に ち は                                                                                                           │
+│                                                                                                                        │
+│  │ trigger error                                                                                                       │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 49: Demo Mode › operates in demo mode without API key | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│???:?:?: 0x10515799f in _sqlite.Db.exec__anon_23131 (???)                                                               │
+│???:?:?: 0x105157c2b in _db.Database(sqlite.Db).addMessageEx (???)                                                      │
+│???:?:?: 0x105157e23 in _db.Database(sqlite.Db).addMessage (???)                                                        │
+│???:?:?: 0x105187277 in _keys.handler.KeyHandler(rendering.renderer.Renderer(rendering.renderer.VaxisBackend),loading.Lo│
+│adingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db.│
+│Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.renderer.Renderer(rendering.renderer.V│
+│axisBackend))),agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvider,loading│
+│.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),│
+│agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.LoadingStat│
+│e(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db.Database(│
+│sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend)))).handleKey│
+│ (???)                                                                                                                  │
+│???:?:?: 0x10519909f in _app.App(db.Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.re│
+│nderer.Renderer(rendering.renderer.VaxisBackend))),rendering.renderer.Renderer(rendering.renderer.VaxisBackend),agent.an│
+│thropic_provider.AnthropicStreamingProvider,environment.Environment(environment.PosixEnv),clock.Clock(clock.StdClock),ag│
+│ent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)).run (???)                                   │
+│???:?:?: 0x1050bffff in _main.panic_handler (???)                                                                       │
+│???:?:?: 0x1050bc123 in _builtin.panic__struct_2538.panic (???)                                                         │
+│???:?:?: 0x105118453 in _Thread.Mutex.lock (???)                                                                        │
+│???:?:?: 0x1051ce327 in _agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvid│
+│er,loading.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistry│
+│Factory)),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.L│
+│oadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db│
+│.Database(sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend))).│
+│stop (???)                                                                                                              │
+│???:?:?: 0x1051b7d77 in _agent_thread.AgentThread(agent.loop.AgentLoop(agent.anthropic_provider.AnthropicStreamingProvid│
+│er,loading.LoadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistry│
+│Factory)),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory),db.Database(sqlite.Db)),loading.L│
+│oadingState(clock.Clock(clock.StdClock),agent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)),db│
+│.Database(sqlite.Db),components.chat_history.ChatHistory(rendering.renderer.Renderer(rendering.renderer.VaxisBackend))).│
+│deinit (???)                                                                                                            │
+│???:?:?: 0x10519baeb in _app.App(db.Database(sqlite.Db),event_loop.EventLoop(Vaxis,tty.PosixTty,event.Event(rendering.re│
+│nderer.Renderer(rendering.renderer.VaxisBackend))),rendering.renderer.Renderer(rendering.renderer.VaxisBackend),agent.an│
+│thropic_provider.AnthropicStreamingProvider,environment.Environment(environment.PosixEnv),clock.Clock(clock.StdClock),ag│
+│ent.tool_executor.ToolExecutor(agent.tool_executor.BuiltinRegistryFactory)).deinit (???)                                │
+│???:?:?: 0x10519b567 in _main.main (???)                                                                                │
+│???:?:?: 0x10519bdab in _main (???)                                                                                     │
+│???:?:?: 0x1982a8273 in ??? (???)                                                                                       │
+│???:?:?: 0x375effffffffffff in ??? (???)                                                                                │
+│                                                                                                                        │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 `;
 
 exports[`Day 50: Long Response Auto-Scroll › auto-scrolls during long streaming response | 1`] = String.raw`
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
-│  You're absolutely right to be skeptical! Let me look for the actual performance bottlenecks that would cause noticeabl│
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  Real Performance Killers:                                                                                             │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  1. Synchronous Rendering on Every Keystroke                                                                           │
-│  If the app is doing a full terminal redraw (clearing screen, repositioning cursor) on every character, that's expensiv│
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  2. Blocking I/O in Event Loop                                                                                         │
-│  Terminal read/write operations that block the main thread.                                                            │
+│  │ write a very long detailed response about programming                                                               │
 │                                                                                                                        │
-│  3. Inefficient Terminal Control Sequences                                                                             │
-│  Sending many escape sequences instead of batching them.                                                               │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  4. No Input Buffering/Debouncing                                                                                      │
-│  Processing each keystroke individually instead of batching rapid input.                                               │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  5. Memory Allocator Pressure                                                                                          │
-│  If the allocator is frequently hitting the OS for memory, that could cause stutters.                                  │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  The most likely culprits for actual perceptible lag are:                                                              │
+│  │ hello                                                                                                               │
 │                                                                                                                        │
-│  ·  Terminal I/O blocking - Each keystroke triggering immediate terminal writes                                        │
-│  ·  Full screen redraws instead of incremental updates                                                                 │
-│  ·  Inefficient escape sequence usage                                                                                  │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
 │                                                                                                                        │
-│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  Can you tell me:                                                                                                      │
-│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
-│  •   Is it worse with longer text or consistent regardless?                                                            │
-│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ first message                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │                                                                                                                        │
 │  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
-│  │> write a very long detailed response about pro                                                                   │  │
+│  │> write                                                                                                           │  │
 │  │                                                                                                                  │  │
 │  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
 │                                                                                                                        │
@@ -227,46 +542,91 @@ exports[`Day 50: Long Response Auto-Scroll › auto-scrolls during long streamin
 
 exports[`Day 50: Long Response Auto-Scroll › auto-scrolls during long streaming response | 1 1`] = String.raw`
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
-│  ·  Full screen redraws instead of incremental updates                                                                 │
-│  ·  Inefficient escape sequence usage                                                                                  │
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  The string operations you mentioned are fast (microseconds). But terminal I/O can easily be milliseconds, which users │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
-│  Can you tell me:                                                                                                      │
-│  •   Does the lag happen on every keystroke or just occasionally?                                                      │
-│  •   Is it worse with longer text or consistent regardless?                                                            │
-│  •   Does it feel like visual lag (characters appearing late) or input lag (keystrokes not registering)?               │
-│                                                                                                                        │
-│  │ hello                                                                                                               │
-│                                                                                                                        │
-│  │ hello                                                                                                               │
-│                                                                                                                        │
-│  │ trigger error                                                                                                       │
-│                                                                                                                        │
-│  ▌                                                                                                                     │
-│                                                                                                                        │
-│  ▌                                                                                                                     │
-│                                                                                                                        │
-│  │ ell me a long story                                                                                                 │
-│                                                                                                                        │
-│  ▌                                                                                                                     │
-│                                                                                                                        │
-│  ▌                                                                                                                     │
-│                                                                                                                        │
-│                                                     Interrupted.                                                       │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │  │ write a very long detailed response about programming                                                               │
 │                                                                                                                        │
-│  ▌                                                                                                                     │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ first message                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
 │                                                                                                                        │
 │                                                                                                                        │
 │  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
-│  │>                                                                                                                 │  │
+│  │> write a very lo                                                                                                 │  │
 │  │                                                                                                                  │  │
 │  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
 │                                                                                                                        │
-│ ⠋  Smithers is thinking...                                                                                             │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+
+exports[`Day 50: Long Response Auto-Scroll › auto-scrolls during long streaming response | 1 2`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   demo-mode                                                                                          │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ write a very long detailed response about programming                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│  │ hello                                                                                                               │
+│                                                                                                                        │
+│  I'm running in demo mode (no API key). Set ANTHROPICAPIKEY to enable AI responses.                                    │
+│                                                                                                                        │
+│  │ first message                                                                                                       │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                Note: ANTHROPIC_API_KEY not set. Running in demo mode.                                  │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │> write a very long detailed response about pr                                                                    │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│ ? help │   Esc interrupt │   Ctrl+C clear │   / commands │                                                             │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 `;
 

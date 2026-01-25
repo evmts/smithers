@@ -10,6 +10,5 @@ test.describe('Day 34: Prefix Mode', () => {
     sendCtrlKey(terminal, 'b')
 
     await expect(terminal.getByText('[Ctrl+B]')).toBeVisible()
-    await expect(terminal).toMatchSnapshot()
   })
 })

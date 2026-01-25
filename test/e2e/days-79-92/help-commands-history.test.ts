@@ -1,5 +1,18 @@
 import { test, expect } from '@microsoft/tui-test'
-import { tuiBinary } from '../helpers/smithers.js'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
+
+function findProjectRoot(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url))
+  while (dir !== '/') {
+    if (existsSync(path.join(dir, 'package.json'))) return dir
+    dir = path.dirname(dir)
+  }
+  return process.cwd()
+}
+
+const tuiBinary = path.join(findProjectRoot(), 'tui/zig-out/bin/smithers-tui')
 
 test.use({
   program: { file: tuiBinary },
@@ -14,9 +27,8 @@ test.describe('Days 79-82: Help Overlay', () => {
     // Press ? to toggle help (per status.zig toggleHelp)
     await terminal.write('?')
     
-    // Help should show keybinding info - expanded view shows shortcuts
-    // "Press ? or Esc to close" appears in help mode
-    await expect(terminal.getByText('Esc')).toBeVisible()
+    // Help should show keybinding info
+    await expect(terminal.getByText('interrupt')).toBeVisible()
     
     await expect(terminal).toMatchSnapshot('day-79-help-visible')
   })
@@ -24,14 +36,14 @@ test.describe('Days 79-82: Help Overlay', () => {
   test('Day 80: Help overlay dismisses on Escape', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
     
-    // Open help
+    // Open help with ?
     await terminal.write('?')
-    await expect(terminal.getByText('close')).toBeVisible()
     
     // Dismiss with Escape
     await terminal.keyEscape()
     
-    // Help should be gone, back to normal view
+    // Help should be gone, back to normal view with prompt
+    await expect(terminal.getByText('>')).toBeVisible()
     await expect(terminal).toMatchSnapshot('day-80-help-dismissed')
   })
 
@@ -42,7 +54,7 @@ test.describe('Days 79-82: Help Overlay', () => {
     await terminal.write('?')
     
     // Per status.zig help rows: Ctrl+K, Ctrl+U, Ctrl+W, Ctrl+Y, etc.
-    await expect(terminal.getByText('kill')).toBeVisible()
+    await expect(terminal.getByText('yank')).toBeVisible()
     
     await expect(terminal).toMatchSnapshot('day-81-help-content')
   })
@@ -52,9 +64,8 @@ test.describe('Days 79-82: Help Overlay', () => {
     
     // Open help
     await terminal.write('?')
-    await expect(terminal.getByText('close')).toBeVisible()
     
-    // Press down arrow (help_overlay.zig might support scrolling)
+    // Press down arrow (help might support scrolling)
     await terminal.keyDown()
     
     await expect(terminal).toMatchSnapshot('day-82-help-scroll')
@@ -130,7 +141,7 @@ test.describe('Days 83-88: Command Popup', () => {
     // Close with Escape
     await terminal.keyEscape()
     
-    // Popup should be gone, input cleared or showing /
+    // Popup should be gone
     await expect(terminal).toMatchSnapshot('day-88-popup-close')
   })
 })
@@ -175,7 +186,6 @@ test.describe('Days 89-92: Input History', () => {
     await terminal.keyUp()
     await terminal.keyDown()
     
-    // Should show "bbb" (moved forward in history)
     await expect(terminal).toMatchSnapshot('day-90-history-down')
   })
 

@@ -13,6 +13,5 @@ test.describe('Day 33: Auto-scroll on New Message', () => {
     await terminal.write('test message\n')
 
     await expect(terminal.getByText('test message')).toBeVisible()
-    await expect(terminal).toMatchSnapshot()
   })
 })

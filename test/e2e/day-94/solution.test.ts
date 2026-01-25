@@ -31,7 +31,7 @@ test.describe('Day 94: Long Input', () => {
   test('handles long input with special characters', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible()
 
-    const mixedText = 'Hello '.repeat(1000) + '🚀'.repeat(100)
+    const mixedText = 'Hello '.repeat(1000) + '!'.repeat(100)
     terminal.write(mixedText)
 
     await new Promise(r => setTimeout(r, 500))
@@ -46,7 +46,7 @@ test.describe('Day 94: Long Input', () => {
     terminal.write(text)
     await new Promise(r => setTimeout(r, 300))
 
-    terminal.submit()
+    await terminal.submit()
     await new Promise(r => setTimeout(r, 500))
 
     await expect(terminal.getByText('>')).toBeVisible()

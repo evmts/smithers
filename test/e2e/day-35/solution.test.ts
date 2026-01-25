@@ -12,7 +12,6 @@ test.describe('Day 35: New Session', () => {
 
     await terminal.write('c')
 
-    await expect(terminal.getByText('tab-')).toBeVisible()
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })

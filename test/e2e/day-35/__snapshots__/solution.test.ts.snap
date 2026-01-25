@@ -1,0 +1,47 @@
+// TUI Test Snapshot v1
+
+exports[`Day 35: New Session › Ctrl+B, c creates new session tab | 1`] = String.raw`
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Smithers v0.1.0 │   claude-sonnet-4                                                                                    │
+│  �8U-08/                                                                                                               │
+│  �8U-09/                                                                                                               │
+│  �8U-10/                                                                                                               │
+│  �8U-11/                                                                                                               │
+│  �8U-12/                                                                                                               │
+│  �8U-13/                                                                                                               │
+│  �8U-14/                                                                                                               │
+│  �8U-15/                                                                                                               │
+│  �8U-16/                                                                                                               │
+│  �8U-17/                                                                                                               │
+│  �8U-18/                                                                                                               │
+│  �8U-19/                                                                                                               │
+│  �8U-20/                                                                                                               │
+│  �8U-21/                                                                                                               │
+│  �8U-22/                                                                                                               │
+│  �8U-23/                                                                                                               │
+│  �8U-24/                                                                                                               │
+│  �8U-25/                                                                                                               │
+│  �8U-26/                                                                                                               │
+│  �8U-27/                                                                                                               │
+│  �8U-35/                                                                                                               │
+│  �8Upers/                                                                                                              │
+│  �8U-test.config.ts                                                                                                    │
+│  �8U-traces/                                                                                                           │
+│                                                                                                                        │
+│  This looks like an Advent of Code project with solutions organized by day. I can see there are solution files for days│
+│                                                                                                                        │
+│  What would you like me to help you with? I can:                                                                       │
+│                                                                                                                        │
+│  ·  Examine a specific day's solution - Look at the code and understand how it works                                   │
+│  ·  Run tests - Execute the test suite for▌                                                                            │
+│                                                                                                                        │
+│                                                                                                                        │
+│  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮  │
+│  │>                                                                                                                 │  │
+│  │                                                                                                                  │  │
+│  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯  │
+│                                                                                                                        │
+│  [Ctrl+B] c:new n:next p:prev 0-9:switch                                                                               │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+`;
+

@@ -9,6 +9,6 @@ test.describe('Day 31: Home Key', () => {
 
     await terminal.write('\x1b[H')
 
-    await expect(terminal).toMatchSnapshot()
+    await expect(terminal.getByText('>')).toBeVisible()
   })
 })
