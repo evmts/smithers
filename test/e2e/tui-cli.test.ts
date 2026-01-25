@@ -80,6 +80,11 @@ function extractAssistantResponse(output: string): string {
   return match?.[1]?.trim() ?? ''
 }
 
+function getCombinedOutput(result: CliResult): string {
+  // The Zig CLI uses std.debug.print which goes to stderr
+  return result.stdout + result.stderr
+}
+
 describe('TUI CLI E2E Tests', () => {
   beforeAll(() => {
     // Verify binary exists
@@ -96,32 +101,35 @@ describe('TUI CLI E2E Tests', () => {
 
   test('simple math question returns correct answer', async () => {
     const result = await runCliMode('What is 2+2? Respond with just the number, nothing else.')
+    const output = getCombinedOutput(result)
     
     expect(result.timeout).toBe(false)
-    expect(result.stdout).toContain('ASSISTANT:')
+    expect(output).toContain('ASSISTANT:')
     
-    const response = extractAssistantResponse(result.stdout)
+    const response = extractAssistantResponse(output)
     expect(response).toMatch(/4/)
   }, 30000)
 
   test('basic greeting works', async () => {
     const result = await runCliMode('Say "hello world" and nothing else')
+    const output = getCombinedOutput(result)
     
     expect(result.timeout).toBe(false)
-    expect(result.stdout).toContain('ASSISTANT:')
+    expect(output).toContain('ASSISTANT:')
     
-    const response = extractAssistantResponse(result.stdout).toLowerCase()
+    const response = extractAssistantResponse(output).toLowerCase()
     expect(response).toContain('hello')
   }, 30000)
 
   test('handles long prompt', async () => {
     const longPrompt = 'Respond with just the word "OK". ' + 'This is padding. '.repeat(50)
     const result = await runCliMode(longPrompt)
+    const output = getCombinedOutput(result)
     
     expect(result.timeout).toBe(false)
-    expect(result.stdout).toContain('ASSISTANT:')
+    expect(output).toContain('ASSISTANT:')
     
-    const response = extractAssistantResponse(result.stdout)
+    const response = extractAssistantResponse(output)
     expect(response.length).toBeGreaterThan(0)
   }, 45000)
 })
@@ -129,26 +137,28 @@ describe('TUI CLI E2E Tests', () => {
 describe('TUI CLI Tool Usage Tests', () => {
   test('bash tool executes simple command', async () => {
     const result = await runCliMode('Run the bash command "echo hello_from_test" and show me the output')
+    const output = getCombinedOutput(result)
     
     expect(result.timeout).toBe(false)
     
     // Either the tool was called and output shown, or assistant reported result
-    const response = extractAssistantResponse(result.stdout)
+    const response = extractAssistantResponse(output)
     expect(response.length).toBeGreaterThan(0)
     
     // Should see evidence of bash tool or the output
-    const hasToolEvidence = result.stdout.includes('bash') || 
-                           result.stdout.includes('hello_from_test') ||
+    const hasToolEvidence = output.includes('bash') || 
+                           output.includes('hello_from_test') ||
                            response.includes('hello_from_test')
     expect(hasToolEvidence).toBe(true)
   }, 60000)
 
   test('read_file tool reads existing file', async () => {
     const result = await runCliMode(`Read the file at ${path.join(projectRoot, 'package.json')} and tell me the package name`)
+    const output = getCombinedOutput(result)
     
     expect(result.timeout).toBe(false)
     
-    const response = extractAssistantResponse(result.stdout)
+    const response = extractAssistantResponse(output)
     expect(response.length).toBeGreaterThan(0)
     
     // Should mention the package name
@@ -157,10 +167,11 @@ describe('TUI CLI Tool Usage Tests', () => {
 
   test('list_dir tool lists directory contents', async () => {
     const result = await runCliMode(`List the files in ${projectRoot}/tui/src and tell me how many .zig files there are`)
+    const output = getCombinedOutput(result)
     
     expect(result.timeout).toBe(false)
     
-    const response = extractAssistantResponse(result.stdout)
+    const response = extractAssistantResponse(output)
     expect(response.length).toBeGreaterThan(0)
     
     // Should have found some zig files
