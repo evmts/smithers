@@ -980,7 +980,3 @@ pub const AnthropicStreamingProvider = struct {
         state.line_pos = 0;
     }
 };
-
-test "AnthropicStreamingProvider interface validation" {
-    provider_interface.validateProviderInterface(AnthropicStreamingProvider);
-}

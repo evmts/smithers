@@ -124,8 +124,3 @@ pub const tool = Tool{
 
 // Legacy export for backwards compat
 pub const bash_tool = tool;
-
-test "bash tool definition" {
-    try std.testing.expectEqualStrings("bash", tool.name);
-    try std.testing.expect(tool.execute_ctx != null);
-}

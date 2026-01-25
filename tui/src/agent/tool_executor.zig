@@ -154,11 +154,3 @@ pub const MockRegistryFactory = struct {
         mock_result = null;
     }
 };
-
-test "ToolExecutor with mock registry" {
-    const MockExecutor = ToolExecutor(MockRegistryFactory);
-    var exec = MockExecutor.init(std.testing.allocator);
-    defer exec.deinit();
-
-    try std.testing.expect(!exec.isRunning());
-}

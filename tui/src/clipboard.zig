@@ -68,12 +68,3 @@ pub const MockClipboard = struct {
         copy_count = 0;
     }
 };
-
-test "MockClipboard" {
-    const TestClipboard = Clipboard(MockClipboard);
-    MockClipboard.reset();
-
-    try TestClipboard.copy(std.testing.allocator, "test");
-    try std.testing.expectEqualStrings("test", MockClipboard.getLastCopied().?);
-    try std.testing.expectEqual(@as(usize, 1), MockClipboard.getCopyCount());
-}

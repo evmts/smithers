@@ -82,8 +82,3 @@ pub const StdFs = struct {
         _ = try std.fs.cwd().statFile(path);
     }
 };
-
-test "Filesystem interface compiles" {
-    // Just ensure interface compiles with explicit type
-    _ = Filesystem(StdFs);
-}

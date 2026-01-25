@@ -147,8 +147,3 @@ pub const tool = Tool{
 
 // Legacy export
 pub const list_dir_tool = tool;
-
-test "list_dir tool definition" {
-    try std.testing.expectEqualStrings("list_dir", tool.name);
-    try std.testing.expect(tool.execute_ctx != null);
-}

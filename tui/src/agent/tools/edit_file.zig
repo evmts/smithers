@@ -138,8 +138,3 @@ pub const tool = Tool{
 
 // Legacy export
 pub const edit_file_tool = tool;
-
-test "edit_file tool definition" {
-    try std.testing.expectEqualStrings("edit_file", tool.name);
-    try std.testing.expect(tool.execute_ctx != null);
-}

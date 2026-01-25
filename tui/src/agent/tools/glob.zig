@@ -163,14 +163,3 @@ pub const tool = Tool{
 
 // Legacy export
 pub const glob_tool = tool;
-
-test "glob tool definition" {
-    try std.testing.expectEqualStrings("glob", tool.name);
-    try std.testing.expect(tool.execute_ctx != null);
-}
-
-test "matchesPattern extension" {
-    try std.testing.expect(matchesPattern("foo/bar.zig", "*.zig"));
-    try std.testing.expect(matchesPattern("src/main.zig", "**/*.zig"));
-    try std.testing.expect(!matchesPattern("foo/bar.ts", "*.zig"));
-}

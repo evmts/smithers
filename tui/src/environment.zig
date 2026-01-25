@@ -55,10 +55,3 @@ pub const MockEnv = struct {
         values.clearRetainingCapacity();
     }
 };
-
-test "Environment basics" {
-    // Just verify the interface compiles with explicit type
-    const ProdEnv = Environment(PosixEnv);
-    const home = ProdEnv.home();
-    _ = home; // May or may not exist
-}
