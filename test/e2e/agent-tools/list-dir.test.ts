@@ -24,7 +24,7 @@ test.describe('Agent Tool: list_dir', () => {
   test('lists current directory contents', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('list the files in the current directory')
+    terminal.submit('use the list_dir tool to list the files in the current directory')
 
     // Should see list_dir tool being called
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
@@ -36,7 +36,7 @@ test.describe('Agent Tool: list_dir', () => {
   test('lists specific directory', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('list the contents of the tui/src directory')
+    terminal.submit('use the list_dir tool to list the contents of the tui/src directory')
 
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see zig files
@@ -46,7 +46,7 @@ test.describe('Agent Tool: list_dir', () => {
   test('lists nested directory', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('what files are in tui/src/agent/tools?')
+    terminal.submit('use the list_dir tool to show what files are in tui/src/agent/tools')
 
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see tool files
@@ -56,7 +56,7 @@ test.describe('Agent Tool: list_dir', () => {
   test('handles nonexistent directory', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('list the directory /nonexistent-dir-xyz-123')
+    terminal.submit('use the list_dir tool on /nonexistent-dir-xyz-123')
 
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see error
@@ -66,7 +66,7 @@ test.describe('Agent Tool: list_dir', () => {
   test('shows directories with trailing slash', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('list the tui directory and show me which entries are folders')
+    terminal.submit('use the list_dir tool on the tui directory')
 
     await expect(terminal.getByText('list_dir', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should see src directory

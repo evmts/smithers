@@ -159,7 +159,9 @@ pub fn App(
                 if (self.agent_thread.consumeStateChanged()) {
                     self.agent_thread.lockForRead();
                     defer self.agent_thread.unlockForRead();
-                    self.chat_history.reload(&self.database) catch {};
+                    self.chat_history.reload(&self.database) catch |err| {
+                        obs.global.logSimple(.err, @src(), "chat_history.reload", @errorName(err));
+                    };
                 }
 
                 // Main thread: poll for events (non-blocking when loading to stay responsive)

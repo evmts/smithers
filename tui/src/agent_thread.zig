@@ -138,7 +138,9 @@ pub fn AgentThread(
                             defer self.mutex.unlock();
 
                             // Mark as sent in DB
-                            self.database.markMessageSent(msg.id) catch {};
+                            self.database.markMessageSent(msg.id) catch |err| {
+                                obs.global.logSimple(.err, @src(), "db.markMessageSent", @errorName(err));
+                            };
 
                             // Set as pending query for agent loop
                             self.loading.pending_query = self.alloc.dupe(u8, msg.content) catch null;
@@ -193,10 +195,14 @@ pub fn AgentThread(
 
                 // For now, just mark interrupted runs as error and notify user
                 // Full recovery would parse the JSON and resume tool execution
-                self.database.failAgentRun(run.id) catch {};
+                self.database.failAgentRun(run.id) catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.failAgentRun", @errorName(err));
+                };
 
                 const msg = "Previous agent run was interrupted. Starting fresh.";
-                _ = self.database.addMessage(.system, msg) catch {};
+                _ = self.database.addMessage(.system, msg) catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.addMessage.recovery", @errorName(err));
+                };
                 self.notifyStateChanged();
             }
         }

@@ -5,7 +5,7 @@
 
 **Ralph the plan, not the agent.**
 
-**Status: Alpha - not ready for production use.**
+
 
 Your orchestrating agent writes React code that spawns and controls other agents. [Let your agents write agents](https://smithers.sh/harness-integration#claude-code-plugin).
 

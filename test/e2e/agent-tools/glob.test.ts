@@ -24,7 +24,7 @@ test.describe('Agent Tool: glob', () => {
   test('finds files with simple pattern', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('find all *.json files in the current directory')
+    terminal.submit('use the glob tool to find all *.json files in the current directory')
 
     // Should see glob tool being called
     await expect(terminal.getByText('glob', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
@@ -36,7 +36,7 @@ test.describe('Agent Tool: glob', () => {
   test('finds files with recursive pattern', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('find all *.zig files in tui/src using glob pattern **/*.zig')
+    terminal.submit('use the glob tool with pattern **/*.zig in tui/src')
 
     await expect(terminal.getByText('glob', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should find zig files
@@ -46,7 +46,7 @@ test.describe('Agent Tool: glob', () => {
   test('finds test files pattern', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('glob for all *_test.zig files in tui/')
+    terminal.submit('use the glob tool with pattern *_test.zig in tui/')
 
     await expect(terminal.getByText('glob', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should find test files
@@ -56,7 +56,7 @@ test.describe('Agent Tool: glob', () => {
   test('handles pattern with no matches', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('glob for *.xyz123nonexistent files')
+    terminal.submit('use the glob tool with pattern *.xyz123nonexistent')
 
     await expect(terminal.getByText('glob', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should indicate no matches
@@ -66,7 +66,7 @@ test.describe('Agent Tool: glob', () => {
   test('finds markdown files', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('find all markdown files (*.md) in the project root')
+    terminal.submit('use the glob tool with pattern *.md in the current directory')
 
     await expect(terminal.getByText('glob', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should find README.md

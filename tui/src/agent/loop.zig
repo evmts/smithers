@@ -51,10 +51,14 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
                 // Mark agent run as failed in SQLite (agent thread owns all DB writes)
                 if (self.loading.agent_run_id) |rid| {
-                    database.failAgentRun(rid) catch {};
+                    database.failAgentRun(rid) catch |err| {
+                        obs.global.logSimple(.err, @src(), "db.failAgentRun", @errorName(err));
+                    };
                 }
                 // Add interrupted message to chat
-                _ = database.addMessage(.system, "Interrupted.") catch {};
+                _ = database.addMessage(.system, "Interrupted.") catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.addMessage", @errorName(err));
+                };
 
                 // Cleanup streaming (kills curl process)
                 if (self.streaming) |*stream| {
@@ -258,10 +262,14 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                         const with_cursor = std.fmt.allocPrint(scratch, "{s}▌", .{text}) catch text;
                         break :blk with_cursor;
                     };
-                    database.updateMessageContent(msg_id, display_text) catch {};
+                    database.updateMessageContent(msg_id, display_text) catch |err| {
+                        obs.global.logSimple(.err, @src(), "db.updateMessageContent", @errorName(err));
+                    };
                     state_changed = true;
                 } else if (is_done and !ProviderApi.hasToolCalls(stream)) {
-                    database.updateMessageContent(msg_id, "No response from AI.") catch {};
+                    database.updateMessageContent(msg_id, "No response from AI.") catch |err| {
+                        obs.global.logSimple(.err, @src(), "db.updateMessageContent.empty", @errorName(err));
+                    };
                     state_changed = true;
                 }
             }
@@ -313,11 +321,17 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     const run_id = database.createAgentRun() catch null;
                     self.loading.agent_run_id = run_id;
                     if (run_id) |rid| {
-                        database.updateAgentRunStatus(rid, .tools) catch {};
-                        database.updateAgentRunAssistantContent(rid, self.loading.assistant_content_json) catch {};
+                        database.updateAgentRunStatus(rid, .tools) catch |err| {
+                            obs.global.logSimple(.err, @src(), "db.updateAgentRunStatus", @errorName(err));
+                        };
+                        database.updateAgentRunAssistantContent(rid, self.loading.assistant_content_json) catch |err| {
+                            obs.global.logSimple(.err, @src(), "db.updateAgentRunAssistantContent", @errorName(err));
+                        };
                         // Serialize pending_tools to JSON for persistence
                         const tools_json_str = self.serializePendingTools(scratch) catch null;
-                        database.updateAgentRunTools(rid, tools_json_str, 0) catch {};
+                        database.updateAgentRunTools(rid, tools_json_str, 0) catch |err| {
+                            obs.global.logSimple(.err, @src(), "db.updateAgentRunTools", @errorName(err));
+                        };
                     }
 
                     // Clean up stream but keep loading state active
@@ -330,7 +344,9 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
                     // Complete any active run
                     if (self.loading.agent_run_id) |rid| {
-                        database.completeAgentRun(rid) catch {};
+                        database.completeAgentRun(rid) catch |err| {
+                            obs.global.logSimple(.err, @src(), "db.completeAgentRun", @errorName(err));
+                        };
                         self.loading.agent_run_id = null;
                     }
                     self.loading.cleanup(self.alloc);
@@ -347,11 +363,15 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
             // Show tool execution in chat
             const tool_msg = std.fmt.allocPrint(scratch, "🔧 Executing: {s}", .{tc.name}) catch "";
-            _ = database.addMessage(.system, tool_msg) catch {};
+            _ = database.addMessage(.system, tool_msg) catch |err| {
+                obs.global.logSimple(.err, @src(), "db.addMessage.tool", @errorName(err));
+            };
 
             // Start async execution
             if (self.loading.tool_executor) |*exec| {
-                exec.execute(tc.id, tc.name, tc.input_json) catch {};
+                exec.execute(tc.id, tc.name, tc.input_json) catch |err| {
+                    obs.global.logSimple(.err, @src(), "tool_executor.execute", @errorName(err));
+                };
             }
         }
 
@@ -396,7 +416,9 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                         }
                     }
 
-                    _ = database.addToolResult(tc.name, tool_input_str, result_msg) catch {};
+                    _ = database.addToolResult(tc.name, tool_input_str, result_msg) catch |err| {
+                        obs.global.logSimple(.err, @src(), "db.addToolResult", @errorName(err));
+                    };
                 }
 
                 // Store result for continuation (self.alloc - outlives tick)
@@ -412,9 +434,13 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
                 // Persist progress to SQLite for crash recovery
                 if (self.loading.agent_run_id) |rid| {
-                    database.updateAgentRunTools(rid, null, @intCast(self.loading.current_tool_idx)) catch {};
+                    database.updateAgentRunTools(rid, null, @intCast(self.loading.current_tool_idx)) catch |err| {
+                        obs.global.logSimple(.err, @src(), "db.updateAgentRunTools", @errorName(err));
+                    };
                     const results_json = self.serializeToolResults(scratch) catch null;
-                    database.updateAgentRunResults(rid, results_json) catch {};
+                    database.updateAgentRunResults(rid, results_json) catch |err| {
+                        obs.global.logSimple(.err, @src(), "db.updateAgentRunResults", @errorName(err));
+                    };
                 }
 
                 // Check if all tools done
@@ -483,7 +509,9 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
             // Mark agent run complete in SQLite (tools finished, now continuing)
             if (self.loading.agent_run_id) |rid| {
-                database.completeAgentRun(rid) catch {};
+                database.completeAgentRun(rid) catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.completeAgentRun", @errorName(err));
+                };
                 self.loading.agent_run_id = null;
             }
 

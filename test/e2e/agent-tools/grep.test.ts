@@ -24,7 +24,7 @@ test.describe('Agent Tool: grep', () => {
   test('searches for pattern in codebase', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('search for "pub fn init" in tui/src/app.zig')
+    terminal.submit('use the grep tool to search for "pub fn init" in tui/src/app.zig')
 
     // Should see grep tool being called
     await expect(terminal.getByText('grep', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
@@ -56,7 +56,7 @@ test.describe('Agent Tool: grep', () => {
   test('handles no matches gracefully', async ({ terminal }) => {
     await expect(terminal.getByText('>')).toBeVisible({ timeout: 10000 }); //.toBeVisible({ timeout: 10000 })
 
-    terminal.submit('search for "ZZZZNONEXISTENT_PATTERN_XYZ123" in tui/src/')
+    terminal.submit('use the grep tool to search for "ZZZZNONEXISTENT_PATTERN_XYZ123" in tui/src/')
 
     await expect(terminal.getByText('grep', { full: true, strict: false })).toBeVisible({ timeout: 30000 })
     // Should indicate no matches
