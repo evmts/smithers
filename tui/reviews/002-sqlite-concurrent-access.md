@@ -14,13 +14,14 @@ Main thread accesses SQLite database without mutex:
 
 Agent thread uses `self.mutex` around DB operations, but main thread bypasses it entirely.
 
-SQLite objects are not safe for concurrent use without serialization.
+Even if SQLite is compiled in "serialized" mode, **sharing a single connection object across threads without a unified locking discipline is a common failure mode**.
 
 ## Impact
 
-- Random SQLite errors
+- Random SQLite errors ("database is locked")
 - Database corruption
-- Hard-to-debug crashes
+- Intermittent crashes
+- Hard-to-debug heisenbugs
 
 ## Current Code
 
@@ -37,25 +38,34 @@ self.chat_history.reload(&self.database) catch {};  // RACE
 _ = try ctx.database.addMessage(.user, command);  // RACE
 ```
 
-## Fix
+## Fix Options
 
-Option A: Add mutex to KeyContext, wrap all DB ops:
+**Option A (minimal): Serialize all DB access with same mutex**
 ```zig
-pub fn KeyContext(...) type {
-    return struct {
-        // existing fields...
-        mutex: *std.Thread.Mutex,
-    };
+// In App.run()
+if (self.agent_thread.consumeStateChanged()) {
+    self.agent_thread.lockForRead();
+    defer self.agent_thread.unlockForRead();
+    self.chat_history.reload(&self.database) catch {};
 }
+```
+And similarly around any key handler paths that mutate DB.
 
-// In handleKey, wrap DB access:
-ctx.mutex.lock();
-defer ctx.mutex.unlock();
-_ = try ctx.database.addMessage(.user, command);
+**Option B (preferred): Separate DB connections per thread**
+- Main thread: `Db.init(...)` -> connection A
+- Agent thread: its own `Db.init(...)` -> connection B
+
+Enable WAL mode and let SQLite coordinate. This eliminates cross-thread connection sharing and reduces lock contention.
+
+```zig
+// In App
+database_ui: Db,
+database_agent: Db,
 ```
 
-Option B: Queue all DB writes to agent thread (message passing).
+**Option C: Agent thread owns DB, queue operations**
+Main thread sends requests to agent thread queue. Agent thread does all DB I/O.
 
 ## Effort
 
-M (1-2 hours) for Option A
+M (1-2 hours) for Option A, L (half day) for Option B
