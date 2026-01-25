@@ -28,12 +28,19 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         alloc: std.mem.Allocator,
         loading: *Loading,
         streaming: ?ProviderApi.StreamingState = null,
+        /// Scratch arena for per-tick allocations (reset each tick)
+        scratch: std.heap.ArenaAllocator,
 
         pub fn init(alloc: std.mem.Allocator, loading: *Loading) Self {
             return .{
                 .alloc = alloc,
                 .loading = loading,
+                .scratch = std.heap.ArenaAllocator.init(alloc),
             };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.scratch.deinit();
         }
 
         /// Tick returns true if state changed (main thread should reload chat_history)
@@ -98,6 +105,9 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 state_changed = state_changed or tool_changed;
             }
 
+            // Reset scratch arena at end of tick - all per-tick allocs freed at once
+            _ = self.scratch.reset(.retain_capacity);
+
             return state_changed;
         }
 
@@ -113,35 +123,34 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
             obs.global.logSimple(.debug, @src(), "agent.query_stream", "building messages json");
 
-            // Build messages JSON from DB
-            const messages = database.getMessages(self.alloc) catch @constCast(&[_]db.Message{});
-            defer if (messages.len > 0) Database.freeMessages(self.alloc, messages);
+            // Use scratch arena for all temporary allocations in this function
+            const scratch = self.scratch.allocator();
+
+            // Build messages JSON from DB (use scratch - freed at tick end)
+            const messages = database.getMessages(scratch) catch @constCast(&[_]db.Message{});
+            // No defer free needed - scratch arena handles it
 
             var msg_buf = std.ArrayListUnmanaged(u8){};
-            defer msg_buf.deinit(self.alloc);
-            try msg_buf.append(self.alloc, '[');
+            try msg_buf.append(scratch, '[');
             var first = true;
             for (messages) |msg| {
                 if (msg.role == .system or msg.ephemeral) continue;
-                if (!first) try msg_buf.append(self.alloc, ',');
+                if (!first) try msg_buf.append(scratch, ',');
                 first = false;
                 const role_str: []const u8 = if (msg.role == .user) "user" else "assistant";
-                const escaped_content = std.json.Stringify.valueAlloc(self.alloc, msg.content, .{}) catch continue;
-                defer self.alloc.free(escaped_content);
-                const msg_json = std.fmt.allocPrint(self.alloc, "{{\"role\":\"{s}\",\"content\":{s}}}", .{ role_str, escaped_content }) catch continue;
-                defer self.alloc.free(msg_json);
-                try msg_buf.appendSlice(self.alloc, msg_json);
+                const escaped_content = std.json.Stringify.valueAlloc(scratch, msg.content, .{}) catch continue;
+                const msg_json = std.fmt.allocPrint(scratch, "{{\"role\":\"{s}\",\"content\":{s}}}", .{ role_str, escaped_content }) catch continue;
+                try msg_buf.appendSlice(scratch, msg_json);
             }
-            try msg_buf.append(self.alloc, ']');
+            try msg_buf.append(scratch, ']');
 
             var len_buf: [64]u8 = undefined;
             const len_msg = std.fmt.bufPrint(&len_buf, "request body len={d}", .{msg_buf.items.len}) catch "?";
             obs.global.logSimple(.debug, @src(), "agent.query_stream", len_msg);
 
-            const request_body = try std.fmt.allocPrint(self.alloc,
+            const request_body = try std.fmt.allocPrint(scratch,
                 \\{{"model":"claude-sonnet-4-20250514","max_tokens":4096,"stream":true,"messages":{s},"tools":{s}}}
             , .{ msg_buf.items, tools_json });
-            defer self.alloc.free(request_body);
 
             // Create placeholder message for streaming response
             const msg_id = try database.addMessage(.assistant, "▌");
@@ -149,6 +158,7 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             obs.global.logSimple(.debug, @src(), "agent.query_stream", "calling ProviderApi.startStream");
 
             // Initialize streaming state using provider interface
+            // Note: streaming state uses self.alloc since it outlives this tick
             self.streaming = ProviderApi.startStream(self.alloc, api_key, request_body) catch |err| {
                 var err_buf: [128]u8 = undefined;
                 const err_msg = std.fmt.bufPrint(&err_buf, "startStream error: {s}", .{@errorName(err)}) catch "error";
@@ -175,10 +185,11 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 return false;
             };
 
-            const request_body = try std.fmt.allocPrint(self.alloc,
+            // Use scratch for temporary request body
+            const scratch = self.scratch.allocator();
+            const request_body = try std.fmt.allocPrint(scratch,
                 \\{{"model":"claude-sonnet-4-20250514","max_tokens":4096,"stream":true,"messages":{s},"tools":{s}}}
             , .{ self.loading.pending_continuation.?, tools_json });
-            defer self.alloc.free(request_body);
 
             // Create placeholder message for continuation response
             const msg_id = try database.addMessage(.assistant, "▌");
@@ -203,6 +214,8 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         fn poll_active_stream(self: *Self, database: *Database) !bool {
             var state_changed = false;
             const stream = &self.streaming.?;
+            const scratch = self.scratch.allocator();
+
             obs.global.logSimple(.debug, @src(), "agent.poll_stream", "calling ProviderApi.poll");
             const is_done = ProviderApi.poll(stream) catch |err| {
                 var err_buf: [64]u8 = undefined;
@@ -219,12 +232,11 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             if (stream.message_id) |msg_id| {
                 if (text.len > 0) {
                     const display_text = if (is_done) text else blk: {
-                        // Add cursor indicator while streaming
-                        const with_cursor = std.fmt.allocPrint(self.alloc, "{s}▌", .{text}) catch text;
+                        // Add cursor indicator while streaming (scratch - freed at tick end)
+                        const with_cursor = std.fmt.allocPrint(scratch, "{s}▌", .{text}) catch text;
                         break :blk with_cursor;
                     };
                     database.updateMessageContent(msg_id, display_text) catch {};
-                    if (!is_done and display_text.ptr != text.ptr) self.alloc.free(display_text);
                     state_changed = true;
                 } else if (is_done and !ProviderApi.hasToolCalls(stream)) {
                     database.updateMessageContent(msg_id, "No response from AI.") catch {};
@@ -235,36 +247,32 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             if (is_done) {
                 // Check if we have tool calls to execute
                 if (ProviderApi.hasToolCalls(stream)) {
-                    // Build assistant content JSON and queue tools for async execution
+                    // Build assistant content JSON (scratch for temp, dupe to alloc for storage)
                     var assistant_content = std.ArrayListUnmanaged(u8){};
-                    defer assistant_content.deinit(self.alloc);
-                    try assistant_content.append(self.alloc, '[');
+                    try assistant_content.append(scratch, '[');
 
                     // Add text content if any
                     const assistant_text = ProviderApi.getText(stream);
                     if (assistant_text.len > 0) {
-                        const escaped_text = std.json.Stringify.valueAlloc(self.alloc, assistant_text, .{}) catch "";
-                        defer self.alloc.free(escaped_text);
-                        const text_block = std.fmt.allocPrint(self.alloc,
+                        const escaped_text = std.json.Stringify.valueAlloc(scratch, assistant_text, .{}) catch "";
+                        const text_block = std.fmt.allocPrint(scratch,
                             \\{{"type":"text","text":{s}}}
                         , .{escaped_text}) catch "";
-                        defer self.alloc.free(text_block);
-                        try assistant_content.appendSlice(self.alloc, text_block);
+                        try assistant_content.appendSlice(scratch, text_block);
                     }
 
                     // Build tool_use blocks and queue tools
                     const tool_calls = ProviderApi.getToolCalls(stream);
                     for (tool_calls) |tc| {
                         if (assistant_content.items.len > 1) {
-                            try assistant_content.append(self.alloc, ',');
+                            try assistant_content.append(scratch, ',');
                         }
-                        const tool_use_block = std.fmt.allocPrint(self.alloc,
+                        const tool_use_block = std.fmt.allocPrint(scratch,
                             \\{{"type":"tool_use","id":"{s}","name":"{s}","input":{s}}}
                         , .{ tc.id, tc.name, if (tc.input_json.len > 0) tc.input_json else "{}" }) catch continue;
-                        defer self.alloc.free(tool_use_block);
-                        try assistant_content.appendSlice(self.alloc, tool_use_block);
+                        try assistant_content.appendSlice(scratch, tool_use_block);
 
-                        // Queue tool for async execution
+                        // Queue tool for async execution (use self.alloc - outlives tick)
                         try self.loading.pending_tools.append(self.alloc, .{
                             .id = try self.alloc.dupe(u8, tc.id),
                             .name = try self.alloc.dupe(u8, tc.name),
@@ -272,7 +280,7 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                         });
                     }
 
-                    try assistant_content.append(self.alloc, ']');
+                    try assistant_content.append(scratch, ']');
                     self.loading.assistant_content_json = try self.alloc.dupe(u8, assistant_content.items);
                     self.loading.current_tool_idx = 0;
 
@@ -293,10 +301,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
         fn start_tool_execution(self: *Self, database: *Database) !void {
             const tc = self.loading.pending_tools.items[self.loading.current_tool_idx];
+            const scratch = self.scratch.allocator();
 
             // Show tool execution in chat
-            const tool_msg = std.fmt.allocPrint(self.alloc, "🔧 Executing: {s}", .{tc.name}) catch "";
-            defer self.alloc.free(tool_msg);
+            const tool_msg = std.fmt.allocPrint(scratch, "🔧 Executing: {s}", .{tc.name}) catch "";
             _ = database.addMessage(.system, tool_msg) catch {};
 
             // Start async execution
@@ -367,62 +375,56 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         }
 
         fn build_continuation_request(self: *Self, database: *Database) !void {
+            // Use scratch arena for all temporary allocations
+            const scratch = self.scratch.allocator();
+
             // Build continuation request
             var tool_results_json = std.ArrayListUnmanaged(u8){};
-            defer tool_results_json.deinit(self.alloc);
 
             for (self.loading.tool_results.items) |tr| {
                 if (tool_results_json.items.len > 0) {
-                    tool_results_json.append(self.alloc, ',') catch {};
+                    tool_results_json.append(scratch, ',') catch {};
                 }
-                const escaped_result = std.json.Stringify.valueAlloc(self.alloc, tr.content, .{}) catch continue;
-                defer self.alloc.free(escaped_result);
-                const tr_json = std.fmt.allocPrint(self.alloc,
+                const escaped_result = std.json.Stringify.valueAlloc(scratch, tr.content, .{}) catch continue;
+                const tr_json = std.fmt.allocPrint(scratch,
                     \\{{"type":"tool_result","tool_use_id":"{s}","content":{s}}}
                 , .{ tr.tool_id, escaped_result }) catch continue;
-                defer self.alloc.free(tr_json);
-                tool_results_json.appendSlice(self.alloc, tr_json) catch {};
+                tool_results_json.appendSlice(scratch, tr_json) catch {};
             }
 
             // Build full message history
-            const messages = database.getMessages(self.alloc) catch @constCast(&[_]db.Message{});
-            defer if (messages.len > 0) Database.freeMessages(self.alloc, messages);
+            const messages = database.getMessages(scratch) catch @constCast(&[_]db.Message{});
 
             var msg_buf = std.ArrayListUnmanaged(u8){};
-            defer msg_buf.deinit(self.alloc);
-            try msg_buf.append(self.alloc, '[');
+            try msg_buf.append(scratch, '[');
             var first = true;
 
             for (messages) |msg| {
                 if (msg.role == .system or msg.ephemeral) continue;
-                if (!first) try msg_buf.append(self.alloc, ',');
+                if (!first) try msg_buf.append(scratch, ',');
                 first = false;
                 const role_str: []const u8 = if (msg.role == .user) "user" else "assistant";
-                const escaped_content = std.json.Stringify.valueAlloc(self.alloc, msg.content, .{}) catch continue;
-                defer self.alloc.free(escaped_content);
-                const msg_json = std.fmt.allocPrint(self.alloc, "{{\"role\":\"{s}\",\"content\":{s}}}", .{ role_str, escaped_content }) catch continue;
-                defer self.alloc.free(msg_json);
-                try msg_buf.appendSlice(self.alloc, msg_json);
+                const escaped_content = std.json.Stringify.valueAlloc(scratch, msg.content, .{}) catch continue;
+                const msg_json = std.fmt.allocPrint(scratch, "{{\"role\":\"{s}\",\"content\":{s}}}", .{ role_str, escaped_content }) catch continue;
+                try msg_buf.appendSlice(scratch, msg_json);
             }
 
             // Add assistant message with tool_use blocks
-            if (!first) try msg_buf.append(self.alloc, ',');
-            const assistant_msg = std.fmt.allocPrint(self.alloc,
+            if (!first) try msg_buf.append(scratch, ',');
+            const assistant_msg = std.fmt.allocPrint(scratch,
                 \\{{"role":"assistant","content":{s}}}
             , .{self.loading.assistant_content_json orelse "[]"}) catch "";
-            defer self.alloc.free(assistant_msg);
-            try msg_buf.appendSlice(self.alloc, assistant_msg);
+            try msg_buf.appendSlice(scratch, assistant_msg);
 
             // Add user message with tool_result blocks
-            const user_results_msg = std.fmt.allocPrint(self.alloc,
+            const user_results_msg = std.fmt.allocPrint(scratch,
                 \\,{{"role":"user","content":[{s}]}}
             , .{tool_results_json.items}) catch "";
-            defer self.alloc.free(user_results_msg);
-            try msg_buf.appendSlice(self.alloc, user_results_msg);
+            try msg_buf.appendSlice(scratch, user_results_msg);
 
-            try msg_buf.append(self.alloc, ']');
+            try msg_buf.append(scratch, ']');
 
-            // Store continuation and clean up tool state
+            // Store continuation (uses self.alloc - outlives tick) and clean up tool state
             self.loading.pending_continuation = try self.alloc.dupe(u8, msg_buf.items);
             self.loading.start_time = std.time.milliTimestamp();
 
