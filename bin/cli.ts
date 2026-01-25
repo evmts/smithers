@@ -159,6 +159,56 @@ program
   });
 
 program
+  .command("super <file>")
+  .description("Run a god agent that monitors and rewrites TSX orchestrations")
+  .option("--model <model>", "Claude model for god agent (haiku/sonnet/opus)", "sonnet")
+  .option("--max-restarts <count>", "Max subprocess restarts before giving up", "10")
+  .option("--restart-cooldown <duration>", "Min time between restarts (e.g., 30s, 5m)", "30s")
+  .option("--db-path <path>", "SQLite database path", DEFAULT_DB_DIR)
+  .option("--report-bugs", "Report Smithers framework bugs to GitHub", true)
+  .option("--no-report-bugs", "Disable bug reporting to GitHub")
+  .option("--dry-run", "Show what would happen without executing", false)
+  .action(async (file: string, options: {
+    model: string;
+    maxRestarts: string;
+    restartCooldown: string;
+    dbPath: string;
+    reportBugs: boolean;
+    dryRun: boolean;
+  }) => {
+    const { superCommand, parseCooldown } = await import("../src/commands/super.ts");
+    
+    const model = options.model as 'haiku' | 'sonnet' | 'opus';
+    if (!['haiku', 'sonnet', 'opus'].includes(model)) {
+      console.error(`❌ Invalid model: ${options.model}. Must be haiku, sonnet, or opus`);
+      process.exit(1);
+    }
+
+    const maxRestarts = parseInt(options.maxRestarts, 10);
+    if (isNaN(maxRestarts) || maxRestarts < 0) {
+      console.error(`❌ Invalid max-restarts: ${options.maxRestarts}. Must be a non-negative integer`);
+      process.exit(1);
+    }
+
+    let restartCooldown: number;
+    try {
+      restartCooldown = parseCooldown(options.restartCooldown);
+    } catch (e) {
+      console.error(`❌ ${e instanceof Error ? e.message : e}`);
+      process.exit(1);
+    }
+
+    return superCommand(file, {
+      model,
+      maxRestarts,
+      restartCooldown,
+      dbPath: options.dbPath,
+      reportBugs: options.reportBugs,
+      dryRun: options.dryRun,
+    });
+  });
+
+program
   .command("serve")
   .description("Start the MCP server")
   .option("-p, --port <port>", "Server port", "3847")
