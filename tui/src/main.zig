@@ -12,6 +12,7 @@ const environment_mod = @import("environment.zig");
 const clock_mod = @import("clock.zig");
 const tool_executor_mod = @import("agent/tool_executor.zig");
 const obs = @import("obs.zig");
+const cli = @import("cli.zig");
 
 const ProductionRenderer = renderer_mod.Renderer(renderer_mod.VaxisBackend);
 const ProductionEvent = event_mod.Event(ProductionRenderer);
@@ -51,6 +52,41 @@ fn fileLog(
 pub const panic = vaxis.panic_handler;
 
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const alloc = gpa.allocator();
+
+    // Parse CLI args
+    const args = try std.process.argsAlloc(alloc);
+    defer std.process.argsFree(alloc, args);
+
+    var cli_mode = false;
+    var cli_prompt: ?[]const u8 = null;
+
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--help") or std.mem.eql(u8, args[i], "-h")) {
+            cli.printUsage();
+            return;
+        } else if (std.mem.eql(u8, args[i], "--cli")) {
+            cli_mode = true;
+            if (i + 1 < args.len) {
+                i += 1;
+                cli_prompt = args[i];
+            }
+        }
+    }
+
+    if (cli_mode) {
+        const prompt = cli_prompt orelse {
+            std.debug.print("Error: --cli requires a prompt argument\n", .{});
+            cli.printUsage();
+            return;
+        };
+        try cli.runCli(alloc, prompt);
+        return;
+    }
+
     // Initialize observability first (reads SMITHERS_DEBUG_LEVEL)
     obs.initGlobal();
     defer obs.deinitGlobal();
@@ -61,11 +97,8 @@ pub fn main() !void {
     obs.global.logSimple(.info, @src(), "startup", "=== Smithers TUI starting ===");
     std.log.debug("=== Smithers TUI starting ===", .{});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
     obs.global.logSimple(.debug, @src(), "init", "Creating App...");
-    var app = try App.init(gpa.allocator());
+    var app = try App.init(alloc);
     defer app.deinit();
 
     obs.global.logSimple(.info, @src(), "run", "Starting main loop");

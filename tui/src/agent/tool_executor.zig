@@ -42,9 +42,10 @@ pub fn ToolExecutor(comptime RegistryFactory: type) type {
             self.thread = null;
         }
 
-        /// Check if a tool is currently executing
+        /// Check if a tool is currently executing or has a pending result
         pub fn isRunning(self: *Self) bool {
-            return self.thread != null and self.result == null;
+            // Running if thread exists, OR if result is pending (not yet polled)
+            return self.thread != null or self.result != null;
         }
 
         /// Poll for completion - returns result if done, null if still running

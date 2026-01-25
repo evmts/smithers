@@ -7,6 +7,7 @@ const Allocator = std.mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const json = std.json;
 const process = std.process;
+const obs = @import("../obs.zig");
 
 const provider = @import("provider.zig");
 const ProviderInterface = provider.ProviderInterface;
@@ -596,27 +597,54 @@ pub const AnthropicStreamingProvider = struct {
         is_done: bool = false,
         stop_reason: ?[]const u8 = null,
         alloc: Allocator,
+        // Allocated strings that must be freed on cleanup (used by curl argv)
+        argv_alloc: ?[]const []const u8 = null,
+        auth_header_alloc: ?[]const u8 = null,
+        body_alloc: ?[]const u8 = null,
 
         pub fn init(alloc: Allocator) StreamingState {
             return .{ .alloc = alloc, .current_tool_input = .{} };
         }
 
         fn processLine(self: *StreamingState, line: []const u8) !void {
-            if (!std.mem.startsWith(u8, line, "data: ")) return;
+            // Log every line we process
+            var log_buf: [256]u8 = undefined;
+            const preview_len = @min(line.len, 80);
+            const msg = std.fmt.bufPrint(&log_buf, "line len={d}: {s}", .{ line.len, line[0..preview_len] }) catch "?";
+            obs.global.logSimple(.debug, @src(), "curl.processLine", msg);
+
+            if (!std.mem.startsWith(u8, line, "data: ")) {
+                obs.global.logSimple(.trace, @src(), "curl.processLine", "not data line, skipping");
+                return;
+            }
             const data = line[6..];
             if (std.mem.eql(u8, data, "[DONE]")) {
+                obs.global.logSimple(.debug, @src(), "curl.processLine", "got [DONE]");
                 self.is_done = true;
                 return;
             }
 
-            const parsed = json.parseFromSlice(json.Value, self.alloc, data, .{}) catch return;
+            const parsed = json.parseFromSlice(json.Value, self.alloc, data, .{}) catch |err| {
+                const err_msg = std.fmt.bufPrint(&log_buf, "JSON parse error: {s}", .{@errorName(err)}) catch "?";
+                obs.global.logSimple(.warn, @src(), "curl.processLine", err_msg);
+                return;
+            };
             defer parsed.deinit();
 
-            if (parsed.value != .object) return;
+            if (parsed.value != .object) {
+                obs.global.logSimple(.warn, @src(), "curl.processLine", "parsed value not object");
+                return;
+            }
 
-            const type_val = parsed.value.object.get("type") orelse return;
+            const type_val = parsed.value.object.get("type") orelse {
+                obs.global.logSimple(.warn, @src(), "curl.processLine", "no 'type' field");
+                return;
+            };
             if (type_val != .string) return;
             const event_type = type_val.string;
+
+            const type_msg = std.fmt.bufPrint(&log_buf, "event_type={s}", .{event_type}) catch "?";
+            obs.global.logSimple(.debug, @src(), "curl.processLine", type_msg);
 
             if (std.mem.eql(u8, event_type, "message_delta")) {
                 if (parsed.value.object.get("delta")) |delta| {
@@ -663,6 +691,8 @@ pub const AnthropicStreamingProvider = struct {
                         if (std.mem.eql(u8, dt.string, "text_delta")) {
                             if (delta.object.get("text")) |text| {
                                 if (text == .string) {
+                                    const text_msg = std.fmt.bufPrint(&log_buf, "GOT TEXT: len={d} total={d}", .{ text.string.len, self.accumulated_text.items.len }) catch "?";
+                                    obs.global.logSimple(.debug, @src(), "curl.processLine", text_msg);
                                     try self.accumulated_text.appendSlice(self.alloc, text.string);
                                 }
                             }
@@ -680,6 +710,7 @@ pub const AnthropicStreamingProvider = struct {
 
             if (std.mem.eql(u8, event_type, "content_block_stop")) {
                 if (self.current_tool_id != null and self.current_tool_name != null) {
+                    obs.global.logSimple(.debug, @src(), "curl.processLine", "saving tool call");
                     try self.tool_calls.append(self.alloc, .{
                         .id = self.current_tool_id.?,
                         .name = self.current_tool_name.?,
@@ -691,57 +722,202 @@ pub const AnthropicStreamingProvider = struct {
                 }
                 return;
             }
+
+            if (std.mem.eql(u8, event_type, "message_stop")) {
+                obs.global.logSimple(.debug, @src(), "curl.processLine", "message_stop - stream complete");
+                self.is_done = true;
+                return;
+            }
         }
     };
 
     pub fn startStream(alloc: Allocator, api_key: []const u8, request_body: []const u8) !StreamingState {
+        var log_buf: [256]u8 = undefined;
+
+        var msg = std.fmt.bufPrint(&log_buf, "init: body_len={d} api_key_len={d}", .{ request_body.len, api_key.len }) catch "init";
+        obs.global.logSimple(.debug, @src(), "curl.start", msg);
+
         var state = StreamingState.init(alloc);
 
         const auth_header = try std.fmt.allocPrint(alloc, "x-api-key: {s}", .{api_key});
-        defer alloc.free(auth_header);
+        errdefer alloc.free(auth_header);
+        const body_copy = try alloc.dupe(u8, request_body);
+        errdefer alloc.free(body_copy);
 
-        var child = std.process.Child.init(&.{
-            "curl", "-s", "-N", "-X", "POST", ANTHROPIC_API_URL,
-            "-H", "content-type: application/json",
-            "-H", "anthropic-version: " ++ ANTHROPIC_VERSION,
-            "-H", auth_header,
-            "-d", request_body,
-        }, alloc);
+        msg = std.fmt.bufPrint(&log_buf, "auth_header_len={d}", .{auth_header.len}) catch "?";
+        obs.global.logSimple(.debug, @src(), "curl.start", msg);
+
+        // Use -d @- to read body from stdin
+        const argv = try alloc.alloc([]const u8, 14);
+        errdefer alloc.free(argv);
+        argv[0] = "curl";
+        argv[1] = "-s";
+        argv[2] = "-N";
+        argv[3] = "-X";
+        argv[4] = "POST";
+        argv[5] = ANTHROPIC_API_URL;
+        argv[6] = "-H";
+        argv[7] = "content-type: application/json";
+        argv[8] = "-H";
+        argv[9] = "anthropic-version: " ++ ANTHROPIC_VERSION;
+        argv[10] = "-H";
+        argv[11] = auth_header;
+        argv[12] = "-d";
+        argv[13] = "@-";
+
+        obs.global.logSimple(.debug, @src(), "curl.start", "calling child.spawn()");
+
+        var child = std.process.Child.init(argv, alloc);
+        child.stdin_behavior = .Pipe;
         child.stdout_behavior = .Pipe;
         child.stderr_behavior = .Pipe;
 
-        try child.spawn();
+        child.spawn() catch |err| {
+            msg = std.fmt.bufPrint(&log_buf, "spawn FAILED: {s}", .{@errorName(err)}) catch "spawn error";
+            obs.global.logSimple(.err, @src(), "curl.start", msg);
+            alloc.free(argv);
+            alloc.free(auth_header);
+            alloc.free(body_copy);
+            return err;
+        };
 
+        // Log child process info
+        msg = std.fmt.bufPrint(&log_buf, "spawned: id={d} stdin={} stdout={} stderr={}", .{
+            child.id,
+            child.stdin != null,
+            child.stdout != null,
+            child.stderr != null,
+        }) catch "?";
+        obs.global.logSimple(.debug, @src(), "curl.start", msg);
+
+        // Write request body to curl's stdin
+        if (child.stdin) |stdin| {
+            const stdin_fd = stdin.handle;
+            msg = std.fmt.bufPrint(&log_buf, "writing {d} bytes to stdin fd={d}", .{ body_copy.len, stdin_fd }) catch "?";
+            obs.global.logSimple(.debug, @src(), "curl.start", msg);
+
+            const written = stdin.writeAll(body_copy) catch |err| {
+                msg = std.fmt.bufPrint(&log_buf, "stdin write FAILED: {s}", .{@errorName(err)}) catch "?";
+                obs.global.logSimple(.err, @src(), "curl.start", msg);
+                return err;
+            };
+            _ = written;
+
+            obs.global.logSimple(.debug, @src(), "curl.start", "stdin write complete, closing stdin");
+            stdin.close();
+            child.stdin = null;
+        } else {
+            obs.global.logSimple(.err, @src(), "curl.start", "NO STDIN PIPE!");
+        }
+
+        // Set stdout non-blocking
         if (child.stdout) |stdout| {
-            const fd = stdout.handle;
+            const stdout_fd = stdout.handle;
+            msg = std.fmt.bufPrint(&log_buf, "setting non-blocking on stdout fd={d}", .{stdout_fd}) catch "?";
+            obs.global.logSimple(.debug, @src(), "curl.start", msg);
+
             const F_GETFL = 3;
             const F_SETFL = 4;
             const O_NONBLOCK: usize = 0x0004;
-            const flags = std.posix.fcntl(fd, F_GETFL, 0) catch 0;
-            _ = std.posix.fcntl(fd, F_SETFL, flags | O_NONBLOCK) catch {};
+            const flags = std.posix.fcntl(stdout_fd, F_GETFL, 0) catch |err| blk: {
+                msg = std.fmt.bufPrint(&log_buf, "fcntl GETFL failed: {s}", .{@errorName(err)}) catch "?";
+                obs.global.logSimple(.err, @src(), "curl.start", msg);
+                break :blk 0;
+            };
+            _ = std.posix.fcntl(stdout_fd, F_SETFL, flags | O_NONBLOCK) catch |err| {
+                msg = std.fmt.bufPrint(&log_buf, "fcntl SETFL failed: {s}", .{@errorName(err)}) catch "?";
+                obs.global.logSimple(.err, @src(), "curl.start", msg);
+            };
+        } else {
+            obs.global.logSimple(.err, @src(), "curl.start", "NO STDOUT PIPE!");
         }
 
+        state.argv_alloc = argv;
+        state.auth_header_alloc = auth_header;
+        state.body_alloc = body_copy;
         state.child = child;
         state.is_done = false;
         state.line_pos = 0;
 
+        obs.global.logSimple(.debug, @src(), "curl.start", "stream ready, returning state");
+
         return state;
     }
 
+    var poll_count: u64 = 0;
+
     pub fn poll(state: *StreamingState) !bool {
-        const child = state.child orelse return true;
-        const stdout = child.stdout orelse return true;
+        poll_count += 1;
+        var log_buf: [256]u8 = undefined;
+
+        const child = state.child orelse {
+            obs.global.logSimple(.debug, @src(), "curl.poll", "ERROR: no child in state");
+            return true;
+        };
+
+        // Log child id periodically
+        if (poll_count % 100 == 1) {
+            const msg = std.fmt.bufPrint(&log_buf, "poll#{d} child_id={d}", .{ poll_count, child.id }) catch "?";
+            obs.global.logSimple(.debug, @src(), "curl.poll", msg);
+        }
+
+        const stdout = child.stdout orelse {
+            obs.global.logSimple(.debug, @src(), "curl.poll", "ERROR: no stdout pipe");
+            return true;
+        };
+
+        const stdout_fd = stdout.handle;
 
         var buf: [4096]u8 = undefined;
         const bytes_read = stdout.read(&buf) catch |err| {
-            if (err == error.WouldBlock) return false;
+            if (err == error.WouldBlock) {
+                // Only log periodically to avoid spam
+                if (poll_count % 100 == 1) {
+                    const msg = std.fmt.bufPrint(&log_buf, "poll#{d} fd={d} WouldBlock", .{ poll_count, stdout_fd }) catch "?";
+                    obs.global.logSimple(.trace, @src(), "curl.poll", msg);
+                }
+                return false;
+            }
+            const msg = std.fmt.bufPrint(&log_buf, "poll#{d} fd={d} read error: {s}", .{ poll_count, stdout_fd, @errorName(err) }) catch "?";
+            obs.global.logSimple(.err, @src(), "curl.poll", msg);
+
+            // Read stderr
+            if (child.stderr) |stderr| {
+                var err_output: [512]u8 = undefined;
+                const err_len = stderr.read(&err_output) catch 0;
+                if (err_len > 0) {
+                    obs.global.logSimple(.err, @src(), "curl.stderr", err_output[0..@min(err_len, 256)]);
+                }
+            }
             return true;
         };
 
         if (bytes_read == 0) {
-            if (state.is_done) return true;
+            // Check stderr when we get EOF
+            if (child.stderr) |stderr| {
+                var err_output: [512]u8 = undefined;
+                const err_len = stderr.read(&err_output) catch 0;
+                if (err_len > 0) {
+                    const msg = std.fmt.bufPrint(&log_buf, "stderr ({d} bytes): {s}", .{ err_len, err_output[0..@min(err_len, 200)] }) catch "?";
+                    obs.global.logSimple(.warn, @src(), "curl.poll", msg);
+                }
+            }
+
+            if (state.is_done) {
+                const msg = std.fmt.bufPrint(&log_buf, "poll#{d} stream complete, text_len={d}", .{ poll_count, state.accumulated_text.items.len }) catch "?";
+                obs.global.logSimple(.debug, @src(), "curl.poll", msg);
+                return true;
+            }
             return false;
         }
+
+        // We got data!
+        const msg = std.fmt.bufPrint(&log_buf, "poll#{d} READ {d} bytes! total_text={d}", .{ poll_count, bytes_read, state.accumulated_text.items.len }) catch "?";
+        obs.global.logSimple(.debug, @src(), "curl.poll", msg);
+
+        var read_buf: [64]u8 = undefined;
+        const read_msg = std.fmt.bufPrint(&read_buf, "read {d} bytes", .{bytes_read}) catch "?";
+        obs.global.logSimple(.trace, @src(), "anthropic.poll", read_msg);
 
         for (buf[0..bytes_read]) |byte| {
             if (byte == '\n') {
@@ -789,6 +965,13 @@ pub const AnthropicStreamingProvider = struct {
         if (state.current_tool_id) |id| state.alloc.free(id);
         if (state.current_tool_name) |name| state.alloc.free(name);
         if (state.stop_reason) |sr| state.alloc.free(sr);
+        // Free curl argv allocations
+        if (state.argv_alloc) |a| state.alloc.free(a);
+        if (state.auth_header_alloc) |h| state.alloc.free(h);
+        if (state.body_alloc) |b| state.alloc.free(b);
+        state.argv_alloc = null;
+        state.auth_header_alloc = null;
+        state.body_alloc = null;
         state.current_tool_id = null;
         state.current_tool_name = null;
         state.stop_reason = null;

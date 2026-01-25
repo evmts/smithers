@@ -4,6 +4,7 @@ const chat_history_mod = @import("../components/chat_history.zig");
 const tool_executor_mod = @import("tool_executor.zig");
 const provider_interface = @import("provider_interface.zig");
 const ToolCallInfo = provider_interface.ToolCallInfo;
+const obs = @import("../obs.zig");
 
 pub const tools_json =
     \\[{"name":"read_file","description":"Read contents of a file with line numbers. Use offset/limit for pagination.","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"File path to read"},"offset":{"type":"integer","description":"Line to start from (0-indexed)"},"limit":{"type":"integer","description":"Max lines to read"}},"required":["path"]}},
@@ -15,10 +16,10 @@ pub const tools_json =
     \\{"name":"list_dir","description":"List directory contents with optional depth","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"Directory path"},"depth":{"type":"integer","description":"Recursion depth (1-3)"}}}}]
 ;
 
-/// Generic AgentLoop over Provider, Loading, and ToolExecutor types
-pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolExec: type) type {
+/// Generic AgentLoop over Provider, Loading, ToolExecutor, and Renderer types
+pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolExec: type, comptime R: type) type {
     const ProviderApi = provider_interface.AgentProvider(Provider);
-    const ChatHistory = chat_history_mod.ChatHistory(@import("../rendering/renderer.zig").Renderer(@import("../rendering/renderer.zig").VaxisBackend));
+    const ChatHistory = chat_history_mod.ChatHistory(R);
     const Database = db.Database(@import("sqlite").Db);
 
     return struct {
@@ -38,19 +39,40 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         pub fn tick(self: *Self, database: *Database, chat_history: *ChatHistory) !bool {
             var should_continue = true;
 
+            const has_query = self.loading.pending_query != null;
+            const has_stream = self.streaming != null;
+            const start_time = self.loading.start_time;
+
+            // Log tick state periodically (every ~1 second based on tick rate)
+            if (has_query or has_stream or self.loading.is_loading) {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "query={} stream={} start_time={d} is_loading={}", .{
+                    has_query,
+                    has_stream,
+                    start_time,
+                    self.loading.is_loading,
+                }) catch "tick";
+                obs.global.logSimple(.debug, @src(), "agent.tick", msg);
+            }
+
             // Start streaming if we have a pending query but no active stream
-            if (self.loading.pending_query != null and self.streaming == null and self.loading.start_time > 0) {
-                const elapsed = std.time.milliTimestamp() - self.loading.start_time;
+            if (has_query and !has_stream and start_time > 0) {
+                const elapsed = std.time.milliTimestamp() - start_time;
                 if (elapsed >= 50) {
+                    obs.global.logSimple(.debug, @src(), "agent.start_stream", "starting query stream");
                     const started = try self.start_query_stream(database, chat_history);
-                    if (!started) should_continue = false;
+                    if (!started) {
+                        obs.global.logSimple(.warn, @src(), "agent.start_stream", "failed to start");
+                        should_continue = false;
+                    }
                 }
             }
 
             // Start continuation stream if we have pending tool results
-            if (self.loading.pending_continuation != null and self.streaming == null and self.loading.start_time > 0) {
-                const elapsed = std.time.milliTimestamp() - self.loading.start_time;
+            if (self.loading.pending_continuation != null and !has_stream and start_time > 0) {
+                const elapsed = std.time.milliTimestamp() - start_time;
                 if (elapsed >= 50) {
+                    obs.global.logSimple(.debug, @src(), "agent.continuation", "starting continuation stream");
                     const started = try self.start_continuation_stream(database, chat_history);
                     if (!started) should_continue = false;
                 }
@@ -58,6 +80,7 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
             // Poll active stream for new data
             if (self.streaming != null) {
+                obs.global.logSimple(.debug, @src(), "agent.poll", "calling poll_active_stream");
                 try self.poll_active_stream(database, chat_history);
             }
 
@@ -75,12 +98,17 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         }
 
         fn start_query_stream(self: *Self, database: *Database, chat_history: *ChatHistory) !bool {
+            obs.global.logSimple(.debug, @src(), "agent.query_stream", "checking api key");
+
             const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
+                obs.global.logSimple(.warn, @src(), "agent.query_stream", "ANTHROPIC_API_KEY not set");
                 _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
                 self.loading.cleanup(self.alloc);
                 try chat_history.reload(database);
                 return false;
             };
+
+            obs.global.logSimple(.debug, @src(), "agent.query_stream", "building messages json");
 
             // Build messages JSON from DB
             const messages = database.getMessages(self.alloc) catch @constCast(&[_]db.Message{});
@@ -103,6 +131,10 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             }
             try msg_buf.append(self.alloc, ']');
 
+            var len_buf: [64]u8 = undefined;
+            const len_msg = std.fmt.bufPrint(&len_buf, "request body len={d}", .{msg_buf.items.len}) catch "?";
+            obs.global.logSimple(.debug, @src(), "agent.query_stream", len_msg);
+
             const request_body = try std.fmt.allocPrint(self.alloc,
                 \\{{"model":"claude-sonnet-4-20250514","max_tokens":4096,"stream":true,"messages":{s},"tools":{s}}}
             , .{ msg_buf.items, tools_json });
@@ -112,15 +144,21 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             const msg_id = try database.addMessage(.assistant, "▌");
             try chat_history.reload(database);
 
+            obs.global.logSimple(.debug, @src(), "agent.query_stream", "calling ProviderApi.startStream");
+
             // Initialize streaming state using provider interface
             self.streaming = ProviderApi.startStream(self.alloc, api_key, request_body) catch |err| {
-                _ = std.log.err("Failed to start stream: {s}", .{@errorName(err)});
+                var err_buf: [128]u8 = undefined;
+                const err_msg = std.fmt.bufPrint(&err_buf, "startStream error: {s}", .{@errorName(err)}) catch "error";
+                obs.global.logSimple(.err, @src(), "agent.query_stream", err_msg);
                 try database.updateMessageContent(msg_id, "Error: Failed to start API request");
                 self.loading.cleanup(self.alloc);
                 try chat_history.reload(database);
                 return false;
             };
             self.streaming.?.message_id = msg_id;
+
+            obs.global.logSimple(.debug, @src(), "agent.query_stream", "stream started successfully");
 
             // Clear pending query now that stream is started
             if (self.loading.pending_query) |q| self.alloc.free(q);
@@ -165,8 +203,17 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
         fn poll_active_stream(self: *Self, database: *Database, chat_history: *ChatHistory) !void {
             const stream = &self.streaming.?;
-            const is_done = ProviderApi.poll(stream) catch true;
+            obs.global.logSimple(.debug, @src(), "agent.poll_stream", "calling ProviderApi.poll");
+            const is_done = ProviderApi.poll(stream) catch |err| {
+                var err_buf: [64]u8 = undefined;
+                const err_msg = std.fmt.bufPrint(&err_buf, "poll error: {s}", .{@errorName(err)}) catch "?";
+                obs.global.logSimple(.err, @src(), "agent.poll_stream", err_msg);
+                return err;
+            };
             const text = ProviderApi.getText(stream);
+            var status_buf: [128]u8 = undefined;
+            const status_msg = std.fmt.bufPrint(&status_buf, "is_done={} text_len={d}", .{ is_done, text.len }) catch "?";
+            obs.global.logSimple(.debug, @src(), "agent.poll_stream", status_msg);
 
             // Update message in DB with current accumulated text
             if (stream.message_id) |msg_id| {

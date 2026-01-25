@@ -9,6 +9,7 @@ const help = @import("../help.zig");
 const editor_utils = @import("../editor.zig");
 const git_utils = @import("../git.zig");
 const event_mod = @import("../event.zig");
+const obs = @import("../obs.zig");
 
 pub const Action = union(enum) {
     none,
@@ -260,13 +261,21 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                         try ctx.chat_history.reload(ctx.database);
                     } else {
                         // Regular message - add to history and call AI
+                        obs.global.logSimple(.debug, @src(), "keys.submit", "user submitted message");
                         _ = try ctx.database.addMessage(.user, command);
                         try ctx.chat_history.reload(ctx.database);
 
                         if (ctx.has_ai) {
+                            var buf: [128]u8 = undefined;
+                            const msg = std.fmt.bufPrint(&buf, "setting pending_query len={d} has_ai=true", .{command.len}) catch "?";
+                            obs.global.logSimple(.debug, @src(), "keys.submit", msg);
                             ctx.loading.pending_query = try self.alloc.dupe(u8, command);
                             ctx.loading.startLoading();
+                            var buf2: [128]u8 = undefined;
+                            const msg2 = std.fmt.bufPrint(&buf2, "after startLoading: is_loading={} start_time={d}", .{ ctx.loading.is_loading, ctx.loading.start_time }) catch "?";
+                            obs.global.logSimple(.debug, @src(), "keys.submit", msg2);
                         } else {
+                            obs.global.logSimple(.debug, @src(), "keys.submit", "demo mode - no AI");
                             _ = try ctx.database.addMessage(.assistant, "I'm running in demo mode (no API key). Set ANTHROPIC_API_KEY to enable AI responses.");
                             try ctx.chat_history.reload(ctx.database);
                         }

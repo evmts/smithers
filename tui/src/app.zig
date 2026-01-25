@@ -35,7 +35,7 @@ pub fn App(
     const Header = header_mod.Header(R);
     const StatusBar = status_bar_mod.StatusBar(R);
     const Frame = frame_mod.FrameRenderer(R, Loading, Db, EvLoop);
-    const AgentLoopT = loop_mod.AgentLoop(Agent, Loading, ToolExec);
+    const AgentLoopT = loop_mod.AgentLoop(Agent, Loading, ToolExec, R);
 
     return struct {
         alloc: std.mem.Allocator,
@@ -95,10 +95,11 @@ pub fn App(
             const header = Header.init(alloc, "0.1.0", if (has_ai) "claude-sonnet-4" else "demo-mode");
             const status_bar = StatusBar.init();
 
-            var loading = Loading{};
+            const loading = Loading{};
             const key_handler = KeyHandler.init(alloc);
             const mouse_handler = MouseHandler.init(alloc);
-            const agent_loop = AgentLoopT.init(alloc, &loading);
+            // NOTE: agent_loop.loading pointer is set in run() after Self has stable address
+            const agent_loop = AgentLoopT.init(alloc, undefined);
 
             return Self{
                 .alloc = alloc,
@@ -129,6 +130,10 @@ pub fn App(
         pub fn run(self: *Self) !void {
             // Start event loop here when self has stable address (not in init())
             try self.event_loop.start();
+
+            // Fix pointer stability: agent_loop.loading must point to self.loading
+            // (not the stack-local loading from init())
+            self.agent_loop.loading = &self.loading;
 
             obs.global.logSimple(.info, @src(), "app.run", "starting main loop");
             std.log.debug("app.run: starting main loop", .{});
