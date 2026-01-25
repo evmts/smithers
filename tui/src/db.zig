@@ -267,6 +267,11 @@ pub fn Database(comptime SqliteDb: type) type {
             var iter = try stmt.iterator(MessageRow, .{ self.current_session_id });
             while (try iter.nextAlloc(allocator, .{})) |row| {
                 const role = Role.fromString(row.role) orelse .user;
+                const status = MessageStatus.fromString(row.status);
+                // Free parsed enum strings - they're no longer needed after conversion
+                allocator.free(row.role);
+                allocator.free(row.status);
+
                 try messages.append(allocator, .{
                     .id = row.id,
                     .role = role,
@@ -275,7 +280,7 @@ pub fn Database(comptime SqliteDb: type) type {
                     .ephemeral = row.ephemeral != 0,
                     .tool_name = row.tool_name,
                     .tool_input = row.tool_input,
-                    .status = MessageStatus.fromString(row.status),
+                    .status = status,
                 });
             }
 
@@ -315,9 +320,14 @@ pub fn Database(comptime SqliteDb: type) type {
             defer stmt.deinit();
 
             if (try stmt.oneAlloc(MessageRow, allocator, .{}, .{self.current_session_id})) |row| {
+                const role = Role.fromString(row.role) orelse .user;
+                // Free parsed enum strings - they're no longer needed after conversion
+                allocator.free(row.role);
+                allocator.free(row.status);
+
                 return Message{
                     .id = row.id,
-                    .role = Role.fromString(row.role) orelse .user,
+                    .role = role,
                     .content = row.content,
                     .timestamp = row.timestamp,
                     .ephemeral = row.ephemeral != 0,
@@ -444,10 +454,14 @@ pub fn Database(comptime SqliteDb: type) type {
             defer stmt.deinit();
 
             if (try stmt.oneAlloc(AgentRunRow, allocator, .{}, .{self.current_session_id})) |row| {
+                const status = AgentRunStatus.fromString(row.status);
+                // Free parsed enum string - no longer needed after conversion
+                allocator.free(row.status);
+
                 return AgentRun{
                     .id = row.id,
                     .session_id = row.session_id,
-                    .status = AgentRunStatus.fromString(row.status),
+                    .status = status,
                     .pending_tools_json = row.pending_tools_json,
                     .current_tool_idx = row.current_tool_idx,
                     .tool_results_json = row.tool_results_json,

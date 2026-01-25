@@ -1,6 +1,11 @@
 const std = @import("std");
-const streaming = @import("streaming.zig");
 const tool_executor_mod = @import("agent/tool_executor.zig");
+
+const ToolCallInfo = struct {
+    id: []const u8,
+    name: []const u8,
+    input_json: []const u8,
+};
 const clock_mod = @import("clock.zig");
 
 pub const spinner_frames = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
@@ -26,11 +31,10 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
         start_time: i64 = 0,
         spinner_frame: usize = 0,
         pending_query: ?[]const u8 = null,
-        streaming: ?streaming.StreamingState = null,
         pending_continuation: ?[]const u8 = null,
 
         tool_executor: ?ToolExec = null,
-        pending_tools: std.ArrayListUnmanaged(streaming.ToolCallInfo) = .{},
+        pending_tools: std.ArrayListUnmanaged(ToolCallInfo) = .{},
         current_tool_idx: usize = 0,
         tool_results: std.ArrayListUnmanaged(ToolResultInfo) = .{},
         assistant_content_json: ?[]const u8 = null,
@@ -88,8 +92,6 @@ pub fn LoadingState(comptime Clk: type, comptime ToolExec: type) type {
             self.pending_query = null;
             if (self.pending_continuation) |c| alloc.free(c);
             self.pending_continuation = null;
-            if (self.streaming) |*s| s.cleanup();
-            self.streaming = null;
             if (self.tool_executor) |*exec| exec.deinit();
             self.tool_executor = null;
             for (self.tool_results.items) |tr| {

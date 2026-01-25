@@ -41,6 +41,8 @@ fn executeGrep(ctx: ToolContext) ToolResult {
         // Fall back to basic grep
         return executeBasicGrep(ctx, pattern, search_path);
     };
+    // Always wait for child to prevent zombies
+    defer _ = child.wait() catch {};
 
     var stdout_list = std.ArrayListUnmanaged(u8){};
     defer stdout_list.deinit(ctx.allocator);

@@ -164,6 +164,11 @@ pub const AnthropicProvider = struct {
         child.stderr_behavior = .Pipe;
 
         try child.spawn();
+        // Always kill and wait for child to prevent zombies
+        defer {
+            _ = child.kill() catch {};
+            _ = child.wait() catch {};
+        }
         
         // Collect full response text while streaming
         var full_text = ArrayListUnmanaged(u8){};
@@ -202,8 +207,6 @@ pub const AnthropicProvider = struct {
                 }
             }
         }
-        
-        _ = child.wait() catch {};
 
         if (full_text.items.len > 0) {
             return ChatResult{ .text = try allocator.dupe(u8, full_text.items) };
@@ -341,15 +344,8 @@ pub const AnthropicProvider = struct {
         try messages_buf.append(allocator, ']');
         const messages_json = messages_buf.items;
 
-        const tools_json =
-            \\[{"name":"read_file","description":"Read contents of a file","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"File path to read"}},"required":["path"]}},
-            \\{"name":"write_file","description":"Write content to a file","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"File path"},"content":{"type":"string","description":"Content to write"}},"required":["path","content"]}},
-            \\{"name":"edit_file","description":"Edit a file by replacing text","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"File path"},"old_text":{"type":"string","description":"Text to find"},"new_text":{"type":"string","description":"Replacement text"}},"required":["path","old_text","new_text"]}},
-            \\{"name":"bash","description":"Execute a bash command","input_schema":{"type":"object","properties":{"command":{"type":"string","description":"Command to execute"}},"required":["command"]}},
-            \\{"name":"glob","description":"Find files matching pattern","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"Glob pattern"}},"required":["pattern"]}},
-            \\{"name":"grep","description":"Search for pattern in files","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"Search pattern"},"path":{"type":"string","description":"Directory or file to search"}},"required":["pattern"]}},
-            \\{"name":"list_dir","description":"List directory contents","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":["path"]}}]
-        ;
+        const loop_mod = @import("loop.zig");
+        const tools_json = loop_mod.tools_json;
 
         const max_tokens = options.max_tokens orelse 4096;
         // Build request body - messages_json is already properly escaped by std.json
@@ -816,15 +812,13 @@ pub const AnthropicStreamingProvider = struct {
             msg = std.fmt.bufPrint(&log_buf, "setting non-blocking on stdout fd={d}", .{stdout_fd}) catch "?";
             obs.global.logSimple(.debug, @src(), "curl.start", msg);
 
-            const F_GETFL = 3;
-            const F_SETFL = 4;
-            const O_NONBLOCK: usize = 0x0004;
-            const flags = std.posix.fcntl(stdout_fd, F_GETFL, 0) catch |err| blk: {
+            const flags = std.posix.fcntl(stdout_fd, std.posix.F.GETFL, 0) catch |err| blk: {
                 msg = std.fmt.bufPrint(&log_buf, "fcntl GETFL failed: {s}", .{@errorName(err)}) catch "?";
                 obs.global.logSimple(.err, @src(), "curl.start", msg);
                 break :blk 0;
             };
-            _ = std.posix.fcntl(stdout_fd, F_SETFL, flags | O_NONBLOCK) catch |err| {
+            const o_nonblock: usize = @as(u32, @bitCast(std.posix.O{ .NONBLOCK = true }));
+            _ = std.posix.fcntl(stdout_fd, std.posix.F.SETFL, flags | o_nonblock) catch |err| {
                 msg = std.fmt.bufPrint(&log_buf, "fcntl SETFL failed: {s}", .{@errorName(err)}) catch "?";
                 obs.global.logSimple(.err, @src(), "curl.start", msg);
             };

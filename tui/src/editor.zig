@@ -5,8 +5,11 @@ const std = @import("std");
 pub fn openExternalEditor(alloc: std.mem.Allocator, event_loop: anytype, input: anytype) ![]u8 {
     const editor_cmd = std.posix.getenv("EDITOR") orelse std.posix.getenv("VISUAL") orelse "vi";
 
-    // Create temp file with current input content
-    const tmp_path = "/tmp/smithers-edit.txt";
+    // Create temp file with unique name (random + timestamp)
+    const rand = std.crypto.random.int(u32);
+    const ts = std.time.milliTimestamp();
+    const tmp_path = try std.fmt.allocPrint(alloc, "/tmp/smithers-edit-{d}-{d}.txt", .{ rand, ts });
+    defer alloc.free(tmp_path);
     {
         const file = try std.fs.createFileAbsolute(tmp_path, .{});
         defer file.close();

@@ -2,6 +2,7 @@
 // NDJSON persistence with tree structure, compatible with db.zig Message format
 
 const std = @import("std");
+const obs = @import("../obs.zig");
 const Allocator = std.mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
@@ -295,12 +296,24 @@ pub const SessionManager = struct {
         var lines = std.mem.splitScalar(u8, content, '\n');
         var header: ?SessionHeader = null;
         var entries = ArrayListUnmanaged(Entry){};
+        errdefer {
+            for (entries.items) |*e| e.deinit(self.allocator);
+            entries.deinit(self.allocator);
+        }
         var index = std.StringHashMapUnmanaged(usize){};
+        errdefer index.deinit(self.allocator);
 
+        var parse_errors: usize = 0;
         while (lines.next()) |line| {
             if (line.len == 0) continue;
 
-            const entry = self.parseEntry(line) catch continue;
+            const entry = self.parseEntry(line) catch |err| {
+                parse_errors += 1;
+                var buf: [64]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "parse error: {s}", .{@errorName(err)}) catch "parse error";
+                obs.global.logSimple(.warn, @src(), "session.load", msg);
+                continue;
+            };
 
             if (entry) |e| {
                 if (e == .session) {
@@ -313,6 +326,12 @@ pub const SessionManager = struct {
                     }
                 }
             }
+        }
+
+        if (parse_errors > 0) {
+            var buf: [64]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "skipped {d} malformed entries", .{parse_errors}) catch "skipped entries";
+            obs.global.logSimple(.warn, @src(), "session.load", msg);
         }
 
         if (header == null) {

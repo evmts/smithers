@@ -1,5 +1,7 @@
 # Untrusted String Injection in OSC/CSI Sequences
 
+> **VENDOR ISSUE**: This is in vendored vaxis code (renderer/src/ctlseqs.zig, renderer/src/Vaxis.zig). Cannot fix without forking upstream.
+
 **Severity:** 🟡 Medium  
 **Type:** Security  
 **File:** `renderer/ctlseqs.zig` (vendored vaxis)

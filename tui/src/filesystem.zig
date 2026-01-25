@@ -53,16 +53,31 @@ pub fn Filesystem(comptime Impl: type) type {
 /// Production implementation using std.fs
 pub const StdFs = struct {
     pub fn openFile(path: []const u8, flags: std.fs.File.OpenFlags) !FileHandle {
+        // Handle absolute paths correctly
+        if (std.fs.path.isAbsolute(path)) {
+            const file = try std.fs.openFileAbsolute(path, flags);
+            return .{ .inner = file };
+        }
         const file = try std.fs.cwd().openFile(path, flags);
         return .{ .inner = file };
     }
 
     pub fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+        // Handle absolute paths correctly
+        if (std.fs.path.isAbsolute(path)) {
+            const file = try std.fs.openFileAbsolute(path, .{});
+            defer file.close();
+            return file.readToEndAlloc(allocator, 10 * 1024 * 1024);
+        }
         return std.fs.cwd().readFileAlloc(allocator, path, 10 * 1024 * 1024);
     }
 
     pub fn writeFile(path: []const u8, data: []const u8) !void {
-        const file = try std.fs.cwd().createFile(path, .{});
+        // Handle absolute paths correctly
+        const file = if (std.fs.path.isAbsolute(path))
+            try std.fs.createFileAbsolute(path, .{})
+        else
+            try std.fs.cwd().createFile(path, .{});
         defer file.close();
         try file.writeAll(data);
     }
@@ -75,10 +90,21 @@ pub const StdFs = struct {
     }
 
     pub fn deleteFile(path: []const u8) !void {
-        try std.fs.cwd().deleteFile(path);
+        // Handle absolute paths correctly
+        if (std.fs.path.isAbsolute(path)) {
+            try std.fs.deleteFileAbsolute(path);
+        } else {
+            try std.fs.cwd().deleteFile(path);
+        }
     }
 
     pub fn access(path: []const u8) !void {
-        _ = try std.fs.cwd().statFile(path);
+        // Handle absolute paths correctly
+        if (std.fs.path.isAbsolute(path)) {
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
+            _ = try std.fs.realpath(path, &buf);
+        } else {
+            _ = try std.fs.cwd().statFile(path);
+        }
     }
 };

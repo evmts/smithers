@@ -1,5 +1,7 @@
 # Windows Escape Sequence Buffer Overflow
 
+> **VENDOR ISSUE**: This is in vendored vaxis code (renderer/src/tty.zig). Cannot fix without forking upstream.
+
 **Severity:** 🟡 Medium  
 **Type:** Memory Safety  
 **File:** `renderer/WindowsTty.zig` (vendored vaxis)

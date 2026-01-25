@@ -47,8 +47,8 @@ pub fn Selection(comptime Clip: type) type {
             if (self.is_selecting) {
                 self.focus_x = x;
                 self.focus_y = @as(i32, y) + @as(i32, scroll_offset);
-                const anchor_y_u: u16 = if (self.anchor_y >= 0) @intCast(self.anchor_y) else 0;
-                const focus_y_u: u16 = if (self.focus_y >= 0) @intCast(self.focus_y) else 0;
+                const anchor_y_u: u16 = std.math.cast(u16, @max(0, self.anchor_y)) orelse std.math.maxInt(u16);
+                const focus_y_u: u16 = std.math.cast(u16, @max(0, self.focus_y)) orelse std.math.maxInt(u16);
                 self.has_selection = (x != self.anchor_x or focus_y_u != anchor_y_u);
             }
         }

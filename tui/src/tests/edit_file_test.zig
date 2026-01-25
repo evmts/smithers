@@ -30,13 +30,17 @@ fn createTempFile(allocator: std.mem.Allocator, content: []const u8) ![]const u8
     defer tmp_dir.close();
 
     const rand = std.crypto.random.int(u64);
-    const filename = try std.fmt.allocPrint(allocator, "edit_file_test_{d}.txt", .{rand});
+    // Create full path directly without intermediate allocation
+    const full_path = try std.fmt.allocPrint(allocator, "/tmp/edit_file_test_{d}.txt", .{rand});
+    errdefer allocator.free(full_path);
 
+    // Extract just the filename part for createFile
+    const filename = std.fs.path.basename(full_path);
     const file = try tmp_dir.createFile(filename, .{});
     defer file.close();
     try file.writeAll(content);
 
-    return try std.fmt.allocPrint(allocator, "/tmp/{s}", .{filename});
+    return full_path;
 }
 
 fn deleteTempFile(path: []const u8) void {

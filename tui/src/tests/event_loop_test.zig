@@ -334,6 +334,8 @@ fn TestEventLoop(comptime Vaxis: type, comptime Tty: type) type {
             const writer = self.tty.writer();
             try writer.writeAll("\x1b[?1049l\x1b[?25h");
             try writer.flush();
+            // Deinit old resources before recreating
+            self.loop.deinit();
             self.tty.deinit();
             self.tty = try Tty.init(&self.tty_buffer);
             self.loop = MockLoop.initWithAllocator(self.allocator, &self.tty, &self.vx);
@@ -343,6 +345,9 @@ fn TestEventLoop(comptime Vaxis: type, comptime Tty: type) type {
         }
 
         pub fn reinitTty(self: *Self) !void {
+            // Deinit old resources before recreating
+            self.loop.deinit();
+            self.tty.deinit();
             self.tty = try Tty.init(&self.tty_buffer);
             self.loop = MockLoop.initWithAllocator(self.allocator, &self.tty, &self.vx);
             try self.loop.init();

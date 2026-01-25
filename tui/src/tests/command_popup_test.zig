@@ -110,21 +110,21 @@ const TestCommandPopup = command_popup_mod.CommandPopup(MockRenderer);
 // =============================================================================
 
 test "init: popup starts hidden" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try testing.expect(!popup.isVisible());
 }
 
 test "init: popup starts with empty filter" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try testing.expectEqual(@as(usize, 0), popup.filter.len);
 }
 
 test "init: popup starts with all commands in filtered list" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     const builtin_count = builtInSlashCommands().len;
@@ -132,7 +132,7 @@ test "init: popup starts with all commands in filtered list" {
 }
 
 test "init: first command is selected by default" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -145,7 +145,7 @@ test "init: first command is selected by default" {
 // =============================================================================
 
 test "show: makes popup visible" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -153,7 +153,7 @@ test "show: makes popup visible" {
 }
 
 test "show: sets filter from prefix" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("mo");
@@ -161,7 +161,7 @@ test "show: sets filter from prefix" {
 }
 
 test "show: empty prefix shows all commands" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -170,7 +170,7 @@ test "show: empty prefix shows all commands" {
 }
 
 test "hide: makes popup invisible" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -181,7 +181,7 @@ test "hide: makes popup invisible" {
 }
 
 test "hide: can be called when already hidden" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     popup.hide();
@@ -191,7 +191,7 @@ test "hide: can be called when already hidden" {
 }
 
 test "isVisible: returns correct state" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try testing.expect(!popup.isVisible());
@@ -206,7 +206,7 @@ test "isVisible: returns correct state" {
 // =============================================================================
 
 test "setFilter: filters commands by prefix" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("mo");
@@ -222,7 +222,7 @@ test "setFilter: filters commands by prefix" {
 }
 
 test "setFilter: case insensitive matching" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("MO");
@@ -238,7 +238,7 @@ test "setFilter: case insensitive matching" {
 }
 
 test "setFilter: no matches returns empty list" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("xyz");
@@ -246,7 +246,7 @@ test "setFilter: no matches returns empty list" {
 }
 
 test "setFilter: empty filter shows all commands" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("mo");
@@ -257,7 +257,7 @@ test "setFilter: empty filter shows all commands" {
 }
 
 test "setFilter: updates filter string" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("test");
@@ -268,7 +268,7 @@ test "setFilter: updates filter string" {
 }
 
 test "setFilter: match_start and match_len set correctly" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("mo");
@@ -283,7 +283,7 @@ test "setFilter: match_start and match_len set correctly" {
 }
 
 test "setFilter: single character filter" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("e");
@@ -299,7 +299,7 @@ test "setFilter: single character filter" {
 }
 
 test "setFilter: very long filter returns no matches" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     const long_filter = "a" ** 100;
@@ -312,7 +312,7 @@ test "setFilter: very long filter returns no matches" {
 // =============================================================================
 
 test "handleKey: down moves selection" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -326,7 +326,7 @@ test "handleKey: down moves selection" {
 }
 
 test "handleKey: up moves selection" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -341,7 +341,7 @@ test "handleKey: up moves selection" {
 }
 
 test "handleKey: escape hides popup" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -352,7 +352,7 @@ test "handleKey: escape hides popup" {
 }
 
 test "handleKey: escape returns null" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -361,7 +361,7 @@ test "handleKey: escape returns null" {
 }
 
 test "handleKey: enter selects command and hides popup" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -375,7 +375,7 @@ test "handleKey: enter selects command and hides popup" {
 }
 
 test "handleKey: tab returns command without hiding" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -387,7 +387,7 @@ test "handleKey: tab returns command without hiding" {
 }
 
 test "handleKey: invisible popup ignores all keys" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try testing.expect(!popup.isVisible());
@@ -400,7 +400,7 @@ test "handleKey: invisible popup ignores all keys" {
 }
 
 test "handleKey: unrecognized key returns null" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -410,7 +410,7 @@ test "handleKey: unrecognized key returns null" {
 }
 
 test "handleKey: down wraps around at end" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -424,7 +424,7 @@ test "handleKey: down wraps around at end" {
 }
 
 test "handleKey: up wraps around at beginning" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -437,14 +437,14 @@ test "handleKey: up wraps around at beginning" {
 // =============================================================================
 
 test "selectedCommand: returns null when hidden" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try testing.expect(popup.selectedCommand() == null);
 }
 
 test "selectedCommand: returns command when visible" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -452,7 +452,7 @@ test "selectedCommand: returns command when visible" {
 }
 
 test "selectedCommand: returns null when no matches" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("xyz");
@@ -464,14 +464,14 @@ test "selectedCommand: returns null when no matches" {
 // =============================================================================
 
 test "getAutocomplete: returns null when hidden" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try testing.expect(popup.getAutocomplete() == null);
 }
 
 test "getAutocomplete: returns command string when visible" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -481,7 +481,7 @@ test "getAutocomplete: returns command string when visible" {
 }
 
 test "getAutocomplete: returns filtered command" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("mo");
@@ -491,7 +491,7 @@ test "getAutocomplete: returns filtered command" {
 }
 
 test "getAutocomplete: returns null when no matches" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("xyz");
@@ -503,7 +503,7 @@ test "getAutocomplete: returns null when no matches" {
 // =============================================================================
 
 test "draw: does nothing when hidden" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     const renderer = MockRenderer.init(.{ .w = 80, .h = 24 });
@@ -511,7 +511,7 @@ test "draw: does nothing when hidden" {
 }
 
 test "draw: draws when visible" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -520,7 +520,7 @@ test "draw: draws when visible" {
 }
 
 test "draw: handles no matches" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("xyz");
@@ -529,7 +529,7 @@ test "draw: handles no matches" {
 }
 
 test "draw: handles small terminal" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -538,7 +538,7 @@ test "draw: handles small terminal" {
 }
 
 test "draw: handles very small terminal" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -547,7 +547,7 @@ test "draw: handles very small terminal" {
 }
 
 test "draw: handles zero dimensions" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -560,18 +560,18 @@ test "draw: handles zero dimensions" {
 // =============================================================================
 
 test "deinit: cleans up filter memory" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     try popup.setFilter("test");
     popup.deinit();
 }
 
 test "deinit: handles empty filter" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     popup.deinit();
 }
 
 test "setFilter: multiple calls don't leak memory" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("a");
@@ -582,7 +582,7 @@ test "setFilter: multiple calls don't leak memory" {
 }
 
 test "show: multiple calls don't leak memory" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("a");
@@ -620,7 +620,7 @@ test "FilteredCommand: null match_start for no match" {
 // =============================================================================
 
 test "edge: rapid show/hide cycles" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     for (0..100) |_| {
@@ -631,7 +631,7 @@ test "edge: rapid show/hide cycles" {
 }
 
 test "edge: filter with special characters" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("\n\t\r");
@@ -639,7 +639,7 @@ test "edge: filter with special characters" {
 }
 
 test "edge: filter with unicode" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.setFilter("日本語");
@@ -647,7 +647,7 @@ test "edge: filter with unicode" {
 }
 
 test "edge: navigation with single filtered command" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("exit");
@@ -661,7 +661,7 @@ test "edge: navigation with single filtered command" {
 }
 
 test "edge: selection after filter change" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -674,7 +674,7 @@ test "edge: selection after filter change" {
 }
 
 test "edge: enter on empty list returns null" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("xyz");
@@ -685,7 +685,7 @@ test "edge: enter on empty list returns null" {
 }
 
 test "edge: tab on empty list returns null" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("xyz");
@@ -698,7 +698,7 @@ test "edge: tab on empty list returns null" {
 // =============================================================================
 
 test "integration: typical usage flow" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -718,7 +718,7 @@ test "integration: typical usage flow" {
 }
 
 test "integration: cancel flow" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -729,7 +729,7 @@ test "integration: cancel flow" {
 }
 
 test "integration: autocomplete flow" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("he");
@@ -746,7 +746,7 @@ test "integration: autocomplete flow" {
 // =============================================================================
 
 test "consistency: all builtin commands appear with empty filter" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
     try popup.show("");
@@ -765,13 +765,29 @@ test "consistency: all builtin commands appear with empty filter" {
 }
 
 test "consistency: filter matches command prefix only" {
-    var popup = TestCommandPopup.init(testing.allocator);
+    var popup = try TestCommandPopup.init(testing.allocator);
     defer popup.deinit();
 
+    // "it" doesn't match any command prefix, so filtered list should be empty
     try popup.setFilter("it");
+    try testing.expectEqual(@as(usize, 0), popup.filtered_commands.items.len);
 
+    // "mo" should match "model" which starts with "mo"
+    try popup.setFilter("mo");
+    try testing.expect(popup.filtered_commands.items.len > 0);
     for (popup.filtered_commands.items) |item| {
         const cmd_name = item.cmd.command();
-        try testing.expect(!std.mem.startsWith(u8, cmd_name, "it"));
+        // All filtered commands should start with the filter prefix (case-insensitive)
+        var cmd_lower_buf: [32]u8 = undefined;
+        const cmd_lower = blk: {
+            var i: usize = 0;
+            for (cmd_name) |c| {
+                if (i >= cmd_lower_buf.len) break;
+                cmd_lower_buf[i] = std.ascii.toLower(c);
+                i += 1;
+            }
+            break :blk cmd_lower_buf[0..i];
+        };
+        try testing.expect(std.mem.startsWith(u8, cmd_lower, "mo"));
     }
 }

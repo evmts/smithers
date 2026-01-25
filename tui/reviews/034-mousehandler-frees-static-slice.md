@@ -1,5 +1,7 @@
 # MouseHandler Frees Non-Owned Static Slice
 
+> **VENDOR ISSUE**: This is in vendored vaxis code (renderer/src/vxfw/App.zig). Cannot fix without forking upstream.
+
 **Severity:** 🔴 Critical  
 **Type:** Memory Safety  
 **File:** `renderer/MouseHandler.zig` (vendored vaxis)

@@ -24,6 +24,8 @@ fn executeBash(ctx: ToolContext) ToolResult {
     child.spawn() catch {
         return ToolResult.err("Failed to spawn process");
     };
+    // Always wait for child to prevent zombies
+    defer _ = child.wait() catch {};
 
     // Collect output with streaming updates
     var stdout_list = std.ArrayListUnmanaged(u8){};
@@ -46,7 +48,9 @@ fn executeBash(ctx: ToolContext) ToolResult {
             const n = stdout_file.read(&buf) catch break;
             if (n == 0) break;
 
-            stdout_list.appendSlice(ctx.allocator, buf[0..n]) catch {};
+            stdout_list.appendSlice(ctx.allocator, buf[0..n]) catch {
+                return ToolResult.err("Out of memory collecting output");
+            };
 
             // Stream partial update
             ctx.update(stdout_list.items);
@@ -60,7 +64,9 @@ fn executeBash(ctx: ToolContext) ToolResult {
     if (child.stderr) |stderr_file| {
         const content = stderr_file.readToEndAlloc(ctx.allocator, MAX_OUTPUT_SIZE) catch "";
         defer if (content.len > 0) ctx.allocator.free(content);
-        stderr_list.appendSlice(ctx.allocator, content) catch {};
+        stderr_list.appendSlice(ctx.allocator, content) catch {
+            return ToolResult.err("Out of memory collecting stderr");
+        };
     }
 
     const result = child.wait() catch {
@@ -70,12 +76,18 @@ fn executeBash(ctx: ToolContext) ToolResult {
     // Combine output
     var combined = std.ArrayListUnmanaged(u8){};
     defer combined.deinit(ctx.allocator);
-    combined.appendSlice(ctx.allocator, stdout_list.items) catch {};
+    combined.appendSlice(ctx.allocator, stdout_list.items) catch {
+        return ToolResult.err("Out of memory combining output");
+    };
     if (stderr_list.items.len > 0) {
         if (combined.items.len > 0) {
-            combined.appendSlice(ctx.allocator, "\n--- stderr ---\n") catch {};
+            combined.appendSlice(ctx.allocator, "\n--- stderr ---\n") catch {
+                return ToolResult.err("Out of memory combining output");
+            };
         }
-        combined.appendSlice(ctx.allocator, stderr_list.items) catch {};
+        combined.appendSlice(ctx.allocator, stderr_list.items) catch {
+            return ToolResult.err("Out of memory combining output");
+        };
     }
 
     // Apply truncation (keep tail for bash output)
@@ -90,24 +102,38 @@ fn executeBash(ctx: ToolContext) ToolResult {
         if (trunc_result.truncated) {
             // Add truncation notice
             var output = std.ArrayListUnmanaged(u8){};
-            output.appendSlice(ctx.allocator, trunc_result.content) catch {};
+            output.appendSlice(ctx.allocator, trunc_result.content) catch {
+                return ToolResult.err("Out of memory formatting output");
+            };
             const notice = std.fmt.allocPrint(
                 ctx.allocator,
                 "\n\n[Showing last {d} of {d} lines]",
                 .{ trunc_result.output_lines, trunc_result.total_lines },
-            ) catch "";
-            defer if (notice.len > 0) ctx.allocator.free(notice);
-            output.appendSlice(ctx.allocator, notice) catch {};
-            return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch "", null);
+            ) catch {
+                return ToolResult.err("Out of memory formatting output");
+            };
+            defer ctx.allocator.free(notice);
+            output.appendSlice(ctx.allocator, notice) catch {
+                return ToolResult.err("Out of memory formatting output");
+            };
+            return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch {
+                return ToolResult.err("Out of memory formatting output");
+            }, null);
         }
         return ToolResult.ok(trunc_result.content);
     } else {
         // Command failed - include exit code
         var output = std.ArrayListUnmanaged(u8){};
-        output.appendSlice(ctx.allocator, trunc_result.content) catch {};
-        const notice = std.fmt.allocPrint(ctx.allocator, "\n\nCommand exited with code {d}", .{exit_code}) catch "";
-        defer if (notice.len > 0) ctx.allocator.free(notice);
-        output.appendSlice(ctx.allocator, notice) catch {};
+        output.appendSlice(ctx.allocator, trunc_result.content) catch {
+            return ToolResult.err("Out of memory formatting error output");
+        };
+        const notice = std.fmt.allocPrint(ctx.allocator, "\n\nCommand exited with code {d}", .{exit_code}) catch {
+            return ToolResult.err("Out of memory formatting error output");
+        };
+        defer ctx.allocator.free(notice);
+        output.appendSlice(ctx.allocator, notice) catch {
+            return ToolResult.err("Out of memory formatting error output");
+        };
         return ToolResult.err(output.toOwnedSlice(ctx.allocator) catch "Command failed");
     }
 }

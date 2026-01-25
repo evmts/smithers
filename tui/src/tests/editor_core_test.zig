@@ -5,7 +5,7 @@ const editor = @import("../editor/editor.zig");
 
 test "Editor init creates empty editor" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), ed.lineCount());
@@ -15,7 +15,7 @@ test "Editor init creates empty editor" {
 
 test "Editor deinit frees memory" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     ed.deinit();
 }
 
@@ -23,7 +23,7 @@ test "Editor deinit frees memory" {
 
 test "Editor getText on empty returns empty" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     const text = try ed.getText();
@@ -33,7 +33,7 @@ test "Editor getText on empty returns empty" {
 
 test "Editor setText single line" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("hello world");
@@ -44,7 +44,7 @@ test "Editor setText single line" {
 
 test "Editor setText multiple lines" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("line1\nline2\nline3");
@@ -57,7 +57,7 @@ test "Editor setText multiple lines" {
 
 test "Editor setText clears previous content" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("first content");
@@ -70,7 +70,7 @@ test "Editor setText clears previous content" {
 
 test "Editor clear resets to empty" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("some content");
@@ -85,7 +85,7 @@ test "Editor clear resets to empty" {
 
 test "Editor getCursor returns position" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     const cursor = ed.getCursor();
@@ -95,7 +95,7 @@ test "Editor getCursor returns position" {
 
 test "Editor setCursor updates position" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("hello\nworld");
@@ -107,7 +107,7 @@ test "Editor setCursor updates position" {
 
 test "Editor setCursor clamps to valid range" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("hi");
@@ -122,7 +122,7 @@ test "Editor setCursor clamps to valid range" {
 
 test "Editor getLine returns line content" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("first\nsecond\nthird");
@@ -134,7 +134,7 @@ test "Editor getLine returns line content" {
 
 test "Editor getLine returns null for invalid index" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("one line");
@@ -146,7 +146,7 @@ test "Editor getLine returns null for invalid index" {
 
 test "Editor lineCount counts lines" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), ed.lineCount());
@@ -165,7 +165,7 @@ test "Editor lineCount counts lines" {
 
 test "Editor handles unicode" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("日本語\némojis 🎉");
@@ -181,7 +181,7 @@ test "Editor handles unicode" {
 
 test "Editor setText empty string" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("");
@@ -190,7 +190,7 @@ test "Editor setText empty string" {
 
 test "Editor setText trailing newline" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("line1\n");
@@ -201,7 +201,7 @@ test "Editor setText trailing newline" {
 
 test "Editor setText multiple empty lines" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     try ed.setText("\n\n\n");
@@ -212,7 +212,7 @@ test "Editor setText multiple empty lines" {
 
 test "Editor multiple setText calls" {
     const allocator = std.testing.allocator;
-    var ed = editor.Editor.init(allocator);
+    var ed = try editor.Editor.init(allocator);
     defer ed.deinit();
 
     var i: usize = 0;

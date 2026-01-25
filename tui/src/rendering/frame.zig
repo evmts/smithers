@@ -53,6 +53,8 @@ pub fn FrameRenderer(comptime R: type, comptime Loading: type, comptime Db: type
             const now = std.time.milliTimestamp();
             if (ctx.loading.isLoading()) {
                 ctx.status_bar.setCustomStatus(" Smithers is thinking...");
+            } else if (ctx.key_handler.prefix_mode) {
+                ctx.status_bar.setCustomStatus(" [Ctrl+B] c:new n:next p:prev 0-9:switch");
             } else if (now - ctx.key_handler.last_ctrl_c < 1500 and ctx.key_handler.last_ctrl_c > 0) {
                 ctx.status_bar.setCustomStatus(" Press Ctrl+C again to exit, or Ctrl+D");
             } else {

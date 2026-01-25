@@ -1,5 +1,7 @@
 # WindowsTty.read References Non-Existent Field
 
+> **VENDOR ISSUE**: This is in vendored vaxis code (renderer/src/tty.zig). Cannot fix without forking upstream.
+
 **Severity:** 🔴 Critical  
 **Type:** Compile Error  
 **File:** `renderer/WindowsTty.zig` (vendored vaxis)

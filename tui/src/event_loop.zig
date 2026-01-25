@@ -142,6 +142,9 @@ pub fn EventLoop(comptime Vaxis: type, comptime Tty: type, comptime Event: type)
             try self.loop.init();
             try self.loop.start();
             try self.vx.enterAltScreen(self.tty.writer());
+            try self.vx.setMouseMode(self.tty.writer(), true);
+            const ws = try self.getWinsize();
+            try self.resize(ws);
         }
     };
 }

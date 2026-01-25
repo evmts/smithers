@@ -75,40 +75,35 @@ pub fn ChatHistory(comptime R: type) type {
         pub fn scrollUpMessage(self: *Self, text_width: u16) void {
             if (self.messages.len == 0) return;
             
-            // Find current message at top of view and scroll to previous
-            var cumulative_height: u16 = 0;
+            var cumulative_height: usize = 0;
             var i: usize = self.messages.len;
             while (i > 0) : (i -= 1) {
                 const msg = self.messages[i - 1];
-                const msg_height = countLines(msg.content, text_width) + 1;
+                const msg_height = self.getMessageHeight(msg, text_width) + 1;
                 
                 if (cumulative_height >= self.scroll_offset) {
-                    // This is the first visible message, scroll to show the one before it
-                    self.scroll_offset = cumulative_height + msg_height;
+                    self.scroll_offset = @intCast(@min(cumulative_height + msg_height, std.math.maxInt(u16)));
                     return;
                 }
                 cumulative_height += msg_height;
             }
-            // Already at top
-            self.scroll_offset = cumulative_height;
+            self.scroll_offset = @intCast(@min(cumulative_height, std.math.maxInt(u16)));
         }
 
         /// Scroll down by one message
         pub fn scrollDownMessage(self: *Self, text_width: u16) void {
             if (self.messages.len == 0 or self.scroll_offset == 0) return;
             
-            // Find message at current offset and scroll down by its height
-            var cumulative_height: u16 = 0;
+            var cumulative_height: usize = 0;
             var i: usize = self.messages.len;
             while (i > 0) : (i -= 1) {
                 const msg = self.messages[i - 1];
-                const msg_height = countLines(msg.content, text_width) + 1;
+                const msg_height = self.getMessageHeight(msg, text_width) + 1;
                 cumulative_height += msg_height;
                 
                 if (cumulative_height >= self.scroll_offset) {
-                    // Scroll down to previous message boundary
                     if (cumulative_height > msg_height) {
-                        self.scroll_offset = cumulative_height - msg_height;
+                        self.scroll_offset = @intCast(@min(cumulative_height - msg_height, std.math.maxInt(u16)));
                     } else {
                         self.scroll_offset = 0;
                     }
@@ -516,24 +511,26 @@ pub fn ChatHistory(comptime R: type) type {
         }
 
         fn getMessageHeight(self: *Self, msg: db.Message, text_width: u16) u16 {
-            // Determine if this message uses markdown rendering
+            // Determine rendering mode based on message role/type
+            const is_read_file = if (msg.tool_name) |tn| std.mem.eql(u8, tn, "read_file") else false;
+            const is_markdown_file = if (is_read_file) blk: {
+                if (msg.tool_input) |ti| {
+                    break :blk std.mem.endsWith(u8, ti, ".md") or std.mem.endsWith(u8, ti, ".mdx");
+                }
+                break :blk false;
+            } else false;
+            const multi_line_system = std.mem.indexOf(u8, msg.content, "\n") != null and msg.tool_name == null;
+            
             const uses_markdown = switch (msg.role) {
                 .assistant => true,
-                .system => blk: {
-                    const is_read_file = if (msg.tool_name) |tn| std.mem.eql(u8, tn, "read_file") else false;
-                    if (is_read_file) {
-                        if (msg.tool_input) |ti| {
-                            break :blk std.mem.endsWith(u8, ti, ".md") or std.mem.endsWith(u8, ti, ".mdx");
-                        }
-                    }
-                    // Multi-line system messages also use markdown
-                    break :blk std.mem.indexOf(u8, msg.content, "\n") != null and msg.tool_name == null;
-                },
+                .system => is_markdown_file or multi_line_system,
                 .user => false,
             };
+            
+            // Tool results (except markdown files) use code rendering (no wrap, newlines only)
+            const uses_code_rendering = msg.role == .system and msg.tool_name != null and !is_markdown_file and !multi_line_system;
 
             if (uses_markdown) {
-                // Trim trailing whitespace to match rendering behavior
                 const trimmed = std.mem.trimRight(u8, msg.content, " \t\n\r");
                 var parser = md.MarkdownParser.init(self.allocator);
                 var result = parser.parse(trimmed) catch {
@@ -542,8 +539,22 @@ pub fn ChatHistory(comptime R: type) type {
                 defer result.deinit();
                 return @intCast(result.lines.len);
             }
+            
+            if (uses_code_rendering) {
+                // Code rendering counts newlines only, no wrapping
+                return countNewlineLines(msg.content);
+            }
 
             return countLines(msg.content, text_width);
+        }
+        
+        fn countNewlineLines(text: []const u8) u16 {
+            if (text.len == 0) return 1;
+            var count: u16 = 1;
+            for (text) |c| {
+                if (c == '\n') count +|= 1;
+            }
+            return count;
         }
 
         fn countLines(text: []const u8, width: u16) u16 {

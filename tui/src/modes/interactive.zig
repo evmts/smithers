@@ -52,7 +52,7 @@ pub fn InteractiveMode(
             var database = try Db.init(allocator, db_path);
             errdefer database.deinit();
 
-            var input = Inp.init(allocator);
+            var input = try Inp.init(allocator);
             errdefer input.deinit();
 
             var chat_history = Chat.init(allocator);
@@ -273,13 +273,17 @@ pub fn InteractiveMode(
             "I understand. Let me process that for you.",
         };
 
+        // Counter for round-robin mock responses
+        var mock_counter: usize = 0;
+
         fn startLoading(self: *Self, _: []const u8) !void {
             self.is_busy = true;
             self.loading_start = std.time.milliTimestamp();
             self.spinner_frame = 0;
 
-            // Prepare mock response
-            const idx = @as(usize, @intCast(@mod(std.time.timestamp(), mock_responses.len)));
+            // Prepare mock response using counter for deterministic cycling
+            const idx = mock_counter;
+            mock_counter = (mock_counter + 1) % mock_responses.len;
             self.pending_response = try self.allocator.dupe(u8, mock_responses[idx]);
         }
 

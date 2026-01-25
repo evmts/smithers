@@ -46,11 +46,9 @@ pub const StreamingState = struct {
 
         if (child.stdout) |stdout| {
             const fd = stdout.handle;
-            const F_GETFL = 3;
-            const F_SETFL = 4;
-            const O_NONBLOCK: usize = 0x0004;
-            const flags = std.posix.fcntl(fd, F_GETFL, 0) catch 0;
-            _ = std.posix.fcntl(fd, F_SETFL, flags | O_NONBLOCK) catch {};
+            const flags = std.posix.fcntl(fd, std.posix.F.GETFL, 0) catch 0;
+            const o_nonblock: usize = @as(u32, @bitCast(std.posix.O{ .NONBLOCK = true }));
+            _ = std.posix.fcntl(fd, std.posix.F.SETFL, flags | o_nonblock) catch {};
         }
 
         self.child = child;
@@ -69,8 +67,16 @@ pub const StreamingState = struct {
         };
 
         if (bytes_read == 0) {
-            if (self.is_done) return true;
-            return false;
+            if (self.line_pos > 0) {
+                const line = self.line_buffer[0..self.line_pos];
+                try self.processLine(line);
+                self.line_pos = 0;
+            }
+            self.is_done = true;
+            if (self.stop_reason == null) {
+                self.stop_reason = self.alloc.dupe(u8, "eof") catch null;
+            }
+            return true;
         }
 
         for (buf[0..bytes_read]) |byte| {

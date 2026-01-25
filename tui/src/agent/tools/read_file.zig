@@ -17,8 +17,10 @@ fn executeReadFile(ctx: ToolContext) ToolResult {
         return ToolResult.err("Cancelled");
     }
 
-    const offset = @as(usize, @intCast(ctx.getInt("offset") orelse 0));
-    const limit = @as(usize, @intCast(ctx.getInt("limit") orelse DEFAULT_LIMIT));
+    const raw_offset = ctx.getInt("offset") orelse 0;
+    const offset: usize = if (raw_offset < 0) 0 else @intCast(raw_offset);
+    const raw_limit = ctx.getInt("limit") orelse @as(i64, DEFAULT_LIMIT);
+    const limit: usize = if (raw_limit <= 0) DEFAULT_LIMIT else @intCast(@min(raw_limit, 1_000_000));
 
     const file = std.fs.cwd().openFile(path, .{}) catch |e| {
         return switch (e) {

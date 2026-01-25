@@ -32,9 +32,9 @@ pub fn Input(comptime R: type) type {
 
         const Self = @This();
 
-        pub fn init(allocator: std.mem.Allocator) Self {
+        pub fn init(allocator: std.mem.Allocator) !Self {
             return .{
-                .editor = Editor.init(allocator),
+                .editor = try Editor.init(allocator),
                 .allocator = allocator,
             };
         }
@@ -237,7 +237,9 @@ pub fn Input(comptime R: type) type {
 
         /// Clear the input
         pub fn clear(self: *Self) void {
-            self.editor.clear() catch {};
+            self.editor.clear() catch |err| {
+                std.log.warn("input clear failed: {s}", .{@errorName(err)});
+            };
         }
 
         /// Draw the input box using renderer (for layout control)

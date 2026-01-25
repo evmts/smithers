@@ -106,13 +106,16 @@ pub fn ToolExecutor(comptime RegistryFactory: type) type {
 
             const result = tool_registry.execute(ctx.tool_name, input_value);
 
-            ctx.executor.mutex.lock();
-            ctx.executor.result = .{
-                .tool_id = ctx.tool_id,
-                .tool_name = ctx.tool_name,
-                .result = result,
-            };
-            ctx.executor.mutex.unlock();
+            {
+                ctx.executor.mutex.lock();
+                defer ctx.executor.mutex.unlock();
+
+                ctx.executor.result = .{
+                    .tool_id = ctx.tool_id,
+                    .tool_name = ctx.tool_name,
+                    .result = result,
+                };
+            }
 
             ctx.allocator.free(ctx.input_json);
         }

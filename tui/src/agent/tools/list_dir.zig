@@ -11,7 +11,8 @@ const MAX_DEPTH = 3;
 
 fn executeListDir(ctx: ToolContext) ToolResult {
     const path = ctx.getString("path") orelse ".";
-    const depth = @as(usize, @intCast(@max(1, @min(MAX_DEPTH, ctx.getInt("depth") orelse DEFAULT_DEPTH))));
+    const raw_depth = ctx.getInt("depth") orelse DEFAULT_DEPTH;
+    const depth: usize = if (raw_depth < 1) 1 else @intCast(@min(raw_depth, MAX_DEPTH));
 
     if (ctx.isCancelled()) {
         return ToolResult.err("Cancelled");
@@ -60,18 +61,28 @@ fn executeListDir(ctx: ToolContext) ToolResult {
         // Indent based on depth
         var i: usize = 0;
         while (i < entry.indent) : (i += 1) {
-            output.appendSlice(ctx.allocator, "  ") catch {};
+            output.appendSlice(ctx.allocator, "  ") catch {
+                return ToolResult.err("Out of memory formatting output");
+            };
         }
 
-        output.appendSlice(ctx.allocator, entry.name) catch {};
+        output.appendSlice(ctx.allocator, entry.name) catch {
+            return ToolResult.err("Out of memory formatting output");
+        };
 
         switch (entry.kind) {
-            .directory => output.append(ctx.allocator, '/') catch {},
-            .sym_link => output.append(ctx.allocator, '@') catch {},
+            .directory => output.append(ctx.allocator, '/') catch {
+                return ToolResult.err("Out of memory formatting output");
+            },
+            .sym_link => output.append(ctx.allocator, '@') catch {
+                return ToolResult.err("Out of memory formatting output");
+            },
             else => {},
         }
 
-        output.append(ctx.allocator, '\n') catch {};
+        output.append(ctx.allocator, '\n') catch {
+            return ToolResult.err("Out of memory formatting output");
+        };
     }
 
     if (entries.items.len == 0) {
@@ -79,11 +90,17 @@ fn executeListDir(ctx: ToolContext) ToolResult {
     }
 
     if (entry_count >= MAX_ENTRIES) {
-        output.appendSlice(ctx.allocator, "\n(More than 500 entries, results truncated)") catch {};
-        return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch "", null);
+        output.appendSlice(ctx.allocator, "\n(More than 500 entries, results truncated)") catch {
+            return ToolResult.err("Out of memory formatting output");
+        };
+        return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch {
+            return ToolResult.err("Out of memory formatting output");
+        }, null);
     }
 
-    return ToolResult.ok(output.toOwnedSlice(ctx.allocator) catch "");
+    return ToolResult.ok(output.toOwnedSlice(ctx.allocator) catch {
+        return ToolResult.err("Out of memory formatting output");
+    });
 }
 
 const Entry = struct {

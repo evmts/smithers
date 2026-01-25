@@ -30,11 +30,13 @@ pub fn CommandPopup(comptime R: type) type {
         const desc_color = R.Color{ .rgb = .{ 0x56, 0x5f, 0x89 } };
         const highlight_color = R.Color{ .rgb = .{ 0xff, 0x9e, 0x64 } };
 
-        pub fn init(allocator: std.mem.Allocator) Self {
+        pub fn init(allocator: std.mem.Allocator) !Self {
+            // Allocate empty filter slice for consistent ownership
+            const empty_filter = try allocator.alloc(u8, 0);
             var self = Self{
                 .allocator = allocator,
                 .visible = false,
-                .filter = &[_]u8{},
+                .filter = empty_filter,
                 .filtered_commands = .empty,
                 .select_list = SelectList(FilteredCommand).init(&[_]FilteredCommand{}, MAX_POPUP_ROWS),
             };
@@ -43,9 +45,7 @@ pub fn CommandPopup(comptime R: type) type {
         }
 
         pub fn deinit(self: *Self) void {
-            if (self.filter.len > 0) {
-                self.allocator.free(self.filter);
-            }
+            self.allocator.free(self.filter);
             self.filtered_commands.deinit(self.allocator);
         }
 
@@ -79,7 +79,7 @@ pub fn CommandPopup(comptime R: type) type {
 
             const cmds = builtInSlashCommands();
             const filter_lower = self.toLowerAlloc(self.filter) catch return;
-            defer if (filter_lower.len > 0) self.allocator.free(filter_lower);
+            defer self.allocator.free(filter_lower);
 
             for (cmds) |entry| {
                 const cmd_name = entry.cmd.command();
@@ -105,7 +105,7 @@ pub fn CommandPopup(comptime R: type) type {
         }
 
         fn toLowerAlloc(self: *Self, str: []const u8) ![]u8 {
-            if (str.len == 0) return &[_]u8{};
+            // Always allocate, even for empty - ensures consistent ownership
             const result = try self.allocator.alloc(u8, str.len);
             for (str, 0..) |c, i| {
                 result[i] = std.ascii.toLower(c);

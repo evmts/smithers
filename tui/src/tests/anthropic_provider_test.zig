@@ -16,5 +16,5 @@ test "anthropic_provider exports expected types" {
         @hasDecl(anthropic, "startStream");
 
     // Module should have some streaming functionality
-    _ = has_streaming;
+    try std.testing.expect(has_streaming);
 }

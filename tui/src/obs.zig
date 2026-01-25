@@ -264,11 +264,47 @@ pub const Obs = struct {
     }
 };
 
-/// Escape JSON special characters (simple, no alloc)
+/// Thread-local buffer for JSON escaping
+threadlocal var escape_buf: [512]u8 = undefined;
+
+/// Escape JSON special characters into thread-local buffer
 fn escapeJson(input: []const u8) []const u8 {
-    // For now, just return input - proper escaping would need a buffer
-    // In production, scan for \n, \r, \t, ", \ and escape
-    return input;
+    var i: usize = 0;
+    for (input) |c| {
+        if (i + 2 >= escape_buf.len) break;
+        switch (c) {
+            '"' => {
+                escape_buf[i] = '\\';
+                escape_buf[i + 1] = '"';
+                i += 2;
+            },
+            '\\' => {
+                escape_buf[i] = '\\';
+                escape_buf[i + 1] = '\\';
+                i += 2;
+            },
+            '\n' => {
+                escape_buf[i] = '\\';
+                escape_buf[i + 1] = 'n';
+                i += 2;
+            },
+            '\r' => {
+                escape_buf[i] = '\\';
+                escape_buf[i + 1] = 'r';
+                i += 2;
+            },
+            '\t' => {
+                escape_buf[i] = '\\';
+                escape_buf[i + 1] = 't';
+                i += 2;
+            },
+            else => {
+                escape_buf[i] = c;
+                i += 1;
+            },
+        }
+    }
+    return escape_buf[0..i];
 }
 
 /// Format helper for key events

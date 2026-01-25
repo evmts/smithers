@@ -21,9 +21,9 @@ pub const Editor = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator) Self {
+    pub fn init(allocator: Allocator) !Self {
         var lines = ArrayListUnmanaged(ArrayListUnmanaged(u8)){};
-        lines.append(allocator, ArrayListUnmanaged(u8){}) catch {};
+        try lines.append(allocator, ArrayListUnmanaged(u8){});
 
         return .{
             .lines = lines,
@@ -444,7 +444,7 @@ fn isWordChar(c: u8) bool {
 
 test "Editor init/deinit" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), editor.lines.items.len);
@@ -454,7 +454,7 @@ test "Editor init/deinit" {
 
 test "Editor setText/getText" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello\nWorld");
@@ -467,7 +467,7 @@ test "Editor setText/getText" {
 
 test "Editor insertChar" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.insertChar('H');
@@ -482,7 +482,7 @@ test "Editor insertChar" {
 
 test "Editor deleteCharBackward" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello");
@@ -499,7 +499,7 @@ test "Editor deleteCharBackward" {
 
 test "Editor deleteCharBackward join lines" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello\nWorld");
@@ -518,7 +518,7 @@ test "Editor deleteCharBackward join lines" {
 
 test "Editor newline" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello");
@@ -533,7 +533,7 @@ test "Editor newline" {
 
 test "Editor cursor movement" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello\nWorld");
@@ -553,7 +553,7 @@ test "Editor cursor movement" {
 
 test "Editor word movement" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("hello world test");
@@ -571,7 +571,7 @@ test "Editor word movement" {
 
 test "Editor deleteToLineEnd (Ctrl+K)" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello World");
@@ -588,7 +588,7 @@ test "Editor deleteToLineEnd (Ctrl+K)" {
 
 test "Editor deleteToLineStart (Ctrl+U)" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello World");
@@ -605,7 +605,7 @@ test "Editor deleteToLineStart (Ctrl+U)" {
 
 test "Editor deleteWordBackward (Ctrl+W)" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("hello world");
@@ -621,7 +621,7 @@ test "Editor deleteWordBackward (Ctrl+W)" {
 
 test "Editor yank (Ctrl+Y)" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello World");
@@ -638,7 +638,7 @@ test "Editor yank (Ctrl+Y)" {
 
 test "Editor undo" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello");
@@ -656,7 +656,7 @@ test "Editor undo" {
 
 test "Editor clear" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello\nWorld");
@@ -671,7 +671,7 @@ test "Editor clear" {
 
 test "Editor getLine" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("Hello\nWorld\nTest");
@@ -684,7 +684,7 @@ test "Editor getLine" {
 
 test "Editor lineCount" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("One\nTwo\nThree");
@@ -693,7 +693,7 @@ test "Editor lineCount" {
 
 test "Editor history navigation" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     editor.addToHistory("first");
@@ -717,7 +717,7 @@ test "Editor history navigation" {
 
 test "Editor moveRight wraps to next line" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("AB\nCD");
@@ -731,7 +731,7 @@ test "Editor moveRight wraps to next line" {
 
 test "Editor moveLeft wraps to prev line" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.setText("AB\nCD");
@@ -746,7 +746,7 @@ test "Editor moveLeft wraps to prev line" {
 
 test "Editor insertText with newlines" {
     const allocator = std.testing.allocator;
-    var editor = Editor.init(allocator);
+    var editor = try Editor.init(allocator);
     defer editor.deinit();
 
     try editor.insertText("Hello\nWorld\nTest");

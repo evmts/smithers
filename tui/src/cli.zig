@@ -34,11 +34,8 @@ pub fn runCli(alloc: std.mem.Allocator, prompt: []const u8) !void {
         std.debug.print("ERROR: ANTHROPIC_API_KEY not set\n", .{});
         return error.MissingApiKey;
     };
-    std.debug.print("API key: {s}...{s} (len={d})\n", .{
-        api_key[0..@min(4, api_key.len)],
-        api_key[@max(api_key.len, 4) - 4 ..],
-        api_key.len,
-    });
+    std.debug.print("API key: configured\n", .{});
+    _ = api_key;
 
     // Create in-memory database
     var database = try Database.init(alloc, ":memory:");

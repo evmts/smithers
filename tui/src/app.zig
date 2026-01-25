@@ -81,7 +81,7 @@ pub fn App(
             // NOTE: Don't call start() here - event_loop will be moved when Self is returned
             // start() must be called in run() when self has a stable address
 
-            var input = Input.init(alloc);
+            var input = try Input.init(alloc);
             errdefer input.deinit();
 
             var chat_history = ChatHistory.init(alloc);

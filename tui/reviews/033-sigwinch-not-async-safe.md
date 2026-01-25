@@ -1,5 +1,7 @@
 # POSIX SIGWINCH Handler Not Async-Signal-Safe
 
+> **VENDOR ISSUE**: This is in vendored vaxis code (renderer/src/tty.zig). Cannot fix without forking upstream.
+
 **Severity:** 🔴 Critical  
 **Type:** Concurrency / UB  
 **File:** `renderer/PosixTty.zig` (vendored vaxis)

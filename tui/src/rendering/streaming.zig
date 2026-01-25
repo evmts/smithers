@@ -1,4 +1,5 @@
 const std = @import("std");
+const width_mod = @import("width.zig");
 
 /// Brightness levels for shimmer animation (dim -> normal -> bright -> normal -> dim)
 const ShimmerLevel = enum(u3) {
@@ -111,22 +112,27 @@ pub const StreamingText = struct {
         }
 
         var line_start: usize = 0;
-        var col: u16 = 0;
+        var col: u32 = 0;
+        var i: usize = 0;
 
-        for (text, 0..) |c, i| {
+        while (i < text.len) {
+            const c = text[i];
             if (c == '\n') {
                 const line_text = try allocator.dupe(u8, text[line_start..i]);
                 try lines.append(allocator, self.makeDisplayLine(line_text, line_start, i));
                 line_start = i + 1;
                 col = 0;
+                i += 1;
             } else {
-                col += 1;
+                const char_width = width_mod.charWidth(c);
+                col += char_width;
                 if (col >= width) {
                     const line_text = try allocator.dupe(u8, text[line_start .. i + 1]);
                     try lines.append(allocator, self.makeDisplayLine(line_text, line_start, i + 1));
                     line_start = i + 1;
                     col = 0;
                 }
+                i += 1;
             }
         }
 

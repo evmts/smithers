@@ -508,17 +508,24 @@ test "Database deleteSession removes session and messages" {
     var database = try TestDatabase.init(allocator, null);
     defer database.deinit();
 
+    // Store original session to switch back to
+    const original_session = database.getCurrentSessionId();
+
     const session_to_delete = try database.createSession("temporary");
     database.switchSession(session_to_delete);
     _ = try database.addMessage(.user, "will be deleted");
 
     const count_before = try database.getSessionCount();
 
-    database.switchSession(database.current_session_id);
+    // Switch back to original session before deleting
+    database.switchSession(original_session);
     try database.deleteSession(session_to_delete);
 
     const count_after = try database.getSessionCount();
     try std.testing.expectEqual(count_before - 1, count_after);
+
+    // Verify we're still on the original session
+    try std.testing.expectEqual(original_session, database.getCurrentSessionId());
 }
 
 test "Database renameSession" {

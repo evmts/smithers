@@ -216,9 +216,9 @@ pub const Agent = struct {
 
                 for (response.tool_calls.items) |tc| {
                     try tc_infos.append(self.allocator, .{
-                        .id = tc.id,
-                        .name = tc.name,
-                        .arguments = tc.arguments,
+                        .id = try self.allocator.dupe(u8, tc.id),
+                        .name = try self.allocator.dupe(u8, tc.name),
+                        .arguments = try self.allocator.dupe(u8, tc.arguments),
                     });
                 }
 
