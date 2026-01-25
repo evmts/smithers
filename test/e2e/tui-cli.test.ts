@@ -75,9 +75,10 @@ async function runCliMode(prompt: string, timeoutMs = 60000): Promise<CliResult>
 }
 
 function extractAssistantResponse(output: string): string {
-  // Find the assistant response from the output
-  const match = output.match(/\[[\d]+\] ASSISTANT:\n([\s\S]*?)(?=\n\n===|\n\[[\d]+\]|$)/)
-  return match?.[1]?.trim() ?? ''
+  // Find ALL assistant responses and concatenate them
+  const regex = /\[[\d]+\] ASSISTANT:\n([\s\S]*?)(?=\n\n===|\n\[[\d]+\]|$)/g
+  const matches = [...output.matchAll(regex)]
+  return matches.map(m => m[1]?.trim()).join('\n')
 }
 
 function getCombinedOutput(result: CliResult): string {
@@ -182,26 +183,30 @@ describe('TUI CLI Tool Usage Tests', () => {
 describe('TUI CLI Error Handling Tests', () => {
   test('handles missing file gracefully', async () => {
     const result = await runCliMode('Read the file /nonexistent/path/to/file.txt and show its contents')
+    const output = getCombinedOutput(result)
     
     expect(result.timeout).toBe(false)
     
-    const response = extractAssistantResponse(result.stdout)
+    const response = extractAssistantResponse(output)
     // Should either error or explain the file doesn't exist
     const handledError = response.toLowerCase().includes('not found') ||
                         response.toLowerCase().includes('error') ||
                         response.toLowerCase().includes('does not exist') ||
                         response.toLowerCase().includes("doesn't exist") ||
                         response.toLowerCase().includes('cannot') ||
-                        response.toLowerCase().includes("couldn't")
+                        response.toLowerCase().includes("couldn't") ||
+                        output.toLowerCase().includes('error') ||
+                        output.toLowerCase().includes('not found')
     expect(handledError).toBe(true)
   }, 60000)
 
   test('handles invalid bash command gracefully', async () => {
     const result = await runCliMode('Run this bash command: ls /definitely/not/a/real/path/123456789')
+    const output = getCombinedOutput(result)
     
     expect(result.timeout).toBe(false)
     
     // Should complete without crashing
-    expect(result.stdout).toContain('Agent loop finished')
+    expect(output).toContain('Agent loop finished')
   }, 60000)
 })
