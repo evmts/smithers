@@ -128,10 +128,26 @@ fn executeReadFile(ctx: ToolContext) ToolResult {
         output.appendSlice(ctx.allocator, notice) catch {};
     }
 
+    // Build details JSON
+    const details_json = buildReadDetailsJson(ctx.allocator, total_lines, has_more, offset, end_line) catch {
+        if (has_more) {
+            return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch "", null);
+        }
+        return ToolResult.okOwned(output.toOwnedSlice(ctx.allocator) catch "");
+    };
+
     if (has_more) {
-        return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch "", null);
+        return ToolResult.okTruncatedWithDetails(output.toOwnedSlice(ctx.allocator) catch "", null, details_json);
     }
-    return ToolResult.okOwned(output.toOwnedSlice(ctx.allocator) catch "");
+    return ToolResult.okOwnedWithDetails(output.toOwnedSlice(ctx.allocator) catch "", details_json);
+}
+
+fn buildReadDetailsJson(allocator: std.mem.Allocator, total_lines: usize, truncated: bool, start_line: usize, end_line: usize) ![]const u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "{{\"total_lines\":{d},\"truncated\":{s},\"start_line\":{d},\"end_line\":{d}}}",
+        .{ total_lines, if (truncated) "true" else "false", start_line, end_line },
+    );
 }
 
 pub const tool = Tool{

@@ -3,7 +3,15 @@ const db = @import("../db.zig");
 const tool_executor_mod = @import("tool_executor.zig");
 const provider_interface = @import("provider_interface.zig");
 const ToolCallInfo = provider_interface.ToolCallInfo;
+const ModelConfig = provider_interface.ModelConfig;
+const ProviderType = provider_interface.ProviderType;
+const getApiKey = provider_interface.getApiKey;
 const obs = @import("../obs.zig");
+const compaction = @import("compaction.zig");
+const types = @import("types.zig");
+const ThinkingLevel = types.ThinkingLevel;
+const openai_provider = @import("openai_provider.zig");
+const gemini_provider = @import("gemini_provider.zig");
 
 pub const tools_json =
     \\[{"name":"read_file","description":"Read contents of a file with line numbers. Use offset/limit for pagination.","input_schema":{"type":"object","properties":{"path":{"type":"string","description":"File path to read"},"offset":{"type":"integer","description":"Line to start from (0-indexed)"},"limit":{"type":"integer","description":"Max lines to read"}},"required":["path"]}},
@@ -39,6 +47,34 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
         pub fn deinit(self: *Self) void {
             self.scratch.deinit();
+        }
+
+        /// Build the API request body for the configured provider, including thinking parameters if enabled
+        fn buildRequestBody(self: *Self, alloc: std.mem.Allocator, messages_json: []const u8, tools: []const u8, config: ModelConfig) ![]const u8 {
+            const thinking_level = self.loading.getThinkingLevel();
+
+            return switch (config.provider) {
+                .anthropic => blk: {
+                    if (thinking_level.isEnabled()) {
+                        const budget = thinking_level.budgetTokens();
+                        const max_tokens = budget + 4096;
+                        break :blk try std.fmt.allocPrint(alloc,
+                            \\{{"model":"{s}","max_tokens":{d},"stream":true,"thinking":{{"type":"enabled","budget_tokens":{d}}},"messages":{s},"tools":{s}}}
+                        , .{ config.model_id, max_tokens, budget, messages_json, tools });
+                    } else {
+                        break :blk try std.fmt.allocPrint(alloc,
+                            \\{{"model":"{s}","max_tokens":4096,"stream":true,"messages":{s},"tools":{s}}}
+                        , .{ config.model_id, messages_json, tools });
+                    }
+                },
+                .openai => try openai_provider.buildRequestBody(alloc, config.model_id, messages_json, tools),
+                .google => try gemini_provider.buildRequestBody(alloc, config.model_id, messages_json, tools),
+            };
+        }
+
+        /// Get the current model configuration from environment
+        fn getModelConfig() ModelConfig {
+            return ModelConfig.fromEnv();
         }
 
         /// Tick returns true if state changed (main thread should reload chat_history)
@@ -94,10 +130,13 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 const elapsed = std.time.milliTimestamp() - start_time;
                 if (elapsed >= 50) {
                     obs.global.logSimple(.debug, @src(), "agent.start_stream", "starting query stream");
+                    // Emit agent_start event when first starting a query
+                    self.loading.emitAgentStart();
                     const started = try self.start_query_stream(database);
                     state_changed = true;
                     if (!started) {
                         obs.global.logSimple(.warn, @src(), "agent.start_stream", "failed to start");
+                        self.loading.emitAgentError("Failed to start stream");
                     }
                 }
             }
@@ -140,14 +179,26 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         fn start_query_stream(self: *Self, database: *Database) !bool {
             obs.global.logSimple(.debug, @src(), "agent.query_stream", "checking api key");
 
-            const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
-                obs.global.logSimple(.warn, @src(), "agent.query_stream", "ANTHROPIC_API_KEY not set");
-                _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
+            // Get model configuration from environment
+            const config = getModelConfig();
+
+            const api_key = getApiKey(config.provider) orelse {
+                var key_buf: [128]u8 = undefined;
+                const key_name = switch (config.provider) {
+                    .anthropic => "ANTHROPIC_API_KEY",
+                    .openai => "OPENAI_API_KEY",
+                    .google => "GEMINI_API_KEY",
+                };
+                const err_text = std.fmt.bufPrint(&key_buf, "Error: {s} not set", .{key_name}) catch "Error: API key not set";
+                obs.global.logSimple(.warn, @src(), "agent.query_stream", err_text);
+                _ = try database.addMessage(.system, err_text);
                 self.loading.cleanup(self.alloc);
                 return false;
             };
 
-            obs.global.logSimple(.debug, @src(), "agent.query_stream", "building messages json");
+            var provider_buf: [64]u8 = undefined;
+            const provider_msg = std.fmt.bufPrint(&provider_buf, "using {s}/{s}", .{ config.provider.toString(), config.model_id }) catch "?";
+            obs.global.logSimple(.debug, @src(), "agent.query_stream", provider_msg);
 
             // Use scratch arena for all temporary allocations in this function
             const scratch = self.scratch.allocator();
@@ -177,12 +228,14 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             const len_msg = std.fmt.bufPrint(&len_buf, "request body len={d}", .{msg_buf.items.len}) catch "?";
             obs.global.logSimple(.debug, @src(), "agent.query_stream", len_msg);
 
-            const request_body = try std.fmt.allocPrint(scratch,
-                \\{{"model":"claude-sonnet-4-20250514","max_tokens":4096,"stream":true,"messages":{s},"tools":{s}}}
-            , .{ msg_buf.items, tools_json });
+            const request_body = try self.buildRequestBody(scratch, msg_buf.items, tools_json, config);
 
             // Create placeholder message for streaming response
             const msg_id = try database.addMessage(.assistant, "▌");
+
+            // Emit turn_start and message_start events
+            self.loading.emitTurnStart();
+            self.loading.emitMessageStart(msg_id);
 
             obs.global.logSimple(.debug, @src(), "agent.query_stream", "calling ProviderApi.startStream");
 
@@ -193,6 +246,7 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                 const err_msg = std.fmt.bufPrint(&err_buf, "startStream error: {s}", .{@errorName(err)}) catch "error";
                 obs.global.logSimple(.err, @src(), "agent.query_stream", err_msg);
                 try database.updateMessageContent(msg_id, "Error: Failed to start API request");
+                self.loading.emitAgentError("Failed to start API request");
                 self.loading.cleanup(self.alloc);
                 return false;
             };
@@ -209,23 +263,40 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         fn start_continuation_stream(self: *Self, database: *Database) !bool {
             const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
                 _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
+                // Mark agent run as failed before cleanup (avoids stuck "continuing" status)
+                if (self.loading.agent_run_id) |rid| {
+                    database.failAgentRun(rid) catch |err| {
+                        obs.global.logSimple(.err, @src(), "db.failAgentRun", @errorName(err));
+                    };
+                }
                 self.loading.cleanup(self.alloc);
                 return false;
             };
 
             // Use scratch for temporary request body
             const scratch = self.scratch.allocator();
-            const request_body = try std.fmt.allocPrint(scratch,
-                \\{{"model":"claude-sonnet-4-20250514","max_tokens":4096,"stream":true,"messages":{s},"tools":{s}}}
-            , .{ self.loading.pending_continuation.?, tools_json });
+            const request_body = try self.buildRequestBody(scratch, self.loading.pending_continuation.?, tools_json);
 
             // Create placeholder message for continuation response
             const msg_id = try database.addMessage(.assistant, "▌");
 
+            // Emit turn_start and message_start events for continuation
+            self.loading.emitTurnStart();
+            self.loading.emitMessageStart(msg_id);
+
             // Initialize streaming state using provider interface
             self.streaming = ProviderApi.startStream(self.alloc, api_key, request_body) catch |err| {
-                _ = std.log.err("Failed to start continuation stream: {s}", .{@errorName(err)});
+                var err_buf: [128]u8 = undefined;
+                const err_msg = std.fmt.bufPrint(&err_buf, "continuation stream error: {s}", .{@errorName(err)}) catch "error";
+                obs.global.logSimple(.err, @src(), "agent.continuation", err_msg);
                 try database.updateMessageContent(msg_id, "Error: Failed to continue after tool execution");
+                self.loading.emitAgentError("Failed to continue after tool execution");
+                // Mark agent run as failed before cleanup (avoids stuck "continuing" status)
+                if (self.loading.agent_run_id) |rid| {
+                    database.failAgentRun(rid) catch |fail_err| {
+                        obs.global.logSimple(.err, @src(), "db.failAgentRun", @errorName(fail_err));
+                    };
+                }
                 self.loading.cleanup(self.alloc);
                 return false;
             };
@@ -267,6 +338,8 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     database.updateMessageContent(msg_id, display_text) catch |err| {
                         obs.global.logSimple(.err, @src(), "db.updateMessageContent", @errorName(err));
                     };
+                    // Emit message_update event (streaming delta)
+                    self.loading.emitMessageUpdate(msg_id, "", text);
                     state_changed = true;
                 } else if (is_done and !ProviderApi.hasToolCalls(stream)) {
                     database.updateMessageContent(msg_id, "No response from AI.") catch |err| {
@@ -336,22 +409,68 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                         };
                     }
 
+                    // Emit message_end and turn_end events (with tool calls pending)
+                    if (stream.message_id) |msg_id| {
+                        self.loading.emitMessageEnd(msg_id, ProviderApi.getText(stream));
+                    }
+                    self.loading.emitTurnEnd(true);
+
                     // Clean up stream but keep loading state active
                     ProviderApi.cleanup(stream, self.alloc);
                     self.streaming = null;
                 } else {
-                    // No tool calls - stream complete, clean up
+                    // Emit message_end and turn_end events (no tool calls)
+                    if (stream.message_id) |msg_id| {
+                        self.loading.emitMessageEnd(msg_id, text);
+                    }
+                    self.loading.emitTurnEnd(false);
+
+                    // No tool calls - stream complete
                     ProviderApi.cleanup(stream, self.alloc);
                     self.streaming = null;
 
-                    // Complete any active run
-                    if (self.loading.agent_run_id) |rid| {
-                        database.completeAgentRun(rid) catch |err| {
-                            obs.global.logSimple(.err, @src(), "db.completeAgentRun", @errorName(err));
+                    // Check for follow-up messages before fully completing
+                    if (self.loading.hasFollowUpMessages()) {
+                        obs.global.logSimple(.info, @src(), "agent.followup", "follow-up messages detected - starting new turn");
+
+                        // Get follow-up messages and start a new query
+                        const followup_msgs = self.loading.getFollowUpMessages(self.alloc) catch &[_][]const u8{};
+                        if (followup_msgs.len > 0) {
+                            // Add follow-up messages to chat and set as pending query
+                            for (followup_msgs) |followup_msg| {
+                                _ = database.addMessage(.user, followup_msg) catch |err| {
+                                    obs.global.logSimple(.err, @src(), "db.addMessage.followup", @errorName(err));
+                                };
+                                // Use first message as the pending query
+                                if (self.loading.pending_query == null) {
+                                    self.loading.setPendingQuery(followup_msg);
+                                } else {
+                                    self.alloc.free(followup_msg);
+                                }
+                            }
+                            if (followup_msgs.len > 0) self.alloc.free(followup_msgs);
+
+                            // Don't cleanup - continue with new query
+                            self.loading.start_time = std.time.milliTimestamp();
+                        }
+                    } else {
+                        // Complete any active run
+                        if (self.loading.agent_run_id) |rid| {
+                            database.completeAgentRun(rid) catch |err| {
+                                obs.global.logSimple(.err, @src(), "db.completeAgentRun", @errorName(err));
+                            };
+                            self.loading.agent_run_id = null;
+                        }
+
+                        // Check if compaction is needed after turn completes
+                        self.checkAndTriggerCompaction(database) catch |err| {
+                            obs.global.logSimple(.err, @src(), "agent.compaction", @errorName(err));
                         };
-                        self.loading.agent_run_id = null;
+
+                        // Emit agent_end event before cleanup
+                        self.loading.emitAgentEnd();
+                        self.loading.cleanup(self.alloc);
                     }
-                    self.loading.cleanup(self.alloc);
                 }
                 state_changed = true;
             }
@@ -362,6 +481,9 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         fn start_tool_execution(self: *Self, database: *Database) !void {
             const tc = self.loading.pending_tools.items[self.loading.current_tool_idx];
             const scratch = self.scratch.allocator();
+
+            // Emit tool_start event
+            self.loading.emitToolStart(tc.id, tc.name, tc.input_json);
 
             // Show tool execution in chat
             const tool_msg = std.fmt.allocPrint(scratch, "🔧 Executing: {s}", .{tc.name}) catch "";
@@ -423,6 +545,9 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     };
                 }
 
+                // Emit tool_end event
+                self.loading.emitToolEnd(result.tool_id, result.tool_name, result_content, !result.result.success);
+
                 // Store result for continuation (self.alloc - outlives tick)
                 try self.loading.tool_results.append(self.alloc, .{
                     .tool_id = result.tool_id,
@@ -430,6 +555,7 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     .content = try self.alloc.dupe(u8, result_content),
                     .success = result.result.success,
                     .input_json = try self.alloc.dupe(u8, self.loading.pending_tools.items[self.loading.current_tool_idx].input_json),
+                    .details_json = if (result.result.details_json) |dj| try self.alloc.dupe(u8, dj) else null,
                 });
 
                 self.loading.current_tool_idx += 1;
@@ -443,6 +569,37 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     database.updateAgentRunResults(rid, results_json) catch |err| {
                         obs.global.logSimple(.err, @src(), "db.updateAgentRunResults", @errorName(err));
                     };
+                }
+
+                // Check for steering messages - skip remaining tools if user interrupted
+                if (self.loading.hasSteeringMessages()) {
+                    obs.global.logSimple(.info, @src(), "agent.steering", "steering message detected - skipping remaining tools");
+
+                    // Skip remaining tools with "skipped" result
+                    while (self.loading.current_tool_idx < self.loading.pending_tools.items.len) {
+                        const skipped_tc = self.loading.pending_tools.items[self.loading.current_tool_idx];
+
+                        // Add skipped result to chat
+                        const skip_msg = std.fmt.allocPrint(scratch, "⏭ {s}: Skipped due to queued user message.", .{skipped_tc.name}) catch "";
+                        _ = database.addMessage(.system, skip_msg) catch |err| {
+                            obs.global.logSimple(.err, @src(), "db.addMessage.skip", @errorName(err));
+                        };
+
+                        // Store skipped result for continuation
+                        try self.loading.tool_results.append(self.alloc, .{
+                            .tool_id = try self.alloc.dupe(u8, skipped_tc.id),
+                            .tool_name = try self.alloc.dupe(u8, skipped_tc.name),
+                            .content = try self.alloc.dupe(u8, "Skipped due to queued user message."),
+                            .success = false,
+                            .input_json = try self.alloc.dupe(u8, skipped_tc.input_json),
+                        });
+
+                        self.loading.current_tool_idx += 1;
+                    }
+
+                    // Build continuation with steering messages injected
+                    try self.build_continuation_request_with_steering(database);
+                    return true;
                 }
 
                 // Check if all tools done
@@ -519,6 +676,116 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
                     obs.global.logSimple(.err, @src(), "db.updateAgentRunStatus", @errorName(err));
                 };
                 // Keep agent_run_id so we can mark complete when continuation finishes
+            }
+
+            // Clean up tool execution state
+            if (self.loading.tool_executor) |*e| e.deinit();
+            self.loading.tool_executor = null;
+            for (self.loading.tool_results.items) |tr| {
+                self.alloc.free(tr.tool_id);
+                self.alloc.free(tr.tool_name);
+                self.alloc.free(tr.content);
+                self.alloc.free(tr.input_json);
+            }
+            self.loading.tool_results.deinit(self.alloc);
+            self.loading.tool_results = .{};
+            for (self.loading.pending_tools.items) |pt| {
+                self.alloc.free(pt.id);
+                self.alloc.free(pt.name);
+                self.alloc.free(pt.input_json);
+            }
+            self.loading.pending_tools.deinit(self.alloc);
+            self.loading.pending_tools = .{};
+            if (self.loading.assistant_content_json) |a| self.alloc.free(a);
+            self.loading.assistant_content_json = null;
+        }
+
+        /// Build continuation request with steering messages injected.
+        /// Similar to build_continuation_request but adds steering messages after tool results.
+        fn build_continuation_request_with_steering(self: *Self, database: *Database) !void {
+            const scratch = self.scratch.allocator();
+
+            // Build tool results JSON
+            var tool_results_json = std.ArrayListUnmanaged(u8){};
+
+            for (self.loading.tool_results.items) |tr| {
+                if (tool_results_json.items.len > 0) {
+                    tool_results_json.append(scratch, ',') catch {};
+                }
+                const escaped_result = std.json.Stringify.valueAlloc(scratch, tr.content, .{}) catch continue;
+                const tr_json = std.fmt.allocPrint(scratch,
+                    \\{{"type":"tool_result","tool_use_id":"{s}","content":{s}}}
+                , .{ tr.tool_id, escaped_result }) catch continue;
+                tool_results_json.appendSlice(scratch, tr_json) catch {};
+            }
+
+            // Get steering messages
+            const steering_msgs = try self.loading.getSteeringMessages(self.alloc);
+            defer {
+                for (steering_msgs) |msg| self.alloc.free(msg);
+                if (steering_msgs.len > 0) self.alloc.free(steering_msgs);
+            }
+
+            // Add steering messages as text content after tool results
+            for (steering_msgs) |steering_msg| {
+                if (tool_results_json.items.len > 0) {
+                    tool_results_json.append(scratch, ',') catch {};
+                }
+                const escaped_steering = std.json.Stringify.valueAlloc(scratch, steering_msg, .{}) catch continue;
+                const steering_json = std.fmt.allocPrint(scratch,
+                    \\{{"type":"text","text":{s}}}
+                , .{escaped_steering}) catch continue;
+                tool_results_json.appendSlice(scratch, steering_json) catch {};
+
+                // Also add steering message to chat history for visibility
+                _ = database.addMessage(.user, steering_msg) catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.addMessage.steering", @errorName(err));
+                };
+            }
+
+            // Build full message history
+            const messages = database.getMessages(scratch) catch |err| {
+                obs.global.logSimple(.err, @src(), "db.getMessages", @errorName(err));
+                return err;
+            };
+
+            var msg_buf = std.ArrayListUnmanaged(u8){};
+            try msg_buf.append(scratch, '[');
+            var first = true;
+
+            for (messages) |msg| {
+                if (msg.role == .system or msg.ephemeral) continue;
+                if (!first) try msg_buf.append(scratch, ',');
+                first = false;
+                const role_str: []const u8 = if (msg.role == .user) "user" else "assistant";
+                const escaped_content = std.json.Stringify.valueAlloc(scratch, msg.content, .{}) catch continue;
+                const msg_json = std.fmt.allocPrint(scratch, "{{\"role\":\"{s}\",\"content\":{s}}}", .{ role_str, escaped_content }) catch continue;
+                try msg_buf.appendSlice(scratch, msg_json);
+            }
+
+            // Add assistant message with tool_use blocks
+            if (!first) try msg_buf.append(scratch, ',');
+            const assistant_msg = std.fmt.allocPrint(scratch,
+                \\{{"role":"assistant","content":{s}}}
+            , .{self.loading.assistant_content_json orelse "[]"}) catch "";
+            try msg_buf.appendSlice(scratch, assistant_msg);
+
+            // Add user message with tool_result blocks + steering messages
+            const user_results_msg = std.fmt.allocPrint(scratch,
+                \\,{{"role":"user","content":[{s}]}}
+            , .{tool_results_json.items}) catch "";
+            try msg_buf.appendSlice(scratch, user_results_msg);
+
+            try msg_buf.append(scratch, ']');
+
+            // Store continuation and clean up
+            self.loading.pending_continuation = try self.alloc.dupe(u8, msg_buf.items);
+            self.loading.start_time = std.time.milliTimestamp();
+
+            if (self.loading.agent_run_id) |rid| {
+                database.updateAgentRunStatus(rid, .continuing) catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.updateAgentRunStatus", @errorName(err));
+                };
             }
 
             // Clean up tool execution state

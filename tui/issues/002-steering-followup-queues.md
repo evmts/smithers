@@ -1,5 +1,7 @@
 # Steering & Follow-Up Message Queues
 
+## Status: ✅ IMPLEMENTED
+
 ## Priority: High
 
 ## Problem
@@ -48,3 +50,30 @@ Modes:
 ## Reference Files
 - `reference/pi-mono/packages/agent/src/agent.ts` (lines 99-228)
 - `reference/pi-mono/packages/agent/src/agent-loop.ts` (lines 363-375)
+
+## Implementation Summary
+
+### Files Modified
+
+1. **`tui/src/loading.zig`**
+   - Added `steering_queue` and `followup_queue` ArrayListUnmanaged fields
+   - Added `steering_mode` and `followup_mode` enums (all | one_at_a_time)
+   - Added methods: `steer()`, `followUp()`, `getSteeringMessages()`, `getFollowUpMessages()`
+   - Added helpers: `hasSteeringMessages()`, `hasFollowUpMessages()`, `clearSteeringQueue()`, `clearFollowUpQueue()`, `clearAllQueues()`
+   - Updated `cleanup()` to free queue memory
+   - Updated `updatePendingWorkFlag()` to include queue state
+
+2. **`tui/src/agent/loop.zig`**
+   - Modified `poll_tool_completion()`: after each tool, checks steering queue. If non-empty, skips remaining tools with "Skipped due to queued user message" and calls `build_continuation_request_with_steering()`
+   - Modified `poll_active_stream()` completion: checks followup queue. If non-empty, starts new turn with followup message instead of full cleanup
+   - Added `build_continuation_request_with_steering()`: builds continuation with tool results + steering messages as text content
+
+3. **`tui/src/keys/handler.zig`**
+   - Modified message submission: when agent is loading, calls `loading.steer()` instead of `addPendingMessage()`
+
+4. **`tui/src/tests/loading_test.zig`**
+   - Added 12 new tests for steering/followup queue functionality
+
+### Behavior
+- User types while agent running → message queued via `steer()` → after current tool completes, remaining tools skipped, steering message injected
+- If agent completes without steering but has followup messages → new turn started automatically with followup as query

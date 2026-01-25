@@ -17,6 +17,9 @@ fn executeBash(ctx: ToolContext) ToolResult {
         return ToolResult.err("Cancelled");
     }
 
+    // Record start time for duration tracking
+    const start_time = std.time.milliTimestamp();
+
     var child = std.process.Child.init(&.{ "/bin/sh", "-c", command }, ctx.allocator);
     child.stdout_behavior = .Pipe;
     child.stderr_behavior = .Pipe;
@@ -93,10 +96,17 @@ fn executeBash(ctx: ToolContext) ToolResult {
     // Apply truncation (keep tail for bash output)
     const trunc_result = truncate.truncateTail(ctx.allocator, combined.items, .{});
 
-    const exit_code = switch (result) {
+    const exit_code: u8 = switch (result) {
         .Exited => |code| code,
         else => 1,
     };
+
+    // Calculate duration
+    const end_time = std.time.milliTimestamp();
+    const duration_ms: i64 = end_time - start_time;
+
+    // Build details JSON
+    const details_json = buildBashDetailsJson(ctx.allocator, exit_code, duration_ms, trunc_result.truncated) catch null;
 
     if (exit_code == 0) {
         if (trunc_result.truncated) {
@@ -116,9 +126,17 @@ fn executeBash(ctx: ToolContext) ToolResult {
             output.appendSlice(ctx.allocator, notice) catch {
                 return ToolResult.err("Out of memory formatting output");
             };
+            if (details_json) |dj| {
+                return ToolResult.okTruncatedWithDetails(output.toOwnedSlice(ctx.allocator) catch {
+                    return ToolResult.err("Out of memory formatting output");
+                }, null, dj);
+            }
             return ToolResult.okTruncated(output.toOwnedSlice(ctx.allocator) catch {
                 return ToolResult.err("Out of memory formatting output");
             }, null);
+        }
+        if (details_json) |dj| {
+            return ToolResult.okOwnedWithDetails(trunc_result.content, dj);
         }
         return ToolResult.okOwned(trunc_result.content);
     } else {
@@ -134,8 +152,18 @@ fn executeBash(ctx: ToolContext) ToolResult {
         output.appendSlice(ctx.allocator, notice) catch {
             return ToolResult.err("Out of memory formatting error output");
         };
+        // Note: errOwned doesn't support details_json, but we include exit_code in the message
+        if (details_json) |dj| ctx.allocator.free(dj);
         return ToolResult.errOwned(output.toOwnedSlice(ctx.allocator) catch "Command failed");
     }
+}
+
+fn buildBashDetailsJson(allocator: std.mem.Allocator, exit_code: u8, duration_ms: i64, truncated: bool) ![]const u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "{{\"exit_code\":{d},\"duration_ms\":{d},\"truncated\":{s}}}",
+        .{ exit_code, duration_ms, if (truncated) "true" else "false" },
+    );
 }
 
 pub const tool = Tool{

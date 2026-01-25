@@ -416,3 +416,180 @@ test "LoadingState hasPendingWork atomic is thread-safe" {
     const flag1 = state.hasPendingWork();
     try std.testing.expect(!flag1);
 }
+
+// ============================================================================
+// Steering & Follow-up Queue Tests
+// ============================================================================
+
+test "LoadingState steer adds message to steering queue" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try state.steer(alloc, "redirect to new task");
+    try std.testing.expectEqual(@as(usize, 1), state.steering_queue.items.len);
+    try std.testing.expectEqualStrings("redirect to new task", state.steering_queue.items[0]);
+    try std.testing.expect(state.hasPendingWork());
+
+    // Cleanup
+    state.cleanup(alloc);
+}
+
+test "LoadingState followUp adds message to followup queue" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try state.followUp(alloc, "after you finish, do this");
+    try std.testing.expectEqual(@as(usize, 1), state.followup_queue.items.len);
+    try std.testing.expectEqualStrings("after you finish, do this", state.followup_queue.items[0]);
+    try std.testing.expect(state.hasPendingWork());
+
+    // Cleanup
+    state.cleanup(alloc);
+}
+
+test "LoadingState hasSteeringMessages detects queued messages" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try std.testing.expect(!state.hasSteeringMessages());
+
+    try state.steer(alloc, "test");
+    try std.testing.expect(state.hasSteeringMessages());
+
+    state.cleanup(alloc);
+}
+
+test "LoadingState hasFollowUpMessages detects queued messages" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try std.testing.expect(!state.hasFollowUpMessages());
+
+    try state.followUp(alloc, "test");
+    try std.testing.expect(state.hasFollowUpMessages());
+
+    state.cleanup(alloc);
+}
+
+test "LoadingState getSteeringMessages drains queue (one-at-a-time mode)" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try state.steer(alloc, "first");
+    try state.steer(alloc, "second");
+    try state.steer(alloc, "third");
+
+    // Default mode is one-at-a-time
+    const msgs1 = try state.getSteeringMessages(alloc);
+    defer {
+        for (msgs1) |m| alloc.free(m);
+        if (msgs1.len > 0) alloc.free(msgs1);
+    }
+    try std.testing.expectEqual(@as(usize, 1), msgs1.len);
+    try std.testing.expectEqualStrings("first", msgs1[0]);
+    try std.testing.expectEqual(@as(usize, 2), state.steering_queue.items.len);
+
+    state.cleanup(alloc);
+}
+
+test "LoadingState getSteeringMessages drains queue (all mode)" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    state.steering_mode = .all;
+    try state.steer(alloc, "first");
+    try state.steer(alloc, "second");
+
+    const msgs = try state.getSteeringMessages(alloc);
+    defer {
+        for (msgs) |m| alloc.free(m);
+        if (msgs.len > 0) alloc.free(msgs);
+    }
+    try std.testing.expectEqual(@as(usize, 2), msgs.len);
+    try std.testing.expectEqualStrings("first", msgs[0]);
+    try std.testing.expectEqualStrings("second", msgs[1]);
+    try std.testing.expectEqual(@as(usize, 0), state.steering_queue.items.len);
+
+    state.cleanup(alloc);
+}
+
+test "LoadingState getFollowUpMessages drains queue" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try state.followUp(alloc, "first");
+    try state.followUp(alloc, "second");
+
+    // one-at-a-time mode
+    const msgs1 = try state.getFollowUpMessages(alloc);
+    defer {
+        for (msgs1) |m| alloc.free(m);
+        if (msgs1.len > 0) alloc.free(msgs1);
+    }
+    try std.testing.expectEqual(@as(usize, 1), msgs1.len);
+    try std.testing.expectEqualStrings("first", msgs1[0]);
+
+    state.cleanup(alloc);
+}
+
+test "LoadingState clearSteeringQueue clears all" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try state.steer(alloc, "a");
+    try state.steer(alloc, "b");
+    try std.testing.expectEqual(@as(usize, 2), state.steering_queue.items.len);
+
+    state.clearSteeringQueue(alloc);
+    try std.testing.expectEqual(@as(usize, 0), state.steering_queue.items.len);
+    try std.testing.expect(!state.hasSteeringMessages());
+}
+
+test "LoadingState clearFollowUpQueue clears all" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try state.followUp(alloc, "a");
+    try state.followUp(alloc, "b");
+    try std.testing.expectEqual(@as(usize, 2), state.followup_queue.items.len);
+
+    state.clearFollowUpQueue(alloc);
+    try std.testing.expectEqual(@as(usize, 0), state.followup_queue.items.len);
+    try std.testing.expect(!state.hasFollowUpMessages());
+}
+
+test "LoadingState cleanup clears steering and followup queues" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    try state.steer(alloc, "steer msg");
+    try state.followUp(alloc, "followup msg");
+
+    state.cleanup(alloc);
+
+    try std.testing.expectEqual(@as(usize, 0), state.steering_queue.items.len);
+    try std.testing.expectEqual(@as(usize, 0), state.followup_queue.items.len);
+    try std.testing.expect(!state.hasPendingWork());
+}
+
+test "LoadingState updatePendingWorkFlag includes queues" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    // Initially no work
+    try std.testing.expect(!state.hasPendingWork());
+
+    // Steering queue sets flag
+    try state.steer(alloc, "test");
+    try std.testing.expect(state.hasPendingWork());
+
+    // Clear steering, flag should reset
+    state.clearSteeringQueue(alloc);
+    try std.testing.expect(!state.hasPendingWork());
+
+    // Followup queue also sets flag
+    try state.followUp(alloc, "test");
+    try std.testing.expect(state.hasPendingWork());
+
+    state.cleanup(alloc);
+}

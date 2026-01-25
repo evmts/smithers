@@ -75,7 +75,18 @@ pub fn AgentThread(
             self.mutex.unlock();
         }
 
+        /// Check if agent state changed (non-destructive read for throttled callers)
+        pub fn hasStateChanged(self: *Self) bool {
+            return self.state_changed.load(.acquire);
+        }
+
+        /// Clear the state changed flag (call after successfully handling the change)
+        pub fn clearStateChanged(self: *Self) void {
+            self.state_changed.store(false, .release);
+        }
+
         /// Check if agent state changed (call from main thread, clears flag)
+        /// DEPRECATED: Use hasStateChanged + clearStateChanged for throttled reloads
         pub fn consumeStateChanged(self: *Self) bool {
             return self.state_changed.swap(false, .acq_rel);
         }

@@ -10,6 +10,8 @@ const editor_utils = @import("../editor.zig");
 const git_utils = @import("../git.zig");
 const event_mod = @import("../event.zig");
 const obs = @import("../obs.zig");
+const types = @import("../agent/types.zig");
+const ThinkingLevel = types.ThinkingLevel;
 
 pub const Action = union(enum) {
     none,
@@ -294,16 +296,113 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                         _ = try ctx.database.addEphemeralMessage(.system, "No uncommitted changes.");
                     }
                     try ctx.chat_history.reload(ctx.database);
+                } else if (std.mem.eql(u8, command, "/branch")) {
+                    ctx.agent_thread.lockDb();
+                    defer ctx.agent_thread.unlockDb();
+                    if (ctx.database.getCurrentLeafId()) |leaf_id| {
+                        const msg = try std.fmt.allocPrint(self.alloc, "Branch created at: {s}", .{leaf_id});
+                        defer self.alloc.free(msg);
+                        _ = try ctx.database.addEphemeralMessage(.system, msg);
+                    } else {
+                        _ = try ctx.database.addEphemeralMessage(.system, "No messages to branch from.");
+                    }
+                    try ctx.chat_history.reload(ctx.database);
+                } else if (std.mem.startsWith(u8, command, "/label ")) {
+                    const label_name = std.mem.trim(u8, command[7..], " ");
+                    if (label_name.len == 0) {
+                        ctx.agent_thread.lockDb();
+                        defer ctx.agent_thread.unlockDb();
+                        _ = try ctx.database.addEphemeralMessage(.system, "Usage: /label <name>");
+                        try ctx.chat_history.reload(ctx.database);
+                    } else {
+                        ctx.agent_thread.lockDb();
+                        defer ctx.agent_thread.unlockDb();
+                        if (ctx.database.getCurrentLeafId()) |leaf_id| {
+                            ctx.database.setLabel(leaf_id, label_name) catch |err| {
+                                const err_msg = try std.fmt.allocPrint(self.alloc, "Error setting label: {s}", .{@errorName(err)});
+                                defer self.alloc.free(err_msg);
+                                _ = try ctx.database.addEphemeralMessage(.system, err_msg);
+                                try ctx.chat_history.reload(ctx.database);
+                                return .none;
+                            };
+                            const msg = try std.fmt.allocPrint(self.alloc, "Label '{s}' set on current message.", .{label_name});
+                            defer self.alloc.free(msg);
+                            _ = try ctx.database.addEphemeralMessage(.system, msg);
+                        } else {
+                            _ = try ctx.database.addEphemeralMessage(.system, "No messages to label.");
+                        }
+                        try ctx.chat_history.reload(ctx.database);
+                    }
+                } else if (std.mem.startsWith(u8, command, "/goto ")) {
+                    const label_name = std.mem.trim(u8, command[6..], " ");
+                    if (label_name.len == 0) {
+                        ctx.agent_thread.lockDb();
+                        defer ctx.agent_thread.unlockDb();
+                        _ = try ctx.database.addEphemeralMessage(.system, "Usage: /goto <label>");
+                        try ctx.chat_history.reload(ctx.database);
+                    } else {
+                        ctx.agent_thread.lockDb();
+                        defer ctx.agent_thread.unlockDb();
+                        if (try ctx.database.getEntryByLabel(label_name, self.alloc)) |entry_id| {
+                            defer self.alloc.free(entry_id);
+                            ctx.database.createBranch(entry_id) catch |err| {
+                                const err_msg = try std.fmt.allocPrint(self.alloc, "Error going to label: {s}", .{@errorName(err)});
+                                defer self.alloc.free(err_msg);
+                                _ = try ctx.database.addEphemeralMessage(.system, err_msg);
+                                try ctx.chat_history.reload(ctx.database);
+                                return .none;
+                            };
+                            const msg = try std.fmt.allocPrint(self.alloc, "Jumped to label '{s}'.", .{label_name});
+                            defer self.alloc.free(msg);
+                            _ = try ctx.database.addEphemeralMessage(.system, msg);
+                        } else {
+                            const msg = try std.fmt.allocPrint(self.alloc, "Label '{s}' not found.", .{label_name});
+                            defer self.alloc.free(msg);
+                            _ = try ctx.database.addEphemeralMessage(.system, msg);
+                        }
+                        try ctx.chat_history.reload(ctx.database);
+                    }
+                } else if (std.mem.eql(u8, command, "/thinking") or std.mem.startsWith(u8, command, "/thinking ")) {
+                    const arg = if (command.len > 10)
+                        std.mem.trim(u8, command[10..], " ")
+                    else
+                        "";
+
+                    ctx.agent_thread.lockDb();
+                    defer ctx.agent_thread.unlockDb();
+
+                    if (arg.len == 0) {
+                        const current_level = ctx.loading.getThinkingLevel();
+                        const msg = try std.fmt.allocPrint(self.alloc, "Thinking level: {s} ({d} tokens)", .{ current_level.toString(), current_level.budgetTokens() });
+                        defer self.alloc.free(msg);
+                        _ = try ctx.database.addEphemeralMessage(.system, msg);
+                    } else if (ThinkingLevel.parse(arg)) |level| {
+                        ctx.loading.setThinkingLevel(level);
+                        const msg = if (level.isEnabled())
+                            try std.fmt.allocPrint(self.alloc, "Thinking enabled: {s} ({d} tokens)", .{ level.toString(), level.budgetTokens() })
+                        else
+                            try std.fmt.allocPrint(self.alloc, "Thinking disabled", .{});
+                        defer self.alloc.free(msg);
+                        _ = try ctx.database.addEphemeralMessage(.system, msg);
+                    } else {
+                        _ = try ctx.database.addEphemeralMessage(.system, "Usage: /thinking <off|minimal|low|medium|high>");
+                    }
+                    try ctx.chat_history.reload(ctx.database);
                 } else {
                     // Regular message submission
                     obs.global.logSimple(.debug, @src(), "keys.submit", "user submitted message");
 
                     if (ctx.loading.isLoading()) {
-                        // AI is busy - queue as pending message (shows gray in UI)
-                        obs.global.logSimple(.debug, @src(), "keys.submit", "queueing as pending (AI busy)");
+                        // AI is busy - queue as steering message to interrupt current work
+                        obs.global.logSimple(.debug, @src(), "keys.submit", "queueing as steering message (AI busy)");
                         ctx.agent_thread.lockDb();
                         defer ctx.agent_thread.unlockDb();
-                        _ = try ctx.database.addPendingMessage(.user, command);
+                        // Queue as steering message - will skip remaining tools and inject
+                        ctx.loading.steer(self.alloc, command) catch |err| {
+                            obs.global.logSimple(.err, @src(), "loading.steer", @errorName(err));
+                            // Fallback to pending message if steer fails
+                            _ = try ctx.database.addPendingMessage(.user, command);
+                        };
                         try ctx.chat_history.reload(ctx.database);
                     } else {
                         // AI is idle - send immediately

@@ -158,7 +158,8 @@ pub fn App(
 
                 // Check if agent thread updated state - reload chat from DB (with mutex)
                 // Debounce reloads during streaming to reduce DB contention (max every 100ms)
-                if (self.agent_thread.consumeStateChanged()) {
+                // Use hasStateChanged (non-destructive) to avoid dropping updates when throttled
+                if (self.agent_thread.hasStateChanged()) {
                     const now = Clk.milliTimestamp();
                     const should_reload = !self.loading.isLoading() or (now - self.last_reload >= 100);
                     if (should_reload) {
@@ -168,6 +169,8 @@ pub fn App(
                             obs.global.logSimple(.err, @src(), "chat_history.reload", @errorName(err));
                         };
                         self.last_reload = now;
+                        // Only clear after successful reload - prevents dropping updates
+                        self.agent_thread.clearStateChanged();
                     }
                 }
 

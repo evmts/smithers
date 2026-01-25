@@ -11,7 +11,12 @@ pub const ToolResult = struct {
     truncated: bool = false,
     /// Path to full output if truncated
     full_output_path: ?[]const u8 = null,
-    /// Whether content/error_message/full_output_path are owned (allocated) and need freeing
+    /// Structured details as JSON (tool-specific metadata)
+    /// e.g., {"diff": "...", "first_changed_line": 42} for edit_file
+    /// e.g., {"exit_code": 0, "duration_ms": 1234} for bash
+    /// e.g., {"total_lines": 100, "truncated": true} for read_file
+    details_json: ?[]const u8 = null,
+    /// Whether content/error_message/full_output_path/details_json are owned (allocated) and need freeing
     owned: bool = false,
 
     pub fn ok(content: []const u8) ToolResult {
@@ -23,12 +28,29 @@ pub const ToolResult = struct {
         return .{ .success = true, .content = content, .owned = true };
     }
 
+    /// Create success result with owned content and details
+    pub fn okOwnedWithDetails(content: []const u8, details_json: []const u8) ToolResult {
+        return .{ .success = true, .content = content, .details_json = details_json, .owned = true };
+    }
+
     pub fn okTruncated(content: []const u8, full_path: ?[]const u8) ToolResult {
         return .{
             .success = true,
             .content = content,
             .truncated = true,
             .full_output_path = full_path,
+            .owned = true,
+        };
+    }
+
+    /// Create truncated result with details
+    pub fn okTruncatedWithDetails(content: []const u8, full_path: ?[]const u8, details_json: []const u8) ToolResult {
+        return .{
+            .success = true,
+            .content = content,
+            .truncated = true,
+            .full_output_path = full_path,
+            .details_json = details_json,
             .owned = true,
         };
     }
@@ -48,6 +70,7 @@ pub const ToolResult = struct {
             if (self.content.len > 0) allocator.free(self.content);
             if (self.error_message) |e| allocator.free(e);
             if (self.full_output_path) |p| allocator.free(p);
+            if (self.details_json) |d| allocator.free(d);
         }
         self.* = .{ .success = false, .content = "" };
     }

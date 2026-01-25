@@ -1,5 +1,6 @@
 const std = @import("std");
 const registry = @import("registry.zig");
+const edit_diff = @import("edit_diff.zig");
 const ToolResult = registry.ToolResult;
 const ToolContext = registry.ToolContext;
 const Tool = registry.Tool;
@@ -19,12 +20,10 @@ fn executeEditFile(ctx: ToolContext) ToolResult {
         return ToolResult.err("Cancelled");
     }
 
-    // Validate old_str != new_str
     if (std.mem.eql(u8, old_str, new_str)) {
         return ToolResult.err("old_str and new_str must be different");
     }
 
-    // Read existing file
     const file = std.fs.cwd().openFile(path, .{}) catch |e| {
         return switch (e) {
             error.FileNotFound => ToolResult.err("File not found"),
@@ -33,94 +32,111 @@ fn executeEditFile(ctx: ToolContext) ToolResult {
         };
     };
 
-    const content = file.readToEndAlloc(ctx.allocator, 10 * 1024 * 1024) catch {
+    const raw_content = file.readToEndAlloc(ctx.allocator, 10 * 1024 * 1024) catch {
         file.close();
         return ToolResult.err("Failed to read file");
     };
     file.close();
-    defer ctx.allocator.free(content);
+    defer ctx.allocator.free(raw_content);
 
-    // Find old_str - check for multiple occurrences
-    const first_idx = std.mem.indexOf(u8, content, old_str);
-    if (first_idx == null) {
-        // Try fuzzy match: trimmed comparison
-        const trimmed_old = std.mem.trim(u8, old_str, " \t\n\r");
-        var found_fuzzy = false;
-        var fuzzy_start: usize = 0;
-        var fuzzy_end: usize = 0;
+    const bom_result = edit_diff.stripBom(raw_content);
+    const content_without_bom = bom_result.text;
+    const has_bom = bom_result.has_bom;
 
-        // Line-by-line fuzzy search
-        var lines = std.mem.splitScalar(u8, content, '\n');
-        var line_start: usize = 0;
-        while (lines.next()) |line| {
-            const trimmed_line = std.mem.trim(u8, line, " \t\r");
-            if (std.mem.indexOf(u8, trimmed_old, trimmed_line) != null or
-                std.mem.indexOf(u8, trimmed_line, trimmed_old) != null)
-            {
-                if (trimmed_line.len > 0 and trimmed_old.len > 0) {
-                    // Found potential match
-                    found_fuzzy = true;
-                    fuzzy_start = line_start;
-                    fuzzy_end = line_start + line.len;
-                    break;
-                }
-            }
-            line_start += line.len + 1;
-        }
+    const original_line_ending = edit_diff.detectLineEnding(content_without_bom);
 
-        if (!found_fuzzy) {
-            return ToolResult.err("old_str not found in file. Ensure exact match including whitespace.");
-        }
-
-        // Use fuzzy match
-        const new_content = std.mem.concat(ctx.allocator, u8, &.{
-            content[0..fuzzy_start],
-            new_str,
-            content[fuzzy_end..],
-        }) catch {
-            return ToolResult.err("Failed to create new content");
-        };
-        defer ctx.allocator.free(new_content);
-
-        const write_file = std.fs.cwd().createFile(path, .{}) catch {
-            return ToolResult.err("Failed to open file for writing");
-        };
-        defer write_file.close();
-
-        write_file.writeAll(new_content) catch {
-            return ToolResult.err("Failed to write file");
-        };
-
-        return ToolResult.ok("File edited successfully (fuzzy match)");
-    }
-
-    // Check for multiple occurrences
-    const last_idx = std.mem.lastIndexOf(u8, content, old_str);
-    if (first_idx.? != last_idx.?) {
-        return ToolResult.err("Found multiple occurrences of old_str. Provide more context to make it unique.");
-    }
-
-    // Single occurrence - do replacement
-    const new_content = std.mem.replaceOwned(u8, ctx.allocator, content, old_str, new_str) catch {
-        return ToolResult.err("Failed to replace content");
+    const normalized_content = edit_diff.normalizeToLF(ctx.allocator, content_without_bom) catch {
+        return ToolResult.err("Failed to normalize content");
     };
-    defer ctx.allocator.free(new_content);
+    defer ctx.allocator.free(normalized_content);
 
-    // Verify something changed
-    if (std.mem.eql(u8, content, new_content)) {
-        return ToolResult.err("No changes made. old_str may not exist as expected.");
+    const normalized_old_str = edit_diff.normalizeToLF(ctx.allocator, old_str) catch {
+        return ToolResult.err("Failed to normalize old_str");
+    };
+    defer ctx.allocator.free(normalized_old_str);
+
+    const normalized_new_str = edit_diff.normalizeToLF(ctx.allocator, new_str) catch {
+        return ToolResult.err("Failed to normalize new_str");
+    };
+    defer ctx.allocator.free(normalized_new_str);
+
+    const occurrences = edit_diff.countOccurrences(ctx.allocator, normalized_content, normalized_old_str) catch {
+        return ToolResult.err("Failed to count occurrences");
+    };
+
+    if (occurrences == 0) {
+        return ToolResult.err("old_str not found in file. Ensure the text matches including whitespace.");
     }
+
+    if (occurrences > 1) {
+        const msg = std.fmt.allocPrint(ctx.allocator, "Found {d} occurrences of old_str. Provide more context to make it unique.", .{occurrences}) catch {
+            return ToolResult.err("Found multiple occurrences of old_str. Provide more context to make it unique.");
+        };
+        return ToolResult.errOwned(msg);
+    }
+
+    const match_result = edit_diff.fuzzyFindText(ctx.allocator, normalized_content, normalized_old_str) catch {
+        return ToolResult.err("Failed to find text");
+    };
+
+    if (!match_result.found) {
+        return ToolResult.err("old_str not found in file");
+    }
+
+    const base_content = match_result.content_for_replacement;
+    const should_free_base = match_result.used_fuzzy_match;
+    defer if (should_free_base) ctx.allocator.free(base_content);
+
+    const new_content_lf = std.mem.concat(ctx.allocator, u8, &.{
+        base_content[0..match_result.index],
+        normalized_new_str,
+        base_content[match_result.index + match_result.match_length ..],
+    }) catch {
+        return ToolResult.err("Failed to create new content");
+    };
+    defer ctx.allocator.free(new_content_lf);
+
+    if (std.mem.eql(u8, base_content, new_content_lf)) {
+        return ToolResult.err("No changes would be made. The replacement produces identical content.");
+    }
+
+    const diff_result = edit_diff.generateDiff(ctx.allocator, base_content, new_content_lf, 4) catch {
+        return ToolResult.err("Failed to generate diff");
+    };
+    defer ctx.allocator.free(diff_result.diff);
+
+    const new_content_endings = edit_diff.restoreLineEndings(ctx.allocator, new_content_lf, original_line_ending) catch {
+        return ToolResult.err("Failed to restore line endings");
+    };
+    defer ctx.allocator.free(new_content_endings);
+
+    const final_content = edit_diff.restoreBom(ctx.allocator, new_content_endings, has_bom) catch {
+        return ToolResult.err("Failed to restore BOM");
+    };
+    defer ctx.allocator.free(final_content);
 
     const write_file = std.fs.cwd().createFile(path, .{}) catch {
         return ToolResult.err("Failed to open file for writing");
     };
     defer write_file.close();
 
-    write_file.writeAll(new_content) catch {
+    write_file.writeAll(final_content) catch {
         return ToolResult.err("Failed to write file");
     };
 
-    return ToolResult.ok("File edited successfully");
+    const fuzzy_note = if (match_result.used_fuzzy_match) " (fuzzy match)" else "";
+    const first_line = if (diff_result.first_changed_line) |line| line else 1;
+
+    const result_msg = std.fmt.allocPrint(ctx.allocator, "File edited successfully{s}. First change at line {d}.\n\n{s}", .{ fuzzy_note, first_line, diff_result.diff }) catch {
+        return ToolResult.ok("File edited successfully");
+    };
+
+    // Build structured details JSON for UI display
+    const details_json = edit_diff.buildEditDetailsJson(ctx.allocator, diff_result.diff, diff_result.first_changed_line) catch {
+        return ToolResult.okOwned(result_msg);
+    };
+
+    return ToolResult.okOwnedWithDetails(result_msg, details_json);
 }
 
 pub const tool = Tool{
@@ -129,12 +145,12 @@ pub const tool = Tool{
     \\Edit a file by replacing old_str with new_str.
     \\Parameters:
     \\  - path: Path to the file (required)
-    \\  - old_str: Exact text to find and replace (required)
+    \\  - old_str: Text to find and replace (required)
     \\  - new_str: Text to replace it with (required)
     \\old_str must be unique in the file. Include surrounding context if needed.
+    \\Uses fuzzy matching for whitespace differences.
     ,
     .execute_ctx = executeEditFile,
 };
 
-// Legacy export
 pub const edit_file_tool = tool;

@@ -584,6 +584,7 @@ pub const AnthropicStreamingProvider = struct {
         child: ?std.process.Child = null,
         message_id: ?i64 = null,
         accumulated_text: ArrayListUnmanaged(u8) = .{},
+        accumulated_thinking: ArrayListUnmanaged(u8) = .{},
         tool_calls: ArrayListUnmanaged(ToolCallInfo) = .{},
         current_tool_id: ?[]const u8 = null,
         current_tool_name: ?[]const u8 = null,
@@ -597,6 +598,8 @@ pub const AnthropicStreamingProvider = struct {
         argv_alloc: ?[]const []const u8 = null,
         auth_header_alloc: ?[]const u8 = null,
         body_alloc: ?[]const u8 = null,
+        // Track if current block is thinking
+        in_thinking_block: bool = false,
 
         pub fn init(alloc: Allocator) StreamingState {
             return .{ .alloc = alloc, .current_tool_input = .{} };
@@ -659,18 +662,26 @@ pub const AnthropicStreamingProvider = struct {
                 if (parsed.value.object.get("content_block")) |block| {
                     if (block == .object) {
                         if (block.object.get("type")) |bt| {
-                            if (bt == .string and std.mem.eql(u8, bt.string, "tool_use")) {
-                                if (block.object.get("id")) |id| {
-                                    if (id == .string) {
-                                        self.current_tool_id = self.alloc.dupe(u8, id.string) catch null;
+                            if (bt == .string) {
+                                if (std.mem.eql(u8, bt.string, "thinking")) {
+                                    self.in_thinking_block = true;
+                                    obs.global.logSimple(.debug, @src(), "curl.processLine", "started thinking block");
+                                } else if (std.mem.eql(u8, bt.string, "tool_use")) {
+                                    self.in_thinking_block = false;
+                                    if (block.object.get("id")) |id| {
+                                        if (id == .string) {
+                                            self.current_tool_id = self.alloc.dupe(u8, id.string) catch null;
+                                        }
                                     }
-                                }
-                                if (block.object.get("name")) |name| {
-                                    if (name == .string) {
-                                        self.current_tool_name = self.alloc.dupe(u8, name.string) catch null;
+                                    if (block.object.get("name")) |name| {
+                                        if (name == .string) {
+                                            self.current_tool_name = self.alloc.dupe(u8, name.string) catch null;
+                                        }
                                     }
+                                    self.current_tool_input.clearRetainingCapacity();
+                                } else if (std.mem.eql(u8, bt.string, "text")) {
+                                    self.in_thinking_block = false;
                                 }
-                                self.current_tool_input.clearRetainingCapacity();
                             }
                         }
                     }
@@ -690,6 +701,14 @@ pub const AnthropicStreamingProvider = struct {
                                     const text_msg = std.fmt.bufPrint(&log_buf, "GOT TEXT: len={d} total={d}", .{ text.string.len, self.accumulated_text.items.len }) catch "?";
                                     obs.global.logSimple(.debug, @src(), "curl.processLine", text_msg);
                                     try self.accumulated_text.appendSlice(self.alloc, text.string);
+                                }
+                            }
+                        } else if (std.mem.eql(u8, dt.string, "thinking_delta")) {
+                            if (delta.object.get("thinking")) |thinking| {
+                                if (thinking == .string) {
+                                    const think_msg = std.fmt.bufPrint(&log_buf, "GOT THINKING: len={d} total={d}", .{ thinking.string.len, self.accumulated_thinking.items.len }) catch "?";
+                                    obs.global.logSimple(.debug, @src(), "curl.processLine", think_msg);
+                                    try self.accumulated_thinking.appendSlice(self.alloc, thinking.string);
                                 }
                             }
                         } else if (std.mem.eql(u8, dt.string, "input_json_delta")) {
@@ -931,6 +950,14 @@ pub const AnthropicStreamingProvider = struct {
         return state.accumulated_text.items;
     }
 
+    pub fn getThinking(state: *StreamingState) []const u8 {
+        return state.accumulated_thinking.items;
+    }
+
+    pub fn hasThinking(state: *StreamingState) bool {
+        return state.accumulated_thinking.items.len > 0;
+    }
+
     pub fn hasToolCalls(state: *StreamingState) bool {
         return state.tool_calls.items.len > 0;
     }
@@ -947,6 +974,8 @@ pub const AnthropicStreamingProvider = struct {
         state.child = null;
         state.accumulated_text.deinit(state.alloc);
         state.accumulated_text = .{};
+        state.accumulated_thinking.deinit(state.alloc);
+        state.accumulated_thinking = .{};
         for (state.tool_calls.items) |tc| {
             state.alloc.free(tc.id);
             state.alloc.free(tc.name);
@@ -971,6 +1000,7 @@ pub const AnthropicStreamingProvider = struct {
         state.stop_reason = null;
         state.message_id = null;
         state.is_done = false;
+        state.in_thinking_block = false;
         state.line_pos = 0;
     }
 };

@@ -12,6 +12,10 @@ pub const SlashCommand = enum {
     diff,
     init,
     mcp,
+    branch,
+    label,
+    goto,
+    thinking,
 
     const Self = @This();
 
@@ -28,6 +32,10 @@ pub const SlashCommand = enum {
             .diff => "diff",
             .init => "init",
             .mcp => "mcp",
+            .branch => "branch",
+            .label => "label",
+            .goto => "goto",
+            .thinking => "thinking",
         };
     }
 
@@ -44,6 +52,10 @@ pub const SlashCommand = enum {
             .diff => "Show git diff",
             .init => "Initialize a new project",
             .mcp => "Manage MCP servers",
+            .branch => "Create branch from current point",
+            .label => "Label current message: /label <name>",
+            .goto => "Go to labeled point: /goto <label>",
+            .thinking => "Set thinking level (off|minimal|low|medium|high)",
         };
     }
 
@@ -77,5 +89,9 @@ pub fn builtInSlashCommands() []const CommandEntry {
         .{ .name = "diff", .cmd = .diff },
         .{ .name = "init", .cmd = .init },
         .{ .name = "mcp", .cmd = .mcp },
+        .{ .name = "branch", .cmd = .branch },
+        .{ .name = "label", .cmd = .label },
+        .{ .name = "goto", .cmd = .goto },
+        .{ .name = "thinking", .cmd = .thinking },
     };
 }
