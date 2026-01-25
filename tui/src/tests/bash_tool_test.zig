@@ -34,6 +34,9 @@ fn freeResult(allocator: std.mem.Allocator, result: ToolResult) void {
             allocator.free(msg);
         }
     }
+    if (result.details_json) |details| {
+        allocator.free(details);
+    }
 }
 
 fn isStaticString(s: []const u8) bool {

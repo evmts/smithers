@@ -16,25 +16,25 @@ pub const CompactionDetails = struct {
     modified_files: []const []const u8,
 
     pub fn toJson(self: CompactionDetails, allocator: std.mem.Allocator) ![]const u8 {
-        var buf = std.ArrayList(u8).init(allocator);
-        errdefer buf.deinit();
+        var buf = std.ArrayListUnmanaged(u8){};
+        errdefer buf.deinit(allocator);
 
-        try buf.appendSlice("{\"readFiles\":[");
+        try buf.appendSlice(allocator, "{\"readFiles\":[");
         for (self.read_files, 0..) |f, i| {
-            if (i > 0) try buf.append(',');
+            if (i > 0) try buf.append(allocator, ',');
             const escaped = try std.json.Stringify.valueAlloc(allocator, f, .{});
             defer allocator.free(escaped);
-            try buf.appendSlice(escaped);
+            try buf.appendSlice(allocator, escaped);
         }
-        try buf.appendSlice("],\"modifiedFiles\":[");
+        try buf.appendSlice(allocator, "],\"modifiedFiles\":[");
         for (self.modified_files, 0..) |f, i| {
-            if (i > 0) try buf.append(',');
+            if (i > 0) try buf.append(allocator, ',');
             const escaped = try std.json.Stringify.valueAlloc(allocator, f, .{});
             defer allocator.free(escaped);
-            try buf.appendSlice(escaped);
+            try buf.appendSlice(allocator, escaped);
         }
-        try buf.appendSlice("]}");
-        return buf.toOwnedSlice();
+        try buf.appendSlice(allocator, "]}");
+        return buf.toOwnedSlice(allocator);
     }
 };
 
@@ -190,8 +190,8 @@ pub fn extractFileOperations(allocator: std.mem.Allocator, messages: []const db.
 
 /// Serialize conversation for summarization prompt
 pub fn serializeConversation(allocator: std.mem.Allocator, messages: []const db.Message) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
-    errdefer buf.deinit();
+    var buf = std.ArrayListUnmanaged(u8){};
+    errdefer buf.deinit(allocator);
 
     for (messages) |msg| {
         const role_str = switch (msg.role) {
@@ -199,31 +199,31 @@ pub fn serializeConversation(allocator: std.mem.Allocator, messages: []const db.
             .assistant => "[Assistant]",
             .system => "[System]",
         };
-        try buf.appendSlice(role_str);
-        try buf.appendSlice(": ");
-        try buf.appendSlice(msg.content);
-        try buf.appendSlice("\n\n");
+        try buf.appendSlice(allocator, role_str);
+        try buf.appendSlice(allocator, ": ");
+        try buf.appendSlice(allocator, msg.content);
+        try buf.appendSlice(allocator, "\n\n");
 
         if (msg.tool_name) |tn| {
-            try buf.appendSlice("[Tool call]: ");
-            try buf.appendSlice(tn);
+            try buf.appendSlice(allocator, "[Tool call]: ");
+            try buf.appendSlice(allocator, tn);
             if (msg.tool_input) |ti| {
-                try buf.append('(');
+                try buf.append(allocator, '(');
                 // Truncate long tool inputs
                 const max_input_len: usize = 500;
                 if (ti.len > max_input_len) {
-                    try buf.appendSlice(ti[0..max_input_len]);
-                    try buf.appendSlice("...");
+                    try buf.appendSlice(allocator, ti[0..max_input_len]);
+                    try buf.appendSlice(allocator, "...");
                 } else {
-                    try buf.appendSlice(ti);
+                    try buf.appendSlice(allocator, ti);
                 }
-                try buf.append(')');
+                try buf.append(allocator, ')');
             }
-            try buf.appendSlice("\n\n");
+            try buf.appendSlice(allocator, "\n\n");
         }
     }
 
-    return buf.toOwnedSlice();
+    return buf.toOwnedSlice(allocator);
 }
 
 pub const SUMMARIZATION_SYSTEM_PROMPT =
@@ -263,32 +263,32 @@ pub fn buildSummarizationPrompt(
     const conversation = try serializeConversation(allocator, messages);
     defer allocator.free(conversation);
 
-    var buf = std.ArrayList(u8).init(allocator);
-    errdefer buf.deinit();
+    var buf = std.ArrayListUnmanaged(u8){};
+    errdefer buf.deinit(allocator);
 
     if (previous_summary) |prev| {
-        try buf.appendSlice("## Previous Summary\n");
-        try buf.appendSlice(prev);
-        try buf.appendSlice("\n\n---\n\n");
+        try buf.appendSlice(allocator, "## Previous Summary\n");
+        try buf.appendSlice(allocator, prev);
+        try buf.appendSlice(allocator, "\n\n---\n\n");
     }
 
-    try buf.appendSlice("<conversation>\n");
-    try buf.appendSlice(conversation);
-    try buf.appendSlice("</conversation>\n\n");
+    try buf.appendSlice(allocator, "<conversation>\n");
+    try buf.appendSlice(allocator, conversation);
+    try buf.appendSlice(allocator, "</conversation>\n\n");
 
     if (previous_summary != null) {
-        try buf.appendSlice(
+        try buf.appendSlice(allocator,
             \\Please UPDATE the previous summary with the new conversation content using this exact format:
             \\
         );
     } else {
-        try buf.appendSlice(
+        try buf.appendSlice(allocator,
             \\Please summarize the above conversation using this exact format:
             \\
         );
     }
 
-    try buf.appendSlice(
+    try buf.appendSlice(allocator,
         \\
         \\## Original Request
         \\[What the user originally asked for]
@@ -305,59 +305,59 @@ pub fn buildSummarizationPrompt(
         \\Be concise. Focus on information needed to continue the work.
     );
 
-    return buf.toOwnedSlice();
+    return buf.toOwnedSlice(allocator);
 }
 
 /// Format file operations for appending to summary
 pub fn formatFileOperations(allocator: std.mem.Allocator, ops: *const FileOperations) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
-    errdefer buf.deinit();
+    var buf = std.ArrayListUnmanaged(u8){};
+    errdefer buf.deinit(allocator);
 
     // Compute read-only files (read but not modified)
-    var read_only = std.ArrayList([]const u8).init(allocator);
-    defer read_only.deinit();
+    var read_only = std.ArrayListUnmanaged([]const u8){};
+    defer read_only.deinit(allocator);
 
     var iter = ops.read.keyIterator();
     while (iter.next()) |key| {
         if (!ops.written.contains(key.*) and !ops.edited.contains(key.*)) {
-            try read_only.append(key.*);
+            try read_only.append(allocator, key.*);
         }
     }
 
     // Collect modified files
-    var modified = std.ArrayList([]const u8).init(allocator);
-    defer modified.deinit();
+    var modified = std.ArrayListUnmanaged([]const u8){};
+    defer modified.deinit(allocator);
 
     var written_iter = ops.written.keyIterator();
     while (written_iter.next()) |key| {
-        try modified.append(key.*);
+        try modified.append(allocator, key.*);
     }
     var edited_iter = ops.edited.keyIterator();
     while (edited_iter.next()) |key| {
         if (!ops.written.contains(key.*)) {
-            try modified.append(key.*);
+            try modified.append(allocator, key.*);
         }
     }
 
     if (read_only.items.len > 0) {
-        try buf.appendSlice("\n\n<read-files>\n");
+        try buf.appendSlice(allocator, "\n\n<read-files>\n");
         for (read_only.items) |path| {
-            try buf.appendSlice(path);
-            try buf.append('\n');
+            try buf.appendSlice(allocator, path);
+            try buf.append(allocator, '\n');
         }
-        try buf.appendSlice("</read-files>");
+        try buf.appendSlice(allocator, "</read-files>");
     }
 
     if (modified.items.len > 0) {
-        try buf.appendSlice("\n\n<modified-files>\n");
+        try buf.appendSlice(allocator, "\n\n<modified-files>\n");
         for (modified.items) |path| {
-            try buf.appendSlice(path);
-            try buf.append('\n');
+            try buf.appendSlice(allocator, path);
+            try buf.append(allocator, '\n');
         }
-        try buf.appendSlice("</modified-files>");
+        try buf.appendSlice(allocator, "</modified-files>");
     }
 
-    return buf.toOwnedSlice();
+    return buf.toOwnedSlice(allocator);
 }
 
 /// Compaction preparation result

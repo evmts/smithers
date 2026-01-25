@@ -590,14 +590,14 @@ pub fn Database(comptime SqliteDb: type) type {
 
         /// Create a branch from a specific entry_id (sets leaf to that point)
         pub fn createBranch(self: *Self, from_entry_id: []const u8) !void {
-            // Verify the entry exists
+            // Verify the entry exists - use COUNT to avoid needing allocator
             var stmt = try self.db.prepare(
-                "SELECT entry_id FROM messages WHERE session_id = ? AND entry_id = ? LIMIT 1"
+                "SELECT COUNT(*) as cnt FROM messages WHERE session_id = ? AND entry_id = ? LIMIT 1"
             );
             defer stmt.deinit();
 
-            const exists = try stmt.one(struct { entry_id: []const u8 }, .{}, .{ self.current_session_id, from_entry_id });
-            if (exists == null) {
+            const result = try stmt.one(struct { cnt: i64 }, .{}, .{ self.current_session_id, from_entry_id });
+            if (result == null or result.?.cnt == 0) {
                 return error.EntryNotFound;
             }
 
@@ -683,14 +683,14 @@ pub fn Database(comptime SqliteDb: type) type {
 
         /// Set a label on an entry_id
         pub fn setLabel(self: *Self, entry_id: []const u8, label: []const u8) !void {
-            // Verify the entry exists
+            // Verify the entry exists - use i64 count instead of slice to avoid allocator requirement
             var check_stmt = try self.db.prepare(
-                "SELECT entry_id FROM messages WHERE session_id = ? AND entry_id = ? LIMIT 1"
+                "SELECT COUNT(*) as cnt FROM messages WHERE session_id = ? AND entry_id = ? LIMIT 1"
             );
             defer check_stmt.deinit();
 
-            const exists = try check_stmt.one(struct { entry_id: []const u8 }, .{}, .{ self.current_session_id, entry_id });
-            if (exists == null) {
+            const result = try check_stmt.one(struct { cnt: i64 }, .{}, .{ self.current_session_id, entry_id });
+            if (result == null or result.?.cnt == 0) {
                 return error.EntryNotFound;
             }
 
