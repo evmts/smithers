@@ -22,6 +22,24 @@ pub const Role = enum {
     }
 };
 
+/// Message status for queue support
+pub const MessageStatus = enum {
+    sent,
+    pending, // queued while AI is responding, displayed gray
+
+    pub fn toString(self: MessageStatus) [:0]const u8 {
+        return switch (self) {
+            .sent => "sent",
+            .pending => "pending",
+        };
+    }
+
+    pub fn fromString(s: []const u8) MessageStatus {
+        if (std.mem.eql(u8, s, "pending")) return .pending;
+        return .sent;
+    }
+};
+
 /// A chat message
 pub const Message = struct {
     id: i64,
@@ -31,6 +49,7 @@ pub const Message = struct {
     ephemeral: bool = false,
     tool_name: ?[]const u8 = null,
     tool_input: ?[]const u8 = null,
+    status: MessageStatus = .sent,
 };
 
 /// Row type for SELECT query
@@ -42,6 +61,7 @@ const MessageRow = struct {
     ephemeral: i64,
     tool_name: ?[]const u8,
     tool_input: ?[]const u8,
+    status: []const u8,
 };
 
 /// A session/tab
@@ -91,13 +111,15 @@ pub fn Database(comptime SqliteDb: type) type {
                 \\    timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                 \\    ephemeral INTEGER NOT NULL DEFAULT 0,
                 \\    tool_name TEXT,
-                \\    tool_input TEXT
+                \\    tool_input TEXT,
+                \\    status TEXT NOT NULL DEFAULT 'sent'
                 \\)
             , .{}, .{});
 
-            // Migration: add tool_name and tool_input columns if they don't exist
+            // Migration: add columns if they don't exist
             db.exec("ALTER TABLE messages ADD COLUMN tool_name TEXT", .{}, .{}) catch {};
             db.exec("ALTER TABLE messages ADD COLUMN tool_input TEXT", .{}, .{}) catch {};
+            db.exec("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'", .{}, .{}) catch {};
 
             // Ensure at least one session exists
             var count_stmt = try db.prepare("SELECT COUNT(*) FROM sessions");
@@ -160,7 +182,7 @@ pub fn Database(comptime SqliteDb: type) type {
         /// Get messages for current session
         pub fn getMessages(self: *Self, allocator: std.mem.Allocator) ![]Message {
             var stmt = try self.db.prepare(
-                "SELECT id, role, content, timestamp, ephemeral, tool_name, tool_input FROM messages WHERE session_id = ? ORDER BY id"
+                "SELECT id, role, content, timestamp, ephemeral, tool_name, tool_input, status FROM messages WHERE session_id = ? ORDER BY id"
             );
             defer stmt.deinit();
 
@@ -185,6 +207,7 @@ pub fn Database(comptime SqliteDb: type) type {
                     .ephemeral = row.ephemeral != 0,
                     .tool_name = row.tool_name,
                     .tool_input = row.tool_input,
+                    .status = MessageStatus.fromString(row.status),
                 });
             }
 
@@ -204,6 +227,53 @@ pub fn Database(comptime SqliteDb: type) type {
         /// Update message content by ID (for streaming updates)
         pub fn updateMessageContent(self: *Self, message_id: i64, content: []const u8) !void {
             try self.db.exec("UPDATE messages SET content = ? WHERE id = ?", .{}, .{ content, message_id });
+        }
+
+        /// Add a pending message (queued while AI is responding)
+        pub fn addPendingMessage(self: *Self, role: Role, content: []const u8) !i64 {
+            try self.db.exec(
+                "INSERT INTO messages (session_id, role, content, status) VALUES (?, ?, ?, 'pending')",
+                .{},
+                .{ self.current_session_id, role.toString(), content },
+            );
+            return self.db.getLastInsertRowID();
+        }
+
+        /// Get the oldest pending message (FIFO queue)
+        pub fn getNextPendingMessage(self: *Self, allocator: std.mem.Allocator) !?Message {
+            var stmt = try self.db.prepare(
+                "SELECT id, role, content, timestamp, ephemeral, tool_name, tool_input, status FROM messages WHERE session_id = ? AND status = 'pending' ORDER BY id LIMIT 1"
+            );
+            defer stmt.deinit();
+
+            if (try stmt.oneAlloc(MessageRow, allocator, .{}, .{self.current_session_id})) |row| {
+                return Message{
+                    .id = row.id,
+                    .role = Role.fromString(row.role) orelse .user,
+                    .content = row.content,
+                    .timestamp = row.timestamp,
+                    .ephemeral = row.ephemeral != 0,
+                    .tool_name = row.tool_name,
+                    .tool_input = row.tool_input,
+                    .status = .pending,
+                };
+            }
+            return null;
+        }
+
+        /// Mark a pending message as sent
+        pub fn markMessageSent(self: *Self, message_id: i64) !void {
+            try self.db.exec("UPDATE messages SET status = 'sent' WHERE id = ?", .{}, .{message_id});
+        }
+
+        /// Check if there are any pending messages
+        pub fn hasPendingMessages(self: *Self) !bool {
+            var stmt = try self.db.prepare("SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND status = 'pending'");
+            defer stmt.deinit();
+            if (try stmt.one(struct { c: i64 }, .{}, .{self.current_session_id})) |row| {
+                return row.c > 0;
+            }
+            return false;
         }
 
         // ============ Session Management ============

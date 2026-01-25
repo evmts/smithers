@@ -205,63 +205,70 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                 return .none;
             }
 
-            if (!ctx.loading.isLoading()) {
-                // Arrow keys scroll 5 lines (~1 message), PageUp/PageDown scroll faster
-                if (key.matches(Key.up, .{})) {
-                    ctx.chat_history.scrollUp(5);
-                    return .none;
-                } else if (key.matches(Key.down, .{})) {
-                    ctx.chat_history.scrollDown(5);
-                    return .none;
-                } else if (key.matches(Key.page_up, .{})) {
-                    ctx.chat_history.scrollUp(20);
-                    return .none;
-                } else if (key.matches(Key.page_down, .{})) {
-                    ctx.chat_history.scrollDown(20);
-                    return .none;
-                } else if (try ctx.input.handleEvent(Event{ .key_press = key })) |command| {
-                    defer self.alloc.free(command);
+            // Arrow keys scroll 5 lines (~1 message), PageUp/PageDown scroll faster
+            if (key.matches(Key.up, .{})) {
+                ctx.chat_history.scrollUp(5);
+                return .none;
+            } else if (key.matches(Key.down, .{})) {
+                ctx.chat_history.scrollDown(5);
+                return .none;
+            } else if (key.matches(Key.page_up, .{})) {
+                ctx.chat_history.scrollUp(20);
+                return .none;
+            } else if (key.matches(Key.page_down, .{})) {
+                ctx.chat_history.scrollDown(20);
+                return .none;
+            } else if (try ctx.input.handleEvent(Event{ .key_press = key })) |command| {
+                defer self.alloc.free(command);
 
-                    if (std.mem.eql(u8, command, "/exit")) {
-                        return .exit;
-                    } else if (std.mem.eql(u8, command, "/clear")) {
-                        try ctx.database.clearMessages();
-                        try ctx.chat_history.reload(ctx.database);
-                    } else if (std.mem.eql(u8, command, "/new")) {
-                        try ctx.database.clearMessages();
-                        _ = try ctx.database.addMessage(.system, "Started new conversation.");
-                        try ctx.chat_history.reload(ctx.database);
-                    } else if (std.mem.eql(u8, command, "/help")) {
-                        _ = try ctx.database.addEphemeralMessage(.assistant, help.INLINE_HELP);
-                        try ctx.chat_history.reload(ctx.database);
-                    } else if (std.mem.eql(u8, command, "/model")) {
-                        _ = try ctx.database.addEphemeralMessage(.system, "Current model: claude-sonnet-4-20250514");
-                        try ctx.chat_history.reload(ctx.database);
-                    } else if (std.mem.eql(u8, command, "/status")) {
-                        const msgs = try ctx.database.getMessages(self.alloc);
-                        defer Db.freeMessages(self.alloc, msgs);
-                        const status_msg = try std.fmt.allocPrint(
-                            self.alloc,
-                            "Session: {d} | Messages: {d} | AI: {s}",
-                            .{ ctx.database.getCurrentSessionId(), msgs.len, if (ctx.has_ai) "connected" else "demo" },
-                        );
-                        defer self.alloc.free(status_msg);
-                        _ = try ctx.database.addEphemeralMessage(.system, status_msg);
-                        try ctx.chat_history.reload(ctx.database);
-                    } else if (std.mem.eql(u8, command, "/diff")) {
-                        const diff_result = git_utils.runGitDiff(self.alloc) catch |err| blk: {
-                            break :blk try std.fmt.allocPrint(self.alloc, "Error running git diff: {s}", .{@errorName(err)});
-                        };
-                        defer self.alloc.free(diff_result);
-                        if (diff_result.len > 0) {
-                            _ = try ctx.database.addEphemeralMessage(.assistant, diff_result);
-                        } else {
-                            _ = try ctx.database.addEphemeralMessage(.system, "No uncommitted changes.");
-                        }
+                if (std.mem.eql(u8, command, "/exit")) {
+                    return .exit;
+                } else if (std.mem.eql(u8, command, "/clear")) {
+                    try ctx.database.clearMessages();
+                    try ctx.chat_history.reload(ctx.database);
+                } else if (std.mem.eql(u8, command, "/new")) {
+                    try ctx.database.clearMessages();
+                    _ = try ctx.database.addMessage(.system, "Started new conversation.");
+                    try ctx.chat_history.reload(ctx.database);
+                } else if (std.mem.eql(u8, command, "/help")) {
+                    _ = try ctx.database.addEphemeralMessage(.assistant, help.INLINE_HELP);
+                    try ctx.chat_history.reload(ctx.database);
+                } else if (std.mem.eql(u8, command, "/model")) {
+                    _ = try ctx.database.addEphemeralMessage(.system, "Current model: claude-sonnet-4-20250514");
+                    try ctx.chat_history.reload(ctx.database);
+                } else if (std.mem.eql(u8, command, "/status")) {
+                    const msgs = try ctx.database.getMessages(self.alloc);
+                    defer Db.freeMessages(self.alloc, msgs);
+                    const status_msg = try std.fmt.allocPrint(
+                        self.alloc,
+                        "Session: {d} | Messages: {d} | AI: {s}",
+                        .{ ctx.database.getCurrentSessionId(), msgs.len, if (ctx.has_ai) "connected" else "demo" },
+                    );
+                    defer self.alloc.free(status_msg);
+                    _ = try ctx.database.addEphemeralMessage(.system, status_msg);
+                    try ctx.chat_history.reload(ctx.database);
+                } else if (std.mem.eql(u8, command, "/diff")) {
+                    const diff_result = git_utils.runGitDiff(self.alloc) catch |err| blk: {
+                        break :blk try std.fmt.allocPrint(self.alloc, "Error running git diff: {s}", .{@errorName(err)});
+                    };
+                    defer self.alloc.free(diff_result);
+                    if (diff_result.len > 0) {
+                        _ = try ctx.database.addEphemeralMessage(.assistant, diff_result);
+                    } else {
+                        _ = try ctx.database.addEphemeralMessage(.system, "No uncommitted changes.");
+                    }
+                    try ctx.chat_history.reload(ctx.database);
+                } else {
+                    // Regular message submission
+                    obs.global.logSimple(.debug, @src(), "keys.submit", "user submitted message");
+
+                    if (ctx.loading.isLoading()) {
+                        // AI is busy - queue as pending message (shows gray in UI)
+                        obs.global.logSimple(.debug, @src(), "keys.submit", "queueing as pending (AI busy)");
+                        _ = try ctx.database.addPendingMessage(.user, command);
                         try ctx.chat_history.reload(ctx.database);
                     } else {
-                        // Regular message - add to history and call AI
-                        obs.global.logSimple(.debug, @src(), "keys.submit", "user submitted message");
+                        // AI is idle - send immediately
                         _ = try ctx.database.addMessage(.user, command);
                         try ctx.chat_history.reload(ctx.database);
 
@@ -271,9 +278,7 @@ pub fn KeyHandler(comptime R: type, comptime Loading: type, comptime Db: type, c
                             obs.global.logSimple(.debug, @src(), "keys.submit", msg);
                             ctx.loading.pending_query = try self.alloc.dupe(u8, command);
                             ctx.loading.startLoading();
-                            var buf2: [128]u8 = undefined;
-                            const msg2 = std.fmt.bufPrint(&buf2, "after startLoading: is_loading={} start_time={d}", .{ ctx.loading.isLoading(), ctx.loading.start_time }) catch "?";
-                            obs.global.logSimple(.debug, @src(), "keys.submit", msg2);
+                            return .{ .start_ai_query = command };
                         } else {
                             obs.global.logSimple(.debug, @src(), "keys.submit", "demo mode - no AI");
                             _ = try ctx.database.addMessage(.assistant, "I'm running in demo mode (no API key). Set ANTHROPIC_API_KEY to enable AI responses.");

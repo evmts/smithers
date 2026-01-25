@@ -117,12 +117,40 @@ pub fn AgentThread(
                     if (state_changed) {
                         self.notifyStateChanged();
                     }
+                } else {
+                    // No active work - check for pending messages in DB queue
+                    self.mutex.lock();
+                    const pending_msg = self.database.getNextPendingMessage(self.alloc) catch null;
+                    self.mutex.unlock();
+
+                    if (pending_msg) |msg| {
+                        obs.global.logSimple(.debug, @src(), "agent_thread", "processing pending message");
+                        self.mutex.lock();
+
+                        // Mark as sent in DB
+                        self.database.markMessageSent(msg.id) catch {};
+
+                        // Set as pending query for agent loop
+                        self.loading.pending_query = self.alloc.dupe(u8, msg.content) catch null;
+                        if (self.loading.pending_query != null) {
+                            self.loading.startLoading();
+                        }
+
+                        // Free the message content we got from DB
+                        self.alloc.free(msg.content);
+                        if (msg.tool_name) |tn| self.alloc.free(tn);
+                        if (msg.tool_input) |ti| self.alloc.free(ti);
+
+                        self.mutex.unlock();
+                        self.notifyStateChanged();
+                        did_work = true;
+                    }
                 }
 
                 if (!did_work) {
                     // No work - wait for signal or timeout
                     self.mutex.lock();
-                    // Wait with timeout so we can check stop flag periodically
+                    // Wait with timeout so we can check stop flag and pending messages periodically
                     self.work_available.timedWait(&self.mutex, 50 * std.time.ns_per_ms) catch {};
                     self.mutex.unlock();
                 } else {

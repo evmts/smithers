@@ -15,6 +15,7 @@ pub fn ChatHistory(comptime R: type) type {
     const assistant_text_color = Colors.Indexed.ASSISTANT_TEXT;
     const system_text_color = Colors.Indexed.SYSTEM_TEXT;
     const dim_color = Colors.Indexed.DIM;
+    const pending_color = Colors.Indexed.DIM; // Gray for pending messages
     const code_color = Colors.Indexed.CODE;
     const heading_color = Colors.Indexed.HEADING;
     const link_color = Colors.Indexed.LINK;
@@ -296,9 +297,10 @@ pub fn ChatHistory(comptime R: type) type {
         fn drawMessage(self: *Self, renderer: R, msg: db.Message, y: u16, text_width: u16, skip_lines: u16) void {
             const content = msg.content;
             const content_lines = self.getMessageHeight(msg, text_width);
+            const is_pending = msg.status == .pending;
 
             switch (msg.role) {
-                .user => self.drawUserMessage(renderer, content, y, content_lines, text_width, skip_lines),
+                .user => self.drawUserMessage(renderer, content, y, content_lines, text_width, skip_lines, is_pending),
                 .assistant => self.drawMarkdownMessage(renderer, content, y, text_width, skip_lines),
                 .system => {
                     // Check if this is a read_file result for markdown
@@ -338,18 +340,19 @@ pub fn ChatHistory(comptime R: type) type {
             }
         }
 
-        fn drawUserMessage(self: *Self, renderer: R, content: []const u8, y: u16, content_lines: u16, text_width: u16, skip_lines: u16) void {
+        fn drawUserMessage(self: *Self, renderer: R, content: []const u8, y: u16, content_lines: u16, text_width: u16, skip_lines: u16, is_pending: bool) void {
             _ = self;
-            // Draw vertical bar for user messages
-            const bar_style: R.Style = .{ .fg = .{ .index = user_bar_color } };
-            const text_style: R.Style = .{ .fg = .{ .index = user_text_color } };
+            // Pending messages render in gray
+            const bar_style: R.Style = .{ .fg = .{ .index = if (is_pending) pending_color else user_bar_color } };
+            const text_style: R.Style = .{ .fg = .{ .index = if (is_pending) pending_color else user_text_color } };
 
             const visible_lines = content_lines -| skip_lines;
             const draw_height = @min(visible_lines, renderer.height() -| y);
 
-            // Draw bar for visible portion
+            // Draw bar for visible portion (dashed for pending)
+            const bar_char: []const u8 = if (is_pending) "┊" else "│";
             for (0..draw_height) |row| {
-                renderer.drawCell(2, y + @as(u16, @intCast(row)), "│", bar_style);
+                renderer.drawCell(2, y + @as(u16, @intCast(row)), bar_char, bar_style);
             }
 
             // Use a sub-renderer that clips appropriately
