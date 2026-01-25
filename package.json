@@ -40,6 +40,8 @@
     "lint:fix": "oxlint --fix src/",
     "test": "bun test",
     "test:watch": "bun test --watch",
+    "test:e2e": "cd test/e2e && npx tui-test",
+    "test:e2e:update": "cd test/e2e && npx tui-test --update-snapshots",
     "check": "bun run typecheck && bun run lint && bun run test",
     "prepare": "husky"
   },
@@ -66,6 +68,7 @@
     "bun": ">=1.0.0"
   },
   "devDependencies": {
+    "@microsoft/tui-test": "^0.0.1-rc.5",
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
     "@types/react-reconciler": "^0.28.9",
@@ -89,5 +92,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/evmts/smithers.git"
-  }
+  },
+  "trustedDependencies": [
+    "@homebridge/node-pty-prebuilt-multiarch"
+  ]
 }

@@ -26,3 +26,5 @@ venv/
 .zig-cache/
 zig-out/
 src/god-tui/main
+.tui-test/
+tui-traces/
