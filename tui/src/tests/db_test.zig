@@ -725,3 +725,358 @@ test "Database can be instantiated with real sqlite" {
     const RealDatabase = db.Database(@import("sqlite").Db);
     try std.testing.expect(@TypeOf(RealDatabase) == type);
 }
+
+// ============================================================================
+// Compaction Tests
+// ============================================================================
+
+test "Database createCompaction and getLatestCompaction" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "Hello");
+    const msg_id = try database.addMessage(.assistant, "World");
+
+    const compaction_id = try database.createCompaction(
+        "Test summary",
+        msg_id,
+        5000,
+        null,
+    );
+    try std.testing.expect(compaction_id > 0);
+
+    const latest = try database.getLatestCompaction(allocator);
+    try std.testing.expect(latest != null);
+    defer TestDatabase.freeCompaction(allocator, latest.?);
+
+    try std.testing.expectEqualStrings("Test summary", latest.?.summary);
+    try std.testing.expectEqual(msg_id, latest.?.first_kept_msg_id);
+    try std.testing.expectEqual(@as(i64, 5000), latest.?.tokens_before);
+}
+
+test "Database createCompaction with details_json" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    const msg_id = try database.addMessage(.user, "Test");
+    const details = "{\"readFiles\":[\"/tmp/a.txt\"],\"modifiedFiles\":[\"/tmp/b.txt\"]}";
+
+    _ = try database.createCompaction("Summary with details", msg_id, 3000, details);
+
+    const latest = try database.getLatestCompaction(allocator);
+    try std.testing.expect(latest != null);
+    defer TestDatabase.freeCompaction(allocator, latest.?);
+
+    try std.testing.expect(latest.?.details_json != null);
+    try std.testing.expectEqualStrings(details, latest.?.details_json.?);
+}
+
+test "Database getLatestCompaction returns null when no compactions" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    const latest = try database.getLatestCompaction(allocator);
+    try std.testing.expect(latest == null);
+}
+
+test "Database getLatestCompaction returns most recent" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    const msg1 = try database.addMessage(.user, "First");
+    const msg2 = try database.addMessage(.user, "Second");
+
+    _ = try database.createCompaction("First compaction", msg1, 1000, null);
+    _ = try database.createCompaction("Second compaction", msg2, 2000, null);
+
+    const latest = try database.getLatestCompaction(allocator);
+    try std.testing.expect(latest != null);
+    defer TestDatabase.freeCompaction(allocator, latest.?);
+
+    try std.testing.expectEqualStrings("Second compaction", latest.?.summary);
+    try std.testing.expectEqual(@as(i64, 2000), latest.?.tokens_before);
+}
+
+test "Database getMessagesFromId returns messages from given ID" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    const id1 = try database.addMessage(.user, "First");
+    const id2 = try database.addMessage(.assistant, "Second");
+    _ = try database.addMessage(.user, "Third");
+
+    const from_id2 = try database.getMessagesFromId(allocator, id2);
+    defer TestDatabase.freeMessages(allocator, from_id2);
+
+    try std.testing.expectEqual(@as(usize, 2), from_id2.len);
+    try std.testing.expectEqualStrings("Second", from_id2[0].content);
+    try std.testing.expectEqualStrings("Third", from_id2[1].content);
+
+    const from_id1 = try database.getMessagesFromId(allocator, id1);
+    defer TestDatabase.freeMessages(allocator, from_id1);
+
+    try std.testing.expectEqual(@as(usize, 3), from_id1.len);
+}
+
+test "Database getMessagesFromId returns empty for future ID" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "Message");
+
+    const messages = try database.getMessagesFromId(allocator, 99999);
+    defer TestDatabase.freeMessages(allocator, messages);
+
+    try std.testing.expectEqual(@as(usize, 0), messages.len);
+}
+
+test "Database compactions are session-specific" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    const msg1 = try database.addMessage(.user, "Session 1 message");
+    _ = try database.createCompaction("Session 1 compaction", msg1, 1000, null);
+
+    const session2 = try database.createSession("Session 2");
+    database.switchSession(session2);
+
+    const latest = try database.getLatestCompaction(allocator);
+    try std.testing.expect(latest == null);
+}
+
+test "Database freeCompaction handles null details" {
+    const allocator = std.testing.allocator;
+    const summary = try allocator.dupe(u8, "Test summary");
+    const entry = db.CompactionEntry{
+        .id = 1,
+        .session_id = 1,
+        .summary = summary,
+        .first_kept_msg_id = 1,
+        .tokens_before = 1000,
+        .details_json = null,
+        .created_at = 0,
+    };
+    TestDatabase.freeCompaction(allocator, entry);
+}
+
+// ============================================================================
+// Branching & Labels Tests
+// ============================================================================
+
+test "Message has entry_id and parent_id fields" {
+    const msg = db.Message{
+        .id = 1,
+        .role = .user,
+        .content = "test",
+        .timestamp = 0,
+        .entry_id = "abc12345",
+        .parent_id = "def67890",
+    };
+
+    try std.testing.expectEqualStrings("abc12345", msg.entry_id.?);
+    try std.testing.expectEqualStrings("def67890", msg.parent_id.?);
+}
+
+test "Message entry_id and parent_id default to null" {
+    const msg = db.Message{
+        .id = 1,
+        .role = .user,
+        .content = "test",
+        .timestamp = 0,
+    };
+
+    try std.testing.expect(msg.entry_id == null);
+    try std.testing.expect(msg.parent_id == null);
+}
+
+test "Label struct fields" {
+    const label = db.Label{
+        .id = 1,
+        .target_id = "abc12345",
+        .label = "checkpoint1",
+        .created_at = 1234567890,
+    };
+
+    try std.testing.expectEqualStrings("abc12345", label.target_id);
+    try std.testing.expectEqualStrings("checkpoint1", label.label);
+    try std.testing.expectEqual(@as(i64, 1234567890), label.created_at);
+}
+
+test "Database messages have entry_id assigned" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "Hello");
+
+    const messages = try database.getMessages(allocator);
+    defer TestDatabase.freeMessages(allocator, messages);
+
+    try std.testing.expectEqual(@as(usize, 1), messages.len);
+    try std.testing.expect(messages[0].entry_id != null);
+    try std.testing.expectEqual(@as(usize, 8), messages[0].entry_id.?.len);
+}
+
+test "Database messages have parent_id chain" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "First");
+    _ = try database.addMessage(.assistant, "Second");
+    _ = try database.addMessage(.user, "Third");
+
+    const messages = try database.getMessages(allocator);
+    defer TestDatabase.freeMessages(allocator, messages);
+
+    try std.testing.expectEqual(@as(usize, 3), messages.len);
+
+    // First message has no parent
+    try std.testing.expect(messages[0].parent_id == null);
+
+    // Second message's parent is first message
+    try std.testing.expectEqualStrings(messages[0].entry_id.?, messages[1].parent_id.?);
+
+    // Third message's parent is second message
+    try std.testing.expectEqualStrings(messages[1].entry_id.?, messages[2].parent_id.?);
+}
+
+test "Database getCurrentLeafId returns latest entry_id" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    try std.testing.expect(database.getCurrentLeafId() == null);
+
+    _ = try database.addMessage(.user, "First");
+    const first_leaf = database.getCurrentLeafId();
+    try std.testing.expect(first_leaf != null);
+
+    _ = try database.addMessage(.assistant, "Second");
+    const second_leaf = database.getCurrentLeafId();
+    try std.testing.expect(second_leaf != null);
+    try std.testing.expect(!std.mem.eql(u8, first_leaf.?, second_leaf.?));
+}
+
+test "Database setLabel and getLabel" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "Hello");
+    const entry_id = database.getCurrentLeafId().?;
+
+    try database.setLabel(entry_id, "checkpoint1");
+
+    const label = try database.getLabel(entry_id, allocator);
+    defer if (label) |l| allocator.free(l);
+
+    try std.testing.expect(label != null);
+    try std.testing.expectEqualStrings("checkpoint1", label.?);
+}
+
+test "Database getEntryByLabel" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "Hello");
+    const entry_id = database.getCurrentLeafId().?;
+
+    try database.setLabel(entry_id, "my-label");
+
+    const found_entry = try database.getEntryByLabel("my-label", allocator);
+    defer if (found_entry) |e| allocator.free(e);
+
+    try std.testing.expect(found_entry != null);
+    try std.testing.expectEqualStrings(entry_id, found_entry.?);
+}
+
+test "Database getEntryByLabel returns null for nonexistent label" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "Hello");
+
+    const found = try database.getEntryByLabel("nonexistent", allocator);
+    try std.testing.expect(found == null);
+}
+
+test "Database createBranch changes leaf pointer" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "First");
+    const first_id = try allocator.dupe(u8, database.getCurrentLeafId().?);
+    defer allocator.free(first_id);
+
+    _ = try database.addMessage(.assistant, "Second");
+    _ = try database.addMessage(.user, "Third");
+
+    // Branch back to first message
+    try database.createBranch(first_id);
+
+    try std.testing.expectEqualStrings(first_id, database.getCurrentLeafId().?);
+}
+
+test "Database createBranch returns error for nonexistent entry" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "Hello");
+
+    const result = database.createBranch("nonexistent");
+    try std.testing.expectError(error.EntryNotFound, result);
+}
+
+test "Database getLabels returns all labels" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "First");
+    const first_id = try allocator.dupe(u8, database.getCurrentLeafId().?);
+    defer allocator.free(first_id);
+
+    _ = try database.addMessage(.assistant, "Second");
+    const second_id = try allocator.dupe(u8, database.getCurrentLeafId().?);
+    defer allocator.free(second_id);
+
+    try database.setLabel(first_id, "start");
+    try database.setLabel(second_id, "checkpoint");
+
+    const labels = try database.getLabels(allocator);
+    defer TestDatabase.freeLabels(allocator, labels);
+
+    try std.testing.expectEqual(@as(usize, 2), labels.len);
+}
+
+test "Database deleteLabel removes label" {
+    const allocator = std.testing.allocator;
+    var database = try TestDatabase.init(allocator, null);
+    defer database.deinit();
+
+    _ = try database.addMessage(.user, "Hello");
+    const entry_id = database.getCurrentLeafId().?;
+
+    try database.setLabel(entry_id, "temp-label");
+
+    var label = try database.getLabel(entry_id, allocator);
+    if (label) |l| allocator.free(l);
+    try std.testing.expect(label != null);
+
+    try database.deleteLabel("temp-label");
+
+    label = try database.getLabel(entry_id, allocator);
+    try std.testing.expect(label == null);
+}

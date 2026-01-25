@@ -439,18 +439,26 @@ pub fn Database(comptime SqliteDb: type) type {
 
         /// Add a pending message (queued while AI is responding)
         pub fn addPendingMessage(self: *Self, role: Role, content: []const u8) !i64 {
+            const entry_id = try self.generateEntryId();
             try self.db.exec(
-                "INSERT INTO messages (session_id, role, content, status) VALUES (?, ?, ?, 'pending')",
+                "INSERT INTO messages (session_id, role, content, status, entry_id, parent_id) VALUES (?, ?, ?, 'pending', ?, ?)",
                 .{},
-                .{ self.current_session_id, role.toString(), content },
+                .{ self.current_session_id, role.toString(), content, &entry_id, self.current_leaf_id },
             );
-            return self.db.getLastInsertRowID();
+            const msg_id = self.db.getLastInsertRowID();
+
+            if (self.current_leaf_id) |old| {
+                self.allocator.free(old);
+            }
+            self.current_leaf_id = try self.allocator.dupe(u8, &entry_id);
+
+            return msg_id;
         }
 
         /// Get the oldest pending message (FIFO queue)
         pub fn getNextPendingMessage(self: *Self, allocator: std.mem.Allocator) !?Message {
             var stmt = try self.db.prepare(
-                "SELECT id, role, content, timestamp, ephemeral, tool_name, tool_input, status FROM messages WHERE session_id = ? AND status = 'pending' ORDER BY id LIMIT 1"
+                "SELECT id, role, content, timestamp, ephemeral, tool_name, tool_input, status, entry_id, parent_id FROM messages WHERE session_id = ? AND status = 'pending' ORDER BY id LIMIT 1"
             );
             defer stmt.deinit();
 
@@ -469,6 +477,8 @@ pub fn Database(comptime SqliteDb: type) type {
                     .tool_name = row.tool_name,
                     .tool_input = row.tool_input,
                     .status = .pending,
+                    .entry_id = row.entry_id,
+                    .parent_id = row.parent_id,
                 };
             }
             return null;

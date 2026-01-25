@@ -131,12 +131,7 @@ fn executeEditFile(ctx: ToolContext) ToolResult {
         return ToolResult.ok("File edited successfully");
     };
 
-    // Build structured details JSON for UI display
-    const details_json = edit_diff.buildEditDetailsJson(ctx.allocator, diff_result.diff, diff_result.first_changed_line) catch {
-        return ToolResult.okOwned(result_msg);
-    };
-
-    return ToolResult.okOwnedWithDetails(result_msg, details_json);
+    return ToolResult.okOwned(result_msg);
 }
 
 pub const tool = Tool{

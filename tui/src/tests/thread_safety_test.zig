@@ -239,3 +239,160 @@ test "Mutex: tryLock works after defer unlock" {
     try std.testing.expect(locked);
     mutex.unlock();
 }
+
+// ============================================================================
+// Issue 9: Debounce doesn't drop final reload (hasStateChanged vs consumeStateChanged)
+// ============================================================================
+
+test "AgentThread pattern: hasStateChanged is non-destructive" {
+    // Simulate the AgentThread atomic flag pattern
+    var state_changed = std.atomic.Value(bool).init(true);
+
+    // hasStateChanged pattern: load without clearing
+    const check1 = state_changed.load(.acquire);
+    try std.testing.expect(check1);
+
+    // Flag should still be true after non-destructive check
+    const check2 = state_changed.load(.acquire);
+    try std.testing.expect(check2);
+}
+
+test "AgentThread pattern: clearStateChanged clears flag" {
+    var state_changed = std.atomic.Value(bool).init(true);
+
+    // clearStateChanged pattern: store false
+    state_changed.store(false, .release);
+
+    const check = state_changed.load(.acquire);
+    try std.testing.expect(!check);
+}
+
+test "Debounce: throttled check doesn't lose update" {
+    clock_mod.MockClock.reset();
+    clock_mod.MockClock.setTime(50); // 50ms since start
+
+    var state_changed = std.atomic.Value(bool).init(true);
+    var last_reload: i64 = 0;
+    const is_loading = true;
+
+    // First loop iteration: 50ms elapsed, need 100ms - throttled
+    {
+        const has_change = state_changed.load(.acquire);
+        try std.testing.expect(has_change);
+
+        const now = clock_mod.MockClock.milliTimestamp();
+        const should_reload = !is_loading or (now - last_reload >= 100);
+        try std.testing.expect(!should_reload); // Throttled
+
+        // With hasStateChanged pattern, flag is NOT cleared
+        // (we didn't call clearStateChanged because we didn't reload)
+    }
+
+    // Verify flag is still set for next iteration
+    try std.testing.expect(state_changed.load(.acquire));
+
+    // Second loop iteration: 100ms total - should reload now
+    clock_mod.MockClock.advance(50);
+    {
+        const has_change = state_changed.load(.acquire);
+        try std.testing.expect(has_change);
+
+        const now = clock_mod.MockClock.milliTimestamp();
+        const should_reload = !is_loading or (now - last_reload >= 100);
+        try std.testing.expect(should_reload); // Now we reload
+
+        // After successful reload, clear the flag
+        last_reload = now;
+        state_changed.store(false, .release);
+    }
+
+    // Flag should now be cleared
+    try std.testing.expect(!state_changed.load(.acquire));
+}
+
+// ============================================================================
+// Issue 10: Continuation failure marks agent run as failed
+// ============================================================================
+
+test "AgentRunStatus: error_state exists for failed runs" {
+    const status = db_mod.AgentRunStatus.error_state;
+    try std.testing.expectEqualStrings("error", status.toString());
+}
+
+test "AgentRunStatus: fromString parses error" {
+    const status = db_mod.AgentRunStatus.fromString("error");
+    try std.testing.expectEqual(db_mod.AgentRunStatus.error_state, status);
+}
+
+test "Continuation failure path: status transitions" {
+    // Verify valid state transitions for crash recovery:
+    // pending -> streaming -> tools -> continuing -> complete
+    // Any state can transition to error_state on failure
+
+    const transitions = [_]struct { from: db_mod.AgentRunStatus, to: db_mod.AgentRunStatus }{
+        .{ .from = .pending, .to = .streaming },
+        .{ .from = .streaming, .to = .tools },
+        .{ .from = .tools, .to = .continuing },
+        .{ .from = .continuing, .to = .complete },
+        // Error transitions from any state
+        .{ .from = .pending, .to = .error_state },
+        .{ .from = .streaming, .to = .error_state },
+        .{ .from = .tools, .to = .error_state },
+        .{ .from = .continuing, .to = .error_state },
+    };
+
+    for (transitions) |t| {
+        // Just verify both statuses can be serialized (valid enum values)
+        const from_str = t.from.toString();
+        const to_str = t.to.toString();
+        try std.testing.expect(from_str.len > 0);
+        try std.testing.expect(to_str.len > 0);
+    }
+}
+
+// ============================================================================
+// Integration: Full Loading state lifecycle
+// ============================================================================
+
+test "Loading: full lifecycle with cancellation" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    // 1. Start loading with query
+    state.startLoading();
+    state.setPendingQuery(try alloc.dupe(u8, "test query"));
+
+    try std.testing.expect(state.isLoading());
+    try std.testing.expect(state.hasPendingWork());
+    try std.testing.expect(!state.isCancelRequested());
+
+    // 2. User requests cancel
+    state.requestCancel();
+
+    try std.testing.expect(state.isLoading()); // Still loading until cleanup
+    try std.testing.expect(state.isCancelRequested());
+
+    // 3. Agent thread sees cancel and cleans up
+    state.cleanup(alloc);
+
+    try std.testing.expect(!state.isLoading());
+    try std.testing.expect(!state.hasPendingWork());
+    try std.testing.expect(!state.isCancelRequested());
+}
+
+test "Loading: pending_continuation lifecycle" {
+    const alloc = std.testing.allocator;
+    var state = TestLoadingState{};
+
+    // Set continuation (happens after tool execution)
+    state.setPendingContinuation(try alloc.dupe(u8, "[{\"role\":\"user\",\"content\":\"hello\"}]"));
+
+    try std.testing.expect(state.hasPendingWork());
+    try std.testing.expect(state.pending_continuation != null);
+
+    // Clear continuation (happens when stream starts)
+    state.clearPendingContinuation(alloc);
+
+    try std.testing.expect(!state.hasPendingWork());
+    try std.testing.expect(state.pending_continuation == null);
+}

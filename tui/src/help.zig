@@ -113,6 +113,9 @@ pub const COMMANDS = [_]struct { name: []const u8, description: []const u8 }{
     .{ .name = "/rename", .description = "Rename current session" },
     .{ .name = "/diff", .description = "Show git diff of current changes" },
     .{ .name = "/tools", .description = "List available tools" },
+    .{ .name = "/branch", .description = "Create branch from current point" },
+    .{ .name = "/label", .description = "Label current message: /label <name>" },
+    .{ .name = "/goto", .description = "Go to labeled point: /goto <label>" },
     .{ .name = "/exit", .description = "Exit the application" },
 };
 

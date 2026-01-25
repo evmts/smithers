@@ -285,10 +285,10 @@ fn convertToolsToOpenAIFormat(alloc: Allocator, anthropic_tools: []const u8) ![]
         if (!first) try result.append(alloc, ',');
         first = false;
 
-        const schema_json = json.stringifyAlloc(alloc, schema, .{}) catch continue;
+        const schema_json = json.Stringify.valueAlloc(alloc, schema, .{}) catch continue;
         defer alloc.free(schema_json);
 
-        const escaped_desc = json.stringifyAlloc(alloc, desc.string, .{}) catch continue;
+        const escaped_desc = json.Stringify.valueAlloc(alloc, desc.string, .{}) catch continue;
         defer alloc.free(escaped_desc);
 
         const tool_json = std.fmt.allocPrint(alloc,

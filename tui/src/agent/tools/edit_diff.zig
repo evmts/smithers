@@ -35,24 +35,24 @@ pub fn detectLineEnding(content: []const u8) LineEnding {
 }
 
 pub fn normalizeToLF(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
-    var result = std.ArrayList(u8).init(allocator);
-    errdefer result.deinit();
+    var result: std.ArrayList(u8) = .empty;
+    errdefer result.deinit(allocator);
 
     var i: usize = 0;
     while (i < text.len) {
         if (i + 1 < text.len and text[i] == '\r' and text[i + 1] == '\n') {
-            try result.append('\n');
+            try result.append(allocator, '\n');
             i += 2;
         } else if (text[i] == '\r') {
-            try result.append('\n');
+            try result.append(allocator, '\n');
             i += 1;
         } else {
-            try result.append(text[i]);
+            try result.append(allocator, text[i]);
             i += 1;
         }
     }
 
-    return result.toOwnedSlice();
+    return result.toOwnedSlice(allocator);
 }
 
 pub fn restoreLineEndings(allocator: std.mem.Allocator, text: []const u8, ending: LineEnding) ![]const u8 {
@@ -60,18 +60,18 @@ pub fn restoreLineEndings(allocator: std.mem.Allocator, text: []const u8, ending
         return allocator.dupe(u8, text);
     }
 
-    var result = std.ArrayList(u8).init(allocator);
-    errdefer result.deinit();
+    var result: std.ArrayList(u8) = .empty;
+    errdefer result.deinit(allocator);
 
     for (text) |c| {
         if (c == '\n') {
-            try result.appendSlice("\r\n");
+            try result.appendSlice(allocator, "\r\n");
         } else {
-            try result.append(c);
+            try result.append(allocator, c);
         }
     }
 
-    return result.toOwnedSlice();
+    return result.toOwnedSlice(allocator);
 }
 
 pub const StripBomResult = struct {
@@ -128,15 +128,15 @@ fn isUnicodeSmartQuote(c: u8, next_bytes: []const u8) ?struct { replacement: u8,
 }
 
 pub fn normalizeForFuzzyMatch(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
-    var result = std.ArrayList(u8).init(allocator);
-    errdefer result.deinit();
+    var result: std.ArrayList(u8) = .empty;
+    errdefer result.deinit(allocator);
 
     var lines = std.mem.splitScalar(u8, text, '\n');
     var first = true;
 
     while (lines.next()) |line| {
         if (!first) {
-            try result.append('\n');
+            try result.append(allocator, '\n');
         }
         first = false;
 
@@ -146,16 +146,16 @@ pub fn normalizeForFuzzyMatch(allocator: std.mem.Allocator, text: []const u8) ![
         while (i < trimmed.len) {
             const remaining = if (i + 1 < trimmed.len) trimmed[i + 1 ..] else &[_]u8{};
             if (isUnicodeSmartQuote(trimmed[i], remaining)) |conv| {
-                try result.append(conv.replacement);
+                try result.append(allocator, conv.replacement);
                 i += conv.skip;
             } else {
-                try result.append(trimmed[i]);
+                try result.append(allocator, trimmed[i]);
                 i += 1;
             }
         }
     }
 
-    return result.toOwnedSlice();
+    return result.toOwnedSlice(allocator);
 }
 
 pub fn fuzzyFindText(allocator: std.mem.Allocator, content: []const u8, needle: []const u8) !FuzzyMatchResult {
@@ -217,21 +217,21 @@ pub fn countOccurrences(allocator: std.mem.Allocator, content: []const u8, needl
 }
 
 pub fn generateDiff(allocator: std.mem.Allocator, old_content: []const u8, new_content: []const u8, context_lines: usize) !DiffResult {
-    var result = std.ArrayList(u8).init(allocator);
-    errdefer result.deinit();
+    var result: std.ArrayList(u8) = .empty;
+    errdefer result.deinit(allocator);
 
-    var old_lines_list = std.ArrayList([]const u8).init(allocator);
-    defer old_lines_list.deinit();
-    var new_lines_list = std.ArrayList([]const u8).init(allocator);
-    defer new_lines_list.deinit();
+    var old_lines_list: std.ArrayList([]const u8) = .empty;
+    defer old_lines_list.deinit(allocator);
+    var new_lines_list: std.ArrayList([]const u8) = .empty;
+    defer new_lines_list.deinit(allocator);
 
     var old_iter = std.mem.splitScalar(u8, old_content, '\n');
     while (old_iter.next()) |line| {
-        try old_lines_list.append(line);
+        try old_lines_list.append(allocator, line);
     }
     var new_iter = std.mem.splitScalar(u8, new_content, '\n');
     while (new_iter.next()) |line| {
-        try new_lines_list.append(line);
+        try new_lines_list.append(allocator, line);
     }
 
     const old_lines = old_lines_list.items;
@@ -260,10 +260,10 @@ pub fn generateDiff(allocator: std.mem.Allocator, old_content: []const u8, new_c
         const context_start = if (old_idx >= context_lines) old_idx - context_lines else 0;
         if (context_start < old_idx) {
             if (result.items.len > 0) {
-                try result.appendSlice("\n");
+                try result.appendSlice(allocator, "\n");
             }
             for (context_start..old_idx) |i| {
-                try appendLine(&result, ' ', i + 1, old_lines[i], line_num_width);
+                try appendLine(allocator, &result, ' ', i + 1, old_lines[i], line_num_width);
             }
         }
 
@@ -287,15 +287,15 @@ pub fn generateDiff(allocator: std.mem.Allocator, old_content: []const u8, new_c
         }
 
         for (old_idx..old_end) |i| {
-            try appendLine(&result, '-', i + 1, old_lines[i], line_num_width);
+            try appendLine(allocator, &result, '-', i + 1, old_lines[i], line_num_width);
         }
         for (new_idx..new_end) |i| {
-            try appendLine(&result, '+', i + 1, new_lines[i], line_num_width);
+            try appendLine(allocator, &result, '+', i + 1, new_lines[i], line_num_width);
         }
 
         const trailing_context_end = @min(old_end + context_lines, old_lines.len);
         for (old_end..trailing_context_end) |i| {
-            try appendLine(&result, ' ', i + 1, old_lines[i], line_num_width);
+            try appendLine(allocator, &result, ' ', i + 1, old_lines[i], line_num_width);
         }
 
         old_idx = trailing_context_end;
@@ -303,26 +303,26 @@ pub fn generateDiff(allocator: std.mem.Allocator, old_content: []const u8, new_c
     }
 
     return .{
-        .diff = try result.toOwnedSlice(),
+        .diff = try result.toOwnedSlice(allocator),
         .first_changed_line = first_changed_line,
     };
 }
 
-fn appendLine(result: *std.ArrayList(u8), prefix: u8, line_num: usize, line: []const u8, width: usize) !void {
+fn appendLine(allocator: std.mem.Allocator, result: *std.ArrayList(u8), prefix: u8, line_num: usize, line: []const u8, width: usize) !void {
     if (result.items.len > 0 and result.items[result.items.len - 1] != '\n') {
-        try result.append('\n');
+        try result.append(allocator, '\n');
     }
-    try result.append(prefix);
+    try result.append(allocator, prefix);
 
     var buf: [20]u8 = undefined;
     const num_str = std.fmt.bufPrint(&buf, "{d}", .{line_num}) catch unreachable;
     const padding = width - num_str.len;
     for (0..padding) |_| {
-        try result.append(' ');
+        try result.append(allocator, ' ');
     }
-    try result.appendSlice(num_str);
-    try result.append(' ');
-    try result.appendSlice(line);
+    try result.appendSlice(allocator, num_str);
+    try result.append(allocator, ' ');
+    try result.appendSlice(allocator, line);
 }
 
 fn countDigits(n: usize) usize {
@@ -334,48 +334,6 @@ fn countDigits(n: usize) usize {
         val /= 10;
     }
     return count;
-}
-
-/// Build JSON details for edit tool: {"diff": "...", "first_changed_line": N}
-pub fn buildEditDetailsJson(allocator: std.mem.Allocator, diff: []const u8, first_line: ?usize) ![]const u8 {
-    var result = std.ArrayList(u8).init(allocator);
-    errdefer result.deinit();
-
-    try result.appendSlice("{\"diff\":");
-    try appendJsonString(&result, diff);
-
-    if (first_line) |line| {
-        var buf: [32]u8 = undefined;
-        const line_str = std.fmt.bufPrint(&buf, ",\"first_changed_line\":{d}", .{line}) catch unreachable;
-        try result.appendSlice(line_str);
-    }
-
-    try result.append('}');
-    return result.toOwnedSlice();
-}
-
-/// Append a JSON-escaped string
-pub fn appendJsonString(result: *std.ArrayList(u8), s: []const u8) !void {
-    try result.append('"');
-    for (s) |c| {
-        switch (c) {
-            '"' => try result.appendSlice("\\\""),
-            '\\' => try result.appendSlice("\\\\"),
-            '\n' => try result.appendSlice("\\n"),
-            '\r' => try result.appendSlice("\\r"),
-            '\t' => try result.appendSlice("\\t"),
-            else => {
-                if (c < 0x20) {
-                    var buf: [6]u8 = undefined;
-                    const hex = std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c}) catch continue;
-                    try result.appendSlice(hex);
-                } else {
-                    try result.append(c);
-                }
-            },
-        }
-    }
-    try result.append('"');
 }
 
 test "detectLineEnding" {

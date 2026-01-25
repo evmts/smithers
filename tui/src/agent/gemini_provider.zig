@@ -118,7 +118,7 @@ pub const StreamingState = struct {
 
         var args_json: []const u8 = "{}";
         if (fc.get("args")) |args_val| {
-            args_json = json.stringifyAlloc(self.alloc, args_val, .{}) catch "{}";
+            args_json = json.Stringify.valueAlloc(self.alloc, args_val, .{}) catch "{}";
         }
 
         try self.tool_calls.append(self.alloc, .{
@@ -314,7 +314,7 @@ fn convertMessagesToGeminiFormat(alloc: Allocator, messages_json: []const u8) ![
             content_str = content_val.string;
         }
 
-        const escaped_content = json.stringifyAlloc(alloc, content_str, .{}) catch continue;
+        const escaped_content = json.Stringify.valueAlloc(alloc, content_str, .{}) catch continue;
         defer alloc.free(escaped_content);
 
         const msg_json = std.fmt.allocPrint(alloc,
@@ -352,10 +352,10 @@ fn convertToolsToGeminiFormat(alloc: Allocator, anthropic_tools: []const u8) ![]
         if (!first) try result.append(alloc, ',');
         first = false;
 
-        const schema_json = json.stringifyAlloc(alloc, schema, .{}) catch continue;
+        const schema_json = json.Stringify.valueAlloc(alloc, schema, .{}) catch continue;
         defer alloc.free(schema_json);
 
-        const escaped_desc = json.stringifyAlloc(alloc, desc.string, .{}) catch continue;
+        const escaped_desc = json.Stringify.valueAlloc(alloc, desc.string, .{}) catch continue;
         defer alloc.free(escaped_desc);
 
         const tool_json = std.fmt.allocPrint(alloc,

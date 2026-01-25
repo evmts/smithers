@@ -203,8 +203,25 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             // Use scratch arena for all temporary allocations in this function
             const scratch = self.scratch.allocator();
 
+            // Check for existing compaction to get first_kept_msg_id
+            var compaction_summary: ?[]const u8 = null;
+            var first_kept_msg_id: ?i64 = null;
+            if (database.getLatestCompaction(scratch)) |maybe_existing| {
+                if (maybe_existing) |existing| {
+                    compaction_summary = existing.summary;
+                    first_kept_msg_id = existing.first_kept_msg_id;
+                }
+            } else |_| {}
+
             // Build messages JSON from DB (use scratch - freed at tick end)
-            const messages = database.getMessages(scratch) catch |err| {
+            // If we have a compaction, only get messages from first_kept_msg_id onwards
+            const messages = if (first_kept_msg_id) |fkid|
+                database.getMessagesFromId(scratch, fkid) catch |err| {
+                    obs.global.logSimple(.err, @src(), "db.getMessagesFromId", @errorName(err));
+                    return false;
+                }
+            else
+                database.getMessages(scratch) catch |err| {
                     obs.global.logSimple(.err, @src(), "db.getMessages", @errorName(err));
                     return false;
                 };
@@ -213,6 +230,18 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             var msg_buf = std.ArrayListUnmanaged(u8){};
             try msg_buf.append(scratch, '[');
             var first = true;
+
+            // Inject compaction summary as first user message if available
+            if (compaction_summary) |summary| {
+                const escaped_summary = std.json.Stringify.valueAlloc(scratch, summary, .{}) catch "";
+                const summary_msg = std.fmt.allocPrint(scratch,
+                    \\{{"role":"user","content":{s}}}
+                , .{escaped_summary}) catch "";
+                try msg_buf.appendSlice(scratch, summary_msg);
+                first = false;
+                obs.global.logSimple(.debug, @src(), "agent.compaction", "injected compaction summary");
+            }
+
             for (messages) |msg| {
                 if (msg.role == .system or msg.ephemeral) continue;
                 if (!first) try msg_buf.append(scratch, ',');
@@ -261,8 +290,18 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
         }
 
         fn start_continuation_stream(self: *Self, database: *Database) !bool {
-            const api_key = std.posix.getenv("ANTHROPIC_API_KEY") orelse {
-                _ = try database.addMessage(.system, "Error: ANTHROPIC_API_KEY not set");
+            // Get model configuration from environment
+            const config = getModelConfig();
+
+            const api_key = getApiKey(config.provider) orelse {
+                var key_buf: [128]u8 = undefined;
+                const key_name = switch (config.provider) {
+                    .anthropic => "ANTHROPIC_API_KEY",
+                    .openai => "OPENAI_API_KEY",
+                    .google => "GEMINI_API_KEY",
+                };
+                const err_text = std.fmt.bufPrint(&key_buf, "Error: {s} not set", .{key_name}) catch "Error: API key not set";
+                _ = try database.addMessage(.system, err_text);
                 // Mark agent run as failed before cleanup (avoids stuck "continuing" status)
                 if (self.loading.agent_run_id) |rid| {
                     database.failAgentRun(rid) catch |err| {
@@ -275,7 +314,7 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
 
             // Use scratch for temporary request body
             const scratch = self.scratch.allocator();
-            const request_body = try self.buildRequestBody(scratch, self.loading.pending_continuation.?, tools_json);
+            const request_body = try self.buildRequestBody(scratch, self.loading.pending_continuation.?, tools_json, config);
 
             // Create placeholder message for continuation response
             const msg_id = try database.addMessage(.assistant, "▌");
@@ -848,6 +887,97 @@ pub fn AgentLoop(comptime Provider: type, comptime Loading: type, comptime ToolE
             }
             try buf.append(alloc, ']');
             return buf.items;
+        }
+
+        /// Check context size and trigger compaction if needed
+        fn checkAndTriggerCompaction(self: *Self, database: *Database) !void {
+            const scratch = self.scratch.allocator();
+            const settings = compaction.DEFAULT_SETTINGS;
+
+            // Get all messages to estimate context size
+            const messages = database.getMessages(scratch) catch |err| {
+                obs.global.logSimple(.err, @src(), "compaction.getMessages", @errorName(err));
+                return err;
+            };
+
+            if (messages.len == 0) return;
+
+            // Check for existing compaction
+            var previous_summary: ?[]const u8 = null;
+            var existing_first_kept_id: ?i64 = null;
+            if (database.getLatestCompaction(scratch)) |maybe_existing| {
+                if (maybe_existing) |existing| {
+                    previous_summary = existing.summary;
+                    existing_first_kept_id = existing.first_kept_msg_id;
+                }
+            } else |err| {
+                obs.global.logSimple(.warn, @src(), "compaction.getLatestCompaction", @errorName(err));
+            }
+
+            // If we have an existing compaction, only count messages after first_kept_msg_id
+            var effective_messages = messages;
+            if (existing_first_kept_id) |first_id| {
+                for (messages, 0..) |msg, i| {
+                    if (msg.id >= first_id) {
+                        effective_messages = messages[i..];
+                        break;
+                    }
+                }
+            }
+
+            const context_tokens = compaction.estimateContextTokens(effective_messages);
+
+            var token_buf: [64]u8 = undefined;
+            const token_msg = std.fmt.bufPrint(&token_buf, "context tokens: {d}", .{context_tokens}) catch "?";
+            obs.global.logSimple(.debug, @src(), "compaction.check", token_msg);
+
+            if (!compaction.shouldCompact(context_tokens, settings)) return;
+
+            obs.global.logSimple(.info, @src(), "compaction", "triggering context compaction");
+
+            // Find cut point
+            const prep = (compaction.prepareCompaction(scratch, effective_messages, previous_summary, settings) catch return) orelse return;
+
+            // Build summarization prompt for later API call
+            const prompt = compaction.buildSummarizationPrompt(
+                scratch,
+                prep.messages_to_summarize,
+                previous_summary,
+            ) catch |err| {
+                obs.global.logSimple(.err, @src(), "compaction.buildPrompt", @errorName(err));
+                return err;
+            };
+
+            // For now, create a simple summary placeholder and store the compaction
+            // Full LLM-based summarization will be added in a follow-up
+            const summary = try std.fmt.allocPrint(self.alloc,
+                \\[Context compacted - {d} tokens summarized]
+                \\
+                \\Previous conversation covered approximately {d} messages.
+                \\This is a placeholder summary - LLM summarization pending.
+            , .{ prep.tokens_before, prep.messages_to_summarize.len });
+            defer self.alloc.free(summary);
+
+            // Extract file operations for tracking
+            var file_ops = compaction.extractFileOperations(scratch, prep.messages_to_summarize) catch {
+                // Continue without file ops if extraction fails
+                _ = try database.createCompaction(summary, prep.first_kept_msg_id, @intCast(prep.tokens_before), null);
+                obs.global.logSimple(.info, @src(), "compaction", "compaction entry created (no file ops)");
+                return;
+            };
+            defer file_ops.deinit();
+
+            const file_ops_suffix = compaction.formatFileOperations(scratch, &file_ops) catch "";
+            const full_summary = try std.fmt.allocPrint(self.alloc, "{s}{s}", .{ summary, file_ops_suffix });
+            defer self.alloc.free(full_summary);
+
+            // Store compaction entry
+            _ = try database.createCompaction(full_summary, prep.first_kept_msg_id, @intCast(prep.tokens_before), null);
+
+            obs.global.logSimple(.info, @src(), "compaction", "compaction entry created");
+
+            // Log prompt for debugging (will be used for LLM call later)
+            _ = prompt;
         }
     };
 }
