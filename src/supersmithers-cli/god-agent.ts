@@ -16,7 +16,21 @@ const modelMap: Record<string, string> = {
   haiku: 'claude-haiku-4-5-20251001',
 }
 
+let claudeProcess: ReturnType<typeof Bun.spawn> | null = null
+
+function setupSignalHandlers() {
+  const forwardSignal = (signal: NodeJS.Signals) => {
+    if (claudeProcess) {
+      claudeProcess.kill(signal === 'SIGINT' ? 'SIGTERM' : signal)
+    }
+  }
+  process.on('SIGINT', () => forwardSignal('SIGINT'))
+  process.on('SIGTERM', () => forwardSignal('SIGTERM'))
+}
+
 export async function runGodAgent(options: GodAgentOptions): Promise<number> {
+  setupSignalHandlers()
+
   const systemPrompt = buildGodAgentPrompt({
     planFile: options.planFile,
     dbPath: options.dbPath,
@@ -24,8 +38,7 @@ export async function runGodAgent(options: GodAgentOptions): Promise<number> {
     restartCooldown: options.restartCooldown,
   })
 
-  const tmpDir = await Bun.file('/tmp').exists() ? '/tmp' : process.cwd()
-  const promptFile = `${tmpDir}/supersmithers-prompt-${Date.now()}.md`
+  const promptFile = `/tmp/supersmithers-prompt-${Date.now()}.md`
   await Bun.write(promptFile, systemPrompt)
 
   const modelId = modelMap[options.model] || options.model
@@ -51,11 +64,12 @@ export async function runGodAgent(options: GodAgentOptions): Promise<number> {
   console.log('')
 
   const proc = Bun.spawn(['claude', ...args], {
-    stdin: new TextEncoder().encode(initialMessage),
+    stdin: new Blob([initialMessage]),
     stdout: 'pipe',
     stderr: 'pipe',
     env: process.env,
   })
+  claudeProcess = proc
 
   const decoder = new TextDecoder()
 

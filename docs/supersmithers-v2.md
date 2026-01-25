@@ -392,11 +392,9 @@ As you work, emit status updates:
 **Files:**
 - `src/supersmithers-cli/god-agent.ts` - God agent orchestrator
 - `src/supersmithers-cli/prompts.ts` - System prompts
-- `src/supersmithers-cli/tools.ts` - Custom tools for god agent
 
 **Deliverables:**
-- Claude integration (API or Claude Code CLI)
-- Tool definitions (bash, read, write, sqlite)
+- Claude CLI integration with built-in tools (Bash, Read, Write)
 - Observation loop
 
 ### Phase 3: Rewrite & Restart

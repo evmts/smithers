@@ -75,7 +75,7 @@ export async function superCommand(file: string, options: Partial<SuperOptions> 
 
   const exitCode = await runGodAgent({
     planFile: filePath,
-    dbPath: opts.dbPath,
+    dbPath: dbFile,
     maxRestarts: opts.maxRestarts,
     restartCooldown: opts.restartCooldown,
     model: opts.model,
