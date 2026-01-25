@@ -42,3 +42,4 @@ See [10-test-coverage-audit.md](./10-test-coverage-audit.md) for full audit.
 ## Zig TUI Reviews
 
 - [30-zig-tui-review.md](./30-zig-tui-review.md) - Full tui/src/ review with P0 bugs (double-deinit, dangling pointers, thread-unsafe SQLite)
+- [31-zig-test-quality-review.md](./31-zig-test-quality-review.md) - Test file quality review (compile errors, ownership bugs, platform portability)
