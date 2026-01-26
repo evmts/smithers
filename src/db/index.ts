@@ -18,6 +18,8 @@ import { createQueryModule, type QueryFunction } from './query.js'
 import { createRenderFramesModule, type RenderFramesModule } from './render-frames.js'
 import { createBuildStateModule, type BuildStateModule } from './build-state.js'
 import { createVCSQueueModule, type VCSQueueModule } from './vcs-queue.js'
+import { createTicketsModule, type TicketsModule } from './tickets.js'
+import { createTicketReportsModule, type TicketReportsModule } from './ticket-reports.js'
 
 export interface SmithersDB {
   db: ReactiveDatabase
@@ -35,6 +37,8 @@ export interface SmithersDB {
   renderFrames: RenderFramesModule
   buildState: BuildStateModule
   vcsQueue: VCSQueueModule
+  tickets: TicketsModule
+  ticketReports: TicketReportsModule
   query: QueryFunction
   close: () => void
 }
@@ -137,7 +141,7 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   }
 
   if (options.reset) {
-    const tables = ['render_frames', 'tasks', 'steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
+    const tables = ['ticket_reports', 'tickets', 'render_frames', 'tasks', 'steps', 'reviews', 'snapshots', 'commits', 'reports', 'artifacts',
                     'transitions', 'state', 'tool_calls', 'agent_stream_events', 'agents', 'phases', 'executions',
                     'memories', 'human_interactions']
     for (const table of tables) {
@@ -183,6 +187,8 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
   const renderFrames = createRenderFramesModule({ rdb, getCurrentExecutionId })
   const buildState = createBuildStateModule({ rdb })
   const vcsQueue = createVCSQueueModule({ rdb, getCurrentExecutionId })
+  const tickets = createTicketsModule({ rdb })
+  const ticketReports = createTicketReportsModule({ rdb, getCurrentExecutionId })
   const query = createQueryModule({ rdb })
 
   const db: SmithersDB = {
@@ -201,6 +207,8 @@ export function createSmithersDB(options: SmithersDBOptions = {}): SmithersDB {
     renderFrames,
     buildState,
     vcsQueue,
+    tickets,
+    ticketReports,
     query,
     close: () => {
       rdb.close()
@@ -231,4 +239,6 @@ export type { VcsModule } from './vcs.js'
 export type { RenderFramesModule } from './render-frames.js'
 export type { BuildStateModule } from './build-state.js'
 export type { VCSQueueModule, VCSQueueItem } from './vcs-queue.js'
+export type { TicketsModule, Ticket, TicketWithState, TicketStatus, TicketBudget, TicketFilter } from './tickets.js'
+export type { TicketReportsModule, TicketReport, AddReportInput, ReportType, TriageAction } from './ticket-reports.js'
 export type { QueryFunction } from './query.js'

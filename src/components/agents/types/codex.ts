@@ -9,7 +9,9 @@ import type { SmithersStreamPart } from '../../../streaming/types.js'
 // Codex-Specific Types
 // ============================================================================
 
-export type CodexModel = 'o3' | 'o4-mini' | 'gpt-4o' | 'gpt-4' | string
+export type CodexModel = 'o3' | 'o4-mini' | 'gpt-4o' | 'gpt-4' | 'codex-5.2' | 'codex-5.3' | string
+
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
 
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
@@ -27,12 +29,23 @@ export interface CodexProps<TSchema extends z.ZodType = z.ZodType> {
 
   /**
    * Codex model to use
+   * - 'codex-5.2': Codex 5.2 (default)
+   * - 'codex-5.3': Codex 5.3
    * - 'o3': OpenAI o3
-   * - 'o4-mini': OpenAI o4-mini (default)
+   * - 'o4-mini': OpenAI o4-mini
    * - 'gpt-4o': GPT-4o
    * - string: custom model ID
    */
   model?: CodexModel
+
+  /**
+   * Reasoning effort level for extended thinking
+   * - 'low': Minimal reasoning
+   * - 'medium': Moderate reasoning
+   * - 'high': High reasoning
+   * - 'xhigh': Maximum reasoning (default for codex-5.x)
+   */
+  reasoningEffort?: CodexReasoningEffort
 
   /**
    * Sandbox mode for command execution
@@ -187,9 +200,14 @@ export interface CodexCLIExecutionOptions {
   prompt: string
 
   /**
-   * Model to use
+   * Model to use (default: codex-5.2)
    */
   model?: CodexModel
+
+  /**
+   * Reasoning effort level (default: xhigh for codex-5.x)
+   */
+  reasoningEffort?: CodexReasoningEffort
 
   /**
    * Sandbox mode

@@ -14,15 +14,16 @@ class CodexMessageParserWrapper implements MessageParserInterface {
 
 export const CodexAdapter: AgentAdapter<CodexProps, CodexCLIExecutionOptions> = {
   name: 'codex',
-  getAgentLabel(options) { return options.model ?? 'o4-mini' },
+  getAgentLabel(options) { return options.model ?? 'gpt-5.2-codex' },
   getLoggerName() { return 'Codex' },
-  getLoggerContext(props) { return { model: props.model ?? 'o4-mini' } },
+  getLoggerContext(props) { return { model: props.model ?? 'gpt-5.2-codex' } },
   extractPrompt(childrenString): { prompt: string; mcpConfigPath: string | undefined } {
     return { prompt: childrenString, mcpConfigPath: undefined }
   },
   buildOptions(props, ctx) {
     const options: CodexCLIExecutionOptions = { prompt: ctx.prompt }
     if (props.model !== undefined) options.model = props.model
+    if (props.reasoningEffort !== undefined) options.reasoningEffort = props.reasoningEffort
     if (props.sandboxMode !== undefined) options.sandboxMode = props.sandboxMode
     if (props.approvalPolicy !== undefined) options.approvalPolicy = props.approvalPolicy
     if (props.fullAuto !== undefined) options.fullAuto = props.fullAuto
@@ -42,7 +43,11 @@ export const CodexAdapter: AgentAdapter<CodexProps, CodexCLIExecutionOptions> = 
   },
   async execute(options): Promise<AgentResult> {
     const result = await executeCodexCLI(options)
-    if (result.stopReason === 'error') throw new Error(result.output || 'Codex CLI execution failed')
+    if (result.stopReason === 'error') {
+      const error = new Error(result.output || 'Codex CLI execution failed')
+      // Re-throw to crash the app - agent failures should be fatal
+      throw error
+    }
     return result
   },
   createMessageParser(maxEntries) { return new CodexMessageParserWrapper(maxEntries) },

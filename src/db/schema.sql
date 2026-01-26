@@ -607,3 +607,60 @@ CREATE TABLE IF NOT EXISTS supersmithers_active_overrides (
   active_version_id TEXT REFERENCES supersmithers_versions(version_id),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+-- 19. TICKETS - Project Tickets (Combines Catalog + State)
+
+CREATE TABLE IF NOT EXISTS tickets (
+  id TEXT PRIMARY KEY,
+  priority INTEGER NOT NULL,           -- lower = higher priority (0 is highest)
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  deps TEXT DEFAULT '[]',              -- JSON array of ticket IDs
+  acceptance TEXT NOT NULL,            -- JSON array
+  smallest_step_hint TEXT NOT NULL,
+  relevant_files TEXT DEFAULT '[]',    -- JSON array
+  requires_e2e INTEGER DEFAULT 0,      -- boolean: requires E2E test
+  budgets TEXT,                        -- JSON: { maxFilesChanged, maxLOC }
+  tags TEXT DEFAULT '[]',              -- JSON array: ['m0', 'e2e', 'backend', etc.]
+  status TEXT NOT NULL DEFAULT 'todo', -- 'todo', 'in_progress', 'blocked', 'done'
+  progress_notes TEXT DEFAULT '[]',    -- JSON array
+  blocked_reason TEXT,
+  last_run_at TEXT,
+  last_report_path TEXT,
+  last_review_dir TEXT,
+  last_ticket_goal TEXT,
+  source TEXT DEFAULT 'seed',          -- 'seed' or 'triage'
+  source_report_id TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tickets_priority ON tickets(priority);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+CREATE INDEX IF NOT EXISTS idx_tickets_source ON tickets(source);
+CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets(created_at DESC);
+
+-- 20. TICKET_REPORTS - Per-Step Reports for Tickets
+
+CREATE TABLE IF NOT EXISTS ticket_reports (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL,
+  ticket_id TEXT NOT NULL,
+  step_name TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  report_type TEXT NOT NULL,           -- 'state', 'execution', 'ci', 'review', 'triage'
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  data TEXT,                           -- JSON structured data
+  triaged INTEGER DEFAULT 0,
+  triage_action TEXT,                  -- 'none', 'internal_ticket', 'github_issue'
+  triage_result_id TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_reports_execution ON ticket_reports(execution_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_reports_ticket ON ticket_reports(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_reports_run ON ticket_reports(run_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_reports_type ON ticket_reports(report_type);
+CREATE INDEX IF NOT EXISTS idx_ticket_reports_triaged ON ticket_reports(triaged);
+CREATE INDEX IF NOT EXISTS idx_ticket_reports_created ON ticket_reports(created_at DESC);

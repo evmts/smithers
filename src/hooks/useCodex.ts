@@ -8,5 +8,5 @@ export interface UseCodexResult extends UseAgentResult {
 
 export function useCodex(props: CodexProps): UseCodexResult {
   const baseResult: UseAgentResult = useAgentRunner(props, CodexAdapter)
-  return { ...baseResult, model: props.model ?? 'o4-mini' }
+  return { ...baseResult, model: props.model ?? 'gpt-5.2-codex' }
 }

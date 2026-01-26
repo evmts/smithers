@@ -2,6 +2,7 @@ import type { CodexCLIExecutionOptions, CodexSandboxMode, CodexApprovalPolicy } 
 
 /**
  * Model name mapping from shorthand to full model ID
+ * Note: Codex Pro uses 'gpt-5.2-codex' format (not 'codex-5.2')
  */
 export const codexModelMap: Record<string, string> = {
   o3: 'o3',
@@ -9,7 +10,14 @@ export const codexModelMap: Record<string, string> = {
   'o4-mini': 'o4-mini',
   'gpt-4o': 'gpt-4o',
   'gpt-4': 'gpt-4',
+  'gpt-5.2-codex': 'gpt-5.2-codex',
+  'gpt-5.3-codex': 'gpt-5.3-codex',
+  // Aliases
+  'codex-5.2': 'gpt-5.2-codex',
+  'codex-5.3': 'gpt-5.3-codex',
 }
+
+export const DEFAULT_CODEX_MODEL = 'gpt-5.2-codex'
 
 /**
  * Build sandbox arguments based on mode
@@ -38,11 +46,10 @@ function buildApprovalArgs(_policy?: CodexApprovalPolicy): string[] {
 export function buildCodexArgs(options: CodexCLIExecutionOptions): string[] {
   const args: string[] = ['exec']
 
-  // Model
-  if (options.model) {
-    const modelId = codexModelMap[options.model] || options.model
-    args.push('--model', modelId)
-  }
+  // Model (default to codex-5.2)
+  const model = options.model || DEFAULT_CODEX_MODEL
+  const modelId = codexModelMap[model] || model
+  args.push('--model', modelId)
 
   // Sandbox mode
   args.push(...buildSandboxArgs(options.sandboxMode))
@@ -52,8 +59,9 @@ export function buildCodexArgs(options: CodexCLIExecutionOptions): string[] {
   args.push(...buildApprovalArgs(options.approvalPolicy))
 
   // Full auto mode (also triggered by approvalPolicy: 'never')
+  // Note: Codex CLI uses --yolo flag, not --full-auto
   if (options.fullAuto || options.approvalPolicy === 'never') {
-    args.push('--full-auto')
+    args.push('--yolo')
   }
 
   // Bypass sandbox (dangerous)
@@ -100,10 +108,17 @@ export function buildCodexArgs(options: CodexCLIExecutionOptions): string[] {
     }
   }
 
-  // Config overrides
+  // Reasoning effort (use -c flag, e.g., -c model_reasoning_effort="xhigh")
+  // Default to 'xhigh' for codex models
+  const reasoningEffort = options.reasoningEffort ?? (modelId.includes('codex') ? 'xhigh' : undefined)
+  if (reasoningEffort) {
+    args.push('-c', `model_reasoning_effort="${reasoningEffort}"`)
+  }
+
+  // Config overrides (use -c flag)
   if (options.configOverrides) {
     for (const [key, value] of Object.entries(options.configOverrides)) {
-      args.push('--config', `${key}=${JSON.stringify(value)}`)
+      args.push('-c', `${key}=${JSON.stringify(value)}`)
     }
   }
 

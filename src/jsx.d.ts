@@ -462,6 +462,12 @@ interface SmithersIntrinsicElements {
       blocked: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
       discovered: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
       agents: { children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+
+      // KanbanRalph compound component elements
+      'kanban-ralph': { id?: string; 'ticket-count'?: string; children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'process-ticket': { model?: string; children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'review-ticket': { reviewers?: string; children?: React.ReactNode; key?: string | number; [key: string]: unknown }
+      'ci-gate': { gates?: string; 'skip-e2e'?: string; children?: React.ReactNode; key?: string | number; [key: string]: unknown }
 }
 
 // Augment JSX namespaces for React and Smithers import sources.

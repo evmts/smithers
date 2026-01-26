@@ -17,6 +17,9 @@ import {
   STOP_EVALUATORS,
 } from './StopConditionEvaluator.js'
 import { useTaskCompletionTracker } from './TaskCompletionTracker.js'
+import { createDebugLogger } from '../utils/debug.js'
+
+const log = createDebugLogger('SmithersProvider')
 
 export {
   createOrchestrationPromise,
@@ -57,9 +60,11 @@ const SmithersContext = createContext<SmithersContextValue | undefined>(undefine
 export function useSmithers() {
   const ctx = useContext(SmithersContext)
   if (ctx) {
+    log.debug('useSmithers called', { executionId: ctx.executionId })
     return ctx
   }
 
+  log.error('useSmithers called outside SmithersProvider')
   throw new Error('useSmithers must be used within SmithersProvider')
 }
 
@@ -101,6 +106,13 @@ export interface SmithersProviderProps {
 }
 
 export function SmithersProvider(props: SmithersProviderProps): ReactNode {
+  log.info('SmithersProvider initializing', {
+    executionId: props.executionId,
+    globalTimeout: props.globalTimeout,
+    hasStopConditions: !!props.stopConditions?.length,
+    snapshotBeforeStart: props.snapshotBeforeStart,
+  })
+
   const reactiveDb = props.db.db
 
   const startTimeRef = useRef(Date.now())

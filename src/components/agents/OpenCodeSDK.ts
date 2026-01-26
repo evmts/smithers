@@ -313,6 +313,9 @@ export async function executeOpenCode(options: OpenCodeExecutionOptions): Promis
     // Cancel event subscription
     void eventPromise
 
+    if (!response.data) {
+      throw new Error('OpenCode SDK returned null response data')
+    }
     const { info, parts } = response.data
 
     // Extract text from parts
@@ -320,10 +323,10 @@ export async function executeOpenCode(options: OpenCodeExecutionOptions): Promis
     const output = textParts.map((p) => p.text).join('\n')
 
     // Handle errors
-    if (info.error) {
+    if (info?.error) {
       return {
         output: info.error.message ?? info.error.type,
-        tokensUsed: { input: info.tokens.input, output: info.tokens.output },
+        tokensUsed: { input: info.tokens?.input ?? 0, output: info.tokens?.output ?? 0 },
         turnsUsed: 1,
         durationMs: Date.now() - startTime,
         stopReason: 'error',
@@ -333,10 +336,10 @@ export async function executeOpenCode(options: OpenCodeExecutionOptions): Promis
 
     return {
       output,
-      tokensUsed: { input: info.tokens.input, output: info.tokens.output },
+      tokensUsed: { input: info?.tokens?.input ?? 0, output: info?.tokens?.output ?? 0 },
       turnsUsed: 1,
       durationMs: Date.now() - startTime,
-      stopReason: info.finish === 'stop' ? 'completed' : (info.finish as AgentResult['stopReason']) ?? 'completed',
+      stopReason: info?.finish === 'stop' ? 'completed' : (info?.finish as AgentResult['stopReason']) ?? 'completed',
       sessionId,
     }
   } catch (error) {

@@ -83,3 +83,14 @@ export { Rebase as JJRebase, type RebaseProps as JJRebaseProps } from './JJ/Reba
 export * from './MCP/index.js'
 
 export { Review, type ReviewProps, type ReviewTarget, type ReviewResult, type ReviewIssue } from './Review.js'
+
+export {
+  KanbanRalph,
+  useKanbanContext,
+  type KanbanRalphProps,
+  type KanbanContext,
+  type ProcessTicketProps,
+  type ReviewTicketProps,
+  type CiProps,
+  type ModelConfig,
+} from './KanbanRalph.js'
