@@ -1,0 +1,3709 @@
+{
+  "issueStateAtFinalObservation": "open",
+  "candidate": {
+    "issue": "https://github.com/smithersai/smithers/issues/1650",
+    "candidateSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+    "ciRunId": 36057564601,
+    "releaseRunId": 36058033216,
+    "releaseWorkflowSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+    "releaseInputs": {
+      "sourceRef": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "releaseTag": "v1.0.0-rc.1",
+      "dryRun": true
+    },
+    "reason": "User requested restart after latest-code pull; primary checkout main@origin, isolated checkout, and GitHub main matched at selection. User confirmed restart.",
+    "observedAt": "2026-09-24T20:55:13.890944+00:00",
+    "previousCandidateSuperseded": "c905d10617bf10a02aed7acfc010bcb9d5d0a6af",
+    "workflowDigests": {
+      "ci": "bbc3c6d59a21e689d30df5358683c16aca0396460fbb672f25f7caf1e20d69e9",
+      "release": "40a0b5df56a2003c6920ef4315de873c35c911f4d454822eff38847302460d6f"
+    }
+  },
+  "observedAt": "2026-09-24T22:02:41.467717+00:00",
+  "qualified": false,
+  "patchReconciliation": "incomplete: saved patches unavailable",
+  "releaseCheckoutEvidenceJobs": [
+    107829824657,
+    107829824995,
+    107829825098,
+    107829825169,
+    107829825315,
+    107834571725
+  ],
+  "runs": {
+    "ci": {
+      "runId": 36057564601,
+      "attempt": 2,
+      "workflowSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "conclusion": "failure",
+      "url": "https://github.com/smithersai/smithers/actions/runs/36057564601",
+      "createdAt": "2026-09-24T20:50:26Z",
+      "attemptStartedAt": "2026-09-24T20:58:25Z",
+      "updatedAt": "2026-09-24T22:02:04Z",
+      "jobs": [
+        {
+          "id": 107833674986,
+          "name": "Publish reviewed workspace results to the cache",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833674986",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Go",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Foundry",
+              "conclusion": "success"
+            },
+            {
+              "name": "Enable the containerd image store",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install native smithers-jj-export",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "Workspace targets",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Install Foundry",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Install Go",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675280,
+          "name": "web bundle compatibility",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675280",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Web bundle compilation guard",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675322,
+          "name": "workspace graph (coverage gates enforced)",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675322",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Pull rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate GitHub Actions workflows",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Go",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Foundry",
+              "conclusion": "success"
+            },
+            {
+              "name": "Enable the containerd image store",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install native smithers-jj-export",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "Examples",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Workspace targets",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Script gates",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Repository flows",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Judge egress",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Repository flow fixtures",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Wiki and release fixtures",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Product gateway",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Public export JSDoc",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Script lint",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "JSDoc rule harness",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Factory harness",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Agent eval suite (offline, baseline-gated)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Agent eval typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Authoring eval dataset (offline)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Authoring eval typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "SWE-bench offline fixtures",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "SWE-bench rig typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Server typecheck and tests",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Review app and workers",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Bug worker",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Project copy drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Site",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Package docs sites",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Review eval suite (offline, baseline-gated)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Review eval typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Recommend eval suite (offline, baseline-gated)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Recommend eval typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Generated workflow drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Factory projection drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Target index drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Collect ci-test-tier-evidence",
+              "conclusion": "success"
+            },
+            {
+              "name": "Upload ci-test-tier-evidence",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Install Foundry",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Install Go",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675338,
+          "name": "package suites (ubuntu-latest)",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675338",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Go",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Foundry",
+              "conclusion": "success"
+            },
+            {
+              "name": "Enable the containerd image store",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install native smithers-jj-export",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "Package test targets",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Install Foundry",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Install Go",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675349,
+          "name": "native FFI compiler and tests",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675349",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install pinned Rust toolchain",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native FFI clippy and tests",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675354,
+          "name": "model reviews (advisory)",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675354",
+          "advisory": true,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Review lints",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675389,
+          "name": "package suites (macos-latest)",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675389",
+          "advisory": true,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Go",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Foundry",
+              "conclusion": "success"
+            },
+            {
+              "name": "Enable the containerd image store",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install native smithers-jj-export",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "Package test targets",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Install Foundry",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Install Go",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675394,
+          "name": "rust fmt + clippy + test",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675394",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install pinned Rust toolchain",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cargo lint gates",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Third-party notices",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Cargo test suite",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675398,
+          "name": "wasm reproducibility",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675398",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install pinned Rust toolchain",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build-script unit tests",
+              "conclusion": "success"
+            },
+            {
+              "name": "Rebuild and byte-compare flows_jj.wasm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675401,
+          "name": "apps e2e (Playwright T1)",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675401",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install native smithers-jj-export",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "UI typecheck",
+              "conclusion": "success"
+            },
+            {
+              "name": "UI unit tests",
+              "conclusion": "failure"
+            },
+            {
+              "name": "UI conformance lint",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "UI browser end-to-end suite",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Collect apps-e2e-artifacts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Upload apps-e2e-artifacts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675406,
+          "name": "fault-injection matrix",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675406",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install native smithers-jj-export",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Exclusive fault matrix",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675427,
+          "name": "package suites (windows-latest)",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675427",
+          "advisory": true,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Go",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Foundry",
+              "conclusion": "success"
+            },
+            {
+              "name": "Enable the containerd image store",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install native smithers-jj-export",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "Package test targets",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Install Foundry",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Install Go",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107833675448,
+          "name": "shared Go backend (PostgreSQL)",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36057564601/job/107833675448",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Go",
+              "conclusion": "success"
+            },
+            {
+              "name": "Enable the containerd image store",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build and test shared backend",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Install Go",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ],
+      "artifacts": [],
+      "skippedNonCleanupSteps": [
+        "workspace graph (coverage gates enforced): Workspace targets",
+        "workspace graph (coverage gates enforced): Script gates",
+        "workspace graph (coverage gates enforced): Repository flows",
+        "workspace graph (coverage gates enforced): Judge egress",
+        "workspace graph (coverage gates enforced): Repository flow fixtures",
+        "workspace graph (coverage gates enforced): Wiki and release fixtures",
+        "workspace graph (coverage gates enforced): Product gateway",
+        "workspace graph (coverage gates enforced): Public export JSDoc",
+        "workspace graph (coverage gates enforced): Script lint",
+        "workspace graph (coverage gates enforced): JSDoc rule harness",
+        "workspace graph (coverage gates enforced): Factory harness",
+        "workspace graph (coverage gates enforced): Agent eval suite (offline, baseline-gated)",
+        "workspace graph (coverage gates enforced): Agent eval typecheck",
+        "workspace graph (coverage gates enforced): Authoring eval dataset (offline)",
+        "workspace graph (coverage gates enforced): Authoring eval typecheck",
+        "workspace graph (coverage gates enforced): SWE-bench offline fixtures",
+        "workspace graph (coverage gates enforced): SWE-bench rig typecheck",
+        "workspace graph (coverage gates enforced): Server typecheck and tests",
+        "workspace graph (coverage gates enforced): Review app and workers",
+        "workspace graph (coverage gates enforced): Bug worker",
+        "workspace graph (coverage gates enforced): Project copy drift",
+        "workspace graph (coverage gates enforced): Site",
+        "workspace graph (coverage gates enforced): Package docs sites",
+        "workspace graph (coverage gates enforced): Review eval suite (offline, baseline-gated)",
+        "workspace graph (coverage gates enforced): Review eval typecheck",
+        "workspace graph (coverage gates enforced): Recommend eval suite (offline, baseline-gated)",
+        "workspace graph (coverage gates enforced): Recommend eval typecheck",
+        "workspace graph (coverage gates enforced): Generated workflow drift",
+        "workspace graph (coverage gates enforced): Factory projection drift",
+        "workspace graph (coverage gates enforced): Target index drift",
+        "rust fmt + clippy + test: Third-party notices",
+        "rust fmt + clippy + test: Cargo test suite",
+        "apps e2e (Playwright T1): UI conformance lint",
+        "apps e2e (Playwright T1): UI browser end-to-end suite"
+      ]
+    },
+    "release": {
+      "runId": 36058033216,
+      "attempt": 1,
+      "workflowSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "conclusion": "failure",
+      "url": "https://github.com/smithersai/smithers/actions/runs/36058033216",
+      "createdAt": "2026-09-24T20:54:42Z",
+      "attemptStartedAt": "2026-09-24T20:54:42Z",
+      "updatedAt": "2026-09-24T21:21:31Z",
+      "jobs": [
+        {
+          "id": 107829824657,
+          "name": "native helper (darwin-x64)",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36058033216/job/107829824657",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build helper",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107829824995,
+          "name": "packaged native topology and persistence",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36058033216/job/107829824995",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Require Plue matrix target",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run rustup toolchain install 1.89.0 1.98.0",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run brew install postgresql@18",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm --filter smithers-app exec playwright install chromium",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build packaged native app",
+              "conclusion": "success"
+            },
+            {
+              "name": "Prove native owned and Plue process topology",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Prove native matrix launcher and capabilities",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Product native modes",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Upload native mode receipts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107829825098,
+          "name": "native helper (linux-arm64)",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36058033216/job/107829825098",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build helper",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107829825169,
+          "name": "native helper (darwin-arm64)",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36058033216/job/107829825169",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build helper",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107829825315,
+          "name": "native helper (win32-x64)",
+          "conclusion": "success",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36058033216/job/107829825315",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build helper",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107834571725,
+          "name": "validate, build, and publish",
+          "conclusion": "failure",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36058033216/job/107834571725",
+          "advisory": false,
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Pull rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f",
+              "conclusion": "success"
+            },
+            {
+              "name": "Refuse a re-run attempt",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Require Plue matrix target",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate explicit dry-run source",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify explicit dry-run source",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate GitHub Actions workflows",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install pinned Rust toolchain",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Go",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install Foundry",
+              "conclusion": "success"
+            },
+            {
+              "name": "Enable the containerd image store",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install certified npm",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run pnpm install --frozen-lockfile --ignore-scripts",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install native smithers-jj-export",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate archived candidate selection",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install jj",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize colocated jj repository",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install ripgrep",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install filesystem helper for sandboxed package tests",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install system packages",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate release tag",
+              "conclusion": "success"
+            },
+            {
+              "name": "Release changelog section",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Examples",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Workspace targets",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Script gates",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Repository flows",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Judge egress",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Repository flow fixtures",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Wiki and release fixtures",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Product gateway",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Public export JSDoc",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Script lint",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "JSDoc rule harness",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Factory harness",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Agent eval suite (offline, baseline-gated)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Agent eval typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Authoring eval dataset (offline)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Authoring eval typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "SWE-bench offline fixtures",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "SWE-bench rig typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "UI typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "UI unit tests",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "UI conformance lint",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Install Playwright Chromium",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Install local FFI toolchain",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Install PostgreSQL 18 for the owned local mode",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Real PostgreSQL backup and restore",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Build distribution image",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Test distribution image",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Product deployment mode matrix",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Upload product deployment mode matrix receipt",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Server typecheck and tests",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Review app and workers",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Bug worker",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Project copy drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Site",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Package docs sites",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Review eval suite (offline, baseline-gated)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Review eval typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Recommend eval suite (offline, baseline-gated)",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Recommend eval typecheck",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Generated workflow drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Factory projection drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Target index drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native FFI clippy and tests",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Exclusive fault matrix",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disaster-recovery script test",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Release version coherence",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Build-script unit tests",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Rebuild and byte-compare flows_jj.wasm",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Build and test shared backend",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Build all workspaces from clean artifacts",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Review declaration API drift",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retrieve native helpers for npm",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Install the supported Node floor",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Install certified npm for the Node floor",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Pack and smoke-test release artifacts",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Restore and verify archived release candidate",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Archive tested release artifacts",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Collect ci-test-tier-evidence",
+              "conclusion": "success"
+            },
+            {
+              "name": "Upload ci-test-tier-evidence",
+              "conclusion": "success"
+            },
+            {
+              "name": "Upload release runtime smoke evidence",
+              "conclusion": "success"
+            },
+            {
+              "name": "Compute the publish plan",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Publish packages in dependency order",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Upload the publish receipt",
+              "conclusion": "success"
+            },
+            {
+              "name": "Report the skipped publication",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Install Foundry",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Install Go",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 107836283944,
+          "name": "deploy package docs sites",
+          "conclusion": "skipped",
+          "url": "https://github.com/smithersai/smithers/actions/runs/36058033216/job/107836283944",
+          "advisory": false,
+          "steps": []
+        }
+      ],
+      "artifacts": [
+        {
+          "id": 10833850303,
+          "node_id": "MDg6QXJ0aWZhY3QxMDgzMzg1MDMwMw==",
+          "name": "native-helper-linux-arm64",
+          "size_in_bytes": 4570071,
+          "url": "https://api.github.com/repos/smithersai/smithers/actions/artifacts/10833850303",
+          "archive_download_url": "https://api.github.com/repos/smithersai/smithers/actions/artifacts/10833850303/zip",
+          "expired": false,
+          "digest": "sha256:af92a55bcdbbbadf81fc66cad043daeffe4e3c47c699c86719795177aad5b6ed",
+          "created_at": "2026-09-24T20:57:53Z",
+          "updated_at": "2026-09-24T20:57:53Z",
+          "expires_at": "2026-12-23T20:54:44Z",
+          "workflow_run": {
+            "id": 36058033216,
+            "repository_id": 1128579105,
+            "head_repository_id": 1128579105,
+            "head_branch": "main",
+            "head_sha": "8ca0f793645d72910cae23fb006519fe1547ed1c"
+          }
+        },
+        {
+          "id": 10833338227,
+          "node_id": "MDg6QXJ0aWZhY3QxMDgzMzMzODIyNw==",
+          "name": "native-helper-win32-x64",
+          "size_in_bytes": 3431099,
+          "url": "https://api.github.com/repos/smithersai/smithers/actions/artifacts/10833338227",
+          "archive_download_url": "https://api.github.com/repos/smithersai/smithers/actions/artifacts/10833338227/zip",
+          "expired": false,
+          "digest": "sha256:aca4d6256510a8a68be5eb4e8a4f281ec3d4248354bfa969c14c3d1a1515c6fc",
+          "created_at": "2026-09-24T21:03:24Z",
+          "updated_at": "2026-09-24T21:03:24Z",
+          "expires_at": "2026-12-23T20:54:44Z",
+          "workflow_run": {
+            "id": 36058033216,
+            "repository_id": 1128579105,
+            "head_repository_id": 1128579105,
+            "head_branch": "main",
+            "head_sha": "8ca0f793645d72910cae23fb006519fe1547ed1c"
+          }
+        },
+        {
+          "id": 10833294106,
+          "node_id": "MDg6QXJ0aWZhY3QxMDgzMzI5NDEwNg==",
+          "name": "native-helper-darwin-x64",
+          "size_in_bytes": 4479302,
+          "url": "https://api.github.com/repos/smithersai/smithers/actions/artifacts/10833294106",
+          "archive_download_url": "https://api.github.com/repos/smithersai/smithers/actions/artifacts/10833294106/zip",
+          "expired": false,
+          "digest": "sha256:41573aa9e3bbb1fdf86ec0c14a5126d971461a751e29f39f07198f2d37e5b5cf",
+          "created_at": "2026-09-24T21:07:47Z",
+          "updated_at": "2026-09-24T21:07:47Z",
+          "expires_at": "2026-12-23T20:54:44Z",
+          "workflow_run": {
+            "id": 36058033216,
+            "repository_id": 1128579105,
+            "head_repository_id": 1128579105,
+            "head_branch": "main",
+            "head_sha": "8ca0f793645d72910cae23fb006519fe1547ed1c"
+          }
+        },
+        {
+          "id": 10833139075,
+          "node_id": "MDg6QXJ0aWZhY3QxMDgzMzEzOTA3NQ==",
+          "name": "native-helper-darwin-arm64",
+          "size_in_bytes": 4473445,
+          "url": "https://api.github.com/repos/smithersai/smithers/actions/artifacts/10833139075",
+          "archive_download_url": "https://api.github.com/repos/smithersai/smithers/actions/artifacts/10833139075/zip",
+          "expired": false,
+          "digest": "sha256:5d650bc119f96eb9429d360520aba4cbfb9a6fa4fdc1a585cfc83a977aee471c",
+          "created_at": "2026-09-24T21:04:53Z",
+          "updated_at": "2026-09-24T21:04:53Z",
+          "expires_at": "2026-12-23T20:54:44Z",
+          "workflow_run": {
+            "id": 36058033216,
+            "repository_id": 1128579105,
+            "head_repository_id": 1128579105,
+            "head_branch": "main",
+            "head_sha": "8ca0f793645d72910cae23fb006519fe1547ed1c"
+          }
+        }
+      ],
+      "skippedNonCleanupSteps": [
+        "packaged native topology and persistence: Prove native matrix launcher and capabilities",
+        "packaged native topology and persistence: Product native modes",
+        "validate, build, and publish: Refuse a re-run attempt",
+        "validate, build, and publish: Examples",
+        "validate, build, and publish: Workspace targets",
+        "validate, build, and publish: Script gates",
+        "validate, build, and publish: Repository flows",
+        "validate, build, and publish: Judge egress",
+        "validate, build, and publish: Repository flow fixtures",
+        "validate, build, and publish: Wiki and release fixtures",
+        "validate, build, and publish: Product gateway",
+        "validate, build, and publish: Public export JSDoc",
+        "validate, build, and publish: Script lint",
+        "validate, build, and publish: JSDoc rule harness",
+        "validate, build, and publish: Factory harness",
+        "validate, build, and publish: Agent eval suite (offline, baseline-gated)",
+        "validate, build, and publish: Agent eval typecheck",
+        "validate, build, and publish: Authoring eval dataset (offline)",
+        "validate, build, and publish: Authoring eval typecheck",
+        "validate, build, and publish: SWE-bench offline fixtures",
+        "validate, build, and publish: SWE-bench rig typecheck",
+        "validate, build, and publish: UI typecheck",
+        "validate, build, and publish: UI unit tests",
+        "validate, build, and publish: UI conformance lint",
+        "validate, build, and publish: Install Playwright Chromium",
+        "validate, build, and publish: Install local FFI toolchain",
+        "validate, build, and publish: Install PostgreSQL 18 for the owned local mode",
+        "validate, build, and publish: Real PostgreSQL backup and restore",
+        "validate, build, and publish: Build distribution image",
+        "validate, build, and publish: Test distribution image",
+        "validate, build, and publish: Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+        "validate, build, and publish: Product deployment mode matrix",
+        "validate, build, and publish: Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+        "validate, build, and publish: Server typecheck and tests",
+        "validate, build, and publish: Review app and workers",
+        "validate, build, and publish: Bug worker",
+        "validate, build, and publish: Project copy drift",
+        "validate, build, and publish: Site",
+        "validate, build, and publish: Package docs sites",
+        "validate, build, and publish: Review eval suite (offline, baseline-gated)",
+        "validate, build, and publish: Review eval typecheck",
+        "validate, build, and publish: Recommend eval suite (offline, baseline-gated)",
+        "validate, build, and publish: Recommend eval typecheck",
+        "validate, build, and publish: Generated workflow drift",
+        "validate, build, and publish: Factory projection drift",
+        "validate, build, and publish: Target index drift",
+        "validate, build, and publish: Native FFI clippy and tests",
+        "validate, build, and publish: Exclusive fault matrix",
+        "validate, build, and publish: Disaster-recovery script test",
+        "validate, build, and publish: Release version coherence",
+        "validate, build, and publish: Build-script unit tests",
+        "validate, build, and publish: Rebuild and byte-compare flows_jj.wasm",
+        "validate, build, and publish: Build and test shared backend",
+        "validate, build, and publish: Build all workspaces from clean artifacts",
+        "validate, build, and publish: Review declaration API drift",
+        "validate, build, and publish: Retrieve native helpers for npm",
+        "validate, build, and publish: Install the supported Node floor",
+        "validate, build, and publish: Install certified npm for the Node floor",
+        "validate, build, and publish: Pack and smoke-test release artifacts",
+        "validate, build, and publish: Restore and verify archived release candidate",
+        "validate, build, and publish: Archive tested release artifacts",
+        "validate, build, and publish: Compute the publish plan",
+        "validate, build, and publish: Publish packages in dependency order",
+        "validate, build, and publish: Report the skipped publication"
+      ]
+    }
+  },
+  "localDiagnostics": {
+    "stop-contract": {
+      "sourceSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "command": [
+        "npm",
+        "exec",
+        "--yes",
+        "--package=node@26.4.0",
+        "--package=pnpm@11.25.0",
+        "--",
+        "pnpm",
+        "--filter",
+        "@smthrs/build-cli",
+        "exec",
+        "vitest",
+        "run",
+        "test/ServiceSupervisor.test.ts",
+        "-t",
+        "stop contract",
+        "--coverage.enabled=false",
+        "--reporter=verbose"
+      ],
+      "startedAt": "2026-09-24T20:56:02.114634+00:00",
+      "elapsedSeconds": 10.976130417082459,
+      "exitCode": 0
+    },
+    "supervisor-program": {
+      "sourceSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "command": [
+        "npm",
+        "exec",
+        "--yes",
+        "--package=node@26.4.0",
+        "--package=pnpm@11.25.0",
+        "--",
+        "pnpm",
+        "--filter",
+        "@smthrs/platform-node",
+        "exec",
+        "vitest",
+        "run",
+        "test/SupervisorProgram.test.ts",
+        "--coverage.enabled=false",
+        "--reporter=verbose"
+      ],
+      "startedAt": "2026-09-24T20:56:13.091375+00:00",
+      "elapsedSeconds": 6.6327958749607205,
+      "exitCode": 0
+    },
+    "release-contracts": {
+      "sourceSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "command": [
+        "npm",
+        "exec",
+        "--yes",
+        "--package=node@26.4.0",
+        "--package=pnpm@11.25.0",
+        "--",
+        "node",
+        "--test",
+        "apps/site/scripts/support-matrix.test.mjs",
+        "scripts/release-gates.test.mjs",
+        "scripts/release-rehearsal.test.mjs"
+      ],
+      "startedAt": "2026-09-24T20:56:19.724477+00:00",
+      "elapsedSeconds": 6.9828674998134375,
+      "exitCode": 0
+    },
+    "app-contracts": {
+      "sourceSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "command": [
+        "npm",
+        "exec",
+        "--yes",
+        "--package=bun@1.4.1",
+        "--",
+        "bun",
+        "test",
+        "apps/app/src/mainview/state/controller/dictation.test.ts",
+        "apps/app/src/mainview/state/controller/controlFocus.test.ts"
+      ],
+      "startedAt": "2026-09-24T20:56:26.707665+00:00",
+      "elapsedSeconds": 3.763150124810636,
+      "exitCode": 0
+    },
+    "app-build-target": {
+      "sourceSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "command": "npm exec --yes --package=node@26.4.0 --package=pnpm@11.25.0 --package=bun@1.4.1 -- pnpm exec smthrs build //apps/app:check --verbose",
+      "exitCode": 0,
+      "observedAt": "2026-09-24T21:00:02.369884+00:00",
+      "scope": "Actual target including generated devkit prerequisite."
+    },
+    "direct-app-typecheck": {
+      "exitCode": 1,
+      "classification": "incomplete local preparation, superseded by successful actual build target",
+      "log": "local-app-typecheck.log"
+    },
+    "gateway-engine": {
+      "sourceSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "command": [
+        "npm",
+        "exec",
+        "--yes",
+        "--package=node@26.4.0",
+        "--package=pnpm@11.25.0",
+        "--",
+        "pnpm",
+        "--filter",
+        "@smthrs/gateway",
+        "exec",
+        "vitest",
+        "run",
+        "test/RealEngineRun.test.ts",
+        "--coverage.enabled=false",
+        "--reporter=verbose"
+      ],
+      "startedAt": "2026-09-24T21:05:45.897833+00:00",
+      "elapsedSeconds": 5.040965583641082,
+      "exitCode": 1,
+      "scope": "Focused behavior diagnostic; package coverage disabled."
+    },
+    "agent-step-trace": {
+      "sourceSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "command": [
+        "npm",
+        "exec",
+        "--yes",
+        "--package=node@26.4.0",
+        "--package=pnpm@11.25.0",
+        "--",
+        "pnpm",
+        "--filter",
+        "@smthrs/agent",
+        "exec",
+        "vitest",
+        "run",
+        "test/StepTrace.test.ts",
+        "--coverage.enabled=false",
+        "--reporter=verbose"
+      ],
+      "startedAt": "2026-09-24T21:05:50.939268+00:00",
+      "elapsedSeconds": 6.434064041823149,
+      "exitCode": 1,
+      "scope": "Focused behavior diagnostic; package coverage disabled."
+    },
+    "current-app-failures": {
+      "sourceSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+      "command": [
+        "npm",
+        "exec",
+        "--yes",
+        "--package=bun@1.4.1",
+        "--",
+        "bun",
+        "test",
+        "src/bun/NativeReviewRegression.test.ts",
+        "e2e/real/coverage/gate.test.ts",
+        "src/mainview/flows/parity.test.ts",
+        "src/mainview/flows/FormCardsAgainstMain.test.ts",
+        "src/mainview/state/RunCause.test.ts",
+        "src/mainview/cards/IssueCards.comment.test.tsx"
+      ],
+      "startedAt": "2026-09-24T21:19:44.967425+00:00",
+      "elapsedSeconds": 16.11067779175937,
+      "exitCode": 1,
+      "scope": "Focused current CI failure diagnosis; six files, not complete app suite."
+    }
+  },
+  "plueTargetObservation": {
+    "observedAt": "2026-09-24T21:39:25.586664+00:00",
+    "scope": "Post-failure read-only observation; does not establish target revision at the time of the failed Release job.",
+    "url": "https://canary.smithers.sh/api/bootstrap",
+    "error": "HTTP Error 403: Forbidden"
+  },
+  "landedCommitAncestry": {
+    "candidateSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+    "observedAt": "2026-09-24T21:26:06.477728+00:00",
+    "scope": "All explicit eight-character commit references in the handoff landed table, checked by GitHub compare. Local clone is shallow and cannot establish ancestry. Range interiors and current behavior are not certified by ancestry.",
+    "commits": [
+      {
+        "handoffPrefix": "004c5b37",
+        "status": "ahead",
+        "aheadBy": 2072,
+        "behindBy": 0,
+        "baseSha": "004c5b37036f148c33fe8171c9b4718d6bb0d3a7",
+        "mergeBaseSha": "004c5b37036f148c33fe8171c9b4718d6bb0d3a7",
+        "url": "https://github.com/smithersai/smithers/compare/004c5b37...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "00a6f558",
+        "status": "ahead",
+        "aheadBy": 2067,
+        "behindBy": 0,
+        "baseSha": "00a6f5584f3cb77f6bb751672d28885db123cf09",
+        "mergeBaseSha": "00a6f5584f3cb77f6bb751672d28885db123cf09",
+        "url": "https://github.com/smithersai/smithers/compare/00a6f558...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "00c67491",
+        "status": "ahead",
+        "aheadBy": 1849,
+        "behindBy": 0,
+        "baseSha": "00c67491fd4d5ad7805323d28cfe85f631ef3b55",
+        "mergeBaseSha": "00c67491fd4d5ad7805323d28cfe85f631ef3b55",
+        "url": "https://github.com/smithersai/smithers/compare/00c67491...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "0119c2b4",
+        "status": "ahead",
+        "aheadBy": 1845,
+        "behindBy": 0,
+        "baseSha": "0119c2b4576ff95b7c77fd2a509c0c163b83972f",
+        "mergeBaseSha": "0119c2b4576ff95b7c77fd2a509c0c163b83972f",
+        "url": "https://github.com/smithersai/smithers/compare/0119c2b4...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "0165178d",
+        "status": "ahead",
+        "aheadBy": 1930,
+        "behindBy": 0,
+        "baseSha": "0165178de3567190d0ac2a2ce3e52cdf62ead376",
+        "mergeBaseSha": "0165178de3567190d0ac2a2ce3e52cdf62ead376",
+        "url": "https://github.com/smithersai/smithers/compare/0165178d...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "073dd310",
+        "status": "ahead",
+        "aheadBy": 2059,
+        "behindBy": 0,
+        "baseSha": "073dd3106292aaa79b70f237a985f55a1292e276",
+        "mergeBaseSha": "073dd3106292aaa79b70f237a985f55a1292e276",
+        "url": "https://github.com/smithersai/smithers/compare/073dd310...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "092605ac",
+        "status": "ahead",
+        "aheadBy": 2031,
+        "behindBy": 0,
+        "baseSha": "092605ac462ae7190d5853c08832b58214a4076b",
+        "mergeBaseSha": "092605ac462ae7190d5853c08832b58214a4076b",
+        "url": "https://github.com/smithersai/smithers/compare/092605ac...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "09dba265",
+        "status": "ahead",
+        "aheadBy": 1920,
+        "behindBy": 0,
+        "baseSha": "09dba26543d283a865b86fa60b66200b61e33851",
+        "mergeBaseSha": "09dba26543d283a865b86fa60b66200b61e33851",
+        "url": "https://github.com/smithersai/smithers/compare/09dba265...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "13f8a84f",
+        "status": "ahead",
+        "aheadBy": 2062,
+        "behindBy": 0,
+        "baseSha": "13f8a84f9ca64ee2537a215f602c2e4b8402f876",
+        "mergeBaseSha": "13f8a84f9ca64ee2537a215f602c2e4b8402f876",
+        "url": "https://github.com/smithersai/smithers/compare/13f8a84f...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "1b8e8364",
+        "status": "ahead",
+        "aheadBy": 2073,
+        "behindBy": 0,
+        "baseSha": "1b8e8364a4a723939352d27b6d1e4e1ca9ca0900",
+        "mergeBaseSha": "1b8e8364a4a723939352d27b6d1e4e1ca9ca0900",
+        "url": "https://github.com/smithersai/smithers/compare/1b8e8364...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "1cf4383a",
+        "status": "ahead",
+        "aheadBy": 2050,
+        "behindBy": 0,
+        "baseSha": "1cf4383a8e8feb931c8facaa17cd214bfbea982a",
+        "mergeBaseSha": "1cf4383a8e8feb931c8facaa17cd214bfbea982a",
+        "url": "https://github.com/smithersai/smithers/compare/1cf4383a...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "20f4482d",
+        "status": "ahead",
+        "aheadBy": 1846,
+        "behindBy": 0,
+        "baseSha": "20f4482de79e5f538051b5aa2fd0e12705596af7",
+        "mergeBaseSha": "20f4482de79e5f538051b5aa2fd0e12705596af7",
+        "url": "https://github.com/smithersai/smithers/compare/20f4482d...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "2c6ce4cd",
+        "status": "ahead",
+        "aheadBy": 2024,
+        "behindBy": 0,
+        "baseSha": "2c6ce4cd3159cfdcd099893b66845949d3617a8f",
+        "mergeBaseSha": "2c6ce4cd3159cfdcd099893b66845949d3617a8f",
+        "url": "https://github.com/smithersai/smithers/compare/2c6ce4cd...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "2d12108e",
+        "status": "ahead",
+        "aheadBy": 1850,
+        "behindBy": 0,
+        "baseSha": "2d12108e2cdaab71cf49a4f592ed2070e2d2cceb",
+        "mergeBaseSha": "2d12108e2cdaab71cf49a4f592ed2070e2d2cceb",
+        "url": "https://github.com/smithersai/smithers/compare/2d12108e...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "39dc6022",
+        "status": "ahead",
+        "aheadBy": 1928,
+        "behindBy": 0,
+        "baseSha": "39dc6022c92d7df37eecad6916aa059d1604abdb",
+        "mergeBaseSha": "39dc6022c92d7df37eecad6916aa059d1604abdb",
+        "url": "https://github.com/smithersai/smithers/compare/39dc6022...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "418389b6",
+        "status": "ahead",
+        "aheadBy": 1880,
+        "behindBy": 0,
+        "baseSha": "418389b6a3de7a9926888bc572d7c980f7642d2d",
+        "mergeBaseSha": "418389b6a3de7a9926888bc572d7c980f7642d2d",
+        "url": "https://github.com/smithersai/smithers/compare/418389b6...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "44311d1c",
+        "status": "ahead",
+        "aheadBy": 2048,
+        "behindBy": 0,
+        "baseSha": "44311d1cdbea5e7f1b316400110ab1f1642cbe7b",
+        "mergeBaseSha": "44311d1cdbea5e7f1b316400110ab1f1642cbe7b",
+        "url": "https://github.com/smithersai/smithers/compare/44311d1c...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "47fc2455",
+        "status": "ahead",
+        "aheadBy": 1932,
+        "behindBy": 0,
+        "baseSha": "47fc2455f31d986b9562fa93b219b8e0c34d4755",
+        "mergeBaseSha": "47fc2455f31d986b9562fa93b219b8e0c34d4755",
+        "url": "https://github.com/smithersai/smithers/compare/47fc2455...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "5ac9bb2b",
+        "status": "ahead",
+        "aheadBy": 1878,
+        "behindBy": 0,
+        "baseSha": "5ac9bb2b32e115867baf6d0602c33287eb930499",
+        "mergeBaseSha": "5ac9bb2b32e115867baf6d0602c33287eb930499",
+        "url": "https://github.com/smithersai/smithers/compare/5ac9bb2b...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "665ca8af",
+        "status": "ahead",
+        "aheadBy": 2026,
+        "behindBy": 0,
+        "baseSha": "665ca8af3791e0938714855d8cc9cd1ab120a0bf",
+        "mergeBaseSha": "665ca8af3791e0938714855d8cc9cd1ab120a0bf",
+        "url": "https://github.com/smithersai/smithers/compare/665ca8af...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "66fe032d",
+        "status": "ahead",
+        "aheadBy": 1877,
+        "behindBy": 0,
+        "baseSha": "66fe032deb0eed7e580cae7cda746147ce4fd99f",
+        "mergeBaseSha": "66fe032deb0eed7e580cae7cda746147ce4fd99f",
+        "url": "https://github.com/smithersai/smithers/compare/66fe032d...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "68345304",
+        "status": "ahead",
+        "aheadBy": 1918,
+        "behindBy": 0,
+        "baseSha": "68345304ec2f3afec18a77f687cf253513ef5494",
+        "mergeBaseSha": "68345304ec2f3afec18a77f687cf253513ef5494",
+        "url": "https://github.com/smithersai/smithers/compare/68345304...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "70eac55b",
+        "status": "ahead",
+        "aheadBy": 1852,
+        "behindBy": 0,
+        "baseSha": "70eac55b39b4273a3226af5b0a60fd420ee35e27",
+        "mergeBaseSha": "70eac55b39b4273a3226af5b0a60fd420ee35e27",
+        "url": "https://github.com/smithersai/smithers/compare/70eac55b...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "72a5942d",
+        "status": "ahead",
+        "aheadBy": 1847,
+        "behindBy": 0,
+        "baseSha": "72a5942da770bb4af3b2592a629a939ef2ccb965",
+        "mergeBaseSha": "72a5942da770bb4af3b2592a629a939ef2ccb965",
+        "url": "https://github.com/smithersai/smithers/compare/72a5942d...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "92bcb53a",
+        "status": "ahead",
+        "aheadBy": 2022,
+        "behindBy": 0,
+        "baseSha": "92bcb53a92e872cd256e5b2672aa18ddbb6f22f1",
+        "mergeBaseSha": "92bcb53a92e872cd256e5b2672aa18ddbb6f22f1",
+        "url": "https://github.com/smithersai/smithers/compare/92bcb53a...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "9d8e41e6",
+        "status": "ahead",
+        "aheadBy": 2049,
+        "behindBy": 0,
+        "baseSha": "9d8e41e6d1c97085bc893ca1799b82845ceeaf41",
+        "mergeBaseSha": "9d8e41e6d1c97085bc893ca1799b82845ceeaf41",
+        "url": "https://github.com/smithersai/smithers/compare/9d8e41e6...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "a8250400",
+        "status": "ahead",
+        "aheadBy": 2033,
+        "behindBy": 0,
+        "baseSha": "a825040063d05762025010a15a73376e8891288e",
+        "mergeBaseSha": "a825040063d05762025010a15a73376e8891288e",
+        "url": "https://github.com/smithersai/smithers/compare/a8250400...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "b64832ed",
+        "status": "ahead",
+        "aheadBy": 1879,
+        "behindBy": 0,
+        "baseSha": "b64832ed5208363f4f1b862d848350e071c83125",
+        "mergeBaseSha": "b64832ed5208363f4f1b862d848350e071c83125",
+        "url": "https://github.com/smithersai/smithers/compare/b64832ed...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "ba4f1951",
+        "status": "ahead",
+        "aheadBy": 1919,
+        "behindBy": 0,
+        "baseSha": "ba4f1951a8df32c0575f2363dd1a97659a0762e1",
+        "mergeBaseSha": "ba4f1951a8df32c0575f2363dd1a97659a0762e1",
+        "url": "https://github.com/smithersai/smithers/compare/ba4f1951...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "bc334d58",
+        "status": "ahead",
+        "aheadBy": 2032,
+        "behindBy": 0,
+        "baseSha": "bc334d589054c75a1223b6d173784a1118accf45",
+        "mergeBaseSha": "bc334d589054c75a1223b6d173784a1118accf45",
+        "url": "https://github.com/smithersai/smithers/compare/bc334d58...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "c1731f57",
+        "status": "ahead",
+        "aheadBy": 1851,
+        "behindBy": 0,
+        "baseSha": "c1731f5705ff6d5fea86248a60bba04141a76927",
+        "mergeBaseSha": "c1731f5705ff6d5fea86248a60bba04141a76927",
+        "url": "https://github.com/smithersai/smithers/compare/c1731f57...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "c4e4c175",
+        "status": "ahead",
+        "aheadBy": 1869,
+        "behindBy": 0,
+        "baseSha": "c4e4c175a90aba487a02d21a07a11f8538895217",
+        "mergeBaseSha": "c4e4c175a90aba487a02d21a07a11f8538895217",
+        "url": "https://github.com/smithersai/smithers/compare/c4e4c175...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "c9a745e1",
+        "status": "ahead",
+        "aheadBy": 2063,
+        "behindBy": 0,
+        "baseSha": "c9a745e13e1ca1651c01c056cac58bf70bf3d826",
+        "mergeBaseSha": "c9a745e13e1ca1651c01c056cac58bf70bf3d826",
+        "url": "https://github.com/smithersai/smithers/compare/c9a745e1...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "cba45a43",
+        "status": "ahead",
+        "aheadBy": 1848,
+        "behindBy": 0,
+        "baseSha": "cba45a4360b1752b5e0582036db74cdad26d2878",
+        "mergeBaseSha": "cba45a4360b1752b5e0582036db74cdad26d2878",
+        "url": "https://github.com/smithersai/smithers/compare/cba45a43...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "d1efd875",
+        "status": "ahead",
+        "aheadBy": 2027,
+        "behindBy": 0,
+        "baseSha": "d1efd8758f4681e7c9292b32608b9f47f62abe25",
+        "mergeBaseSha": "d1efd8758f4681e7c9292b32608b9f47f62abe25",
+        "url": "https://github.com/smithersai/smithers/compare/d1efd875...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "d3ce95e3",
+        "status": "ahead",
+        "aheadBy": 1863,
+        "behindBy": 0,
+        "baseSha": "d3ce95e395d604551a49780232854dcc7920abca",
+        "mergeBaseSha": "d3ce95e395d604551a49780232854dcc7920abca",
+        "url": "https://github.com/smithersai/smithers/compare/d3ce95e3...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "f390e3a1",
+        "status": "ahead",
+        "aheadBy": 1931,
+        "behindBy": 0,
+        "baseSha": "f390e3a11a9951cf2ccdc47e9ae9c30c255feaa8",
+        "mergeBaseSha": "f390e3a11a9951cf2ccdc47e9ae9c30c255feaa8",
+        "url": "https://github.com/smithersai/smithers/compare/f390e3a1...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "f4d63267",
+        "status": "ahead",
+        "aheadBy": 2023,
+        "behindBy": 0,
+        "baseSha": "f4d63267422550b0f20e646f59009dbe06bf97a6",
+        "mergeBaseSha": "f4d63267422550b0f20e646f59009dbe06bf97a6",
+        "url": "https://github.com/smithersai/smithers/compare/f4d63267...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "f9599dae",
+        "status": "ahead",
+        "aheadBy": 1929,
+        "behindBy": 0,
+        "baseSha": "f9599daea2e201ba86026b321f3fb820112fc07e",
+        "mergeBaseSha": "f9599daea2e201ba86026b321f3fb820112fc07e",
+        "url": "https://github.com/smithersai/smithers/compare/f9599dae...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "fa164491",
+        "status": "ahead",
+        "aheadBy": 1853,
+        "behindBy": 0,
+        "baseSha": "fa164491bcbfe3b2db3cb7b471fdb2c6cae5fa38",
+        "mergeBaseSha": "fa164491bcbfe3b2db3cb7b471fdb2c6cae5fa38",
+        "url": "https://github.com/smithersai/smithers/compare/fa164491...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "fb68198f",
+        "status": "ahead",
+        "aheadBy": 2057,
+        "behindBy": 0,
+        "baseSha": "fb68198f75f21d46db937db9fcbc5a207a573cca",
+        "mergeBaseSha": "fb68198f75f21d46db937db9fcbc5a207a573cca",
+        "url": "https://github.com/smithersai/smithers/compare/fb68198f...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "fc80c518",
+        "status": "ahead",
+        "aheadBy": 2056,
+        "behindBy": 0,
+        "baseSha": "fc80c5186cdc71c6385fd5996e086270770c237d",
+        "mergeBaseSha": "fc80c5186cdc71c6385fd5996e086270770c237d",
+        "url": "https://github.com/smithersai/smithers/compare/fc80c518...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      },
+      {
+        "handoffPrefix": "fe4d43a6",
+        "status": "ahead",
+        "aheadBy": 2025,
+        "behindBy": 0,
+        "baseSha": "fe4d43a61a47ed528309ff9b16714014a9f39c42",
+        "mergeBaseSha": "fe4d43a61a47ed528309ff9b16714014a9f39c42",
+        "url": "https://github.com/smithersai/smithers/compare/fe4d43a6...8ca0f793645d72910cae23fb006519fe1547ed1c",
+        "isAncestor": true
+      }
+    ]
+  },
+  "ownership": {
+    "candidateSha": "8ca0f793645d72910cae23fb006519fe1547ed1c",
+    "observedAt": "2026-09-24T21:23:15.574481+00:00",
+    "limitation": "Recent authors are suggested contacts, not accepted assignments.",
+    "history": [
+      {
+        "path": "examples/src/durable-layer.ts",
+        "commits": [
+          {
+            "sha": "8bd18933f0f0edd7ce677ae63adf3a925eb96a67",
+            "url": "https://github.com/smithersai/smithers/commit/8bd18933f0f0edd7ce677ae63adf3a925eb96a67",
+            "author": "roninjin10",
+            "date": "2026-09-24T17:30:18Z"
+          },
+          {
+            "sha": "2949d29014ed6756988d15be789bd1309bba8a83",
+            "url": "https://github.com/smithersai/smithers/commit/2949d29014ed6756988d15be789bd1309bba8a83",
+            "author": null,
+            "date": "2026-09-10T17:59:45Z"
+          },
+          {
+            "sha": "9a6caa5c6008cd7d29b93b257d5314bfe190cbad",
+            "url": "https://github.com/smithersai/smithers/commit/9a6caa5c6008cd7d29b93b257d5314bfe190cbad",
+            "author": "roninjin10",
+            "date": "2026-09-03T21:26:17Z"
+          }
+        ]
+      },
+      {
+        "path": "crates/smithers-ffi/src/atomic_windows_fs.rs",
+        "commits": [
+          {
+            "sha": "dc5435eb7ea0f7e9e44467534cd26060b9c7aad8",
+            "url": "https://github.com/smithersai/smithers/commit/dc5435eb7ea0f7e9e44467534cd26060b9c7aad8",
+            "author": "roninjin10",
+            "date": "2026-09-24T19:50:30Z"
+          },
+          {
+            "sha": "391306344143bc68e5312f4f6045c45e2e132668",
+            "url": "https://github.com/smithersai/smithers/commit/391306344143bc68e5312f4f6045c45e2e132668",
+            "author": "roninjin10",
+            "date": "2026-09-24T19:49:13Z"
+          },
+          {
+            "sha": "fd61a6ab205a1c01cfae2f603e19f9a3147acfdf",
+            "url": "https://github.com/smithersai/smithers/commit/fd61a6ab205a1c01cfae2f603e19f9a3147acfdf",
+            "author": "roninjin10",
+            "date": "2026-09-24T19:39:55Z"
+          }
+        ]
+      },
+      {
+        "path": "apps/app/src/mainview/flows/parity.test.ts",
+        "commits": [
+          {
+            "sha": "4502b11ba2c5add9ad3cfebe3699cd2204689247",
+            "url": "https://github.com/smithersai/smithers/commit/4502b11ba2c5add9ad3cfebe3699cd2204689247",
+            "author": "roninjin10",
+            "date": "2026-09-24T18:10:46Z"
+          },
+          {
+            "sha": "67a705165c24eafb909b6d8596874852c875c71a",
+            "url": "https://github.com/smithersai/smithers/commit/67a705165c24eafb909b6d8596874852c875c71a",
+            "author": "roninjin10",
+            "date": "2026-09-24T17:04:10Z"
+          },
+          {
+            "sha": "74e44cbee15020e4ad53cb85385e37605ad7a077",
+            "url": "https://github.com/smithersai/smithers/commit/74e44cbee15020e4ad53cb85385e37605ad7a077",
+            "author": "roninjin10",
+            "date": "2026-09-24T16:41:38Z"
+          }
+        ]
+      },
+      {
+        "path": "scripts/generate-changelog.mjs",
+        "commits": [
+          {
+            "sha": "dc347f018eb44cae530061515178970eddea0972",
+            "url": "https://github.com/smithersai/smithers/commit/dc347f018eb44cae530061515178970eddea0972",
+            "author": null,
+            "date": "2026-09-11T03:02:39Z"
+          },
+          {
+            "sha": "b3997f966623ccc86c2b3813142c3deeefc09a35",
+            "url": "https://github.com/smithersai/smithers/commit/b3997f966623ccc86c2b3813142c3deeefc09a35",
+            "author": null,
+            "date": "2026-09-07T17:51:14Z"
+          },
+          {
+            "sha": "c75210a153bbe637791e5c48447b68012cd709ec",
+            "url": "https://github.com/smithersai/smithers/commit/c75210a153bbe637791e5c48447b68012cd709ec",
+            "author": "roninjin10",
+            "date": "2026-09-03T21:26:17Z"
+          }
+        ]
+      },
+      {
+        "path": "apps/app/scripts/test-native-owned.ts",
+        "commits": [
+          {
+            "sha": "359f476d04d42a30af3951d63065a336e27a3bcb",
+            "url": "https://github.com/smithersai/smithers/commit/359f476d04d42a30af3951d63065a336e27a3bcb",
+            "author": "roninjin10",
+            "date": "2026-09-23T05:56:38Z"
+          },
+          {
+            "sha": "9d0a5979c348fab78629931c1bb0fd95e2e5d58d",
+            "url": "https://github.com/smithersai/smithers/commit/9d0a5979c348fab78629931c1bb0fd95e2e5d58d",
+            "author": null,
+            "date": "2026-09-23T00:08:27Z"
+          },
+          {
+            "sha": "d3da1f55caf81a9f7f13396aeef865a0e1ec8f38",
+            "url": "https://github.com/smithersai/smithers/commit/d3da1f55caf81a9f7f13396aeef865a0e1ec8f38",
+            "author": "roninjin10",
+            "date": "2026-09-22T20:00:35Z"
+          }
+        ]
+      },
+      {
+        "path": "packages/smithers/agent/test/StepTrace.test.ts",
+        "commits": [
+          {
+            "sha": "52d713b58e6a034761f82d902e3a58024c0fcd49",
+            "url": "https://github.com/smithersai/smithers/commit/52d713b58e6a034761f82d902e3a58024c0fcd49",
+            "author": "roninjin10",
+            "date": "2026-09-20T18:01:45Z"
+          },
+          {
+            "sha": "0c31eb19cecfa7ca5c8dacd7d2fd9f77ceff67ad",
+            "url": "https://github.com/smithersai/smithers/commit/0c31eb19cecfa7ca5c8dacd7d2fd9f77ceff67ad",
+            "author": "roninjin10",
+            "date": "2026-09-19T21:27:04Z"
+          }
+        ]
+      }
+    ]
+  },
+  "latestSuccessfulMainCi": {
+    "id": 34189173725,
+    "head_sha": "a659f17af9d0bf1a454ee5fa29153033cb5d6c1b",
+    "created_at": "2026-09-08T05:03:17Z",
+    "html_url": "https://github.com/smithersai/smithers/actions/runs/34189173725"
+  },
+  "targetTriage": [
+    {
+      "jobId": 107833674986,
+      "target": "//packages/smithers/agent/model:test",
+      "ownerRoute": "Model protocol / provider adapters",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  30 passed | 1 skipped (31)",
+        "Tests  682 passed | 9 skipped (691)"
+      ],
+      "coverageErrors": [
+        "ERROR: Coverage for lines (99.94%) does not meet global threshold (100%)",
+        "ERROR: Coverage for statements (99.94%) does not meet global threshold (100%)",
+        "ERROR: Coverage for branches (99.87%) does not meet global threshold (100%)"
+      ],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833674986,
+      "target": "//packages/smithers/agent:test",
+      "ownerRoute": "Agent checkpoints / cache semantics",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 51 passed (52)",
+        "Tests  1 failed | 906 passed (907)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/StepTrace.test.ts > agent step checkpoints on the real SQLite engine > keeps repeated and concurrent calls of the same declaration separate"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833674986,
+      "target": "//packages/smithers/build/targets:referenceCodeBlocks",
+      "ownerRoute": "Build targets / documentation / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": null,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833674986,
+      "target": "//packages/smithers/build/targets:test",
+      "ownerRoute": "Build targets / documentation / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  84 passed (84)",
+        "Tests  1921 passed | 2 skipped (1923)"
+      ],
+      "coverageErrors": [
+        "ERROR: Coverage for statements (98.95%) does not meet global threshold (99%)",
+        "ERROR: Coverage for branches (96.91%) does not meet global threshold (97%)"
+      ],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833674986,
+      "target": "//packages/smithers/gateway:test",
+      "ownerRoute": "Gateway / platform filesystem integration",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 29 passed (30)",
+        "Tests  3 failed | 737 passed (740)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > reports a run the engine carried to completion",
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > reports the run the engine left failed, with the cause it failed on",
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > keeps the engine's own records in the engine's journal, where no watch reads them"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833674986,
+      "target": "//packages/testing:check",
+      "ownerRoute": "Testing contracts / model parity / host fixtures",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 2,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675322,
+      "target": "//examples:check",
+      "ownerRoute": "JJ API / examples",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 2,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675322,
+      "target": "//examples:suite",
+      "ownerRoute": "JJ API / examples",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  2 failed | 36 passed | 2 skipped (40)",
+        "Tests  10 failed | 131 passed | 2 skipped (143)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/21-cache-and-compensation.test.ts > restores the pre-image before retrying a compensable step",
+        " test/25-agent-tools-in-sandbox.test.ts > runs the model's cell in the sandbox and lets it reach real files",
+        " test/25-agent-tools-in-sandbox.test.ts > refuses absolute reads and writes through ctx.call",
+        " test/25-agent-tools-in-sandbox.test.ts > refuses traversal reads and writes through ctx.call",
+        " test/25-agent-tools-in-sandbox.test.ts > refuses file-link reads and writes through ctx.call"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675338,
+      "target": "//packages/smithers/agent/model:test",
+      "ownerRoute": "Model protocol / provider adapters",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  30 passed | 1 skipped (31)",
+        "Tests  682 passed | 9 skipped (691)"
+      ],
+      "coverageErrors": [
+        "ERROR: Coverage for lines (99.94%) does not meet global threshold (100%)",
+        "ERROR: Coverage for statements (99.94%) does not meet global threshold (100%)",
+        "ERROR: Coverage for branches (99.87%) does not meet global threshold (100%)"
+      ],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675338,
+      "target": "//packages/smithers/agent:test",
+      "ownerRoute": "Agent checkpoints / cache semantics",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 51 passed (52)",
+        "Tests  1 failed | 906 passed (907)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/StepTrace.test.ts > agent step checkpoints on the real SQLite engine > keeps repeated and concurrent calls of the same declaration separate"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675338,
+      "target": "//packages/smithers/build/targets:referenceCodeBlocks",
+      "ownerRoute": "Build targets / documentation / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": null,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675338,
+      "target": "//packages/smithers/build/targets:test",
+      "ownerRoute": "Build targets / documentation / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  84 passed (84)",
+        "Tests  1921 passed | 2 skipped (1923)"
+      ],
+      "coverageErrors": [
+        "ERROR: Coverage for statements (98.95%) does not meet global threshold (99%)",
+        "ERROR: Coverage for branches (96.91%) does not meet global threshold (97%)"
+      ],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675338,
+      "target": "//packages/smithers/gateway:test",
+      "ownerRoute": "Gateway / platform filesystem integration",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 29 passed (30)",
+        "Tests  3 failed | 737 passed (740)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > reports a run the engine carried to completion",
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > reports the run the engine left failed, with the cause it failed on",
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > keeps the engine's own records in the engine's journal, where no watch reads them"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675389,
+      "target": "//packages/smithers/agent/model:test",
+      "ownerRoute": "Model protocol / provider adapters",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  30 passed | 1 skipped (31)",
+        "Tests  682 passed | 9 skipped (691)"
+      ],
+      "coverageErrors": [
+        "ERROR: Coverage for lines (99.94%) does not meet global threshold (100%)",
+        "ERROR: Coverage for statements (99.94%) does not meet global threshold (100%)",
+        "ERROR: Coverage for branches (99.87%) does not meet global threshold (100%)"
+      ],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675389,
+      "target": "//packages/smithers/agent:test",
+      "ownerRoute": "Agent checkpoints / cache semantics",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 51 passed (52)",
+        "Tests  1 failed | 906 passed (907)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/StepTrace.test.ts > agent step checkpoints on the real SQLite engine > keeps repeated and concurrent calls of the same declaration separate"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675389,
+      "target": "//packages/smithers/build/targets:referenceCodeBlocks",
+      "ownerRoute": "Build targets / documentation / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": null,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675389,
+      "target": "//packages/smithers/build/targets:test",
+      "ownerRoute": "Build targets / documentation / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  84 passed (84)",
+        "Tests  1921 passed | 2 skipped (1923)"
+      ],
+      "coverageErrors": [
+        "ERROR: Coverage for statements (98.98%) does not meet global threshold (99%)",
+        "ERROR: Coverage for branches (96.96%) does not meet global threshold (97%)"
+      ],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675389,
+      "target": "//packages/smithers/gateway:test",
+      "ownerRoute": "Gateway / platform filesystem integration",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 29 passed (30)",
+        "Tests  3 failed | 737 passed (740)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > reports a run the engine carried to completion",
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > reports the run the engine left failed, with the cause it failed on",
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > keeps the engine's own records in the engine's journal, where no watch reads them"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675394,
+      "target": "//crates/flows-jj:cargoFmt",
+      "ownerRoute": "Native filesystem / Rust build",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": null,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675401,
+      "target": "//apps/app:unitTests",
+      "ownerRoute": "App UI / command contracts",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/agent/model:test",
+      "ownerRoute": "Model protocol / provider adapters",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  30 passed | 1 skipped (31)",
+        "Tests  682 passed | 9 skipped (691)"
+      ],
+      "coverageErrors": [
+        "ERROR: Coverage for lines (99.94%) does not meet global threshold (100%)",
+        "ERROR: Coverage for statements (99.94%) does not meet global threshold (100%)",
+        "ERROR: Coverage for branches (99.87%) does not meet global threshold (100%)"
+      ],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/agent/registry:test",
+      "ownerRoute": "Flow discovery / durable execution",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  3 failed | 20 passed (23)",
+        "Tests  18 failed | 642 passed (660)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/Discovery.test.ts > Discovery > stops an ancestor symlink after the first physical directory visit",
+        " test/Executable.test.ts > the modules a flow's entry imports > keeps a load whose sibling will not unlink, and sweeps only stale siblings",
+        " test/ExecutableEngine.test.ts > a discovered flow runs on the durable engine > persists and replays transforming results and typed failures through cacheable",
+        " test/ExecutableEngine.test.ts > a discovered flow runs on the durable engine > drives a flow.ts descriptor to completion over SQLite",
+        " test/ExecutableEngine.test.ts > a discovered flow runs on the durable engine > drives a flow.mdx descriptor to completion over SQLite"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/agent:test",
+      "ownerRoute": "Agent checkpoints / cache semantics",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  3 failed | 49 passed (52)",
+        "Tests  4 failed | 903 passed (907)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/CellCallIdentityReplay.test.ts > resumes a prior wire declaration from reopened SQLite under the same Effect lock",
+        " test/StandardFlows.test.ts > the standard capability catalog > searches the guarded disk workspace through glob without an absolute [REDACTED] (requires native smithers-jj-export)",
+        " test/StandardFlows.test.ts > the standard capability catalog > searches the guarded disk workspace through grep without an absolute [REDACTED] (requires native smithers-jj-export)",
+        " test/StepTrace.test.ts > agent step checkpoints on the real SQLite engine > keeps repeated and concurrent calls of the same declaration separate"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/build/build-cli:test",
+      "ownerRoute": "Build CLI / platform integration",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/NodeLaneExecution.test.ts > Node lane package execution > checks Markdown blocks and size budgets with cache hits",
+        " test/NodeLaneExecution.test.ts > Node lane package execution > confines Changesets.Version writes and distinguishes check/write",
+        " test/NodeLaneExecution.test.ts > Node lane package execution > builds overlay consumers in scratch, caches outputs, and leaves source bytes untouched",
+        " test/NodeLaneExecution.test.ts > Node lane package execution > keeps an overlay private to its own consumer and refuses rules with no scratch mount",
+        " test/OverlayExec.test.ts > apply > replaces a regular file and preserves the replacement's executable mode"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/build/infra:suite",
+      "ownerRoute": "Build infrastructure / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  21 passed (21)",
+        "Tests  553 passed | 13 skipped (566)"
+      ],
+      "coverageErrors": [
+        "ERROR: Coverage for lines (99.35%) does not meet global threshold (100%)",
+        "ERROR: Coverage for functions (99.07%) does not meet global threshold (100%)",
+        "ERROR: Coverage for statements (99.3%) does not meet global threshold (100%)",
+        "ERROR: Coverage for branches (99.2%) does not meet global threshold (100%)"
+      ],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/build/targets:referenceCodeBlocks",
+      "ownerRoute": "Build targets / documentation / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": null,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/build/targets:test",
+      "ownerRoute": "Build targets / documentation / coverage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/Compose.test.ts > generator backup recovery and bounds > restores a declared directory replaced by a file",
+        " test/Compose.test.ts > generator backup recovery and bounds > restores a declared directory replaced by a symlink",
+        " test/ComposeRollback.test.ts > check-mode rollback > reports and undoes a permissions-only change",
+        " test/ComposeRollback.test.ts > check-mode rollback > restores a deleted directory tree with its bytes and modes",
+        " test/ComposeRollback.test.ts > check-mode rollback > reports and restores a permissions-only change inside a declared directory"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/artifacts:bunTest",
+      "ownerRoute": "Artifact storage / filesystem publication",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 13 passed (14)",
+        "Tests  4 failed | 351 passed (355)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/FileSystemArtifactStore.test.ts > Node filesystem publication security > creates private payloads and directories under umask 022, with explicit sharing options",
+        " test/FileSystemArtifactStore.test.ts > Node filesystem publication security > retries a preplanted scratch symlink without touching its target or removing the collision",
+        " test/FileSystemArtifactStore.test.ts > Node filesystem publication security > skips orphan cleanup through symlinked fanouts and scratch entries",
+        " test/FileSystemArtifactStore.test.ts > filesystem capability refusals > refuses a fanout replaced with file after scratch sync"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/artifacts:test",
+      "ownerRoute": "Artifact storage / filesystem publication",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 13 passed (14)",
+        "Tests  4 failed | 351 passed (355)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/FileSystemArtifactStore.test.ts > Node filesystem publication security > creates private payloads and directories under umask 022, with explicit sharing options",
+        " test/FileSystemArtifactStore.test.ts > Node filesystem publication security > retries a preplanted scratch symlink without touching its target or removing the collision",
+        " test/FileSystemArtifactStore.test.ts > Node filesystem publication security > skips orphan cleanup through symlinked fanouts and scratch entries",
+        " test/FileSystemArtifactStore.test.ts > filesystem capability refusals > refuses a fanout replaced with file after scratch sync"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/database:test",
+      "ownerRoute": "Database host / filesystem permissions",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 15 passed (16)",
+        "Tests  9 failed | 211 passed | 1 skipped (221)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/NodeDatabaseGuard.test.ts > NodeDatabase file permissions > creates the database and WAL sidecars with private default permissions",
+        " test/NodeDatabaseGuard.test.ts > NodeDatabase file permissions > creates the database and WAL sidecars with the process umask",
+        " test/NodeDatabaseGuard.test.ts > NodeDatabase file permissions > creates the database and WAL sidecars with explicit group-readable permissions",
+        " test/NodeDatabaseGuard.test.ts > NodeDatabase file permissions > creates the database and WAL sidecars with existing file permissions",
+        " test/NodeDatabaseGuard.test.ts > NodeDatabase guard: 0.x database files (X-13) > refuses a 0.x file opened through an absolute file:// URI"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/engine-store:test",
+      "ownerRoute": "Durable engine / platform storage",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/PlanSchedulerProduction.test.ts > a persisted plan driven end to end under the production composition > recovers prior pins and appended-generation glob membership across independent database openings",
+        " test/ReplayCorruptionClassification.test.ts > replay-failed classification (issue #150) > heals a genuinely truncated artifact through corruption eviction and clean replay (issue #174)",
+        " test/RestoreDrill.test.ts > restore drill > hot-backs-up mid-action, fences the pre-backup owner, and resumes on the restored store",
+        " test/SandboxedAction.test.ts > sealed actions under the production composition > admits a hard-boundary result to the shared cache \u2014 impossible before this lane",
+        " test/SandboxedAction.test.ts > sealed actions under the production composition > journals the captured bundle and the settled copy-back, and dispatches queued effects once"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/jj:test",
+      "ownerRoute": "JJ storage / platform integration",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  5 failed | 14 passed | 2 skipped (21)",
+        "Tests  52 failed | 244 passed | 64 skipped (360)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/NodeJj.test.ts > NodeJj > serializes snapshots across Node processes and keeps both restorable",
+        " test/NodeJj.test.ts > NodeJj > recovers a repository lock left by a dead process",
+        " test/NodeJj.test.ts > NodeJj > answers the repository [REDACTED] from a directory inside it",
+        " test/NodeJj.test.ts > NodeJj > answers the repository [REDACTED] for a FILE inside it, not only a directory",
+        " test/NodeJjLock.test.ts > NodeJj repository locks > reaches lock assertions after fixture startup exceeds the production deadline"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/platform-bun:bunTest",
+      "ownerRoute": "Native filesystem / process and watch adapters",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 9 passed | 3 skipped (13)",
+        "Tests  1 failed | 39 passed | 17 skipped (57)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/BunArtifact.test.ts > puts an artifact with only BunHost provided"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/platform-bun:test",
+      "ownerRoute": "Native filesystem / process and watch adapters",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  2 failed | 7 passed | 3 skipped (13)",
+        "Tests  2 failed | 28 passed | 16 skipped (57)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/BunArtifact.test.ts > puts an artifact with only BunHost provided",
+        " test/index.test.ts > @smthrs/platform-bun barrel > records the executable a contained child runs, never a credential in its argv"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/platform-node:test",
+      "ownerRoute": "Native filesystem / process and watch adapters",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  9 failed | 25 passed | 5 skipped (41)",
+        "Tests  78 failed | 323 passed | 66 skipped (489)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/AtomicFileSystem.test.ts > Node atomic filesystem > reports every stat field the native adapter reports, mode bits included",
+        " test/AtomicFileSystem.test.ts > Node atomic filesystem > reports the same atime, mtime and birthtime as the native adapter",
+        " test/ContainedSpawner.integration.test.ts > ContainedSpawner > kills the whole process group a cancelled child leads",
+        " test/ContainedSpawner.integration.test.ts > ContainedSpawner > escalates to SIGKILL when the child ignores SIGTERM",
+        " test/ContainedSpawner.integration.test.ts > ContainedSpawner > records a live process against its group and releases it on scope close"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/sandbox:bunTest",
+      "ownerRoute": "Sandbox host / shell and filesystem probes",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/SandboxFileSystemProbes.test.ts > Sandbox.fileSystem probes against the reference filesystem > falls back to wc when native stat is unavailable",
+        " test/VercelSandbox.test.ts > VercelSandbox > uses deterministic persistence, explicit credentials, and the timeout remainder",
+        " test/VercelSandbox.test.ts > VercelSandbox > resolves caller-supplied credential sources in precedence order",
+        " test/VercelSandbox.test.ts > VercelSandbox > delivers standard input, [REDACTED]s relative cwds, and drains text reads",
+        " test/VercelSandbox.test.ts > VercelSandbox > isolates caller bytes from an SDK that mutates write buffers"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows/sandbox:test",
+      "ownerRoute": "Sandbox host / shell and filesystem probes",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/SandboxFileSystemProbes.test.ts > Sandbox.fileSystem probes against the reference filesystem > falls back to wc when native stat is unavailable",
+        " test/VercelSandbox.test.ts > VercelSandbox > uses deterministic persistence, explicit credentials, and the timeout remainder",
+        " test/VercelSandbox.test.ts > VercelSandbox > resolves caller-supplied credential sources in precedence order",
+        " test/VercelSandbox.test.ts > VercelSandbox > delivers standard input, [REDACTED]s relative cwds, and drains text reads",
+        " test/VercelSandbox.test.ts > VercelSandbox > isolates caller bytes from an SDK that mutates write buffers"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/flows:test",
+      "ownerRoute": "Flow execution / sandbox path handling",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/SandboxedFlow.test.ts > sandbox limit boundaries > walks the workspace with bounded stat concurrency, not one file at a time",
+        " test/SandboxedFlow.test.ts > sandbox limit boundaries > stops the after walk once the changed-file limit is exceeded",
+        " test/SandboxedFlow.test.ts > sandbox limit boundaries > rejects a zero-byte result budget before downloading",
+        " test/SandboxedFlow.test.ts > sandbox limit boundaries > stops a growing result at the byte budget plus one",
+        " test/SandboxedFlow.test.ts > sandbox limit boundaries > rejects actual aggregate diff bytes when files grow after stat"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/gateway:test",
+      "ownerRoute": "Gateway / platform filesystem integration",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 29 passed (30)",
+        "Tests  3 failed | 737 passed (740)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > reports a run the engine carried to completion",
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > reports the run the engine left failed, with the cause it failed on",
+        " test/RealEngineRun.test.ts > the read path over a run the engine executed > keeps the engine's own records in the engine's journal, where no watch reads them"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/mcp:test",
+      "ownerRoute": "MCP process transport",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 11 passed (12)",
+        "Tests  1 failed | 345 passed (346)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/RealServer.integration.test.ts > McpClient against a real MCP server > fails a pending call when the server closes stdin"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers/migrate:test",
+      "ownerRoute": "Migration checkpoint / filesystem rollback",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/flow/Checkpoint.test.ts > Checkpoint.take on git > diffs only the paths the unit touched, and restores only those",
+        " test/flow/Checkpoint.test.ts > Checkpoint.take on git > removes a nonempty directory at a path checkpointed as absent",
+        " test/flow/Checkpoint.test.ts > Checkpoint.take on git > restores exact bytes for a target that existed before migration",
+        " test/flow/Checkpoint.test.ts > Checkpoint.take on git > refuses a corrupted backup before overwriting the current target",
+        " test/flow/Checkpoint.test.ts > Checkpoint.take on git > records an absent target as an explicit manifest fact and a present one with its digest"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/smithers:test",
+      "ownerRoute": "Core engine / native host integration",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/NativeControlPlan.test.ts > planning a discovered flow on the native host > still plans a flow whose drafts the compiler refuses, with no nodes",
+        " test/NativeControlPlan.test.ts > planning a discovered flow on the native host > says which flow's body it could not walk, and why",
+        " test/NativeControlPlan.test.ts > planning a discovered flow on the native host > still plans a flow whose body cannot be graphed, with no nodes",
+        " test/UnifiedCli.test.ts > unified CLI > explicit npm init refuses before writes and flow generation preserves the package manager",
+        " test/UnifiedCli.test.ts > unified CLI > initializes one workspace and preserves existing declarations on repeat"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675427,
+      "target": "//packages/testing:test",
+      "ownerRoute": "Testing contracts / model parity / host fixtures",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": 1,
+      "testSummary": [
+        "Test Files  1 failed | 47 passed (48)",
+        "Tests  1 failed | 591 passed | 5 skipped (597)"
+      ],
+      "coverageErrors": [],
+      "sampleFailingTests": [
+        " test/applied/HostSuite.test.ts > HostSuite scratch ownership > refuses a dangling symlink without creating its target or removing the link"
+      ],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    },
+    {
+      "jobId": 107833675448,
+      "target": "//:backendGo",
+      "ownerRoute": "Backend schema / integration fixtures",
+      "assignmentStatus": "Component route only; no individual assignment accepted or notification sent.",
+      "exitCode": null,
+      "testSummary": [],
+      "coverageErrors": [],
+      "sampleFailingTests": [],
+      "scope": "Samples from captured task output; retained tails may omit earlier failures. Full job logs remain authoritative."
+    }
+  ],
+  "failedTargets": {
+    "107829824657": [],
+    "107829824995": [],
+    "107829825098": [],
+    "107829825169": [],
+    "107829825315": [],
+    "107833674986": [
+      "//packages/smithers/agent/model:test",
+      "//packages/smithers/agent:test",
+      "//packages/smithers/build/targets:referenceCodeBlocks",
+      "//packages/smithers/build/targets:test",
+      "//packages/smithers/gateway:test",
+      "//packages/testing:check"
+    ],
+    "107833675280": [],
+    "107833675322": [
+      "//examples:check",
+      "//examples:suite"
+    ],
+    "107833675338": [
+      "//packages/smithers/agent/model:test",
+      "//packages/smithers/agent:test",
+      "//packages/smithers/build/targets:referenceCodeBlocks",
+      "//packages/smithers/build/targets:test",
+      "//packages/smithers/gateway:test"
+    ],
+    "107833675349": [],
+    "107833675354": [],
+    "107833675389": [
+      "//packages/smithers/agent/model:test",
+      "//packages/smithers/agent:test",
+      "//packages/smithers/build/targets:referenceCodeBlocks",
+      "//packages/smithers/build/targets:test",
+      "//packages/smithers/gateway:test"
+    ],
+    "107833675394": [
+      "//crates/flows-jj:cargoFmt"
+    ],
+    "107833675398": [],
+    "107833675401": [
+      "//apps/app:unitTests"
+    ],
+    "107833675406": [],
+    "107833675427": [
+      "//packages/smithers/agent/model:test",
+      "//packages/smithers/agent/registry:test",
+      "//packages/smithers/agent:test",
+      "//packages/smithers/build/build-cli:test",
+      "//packages/smithers/build/infra:suite",
+      "//packages/smithers/build/targets:referenceCodeBlocks",
+      "//packages/smithers/build/targets:test",
+      "//packages/smithers/flows/artifacts:bunTest",
+      "//packages/smithers/flows/artifacts:test",
+      "//packages/smithers/flows/database:test",
+      "//packages/smithers/flows/engine-store:test",
+      "//packages/smithers/flows/jj:test",
+      "//packages/smithers/flows/platform-bun:bunTest",
+      "//packages/smithers/flows/platform-bun:test",
+      "//packages/smithers/flows/platform-node:test",
+      "//packages/smithers/flows/sandbox:bunTest",
+      "//packages/smithers/flows/sandbox:test",
+      "//packages/smithers/flows:test",
+      "//packages/smithers/gateway:test",
+      "//packages/smithers/mcp:test",
+      "//packages/smithers/migrate:test",
+      "//packages/smithers:test",
+      "//packages/testing:test"
+    ],
+    "107833675448": [
+      "//:backendGo"
+    ],
+    "107834571725": []
+  }
+}
