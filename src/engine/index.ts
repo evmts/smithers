@@ -4964,17 +4964,11 @@ async function runWorkflowBody<Schema>(
           };
         }
 
-        if (schedule.pendingExists) {
-          const waitMs =
-            schedule.nextRetryAtMs != null
-              ? Math.max(0, schedule.nextRetryAtMs - nowMs())
-              : 100;
-          if (waitMs > 0) {
-            await Bun.sleep(waitMs);
-          }
-          continue;
-        }
-
+        // Process loop advancement BEFORE sleeping on pending tasks.
+        // Pending tasks downstream of a loop (e.g. write-plan after a
+        // review Loop) cannot run until the loop advances. If we sleep
+        // on pendingExists first, the loop never advances and the engine
+        // deadlocks.
         if (schedule.readyRalphs.length > 0) {
           // Re-evaluate each ralph's `until` with the correct per-ralph
           // iteration context.  The plan tree's `until` was rendered with
@@ -5192,6 +5186,17 @@ async function runWorkflowBody<Schema>(
               done: true,
               updatedAtMs: nowMs(),
             });
+          }
+          continue;
+        }
+
+        if (schedule.pendingExists) {
+          const waitMs =
+            schedule.nextRetryAtMs != null
+              ? Math.max(0, schedule.nextRetryAtMs - nowMs())
+              : 100;
+          if (waitMs > 0) {
+            await Bun.sleep(waitMs);
           }
           continue;
         }
