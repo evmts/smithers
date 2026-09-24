@@ -1319,6 +1319,10 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
         /^.*failed to record rollout items: failed to queue rollout items: channel closed.*$/gim,
         /^.*Failed to shutdown rollout recorder.*$/gm,
         /^.*failed to renew cache TTL: Operation not permitted.*$/gim,
+        // Codex prints this warning when it exits before producing a model
+        // response (e.g. first exec with app-based auth). The resume attempt
+        // will succeed, so this is not a fatal error.
+        /^.*Warning: no last agent message; wrote empty content to .*$/gm,
       ];
       let filtered = stderr;
       for (const pattern of benignPatterns) {
