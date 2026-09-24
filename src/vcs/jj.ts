@@ -180,12 +180,15 @@ export function workspaceAddEffect(
   const attempts: string[][] = [];
   const revTail = opts.atRev ? ["-r", opts.atRev] : [];
 
+  // jj 0.40+ syntax: `workspace add <DESTINATION> --name <NAME> [-r <REV>]`
   attempts.push(["workspace", "add", path, "--name", name, ...revTail]);
   if (opts.atRev) {
+    // Alternate flag ordering for older jj versions
     attempts.push(["workspace", "add", "-r", opts.atRev, path, "--name", name]);
   }
+  // Legacy positional syntax: `workspace add <NAME> <PATH>`
   attempts.push(["workspace", "add", name, path, ...revTail]);
-  attempts.push(["workspace", "add", "--wc-path", path, name, ...revTail]);
+  // NOTE: --wc-path was removed in jj 0.40 and causes hard errors; omitted.
 
   return Effect.gen(function* () {
     // Pre-check: forget stale workspace + ensure parent dir exists
