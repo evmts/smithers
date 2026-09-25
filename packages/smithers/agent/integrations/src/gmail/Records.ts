@@ -13,7 +13,7 @@
  * comparing two versions as strings orders them the way the mailbox does.
  * Messages have no public link, so `url` is `null`.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type { SourceRecord } from "../core/SourceRecord.ts"
 import type { Message, MessagePart } from "./GmailClient.ts"
@@ -22,7 +22,7 @@ import type { Message, MessagePart } from "./GmailClient.ts"
  * The record provider name.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PROVIDER = "gmail"
 
@@ -30,7 +30,7 @@ export const PROVIDER = "gmail"
  * The record kind.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const KIND = "message"
 
@@ -38,7 +38,7 @@ export const KIND = "message"
  * The headers a record keeps, and a sync reads in `metadata` format.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const HEADERS: ReadonlyArray<string> = ["From", "To", "Cc", "Subject", "Date", "Message-ID"]
 
@@ -46,7 +46,7 @@ export const HEADERS: ReadonlyArray<string> = ["From", "To", "Cc", "Subject", "D
  * Where a record came from.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Context {
   readonly connectionId: string
@@ -59,7 +59,7 @@ export interface Context {
  * A history id as a record version: zero-padded to twenty digits.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const version = (historyId: string | undefined): string | null =>
   historyId === undefined ? null : historyId.padStart(20, "0")
@@ -68,7 +68,7 @@ export const version = (historyId: string | undefined): string | null =>
  * The first value of header `name`, matched without regard to case.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const header = (message: Message, name: string): string | undefined => {
   const wanted = name.toLowerCase()
@@ -81,7 +81,7 @@ export const header = (message: Message, name: string): string | undefined => {
  * address.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseMailbox = (value: string): { readonly address: string; readonly name: string | null } | null => {
   const angle = /^\s*(.*?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/.exec(value)
@@ -99,7 +99,7 @@ const ENTITIES: Readonly<Record<string, string>> = { amp: "&", lt: "<", gt: ">",
  * Google's snippet with its HTML character references decoded.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decodeSnippet = (snippet: string): string =>
   snippet.replace(/&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-z]+);/g, (entity, body: string) => {
@@ -115,7 +115,7 @@ export const decodeSnippet = (snippet: string): string =>
  * has none inline.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const bodyText = (message: Message): string | null => {
   const visit = (part: MessagePart): string | null => {
@@ -136,7 +136,7 @@ export const bodyText = (message: Message): string | null => {
  * `labelId`): it is in the trash or spam, or it lost the label.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isGone = (message: Message, labelId?: string): boolean => {
   const labels = message.labelIds ?? []
@@ -148,7 +148,7 @@ export const isGone = (message: Message, labelId?: string): boolean => {
  * A message as a record.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const fromMessage = (message: Message, context: Context): SourceRecord => {
   const from = header(message, "From")
@@ -188,7 +188,7 @@ export const fromMessage = (message: Message, context: Context): SourceRecord =>
  * A tombstone for a message that is gone.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const tombstone = (
   message: { readonly id: string; readonly threadId?: string | undefined },

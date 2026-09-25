@@ -30,7 +30,7 @@
  * segment, so provider data cannot walk the token-bearing request to another
  * endpoint.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Context, Duration, Effect, Layer, Option, Redacted, Schedule, Schema } from "effect"
 import { IntegrationError, isRetryable } from "../core/IntegrationError.ts"
@@ -43,7 +43,7 @@ import { type GmailConfig, PROVIDER, resolve } from "./Config.ts"
  * A Gmail message, thread or draft id.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const GmailId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/))
 
@@ -51,7 +51,7 @@ export const GmailId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,12
  * A mailbox history id: an unsigned decimal integer.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const HistoryId = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/))
 
@@ -59,7 +59,7 @@ export const HistoryId = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/))
  * A message's identity in a listing.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MessageRef = Schema.Struct({
   id: GmailId,
@@ -70,7 +70,7 @@ export const MessageRef = Schema.Struct({
  * One page of `users.messages.list`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MessageList = Schema.Struct({
   messages: Schema.optionalKey(Schema.Array(MessageRef)),
@@ -82,7 +82,7 @@ export const MessageList = Schema.Struct({
  * One page of `users.messages.list`.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type MessageList = typeof MessageList.Type
 
@@ -90,7 +90,7 @@ export type MessageList = typeof MessageList.Type
  * One message header.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Header = Schema.Struct({
   name: Schema.String,
@@ -101,7 +101,7 @@ export const Header = Schema.Struct({
  * The body of one MIME part. `data` is base64url when Google inlined it.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PartBody = Schema.Struct({
   size: Schema.optionalKey(Schema.Number),
@@ -113,7 +113,7 @@ export const PartBody = Schema.Struct({
  * One MIME part of a message, with its children.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface MessagePart {
   readonly partId?: string
@@ -128,7 +128,7 @@ export interface MessagePart {
  * One MIME part of a message, with its children.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MessagePart: Schema.Codec<MessagePart> = Schema.Struct({
   partId: Schema.optionalKey(Schema.String),
@@ -147,7 +147,7 @@ export const MessagePart: Schema.Codec<MessagePart> = Schema.Struct({
  * tree in `full`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Message = Schema.Struct({
   id: GmailId,
@@ -164,7 +164,7 @@ export const Message = Schema.Struct({
  * A message as `users.messages.get` returns it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Message = typeof Message.Type
 
@@ -172,7 +172,7 @@ export type Message = typeof Message.Type
  * A message named by a history record.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const HistoryMessage = Schema.Struct({
   id: GmailId,
@@ -189,7 +189,7 @@ const HistoryChange = Schema.Struct({
  * One mailbox change.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const HistoryRecord = Schema.Struct({
   id: HistoryId,
@@ -203,7 +203,7 @@ export const HistoryRecord = Schema.Struct({
  * One mailbox change.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type HistoryRecord = typeof HistoryRecord.Type
 
@@ -212,7 +212,7 @@ export type HistoryRecord = typeof HistoryRecord.Type
  * history id.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const HistoryList = Schema.Struct({
   history: Schema.optionalKey(Schema.Array(HistoryRecord)),
@@ -224,7 +224,7 @@ export const HistoryList = Schema.Struct({
  * One page of `users.history.list`.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type HistoryList = typeof HistoryList.Type
 
@@ -232,7 +232,7 @@ export type HistoryList = typeof HistoryList.Type
  * The mailbox profile. `historyId` is where a later history read starts.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Profile = Schema.Struct({
   emailAddress: Schema.String,
@@ -245,7 +245,7 @@ export const Profile = Schema.Struct({
  * The mailbox profile.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Profile = typeof Profile.Type
 
@@ -253,7 +253,7 @@ export type Profile = typeof Profile.Type
  * A message Gmail stored as sent, or as a draft.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const StoredMessage = Schema.Struct({
   id: GmailId,
@@ -265,7 +265,7 @@ export const StoredMessage = Schema.Struct({
  * A message Gmail stored as sent, or as a draft.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type StoredMessage = typeof StoredMessage.Type
 
@@ -273,7 +273,7 @@ export type StoredMessage = typeof StoredMessage.Type
  * A created draft.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Draft = Schema.Struct({
   id: GmailId,
@@ -284,7 +284,7 @@ export const Draft = Schema.Struct({
  * A created draft.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Draft = typeof Draft.Type
 
@@ -292,7 +292,7 @@ export type Draft = typeof Draft.Type
  * The largest page `messages.list` and `history.list` accept.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_PAGE_SIZE = 500
 
@@ -300,7 +300,7 @@ export const MAX_PAGE_SIZE = 500
  * What {@link GmailClient.listMessages} filters and pages by.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ListMessagesOptions {
   /** A Gmail search query. Needs the `read` operation. */
@@ -316,7 +316,7 @@ export interface ListMessagesOptions {
  * How much of a message to read. `full` needs the `read` operation.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type MessageFormat = "minimal" | "metadata" | "full"
 
@@ -324,7 +324,7 @@ export type MessageFormat = "minimal" | "metadata" | "full"
  * What {@link GmailClient.getMessage} reads.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GetMessageOptions {
   /** Defaults to `metadata`. */
@@ -337,7 +337,7 @@ export interface GetMessageOptions {
  * A kind of mailbox change.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type HistoryType = "messageAdded" | "messageDeleted" | "labelAdded" | "labelRemoved"
 
@@ -345,7 +345,7 @@ export type HistoryType = "messageAdded" | "messageDeleted" | "labelAdded" | "la
  * What {@link GmailClient.listHistory} reads.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ListHistoryOptions {
   readonly startHistoryId: string
@@ -360,7 +360,7 @@ export interface ListHistoryOptions {
  * The client service.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GmailClient {
   /** The connection the client acts for, when one is bound. */
@@ -391,7 +391,7 @@ export interface GmailClient {
  * Service tag for the Gmail client.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const GmailClient: Context.Service<GmailClient, GmailClient> = Context.Service(
   "@smthrs/integrations/GmailClient"
@@ -401,7 +401,7 @@ export const GmailClient: Context.Service<GmailClient, GmailClient> = Context.Se
  * Google's per-error reasons that mean "slow down" on a 403.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RATE_LIMIT_REASONS: ReadonlyArray<string> = ["rateLimitExceeded", "userRateLimitExceeded"]
 
@@ -413,12 +413,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * status, errors: [{ reason }] } }`. Anything else yields none.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const googleError = (body: unknown): { readonly reasons: ReadonlyArray<string>; readonly message: string } => {
   const error = isRecord(body) && isRecord(body["error"]) ? body["error"] : {}
   const errors = Array.isArray(error["errors"]) ? error["errors"] : []
-  const reasons = errors.flatMap((entry) => isRecord(entry) && typeof entry["reason"] === "string" ? [entry["reason"]] : [])
+  const reasons = errors.flatMap((entry) =>
+    isRecord(entry) && typeof entry["reason"] === "string" ? [entry["reason"]] : []
+  )
   if (typeof error["status"] === "string") reasons.push(error["status"])
   return { reasons, message: typeof error["message"] === "string" ? error["message"].slice(0, 300) : "" }
 }
@@ -427,7 +429,7 @@ export const googleError = (body: unknown): { readonly reasons: ReadonlyArray<st
  * The wait a `Retry-After` header asks for, in milliseconds, or `null`.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const retryAfterMs = (headers: Headers): number | null => {
   const value = headers.get("retry-after")
@@ -480,7 +482,7 @@ const requireId = (kind: string, id: string): Effect.Effect<string, IntegrationE
  * rate-limit cap out of range.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (
   config: GmailConfig,
@@ -515,7 +517,7 @@ export const make = (
     const url = new URL(`${baseUrl}${mailbox}${path}`)
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value === undefined) continue
-      if (Array.isArray(value)) for (const item of value) url.searchParams.append(key, item)
+      if (Array.isArray(value)) { for (const item of value) url.searchParams.append(key, item) }
       else url.searchParams.set(key, String(value))
     }
     return url.toString()
@@ -536,7 +538,12 @@ export const make = (
             "user-agent": "smithers-integrations"
           }
           if (body !== undefined) headers["content-type"] = "application/json"
-          const response = await fetch(url, { method: call.method, headers, signal, ...(body === undefined ? {} : { body }) })
+          const response = await fetch(url, {
+            method: call.method,
+            headers,
+            signal,
+            ...(body === undefined ? {} : { body })
+          })
           const text = await response.text()
           let json: unknown = null
           if (text.length > 0) {
@@ -553,13 +560,17 @@ export const make = (
             (status === 403 && provider.reasons.some((reason) => RATE_LIMIT_REASONS.includes(reason)))
           const serverError = status >= 500
           const outcomeUnknown = serverError && write
-          const reason = rateLimited ? "delivery-failed" : status === 401 || status === 403 ? "permission-denied" : "delivery-failed"
+          const reason = rateLimited
+            ? "delivery-failed"
+            : status === 401 || status === 403
+            ? "permission-denied"
+            : "delivery-failed"
           const wait = rateLimited ? retryAfterMs(response.headers) : null
           throw failure(
             reason,
-            `Gmail ${call.operation} failed: ${call.method} ${path} -> ${status} ${provider.message || response.statusText}${
-              outcomeUnknown ? unknownSuffix : ""
-            }`,
+            `Gmail ${call.operation} failed: ${call.method} ${path} -> ${status} ${
+              provider.message || response.statusText
+            }${outcomeUnknown ? unknownSuffix : ""}`,
             {
               status,
               method: call.method,
@@ -700,7 +711,9 @@ export const make = (
     })
 
   const threadOf = (threadId: string | undefined) =>
-    threadId === undefined ? Effect.succeed({}) : Effect.map(requireId("thread", threadId), (valid) => ({ threadId: valid }))
+    threadId === undefined
+      ? Effect.succeed({})
+      : Effect.map(requireId("thread", threadId), (valid) => ({ threadId: valid }))
 
   const raw = (rfc2822: string): string => Buffer.from(rfc2822, "utf8").toString("base64url")
 
@@ -740,7 +753,7 @@ export const make = (
  * Layer for a client bound to `config`.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (
   config: GmailConfig,

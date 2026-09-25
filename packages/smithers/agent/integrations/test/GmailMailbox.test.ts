@@ -133,9 +133,7 @@ class FakeMailbox {
     const includeSpamTrash = query.get("includeSpamTrash") === "true"
     const q = query.get("q")
     return [...this.messages.values()]
-      .filter((stored) =>
-        includeSpamTrash || (!stored.labelIds.includes("TRASH") && !stored.labelIds.includes("SPAM"))
-      )
+      .filter((stored) => includeSpamTrash || (!stored.labelIds.includes("TRASH") && !stored.labelIds.includes("SPAM")))
       .filter((stored) => labels.every((label) => stored.labelIds.includes(label)))
       .filter((stored) => {
         if (q === null) return true
@@ -171,7 +169,9 @@ class FakeMailbox {
     if (request.method === "GET" && path === "/messages") {
       const { slice, next } = this.page(this.listed(query), query)
       json(response, 200, {
-        ...(slice.length === 0 ? {} : { messages: slice.map((stored) => ({ id: stored.id, threadId: stored.threadId })) }),
+        ...(slice.length === 0
+          ? {}
+          : { messages: slice.map((stored) => ({ id: stored.id, threadId: stored.threadId })) }),
         ...(next === undefined ? {} : { nextPageToken: next }),
         resultSizeEstimate: slice.length
       })
@@ -229,7 +229,11 @@ class FakeMailbox {
       return
     }
     if (request.method === "POST" && (path === "/drafts" || path === "/messages/send")) {
-      const body = JSON.parse(request.body) as { raw?: string; threadId?: string; message?: { raw: string; threadId?: string } }
+      const body = JSON.parse(request.body) as {
+        raw?: string
+        threadId?: string
+        message?: { raw: string; threadId?: string }
+      }
       const write = body.message ?? (body as { raw: string; threadId?: string })
       const stored = this.store(write.raw, path === "/drafts" ? "DRAFT" : "SENT", write.threadId)
       const lose = this.loseNextWrite
@@ -242,7 +246,9 @@ class FakeMailbox {
         response.socket?.destroy()
         return
       }
-      const message = this.bare ? { id: stored.id } : { id: stored.id, threadId: stored.threadId, labelIds: stored.labelIds }
+      const message = this.bare
+        ? { id: stored.id }
+        : { id: stored.id, threadId: stored.threadId, labelIds: stored.labelIds }
       json(response, 200, path === "/drafts" ? { id: `r-${stored.id}`, message } : message)
       return
     }
@@ -278,7 +284,10 @@ const start = async (): Promise<FakeMailbox> => {
 
 /** A client bound to `bound`, or to no connection when it is `null`. */
 const client = (bound: Connection | null = connection()) =>
-  GmailClient.make({ token, connection: bound ?? undefined, apiBaseUrl: (fixture as Fixture).origin, maxRetries: 0 }, {})
+  GmailClient.make(
+    { token, connection: bound ?? undefined, apiBaseUrl: (fixture as Fixture).origin, maxRetries: 0 },
+    {}
+  )
 
 const run = <A>(effect: Effect.Effect<A, IntegrationError>): Promise<A> => Effect.runPromise(effect)
 const flip = <A>(effect: Effect.Effect<A, IntegrationError>): Promise<IntegrationError> =>
@@ -600,7 +609,10 @@ describe("Gmail durable actions", () => {
     box.bare = true
     const sent = await runAction<typeof Actions.MessageSent.Type>(Actions.SendMessage, compose())
     expect(sent).toMatchObject({ messageId: "m0001", threadId: null, labelIds: [] })
-    const draft = await runAction<typeof Actions.DraftCreated.Type>(Actions.CreateDraft, compose({ key: "assistant/d" }))
+    const draft = await runAction<typeof Actions.DraftCreated.Type>(
+      Actions.CreateDraft,
+      compose({ key: "assistant/d" })
+    )
     expect(draft).toMatchObject({ draftId: "r-m0002", messageId: "m0002", threadId: null })
     const found = await runAction<typeof Actions.Found.Type>(Actions.FindByKey, {
       connectionId: "assistant-mail",

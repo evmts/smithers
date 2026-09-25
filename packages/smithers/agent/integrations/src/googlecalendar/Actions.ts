@@ -27,7 +27,7 @@
  * instance through `events.instances` and writes to the instance id Google
  * reports, rather than assembling an instance id itself.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Action, type FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Effect, Layer, Schema } from "effect"
@@ -52,7 +52,7 @@ import { EventId, EventReference } from "./EventId.ts"
  * Who Google emails about a write.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SendUpdates = Schema.Literals(["all", "externalOnly", "none"])
 
@@ -63,7 +63,7 @@ export const SendUpdates = Schema.Literals(["all", "externalOnly", "none"])
  * of the same event carries.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventReceipt = Schema.Struct({
   calendarId: Schema.String,
@@ -78,7 +78,7 @@ export const EventReceipt = Schema.Struct({
  * What a write action reports about the event it left behind.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type EventReceipt = typeof EventReceipt.Type
 
@@ -100,7 +100,7 @@ const receipt = (calendarId: string, event: Event): EventReceipt => ({
  * the wrong event in place. `PatchEvent` changes it deliberately.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class EventConflict extends Schema.TaggedError<EventConflict>()(
   "/integrations/googlecalendar/EventConflict",
@@ -120,7 +120,7 @@ export class EventConflict extends Schema.TaggedError<EventConflict>()(
  * retried: the same comparison would fail the same way.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const retryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({
   initialMs: 500,
@@ -137,7 +137,7 @@ export const retryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({
  * names the event, such as a meeting series and a principal.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const UpsertEventPayload = Schema.Struct({
   calendarId: CalendarId,
@@ -151,7 +151,7 @@ export const UpsertEventPayload = Schema.Struct({
  * existed as asked, which is what a retried or replayed upsert sees.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Upserted = Schema.Struct({
   ...EventReceipt.fields,
@@ -166,7 +166,7 @@ export const Upserted = Schema.Struct({
  * else fails with {@link EventConflict}.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const UpsertEvent = Action.make("integrations/googlecalendar/upsert-event", {
   payload: UpsertEventPayload,
@@ -193,7 +193,7 @@ const toFailure = (error: IntegrationError | EventConflict): IntegrationFailure 
  * Implements {@link UpsertEvent} over the client in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerUpsertEvent: Layer.Layer<
   Action.Requirement<"integrations/googlecalendar/upsert-event">,
@@ -235,7 +235,7 @@ export const layerUpsertEvent: Layer.Layer<
  * moved further than this from where it began is not found.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const OCCURRENCE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -289,7 +289,7 @@ const findOccurrence = (
  * recurring event is the whole series.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PatchEventPayload = Schema.Struct({
   calendarId: CalendarId,
@@ -307,7 +307,7 @@ export const PatchEventPayload = Schema.Struct({
  * may repeat it after a lost answer.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PatchEvent = Action.make("integrations/googlecalendar/patch-event", {
   payload: PatchEventPayload,
@@ -330,7 +330,7 @@ export const PatchEvent = Action.make("integrations/googlecalendar/patch-event",
  * Implements {@link PatchEvent} over the client in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerPatchEvent: Layer.Layer<
   Action.Requirement<"integrations/googlecalendar/patch-event">,
@@ -358,7 +358,7 @@ export const layerPatchEvent: Layer.Layer<
  * is cancelled; without it, the event itself, every occurrence of a series.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CancelEventPayload = Schema.Struct({
   calendarId: CalendarId,
@@ -373,7 +373,7 @@ export const CancelEventPayload = Schema.Struct({
  * cancel sees.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Cancelled = Schema.Struct({
   calendarId: Schema.String,
@@ -390,7 +390,7 @@ export const Cancelled = Schema.Struct({
  * `alreadyCancelled: true`.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CancelEvent = Action.make("integrations/googlecalendar/cancel-event", {
   payload: CancelEventPayload,
@@ -412,7 +412,7 @@ export const CancelEvent = Action.make("integrations/googlecalendar/cancel-event
  * Implements {@link CancelEvent} over the client in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerCancelEvent: Layer.Layer<
   Action.Requirement<"integrations/googlecalendar/cancel-event">,
@@ -446,7 +446,7 @@ export const layerCancelEvent: Layer.Layer<
  * What {@link FreeBusy} needs.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const FreeBusyPayload = Schema.Struct({
   timeMin: DateTime,
@@ -459,7 +459,7 @@ export const FreeBusyPayload = Schema.Struct({
  * One busy interval, as given and as Unix milliseconds.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const BusyInterval = Schema.Struct({
   start: Schema.String,
@@ -474,7 +474,7 @@ export const BusyInterval = Schema.Struct({
  * A calendar with `errors` is unknown, not free.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Availability = Schema.Struct({
   timeMin: Schema.String,
@@ -494,7 +494,7 @@ export const Availability = Schema.Struct({
  * asks at different moments may legitimately answer differently.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const FreeBusy = Action.make("integrations/googlecalendar/free-busy", {
   payload: FreeBusyPayload,
@@ -507,7 +507,7 @@ export const FreeBusy = Action.make("integrations/googlecalendar/free-busy", {
  * Implements {@link FreeBusy} over the client in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerFreeBusy: Layer.Layer<
   Action.Requirement<"integrations/googlecalendar/free-busy">,
@@ -529,7 +529,7 @@ export const layerFreeBusy: Layer.Layer<
  * Every Google Calendar action's implementation, in one layer.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer: Layer.Layer<
   | Action.Requirement<"integrations/googlecalendar/upsert-event">

@@ -31,7 +31,7 @@
  * Writes default to `sendUpdates: "none"`: attendees are not emailed unless a
  * caller asks.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Credential } from "@smthrs/control/Credential"
 import { Context, Duration, Effect, Layer, Option, Redacted, Schedule, Schema } from "effect"
@@ -42,15 +42,7 @@ import * as OAuthToken from "../core/OAuthToken.ts"
 import { redactedError } from "../core/RedactedError.ts"
 import * as Environment from "../Environment.ts"
 import { type GoogleCalendarConfig, resolve } from "./Config.ts"
-import {
-  Event,
-  type EventInput,
-  EventList,
-  type EventPatch,
-  isCalendarId,
-  isDateTime,
-  isTimeZone
-} from "./Event.ts"
+import { Event, type EventInput, EventList, type EventPatch, isCalendarId, isDateTime, isTimeZone } from "./Event.ts"
 import { isEventId, isEventReference } from "./EventId.ts"
 
 // Upper bound on an honored Retry-After, so a hostile header cannot park a call.
@@ -60,7 +52,7 @@ const MAX_RETRY_AFTER_MS = 60_000
  * The largest page `events.list` and `events.instances` accept.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_PAGE_SIZE = 2500
 
@@ -68,7 +60,7 @@ export const MAX_PAGE_SIZE = 2500
  * The most calendars one `freeBusy.query` may name.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_FREE_BUSY_CALENDARS = 50
 
@@ -76,7 +68,7 @@ export const MAX_FREE_BUSY_CALENDARS = 50
  * The 403 error reasons Google uses for a rate limit.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RATE_LIMIT_REASONS: ReadonlyArray<string> = ["rateLimitExceeded", "userRateLimitExceeded"]
 
@@ -87,7 +79,7 @@ export const RATE_LIMIT_REASONS: ReadonlyArray<string> = ["rateLimitExceeded", "
  * not `permission-denied`, because the credential is fine.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const QUOTA_REASONS: ReadonlyArray<string> = ["dailyLimitExceeded", "quotaExceeded"]
 
@@ -96,7 +88,7 @@ export const QUOTA_REASONS: ReadonlyArray<string> = ["dailyLimitExceeded", "quot
  * Google Calendar, or nobody.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type SendUpdates = "all" | "externalOnly" | "none"
 
@@ -104,7 +96,7 @@ export type SendUpdates = "all" | "externalOnly" | "none"
  * Options for a write.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface WriteOptions {
   /** Defaults to `none`. */
@@ -118,7 +110,7 @@ export interface WriteOptions {
  * cannot be combined with a time bound.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ListQuery {
   readonly pageToken?: string | undefined
@@ -134,7 +126,7 @@ export interface ListQuery {
  * Parameters of an `events.instances` call.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface InstancesQuery {
   readonly pageToken?: string | undefined
@@ -148,7 +140,7 @@ export interface InstancesQuery {
  * One page of events.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface EventsPage {
   readonly items: ReadonlyArray<Event>
@@ -162,7 +154,7 @@ export interface EventsPage {
  * A `freeBusy.query` request.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface FreeBusyQuery {
   /** An RFC 3339 instant with an offset. */
@@ -178,7 +170,7 @@ export interface FreeBusyQuery {
  * One busy interval.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface BusyInterval {
   readonly start: string
@@ -195,7 +187,7 @@ export interface BusyInterval {
  * client's reason for a calendar the response left out.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface CalendarAvailability {
   readonly calendarId: string
@@ -207,7 +199,7 @@ export interface CalendarAvailability {
  * A `freeBusy.query` answer, one entry per requested calendar in request order.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface FreeBusy {
   readonly timeMin: string
@@ -219,7 +211,7 @@ export interface FreeBusy {
  * The client service.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface CalendarClient {
   /** `events.list`: one page of a calendar's events, or of its changes since a sync token. */
@@ -262,7 +254,7 @@ export interface CalendarClient {
  * Service tag for the Google Calendar client.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CalendarClient: Context.Service<CalendarClient, CalendarClient> = Context.Service(
   "@smthrs/integrations/GoogleCalendarClient"
@@ -282,7 +274,7 @@ const decodeGoogleError = Schema.decodeUnknownOption(GoogleErrorBody)
  * The first error reason in a Google error body, or `null`.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const errorReason = (body: unknown): string | null => {
   const decoded = decodeGoogleError(body)
@@ -293,7 +285,7 @@ export const errorReason = (body: unknown): string | null => {
  * Whether a response is Google telling the client to slow down.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isRateLimitResponse = (status: number, body: unknown): boolean => {
   if (status === 429) return true
@@ -307,7 +299,7 @@ export const isRateLimitResponse = (status: number, body: unknown): boolean => {
  * minute.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const retryAfterMs = (headers: Headers): number | null => {
   const value = headers.get("retry-after")
@@ -352,7 +344,7 @@ const invalid = (message: string, details: Record<string, unknown> = {}): Integr
  * retry budget or timeout, like the other providers' constructors.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (
   config: GoogleCalendarConfig = {},
@@ -763,7 +755,7 @@ const fromMake = (build: () => CalendarClient): Effect.Effect<CalendarClient, In
  * Layer for a client bound to `config`.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (
   config: GoogleCalendarConfig = {},
@@ -774,7 +766,7 @@ export const layer = (
  * Who is asking to use a connection, and the host policy that decides.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ConnectionAccess {
   /** The principal the running task acts as, from trusted host state. */
@@ -796,7 +788,7 @@ export interface ConnectionAccess {
  * connection's containers are the calendars the client may touch.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerFromConnection = (
   connection: Connection,

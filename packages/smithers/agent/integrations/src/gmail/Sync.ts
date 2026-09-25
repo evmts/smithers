@@ -25,7 +25,7 @@
  * A corrupt cursor fails as `decode-failed` rather than silently starting
  * over.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Clock, Effect, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
@@ -38,7 +38,7 @@ import * as Records from "./Records.ts"
  * Messages listed, or history records read, per page by default.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_PAGE_SIZE = 50
 
@@ -46,7 +46,7 @@ export const DEFAULT_PAGE_SIZE = 50
  * Messages read at once by default.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_FETCH_CONCURRENCY = 4
 
@@ -54,7 +54,7 @@ export const DEFAULT_FETCH_CONCURRENCY = 4
  * The most messages read at once.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_FETCH_CONCURRENCY = 16
 
@@ -64,7 +64,7 @@ export const MAX_FETCH_CONCURRENCY = 16
  * page token within it.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Cursor = Schema.Struct({
   v: Schema.Literal(1),
@@ -77,7 +77,7 @@ export const Cursor = Schema.Struct({
  * A mailbox cursor.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Cursor = typeof Cursor.Type
 
@@ -85,7 +85,7 @@ export type Cursor = typeof Cursor.Type
  * A cursor as the string a store keeps.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const encodeCursor = (cursor: Cursor): string =>
   JSON.stringify(
@@ -98,7 +98,7 @@ export const encodeCursor = (cursor: Cursor): string =>
  * A stored cursor, or `decode-failed` when it is not one.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decodeCursor = (text: string): Effect.Effect<Cursor, IntegrationError> =>
   Effect.try({ try: () => JSON.parse(text) as unknown, catch: (cause) => cause }).pipe(
@@ -114,7 +114,7 @@ export const decodeCursor = (text: string): Effect.Effect<Cursor, IntegrationErr
  * What {@link mailbox} syncs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface MailboxOptions {
   /** A client with a bound connection. */
@@ -137,7 +137,7 @@ export interface MailboxOptions {
  * What {@link search} finds.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface SearchOptions {
   /** A client with a bound connection. */
@@ -155,7 +155,7 @@ export interface SearchOptions {
  * One page of search results.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface SearchPage {
   readonly records: ReadonlyArray<SourceRecord>
@@ -239,7 +239,7 @@ const collect = (history: ReadonlyArray<HistoryRecord>): ReadonlyArray<Ref> => {
  * container, or a fetch concurrency out of range.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const mailbox = (options: MailboxOptions): Effect.Effect<SyncAdapter, IntegrationError> =>
   Effect.map(reader(options.client, options.container, options.fetchConcurrency), (read): SyncAdapter => {
@@ -311,7 +311,7 @@ export const mailbox = (options: MailboxOptions): Effect.Effect<SyncAdapter, Int
  * operation. A message deleted between the search and the read is left out.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const search = (options: SearchOptions): Effect.Effect<SearchPage, IntegrationError> =>
   Effect.gen(function*() {

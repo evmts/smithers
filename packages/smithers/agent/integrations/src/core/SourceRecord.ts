@@ -13,7 +13,7 @@
  * data, never instructions. `deleted` marks a tombstone: the provider removed
  * the object, so its payload and text are empty and retrieval never returns it.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Schema } from "effect"
 
@@ -26,7 +26,7 @@ import { Schema } from "effect"
  * `public` to anyone.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const AccessScope = Schema.Literals(["private", "container", "workspace", "public"])
 
@@ -34,7 +34,7 @@ export const AccessScope = Schema.Literals(["private", "container", "workspace",
  * One of {@link AccessScope}'s values.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type AccessScope = typeof AccessScope.Type
 
@@ -42,7 +42,7 @@ export type AccessScope = typeof AccessScope.Type
  * The provider's author identity for a record.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Author = Schema.Struct({
   /** The provider's stable user or bot id. */
@@ -55,7 +55,7 @@ export const Author = Schema.Struct({
  * The provider's access scope for a record.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Access = Schema.Struct({
   scope: AccessScope,
@@ -67,7 +67,7 @@ export const Access = Schema.Struct({
  * Where a record sits in its conversation or hierarchy.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Thread = Schema.Struct({
   /** The channel, repository or calendar holding the record. */
@@ -82,7 +82,7 @@ export const Thread = Schema.Struct({
  * One retrieved provider object with its provenance.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SourceRecord = Schema.Struct({
   /** The provider that produced it: `github`, `slack`, `googlecalendar`. */
@@ -118,7 +118,7 @@ export const SourceRecord = Schema.Struct({
  * One retrieved provider object with its provenance.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type SourceRecord = typeof SourceRecord.Type
 
@@ -126,7 +126,7 @@ export type SourceRecord = typeof SourceRecord.Type
  * Decodes an unknown value as a {@link SourceRecord}.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decode = Schema.decodeUnknownEffect(SourceRecord)
 
@@ -134,7 +134,7 @@ export const decode = Schema.decodeUnknownEffect(SourceRecord)
  * The fields that order two copies of one record.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Ordering = Pick<SourceRecord, "updatedAtMs" | "deleted" | "version">
 
@@ -153,7 +153,7 @@ const sign = (left: string, right: string): number => left === right ? 0 : left 
  * same way whichever copy arrives first.
  *
  * @category ordering
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const compareVersion = (left: string | null, right: string | null): number => {
   if (left === right) return 0
@@ -185,7 +185,7 @@ export const compareVersion = (left: string | null, right: string | null): numbe
  * the three fields, applying copies in any order converges on the same winner.
  *
  * @category ordering
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const compare = (current: Ordering, candidate: Ordering): number => {
   if (current.updatedAtMs !== candidate.updatedAtMs) {
@@ -205,7 +205,7 @@ export const compare = (current: Ordering, candidate: Ordering): number => {
  * the same record twice a no-op.
  *
  * @category ordering
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const supersedes = (current: Ordering, candidate: Ordering): boolean => compare(current, candidate) > 0
 
@@ -213,7 +213,7 @@ export const supersedes = (current: Ordering, candidate: Ordering): boolean => c
  * What a tombstone keeps of the record it removes.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Identity =
   & Pick<SourceRecord, "provider" | "connectionId" | "externalId" | "kind" | "access" | "thread">
@@ -229,7 +229,7 @@ export type Identity =
  * to any later edit, which is how an object the provider restores comes back.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const tombstone = (of: Identity, deletedAtMs: number, retrievedAtMs: number = deletedAtMs): SourceRecord => ({
   provider: of.provider,
@@ -255,7 +255,7 @@ export const tombstone = (of: Identity, deletedAtMs: number, retrievedAtMs: numb
  * grant that covers the whole connection.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const containers = (record: Pick<SourceRecord, "access" | "thread">): ReadonlyArray<string> => {
   const ids: Array<string> = []
@@ -272,7 +272,7 @@ export const containers = (record: Pick<SourceRecord, "access" | "thread">): Rea
  * one is still readable and still the copy it used.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Reference = Schema.Struct({
   connectionId: Schema.NonEmptyString,
@@ -286,7 +286,7 @@ export const Reference = Schema.Struct({
  * A pointer to one retrieved copy of a record.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Reference = typeof Reference.Type
 
@@ -294,7 +294,7 @@ export type Reference = typeof Reference.Type
  * The reference to `record` as retrieved.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const reference = (record: SourceRecord): Reference => ({
   connectionId: record.connectionId,

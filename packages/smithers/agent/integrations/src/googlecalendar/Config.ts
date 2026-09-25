@@ -21,7 +21,7 @@
  *
  * None of them is ever logged.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Duration } from "effect"
 import type { AccessTokenSource } from "../core/AccessToken.ts"
@@ -31,7 +31,7 @@ import * as Environment from "../Environment.ts"
  * The public Calendar API root.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_API_BASE_URL = "https://www.googleapis.com/calendar/v3"
 
@@ -39,7 +39,7 @@ export const DEFAULT_API_BASE_URL = "https://www.googleapis.com/calendar/v3"
  * Google's OAuth 2.0 token endpoint.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
@@ -48,7 +48,7 @@ export const DEFAULT_TOKEN_URL = "https://oauth2.googleapis.com/token"
  * body read.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
 
@@ -59,7 +59,7 @@ export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
  * reads availability only.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SCOPES = {
   events: "https://www.googleapis.com/auth/calendar.events",
@@ -74,7 +74,7 @@ const DEFAULT_MAX_RETRIES = 3
  * `credentials-missing` when no token source can be formed.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GoogleCalendarConfig {
   /** Where the client gets bearer tokens. Wins over every other credential field. */
@@ -107,7 +107,7 @@ export interface GoogleCalendarConfig {
  * A config with every fallback applied.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ResolvedGoogleCalendarConfig {
   readonly tokens: AccessTokenSource | undefined
@@ -133,7 +133,7 @@ const firstNonEmpty = (candidates: ReadonlyArray<string | undefined>): string | 
  * Resolves configuration: explicit values, then `env`.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const resolve = (
   config: GoogleCalendarConfig,

@@ -35,7 +35,7 @@
  * endpoint is refused rather than followed, so a moved endpoint cannot receive
  * the form body.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type { Credential, CredentialRef } from "@smthrs/control/Credential"
 import { Clock, Duration, Effect, Option, Redacted, Ref, Schedule, Schema, Semaphore } from "effect"
@@ -50,7 +50,7 @@ import { redactedError } from "./RedactedError.ts"
  * token is replaced a minute early rather than used to its last second.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_SKEW: Duration.Duration = Duration.seconds(60)
 
@@ -58,7 +58,7 @@ export const DEFAULT_SKEW: Duration.Duration = Duration.seconds(60)
  * The default deadline for one token-endpoint attempt, headers and body.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
 
@@ -69,7 +69,7 @@ const MAX_RETRY_AFTER_MS = 60_000
  * Where a refresh token is kept, with compare-and-set replacement.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface RefreshTokenStore {
   /** The current refresh token. */
@@ -93,7 +93,7 @@ export interface RefreshTokenStore {
  * provider that rotates refresh tokens needs {@link credentialStore}.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const memoryStore = (initial: Redacted.Redacted<string>): RefreshTokenStore => {
   let current = initial
@@ -131,7 +131,7 @@ const credentialFailure = (reference: CredentialRef) => (error: { readonly _tag:
  * concurrent write with `CredentialConflict`, reported here as `false`.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const credentialStore = (credential: Credential, reference: CredentialRef): RefreshTokenStore => {
   const load = credential.resolve(reference).pipe(Effect.mapError(credentialFailure(reference)))
@@ -159,7 +159,7 @@ export const credentialStore = (credential: Credential, reference: CredentialRef
  * secret is a public client and sends only `client_id`, whichever is chosen.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ClientAuthentication = "body" | "basic"
 
@@ -167,7 +167,7 @@ export type ClientAuthentication = "body" | "basic"
  * The token endpoint and client identity shared by every exchange.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Endpoint {
   /** An absolute `http:` or `https:` token endpoint URL. */
@@ -188,7 +188,7 @@ export interface Endpoint {
  * What {@link make} needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options extends Endpoint {
   readonly refreshToken: RefreshTokenStore
@@ -202,7 +202,7 @@ export interface Options extends Endpoint {
  * One successful token-endpoint answer.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Grant {
   readonly accessToken: Redacted.Redacted<string>
@@ -240,7 +240,7 @@ const decodeErrorResponse = Schema.decodeUnknownOption(ErrorResponse)
  * reported as a refused delivery.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const reasonForOAuthError = (code: string): IntegrationError["reason"] => {
   switch (code) {
@@ -469,7 +469,7 @@ const requestGrant = (
  * What {@link exchangeCode} needs beyond the endpoint.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface CodeExchange extends Endpoint {
   /** The authorization code the redirect delivered. */
@@ -491,7 +491,7 @@ export interface CodeExchange extends Endpoint {
  * nothing.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const exchangeCode = (exchange: CodeExchange): Effect.Effect<Grant, IntegrationError> =>
   Effect.try({ try: () => resolveEndpoint(exchange), catch: (cause) => cause as IntegrationError }).pipe(
@@ -527,7 +527,7 @@ interface Cached {
  * cached, since nothing says how long it lives.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (options: Options): AccessTokenSource => {
   const endpoint = resolveEndpoint(options)

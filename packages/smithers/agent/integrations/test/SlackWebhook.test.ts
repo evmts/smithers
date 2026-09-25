@@ -95,7 +95,7 @@ describe("verify", () => {
 })
 
 describe("answer", () => {
-  const request = (body: string, headers = signed(body)) => ({ body: bytes(body), headers })
+  const request = (body: string, headers: Record<string, string> = signed(body)) => ({ body: bytes(body), headers })
 
   it("refuses an unverified request before reading the body", () => {
     expect(Webhook.answer(request("not json", {}), SECRET, { policy })).toEqual({ _tag: "Unauthorized" })
@@ -107,7 +107,10 @@ describe("answer", () => {
 
   it("echoes the url_verification challenge", () => {
     const body = JSON.stringify({ token: "t", type: "url_verification", challenge: "challenge-value" })
-    expect(Webhook.answer(request(body), SECRET, { policy })).toEqual({ _tag: "Challenge", challenge: "challenge-value" })
+    expect(Webhook.answer(request(body), SECRET, { policy })).toEqual({
+      _tag: "Challenge",
+      challenge: "challenge-value"
+    })
     expect(Webhook.challenge({ type: "event_callback" })).toBeUndefined()
   })
 

@@ -119,7 +119,9 @@ describe("Gmail message composition", () => {
   })
 
   it("quotes an ASCII display name and escapes its quotes", async () => {
-    const { headers } = parse((await composed({ to: [{ address: "a@example.test", name: "Smith, \"Al\" \\ Jr" }] })).raw)
+    const { headers } = parse(
+      (await composed({ to: [{ address: "a@example.test", name: "Smith, \"Al\" \\ Jr" }] })).raw
+    )
     expect(headers.get("To")).toBe("\"Smith, \\\"Al\\\" \\\\ Jr\" <a@example.test>")
   })
 

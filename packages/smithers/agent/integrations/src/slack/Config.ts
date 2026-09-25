@@ -9,21 +9,29 @@
  * it, so a caller that supplies its own credentials cannot have an ambient
  * token decide which workspace a call reaches.
  *
+ * A resolved token or secret is `Redacted`, so a config that reaches a log, an
+ * error, or `JSON.stringify` prints `<redacted>` rather than the value.
+ *
+ * {@link policy} reads the admission allowlists from the same environment, so
+ * a host configured entirely by `SMITHERS_SLACK_*` variables needs no code to
+ * decide which workspace, conversations and people may reach it.
+ *
  * Every limit is validated here, once, so a client never starts with a budget
  * that is unbounded, fractional, or negative. A failure names the field and
  * never carries token material.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
-import { Duration, Option } from "effect"
+import { Duration, Option, Redacted } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import * as Environment from "../Environment.ts"
+import { type Policy, requirePolicy } from "./Payload.ts"
 
 /**
  * The public Web API base URL. A method is posted to `<base>/<method>`.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_API_BASE_URL = "https://slack.com/api"
 
@@ -32,7 +40,7 @@ export const DEFAULT_API_BASE_URL = "https://slack.com/api"
  * body read.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
 
@@ -40,7 +48,7 @@ export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
  * The default first delay of the backoff between retried reads.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_RETRY_BASE_DELAY: Duration.Duration = Duration.millis(250)
 
@@ -48,29 +56,41 @@ export const DEFAULT_RETRY_BASE_DELAY: Duration.Duration = Duration.millis(250)
  * The environment variable names this module reads.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ENV = {
   botToken: "SMITHERS_SLACK_BOT_TOKEN",
   appToken: "SMITHERS_SLACK_APP_TOKEN",
   signingSecret: "SMITHERS_SLACK_SIGNING_SECRET",
-  apiBaseUrl: "SMITHERS_SLACK_API_BASE_URL"
+  apiBaseUrl: "SMITHERS_SLACK_API_BASE_URL",
+  teamIds: "SMITHERS_SLACK_TEAM_IDS",
+  channelIds: "SMITHERS_SLACK_CHANNEL_IDS",
+  userIds: "SMITHERS_SLACK_USER_IDS",
+  selfUserIds: "SMITHERS_SLACK_SELF_USER_IDS"
 } as const
+
+/**
+ * A secret as a caller may supply it: a plain string or one already wrapped.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Secret = string | Redacted.Redacted<string>
 
 /**
  * What a caller may supply. Every field is optional; each consumer fails with
  * a typed error when a value it needs is missing.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface SlackConfig {
   /** The bot token. Falls back to `SMITHERS_SLACK_BOT_TOKEN`. Never logged. */
-  readonly botToken?: string | undefined
+  readonly botToken?: Secret | undefined
   /** The app-level token for Socket Mode. Falls back to `SMITHERS_SLACK_APP_TOKEN`. Never logged. */
-  readonly appToken?: string | undefined
+  readonly appToken?: Secret | undefined
   /** The Events API signing secret. Falls back to `SMITHERS_SLACK_SIGNING_SECRET`. */
-  readonly signingSecret?: string | undefined
+  readonly signingSecret?: Secret | undefined
   /** The Web API base URL, for a fixture server. Falls back to `SMITHERS_SLACK_API_BASE_URL`. */
   readonly apiBaseUrl?: string | undefined
   /** Automatic retries of a rate-limited call, for every method. Defaults to 3; 0 to 10. */
@@ -89,12 +109,12 @@ export interface SlackConfig {
  * A config with every fallback applied and every limit validated.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ResolvedSlackConfig {
-  readonly botToken: string | undefined
-  readonly appToken: string | undefined
-  readonly signingSecret: string | undefined
+  readonly botToken: Redacted.Redacted<string> | undefined
+  readonly appToken: Redacted.Redacted<string> | undefined
+  readonly signingSecret: Redacted.Redacted<string> | undefined
   /** Without a trailing slash. */
   readonly apiBaseUrl: string
   readonly maxRateLimitRetries: number
@@ -106,6 +126,11 @@ export interface ResolvedSlackConfig {
 
 const firstNonEmpty = (...candidates: ReadonlyArray<string | undefined>): string | undefined =>
   candidates.map((candidate) => typeof candidate === "string" ? candidate.trim() : "").find((value) => value.length > 0)
+
+const secret = (explicit: Secret | undefined, ambient: string | undefined): Redacted.Redacted<string> | undefined => {
+  const value = firstNonEmpty(Redacted.isRedacted(explicit) ? Redacted.value(explicit) : explicit, ambient)
+  return value === undefined ? undefined : Redacted.make(value)
+}
 
 const invalid = (field: string, rule: string, value: unknown): IntegrationError =>
   new IntegrationError("invalid-config", `Slack ${field} must be ${rule}.`, {
@@ -144,7 +169,7 @@ const duration = (
  * token, and the call that needs one fails `credentials-missing`.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const resolve = (
   config: SlackConfig = {},
@@ -157,9 +182,9 @@ export const resolve = (
     throw invalid("apiBaseUrl", "an HTTP or HTTPS URL", apiBaseUrl)
   }
   return {
-    botToken: firstNonEmpty(config.botToken, env[ENV.botToken]),
-    appToken: firstNonEmpty(config.appToken, env[ENV.appToken]),
-    signingSecret: firstNonEmpty(config.signingSecret, env[ENV.signingSecret]),
+    botToken: secret(config.botToken, env[ENV.botToken]),
+    appToken: secret(config.appToken, env[ENV.appToken]),
+    signingSecret: secret(config.signingSecret, env[ENV.signingSecret]),
     apiBaseUrl,
     maxRateLimitRetries: integer("maxRateLimitRetries", config.maxRateLimitRetries, 3, 10),
     maxRetryAfterSeconds: integer("maxRetryAfterSeconds", config.maxRetryAfterSeconds, 30, 300),
@@ -167,4 +192,35 @@ export const resolve = (
     retryBaseDelay: duration("retryBaseDelay", config.retryBaseDelay, DEFAULT_RETRY_BASE_DELAY, true),
     requestTimeout: duration("requestTimeout", config.requestTimeout, DEFAULT_REQUEST_TIMEOUT, false)
   }
+}
+
+const ids = (value: string | undefined): ReadonlyArray<string> =>
+  (value ?? "").split(",").map((id) => id.trim()).filter((id) => id.length > 0)
+
+/**
+ * The admission policy from comma-separated `SMITHERS_SLACK_*` lists.
+ *
+ * `SMITHERS_SLACK_TEAM_IDS` names the admitted workspaces,
+ * `SMITHERS_SLACK_CHANNEL_IDS` the admitted conversations,
+ * `SMITHERS_SLACK_USER_IDS` the people who may reach the host (and whose
+ * direct messages are admitted without listing the `D…` conversation), and
+ * `SMITHERS_SLACK_SELF_USER_IDS` any further ids that are this app.
+ *
+ * Throws `IntegrationError` with reason `invalid-config` under the same rule
+ * as `Payload.requirePolicy`: no workspace, or neither a conversation nor a
+ * person, admits nothing and is refused.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const policy = (
+  env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
+): Policy => {
+  const selfUserIds = ids(env[ENV.selfUserIds])
+  return requirePolicy({
+    allowedTeamIds: ids(env[ENV.teamIds]),
+    allowedChannelIds: ids(env[ENV.channelIds]),
+    allowedUserIds: ids(env[ENV.userIds]),
+    ...(selfUserIds.length === 0 ? {} : { selfUserIds })
+  }, "Slack.Config.policy")
 }

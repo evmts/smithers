@@ -24,7 +24,7 @@
  * cursor that does not parse fails with `invalid-config` rather than starting
  * over, which would replay the calendar as new.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Clock, Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
@@ -38,7 +38,7 @@ import { type Event, isCalendarId, isCancelled } from "./Event.ts"
  * The provider name records carry.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PROVIDER = "googlecalendar"
 
@@ -46,7 +46,7 @@ export const PROVIDER = "googlecalendar"
  * The record kind of a calendar event.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const KIND = "event"
 
@@ -54,7 +54,7 @@ export const KIND = "event"
  * The page size the adapter asks for by default.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_PAGE_SIZE = 250
 
@@ -62,7 +62,7 @@ export const DEFAULT_PAGE_SIZE = 250
  * What {@link make} needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options {
   /** The configured connection the client reads through. */
@@ -103,7 +103,7 @@ const when = (time: Event["start"]): string | null =>
  * description, one per line. Data, never instructions.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const render = (event: Event): string => {
   const lines: Array<string> = []
@@ -126,7 +126,7 @@ export const render = (event: Event): string => {
  * times only.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const toRecord = (
   options: {
@@ -174,7 +174,7 @@ const invalid = (message: string, details: Record<string, unknown>): Integration
  * cannot be sent, or a page size outside 1 to 2500.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (options: Options): Effect.Effect<SyncAdapter, IntegrationError, CalendarClient> =>
   Effect.gen(function*() {

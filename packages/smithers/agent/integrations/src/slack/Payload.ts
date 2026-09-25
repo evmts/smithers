@@ -8,17 +8,18 @@
  * exactly the same deliveries and name them the same way.
  *
  * Admission fails closed. A delivery is admitted only when its workspace is in
- * `allowedTeamIds`, its channel is in `allowedChannelIds`, and its author is
- * neither a bot nor this app itself. A delivery whose channel or author cannot
- * be determined is refused, because an allowlist that admits what it cannot
- * classify is not one. Refusing the app's own messages is the echo filter: an
+ * `allowedTeamIds`, its channel is in `allowedChannelIds` (or it is a direct
+ * message and `allowedUserIds` is set), its author is neither a bot nor this
+ * app itself, and, when `allowedUserIds` is set, its author is one of those
+ * people. A delivery whose channel or author cannot be determined is refused,
+ * because an allowlist that admits what it cannot classify is not one. Refusing the app's own messages is the echo filter: an
  * agent that answers in a channel must not wake on its own answer.
  *
  * The delivered payload keeps Slack's shape, minus the fields that are
  * credentials: the legacy verification `token` and the `response_url`
  * capability are removed before the payload can reach a journal.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { isRecord } from "@smthrs/canonical/Record"
 import { Schema } from "effect"
@@ -30,7 +31,7 @@ import * as SignalName from "../core/SignalName.ts"
  * The service segment of every Slack signal name.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SERVICE = "slack"
 
@@ -43,7 +44,7 @@ const open = <Fields extends Schema.Struct.Fields>(fields: Fields) => Schema.Str
  * within its channel.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Ts = Schema.String.check(Schema.isPattern(/^\d{1,12}\.\d{1,9}$/))
 
@@ -53,7 +54,7 @@ export const Ts = Schema.String.check(Schema.isPattern(/^\d{1,12}\.\d{1,9}$/))
  * conversation and an allowlist compares ids.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ChannelId = Schema.String.check(Schema.isPattern(/^[CDG][A-Z0-9]{2,31}$/))
 
@@ -61,7 +62,7 @@ export const ChannelId = Schema.String.check(Schema.isPattern(/^[CDG][A-Z0-9]{2,
  * The edit marker on a changed message.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Edited = open({ user: Schema.optional(Schema.String), ts: Ts })
 
@@ -70,7 +71,7 @@ export const Edited = open({ user: Schema.optional(Schema.String), ts: Ts })
  * events carry it.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Message = open({
   type: Schema.optional(Schema.String),
@@ -91,7 +92,7 @@ export const Message = open({
  * subtypes, whose subject is nested under `message` and `previous_message`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MessageEvent = open({
   type: Schema.Literal("message"),
@@ -113,7 +114,7 @@ export const MessageEvent = open({
  * One installation an Events API delivery was sent for.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Authorization = open({
   team_id: Schema.optional(Schema.NullOr(Schema.String)),
@@ -125,7 +126,7 @@ export const Authorization = open({
  * An Events API delivery, delivered for `integration:slack:<event type>`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventCallback = open({
   type: Schema.Literal("event_callback"),
@@ -141,7 +142,7 @@ export const EventCallback = open({
  * The Events API's endpoint check, answered by the HTTP host.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const UrlVerification = open({ type: Schema.Literal("url_verification"), challenge: Schema.String })
 
@@ -149,7 +150,7 @@ export const UrlVerification = open({ type: Schema.Literal("url_verification"), 
  * One pressed Block Kit element.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const BlockAction = open({
   action_id: Schema.String,
@@ -162,7 +163,7 @@ export const BlockAction = open({
  * A Block Kit interaction, delivered for `integration:slack:block_actions`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const BlockActions = open({
   type: Schema.Literal("block_actions"),
@@ -182,7 +183,7 @@ export const BlockActions = open({
  * One Socket Mode frame: `hello`, `disconnect`, or an envelope to acknowledge.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SocketEnvelope = open({
   type: Schema.String,
@@ -199,13 +200,24 @@ const asBlockActions = Schema.decodeUnknownOption(BlockActions)
  * Who may reach a flow through a Slack door.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Policy {
   /** Workspace ids admitted. Required and non-empty. */
   readonly allowedTeamIds: ReadonlyArray<string>
-  /** Conversation ids admitted. Required and non-empty. */
-  readonly allowedChannelIds: ReadonlyArray<string>
+  /**
+   * Conversation ids admitted. Required and non-empty unless `allowedUserIds`
+   * is set.
+   */
+  readonly allowedChannelIds?: ReadonlyArray<string> | undefined
+  /**
+   * The people who may reach a flow. When set and non-empty, every admitted
+   * delivery must be authored (or, for a button press, pressed) by one of
+   * them, and their direct messages (`D…` conversations) are admitted without
+   * listing the conversation, so an owner's first DM works before its id is
+   * known.
+   */
+  readonly allowedUserIds?: ReadonlyArray<string> | undefined
   /**
    * User ids that are this app, beyond the bot users a delivery's
    * `authorizations` name. Their deliveries are echoes and are refused.
@@ -216,26 +228,43 @@ export interface Policy {
 const nonEmptyIds = (list: unknown): boolean =>
   Array.isArray(list) && list.length > 0 && list.every((id) => typeof id === "string" && id.length > 0)
 
+const idsOrAbsent = (list: unknown): boolean =>
+  list === undefined || (Array.isArray(list) && list.every((id) => typeof id === "string" && id.length > 0))
+
 /**
- * Returns `policy` when both allowlists are non-empty lists of ids.
+ * Returns `policy` when `allowedTeamIds` is a non-empty list of ids and
+ * `allowedChannelIds` or `allowedUserIds` is too.
  *
  * Throws `IntegrationError` with reason `invalid-config` otherwise: an empty
  * allowlist would either admit nothing, silently, or be mistaken for "admit
  * everything", and neither belongs in a running door.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const requirePolicy = (policy: Policy, where: string): Policy => {
-  if (!nonEmptyIds(policy?.allowedTeamIds) || !nonEmptyIds(policy?.allowedChannelIds)) {
+  const channels = policy?.allowedChannelIds
+  const users = policy?.allowedUserIds
+  if (
+    !nonEmptyIds(policy?.allowedTeamIds) || !idsOrAbsent(channels) || !idsOrAbsent(users) ||
+    !idsOrAbsent(policy?.selfUserIds) || !(nonEmptyIds(channels) || nonEmptyIds(users))
+  ) {
     throw new IntegrationError(
       "invalid-config",
-      `${where} requires non-empty allowedTeamIds and allowedChannelIds before it can admit a delivery.`,
+      `${where} requires non-empty allowedTeamIds, and non-empty allowedChannelIds or allowedUserIds, before it can admit a delivery.`,
       { source: SERVICE, retryable: false }
     )
   }
   return policy
 }
+
+/**
+ * Whether a conversation id names a direct message.
+ *
+ * @category refinements
+ * @since 1.0.0
+ */
+export const isDirectMessage = (channelId: string): boolean => channelId.startsWith("D")
 
 /**
  * Why a delivery was not admitted.
@@ -247,17 +276,24 @@ export const requirePolicy = (policy: Policy, where: string): Policy => {
  *   the delivery names none.
  * - `bot-author`: a bot wrote it.
  * - `self-author`: this app wrote it.
+ * - `user-not-allowed`: `allowedUserIds` is set and does not name the author.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
-export type RefusalReason = "unsupported" | "team-not-allowed" | "channel-not-allowed" | "bot-author" | "self-author"
+export type RefusalReason =
+  | "unsupported"
+  | "team-not-allowed"
+  | "channel-not-allowed"
+  | "bot-author"
+  | "self-author"
+  | "user-not-allowed"
 
 /**
  * The admission decision for one delivery.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Classification =
   | {
@@ -345,17 +381,20 @@ const subjectOf = (payload: unknown): Subject | undefined => {
  * Decides whether one delivery may reach a flow.
  *
  * The checks run in a fixed order, and the first failing one names the
- * refusal: shape, workspace, conversation, bot author, self author.
+ * refusal: shape, workspace, conversation, bot author, self author, person.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const classify = (payload: unknown, policy: Policy): Classification => {
   const subject = subjectOf(payload)
   if (subject === undefined || subject.key === undefined || subject.names.length === 0) return refused("unsupported")
   if (!policy.allowedTeamIds.includes(subject.teamId)) return refused("team-not-allowed")
   const channelId = subject.channelId
-  if (channelId === undefined || !policy.allowedChannelIds.includes(channelId)) return refused("channel-not-allowed")
+  const people = policy.allowedUserIds ?? []
+  const channelAllowed = channelId !== undefined &&
+    ((policy.allowedChannelIds ?? []).includes(channelId) || (people.length > 0 && isDirectMessage(channelId)))
+  if (!channelAllowed) return refused("channel-not-allowed")
   if (typeof subject.author["bot_id"] === "string" || subject.author["subtype"] === "bot_message") {
     return refused("bot-author")
   }
@@ -363,6 +402,7 @@ export const classify = (payload: unknown, policy: Policy): Classification => {
   if (typeof user === "string" && [...(policy.selfUserIds ?? []), ...subject.selfIds].includes(user)) {
     return refused("self-author")
   }
+  if (people.length > 0 && (typeof user !== "string" || !people.includes(user))) return refused("user-not-allowed")
   return { _tag: "Admitted", teamId: subject.teamId, channelId, key: subject.key, names: subject.names }
 }
 
@@ -375,7 +415,7 @@ export const classify = (payload: unknown, policy: Policy): Classification => {
  * key `Channels.ingest` and `Control.signal` deduplicate on.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const idempotencyKey = (payload: unknown): string | undefined => subjectOf(payload)?.key
 
@@ -383,7 +423,7 @@ export const idempotencyKey = (payload: unknown): string | undefined => subjectO
  * The correlation for a conversation.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const channelCorrelationId = (channelId: string): string => `channel:${channelId}`
 
@@ -391,7 +431,7 @@ export const channelCorrelationId = (channelId: string): string => `channel:${ch
  * The correlation for a thread within a conversation.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const threadCorrelationId = (channelId: string, threadTs: string): string =>
   `channel:${channelId}:thread:${threadTs}`
@@ -401,7 +441,7 @@ export const threadCorrelationId = (channelId: string, threadTs: string): string
  * the conversation, then `null`.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const correlations = (payload: unknown): ReadonlyArray<string | null> => {
   const subject = subjectOf(payload)
@@ -420,7 +460,7 @@ export const correlations = (payload: unknown): ReadonlyArray<string | null> => 
  * not name.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const names = (payload: unknown): ReadonlyArray<string> => subjectOf(payload)?.names ?? []
 
@@ -429,7 +469,7 @@ export const names = (payload: unknown): ReadonlyArray<string> => subjectOf(payl
  * verification `token` and the `response_url` capabilities.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const redact = (payload: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
   const { response_url: _responseUrl, response_urls: _responseUrls, token: _token, ...kept } = payload
@@ -440,7 +480,7 @@ export const redact = (payload: Readonly<Record<string, unknown>>): Readonly<Rec
  * A policy refusal, classified independently of the message.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class SlackRefused extends IntegrationError {
   readonly refusal: RefusalReason
@@ -459,7 +499,7 @@ export class SlackRefused extends IntegrationError {
  * What {@link toExternalEvent} needs beyond the payload.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface DecodeOptions {
   /** The event's `source`: the channel or source id. Defaults to {@link SERVICE}. */
@@ -478,7 +518,7 @@ export interface DecodeOptions {
  * Throws {@link SlackRefused} for a delivery {@link classify} refuses.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const toExternalEvent = (payload: unknown, options: DecodeOptions): ExternalEvent => {
   const verdict = classify(payload, options.policy)

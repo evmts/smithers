@@ -31,7 +31,7 @@
  * channel is `workspace`, each relative to the conversation id. A record
  * whose conversation type is unknown takes the narrowest scope.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { isRecord } from "@smthrs/canonical/Record"
 import { Clock, Effect, Schema } from "effect"
@@ -45,7 +45,7 @@ import { nextCursor, type SlackClient } from "./SlackClient.ts"
  * A conversation's type, as far as who may read it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ChannelType = "public" | "private" | "im" | "mpim"
 
@@ -53,7 +53,7 @@ export type ChannelType = "public" | "private" | "im" | "mpim"
  * The access scope a conversation type grants.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const accessScope = (type: ChannelType): AccessScope =>
   type === "public" ? "workspace" : type === "private" ? "container" : "private"
@@ -62,7 +62,7 @@ export const accessScope = (type: ChannelType): AccessScope =>
  * The type of a `conversations.info` channel object.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const channelTypeOf = (channel: Readonly<Record<string, unknown>>): ChannelType =>
   channel["is_im"] === true
@@ -85,7 +85,7 @@ const EVENT_CHANNEL_TYPES: Readonly<Record<string, ChannelType>> = {
  * does not document.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const eventChannelType = (channelType: unknown): ChannelType | undefined =>
   typeof channelType === "string" && Object.hasOwn(EVENT_CHANNEL_TYPES, channelType)
@@ -96,7 +96,7 @@ export const eventChannelType = (channelType: unknown): ChannelType | undefined 
  * A Slack timestamp in Unix milliseconds. `ts` must match `Payload.Ts`.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const tsToMs = (ts: string): number => {
   const [seconds, fraction] = ts.split(".") as [string, string]
@@ -108,7 +108,7 @@ export const tsToMs = (ts: string): number => {
  * which orders with real Slack timestamps.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const msToTs = (ms: number): string =>
   `${Math.floor(ms / 1000)}.${String(Math.floor(ms % 1000) * 1000).padStart(6, "0")}`
@@ -118,7 +118,7 @@ export const msToTs = (ms: number): string =>
  * must match `Payload.Ts`.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const compareTs = (left: string, right: string): number => {
   // Compared in two parts: a double cannot hold ten digits of seconds and six
@@ -140,7 +140,7 @@ const isTs = Schema.is(Ts)
  * Where a record came from.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface RecordContext {
   readonly connectionId: string
@@ -155,7 +155,7 @@ export interface RecordContext {
  * The external id of a message: `<channel>:<ts>`.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const externalId = (channel: string, ts: string): string => `${channel}:${ts}`
 
@@ -163,7 +163,7 @@ export const externalId = (channel: string, ts: string): string => `${channel}:$
  * The link to a message in its workspace, or `null` without a workspace URL.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const messageUrl = (
   workspaceUrl: string | undefined,
@@ -189,7 +189,7 @@ const access = (context: RecordContext): SourceRecord["access"] => ({
  * earlier version of the message.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const tombstone = (ts: string, version: string, context: RecordContext): SourceRecord => ({
   provider: SERVICE,
@@ -218,7 +218,7 @@ export const tombstone = (ts: string, version: string, context: RecordContext): 
  * versioned at the moment it was retrieved.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const messageRecord = (message: Readonly<Record<string, unknown>>, context: RecordContext): SourceRecord => {
   const ts = message["ts"] as string
@@ -251,7 +251,7 @@ export const messageRecord = (message: Readonly<Record<string, unknown>>, contex
  * What {@link eventRecord} needs besides the delivery.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface EventRecordContext {
   readonly connectionId: string
@@ -274,7 +274,7 @@ const asMessage = Schema.decodeUnknownOption(Schema.Struct({ ts: Ts }))
  * versioned at the deletion.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const eventRecord = (payload: unknown, context: EventRecordContext): SourceRecord | undefined => {
   const callback = asCallback(payload)
@@ -301,7 +301,7 @@ export const eventRecord = (payload: unknown, context: EventRecordContext): Sour
  * The adapter's cursor, as stored.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CursorState = Schema.Struct({
   v: Schema.Literal(1),
@@ -319,7 +319,7 @@ export const CursorState = Schema.Struct({
  * The adapter's cursor, as stored.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type CursorState = typeof CursorState.Type
 
@@ -329,7 +329,7 @@ const decodeCursor = Schema.decodeUnknownOption(Schema.fromJsonString(CursorStat
  * What {@link make} needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options {
   readonly connectionId: string
@@ -376,7 +376,7 @@ const decodeFailed = (message: string, details: Record<string, unknown>): Integr
  * its range or an `initialOldest` that is not a Slack timestamp.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (options: Options): SyncAdapter => {
   const pageSize = range("pageSize", options.pageSize, 200, 1, 999)

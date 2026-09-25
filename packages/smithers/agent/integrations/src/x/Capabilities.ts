@@ -11,7 +11,7 @@
  * own account. A host may still connect an organization's account and mark
  * that connection otherwise; who may use either is host policy.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { IntegrationError } from "../core/IntegrationError.ts"
 
@@ -24,7 +24,7 @@ import { IntegrationError } from "../core/IntegrationError.ts"
  * - `dm-write`: send a direct message.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Operation = "read" | "dm-read" | "post" | "dm-write"
 
@@ -32,7 +32,7 @@ export type Operation = "read" | "dm-read" | "post" | "dm-write"
  * Every operation, in declaration order.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const operations: ReadonlyArray<Operation> = ["read", "dm-read", "post", "dm-write"]
 
@@ -40,7 +40,7 @@ export const operations: ReadonlyArray<Operation> = ["read", "dm-read", "post", 
  * The scopes each operation requires: all of them.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const requiredScopes: Readonly<Record<Operation, ReadonlyArray<string>>> = {
   read: ["tweet.read", "users.read"],
@@ -54,7 +54,7 @@ export const requiredScopes: Readonly<Record<Operation, ReadonlyArray<string>>> 
  * account.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const personalAccount = true
 
@@ -62,7 +62,7 @@ export const personalAccount = true
  * The scopes `operation` needs that `granted` lacks.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const missing = (granted: ReadonlyArray<string>, operation: Operation): ReadonlyArray<string> =>
   requiredScopes[operation].filter((scope) => !granted.includes(scope))
@@ -71,7 +71,7 @@ export const missing = (granted: ReadonlyArray<string>, operation: Operation): R
  * Whether `granted` allows `operation`.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const allows = (granted: ReadonlyArray<string>, operation: Operation): boolean =>
   missing(granted, operation).length === 0
@@ -80,7 +80,7 @@ export const allows = (granted: ReadonlyArray<string>, operation: Operation): bo
  * The operations `granted` allows, in declaration order.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const available = (granted: ReadonlyArray<string>): ReadonlyArray<Operation> =>
   operations.filter((operation) => allows(granted, operation))
@@ -90,7 +90,7 @@ export const available = (granted: ReadonlyArray<string>): ReadonlyArray<Operati
  * when it does.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const refusal = (granted: ReadonlyArray<string>, operation: Operation): IntegrationError | undefined => {
   const lacking = missing(granted, operation)

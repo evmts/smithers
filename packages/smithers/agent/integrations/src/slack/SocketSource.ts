@@ -19,9 +19,10 @@
  *
  * There is no signature on this path: the socket itself is authenticated by
  * the app token. Admission is the same fail-closed policy as the webhook
- * (`Payload.classify`): non-empty `allowedTeamIds` and `allowedChannelIds` are
- * required, and a bot's or this app's own message is an echo. A refused
- * envelope is acknowledged and dropped, so Slack does not redeliver it.
+ * (`Payload.classify`): a non-empty `allowedTeamIds` and a non-empty
+ * `allowedChannelIds` or `allowedUserIds` are required, and a bot's or this
+ * app's own message is an echo. A refused envelope is acknowledged and
+ * dropped, so Slack does not redeliver it.
  *
  * Slack closes a connection on its own schedule: a `disconnect` frame asks
  * for a fresh connection, which the source opens at once. A connection that
@@ -31,7 +32,7 @@
  * `link_disabled` disconnect means Socket Mode was turned off for the app, and
  * fails `run` at once.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Duration, Effect, Option, Queue, Schema } from "effect"
 import type { ExternalEvent } from "../core/ExternalEvent.ts"
@@ -45,7 +46,7 @@ import { make as makeClient, type SlackClient } from "./SlackClient.ts"
  * How the source reconnects.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ReconnectOptions {
   /** The first backoff delay, and the pause after a connection drops. Defaults to 1 second. */
@@ -60,12 +61,12 @@ export interface ReconnectOptions {
  * What the source needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options extends SlackConfig {
   /** The source id: every event's `source`. Defaults to `slack`. */
   readonly sourceId?: string | undefined
-  /** Required: non-empty `allowedTeamIds` and `allowedChannelIds`. */
+  /** Required: non-empty `allowedTeamIds`, and non-empty `allowedChannelIds` or `allowedUserIds`. */
   readonly policy: Payload.Policy
   /** An already-built client holding the app token. Built from the config and `env` otherwise. */
   readonly client?: SlackClient | undefined
@@ -88,7 +89,7 @@ export interface Options extends SlackConfig {
  * A Socket Mode source bound to one app.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Source {
   readonly sourceId: string
@@ -107,7 +108,7 @@ export interface Source {
  * `slack:<team>:<event id>`.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const idempotencyKey = (event: ExternalEvent): string => event.dedupeKey
 
@@ -151,7 +152,7 @@ const millis = (name: string, value: Duration.Input | undefined, fallback: numbe
  * allowlist, an empty source id, or a bound outside its range.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (
   options: Options,

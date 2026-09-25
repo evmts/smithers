@@ -11,7 +11,7 @@
  * A poll that finds nothing proposes no cursor, which leaves the stored one
  * alone.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Effect, Schedule } from "effect"
 import { CursorStore } from "./CursorStore.ts"
@@ -25,7 +25,7 @@ import type { IntegrationError } from "./IntegrationError.ts"
  * when the poll returned nothing, which leaves the stored cursor alone.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Batch {
   readonly events: ReadonlyArray<ExternalEvent>
@@ -36,7 +36,7 @@ export interface Batch {
  * How `run` repeats its turns.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface RunOptions {
   /**
@@ -50,7 +50,7 @@ export interface RunOptions {
  * A polling source bound to one cursor.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Source {
   /** The source id, which is also the cursor key and the dedupe scope. */
@@ -71,7 +71,7 @@ export interface Source {
  * The default spacing between turns.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_SCHEDULE: Schedule.Schedule<unknown> = Schedule.spaced("250 millis")
 
@@ -84,7 +84,7 @@ export const DEFAULT_SCHEDULE: Schedule.Schedule<unknown> = Schedule.spaced("250
  * loop with the cursor where it was.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const runWithCursor = <EP, RP, E, R>(
   sourceId: string,

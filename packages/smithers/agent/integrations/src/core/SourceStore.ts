@@ -34,7 +34,7 @@
  *
  * The SQL store requires `Core.Migrations` to have run.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { affectedRows, DurableWriter } from "@smthrs/database/DurableWriter"
 import { Context, Effect, Layer, Option, Ref, Schema, Semaphore } from "effect"
@@ -50,7 +50,7 @@ import type { Changes } from "./Sync.ts"
  * revocation marker for a whole connection.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const WILDCARD = "*"
 
@@ -58,7 +58,7 @@ export const WILDCARD = "*"
  * The most records one `retrieve` returns.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_RETRIEVE_LIMIT = 500
 
@@ -67,7 +67,7 @@ export const MAX_RETRIEVE_LIMIT = 500
  * `["*"]` for all of them. An empty list reads nothing.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Grant = Schema.Struct({
   connectionId: Schema.NonEmptyString,
@@ -78,7 +78,7 @@ export const Grant = Schema.Struct({
  * What a caller may read of one connection.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Grant = typeof Grant.Type
 
@@ -87,7 +87,7 @@ export type Grant = typeof Grant.Type
  * is connection-wide, or that names every container the record lives in.
  *
  * @category authorization
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const covers = (
   allowed: ReadonlyArray<Grant>,
@@ -109,7 +109,7 @@ export const covers = (
  * record that only ever arrived through `apply`.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Stored {
   readonly record: SourceRecord.SourceRecord
@@ -121,7 +121,7 @@ export interface Stored {
  * What a `retrieve` asks for.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Query {
   /** The grants the reader holds. Nothing outside them is returned. */
@@ -143,7 +143,7 @@ export interface Query {
  * `missing` are refusals.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Validity = "current" | "changed" | "deleted" | "revoked" | "denied" | "missing"
 
@@ -151,7 +151,7 @@ export type Validity = "current" | "changed" | "deleted" | "revoked" | "denied" 
  * One reference's answer from `validate`.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Validation {
   readonly reference: SourceRecord.Reference
@@ -164,7 +164,7 @@ export interface Validation {
  * `tombstoned` counts the inserted and updated records that are deletions.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ApplyReport {
   readonly inserted: number
@@ -177,7 +177,7 @@ export interface ApplyReport {
  * One page of one stream's changes, as `commit` applies it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Page {
   readonly provider: string
@@ -191,7 +191,7 @@ export interface Page {
  * ran.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface CommitReport extends ApplyReport {
   /** Records the completed full listing did not contain, now tombstones. */
@@ -204,7 +204,7 @@ export interface CommitReport extends ApplyReport {
  * The store service.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface SourceStore {
   /** Applies records monotonically in one transaction. */
@@ -239,7 +239,7 @@ export interface SourceStore {
  * Service tag for the source record store.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SourceStore: Context.Service<SourceStore, SourceStore> = Context.Service(
   "@smthrs/integrations/SourceStore"
@@ -251,7 +251,7 @@ export const SourceStore: Context.Service<SourceStore, SourceStore> = Context.Se
  * unambiguous.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const cursorKey = (connectionId: string, stream: string): string => `${connectionId}:${stream}`
 
@@ -568,7 +568,7 @@ const memoryTables = (draft: MemoryState): Tables => ({
  * as the process, which is what a test and an ephemeral host want.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeMemory: Effect.Effect<SourceStore> = Effect.gen(function*() {
   const state = yield* Ref.make<MemoryState>({
@@ -673,7 +673,7 @@ export const makeMemory: Effect.Effect<SourceStore> = Effect.gen(function*() {
  * Layer for the in-memory store.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerMemory: Layer.Layer<SourceStore> = Layer.effect(SourceStore, makeMemory)
 
@@ -756,7 +756,7 @@ const fromRow = (row: Row): Effect.Effect<Stored, IntegrationError> =>
  * transaction.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeSql: Effect.Effect<SourceStore, never, SqlClient.SqlClient | DurableWriter> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
@@ -947,7 +947,7 @@ export const makeSql: Effect.Effect<SourceStore, never, SqlClient.SqlClient | Du
  * Layer for the SQL-backed store.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerSql: Layer.Layer<SourceStore, never, SqlClient.SqlClient | DurableWriter> = Layer.effect(
   SourceStore,

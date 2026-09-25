@@ -50,10 +50,14 @@ describe("Config.resolve", () => {
       SMITHERS_SLACK_API_BASE_URL: "http://127.0.0.1:9/api/"
     }
     const fromEnv = Config.resolve({}, env)
+    const reveal = (secret: Redacted.Redacted<string> | undefined) =>
+      secret === undefined ? undefined : Redacted.value(secret)
+    expect([fromEnv.botToken, fromEnv.appToken, fromEnv.signingSecret].map(reveal))
+      .toEqual(["xoxb-env", "xapp-env", "signing-env"])
+    // A resolved config prints no secret.
+    expect(JSON.stringify(fromEnv)).not.toMatch(/xoxb-env|xapp-env|signing-env/)
+    expect(String(fromEnv.botToken)).not.toContain("xoxb-env")
     expect(fromEnv).toMatchObject({
-      botToken: "xoxb-env",
-      appToken: "xapp-env",
-      signingSecret: "signing-env",
       apiBaseUrl: "http://127.0.0.1:9/api",
       maxRateLimitRetries: 3,
       maxRetryAfterSeconds: 30,
@@ -61,8 +65,10 @@ describe("Config.resolve", () => {
     })
     expect(Duration.toMillis(fromEnv.requestTimeout)).toBe(30_000)
     expect(Duration.toMillis(fromEnv.retryBaseDelay)).toBe(250)
-    expect(Config.resolve({ botToken: "xoxb-explicit", apiBaseUrl: "https://example.test/api" }, env))
-      .toMatchObject({ botToken: "xoxb-explicit", apiBaseUrl: "https://example.test/api" })
+    const explicit = Config.resolve({ botToken: "xoxb-explicit", apiBaseUrl: "https://example.test/api" }, env)
+    expect([reveal(explicit.botToken), explicit.apiBaseUrl]).toEqual(["xoxb-explicit", "https://example.test/api"])
+    // An already-redacted secret is accepted as is.
+    expect(reveal(Config.resolve({ appToken: Redacted.make(" xapp-wrapped ") }, {}).appToken)).toBe("xapp-wrapped")
   })
 
   it("reads nothing ambient once an env is passed", () => {
@@ -73,6 +79,26 @@ describe("Config.resolve", () => {
       apiBaseUrl: Config.DEFAULT_API_BASE_URL
     })
     expect(Config.ENV.botToken).toBe("SMITHERS_SLACK_BOT_TOKEN")
+  })
+
+  it("reads the admission policy from comma-separated lists, refusing one that admits nothing", () => {
+    expect(Config.policy({ SMITHERS_SLACK_TEAM_IDS: "T1", SMITHERS_SLACK_USER_IDS: " UOWNER , " })).toEqual({
+      allowedTeamIds: ["T1"],
+      allowedChannelIds: [],
+      allowedUserIds: ["UOWNER"]
+    })
+    expect(Config.policy({
+      SMITHERS_SLACK_TEAM_IDS: "T1,T2",
+      SMITHERS_SLACK_CHANNEL_IDS: "C0001",
+      SMITHERS_SLACK_SELF_USER_IDS: "UBOT"
+    })).toEqual({
+      allowedTeamIds: ["T1", "T2"],
+      allowedChannelIds: ["C0001"],
+      allowedUserIds: [],
+      selfUserIds: ["UBOT"]
+    })
+    expect(() => Config.policy({ SMITHERS_SLACK_TEAM_IDS: "T1" })).toThrow(/allowedUserIds/)
+    expect(() => Config.policy({ SMITHERS_SLACK_USER_IDS: "U1" })).toThrow(/Slack.Config.policy/)
   })
 
   it("refuses a base URL that is not HTTP or HTTPS, and every out-of-range limit", () => {
@@ -99,7 +125,9 @@ describe("Config.resolve", () => {
 
 describe("isWriteMethod and nextCursor", () => {
   it("treats chat, reactions, join and open as writes, except their reads", () => {
-    for (const method of ["chat.postMessage", "chat.update", "reactions.add", "conversations.join", "conversations.open"]) {
+    for (
+      const method of ["chat.postMessage", "chat.update", "reactions.add", "conversations.join", "conversations.open"]
+    ) {
       expect(isWriteMethod(method)).toBe(true)
     }
     for (const method of ["chat.getPermalink", "reactions.get", "conversations.history", "apps.connections.open"]) {
@@ -391,7 +419,9 @@ describe("SlackClient.paginate", () => {
       else if (cursor === "p2") ok(response, { channels: [3], response_metadata: { next_cursor: "p3" } })
       else ok(response, { channels: [4], response_metadata: { next_cursor: "" } })
     })
-    const page = await Effect.runPromise(client().paginate("conversations.list", "channels", { types: "public_channel" }))
+    const page = await Effect.runPromise(
+      client().paginate("conversations.list", "channels", { types: "public_channel" })
+    )
     expect(page).toEqual({ items: [1, 2, 3, 4], truncated: false, nextCursor: null })
     expect(fixture.calls.map((call) => [call.params["cursor"], call.params["limit"], call.params["types"]])).toEqual([
       [undefined, "200", "public_channel"],

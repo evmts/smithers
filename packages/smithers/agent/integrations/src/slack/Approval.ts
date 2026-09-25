@@ -16,7 +16,7 @@
  * another's. It is a namespace, not a secret; sender authorization is checked
  * separately. A prompt with no token, or an empty one, matches nothing.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { SmithersError } from "@smthrs/errors/SmithersError"
 import { Schema } from "effect"
@@ -26,11 +26,13 @@ import { BlockActions } from "./Payload.ts"
 /** Namespace prefix for approval action ids: Smithers APproval. */
 const PREFIX = "sap"
 
+const asBlockActions = Schema.decodeUnknownOption(BlockActions)
+
 /**
  * Slack's limit on an `action_id`, in characters.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ACTION_ID_MAX_LENGTH = 255
 
@@ -38,7 +40,7 @@ export const ACTION_ID_MAX_LENGTH = 255
  * What an approver can choose.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Choice = { readonly kind: "approve" } | { readonly kind: "reject" } | {
   readonly kind: "select"
@@ -49,7 +51,7 @@ export type Choice = { readonly kind: "approve" } | { readonly kind: "reject" } 
  * One option offered in `select` mode.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Option {
   /** The value echoed back as the decision. No `:`. */
@@ -61,7 +63,7 @@ export interface Option {
  * How to build the prompt and read the press.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface PromptSpec {
   readonly mode: "approve" | "select"
@@ -81,7 +83,7 @@ export interface PromptSpec {
  * The decision an `approve`-mode press produces.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Decision {
   readonly approved: boolean
@@ -95,7 +97,7 @@ export interface Decision {
  * The decision a `select`-mode press produces.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Selection {
   readonly selected: string
@@ -112,7 +114,7 @@ export interface Selection {
  * empty id would give every miscalled prompt the same namespace.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const token = (id: string): string => {
   if (typeof id !== "string" || id.length === 0) {
@@ -128,7 +130,7 @@ export const token = (id: string): string => {
  * option key, and an id over {@link ACTION_ID_MAX_LENGTH}.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const actionId = (choice: Choice, approvalToken: string): string => {
   if (approvalToken.includes(":")) {
@@ -156,7 +158,7 @@ export const actionId = (choice: Choice, approvalToken: string): string => {
  * have produced.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseActionId = (value: unknown): (Choice & { readonly token: string }) | null => {
   if (typeof value !== "string") return null
@@ -169,6 +171,21 @@ export const parseActionId = (value: unknown): (Choice & { readonly token: strin
     return { token: approvalToken, kind: "select", key: parts[3] as string }
   }
   return null
+}
+
+/**
+ * The prompt token a `block_actions` press names, or `null` when the payload
+ * is not one press of an approval button. A host with several pending
+ * prompts uses it to find the one to ask {@link decision} about; it decides
+ * nothing by itself.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const pressedToken = (payload: unknown): string | null => {
+  const decoded = asBlockActions(payload)
+  if (decoded._tag === "None" || decoded.value.actions.length !== 1) return null
+  return parseActionId((decoded.value.actions[0] as typeof decoded.value.actions[number]).action_id)?.token ?? null
 }
 
 const button = (text: string, choice: Choice, approvalToken: string, style?: "primary" | "danger") => ({
@@ -185,15 +202,16 @@ const button = (text: string, choice: Choice, approvalToken: string, style?: "pr
  * Raises `INVALID_INPUT` for `select` mode with no options.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const blocks = (spec: PromptSpec): ReadonlyArray<Record<string, unknown>> => {
   const value = spec.token ?? ""
-  if (spec.mode === "select" && (spec.options ?? []).length === 0) {
+  const options = spec.options ?? []
+  if (spec.mode === "select" && options.length === 0) {
     throw new SmithersError("INVALID_INPUT", "Slack approval mode \"select\" requires at least one option.")
   }
   const elements = spec.mode === "select"
-    ? (spec.options ?? []).map((option) => button(option.label, { kind: "select", key: option.key }, value))
+    ? options.map((option) => button(option.label, { kind: "select", key: option.key }, value))
     : [
       button(spec.approveText ?? "Approve", { kind: "approve" }, value, "primary"),
       button(spec.rejectText ?? "Reject", { kind: "reject" }, value, "danger")
@@ -211,7 +229,7 @@ export const blocks = (spec: PromptSpec): ReadonlyArray<Record<string, unknown>>
  * - `unknown-option`: this prompt's token, but a choice it never offered.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type IgnoredReason = "foreign-prompt" | "unauthorized" | "unknown-option"
 
@@ -219,7 +237,7 @@ export type IgnoredReason = "foreign-prompt" | "unauthorized" | "unknown-option"
  * A press that is not an authorized answer. The approval stays pending.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Ignored {
   readonly _tag: "Ignored"
@@ -230,7 +248,7 @@ export interface Ignored {
  * An authorized answer to this prompt.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Decided<A extends Decision | Selection> {
   readonly _tag: "Decided"
@@ -241,15 +259,13 @@ export interface Decided<A extends Decision | Selection> {
  * What {@link decision} reports for a press on a prompt of mode `M`.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Outcome<M extends PromptSpec["mode"] = PromptSpec["mode"]> =
   | Ignored
   | Decided<M extends "select" ? Selection : Decision>
 
 const ignored = (reason: IgnoredReason): Ignored => ({ _tag: "Ignored", reason })
-
-const asBlockActions = Schema.decodeUnknownOption(BlockActions)
 
 /**
  * Maps a delivered `block_actions` payload to an outcome.
@@ -260,7 +276,7 @@ const asBlockActions = Schema.decodeUnknownOption(BlockActions)
  * even as a rejection. `decidedAt` is the resolution wall clock.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decision = <M extends PromptSpec["mode"]>(
   payload: unknown,

@@ -12,7 +12,7 @@
  * someone's own mailbox. Which principal may use it is host policy; this
  * module only states the fact that policy needs.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { IntegrationError } from "../core/IntegrationError.ts"
 
@@ -26,7 +26,7 @@ import { IntegrationError } from "../core/IntegrationError.ts"
  * - `send`: send a message.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Operation = "metadata" | "read" | "draft" | "send"
 
@@ -34,7 +34,7 @@ export type Operation = "metadata" | "read" | "draft" | "send"
  * Every operation, in declaration order.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const operations: ReadonlyArray<Operation> = ["metadata", "read", "draft", "send"]
 
@@ -42,7 +42,7 @@ export const operations: ReadonlyArray<Operation> = ["metadata", "read", "draft"
  * Google's full-access mailbox scope.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SCOPE_FULL = "https://mail.google.com/"
 
@@ -50,7 +50,7 @@ export const SCOPE_FULL = "https://mail.google.com/"
  * Read-only mailbox access.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SCOPE_READONLY = "https://www.googleapis.com/auth/gmail.readonly"
 
@@ -58,7 +58,7 @@ export const SCOPE_READONLY = "https://www.googleapis.com/auth/gmail.readonly"
  * Headers and labels only, no bodies and no search.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SCOPE_METADATA = "https://www.googleapis.com/auth/gmail.metadata"
 
@@ -66,7 +66,7 @@ export const SCOPE_METADATA = "https://www.googleapis.com/auth/gmail.metadata"
  * Drafts and sending.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SCOPE_COMPOSE = "https://www.googleapis.com/auth/gmail.compose"
 
@@ -74,7 +74,7 @@ export const SCOPE_COMPOSE = "https://www.googleapis.com/auth/gmail.compose"
  * Sending only.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SCOPE_SEND = "https://www.googleapis.com/auth/gmail.send"
 
@@ -82,7 +82,7 @@ export const SCOPE_SEND = "https://www.googleapis.com/auth/gmail.send"
  * Everything except permanent deletion.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SCOPE_MODIFY = "https://www.googleapis.com/auth/gmail.modify"
 
@@ -90,7 +90,7 @@ export const SCOPE_MODIFY = "https://www.googleapis.com/auth/gmail.modify"
  * The scopes that each allow an operation: holding any one is enough.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const acceptedScopes: Readonly<Record<Operation, ReadonlyArray<string>>> = {
   metadata: [SCOPE_METADATA, SCOPE_READONLY, SCOPE_MODIFY, SCOPE_FULL],
@@ -103,7 +103,7 @@ export const acceptedScopes: Readonly<Record<Operation, ReadonlyArray<string>>> 
  * Whether connections to this provider are a person's own account.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const personalAccount = true
 
@@ -111,7 +111,7 @@ export const personalAccount = true
  * Whether `granted` allows `operation`.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const allows = (granted: ReadonlyArray<string>, operation: Operation): boolean =>
   acceptedScopes[operation].some((scope) => granted.includes(scope))
@@ -120,7 +120,7 @@ export const allows = (granted: ReadonlyArray<string>, operation: Operation): bo
  * The operations `granted` allows, in declaration order.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const available = (granted: ReadonlyArray<string>): ReadonlyArray<Operation> =>
   operations.filter((operation) => allows(granted, operation))
@@ -130,7 +130,7 @@ export const available = (granted: ReadonlyArray<string>): ReadonlyArray<Operati
  * when it does.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const refusal = (granted: ReadonlyArray<string>, operation: Operation): IntegrationError | undefined =>
   allows(granted, operation) ? undefined : new IntegrationError(

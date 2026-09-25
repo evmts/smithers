@@ -16,7 +16,7 @@
  * name the IANA time zone its rule is expanded in, which is what keeps a
  * weekly 9:00 at 9:00 local time across a daylight-saving change.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Schema } from "effect"
 
@@ -32,7 +32,7 @@ const open = <Fields extends Schema.Struct.Fields>(fields: Fields) => Schema.Str
  * nothing that forms a `.` or `..` path segment.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CALENDAR_ID_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._%+@#-]{1,1024}$/
 
@@ -40,7 +40,7 @@ export const CALENDAR_ID_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._%+@#-]{1,1024}$/
  * A calendar id.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CalendarId = Schema.String.check(Schema.isPattern(CALENDAR_ID_PATTERN))
 
@@ -48,7 +48,7 @@ export const CalendarId = Schema.String.check(Schema.isPattern(CALENDAR_ID_PATTE
  * Whether `value` may name a calendar in a request.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isCalendarId = (value: unknown): value is string =>
   typeof value === "string" && CALENDAR_ID_PATTERN.test(value)
@@ -65,7 +65,7 @@ const validCalendarDate = (year: number, month: number, day: number): boolean =>
  * Whether `value` is an RFC 3339 date-time with an explicit offset.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isDateTime = (value: unknown): value is string => {
   if (typeof value !== "string") return false
@@ -79,7 +79,7 @@ export const isDateTime = (value: unknown): value is string => {
  * Whether `value` is a `YYYY-MM-DD` calendar date that exists.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isCalendarDate = (value: unknown): value is string => {
   if (typeof value !== "string") return false
@@ -95,7 +95,7 @@ export const isCalendarDate = (value: unknown): value is string => {
  * rules to expand it with.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isTimeZone = (value: unknown): value is string => {
   if (typeof value !== "string" || !/^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/.test(value)) return false
@@ -111,7 +111,7 @@ export const isTimeZone = (value: unknown): value is string => {
  * An RFC 3339 date-time with an explicit offset.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DateTime = Schema.String.check(
   Schema.makeFilter((value) => isDateTime(value) || "an RFC 3339 date-time with an explicit offset")
@@ -121,7 +121,7 @@ export const DateTime = Schema.String.check(
  * A `YYYY-MM-DD` calendar date.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CalendarDate = Schema.String.check(
   Schema.makeFilter((value) => isCalendarDate(value) || "a YYYY-MM-DD calendar date")
@@ -131,7 +131,7 @@ export const CalendarDate = Schema.String.check(
  * An IANA time zone name.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const TimeZone = Schema.String.check(
   Schema.makeFilter((value) => isTimeZone(value) || "an IANA time zone name")
@@ -141,7 +141,7 @@ export const TimeZone = Schema.String.check(
  * An event's start or end as Google returns it.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventTime = open({
   date: Schema.optional(Schema.String),
@@ -153,7 +153,7 @@ export const EventTime = open({
  * An event's start or end as Google returns it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type EventTime = typeof EventTime.Type
 
@@ -161,7 +161,7 @@ export type EventTime = typeof EventTime.Type
  * A person Google names on an event.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Person = open({
   id: Schema.optional(Schema.String),
@@ -174,7 +174,7 @@ export const Person = open({
  * An attendee Google lists on an event.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Attendee = open({
   email: Schema.optional(Schema.String),
@@ -192,7 +192,7 @@ export const Attendee = open({
  * `status` reads as `confirmed`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Event = open({
   id: Schema.String,
@@ -224,7 +224,7 @@ export const Event = open({
  * A calendar event resource.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Event = typeof Event.Type
 
@@ -232,7 +232,7 @@ export type Event = typeof Event.Type
  * One page of an event listing.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventList = open({
   items: Schema.optional(Schema.Array(Event)),
@@ -245,7 +245,7 @@ export const EventList = open({
  * Whether Google reports the event, or this instance of it, as cancelled.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isCancelled = (event: Event): boolean => event.status === "cancelled"
 
@@ -256,7 +256,7 @@ export const isCancelled = (event: Event): boolean => event.status === "cancelle
  * IANA zone the time is shown and, for a recurring event, expanded in.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventTimeInput = Schema.Struct({
   date: Schema.optionalKey(CalendarDate),
@@ -264,7 +264,8 @@ export const EventTimeInput = Schema.Struct({
   timeZone: Schema.optionalKey(TimeZone)
 }).check(
   Schema.makeFilter((time) =>
-    (time.date === undefined) !== (time.dateTime === undefined) || "an event time names exactly one of date and dateTime"
+    (time.date === undefined) !== (time.dateTime === undefined) ||
+    "an event time names exactly one of date and dateTime"
   )
 )
 
@@ -272,7 +273,7 @@ export const EventTimeInput = Schema.Struct({
  * The start or end of an event a caller writes.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type EventTimeInput = typeof EventTimeInput.Type
 
@@ -283,7 +284,7 @@ export type EventTimeInput = typeof EventTimeInput.Type
  * `EXDATE;TZID=America/Los_Angeles:20261225T090000`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RecurrenceLine = Schema.String.check(Schema.isPattern(/^(?:RRULE|EXRULE|RDATE|EXDATE)[:;][^\r\n]+$/))
 
@@ -291,7 +292,7 @@ export const RecurrenceLine = Schema.String.check(Schema.isPattern(/^(?:RRULE|EX
  * An attendee a caller invites.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const AttendeeInput = Schema.Struct({
   email: Schema.String.check(Schema.isPattern(/^[^\s@]+@[^\s@]+$/)),
@@ -304,7 +305,7 @@ export const AttendeeInput = Schema.Struct({
  * or shared with every attendee's copy.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ExtendedPropertiesInput = Schema.Struct({
   private: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
@@ -340,7 +341,7 @@ const spanIssue = (start: EventTimeInput, end: EventTimeInput): string | undefin
  * recurring event must name the time zone of both.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventInput = Schema.Struct({
   ...fields,
@@ -364,7 +365,7 @@ export const EventInput = Schema.Struct({
  * The event a caller asks to make exist.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type EventInput = typeof EventInput.Type
 
@@ -375,7 +376,7 @@ export type EventInput = typeof EventInput.Type
  * `status: "cancelled"` cancels, and `confirmed` restores a cancelled event.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventPatch = Schema.Struct({
   ...fields,
@@ -394,7 +395,7 @@ export const EventPatch = Schema.Struct({
  * The fields a caller changes on an existing event.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type EventPatch = typeof EventPatch.Type
 
@@ -432,7 +433,7 @@ const sameEntries = (
  * An empty answer means the existing event is the one the caller asked for.
  *
  * @category comparisons
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const differences = (desired: EventInput, existing: Event): ReadonlyArray<string> => {
   const found: Array<string> = []
@@ -480,7 +481,7 @@ export const differences = (desired: EventInput, existing: Event): ReadonlyArray
  * an all-day one.
  *
  * @category comparisons
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isOccurrence = (event: Event, originalStart: EventTimeInput): boolean => {
   const original = event.originalStartTime

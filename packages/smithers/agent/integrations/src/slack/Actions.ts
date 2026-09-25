@@ -22,10 +22,15 @@
  * and `conversations.replies` when `include_all_metadata` is set. That is
  * exercised against fixture servers here, not against a live workspace.
  *
+ * One Slack app can speak as several personas: a post may name a
+ * {@link Persona}, a display name and icon Slack shows instead of the app's
+ * own. That needs the `chat:write.customize` bot scope; without it Slack
+ * refuses the post (`missing_scope`), which is a known outcome.
+ *
  * Each action resolves its client through `Connections.SlackConnections`, so
  * the channel must be one the connection grants.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Action, type FlowRuntime } from "@smthrs/flow"
 import { Effect, Layer, Schema } from "effect"
@@ -39,7 +44,7 @@ import { nextCursor, type SlackClient } from "./SlackClient.ts"
  * The metadata event type every post is stamped with.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const METADATA_EVENT_TYPE = "smithers_message"
 
@@ -47,7 +52,7 @@ export const METADATA_EVENT_TYPE = "smithers_message"
  * The longest message text an action sends. Slack truncates beyond it.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_TEXT_LENGTH = 40_000
 
@@ -55,17 +60,48 @@ export const MAX_TEXT_LENGTH = 40_000
  * A reconcile key: 1 to 128 letters, digits, and `.`, `_`, `:`, `/`, `-`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SmithersKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9._:/-]{1,128}$/))
 
 const MessageText = Schema.NonEmptyString.check(Schema.isMaxLength(MAX_TEXT_LENGTH))
 
 /**
+ * The name and icon a post is shown under, for one app speaking as several
+ * roles. Give at most one of `iconEmoji` (`:robot_face:`) and `iconUrl`.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Persona = Schema.Struct({
+  /** The display name, 1 to 80 characters. */
+  username: Schema.NonEmptyString.check(Schema.isMaxLength(80)),
+  iconEmoji: Schema.optional(Schema.String.check(Schema.isPattern(/^:[a-z0-9_+'-]{1,100}:$/))),
+  iconUrl: Schema.optional(Schema.String.check(Schema.isPattern(/^https:\/\/\S{1,2000}$/)))
+}).check(
+  Schema.makeFilter((persona) =>
+    persona.iconEmoji === undefined || persona.iconUrl === undefined || "must name one icon, not both"
+  )
+)
+
+/**
+ * The persona fields `chat.postMessage` takes.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const personaParams = (persona: typeof Persona.Type | undefined): Readonly<Record<string, string>> =>
+  persona === undefined ? {} : {
+    username: persona.username,
+    ...(persona.iconEmoji === undefined ? {} : { icon_emoji: persona.iconEmoji }),
+    ...(persona.iconUrl === undefined ? {} : { icon_url: persona.iconUrl })
+  }
+
+/**
  * What {@link PostMessage} needs.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PostMessagePayload = Schema.Struct({
   connectionId: Schema.NonEmptyString,
@@ -76,14 +112,16 @@ export const PostMessagePayload = Schema.Struct({
   /** Block Kit blocks; `text` stays the notification fallback. */
   blocks: Schema.optional(Schema.Array(Schema.Json)),
   /** The reconcile key stamped into the message's metadata. */
-  key: SmithersKey
+  key: SmithersKey,
+  /** Shows the post under this name and icon. Needs `chat:write.customize`. */
+  persona: Schema.optional(Persona)
 })
 
 /**
  * What Slack accepted.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Posted = Schema.Struct({
   connectionId: Schema.String,
@@ -98,7 +136,7 @@ export const Posted = Schema.Struct({
  * Posts a message to a channel or thread.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PostMessage = Action.make("integrations/slack/post-message", {
   payload: PostMessagePayload,
@@ -111,7 +149,7 @@ export const PostMessage = Action.make("integrations/slack/post-message", {
  * What {@link UpdateMessage} needs.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const UpdateMessagePayload = Schema.Struct({
   connectionId: Schema.NonEmptyString,
@@ -125,7 +163,7 @@ export const UpdateMessagePayload = Schema.Struct({
  * The message Slack updated.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Updated = Schema.Struct({
   connectionId: Schema.String,
@@ -140,7 +178,7 @@ export const Updated = Schema.Struct({
  * update again after an `outcomeUnknown`; the action itself never does.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const UpdateMessage = Action.make("integrations/slack/update-message", {
   payload: UpdateMessagePayload,
@@ -153,7 +191,7 @@ export const UpdateMessage = Action.make("integrations/slack/update-message", {
  * What {@link Reconcile} needs.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ReconcilePayload = Schema.Struct({
   connectionId: Schema.NonEmptyString,
@@ -171,7 +209,7 @@ export const ReconcilePayload = Schema.Struct({
  * Whether the key is in the conversation.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ReconcileStatus = Schema.Literals(["found", "absent", "inconclusive"])
 
@@ -179,7 +217,7 @@ export const ReconcileStatus = Schema.Literals(["found", "absent", "inconclusive
  * What {@link Reconcile} found.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Reconciled = Schema.Struct({
   connectionId: Schema.String,
@@ -198,7 +236,7 @@ export const Reconciled = Schema.Struct({
  * a replayed run sees the answer its first execution acted on.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Reconcile = Action.make("integrations/slack/reconcile-post", {
   payload: ReconcilePayload,
@@ -212,7 +250,7 @@ export const Reconcile = Action.make("integrations/slack/reconcile-post", {
  * The metadata a post carries so {@link Reconcile} can find it.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const metadata = (key: string) => ({ event_type: METADATA_EVENT_TYPE, event_payload: { smithers_key: key } })
 
@@ -230,7 +268,7 @@ const isTs = Schema.is(Ts)
  * What {@link findPosted} searches.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface FindOptions {
   readonly channel: string
@@ -244,7 +282,7 @@ export interface FindOptions {
  * The search {@link Reconcile} runs, over a client.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const findPosted = (
   client: SlackClient,
@@ -303,7 +341,7 @@ const permalinkOf = (client: SlackClient, channel: string, ts: string) =>
  * Implements {@link PostMessage} over the connections in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerPostMessage: Layer.Layer<
   Action.Requirement<"integrations/slack/post-message">,
@@ -317,7 +355,8 @@ export const layerPostMessage: Layer.Layer<
       text: payload.text,
       thread_ts: payload.threadTs,
       blocks: payload.blocks,
-      metadata: metadata(payload.key)
+      metadata: metadata(payload.key),
+      ...personaParams(payload.persona)
     })
     const ts = answer["ts"]
     if (!isTs(ts)) {
@@ -344,7 +383,7 @@ export const layerPostMessage: Layer.Layer<
  * Implements {@link UpdateMessage} over the connections in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerUpdateMessage: Layer.Layer<
   Action.Requirement<"integrations/slack/update-message">,
@@ -367,7 +406,7 @@ export const layerUpdateMessage: Layer.Layer<
  * Implements {@link Reconcile} over the connections in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerReconcile: Layer.Layer<
   Action.Requirement<"integrations/slack/reconcile-post">,
@@ -385,7 +424,7 @@ export const layerReconcile: Layer.Layer<
  * Every Slack action's implementation, in one layer.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer: Layer.Layer<
   | Action.Requirement<"integrations/slack/post-message">

@@ -15,7 +15,7 @@
  * shape of that hook, under which only the named principals resolve personal
  * connections.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type { Credential } from "@smthrs/control/Credential"
 import { Effect, type Redacted, Schema } from "effect"
@@ -25,7 +25,7 @@ import { IntegrationError } from "./IntegrationError.ts"
  * The shape a connection id must have: lowercase, digits, and single hyphens.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ConnectionId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/))
 
@@ -33,7 +33,7 @@ export const ConnectionId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9]
  * A journal-safe reference to a stored credential.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CredentialReference = Schema.Struct({
   id: Schema.NonEmptyString,
@@ -44,7 +44,7 @@ export const CredentialReference = Schema.Struct({
  * One configured provider connection.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Connection = Schema.Struct({
   id: ConnectionId,
@@ -67,7 +67,7 @@ export const Connection = Schema.Struct({
  * One configured provider connection.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Connection = typeof Connection.Type
 
@@ -75,7 +75,7 @@ export type Connection = typeof Connection.Type
  * Decodes an unknown value as a {@link Connection}.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decode = Schema.decodeUnknownEffect(Connection)
 
@@ -83,7 +83,7 @@ export const decode = Schema.decodeUnknownEffect(Connection)
  * The container id that allows every container of a connection.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ANY_CONTAINER = "*"
 
@@ -92,7 +92,7 @@ export const ANY_CONTAINER = "*"
  * or lists {@link ANY_CONTAINER}. An empty list allows nothing.
  *
  * @category authorization
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const containersAllowed = (connection: Pick<Connection, "containers">, container: string): boolean =>
   connection.containers.includes(ANY_CONTAINER) || connection.containers.includes(container)
@@ -104,7 +104,7 @@ export const containersAllowed = (connection: Pick<Connection, "containers">, co
  * failure is passed through.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Authorize = (principal: string, connection: Connection) => Effect.Effect<boolean, IntegrationError>
 
@@ -116,7 +116,7 @@ export type Authorize = (principal: string, connection: Connection) => Effect.Ef
  * by `shared`, which defaults to allowing every principal.
  *
  * @category authorization
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const personalPolicy = (options: {
   readonly personalPrincipals: ReadonlyArray<string>
@@ -138,7 +138,7 @@ export const personalPolicy = (options: {
  * resolved value stays `Redacted`.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const resolveSecret = (options: {
   readonly credentials: Credential

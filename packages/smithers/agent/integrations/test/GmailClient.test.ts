@@ -25,7 +25,10 @@ afterEach(async () => {
 
 const TOKEN = "ya29.fixture-access-token"
 
-const connection = (scopes: ReadonlyArray<string> = [Capabilities.SCOPE_FULL], extra: Partial<Connection> = {}): Connection => ({
+const connection = (
+  scopes: ReadonlyArray<string> = [Capabilities.SCOPE_FULL],
+  extra: Partial<Connection> = {}
+): Connection => ({
   id: "assistant-mail",
   provider: "gmail",
   label: "Assistant mailbox",
@@ -186,7 +189,9 @@ describe("Gmail capabilities", () => {
   })
 
   it("does not gate a client with no bound connection", async () => {
-    fixture = await startFixture((_request, response) => json(response, 200, { emailAddress: "a@example.test", historyId: "1" }))
+    fixture = await startFixture((_request, response) =>
+      json(response, 200, { emailAddress: "a@example.test", historyId: "1" })
+    )
     const unbound = client({ connection: undefined })
     expect(unbound.connectionId).toBeUndefined()
     expect((await Effect.runPromise(unbound.getProfile)).historyId).toBe("1")
@@ -318,15 +323,20 @@ describe("GmailClient requests", () => {
 
   it("reads history with its filters", async () => {
     fixture = await startFixture((_request, response) =>
-      json(response, 200, { history: [{ id: "81", messagesAdded: [{ message: { id: "m2", threadId: "t2" } }] }], historyId: "90" })
+      json(response, 200, {
+        history: [{ id: "81", messagesAdded: [{ message: { id: "m2", threadId: "t2" } }] }],
+        historyId: "90"
+      })
     )
-    const page = await Effect.runPromise(client().listHistory({
-      startHistoryId: "80",
-      pageToken: "h2",
-      maxResults: 100,
-      labelId: "INBOX",
-      historyTypes: ["messageAdded", "messageDeleted"]
-    }))
+    const page = await Effect.runPromise(
+      client().listHistory({
+        startHistoryId: "80",
+        pageToken: "h2",
+        maxResults: 100,
+        labelId: "INBOX",
+        historyTypes: ["messageAdded", "messageDeleted"]
+      })
+    )
     expect(page.historyId).toBe("90")
     const sent = url(fixture.requests[0]!)
     expect(sent.pathname).toBe("/gmail/v1/users/me/history")
@@ -336,7 +346,9 @@ describe("GmailClient requests", () => {
   })
 
   it("addresses a named mailbox", async () => {
-    fixture = await startFixture((_request, response) => json(response, 200, { emailAddress: "a@example.test", historyId: "1" }))
+    fixture = await startFixture((_request, response) =>
+      json(response, 200, { emailAddress: "a@example.test", historyId: "1" })
+    )
     await Effect.runPromise(client({ userId: "assistant@example.test" }).getProfile)
     expect(fixture.requests[0]?.url).toBe("/gmail/v1/users/assistant%40example.test/profile")
   })
@@ -487,7 +499,9 @@ describe("GmailClient retries and ambiguity", () => {
 
   it("reports a second 401 as permission-denied", async () => {
     const tokens = rotating(["revoked-a", "revoked-b"])
-    fixture = await startFixture((_request, response) => json(response, 401, { error: { message: "Invalid Credentials" } }))
+    fixture = await startFixture((_request, response) =>
+      json(response, 401, { error: { message: "Invalid Credentials" } })
+    )
     const error = await failure(client({ token: tokens.source }).getProfile)
     expect(error.reason).toBe("permission-denied")
     expect(error.details).toMatchObject({ unauthorized: true, retryable: false })
@@ -498,7 +512,9 @@ describe("GmailClient retries and ambiguity", () => {
   it("classifies a scope refusal, a missing message, and a bad request", async () => {
     fixture = await startFixture((request, response) => {
       if (request.url.includes("/profile")) {
-        json(response, 403, { error: { message: "Insufficient Permission", errors: [{ reason: "insufficientPermissions" }] } })
+        json(response, 403, {
+          error: { message: "Insufficient Permission", errors: [{ reason: "insufficientPermissions" }] }
+        })
         return
       }
       if (request.url.includes("/messages/gone")) {

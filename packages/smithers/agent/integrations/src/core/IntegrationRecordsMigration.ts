@@ -1,7 +1,7 @@
 /**
  * The source record store's schema installation.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
@@ -20,7 +20,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient"
  * `integrationCursors`.
  *
  * @category migrations
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const integrationRecords: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient

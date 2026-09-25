@@ -10,7 +10,7 @@
  * Posts are immutable (an edit is a new post id), so `version` is `null`. A
  * post's link is X's id-only status URL; a direct message has no public link.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type { SourceRecord } from "../core/SourceRecord.ts"
 import type { DmEvent, Includes, Tweet, User } from "./XClient.ts"
@@ -19,7 +19,7 @@ import type { DmEvent, Includes, Tweet, User } from "./XClient.ts"
  * The record provider name.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PROVIDER = "x"
 
@@ -27,7 +27,7 @@ export const PROVIDER = "x"
  * The record kind of a mention.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MENTION_KIND = "mention"
 
@@ -35,7 +35,7 @@ export const MENTION_KIND = "mention"
  * The record kind of a direct message.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DIRECT_MESSAGE_KIND = "direct-message"
 
@@ -43,7 +43,7 @@ export const DIRECT_MESSAGE_KIND = "direct-message"
  * Where a record came from.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Context {
   readonly connectionId: string
@@ -54,7 +54,7 @@ export interface Context {
  * The link to a post.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const tweetUrl = (id: string): string => `https://x.com/i/web/status/${id}`
 
@@ -62,7 +62,7 @@ export const tweetUrl = (id: string): string => `https://x.com/i/web/status/${id
  * An ISO 8601 instant in Unix milliseconds, or `null`.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const instant = (value: string | undefined): number | null => {
   const ms = value === undefined ? Number.NaN : Date.parse(value)
@@ -81,7 +81,7 @@ const author = (id: string | undefined, user: User | undefined) =>
  * A post that mentions `userId`, as a public record.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const fromMention = (
   tweet: Tweet,
@@ -117,7 +117,7 @@ export const fromMention = (
  * A direct-message event, as a record private to its conversation.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const fromDirectMessage = (event: DmEvent, includes: Includes | undefined, context: Context): SourceRecord => {
   const sender = userOf(includes, event.sender_id)

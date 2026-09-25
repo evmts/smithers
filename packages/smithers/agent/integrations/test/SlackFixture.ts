@@ -147,7 +147,7 @@ const readBody = (request: IncomingMessage): Promise<string> =>
 const acceptPeer = (socket: Socket, path: string): Peer => {
   const received: Array<string> = []
   const inbox = channel<string>()
-  let pending = Buffer.alloc(0)
+  let pending: Buffer = Buffer.alloc(0)
   let closing = false
   const closed = new Promise<void>((resolve) => socket.on("close", () => resolve()))
   const write = (bytes: Buffer) => {

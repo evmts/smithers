@@ -85,15 +85,17 @@ describe("OAuthToken refresh", () => {
   it("serves the cached token until its expiry minus the skew, then refreshes", async () => {
     await mintingEndpoint({ expires_in: 3600 })
     const source = OAuthToken.make(endpoint({ skew: "60 seconds" }))
-    const seen = await Effect.runPromise(Effect.gen(function*() {
-      const first = yield* source.token
-      yield* TestClock.adjust("58 minutes")
-      const cached = yield* source.token
-      yield* TestClock.adjust("1 minute")
-      const refreshed = yield* source.token
-      const again = yield* source.token
-      return [first, cached, refreshed, again].map(value)
-    }).pipe(Effect.provide(TestClock.layer())))
+    const seen = await Effect.runPromise(
+      Effect.gen(function*() {
+        const first = yield* source.token
+        yield* TestClock.adjust("58 minutes")
+        const cached = yield* source.token
+        yield* TestClock.adjust("1 minute")
+        const refreshed = yield* source.token
+        const again = yield* source.token
+        return [first, cached, refreshed, again].map(value)
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(seen).toEqual(["access-1", "access-1", "access-2", "access-2"])
     expect(tokenRequests()).toHaveLength(2)
   })
@@ -135,7 +137,9 @@ describe("OAuthToken refresh", () => {
       json(response, 200, { access_token: `access-${minted}`, expires_in: 3600 })
     })
     const source = OAuthToken.make(endpoint())
-    const fiber = Effect.runFork(Effect.all(Array.from({ length: 5 }, () => source.token), { concurrency: "unbounded" }))
+    const fiber = Effect.runFork(
+      Effect.all(Array.from({ length: 5 }, () => source.token), { concurrency: "unbounded" })
+    )
     await (fixture as Fixture).arrived
     release?.()
     const tokens = await Effect.runPromise(Fiber.join(fiber))
@@ -449,7 +453,8 @@ describe("OAuthToken credential store", () => {
           yield* credentials.create({ ...REFERENCE, secret: Redacted.make(REFRESH) })
           const store = OAuthToken.credentialStore(credentials, REFERENCE)
           // A competing rotation lands between `rotate`'s read and its write.
-          interleave = () => Effect.runPromise(credentials.rotate(REFERENCE, Redacted.make("rotated-elsewhere")))
+          interleave = () =>
+            Effect.runPromise(credentials.rotate(REFERENCE, Redacted.make("rotated-elsewhere"))).then(() => undefined)
           const outcome = yield* store.replace(Redacted.make(REFRESH), Redacted.make("rotated-mine"))
           return [outcome, value(yield* credentials.resolve(REFERENCE))]
         }),

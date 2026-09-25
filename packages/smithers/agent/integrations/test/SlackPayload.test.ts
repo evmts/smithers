@@ -76,6 +76,20 @@ describe("requirePolicy", () => {
     expect(() => Payload.requirePolicy({ allowedTeamIds: [""], allowedChannelIds: ["C1"] }, "door")).toThrow()
     expect(() => Payload.requirePolicy({ allowedTeamIds: "T1" as never, allowedChannelIds: ["C1"] }, "door"))
       .toThrow()
+    expect(() => Payload.requirePolicy({ allowedTeamIds: ["T1"], allowedUserIds: [] }, "door")).toThrow()
+    expect(() => Payload.requirePolicy({ allowedTeamIds: ["T1"], allowedUserIds: [""] }, "door")).toThrow()
+    expect(() => Payload.requirePolicy({ allowedTeamIds: ["T1"], allowedUserIds: "U1" as never }, "door")).toThrow()
+    expect(() =>
+      Payload.requirePolicy({ allowedTeamIds: ["T1"], allowedChannelIds: [""], allowedUserIds: ["U1"] }, "door")
+    ).toThrow()
+    expect(() =>
+      Payload.requirePolicy({ allowedTeamIds: ["T1"], allowedUserIds: ["U1"], selfUserIds: [7] as never }, "door")
+    ).toThrow()
+  })
+
+  it("accepts people in place of conversations", () => {
+    const people: Payload.Policy = { allowedTeamIds: ["T1"], allowedUserIds: ["U1"] }
+    expect(Payload.requirePolicy(people, "door")).toBe(people)
   })
 })
 
@@ -136,7 +150,13 @@ describe("classify", () => {
     const edited = message({
       subtype: "message_changed",
       user: undefined,
-      message: { type: "message", user: "U1", text: "new", ts: "1700000000.000100", edited: { ts: "1700000005.000000" } }
+      message: {
+        type: "message",
+        user: "U1",
+        text: "new",
+        ts: "1700000000.000100",
+        edited: { ts: "1700000005.000000" }
+      }
     })
     expect(verdict(callback(edited))).toMatchObject({
       _tag: "Admitted",
@@ -155,7 +175,9 @@ describe("classify", () => {
   })
 
   it("names only the base type when the subtype is not a signal segment", () => {
-    expect(verdict(callback(message({ subtype: "odd:subtype" })))).toMatchObject({ names: ["integration:slack:message"] })
+    expect(verdict(callback(message({ subtype: "odd:subtype" })))).toMatchObject({
+      names: ["integration:slack:message"]
+    })
   })
 
   it("admits a person's button press, reading its workspace and channel wherever Slack put them", () => {
@@ -168,9 +190,49 @@ describe("classify", () => {
     })
     expect(verdict(press({ team: null, channel: undefined }))).toMatchObject({ _tag: "Admitted", teamId: "T1" })
     expect(verdict(press({ team: null, user: { id: "U1" } }))).toMatchObject({ reason: "team-not-allowed" })
-    expect(verdict(press({ channel: undefined, container: undefined }))).toMatchObject({ reason: "channel-not-allowed" })
+    expect(verdict(press({ channel: undefined, container: undefined }))).toMatchObject({
+      reason: "channel-not-allowed"
+    })
     expect(verdict(press({ user: { id: "U7", team_id: "T1" } }), { selfUserIds: ["U7"] }))
       .toMatchObject({ reason: "self-author" })
+  })
+
+  describe("with allowedUserIds", () => {
+    const owner: Payload.Policy = { allowedTeamIds: ["T1"], allowedUserIds: ["UOWNER"] }
+    const dm = (fields: Record<string, unknown> = {}) =>
+      callback(message({ channel: "D0OWNER", channel_type: "im", user: "UOWNER", ...fields }))
+
+    it("admits the owner's direct message before its conversation is listed", () => {
+      expect(Payload.isDirectMessage("D0OWNER")).toBe(true)
+      expect(Payload.isDirectMessage("C1")).toBe(false)
+      expect(Payload.classify(dm(), owner)).toMatchObject({ _tag: "Admitted", channelId: "D0OWNER" })
+      expect(Payload.classify(press({ user: { id: "UOWNER" }, channel: { id: "D0OWNER" } }), owner))
+        .toMatchObject({ _tag: "Admitted", channelId: "D0OWNER" })
+    })
+
+    it("refuses anyone else, and an unlisted channel even for the owner", () => {
+      expect(Payload.classify(dm({ user: "U2" }), owner)).toEqual({ _tag: "Refused", reason: "user-not-allowed" })
+      expect(Payload.classify(dm({ user: undefined }), owner)).toMatchObject({ reason: "user-not-allowed" })
+      expect(Payload.classify(press({ channel: { id: "D0OWNER" } }), owner)).toMatchObject({
+        reason: "user-not-allowed"
+      })
+      expect(Payload.classify(dm({ channel: "C1" }), owner)).toMatchObject({ reason: "channel-not-allowed" })
+    })
+
+    it("still refuses echoes first, so the app's own DM reply is named as one", () => {
+      expect(Payload.classify(dm({ bot_id: "B1", user: "UBOT" }), owner)).toMatchObject({ reason: "bot-author" })
+      expect(Payload.classify(dm({ user: "UBOT" }), owner)).toMatchObject({ reason: "self-author" })
+    })
+
+    it("restricts a listed channel to the listed people", () => {
+      const both: Payload.Policy = { ...owner, allowedChannelIds: ["C1"] }
+      expect(Payload.classify(callback(message({ user: "UOWNER" })), both)).toMatchObject({ _tag: "Admitted" })
+      expect(Payload.classify(callback(message({ user: "U1" })), both)).toMatchObject({ reason: "user-not-allowed" })
+    })
+
+    it("admits no direct message without people", () => {
+      expect(verdict(dm({ channel: "D9" }))).toMatchObject({ reason: "channel-not-allowed" })
+    })
   })
 })
 

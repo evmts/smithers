@@ -7,59 +7,59 @@
  * through the same fail-closed workspace and channel allowlists and refuses
  * the app's own messages.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 /**
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as Actions from "./slack/Actions.ts"
 
 /**
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as Approval from "./slack/Approval.ts"
 
 /**
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as Config from "./slack/Config.ts"
 
 /**
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as Connections from "./slack/Connections.ts"
 
 /**
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as Payload from "./slack/Payload.ts"
 
 /**
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as SlackClient from "./slack/SlackClient.ts"
 
 /**
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as SocketSource from "./slack/SocketSource.ts"
 
 /**
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as Sync from "./slack/Sync.ts"
 
 /**
  * @category verification
- * @since 0.1.0
+ * @since 1.0.0
  */
 export * as Webhook from "./slack/Webhook.ts"

@@ -23,7 +23,7 @@
  * Block Kit interactions over HTTP arrive form-encoded and are not handled
  * here; Socket Mode delivers them through `Slack.SocketSource`.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type { Channel, InboundResult, RawInbound } from "@smthrs/control/Channels"
 import type { InvalidInput } from "@smthrs/control/ControlError"
@@ -39,7 +39,7 @@ import * as Payload from "./Payload.ts"
  * The service segment of every Slack signal name.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SERVICE = Payload.SERVICE
 
@@ -47,7 +47,7 @@ export const SERVICE = Payload.SERVICE
  * The prefix of the `X-Slack-Signature` header and of the signed base string.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SIGNATURE_VERSION = "v0"
 
@@ -55,7 +55,7 @@ export const SIGNATURE_VERSION = "v0"
  * How far `X-Slack-Request-Timestamp` may sit from now: five minutes.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_TIMESTAMP_SKEW_MS = 300_000
 
@@ -64,7 +64,7 @@ export const DEFAULT_TIMESTAMP_SKEW_MS = 300_000
  * window, never widen it past Slack's own.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_TIMESTAMP_SKEW_MS = DEFAULT_TIMESTAMP_SKEW_MS
 
@@ -72,7 +72,7 @@ export const MAX_TIMESTAMP_SKEW_MS = DEFAULT_TIMESTAMP_SKEW_MS
  * What {@link verify} allows.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface VerifyOptions {
   /** How far the timestamp may sit from now, in milliseconds. 0 to {@link MAX_TIMESTAMP_SKEW_MS}. */
@@ -84,7 +84,7 @@ export interface VerifyOptions {
  * The exact bytes Slack signs: `v0:<timestamp>:<raw body>`.
  *
  * @category verification
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const signatureBase = (timestamp: string, body: Uint8Array): Uint8Array =>
   Buffer.concat([Buffer.from(`${SIGNATURE_VERSION}:${timestamp}:`), body])
@@ -98,7 +98,7 @@ export const signatureBase = (timestamp: string, body: Uint8Array): Uint8Array =
  * signature that does not match the raw body.
  *
  * @category verification
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const verify = (raw: RawInbound, secret: string, options: VerifyOptions = {}): boolean => {
   const timestamp = readHeader(raw, "x-slack-request-timestamp")
@@ -132,7 +132,7 @@ const parse = (body: Uint8Array): unknown => {
  * other payload.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const challenge = (payload: unknown): string | undefined =>
   isUrlVerification(payload) ? payload.challenge : undefined
@@ -142,7 +142,7 @@ export const challenge = (payload: unknown): string | undefined =>
  * `slack:<team_id>:<event_id>`, or `undefined` when the payload carries none.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const idempotencyKey = (payload: unknown): string | undefined => Payload.idempotencyKey(payload)
 
@@ -156,7 +156,7 @@ export const idempotencyKey = (payload: unknown): string | undefined => Payload.
  * - `Ingest`: pass `raw` to `Channels.ingest` and answer from its receipt.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type HostAnswer =
   | { readonly _tag: "Unauthorized" }
@@ -169,7 +169,7 @@ export type HostAnswer =
  * What {@link answer} needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface AnswerOptions extends VerifyOptions {
   readonly policy: Payload.Policy
@@ -183,7 +183,7 @@ export interface AnswerOptions extends VerifyOptions {
  * to ingest, carrying {@link idempotencyKey}.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const answer = (
   request: { readonly body: Uint8Array; readonly headers: HasHeaders["headers"] },
@@ -208,7 +208,7 @@ export const answer = (
  * `url_verification` that reached ingest instead of {@link answer}.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decode = (payload: unknown, options: Payload.DecodeOptions): ExternalEvent =>
   Payload.toExternalEvent(payload, options)
@@ -217,7 +217,7 @@ export const decode = (payload: unknown, options: Payload.DecodeOptions): Extern
  * What {@link channel} needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ChannelOptions {
   /** The channel name, which is every decoded event's source. Defaults to `slack`. */
@@ -238,7 +238,7 @@ export interface ChannelOptions {
  * allowlist is empty.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const channel = (options: ChannelOptions): Channel => {
   const name = options.name ?? SERVICE

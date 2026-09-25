@@ -35,7 +35,7 @@
  * Every attempt carries its own `requestTimeout` over the headers and the
  * body, and interrupting the fiber aborts the request in flight.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { isRecord } from "@smthrs/canonical/Record"
 import { Context, Duration, Effect, Layer, Redacted } from "effect"
@@ -51,7 +51,7 @@ import { resolve, type SlackConfig } from "./Config.ts"
  * `app` is the app-level token, which only `apps.connections.open` accepts.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Auth = "bot" | "app"
 
@@ -59,7 +59,7 @@ export type Auth = "bot" | "app"
  * Per-call options.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface CallOptions {
   /** The token to send. Defaults to `bot`. */
@@ -75,7 +75,7 @@ export interface CallOptions {
  * Bounds for one {@link SlackClient.paginate} walk.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface PageOptions extends CallOptions {
   /** Pages to read at most. Defaults to {@link DEFAULT_MAX_PAGES}; 1 to {@link MAX_PAGES_LIMIT}. */
@@ -88,7 +88,7 @@ export interface PageOptions extends CallOptions {
  * One pagination walk's result.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Page {
   readonly items: ReadonlyArray<unknown>
@@ -102,7 +102,7 @@ export interface Page {
  * The client service.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface SlackClient {
   /** One Web API call, answering the whole `ok: true` envelope. */
@@ -127,7 +127,7 @@ export interface SlackClient {
  * Service tag for the Slack Web API client.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SlackClient: Context.Service<SlackClient, SlackClient> = Context.Service(
   "@smthrs/integrations/SlackClient"
@@ -141,7 +141,7 @@ export const SlackClient: Context.Service<SlackClient, SlackClient> = Context.Se
  * invalidated and the call is tried once more.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Tokens {
   readonly bot?: AccessToken.AccessTokenSource | undefined
@@ -152,7 +152,7 @@ export interface Tokens {
  * The default page budget of {@link SlackClient.paginate}.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_MAX_PAGES = 10
 
@@ -160,7 +160,7 @@ export const DEFAULT_MAX_PAGES = 10
  * The largest page budget {@link SlackClient.paginate} accepts.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_PAGES_LIMIT = 1000
 
@@ -179,7 +179,7 @@ const READS_UNDER_WRITE_PREFIXES: ReadonlySet<string> = new Set([
  * `conversations.join` and `conversations.open`.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isWriteMethod = (method: string): boolean =>
   WRITE_METHODS.has(method) ||
@@ -190,7 +190,7 @@ export const isWriteMethod = (method: string): boolean =>
  * been applied.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SERVER_ERRORS: ReadonlySet<string> = new Set([
   "internal_error",
@@ -203,7 +203,7 @@ export const SERVER_ERRORS: ReadonlySet<string> = new Set([
  * Slack error codes that refuse the credential rather than the call.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const AUTH_ERRORS: ReadonlySet<string> = new Set([
   "not_authed",
@@ -229,7 +229,7 @@ const MAX_BACKOFF_MS = 30_000
  * listing is complete.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const nextCursor = (answer: Readonly<Record<string, unknown>>): string | null => {
   const metadata = answer["response_metadata"]
@@ -282,7 +282,7 @@ interface Answer {
  * Throws `IntegrationError` with reason `invalid-config` for a bad config.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (
   config: SlackConfig = {},
@@ -292,7 +292,8 @@ export const make = (
   const resolved = resolve(config, env)
   const requestTimeoutMs = Duration.toMillis(resolved.requestTimeout)
   const retryBaseMs = Duration.toMillis(resolved.retryBaseDelay)
-  const fixed = (token: string | undefined) => token === undefined ? undefined : AccessToken.fixed(Redacted.make(token))
+  const fixed = (token: Redacted.Redacted<string> | undefined) =>
+    token === undefined ? undefined : AccessToken.fixed(token)
   const sources: Readonly<Record<Auth, AccessToken.AccessTokenSource | undefined>> = {
     bot: tokens.bot ?? fixed(resolved.botToken),
     app: tokens.app ?? fixed(resolved.appToken)
@@ -523,7 +524,7 @@ export const make = (
  * defect and stays one.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (
   config: SlackConfig = {},

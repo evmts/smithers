@@ -18,10 +18,10 @@
  * original start) fall outside base32hex. {@link EventReference} accepts
  * those for reads, patches and deletes; only an insert needs {@link EventId}.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
-import { createHash } from "node:crypto"
 import { Schema } from "effect"
+import { createHash } from "node:crypto"
 
 const ALPHABET = "0123456789abcdefghijklmnopqrstuv"
 
@@ -29,7 +29,7 @@ const ALPHABET = "0123456789abcdefghijklmnopqrstuv"
  * The shape of an id a caller may choose on insert.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EVENT_ID_PATTERN = /^[a-v0-9]{5,1024}$/
 
@@ -40,7 +40,7 @@ export const EVENT_ID_PATTERN = /^[a-v0-9]{5,1024}$/
  * form a `.` or `..` path segment or leave the segment once encoded.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EVENT_REFERENCE_PATTERN = /^[A-Za-z0-9_-]{1,1024}$/
 
@@ -48,7 +48,7 @@ export const EVENT_REFERENCE_PATTERN = /^[A-Za-z0-9_-]{1,1024}$/
  * An id a caller may choose when inserting an event.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventId = Schema.String.check(Schema.isPattern(EVENT_ID_PATTERN))
 
@@ -56,7 +56,7 @@ export const EventId = Schema.String.check(Schema.isPattern(EVENT_ID_PATTERN))
  * An id a caller may choose when inserting an event.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type EventId = typeof EventId.Type
 
@@ -64,7 +64,7 @@ export type EventId = typeof EventId.Type
  * The id of an existing event or of one instance of a recurring event.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EventReference = Schema.String.check(Schema.isPattern(EVENT_REFERENCE_PATTERN))
 
@@ -72,16 +72,15 @@ export const EventReference = Schema.String.check(Schema.isPattern(EVENT_REFEREN
  * Whether `value` is valid as a caller-chosen event id.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const isEventId = (value: unknown): value is EventId =>
-  typeof value === "string" && EVENT_ID_PATTERN.test(value)
+export const isEventId = (value: unknown): value is EventId => typeof value === "string" && EVENT_ID_PATTERN.test(value)
 
 /**
  * Whether `value` may name an existing event or instance in a request.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isEventReference = (value: unknown): value is string =>
   typeof value === "string" && EVENT_REFERENCE_PATTERN.test(value)
@@ -90,7 +89,7 @@ export const isEventReference = (value: unknown): value is string =>
  * RFC 4648 base32hex without padding, in lowercase.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const base32hex = (bytes: Uint8Array): string => {
   let output = ""
@@ -117,6 +116,6 @@ export const base32hex = (bytes: Uint8Array): string => {
  * by accident. The same key always yields the same id.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const fromKey = (key: string): EventId => base32hex(createHash("sha256").update(key, "utf8").digest())

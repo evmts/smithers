@@ -8,7 +8,7 @@
  * client an `AccessTokenSource`. The environment may still name the API
  * origin, for a fixture server.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Duration } from "effect"
 import type { AccessTokenSource } from "../core/AccessToken.ts"
@@ -19,7 +19,7 @@ import * as Environment from "../Environment.ts"
  * The provider name an X connection carries.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PROVIDER = "x"
 
@@ -27,7 +27,7 @@ export const PROVIDER = "x"
  * The public API v2 base URL.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_API_BASE_URL = "https://api.x.com/2"
 
@@ -36,7 +36,7 @@ export const DEFAULT_API_BASE_URL = "https://api.x.com/2"
  * body read.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
 
@@ -46,7 +46,7 @@ export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
  * the wait, for a scheduler to honor.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_MAX_RETRY_AFTER: Duration.Duration = Duration.seconds(60)
 
@@ -54,7 +54,7 @@ export const DEFAULT_MAX_RETRY_AFTER: Duration.Duration = Duration.seconds(60)
  * The default number of repeated attempts for a rate limit or a failed read.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_MAX_RETRIES = 3
 
@@ -62,7 +62,7 @@ export const DEFAULT_MAX_RETRIES = 3
  * What a caller supplies.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface XConfig {
   /** Where the bearer token comes from. Required: there is no ambient fallback. */
@@ -89,7 +89,7 @@ export interface XConfig {
  * A config with every fallback applied.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ResolvedXConfig {
   readonly token: AccessTokenSource
@@ -113,7 +113,7 @@ const firstNonEmpty = (candidates: ReadonlyArray<string | undefined>): string | 
  * `env` replaces the ambient environment rather than layering over it.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const resolve = (
   config: XConfig,

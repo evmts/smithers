@@ -21,7 +21,7 @@
  * resumes from the committed cursor, including a full listing still in
  * progress. A revoked connection is refused before the adapter is called.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Effect } from "effect"
 import { IntegrationError } from "./IntegrationError.ts"
@@ -32,7 +32,7 @@ import { SourceStore } from "./SourceStore.ts"
  * One page of changes.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Changes {
   /** Created, edited and deleted records (tombstones), in any order. */
@@ -49,7 +49,7 @@ export interface Changes {
  * A provider's change feed for one stream of one connection.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface SyncAdapter {
   /** The provider the records come from. */
@@ -66,7 +66,7 @@ export interface SyncAdapter {
  * The default number of pages one `runSync` commits.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_MAX_PAGES = 10
 
@@ -74,7 +74,7 @@ export const DEFAULT_MAX_PAGES = 10
  * The largest page budget `runSync` accepts.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_PAGES_LIMIT = 1000
 
@@ -82,7 +82,7 @@ export const MAX_PAGES_LIMIT = 1000
  * What one `runSync` did.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Report {
   readonly provider: string
@@ -109,7 +109,7 @@ export interface Report {
  * What `runSync` needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface RunOptions {
   readonly adapter: SyncAdapter
@@ -128,7 +128,7 @@ export interface RunOptions {
  * anything else is refused before it is written.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const runSync = (options: RunOptions): Effect.Effect<Report, IntegrationError, SourceStore> =>
   Effect.gen(function*() {

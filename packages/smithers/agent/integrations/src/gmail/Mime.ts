@@ -20,16 +20,24 @@
  * same key. A send whose answer was lost is reconciled by searching the
  * mailbox for that Message-ID (`rfc822msgid:`) and comparing the key header.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Effect, Schema } from "effect"
 import { createHash } from "node:crypto"
 import { IntegrationError } from "../core/IntegrationError.ts"
 
-const CONTROL = /[\u0000-\u0008\u000A-\u001F\u007F]/
+// Every C0 control except tab, and DEL: the characters that could end or fold
+// a header line. A code-point scan keeps control characters out of a regex.
+const hasControl = (value: string): boolean => {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if ((code < 0x20 && code !== 0x09) || code === 0x7f) return true
+  }
+  return false
+}
 
 const noControl = Schema.makeFilter<string>((value) =>
-  !CONTROL.test(value) || "must not contain control characters such as CR or LF"
+  !hasControl(value) || "must not contain control characters such as CR or LF"
 )
 
 /**
@@ -37,7 +45,7 @@ const noControl = Schema.makeFilter<string>((value) =>
  * (tab excepted) and DEL.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const HeaderText = Schema.String.check(noControl, Schema.isMaxLength(2000))
 
@@ -47,7 +55,7 @@ export const HeaderText = Schema.String.check(noControl, Schema.isMaxLength(2000
  * punycode form) are refused.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const EmailAddress = Schema.String.check(
   Schema.isPattern(
@@ -60,7 +68,7 @@ export const EmailAddress = Schema.String.check(
  * A mailbox: an address and an optional display name.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Address = Schema.Struct({
   address: EmailAddress,
@@ -71,7 +79,7 @@ export const Address = Schema.Struct({
  * A mailbox.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Address = typeof Address.Type
 
@@ -79,7 +87,7 @@ export type Address = typeof Address.Type
  * An RFC 2822 message id, angle brackets included.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MessageId = Schema.String.check(
   Schema.isPattern(/^<[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+>$/),
@@ -91,7 +99,7 @@ export const MessageId = Schema.String.check(
  * writes need distinct keys.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SmithersKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:/@+=-]{0,199}$/))
 
@@ -99,7 +107,7 @@ export const SmithersKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-
  * The header that carries the key.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const KEY_HEADER = "X-Smithers-Key"
 
@@ -108,7 +116,7 @@ export const KEY_HEADER = "X-Smithers-Key"
  * cannot collide with a real host's ids.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MESSAGE_ID_DOMAIN = "smithers.invalid"
 
@@ -117,7 +125,7 @@ export const MESSAGE_ID_DOMAIN = "smithers.invalid"
  * Gmail limit.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_TEXT_BYTES = 1_048_576
 
@@ -125,7 +133,7 @@ export const MAX_TEXT_BYTES = 1_048_576
  * What a message says.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Draft = Schema.Struct({
   key: SmithersKey,
@@ -143,7 +151,7 @@ export const Draft = Schema.Struct({
  * What a message says.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Draft = typeof Draft.Type
 
@@ -151,7 +159,7 @@ export type Draft = typeof Draft.Type
  * A composed message.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Composed {
   /** The RFC 2822 text, CRLF line ends. */
@@ -165,7 +173,7 @@ export interface Composed {
  * The Message-ID a key always produces.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const messageIdFor = (key: string): string =>
   `<smithers.${createHash("sha256").update(key, "utf8").digest("hex").slice(0, 40)}@${MESSAGE_ID_DOMAIN}>`
@@ -178,13 +186,13 @@ const pad = (value: number): string => String(value).padStart(2, "0")
  * An RFC 2822 date in UTC: `Fri, 25 Sep 2026 22:00:00 +0000`.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const formatDate = (epochMs: number): string => {
   const date = new Date(epochMs)
-  return `${WEEKDAYS[date.getUTCDay()]}, ${pad(date.getUTCDate())} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()} ${
-    pad(date.getUTCHours())
-  }:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())} +0000`
+  return `${WEEKDAYS[date.getUTCDay()]}, ${pad(date.getUTCDate())} ${
+    MONTHS[date.getUTCMonth()]
+  } ${date.getUTCFullYear()} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())} +0000`
 }
 
 /**
@@ -192,7 +200,7 @@ export const formatDate = (epochMs: number): string => {
  * splitting a character. Empty text has none.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const encodedWords = (text: string): ReadonlyArray<string> => {
   const words: Array<string> = []
@@ -250,7 +258,7 @@ const decodeDraft = Schema.decodeUnknownEffect(Draft)
  * recipient, or a body over {@link MAX_TEXT_BYTES}.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const compose = (draft: Draft, dateMs: number): Effect.Effect<Composed, IntegrationError> =>
   decodeDraft(draft).pipe(

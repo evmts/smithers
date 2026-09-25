@@ -18,7 +18,7 @@
  * Which principal may run these, and whether a send needs approval first, is
  * host policy; these declarations only state what they do.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Action, type FlowRuntime } from "@smthrs/flow"
 import { Clock, Effect, Layer, Schema } from "effect"
@@ -35,7 +35,7 @@ import { findByKey, Match } from "./Reconcile.ts"
  * and `references` are the RFC 2822 threading headers other clients read.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ComposePayload = Schema.Struct({
   connectionId: Schema.NonEmptyString,
@@ -47,7 +47,7 @@ export const ComposePayload = Schema.Struct({
  * What {@link CreateDraft} and {@link SendMessage} write.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ComposePayload = typeof ComposePayload.Type
 
@@ -55,7 +55,7 @@ export type ComposePayload = typeof ComposePayload.Type
  * The draft Gmail stored.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DraftCreated = Schema.Struct({
   connectionId: Schema.String,
@@ -70,7 +70,7 @@ export const DraftCreated = Schema.Struct({
  * The message Gmail sent.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MessageSent = Schema.Struct({
   connectionId: Schema.String,
@@ -85,7 +85,7 @@ export const MessageSent = Schema.Struct({
  * What {@link FindByKey} looks for.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const FindByKeyPayload = Schema.Struct({
   connectionId: Schema.NonEmptyString,
@@ -96,7 +96,7 @@ export const FindByKeyPayload = Schema.Struct({
  * What {@link FindByKey} found.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Found = Schema.Struct({
   connectionId: Schema.String,
@@ -109,7 +109,7 @@ export const Found = Schema.Struct({
  * Creates a draft.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CreateDraft = Action.make("integrations/gmail/create-draft", {
   payload: ComposePayload,
@@ -123,7 +123,7 @@ export const CreateDraft = Action.make("integrations/gmail/create-draft", {
  * Sends a message.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SendMessage = Action.make("integrations/gmail/send-message", {
   payload: ComposePayload,
@@ -140,7 +140,7 @@ export const SendMessage = Action.make("integrations/gmail/send-message", {
  * later lookup asks Gmail again rather than reusing it.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const FindByKey = Action.make("integrations/gmail/find-by-key", {
   payload: FindByKeyPayload,
@@ -170,7 +170,7 @@ const composed = (payload: ComposePayload) =>
  * Implements {@link CreateDraft} over the client in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerCreateDraft: Layer.Layer<
   Action.Requirement<"integrations/gmail/create-draft">,
@@ -196,7 +196,7 @@ export const layerCreateDraft: Layer.Layer<
  * Implements {@link SendMessage} over the client in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerSendMessage: Layer.Layer<
   Action.Requirement<"integrations/gmail/send-message">,
@@ -222,7 +222,7 @@ export const layerSendMessage: Layer.Layer<
  * Implements {@link FindByKey} over the client in context.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerFindByKey: Layer.Layer<
   Action.Requirement<"integrations/gmail/find-by-key">,
@@ -245,7 +245,7 @@ export const layerFindByKey: Layer.Layer<
  * Every Gmail action's implementation, in one layer.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer: Layer.Layer<
   | Action.Requirement<"integrations/gmail/create-draft">

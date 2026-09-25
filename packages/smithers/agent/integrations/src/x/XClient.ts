@@ -28,7 +28,7 @@
  * Every user and post id is validated as a decimal id before it becomes a
  * path segment.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schedule, Schema } from "effect"
 import { IntegrationError, isRetryable } from "../core/IntegrationError.ts"
@@ -41,7 +41,7 @@ import { PROVIDER, resolve, type XConfig } from "./Config.ts"
  * An X user, post or direct-message event id: a decimal snowflake.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const XId = Schema.String.check(Schema.isPattern(/^[0-9]{1,19}$/))
 
@@ -49,7 +49,7 @@ export const XId = Schema.String.check(Schema.isPattern(/^[0-9]{1,19}$/))
  * A user, as the `users` expansion returns one.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const User = Schema.Struct({
   id: XId,
@@ -61,7 +61,7 @@ export const User = Schema.Struct({
  * A user.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type User = typeof User.Type
 
@@ -69,7 +69,7 @@ export type User = typeof User.Type
  * A post another post refers to.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ReferencedTweet = Schema.Struct({
   type: Schema.String,
@@ -80,7 +80,7 @@ export const ReferencedTweet = Schema.Struct({
  * A post.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Tweet = Schema.Struct({
   id: XId,
@@ -96,7 +96,7 @@ export const Tweet = Schema.Struct({
  * A post.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Tweet = typeof Tweet.Type
 
@@ -104,7 +104,7 @@ export type Tweet = typeof Tweet.Type
  * Expanded objects that accompany a page.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Includes = Schema.Struct({
   users: Schema.optionalKey(Schema.Array(User))
@@ -114,7 +114,7 @@ export const Includes = Schema.Struct({
  * Expanded objects that accompany a page.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Includes = typeof Includes.Type
 
@@ -122,7 +122,7 @@ export type Includes = typeof Includes.Type
  * One page of a timeline: mentions or a user's posts, newest first.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const TimelinePage = Schema.Struct({
   data: Schema.optionalKey(Schema.Array(Tweet)),
@@ -139,7 +139,7 @@ export const TimelinePage = Schema.Struct({
  * One page of a timeline.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type TimelinePage = typeof TimelinePage.Type
 
@@ -147,7 +147,7 @@ export type TimelinePage = typeof TimelinePage.Type
  * A direct-message event.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DmEvent = Schema.Struct({
   id: XId,
@@ -163,7 +163,7 @@ export const DmEvent = Schema.Struct({
  * A direct-message event.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type DmEvent = typeof DmEvent.Type
 
@@ -171,7 +171,7 @@ export type DmEvent = typeof DmEvent.Type
  * One page of direct-message events, newest first.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DmEventsPage = Schema.Struct({
   data: Schema.optionalKey(Schema.Array(DmEvent)),
@@ -187,7 +187,7 @@ export const DmEventsPage = Schema.Struct({
  * One page of direct-message events.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type DmEventsPage = typeof DmEventsPage.Type
 
@@ -195,7 +195,7 @@ export type DmEventsPage = typeof DmEventsPage.Type
  * The post X created.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CreatedTweet = Schema.Struct({
   data: Schema.Struct({ id: XId, text: Schema.String })
@@ -205,7 +205,7 @@ export const CreatedTweet = Schema.Struct({
  * The direct message X sent.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SentDirectMessage = Schema.Struct({
   data: Schema.Struct({ dm_conversation_id: Schema.NonEmptyString, dm_event_id: XId })
@@ -217,7 +217,7 @@ const Me = Schema.Struct({ data: User })
  * Post fields every timeline read requests.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const TWEET_FIELDS = "author_id,conversation_id,created_at,in_reply_to_user_id,referenced_tweets"
 
@@ -225,7 +225,7 @@ export const TWEET_FIELDS = "author_id,conversation_id,created_at,in_reply_to_us
  * Direct-message event fields every event read requests.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DM_EVENT_FIELDS = "id,text,event_type,created_at,dm_conversation_id,sender_id,participant_ids"
 
@@ -233,7 +233,7 @@ export const DM_EVENT_FIELDS = "id,text,event_type,created_at,dm_conversation_id
  * User fields every expansion requests.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const USER_FIELDS = "username,name"
 
@@ -241,7 +241,7 @@ export const USER_FIELDS = "username,name"
  * Where a timeline read starts and how much it reads.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface TimelineOptions {
   /** Only posts newer than this id. */
@@ -257,7 +257,7 @@ export interface TimelineOptions {
  * How much of a direct-message event list to read.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface DmEventsOptions {
   readonly paginationToken?: string | undefined
@@ -269,7 +269,7 @@ export interface DmEventsOptions {
  * The client service.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface XClient {
   /** The connection the client acts for, when one is bound. */
@@ -303,7 +303,7 @@ export interface XClient {
  * Service tag for the X client.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const XClient: Context.Service<XClient, XClient> = Context.Service("@smthrs/integrations/XClient")
 
@@ -315,7 +315,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * entry of `errors`. Anything else yields an empty message.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const xError = (body: unknown): string => {
   const record = isRecord(body) ? body : {}
@@ -331,7 +331,7 @@ export const xError = (body: unknown): string => {
  * `null` when the header is absent or malformed.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const retryAfterMs = (headers: Headers, nowMs: number): number | null => {
   const value = headers.get("x-rate-limit-reset")
@@ -380,7 +380,7 @@ const requireId = (kind: string, id: string): Effect.Effect<string, IntegrationE
  * range.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (
   config: XConfig,
@@ -430,7 +430,12 @@ export const make = (
             "user-agent": "smithers-integrations"
           }
           if (body !== undefined) headers["content-type"] = "application/json"
-          const response = await fetch(url, { method: call.method, headers, signal, ...(body === undefined ? {} : { body }) })
+          const response = await fetch(url, {
+            method: call.method,
+            headers,
+            signal,
+            ...(body === undefined ? {} : { body })
+          })
           const text = await response.text()
           let json: unknown = null
           if (text.length > 0) {
@@ -603,7 +608,13 @@ export const make = (
         ? Effect.succeed({})
         : Effect.map(requireId("reply", request.replyToTweetId), (id) => ({ reply: { in_reply_to_tweet_id: id } })),
       (reply) =>
-        send({ method: "POST", path: "/tweets", operation: "post", schema: CreatedTweet, body: { text: request.text, ...reply } })
+        send({
+          method: "POST",
+          path: "/tweets",
+          operation: "post",
+          schema: CreatedTweet,
+          body: { text: request.text, ...reply }
+        })
     )
 
   const sendDirectMessage: XClient["sendDirectMessage"] = (participantId, text) =>
@@ -632,7 +643,7 @@ export const make = (
  * Layer for a client bound to `config`.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (
   config: XConfig,

@@ -123,6 +123,25 @@ describe("Google Calendar config", () => {
     expect(Exit.isFailure(exit) && isIntegrationError(Cause.squash(exit.cause))).toBe(true)
   })
 
+  it("keeps an error that is not a config error a defect of the layer", async () => {
+    const boom = new Error("config getter failed")
+    const config = Object.defineProperty({}, "maxRetries", {
+      get: () => {
+        throw boom
+      }
+    }) as Config.GoogleCalendarConfig
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(
+        Effect.gen(function*() {
+          return yield* CalendarClient.CalendarClient
+        }),
+        CalendarClient.layer(config, {})
+      )
+    )
+    expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(boom)
+  })
+
   it("provides a working client through its layer", async () => {
     fixture = await startFixture((_request, response) => json(response, 200, { id: EVENT_ID }))
     const event = await Effect.runPromise(
@@ -287,11 +306,13 @@ describe("Google Calendar allowlist", () => {
     expect(denied.reason).toBe("permission-denied")
     const none = await failure(client({ allowedCalendars: [] }).getEvent("work@example.test", EVENT_ID))
     expect(none.reason).toBe("permission-denied")
-    const freeBusy = await failure(client({ allowedCalendars: ["work@example.test"] }).freeBusy({
-      timeMin: "2026-10-02T00:00:00Z",
-      timeMax: "2026-10-03T00:00:00Z",
-      calendarIds: ["work@example.test", "primary"]
-    }))
+    const freeBusy = await failure(
+      client({ allowedCalendars: ["work@example.test"] }).freeBusy({
+        timeMin: "2026-10-02T00:00:00Z",
+        timeMax: "2026-10-03T00:00:00Z",
+        calendarIds: ["work@example.test", "primary"]
+      })
+    )
     expect(freeBusy.reason).toBe("permission-denied")
     expect(api()).toHaveLength(0)
     await Effect.runPromise(client({ allowedCalendars: ["work@example.test"] }).listEvents("work@example.test"))
@@ -324,6 +345,23 @@ const refreshingClient = () =>
   })
 
 describe("Google Calendar token refresh", () => {
+  it("refreshes as a public client when the environment names no client secret", async () => {
+    await withTokenEndpoint((_request, response) => json(response, 200, { items: [] }))
+    const calendar = CalendarClient.make({ apiBaseUrl: origin() }, {
+      SMITHERS_GOOGLE_CLIENT_ID: "public-client",
+      SMITHERS_GOOGLE_REFRESH_TOKEN: "refresh-fixture",
+      SMITHERS_GOOGLE_TOKEN_URL: `${origin()}/token`
+    })
+    await Effect.runPromise(calendar.listEvents("primary"))
+    const token = (fixture as Fixture).requests.find((r) => r.url.startsWith("/token")) as Recorded
+    const form = new URLSearchParams(token.body)
+    expect(form.get("client_id")).toBe("public-client")
+    expect(form.get("refresh_token")).toBe("refresh-fixture")
+    expect(form.has("client_secret")).toBe(false)
+    expect(token.headers["authorization"]).toBeUndefined()
+    expect((api()[0] as Recorded).headers["authorization"]).toBe("Bearer access-1")
+  })
+
   it("refreshes through the OAuth endpoint and resends once after a 401", async () => {
     await withTokenEndpoint((_request, response, bearer) => {
       if (bearer === "Bearer access-1") return googleError(response, 401, "authError", "Invalid Credentials")
@@ -372,6 +410,18 @@ describe("Google Calendar rate limits and ambiguity", () => {
     const event = await Effect.runPromise(client().insertEvent("primary", EVENT, { id: EVENT_ID }))
     expect(event.id).toBe(EVENT_ID)
     expect(api()).toHaveLength(4)
+  })
+
+  it("waits the Retry-After Google asks for before the retry", async () => {
+    let calls = 0
+    fixture = await startFixture((_request, response) => {
+      calls += 1
+      if (calls === 1) return json(response, 429, { error: { code: 429, message: "slow" } }, { "retry-after": "1" })
+      json(response, 200, { items: [] })
+    })
+    await Effect.runPromise(client().listEvents("primary"))
+    const [first, second] = api() as [Recorded, Recorded]
+    expect(second.receivedAt - first.receivedAt).toBeGreaterThanOrEqual(900)
   })
 
   it("stops after the retry budget and says the refusal was a rate limit", async () => {
@@ -478,11 +528,13 @@ describe("Google Calendar free/busy", () => {
         }
       })
     )
-    const answer = await Effect.runPromise(client().freeBusy({
-      ...window,
-      calendarIds: ["missing@example.test", "primary", "dropped@example.test", "odd@example.test"],
-      timeZone: "America/Los_Angeles"
-    }))
+    const answer = await Effect.runPromise(
+      client().freeBusy({
+        ...window,
+        calendarIds: ["missing@example.test", "primary", "dropped@example.test", "odd@example.test"],
+        timeZone: "America/Los_Angeles"
+      })
+    )
     expect(answer.calendars).toEqual([
       { calendarId: "missing@example.test", busy: [], errors: ["notFound"] },
       {
@@ -534,8 +586,12 @@ describe("Google Calendar free/busy", () => {
   })
 
   it("rejects a busy interval that is not a pair of instants", async () => {
-    for (const busy of [{ start: "soon", end: "2026-10-02T16:00:00Z" }, { start: window.timeMax, end: window.timeMin }]) {
-      fixture = await startFixture((_request, response) => json(response, 200, { calendars: { primary: { busy: [busy] } } }))
+    for (
+      const busy of [{ start: "soon", end: "2026-10-02T16:00:00Z" }, { start: window.timeMax, end: window.timeMin }]
+    ) {
+      fixture = await startFixture((_request, response) =>
+        json(response, 200, { calendars: { primary: { busy: [busy] } } })
+      )
       const error = await failure(client().freeBusy({ ...window, calendarIds: ["primary"] }))
       expect(error.reason).toBe("decode-failed")
       await fixture.close()
@@ -581,7 +637,12 @@ const connection: Connection = {
 const throughConnection = <A>(
   principal: string,
   use: (calendar: CalendarClient.CalendarClient) => Effect.Effect<A, IntegrationError>,
-  target: Connection = connection
+  target: Connection = connection,
+  oauthClient: { readonly clientId: string; readonly clientSecret?: string } = {
+    clientId: "client-id",
+    clientSecret: "client-secret-fixture"
+  },
+  observeStored: (refreshToken: string) => void = () => {}
 ): Promise<Exit.Exit<A, IntegrationError>> =>
   Effect.runPromise(
     Effect.gen(function*() {
@@ -592,13 +653,15 @@ const throughConnection = <A>(
       const layer = CalendarClient.layerFromConnection(
         { ...target, apiBaseUrl: origin() },
         { principal, authorize: personalPolicy({ personalPrincipals: ["assistant"] }) },
-        { clientId: "client-id", clientSecret: "client-secret-fixture", tokenUrl: `${origin()}/token` },
+        { ...oauthClient, tokenUrl: `${origin()}/token` },
         {}
       ).pipe(Layer.provide(Layer.succeed(Credential.Credential, credentials)))
       const program = Effect.gen(function*() {
         return yield* use(yield* CalendarClient.CalendarClient)
       })
-      return yield* Effect.exit(program.pipe(Effect.provide(layer)))
+      const exit = yield* Effect.exit(program.pipe(Effect.provide(layer)))
+      observeStored(Redacted.value(yield* credentials.resolve(target.credential)))
+      return exit
     }).pipe(Effect.provide(TestDatabase.layer), Effect.scoped, Effect.orDie)
   )
 
@@ -625,6 +688,68 @@ describe("Google Calendar through a connection", () => {
     const exit = await throughConnection("assistant", (calendar) => calendar.listEvents("other@example.test"))
     const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) as IntegrationError : undefined
     expect(error?.reason).toBe("permission-denied")
+    expect((fixture as Fixture).requests).toHaveLength(0)
+  })
+
+  it("refreshes as a public OAuth client when no client secret is configured", async () => {
+    await withTokenEndpoint((_request, response) => json(response, 200, { items: [] }))
+    const exit = await throughConnection("assistant", (calendar) => calendar.listEvents("primary"), connection, {
+      clientId: "public-client"
+    })
+    expect(Exit.isSuccess(exit)).toBe(true)
+    const token = (fixture as Fixture).requests.find((r) => r.url.startsWith("/token")) as Recorded
+    const form = new URLSearchParams(token.body)
+    expect(form.get("client_id") ?? token.headers["authorization"]).toBeTruthy()
+    expect(form.has("client_secret")).toBe(false)
+    expect(token.body).not.toContain("client-secret-fixture")
+  })
+
+  it("writes a refresh token Google rotated back to the stored credential", async () => {
+    fixture = await startFixture((request, response) =>
+      request.url.startsWith("/token")
+        ? json(response, 200, { access_token: "access-1", expires_in: 3600, refresh_token: "rotated-refresh" })
+        : json(response, 200, { items: [] })
+    )
+    let stored: string | undefined
+    const exit = await throughConnection(
+      "assistant",
+      (calendar) => calendar.listEvents("primary"),
+      connection,
+      undefined,
+      (value) => {
+        stored = value
+      }
+    )
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(stored).toBe("rotated-refresh")
+  })
+
+  it("uses the configured API root for a connection that names none, and needs an OAuth client id", async () => {
+    await withTokenEndpoint((_request, response) => json(response, 200, { items: [] }))
+    const exit = await Effect.runPromise(
+      Effect.gen(function*() {
+        const credentials = Credential.make({
+          store: yield* SqlCredentialStore.make,
+          cipher: yield* WebCryptoCipher.make({ key: HOST_KEY })
+        })
+        yield* credentials.create({ ...connection.credential, secret: Redacted.make("stored-refresh") })
+        const layer = CalendarClient.layerFromConnection(
+          connection,
+          { principal: "assistant", authorize: personalPolicy({ personalPrincipals: ["assistant"] }) },
+          { apiBaseUrl: origin(), tokenUrl: `${origin()}/token` },
+          {}
+        ).pipe(Layer.provide(Layer.succeed(Credential.Credential, credentials)))
+        return yield* Effect.exit(Effect.provide(
+          Effect.gen(function*() {
+            return yield* CalendarClient.CalendarClient
+          }),
+          layer
+        ))
+      }).pipe(Effect.provide(TestDatabase.layer), Effect.scoped, Effect.orDie)
+    )
+    const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) as IntegrationError : undefined
+    expect(error?.reason).toBe("credentials-missing")
+    expect(error?.message).toContain("client id")
     expect((fixture as Fixture).requests).toHaveLength(0)
   })
 

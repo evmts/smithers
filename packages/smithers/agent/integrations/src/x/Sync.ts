@@ -18,7 +18,7 @@
  * reports deletions. A corrupt cursor fails as `decode-failed` rather than
  * silently starting over.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Clock, Effect, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
@@ -31,7 +31,7 @@ import { type XClient, XId } from "./XClient.ts"
  * its `page` token and the `newest` id it has seen.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Cursor = Schema.Struct({
   v: Schema.Literal(1),
@@ -44,7 +44,7 @@ export const Cursor = Schema.Struct({
  * A feed cursor.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Cursor = typeof Cursor.Type
 
@@ -52,7 +52,7 @@ export type Cursor = typeof Cursor.Type
  * A cursor as the string a store keeps.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const encodeCursor = (cursor: Cursor): string =>
   JSON.stringify({
@@ -66,7 +66,7 @@ export const encodeCursor = (cursor: Cursor): string =>
  * A stored cursor, or `decode-failed` when it is not one.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decodeCursor = (text: string): Effect.Effect<Cursor, IntegrationError> =>
   Effect.try({ try: () => JSON.parse(text) as unknown, catch: (cause) => cause }).pipe(
@@ -82,7 +82,7 @@ export const decodeCursor = (text: string): Effect.Effect<Cursor, IntegrationErr
  * The largest of some ids, compared as numbers, or `undefined` for none.
  *
  * @category getters
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const newestId = (ids: ReadonlyArray<string | null | undefined>): string | undefined =>
   ids.reduce<string | undefined>(
@@ -94,7 +94,7 @@ export const newestId = (ids: ReadonlyArray<string | null | undefined>): string 
  * What {@link mentions} syncs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface MentionsOptions {
   /** A client with a bound connection. */
@@ -111,7 +111,7 @@ export interface MentionsOptions {
  * What {@link directMessages} syncs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface DirectMessagesOptions {
   /** A client with a bound connection. */
@@ -135,7 +135,11 @@ const state = (cursor: string | null): Effect.Effect<Cursor, IntegrationError> =
 
 // A walk with more pages keeps the mark and carries what it has seen; a
 // finished walk moves the mark to the newest id seen.
-const advance = (current: Cursor, seen: string | undefined, next: string | undefined): Pick<Changes, "cursor" | "done"> =>
+const advance = (
+  current: Cursor,
+  seen: string | undefined,
+  next: string | undefined
+): Pick<Changes, "cursor" | "done"> =>
   next === undefined
     ? { cursor: encodeCursor({ v: 1, since: newestId([seen, current.since]) ?? null }), done: true }
     : {
@@ -155,7 +159,7 @@ const advance = (current: Cursor, seen: string | undefined, next: string | undef
  * that is not a decimal id.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const mentions = (options: MentionsOptions): Effect.Effect<SyncAdapter, IntegrationError> =>
   Effect.gen(function*() {
@@ -188,7 +192,7 @@ export const mentions = (options: MentionsOptions): Effect.Effect<SyncAdapter, I
  * Fails `invalid-config` for a client with no bound connection.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const directMessages = (options: DirectMessagesOptions): Effect.Effect<SyncAdapter, IntegrationError> =>
   Effect.map(boundConnection(options.client), (connectionId) => {

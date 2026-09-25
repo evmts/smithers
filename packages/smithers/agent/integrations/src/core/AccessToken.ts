@@ -8,7 +8,7 @@
  * `credentials-missing` (nothing configured) or `permission-denied` (the grant
  * was revoked), so a client can report the difference.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Effect, type Redacted } from "effect"
 import type { IntegrationError } from "./IntegrationError.ts"
@@ -17,7 +17,7 @@ import type { IntegrationError } from "./IntegrationError.ts"
  * A provider of bearer tokens.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface AccessTokenSource {
   /** The current access token, refreshed by the source when it expires. */
@@ -33,7 +33,7 @@ export interface AccessTokenSource {
  * A source that always answers the same token.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const fixed = (token: Redacted.Redacted<string>): AccessTokenSource => ({
   token: Effect.succeed(token),

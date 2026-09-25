@@ -39,7 +39,7 @@
  *
  * Rate limits and transient read failures are retried by `GitHubClient`.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Effect, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
@@ -52,7 +52,7 @@ import { repositoryPath } from "./Repository.ts"
  * The provider name on every record.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PROVIDER = "github"
 
@@ -64,7 +64,7 @@ const OVERLAP_MS = 1000
  * What the adapter needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options {
   /** The connection the records belong to. */
@@ -134,7 +134,7 @@ const Repository = Schema.Struct({ id: Schema.Number, private: Schema.Boolean })
  * The external id of an issue or pull request.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const issueId = (repositoryId: number, issueNumber: number): string =>
   `repo:${repositoryId}:issue:${issueNumber}`
@@ -143,7 +143,7 @@ export const issueId = (repositoryId: number, issueNumber: number): string =>
  * The external id of an issue comment.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const commentId = (repositoryId: number, id: number): string => `repo:${repositoryId}:comment:${id}`
 
@@ -156,7 +156,7 @@ const ISSUE_NUMBER = /\/issues\/(\d+)$/
  * have issued, or a page size outside 1 to 100, before any request is made.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (options: Options): SyncAdapter => {
   const path = repositoryPath(options.owner, options.repo)
