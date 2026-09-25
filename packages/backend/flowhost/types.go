@@ -16,7 +16,14 @@ import (
 const (
 	CatalogCoding    = "coding"
 	CatalogLibrarian = "librarian"
+	// CatalogOrganization is the optional single-owner organization host.
+	CatalogOrganization = "organization"
 )
+
+// OrganizationConfigEnvironment names the organization host's configuration
+// file, relative to its workspace root (the host defaults to
+// Org/Organization.md when it is absent).
+const OrganizationConfigEnvironment = "SMITHERS_ORGANIZATION_CONFIG"
 
 var ErrHostNotRunning = errors.New("flow host is not running")
 

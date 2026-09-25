@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -162,5 +164,137 @@ func TestLoadRegularManifestSymlink(t *testing.T) {
 	}
 	if _, err := Load(link); err != nil {
 		t.Fatalf("regular manifest symlink rejected: %v", err)
+	}
+}
+
+func addOrganizationHost(t *testing.T, path string, hosts map[string]rawHost, flows []string) {
+	t.Helper()
+	name := "smithers-organization-host-v10"
+	contents := []byte("host:organization")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), contents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(contents)
+	hosts[OrganizationFamily] = rawHost{Executable: name, SHA256: hex.EncodeToString(digest[:]), Flows: flows}
+}
+
+func TestLoadWithoutOrganizationHostKeepsExistingRegistry(t *testing.T) {
+	path, hosts := bundledManifest(t)
+	writeManifest(t, path, hosts)
+	registry, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registry.HasOrganization || registry.Organization.Executable != "" || len(registry.Organization.Flows) != 0 {
+		t.Fatalf("a two-host manifest reported an organization host: %+v", registry.Organization)
+	}
+	if registry.Coding.SHA256 != hosts["coding"].SHA256 || registry.Librarian.SHA256 != hosts["librarian"].SHA256 {
+		t.Fatalf("wrong registry: %+v", registry)
+	}
+}
+
+func TestLoadVerifiesOptionalOrganizationHost(t *testing.T) {
+	path, hosts := bundledManifest(t)
+	reversed := OrganizationFlows()
+	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+		reversed[left], reversed[right] = reversed[right], reversed[left]
+	}
+	addOrganizationHost(t, path, hosts, reversed)
+	writeManifest(t, path, hosts)
+	registry, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !registry.HasOrganization || registry.Organization.SHA256 != hosts[OrganizationFamily].SHA256 ||
+		registry.Organization.Executable != filepath.Join(filepath.Dir(path), hosts[OrganizationFamily].Executable) {
+		t.Fatalf("organization host not verified: %+v", registry)
+	}
+	if !reflect.DeepEqual(registry.Organization.Flows, OrganizationFlows()) {
+		t.Fatalf("organization flows were not canonicalized: %v", registry.Organization.Flows)
+	}
+	if err := os.WriteFile(registry.Organization.Executable, []byte("altered host"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "organization Flow host checksum") {
+		t.Fatalf("tampered organization host accepted: %v", err)
+	}
+}
+
+func TestLoadRejectsOrganizationHostWithDifferentCatalog(t *testing.T) {
+	complete := OrganizationFlows()
+	for name, flows := range map[string][]string{
+		"missing":   complete[1:],
+		"extra":     append(OrganizationFlows(), "organization/unknown"),
+		"duplicate": append(OrganizationFlows(), complete[0]),
+		"empty":     nil,
+		"foreign":   append(OrganizationFlows()[1:], "coding/dispatch"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path, hosts := bundledManifest(t)
+			addOrganizationHost(t, path, hosts, flows)
+			writeManifest(t, path, hosts)
+			if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "organization Flow host declares unexpected flows") {
+				t.Fatalf("organization host with a different catalog accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadStillRequiresBothCanonicalHostsBesideOrganization(t *testing.T) {
+	path, hosts := bundledManifest(t)
+	addOrganizationHost(t, path, hosts, OrganizationFlows())
+	delete(hosts, "librarian")
+	writeManifest(t, path, hosts)
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "lacks librarian") {
+		t.Fatalf("organization host replaced a required host: %v", err)
+	}
+}
+
+// The organization catalog is the one list the host, the distribution script
+// and this loader agree on. Its source of truth is flows/organization.
+func TestOrganizationFlowsCatalog(t *testing.T) {
+	want := []string{
+		"organization/intake", "organization/deliver", "organization/task", "organization/hire",
+		"organization/retire", "organization/delegate", "organization/meetings-plan",
+		"organization/meeting-prepare", "organization/book-block", "organization/sync",
+		"organization/saas-request", "organization/status",
+	}
+	sort.Strings(want)
+	if !reflect.DeepEqual(OrganizationFlows(), want) {
+		t.Fatalf("organization catalog = %v, want %v", OrganizationFlows(), want)
+	}
+	if !sort.StringsAreSorted(organizationFlows) {
+		t.Fatal("organization catalog must be stored sorted")
+	}
+	copied := OrganizationFlows()
+	copied[0] = "mutated"
+	if organizationFlows[0] == "mutated" {
+		t.Fatal("OrganizationFlows exposed the catalog for mutation")
+	}
+}
+
+// When the organization host source is present, every file flow it packages
+// must be in the catalog and nothing else may be.
+func TestOrganizationFlowsMatchSourceDirectory(t *testing.T) {
+	directory := filepath.Join("..", "..", "..", "flows", "organization")
+	entries, err := os.ReadDir(directory)
+	if os.IsNotExist(err) {
+		t.Skip("flows/organization is not in this checkout")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(directory, entry.Name(), "flow.ts")); err == nil {
+			found = append(found, "organization/"+entry.Name())
+		}
+	}
+	sort.Strings(found)
+	if !reflect.DeepEqual(found, OrganizationFlows()) {
+		t.Fatalf("flows/organization declares %v, catalog is %v", found, OrganizationFlows())
 	}
 }

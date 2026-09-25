@@ -2,7 +2,6 @@ import { cloudFailure } from "../seams/CloudClient"
 import { renderPlanLimit } from "../seams/BillingSeam"
 import type { ViewAction } from "../PreparedView"
 import { createWorkflowCatalogController } from "./workflow-catalog"
-import { WORKFLOW_PROVISION_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { Card } from "../AppState"
 import { sameApproval } from "../ApprovalReference"
 import { reconcileRunApprovals } from "./approval-reconciliation"
@@ -216,7 +215,8 @@ export const createWorkflowController = (
       if (signal?.aborted) return { code: "request_aborted", message: "Workspace preparation was interrupted." }
       let body: { status?: unknown; message?: unknown } | undefined
       try {
-        const response = await boundedFetch(`${baseUrl}${WORKFLOW_PROVISION_PATH}`, {
+        const { provision } = await ctx.flowRelay.pathsFor(repo)
+        const response = await boundedFetch(`${baseUrl}${provision}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ repo, ...binding }),

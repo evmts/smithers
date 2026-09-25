@@ -41,6 +41,9 @@ type bootstrapFeatures struct {
 	billingCheckout  bool
 	workspaceRuntime bool
 	isolatedSandbox  bool
+	// organization: this process relays the configured organization host
+	// (/api/organization*). The repository name is served only to the owner.
+	organization bool
 }
 
 func newAppBootstrap(features bootstrapFeatures) appBootstrap {
@@ -78,6 +81,9 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 	}
 	if features.billingCheckout {
 		result.Capabilities = append(result.Capabilities, "billing.checkout")
+	}
+	if features.organization {
+		result.Capabilities = append(result.Capabilities, "organization")
 	}
 	if features.workspaceRuntime || features.isolatedSandbox {
 		mode := "trusted-only"

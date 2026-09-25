@@ -191,6 +191,36 @@ export const WORKFLOW_PROVISION_PATH = "/api/workflow/provision"
  */
 export const WORKFLOW_RPC_PATH = "/api/workflow/rpc"
 /*
+ * The organization relay: the workflow relay's procedures and payloads for the
+ * optional organization Flow host of a single-owner installation. Only the
+ * installation owner is served, and only for the one repository the operator
+ * configured; every other caller or repository gets the same refusal as a
+ * repository it cannot see. A host that serves it advertises the
+ * `organization` bootstrap capability, and `GET` on the base path names the
+ * configured repository to its owner.
+ */
+/**
+ * The organization relay route that names the configured repository to its owner.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const ORGANIZATION_PATH = "/api/organization"
+/**
+ * The organization provision route shared by server and client.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const ORGANIZATION_PROVISION_PATH = "/api/organization/provision"
+/**
+ * The organization rpc route shared by server and client.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const ORGANIZATION_RPC_PATH = "/api/organization/rpc"
+/*
  * The dispatchers a repository's runs wait on: its durable trigger
  * registrations (cron schedules), one row each with the raw schedule, the
  * flow it launches, and its state; and its registered webhooks, one row each

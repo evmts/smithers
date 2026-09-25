@@ -31,6 +31,16 @@ func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
 	require.Equal(t, "none", unavailable.AuthFlow)
 }
 
+func TestAppBootstrapOrganizationRequiresEnabledFamily(t *testing.T) {
+	without := newAppBootstrap(bootstrapFeatures{role: localTopology, identity: true})
+	require.NotContains(t, without.Capabilities, "organization")
+	with := newAppBootstrap(bootstrapFeatures{role: localTopology, identity: true, organization: true})
+	require.Equal(t, []string{"identity", "organization"}, with.Capabilities)
+	encoded, err := json.Marshal(with)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "repo", "the unauthenticated bootstrap never names the organization repository")
+}
+
 func TestAppBootstrapGitHubRequiresConfiguredIntegration(t *testing.T) {
 	without := newAppBootstrap(bootstrapFeatures{role: localTopology, identity: true})
 	require.NotContains(t, without.Capabilities, "github")

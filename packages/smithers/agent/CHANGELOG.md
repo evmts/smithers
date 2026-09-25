@@ -54,6 +54,18 @@
 
 - `StandardFlows.classify(services, options?)`: the cell's doors to Jev as the source `std/classify`, binding the ad-hoc `classify` flow and one `classify/<id>` flow per curated classifier (the three from `@smthrs/std` by default) over the `Evaluator` service. An explicit classifier outage fixture binds `Evaluator.layerUnavailable()` and every call resolves `{ ok: false, error: { code: "flow_failed", message } }` with a message containing `unreachable:` after the binding's `Flow classify failed:` prefix.
 
+- `StandardFlows.memory(services, scope?)` and `StandardFlows.MemoryScope`
+  (#1700, in part). With a scope, `remember` and `recall` are bound through
+  `WithMemory.withMemory` and `Flows.handlersFor`: a bank outside
+  `scope.policy.namespace` fails with `invalid_namespace` before any I/O, a
+  recall naming no bank reads the policy namespace, and `recall: "none"` and
+  `retain: "never"` behave as `@smthrs/memory` defines them. `scope.provenance`
+  is recorded on remembered facts. The policy and provenance are the bindings'
+  declaration identity, so a sealed recall recorded under one scope or run is
+  never replayed into another. An invalid policy binds nothing and fails
+  catalog composition with `assembly_failed`. Without a scope, the binding is
+  unchanged.
+
 ### Changed
 
 - `control.agent.vacuous-verification-observed` now projects `callDigest` where

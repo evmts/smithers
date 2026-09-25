@@ -102,6 +102,8 @@ export interface GatewayTransport {
   /** Capture ownership at request admission; a late answer cannot cross an account boundary. */
   readonly observationGuard?: () => () => boolean
   readonly bindingFor?: (repo: string, runId?: string) => GatewayWorkspaceBinding | { readonly error: string }
+  /** The relay route for this repository (controller/flowRelay.ts); omission is the workflow relay. */
+  readonly rpcPathFor?: (repo: string) => Promise<string>
   readonly fetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly errorMessageOf: (response: Response, fallback: string) => Promise<string>
 }
@@ -202,9 +204,10 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
     let body: { ok?: unknown; payload?: unknown; error?: unknown; message?: unknown; status?: unknown } | undefined
     const resumeDeadline = Date.now() + 180_000
     try {
+      const path = transport.rpcPathFor === undefined ? WORKFLOW_RPC_PATH : await transport.rpcPathFor(repo)
       for (;;) {
         if (!stillOwned()) return { status: "error", message: "This workspace request no longer belongs to the current session." }
-        const response = await transport.fetch(`${baseUrl}${WORKFLOW_RPC_PATH}`, {
+        const response = await transport.fetch(`${baseUrl}${path}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ repo, procedure, payload, ...target })

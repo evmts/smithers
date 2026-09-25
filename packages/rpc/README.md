@@ -24,6 +24,7 @@ Each route family has one home module, and a route constant is declared only the
 | `/api/repository-setup`                                                                                                                                                                        | `RepositorySetup.ts` |
 | `/api/repos/{owner}/{repo}/mythical`                                                                                                                                                           | `Mythical.ts`        |
 | `/api/model/credential`, `/api/model/credential/receipt`                                                                                                                                       | `AgentApiRoutes.ts`  |
+| `/api/organization`                                                                                                                                                                            | `AgentApiRoutes.ts`  |
 | `/api/agent`, `/api/auth`, `/api/identity`, `/api/billing`, `/api/tools`, `/api/workflow`, `/api/model`, `/api/public`, `/api/admin`, `/api/recommend`, `/api/jev`, `/api/chat`, `/api/health` | `AgentApiRoutes.ts`  |
 
 These are public product contracts even while the package is private. Preserve wire fields and route strings when changing implementation details. All exported declarations carry descriptions, `@since`, and `@category`.

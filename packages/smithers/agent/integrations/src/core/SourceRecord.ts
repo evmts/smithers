@@ -129,3 +129,177 @@ export type SourceRecord = typeof SourceRecord.Type
  * @since 0.1.0
  */
 export const decode = Schema.decodeUnknownEffect(SourceRecord)
+
+/**
+ * The fields that order two copies of one record.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Ordering = Pick<SourceRecord, "updatedAtMs" | "deleted" | "version">
+
+// A decimal version token: Slack's `1712345678.000200`, a Google sequence.
+const DECIMAL_VERSION = /^(\d+)(?:\.(\d+))?$/
+
+const sign = (left: string, right: string): number => left === right ? 0 : left < right ? -1 : 1
+
+/**
+ * Orders two provider version tokens.
+ *
+ * A missing token sorts first. Two decimal tokens compare as numbers, digit by
+ * digit, so `10.5` follows `9.75` without a floating-point round trip that
+ * would merge two microsecond-distinct Slack timestamps. Any other pair
+ * compares by code unit: a total order, so the same pair always resolves the
+ * same way whichever copy arrives first.
+ *
+ * @category ordering
+ * @since 0.1.0
+ */
+export const compareVersion = (left: string | null, right: string | null): number => {
+  if (left === right) return 0
+  if (left === null) return -1
+  if (right === null) return 1
+  const leftDecimal = DECIMAL_VERSION.exec(left)
+  const rightDecimal = DECIMAL_VERSION.exec(right)
+  if (leftDecimal !== null && rightDecimal !== null) {
+    const leftWhole = leftDecimal[1]!.replace(/^0+(?=\d)/, "")
+    const rightWhole = rightDecimal[1]!.replace(/^0+(?=\d)/, "")
+    if (leftWhole.length !== rightWhole.length) return leftWhole.length < rightWhole.length ? -1 : 1
+    const whole = sign(leftWhole, rightWhole)
+    if (whole !== 0) return whole
+    const width = Math.max(leftDecimal[2]?.length ?? 0, rightDecimal[2]?.length ?? 0)
+    const fraction = sign((leftDecimal[2] ?? "").padEnd(width, "0"), (rightDecimal[2] ?? "").padEnd(width, "0"))
+    if (fraction !== 0) return fraction
+  }
+  return sign(left, right)
+}
+
+/**
+ * Orders two copies of one record: negative when `candidate` is older than
+ * `current`, zero when neither is newer, positive when `candidate` is newer.
+ *
+ * The provider's change time decides first, and a copy with no change time is
+ * older than any copy that has one. At the same time a deletion follows the
+ * live copy, because a provider stamps a delete with the time of the version it
+ * removed. Then the version token decides. Because this is a total order over
+ * the three fields, applying copies in any order converges on the same winner.
+ *
+ * @category ordering
+ * @since 0.1.0
+ */
+export const compare = (current: Ordering, candidate: Ordering): number => {
+  if (current.updatedAtMs !== candidate.updatedAtMs) {
+    if (current.updatedAtMs === null) return 1
+    if (candidate.updatedAtMs === null) return -1
+    return candidate.updatedAtMs > current.updatedAtMs ? 1 : -1
+  }
+  if (current.deleted !== candidate.deleted) return candidate.deleted ? 1 : -1
+  return compareVersion(candidate.version, current.version)
+}
+
+/**
+ * Whether `candidate` is strictly newer than `current`.
+ *
+ * Ordered by `updatedAtMs`, then deletion, then `version`; see {@link compare}.
+ * A copy equal on all three does not supersede, which is what makes applying
+ * the same record twice a no-op.
+ *
+ * @category ordering
+ * @since 0.1.0
+ */
+export const supersedes = (current: Ordering, candidate: Ordering): boolean => compare(current, candidate) > 0
+
+/**
+ * What a tombstone keeps of the record it removes.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Identity =
+  & Pick<SourceRecord, "provider" | "connectionId" | "externalId" | "kind" | "access" | "thread">
+  & Partial<Pick<SourceRecord, "createdAtMs" | "updatedAtMs" | "version">>
+
+/**
+ * A tombstone: the provider deleted the object.
+ *
+ * It keeps identity, placement, times and version, and nothing else: text,
+ * payload, author and link are empty, so a deleted object's content cannot be
+ * retrieved from the tombstone. Its change time is the later of the removed
+ * version's and `deletedAtMs`, so it supersedes the copy it removes and loses
+ * to any later edit, which is how an object the provider restores comes back.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const tombstone = (of: Identity, deletedAtMs: number, retrievedAtMs: number = deletedAtMs): SourceRecord => ({
+  provider: of.provider,
+  connectionId: of.connectionId,
+  externalId: of.externalId,
+  kind: of.kind,
+  url: null,
+  author: null,
+  createdAtMs: of.createdAtMs ?? null,
+  updatedAtMs: Math.max(of.updatedAtMs ?? deletedAtMs, deletedAtMs),
+  version: of.version ?? null,
+  retrievedAtMs,
+  access: of.access,
+  thread: of.thread,
+  text: "",
+  deleted: true,
+  payload: null
+})
+
+/**
+ * The containers a record lives in: its access container and its thread
+ * container, without duplicates. A record in none is readable only through a
+ * grant that covers the whole connection.
+ *
+ * @category getters
+ * @since 0.1.0
+ */
+export const containers = (record: Pick<SourceRecord, "access" | "thread">): ReadonlyArray<string> => {
+  const ids: Array<string> = []
+  for (const id of [record.access.containerId, record.thread.containerId]) {
+    if (id !== null && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+/**
+ * A pointer to one retrieved copy of a record, as a prompt or a run keeps it.
+ *
+ * A resumed run holds references, not text, and asks the store whether each
+ * one is still readable and still the copy it used.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Reference = Schema.Struct({
+  connectionId: Schema.NonEmptyString,
+  externalId: Schema.NonEmptyString,
+  updatedAtMs: Schema.NullOr(Schema.Number),
+  version: Schema.NullOr(Schema.String),
+  retrievedAtMs: Schema.Number
+})
+
+/**
+ * A pointer to one retrieved copy of a record.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Reference = typeof Reference.Type
+
+/**
+ * The reference to `record` as retrieved.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const reference = (record: SourceRecord): Reference => ({
+  connectionId: record.connectionId,
+  externalId: record.externalId,
+  updatedAtMs: record.updatedAtMs,
+  version: record.version,
+  retrievedAtMs: record.retrievedAtMs
+})

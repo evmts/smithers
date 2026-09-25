@@ -25,13 +25,32 @@ const host = async (root, path, flows) => {
   }
 }
 
-export const writeFlowHostManifest = async ({ output, coding, librarian }) => {
+// The optional organization host's exact catalog (flows/organization/<name>/flow.ts).
+// packages/backend/flowmanifest organizationFlows is the Go copy; a distribution
+// test loads this script's output there, so the two cannot drift silently.
+export const organizationFlows = [
+  "organization/book-block",
+  "organization/delegate",
+  "organization/deliver",
+  "organization/hire",
+  "organization/intake",
+  "organization/meeting-prepare",
+  "organization/meetings-plan",
+  "organization/retire",
+  "organization/saas-request",
+  "organization/status",
+  "organization/sync",
+  "organization/task"
+]
+
+export const writeFlowHostManifest = async ({ output, coding, librarian, organization }) => {
   const manifestPath = resolve(output)
   const root = dirname(manifestPath)
   await mkdir(root, { recursive: true })
   const hosts = {
     coding: await host(root, coding, ["coding/dispatch"]),
-    librarian: await host(root, librarian, ["librarian/history", "librarian/wiki"])
+    librarian: await host(root, librarian, ["librarian/history", "librarian/wiki"]),
+    ...(organization === undefined ? {} : { organization: await host(root, organization, [...organizationFlows]) })
   }
   for (const entry of Object.values(hosts)) {
     await writeFile(
@@ -45,9 +64,10 @@ export const writeFlowHostManifest = async ({ output, coding, librarian }) => {
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const [output, coding, librarian] = process.argv.slice(2)
-  if (output === undefined || coding === undefined || librarian === undefined) {
-    throw new Error("usage: flow-host-manifest.mjs OUTPUT CODING_HOST LIBRARIAN_HOST")
+  const args = process.argv.slice(2)
+  const [output, coding, librarian, organization] = args
+  if (output === undefined || coding === undefined || librarian === undefined || args.length > 4) {
+    throw new Error("usage: flow-host-manifest.mjs OUTPUT CODING_HOST LIBRARIAN_HOST [ORGANIZATION_HOST]")
   }
-  await writeFlowHostManifest({ output, coding, librarian })
+  await writeFlowHostManifest({ output, coding, librarian, organization })
 }

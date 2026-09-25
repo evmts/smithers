@@ -1,11 +1,20 @@
-import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Logger, Path, References, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { Effect, Fiber, Logger, References, Stream } from "effect"
+import { type ChildProcess as NodeChild, spawn } from "node:child_process"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { elapsed } from "../src/internal/deadline.ts"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
 import type { Sdk } from "../src/MicrosandboxSandbox/Sdk.ts"
 import type { RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.ts"
@@ -16,50 +25,37 @@ import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import * as SandboxHealth from "../src/SandboxHealth/index.ts"
 
 const encoder = new TextEncoder()
-const decoder = new TextDecoder()
 
 type Builder = ReturnType<Sdk["Sandbox"]["builder"]>
 type VendorSandbox = Awaited<ReturnType<Builder["create"]>>
 type VendorHandle = Awaited<ReturnType<Sdk["Sandbox"]["get"]>>
 type ExecBuilder = Parameters<Parameters<VendorSandbox["execStreamWith"]>[1]>[0]
-type ExecOutput = Awaited<ReturnType<Awaited<ReturnType<VendorSandbox["execStreamWith"]>>["collect"]>>
+type ExecHandle = Awaited<ReturnType<VendorSandbox["execStreamWith"]>>
+type ExecEvent = NonNullable<Awaited<ReturnType<ExecHandle["recv"]>>>
+type ListBuilder = Parameters<Parameters<Sdk["Sandbox"]["listWith"]>[0]>[0]
 
 // -----------------------------------------------------------------------------
-// The Microsandbox SDK as a fake: real shells and real files behind the
-// vendor's builders and handles.
+// The Microsandbox SDK as a fake: real processes and real files behind the
+// vendor's builders, handles, and streaming command events.
 // -----------------------------------------------------------------------------
 
-// The fake emulates only the vendor transport: the fluent builders and the
-// single-drain command handle record what the SDK would carry, and underneath
-// every command is a REAL `sh` running against a REAL directory, every guest
-// file a real file. Guest-fixed absolute paths — the default `/workspace`, the
-// image's `/etc/hostname` — live under the machine's own directory on this
-// host, the way the AWS fake keeps guest pids under the test root.
+// The fake emulates only the vendor transport: the fluent builders, lifecycle
+// handles, label listing, and the streaming command handle record what the SDK
+// would carry, and underneath every command is a REAL process running against
+// a REAL directory, every guest file a real file. Each command leads its own
+// process group, the way the guest agent runs an exec, so the handle's
+// `signal` reaches the group and nothing outside it. Guest-fixed absolute
+// paths — the default `/workspace`, the image's `/etc/hostname` — live under
+// the machine's own directory on this host.
 const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-msb-sandbox-")))
 afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-const platform = Layer.provideMerge(
-  NodeChildProcessSpawner.layer,
-  Layer.merge(NodeFileSystem.layer, Path.layer)
-)
-const local = Effect.runSync(
-  Effect.gen(function*() {
-    return yield* ChildProcessSpawner
-  }).pipe(Effect.provide(platform))
-)
-
-const concat = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
-  let length = 0
-  for (const chunk of chunks) length += chunk.length
-  const whole = new Uint8Array(length)
-  let offset = 0
-  for (const chunk of chunks) {
-    whole.set(chunk, offset)
-    offset += chunk.length
-  }
-  return whole
+interface LiveExec {
+  readonly child: NodeChild
+  /** The guest went away: the stream ends without an exit event. */
+  readonly lose: () => void
 }
 
 interface Machine {
@@ -67,7 +63,10 @@ interface Machine {
   /** The real directory guest-fixed absolute paths live under on this host. */
   readonly root: string
   readonly ephemeral: boolean
-  running: boolean
+  readonly backendKind: "local" | "cloud"
+  labels: Record<string, string>
+  status: "running" | "stopped" | "crashed"
+  readonly live: Set<LiveExec>
 }
 
 interface ExecCall {
@@ -83,17 +82,39 @@ interface Recorded {
   readonly builds: Array<{ readonly name: string; readonly settings: Record<string, unknown> }>
   readonly execs: Array<ExecCall>
   readonly mkdirs: Array<string>
-  readonly stops: Array<string>
+  readonly destroys: Array<{ readonly name: string; readonly timeoutMs: number }>
   readonly connects: Array<string>
   readonly starts: Array<{ readonly name: string; readonly detached: boolean }>
-  collects: number
+  readonly modifies: Array<{ readonly name: string; readonly labels: Record<string, string>; readonly policy: string }>
+  readonly signals: Array<{ readonly name: string; readonly signal: number }>
+  readonly handleKills: Array<string>
+  readonly lists: Array<{ readonly labels: Record<string, string>; readonly cursor: string | undefined }>
+  readonly backends: Array<string>
 }
 
 interface Controls {
   readonly createFailure?: (() => unknown) | undefined
-  readonly stopFailure?: boolean | undefined
+  readonly destroyFailure?: ((name: string) => unknown) | undefined
   readonly pingFailure?: Error | undefined
   readonly readFailure?: (() => unknown) | undefined
+  readonly defaultBackend?: (() => "local" | "cloud") | undefined
+  readonly machineBackend?: "local" | "cloud" | undefined
+  readonly modifyApplied?: boolean | undefined
+  readonly modifyFailure?: (() => unknown) | undefined
+  /** Rejects `execStreamWith` for a matching command line. */
+  readonly execFailure?: ((line: string) => unknown) | undefined
+  /** Holds `execStreamWith` open until the gate resolves, for a matching command line. */
+  readonly startGate?: ((line: string) => Promise<void> | undefined) | undefined
+  /** Delays the `started` event of a matching command line. */
+  readonly startedDelayMs?: ((line: string) => number | undefined) | undefined
+  /** Ends a matching command's stream right after it starts, without an exit event. */
+  readonly loseOn?: ((line: string) => boolean) | undefined
+  /** Rejects `recv` right after a matching command starts. */
+  readonly recvFailure?: ((line: string) => unknown) | undefined
+  readonly listPageSize?: number | undefined
+  readonly listFailure?: (() => unknown) | undefined
+  readonly refreshFailure?: ((name: string) => unknown) | undefined
+  readonly configJson?: ((name: string) => string | undefined) | undefined
 }
 
 /** Every guest filesystem failure arrives as the SDK's one fs error kind. */
@@ -109,21 +130,52 @@ const fsFailure = (cause: unknown): Error => {
   )
 }
 
+const coded = (code: string, message: string): Error => Object.assign(new Error(message), { code })
+
+/** One command's event stream: buffered until received, closed by `null`. */
+const eventChannel = () => {
+  const buffered: Array<ExecEvent | null> = []
+  const waiting: Array<(event: ExecEvent | null) => void> = []
+  let closed = false
+  return {
+    push: (event: ExecEvent | null): void => {
+      if (closed) return
+      if (event === null) closed = true
+      const waiter = waiting.shift()
+      if (waiter === undefined) buffered.push(event)
+      else waiter(event)
+    },
+    next: (): Promise<ExecEvent | null> => {
+      if (buffered.length > 0) return Promise.resolve(buffered.shift()!)
+      if (closed) return Promise.resolve(null)
+      return new Promise((resolve) => waiting.push(resolve))
+    }
+  }
+}
+
+const signalGroup = (child: NodeChild, signal: number): void => {
+  process.kill(-child.pid!, signal)
+}
+
 const fakeSdk = (controls: Controls = {}) => {
   const machines = new Map<string, Machine>()
   const recorded: Recorded = {
     builds: [],
     execs: [],
     mkdirs: [],
-    stops: [],
+    destroys: [],
     connects: [],
     starts: [],
-    collects: 0
+    modifies: [],
+    signals: [],
+    handleKills: [],
+    lists: [],
+    backends: []
   }
 
   const machineAt = (name: string): Machine => {
     const machine = machines.get(name)
-    if (machine === undefined) throw new Error(`no such fake microVM: ${name}`)
+    if (machine === undefined) throw coded("sandboxNotFound", `sandbox not found: ${name}`)
     return machine
   }
 
@@ -141,8 +193,76 @@ const fakeSdk = (controls: Controls = {}) => {
     }
   }
 
+  const exec = async (machine: Machine, call: ExecCall): Promise<ExecHandle> => {
+    const line = [call.shell, ...call.args].join(" ")
+    const failed = controls.execFailure?.(line)
+    if (failed !== undefined) throw failed
+    await controls.startGate?.(line)
+    const events = eventChannel()
+    const child = spawn(call.shell, [...call.args], {
+      cwd: hostPath(machine, call.cwd),
+      env: { ...process.env, ...call.env },
+      detached: true,
+      stdio: ["pipe", "pipe", "pipe"]
+    })
+    child.stdin!.on("error", () => undefined)
+    child.stdin!.end(Buffer.from(call.stdin ?? new Uint8Array()))
+    const live: LiveExec = {
+      child,
+      lose: () => {
+        machine.live.delete(live)
+        events.push(null)
+        try {
+          signalGroup(child, 9)
+        } catch {
+          // Already gone with the guest.
+        }
+      }
+    }
+    machine.live.add(live)
+    const delay = controls.startedDelayMs?.(line)
+    const started = () => events.push({ kind: "started", pid: child.pid! })
+    if (delay === undefined) started()
+    else setTimeout(started, delay)
+    child.stdout!.on("data", (data: Buffer) => events.push({ kind: "stdout", data: new Uint8Array(data) }))
+    child.stderr!.on("data", (data: Buffer) => events.push({ kind: "stderr", data: new Uint8Array(data) }))
+    child.on("close", (code) => {
+      machine.live.delete(live)
+      events.push({ kind: "exited", code: code ?? -1 })
+      events.push(null)
+    })
+    if (controls.loseOn?.(line) === true) live.lose()
+    const recvFailure = controls.recvFailure?.(line)
+    return {
+      recv: () => recvFailure === undefined ? events.next() : Promise.reject(recvFailure),
+      signal: async (signal) => {
+        recorded.signals.push({ name: machine.name, signal })
+        signalGroup(child, signal)
+      },
+      kill: async () => {
+        recorded.handleKills.push(line)
+        signalGroup(child, 9)
+      }
+    }
+  }
+
+  const remove = (machine: Machine): void => {
+    machine.status = "stopped"
+    for (const live of [...machine.live]) live.lose()
+    machines.delete(machine.name)
+    rmSync(machine.root, { recursive: true, force: true })
+  }
+
+  const destroy = async (machine: Machine, options: { readonly timeoutMs: number }): Promise<void> => {
+    recorded.destroys.push({ name: machine.name, timeoutMs: options.timeoutMs })
+    const failed = controls.destroyFailure?.(machine.name)
+    if (failed !== undefined) throw failed
+    remove(machine)
+  }
+
   const sandboxFor = (machine: Machine): VendorSandbox => ({
     name: machine.name,
+    backendKind: machine.backendKind,
     fs: () => ({
       write: async (path, data) => {
         const bytes = typeof data === "string" ? encoder.encode(data) : new Uint8Array(data)
@@ -162,10 +282,8 @@ const fakeSdk = (controls: Controls = {}) => {
       }
     }),
     execStreamWith: async (shell, configure) => {
-      if (!machine.running) {
-        throw Object.assign(new Error(`[SandboxNotRunning] microVM ${machine.name} is stopped`), {
-          code: "sandboxNotRunning"
-        })
+      if (machine.status !== "running") {
+        throw coded("sandboxNotRunning", `[SandboxNotRunning] microVM ${machine.name} is ${machine.status}`)
       }
       let args: Array<string> = []
       let cwd = ""
@@ -192,55 +310,43 @@ const fakeSdk = (controls: Controls = {}) => {
       configure(builder)
       const call: ExecCall = { name: machine.name, shell, args, cwd, env, stdin }
       recorded.execs.push(call)
-      let collected = false
-      return {
-        collect: async () => {
-          if (collected) throw new Error("Microsandbox command handles can only be collected once")
-          collected = true
-          recorded.collects++
-          return await Effect.runPromise(
-            Effect.scoped(
-              Effect.gen(function*() {
-                const child = yield* local.spawn(
-                  ChildProcess.make(call.shell, [...call.args], {
-                    cwd: hostPath(machine, call.cwd),
-                    env: call.env,
-                    extendEnv: true,
-                    // The vendor default connects stdin to /dev/null; given
-                    // bytes are sent and the channel closed.
-                    stdin: Stream.make(call.stdin ?? new Uint8Array())
-                  })
-                )
-                const [stdout, stderr, code] = yield* Effect.all(
-                  [Stream.runCollect(child.stdout), Stream.runCollect(child.stderr), child.exitCode],
-                  { concurrency: "unbounded" }
-                )
-                const stdoutBytes = concat(stdout)
-                const stderrBytes = concat(stderr)
-                const output: ExecOutput = {
-                  code,
-                  stdout: () => decoder.decode(stdoutBytes),
-                  stderr: () => decoder.decode(stderrBytes),
-                  stdoutBytes: () => stdoutBytes,
-                  stderrBytes: () => stderrBytes
-                }
-                return output
-              })
-            )
-          )
-        }
-      }
+      return await exec(machine, call)
     },
-    stop: async () => {
-      recorded.stops.push(machine.name)
-      if (controls.stopFailure === true) throw new Error(`could not stop ${machine.name}`)
-      machine.running = false
-      // An ephemeral microVM's filesystem dies with it.
-      if (machine.ephemeral) {
-        machines.delete(machine.name)
-        rmSync(machine.root, { recursive: true, force: true })
-      }
-    }
+    destroy: (options) => destroy(machine, options)
+  })
+
+  const handleFor = (machine: Machine): VendorHandle => ({
+    name: machine.name,
+    status: machine.status,
+    configJson: controls.configJson?.(machine.name) ?? JSON.stringify({ name: machine.name, labels: machine.labels }),
+    connect: async () => {
+      if (machine.status !== "running") throw new Error(`microVM ${machine.name} is stopped`)
+      recorded.connects.push(machine.name)
+      return sandboxFor(machine)
+    },
+    start: async () => {
+      machine.status = "running"
+      recorded.starts.push({ name: machine.name, detached: false })
+      return sandboxFor(machine)
+    },
+    startDetached: async () => {
+      machine.status = "running"
+      recorded.starts.push({ name: machine.name, detached: true })
+      return sandboxFor(machine)
+    },
+    refresh: async () => {
+      const failed = controls.refreshFailure?.(machine.name)
+      if (failed !== undefined) throw failed
+      return handleFor(machineAt(machine.name))
+    },
+    modify: async ({ labels, policy }) => {
+      recorded.modifies.push({ name: machine.name, labels: { ...labels }, policy })
+      if (controls.modifyFailure !== undefined) throw controls.modifyFailure()
+      if (controls.modifyApplied === false) return { applied: false }
+      machine.labels = { ...machine.labels, ...labels }
+      return { applied: true }
+    },
+    destroy: (options) => destroy(machine, options)
   })
 
   const sdk: Sdk = {
@@ -311,16 +417,15 @@ const fakeSdk = (controls: Controls = {}) => {
           create: async () => {
             recorded.builds.push({ name, settings: { ...settings } })
             if (controls.createFailure !== undefined) throw controls.createFailure()
-            if (machines.has(name)) {
-              throw Object.assign(new Error(`sandbox ${name} already exists`), {
-                code: "sandboxAlreadyExists"
-              })
-            }
+            if (machines.has(name)) throw coded("sandboxAlreadyExists", `sandbox ${name} already exists`)
             const machine: Machine = {
               name,
               root: join(root, "machines", name),
               ephemeral: settings["ephemeral"] === true,
-              running: true
+              backendKind: controls.machineBackend ?? "local",
+              labels: { ...(settings["labels"] as Record<string, string>) },
+              status: "running",
+              live: new Set()
             }
             // The image ships a hostname; the fake machine really holds one.
             mkdirSync(join(machine.root, "etc"), { recursive: true })
@@ -331,41 +436,73 @@ const fakeSdk = (controls: Controls = {}) => {
         }
         return builder
       },
-      get: async (name) => {
-        const machine = machineAt(name)
-        const handle: VendorHandle = {
-          status: machine.running ? "running" : "stopped",
-          connect: async () => {
-            if (!machine.running) throw new Error(`microVM ${name} is stopped`)
-            recorded.connects.push(name)
-            return sandboxFor(machine)
+      get: async (name) => handleFor(machineAt(name)),
+      listWith: async (configure) => {
+        const labels: Record<string, string> = {}
+        let cursor: string | undefined
+        const list: ListBuilder = {
+          label(key, value) {
+            labels[key] = value
+            return this
           },
-          start: async () => {
-            machine.running = true
-            recorded.starts.push({ name, detached: false })
-            return sandboxFor(machine)
-          },
-          startDetached: async () => {
-            machine.running = true
-            recorded.starts.push({ name, detached: true })
-            return sandboxFor(machine)
+          cursor(value) {
+            cursor = value
+            return this
           }
         }
-        return handle
+        configure(list)
+        recorded.lists.push({ labels: { ...labels }, cursor })
+        if (controls.listFailure !== undefined) throw controls.listFailure()
+        const matching = [...machines.values()]
+          .filter((machine) => Object.entries(labels).every(([key, value]) => machine.labels[key] === value))
+          .map(handleFor)
+        const size = controls.listPageSize ?? matching.length
+        const from = cursor === undefined ? 0 : Number(cursor)
+        const next = from + size
+        return {
+          sandboxes: matching.slice(from, next),
+          ...next < matching.length ? { nextCursor: String(next) } : {}
+        }
       }
+    },
+    defaultBackendKind: () => controls.defaultBackend?.() ?? "local",
+    setDefaultBackend: (backend) => {
+      recorded.backends.push(backend)
     }
   }
 
   return {
     sdk,
     recorded,
+    machines,
     markStopped: (name: string): void => {
-      machineAt(name).running = false
+      machineAt(name).status = "stopped"
     },
     breakHostname: (name: string): void => {
       rmSync(join(machineAt(name).root, "etc", "hostname"), { force: true })
     },
-    machineRoot: (name: string): string => machineAt(name).root
+    machineRoot: (name: string): string => machineAt(name).root,
+    /** The machine dies: every running command's stream ends without an exit, and nothing new starts. */
+    loseGuest: (name: string): void => {
+      const machine = machineAt(name)
+      machine.status = "crashed"
+      for (const live of [...machine.live]) live.lose()
+    },
+    /** A machine some earlier process created and labelled. */
+    plant: (name: string, labels: Record<string, string>, status: Machine["status"] = "running"): void => {
+      const machine: Machine = {
+        name,
+        root: join(root, "machines", name),
+        ephemeral: false,
+        backendKind: "local",
+        labels,
+        status,
+        live: new Set()
+      }
+      mkdirSync(join(machine.root, "etc"), { recursive: true })
+      writeFileSync(join(machine.root, "etc", "hostname"), name)
+      machines.set(name, machine)
+    }
   }
 }
 
@@ -384,6 +521,22 @@ const output = (process: RemoteProcess) =>
     ],
     { concurrency: "unbounded" }
   )
+
+const sizeOf = (path: string): number => existsSync(path) ? statSync(path).size : 0
+
+/** Whether a file stopped growing: two reads a quarter second apart agree. */
+const settled = (path: string) =>
+  Effect.gen(function*() {
+    const before = sizeOf(path)
+    yield* elapsed(250)
+    return sizeOf(path) === before
+  })
+
+const ownership = (owner: string, holder: string) => ({
+  "smithers.provider": "microsandbox",
+  "smithers.owner": owner,
+  "smithers.holder": holder
+})
 
 describe("MicrosandboxSandbox", () => {
   it.effect("keeps vendor credentials out of health messages and debug logs", () =>
@@ -489,30 +642,33 @@ describe("MicrosandboxSandbox", () => {
     )
   }
 
-  it.effect("passes SandboxConformance running real shells against real files", () =>
+  it.live("passes SandboxConformance, kill and interrupt included, running real processes against real files", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
       const workdir = join(root, "conformance-ws")
       const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
 
       const violations = yield* SandboxConformance.check(provider, {
-        provides: { ping: true }
+        provides: { ping: true, kill: true, interrupt: true, ephemeral: true }
       })
 
       expect(violations).toEqual([])
-      expect(fake.recorded.collects).toBe(fake.recorded.execs.length)
       expect(fake.recorded.builds.every(({ settings }) =>
         settings["image"] === "oven/bun:1" &&
         settings["ephemeral"] === true &&
         settings["detached"] === false
       )).toBe(true)
+      // Every released ephemeral machine is removed under the bounded stop.
+      expect(fake.recorded.destroys.length).toBe(fake.recorded.builds.length)
+      expect(fake.recorded.destroys.every(({ timeoutMs }) => timeoutMs === 3_000)).toBe(true)
       // Commands run a plain shell, never a login shell, and never smuggle
       // file contents through the command line.
-      expect(fake.recorded.execs.every(({ args, shell }) => shell === "/bin/sh" && args[0] === "-c")).toBe(true)
-      expect(fake.recorded.execs.every(({ args }) => args[1]?.includes("base64") !== true)).toBe(true)
+      const commands = fake.recorded.execs.filter(({ args }) => !args[1]?.includes("kill -s"))
+      expect(commands.every(({ args, shell }) => shell === "/bin/sh" && args[0] === "-c")).toBe(true)
+      expect(commands.every(({ args }) => args[1]?.includes("base64") !== true)).toBe(true)
       // Standard input rode the exec builder's byte channel.
       expect(fake.recorded.execs.some(({ stdin }) => stdin !== undefined && stdin.includes(255))).toBe(true)
-    }), 30_000)
+    }), 60_000)
 
   it.effect("carries every builder option and command setting without a builder workdir", () =>
     Effect.gen(function*() {
@@ -532,10 +688,12 @@ describe("MicrosandboxSandbox", () => {
         idleTimeoutSecs: 120,
         security: "restricted",
         pullPolicy: "if-missing",
-        labels: { owner: "smithers" },
+        labels: { owner: "smithers", "smithers.holder": "forged" },
         scripts: { prepare: "echo ready" },
         detached: true,
-        disableNetwork: true
+        disableNetwork: true,
+        owner: "installation-a",
+        holder: "host-7"
       })
 
       const result = yield* Effect.scoped(
@@ -591,7 +749,9 @@ describe("MicrosandboxSandbox", () => {
         maxMemory: 2048,
         security: "restricted",
         pullPolicy: "if-missing",
-        labels: { owner: "smithers" },
+        // The ownership keys are the provider's own: a caller label cannot
+        // forge the holder `reap` judges.
+        labels: { owner: "smithers", ...ownership("installation-a", "host-7") },
         scripts: { prepare: "echo ready" },
         maxDuration: 900,
         idleTimeout: 120,
@@ -600,13 +760,284 @@ describe("MicrosandboxSandbox", () => {
         detached: true
       })
       expect(fake.recorded.builds[0]?.settings["workdir"]).toBeUndefined()
-      expect(fake.recorded.stops).toHaveLength(2)
+      expect(fake.recorded.destroys).toHaveLength(2)
+    }))
+
+  it.effect("labels every machine with a default owner and a holder minted per provider", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const first = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "labels-ws") })
+      const second = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "labels-ws") })
+      yield* inSession(first, "labels-a", () => Effect.void)
+      yield* inSession(first, "labels-b", () => Effect.void)
+      yield* inSession(second, "labels-c", () => Effect.void)
+      const labels = fake.recorded.builds.map(({ settings }) => settings["labels"] as Record<string, string>)
+      expect(labels.every((label) => label["smithers.provider"] === "microsandbox")).toBe(true)
+      expect(labels.every((label) => label["smithers.owner"] === "smithers")).toBe(true)
+      expect(labels[0]?.["smithers.holder"]).toMatch(/^[0-9a-f-]{36}$/)
+      expect(labels[1]?.["smithers.holder"]).toBe(labels[0]?.["smithers.holder"])
+      expect(labels[2]?.["smithers.holder"]).not.toBe(labels[0]?.["smithers.holder"])
+    }))
+
+  it.live("streams output as the guest writes it, before the command exits", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "stream-ws") })
+      yield* inSession(provider, "streaming", (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const gate = join(root, `stream-gate-${process.pid}`)
+          const running = yield* session.spawn(
+            `printf early; while [ ! -e ${gate} ]; do sleep 0.05; done; printf late; printf warned >&2; exit 4`,
+            {}
+          )
+          const exit = yield* Effect.forkChild(running.exitCode)
+          const rest = yield* Effect.forkChild(Stream.mkString(Stream.decodeText(running.stdout)))
+          // The command is still blocked on the gate, yet its first chunk has
+          // already arrived: output is not collected at completion.
+          while (fake.recorded.execs.length === 0) yield* elapsed(20)
+          yield* elapsed(300)
+          expect(exit.pollUnsafe()).toBeUndefined()
+          expect(rest.pollUnsafe()).toBeUndefined()
+          writeFileSync(gate, "")
+          expect(yield* Fiber.join(exit)).toBe(4)
+          expect(yield* Fiber.join(rest)).toBe("earlylate")
+          expect(yield* Stream.mkString(Stream.decodeText(running.stderr))).toBe("warned")
+        })))
+    }), 30_000)
+
+  it.live("delivers the first chunk while the command is still running", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "first-chunk-ws") })
+      yield* inSession(provider, "first-chunk", (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const gate = join(root, `first-chunk-gate-${process.pid}`)
+          const running = yield* session.spawn(`printf early; while [ ! -e ${gate} ]; do sleep 0.05; done`, {})
+          const head = yield* Stream.runHead(Stream.decodeText(running.stdout))
+          expect(head).toMatchObject({ _tag: "Some", value: "early" })
+          writeFileSync(gate, "")
+          expect(yield* running.exitCode).toBe(0)
+        })))
+    }), 30_000)
+
+  it.live("kills the command and every descendant, including one in its own process group", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const workdir = join(root, "tree-ws")
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+      yield* inSession(provider, "tree", (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          // `set -m` gives the background job a process group of its own, so
+          // a signal to the command's group alone would miss it.
+          const running = yield* session.spawn(
+            "set -m; (while :; do printf x >> escaped.log; sleep 0.05; done) & " +
+              "while :; do printf x >> direct.log; sleep 0.05; done",
+            {}
+          )
+          while (sizeOf(join(workdir, "escaped.log")) === 0 || sizeOf(join(workdir, "direct.log")) === 0) {
+            yield* elapsed(50)
+          }
+          yield* session.kill!(running, "SIGTERM")
+          const code = yield* running.exitCode
+          expect(code).not.toBe(0)
+          expect(yield* settled(join(workdir, "escaped.log"))).toBe(true)
+          expect(yield* settled(join(workdir, "direct.log"))).toBe(true)
+          // A command seen to exit is never signalled again.
+          const signals = fake.recorded.signals.length
+          yield* session.kill!(running, "SIGKILL")
+          expect(fake.recorded.signals).toHaveLength(signals)
+        })))
+    }), 30_000)
+
+  it.live("signals the process group when the pid is not known yet", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk({ startedDelayMs: (line) => line.includes("slow-start") ? 1_000 : undefined })
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "early-kill-ws") })
+      yield* inSession(provider, "early-kill", (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const running = yield* session.spawn("sleep 30 # slow-start", {})
+          yield* session.kill!(running, "SIGTERM")
+          expect(yield* running.exitCode).not.toBe(0)
+          expect(fake.recorded.signals.map(({ signal }) => signal)).toEqual([15])
+        })))
+    }), 30_000)
+
+  it.live("fails a signal neither the walk nor the group can deliver", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "lost-signal-ws") })
+      yield* inSession(provider, "lost-signal", (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const running = yield* session.spawn("sleep 30", {})
+          yield* elapsed(200)
+          // No Linux signal is named SIGLOST, and no shell `kill` knows it.
+          const error = yield* Effect.flip(session.kill!(running, "SIGLOST"))
+          expect(error).toBeInstanceOf(ProviderError)
+          expect(error.message).toContain("SIGLOST")
+          yield* session.kill!(running, "SIGKILL")
+          expect(yield* running.exitCode).not.toBe(0)
+        })))
+    }), 30_000)
+
+  it.live("escalates to SIGKILL when an interrupted command ignores SIGTERM", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const workdir = join(root, "stubborn-ws")
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+      yield* inSession(provider, "stubborn", (session) =>
+        Effect.gen(function*() {
+          const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
+            session.spawn("trap '' TERM; while :; do printf x >> stubborn.log; sleep 0.05; done", {}),
+            (running) => running.exitCode
+          )))
+          while (sizeOf(join(workdir, "stubborn.log")) === 0) yield* elapsed(50)
+          const began = Date.now()
+          yield* Fiber.interrupt(fiber)
+          const took = Date.now() - began
+          // The grace is two seconds; the whole teardown is bounded by five.
+          expect(took).toBeGreaterThanOrEqual(1_900)
+          expect(took).toBeLessThan(5_500)
+          expect(yield* settled(join(workdir, "stubborn.log"))).toBe(true)
+        }))
+    }), 30_000)
+
+  it.live("stops the guest command when the consuming fiber is interrupted", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const workdir = join(root, "interrupt-ws")
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+      yield* inSession(provider, "interrupt", (session) =>
+        Effect.gen(function*() {
+          const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
+            session.spawn("printf started > started; sleep 1; printf survived > survived", {}),
+            (running) => running.exitCode
+          )))
+          while (!existsSync(join(workdir, "started"))) yield* elapsed(20)
+          yield* Fiber.interrupt(fiber)
+          yield* elapsed(1_500)
+          expect(existsSync(join(workdir, "survived"))).toBe(false)
+        }))
+    }), 30_000)
+
+  it.live("kills a command whose start the caller abandoned, once its handle arrives", () =>
+    Effect.gen(function*() {
+      let open: () => void = () => undefined
+      const gate = new Promise<void>((resolve) => {
+        open = resolve
+      })
+      const fake = fakeSdk({ startGate: (line) => line.includes("late-start") ? gate : undefined })
+      const workdir = join(root, "late-start-ws")
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir })
+      yield* inSession(provider, "late-start", (session) =>
+        Effect.gen(function*() {
+          const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
+            session.spawn("sleep 1; printf ran > ran # late-start", {}),
+            (running) => running.exitCode
+          )))
+          yield* elapsed(100)
+          yield* Fiber.interrupt(fiber)
+          open()
+          yield* elapsed(1_500)
+          expect(fake.recorded.handleKills.some((line) => line.includes("late-start"))).toBe(true)
+          expect(existsSync(join(workdir, "ran"))).toBe(false)
+        }))
+    }), 30_000)
+
+  it.live("fails a pending command promptly with unavailable when its machine is lost", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "lost-ws") })
+      const began = Date.now()
+      const failure = yield* inSession(provider, "lost", (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const running = yield* session.spawn("sleep 30", {})
+          const waiting = yield* Effect.forkChild(Effect.flip(running.exitCode))
+          const streaming = yield* Effect.forkChild(Effect.flip(Stream.runDrain(running.stdout)))
+          yield* elapsed(200)
+          fake.loseGuest(session.remoteId)
+          const stream = yield* Fiber.join(streaming)
+          expect(stream.code).toBe("unavailable")
+          return yield* Fiber.join(waiting)
+        })))
+      // Teardown of the lost command and the crashed machine is prompt too.
+      expect(Date.now() - began).toBeLessThan(3_000)
+      expect(failure).toBeInstanceOf(ProviderError)
+      expect(failure.code).toBe("unavailable")
+      expect(failure.message).toContain("ended before `sleep 30` reported its status")
+      expect(fake.recorded.destroys).toHaveLength(1)
+    }), 30_000)
+
+  it.live("fails the command with unavailable when its event stream breaks", () =>
+    Effect.gen(function*() {
+      const broken = new Error("agent protocol broke")
+      const fake = fakeSdk({ recvFailure: (line) => line.includes("broken-stream") ? broken : undefined })
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "broken-ws") })
+      yield* inSession(provider, "broken", (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const running = yield* session.spawn("sleep 1 # broken-stream", {})
+          const failure = yield* Effect.flip(running.exitCode)
+          expect(failure.code).toBe("unavailable")
+          expect(failure.cause).toBe(broken)
+        })))
+    }), 30_000)
+
+  it.effect("refuses to start when the SDK rejects the command", () =>
+    Effect.gen(function*() {
+      const refused = new Error("exec refused")
+      const fake = fakeSdk({ execFailure: (line) => line.includes("refused") ? refused : undefined })
+      const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, workdir: join(root, "refused-ws") })
+      yield* inSession(provider, "refused", (session) =>
+        Effect.gen(function*() {
+          const failure = yield* Effect.flip(Effect.scoped(session.spawn("true # refused", {})))
+          expect(failure.code).toBe("spawn_error")
+          expect(failure.cause).toBe(refused)
+        }))
+    }))
+
+  it.effect("refuses a hosted backend before provisioning, and accepts it only when asked", () =>
+    Effect.gen(function*() {
+      const cloud = fakeSdk({ defaultBackend: () => "cloud" })
+      const refused = yield* Effect.flip(inSession(MicrosandboxSandbox.make({ sdk: cloud.sdk }), "cloud", () =>
+        Effect.void))
+      expect(refused.code).toBe("unavailable")
+      expect(refused.message).toContain("default backend is cloud")
+      expect(refused.message).toContain("setDefaultBackend(\"local\")")
+      expect(cloud.recorded.builds).toEqual([])
+
+      yield* inSession(
+        MicrosandboxSandbox.make({ sdk: cloud.sdk, backend: "any", workdir: join(root, "any-ws") }),
+        "any",
+        () => Effect.void
+      )
+      expect(cloud.recorded.builds).toHaveLength(1)
+
+      const unreadable = new Error("native binding unavailable")
+      const broken = fakeSdk({
+        defaultBackend: () => {
+          throw unreadable
+        }
+      })
+      const unnamed = yield* Effect.flip(inSession(MicrosandboxSandbox.make({ sdk: broken.sdk }), "unnamed", () =>
+        Effect.void))
+      expect(unnamed.code).toBe("unavailable")
+      expect(unnamed.cause).toBe(unreadable)
+      expect(broken.recorded.builds).toEqual([])
+
+      // The default backend can change between the read and the create; the
+      // machine's own report is checked too, and a refused machine is removed.
+      const raced = fakeSdk({ machineBackend: "cloud" })
+      const moved = yield* Effect.flip(
+        inSession(MicrosandboxSandbox.make({ sdk: raced.sdk, workdir: join(root, "raced-ws") }), "raced", () =>
+          Effect.void)
+      )
+      expect(moved.code).toBe("unavailable")
+      expect(moved.message).toContain("runs on the cloud backend")
+      expect(raced.recorded.destroys).toHaveLength(1)
     }))
 
   // A fake `nix`: records its argv, fails on demand the way an unevaluable
   // flake would, and execs whatever follows `--command`. Real `nix` in the
-  // nixos/nix image behaves the same from the provider's side; the microVM
-  // itself is not available on this host.
+  // nixos/nix image behaves the same from the provider's side.
   const fakeNix = (): { readonly nix: string; readonly log: string } => {
     const nixDir = mkdtempSync(join(root, "fake-nix-"))
     mkdirSync(nixDir, { recursive: true })
@@ -618,6 +1049,7 @@ describe("MicrosandboxSandbox", () => {
         "#!/bin/sh",
         `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
         `if [ "$NIX_FAKE_FAIL" = 1 ]; then echo 'error: flake evaluation failed' >&2; exit 7; fi`,
+        `if [ -n "$NIX_FAKE_SLEEP" ]; then sleep "$NIX_FAKE_SLEEP"; fi`,
         "shift 2",
         `[ "$1" = --command ] || { echo 'expected --command' >&2; exit 2; }`,
         "shift",
@@ -647,8 +1079,8 @@ describe("MicrosandboxSandbox", () => {
             output
           )
           return {
-            flake: decoder.decode(flake),
-            lock: decoder.decode(lock),
+            flake: new TextDecoder().decode(flake),
+            lock: new TextDecoder().decode(lock),
             printed,
             guestRoot: fake.machineRoot(session.remoteId)
           }
@@ -665,7 +1097,7 @@ describe("MicrosandboxSandbox", () => {
       ])
       expect(fake.recorded.execs[0]).toMatchObject({ cwd: "/workspace", env: { BASE: "kept" } })
       expect(readFileSync(log, "utf8").split("\n").filter((line) => line !== "")).toHaveLength(2)
-      expect(fake.recorded.stops).toHaveLength(1)
+      expect(fake.recorded.destroys).toHaveLength(1)
     }))
 
   it.effect("looks for `nix` on the guest PATH when no executable is named", () =>
@@ -681,7 +1113,7 @@ describe("MicrosandboxSandbox", () => {
       expect(fake.recorded.execs.map(({ shell, args }) => [shell, ...args])).toEqual([
         ["nix", "develop", "path:/workspace/.smithers/nix", "--command", "true"]
       ])
-      expect(fake.recorded.stops).toHaveLength(1)
+      expect(fake.recorded.destroys).toHaveLength(1)
     }))
 
   it.effect("fails the acquire, not a later spawn, when the Nix environment cannot be realised", () =>
@@ -703,11 +1135,51 @@ describe("MicrosandboxSandbox", () => {
       expect(failure.message).toContain("(nix develop exited 7): error: flake evaluation failed")
       expect(fake.recorded.builds[0]?.settings["image"]).toBe("nixos/nix:2.29.0")
       expect(fake.recorded.execs.map(({ args }) => args)).toEqual([["develop", "path:/opt/env", "--command", "true"]])
-      // The booted machine that could not be prepared is stopped, not leaked.
-      expect(fake.recorded.stops).toHaveLength(1)
+      // The booted machine that could not be prepared is removed, not leaked.
+      expect(fake.recorded.destroys).toHaveLength(1)
     }))
 
-  it.effect("keeps sticky machines and reconnects to running or stopped instances", () =>
+  it.live("fails the acquire when the machine is lost or its stream breaks while the environment warms", () =>
+    Effect.gen(function*() {
+      const { nix } = fakeNix()
+      const lost = fakeSdk({ loseOn: (line) => line.endsWith("--command true") })
+      const gone = yield* Effect.flip(inSession(
+        MicrosandboxSandbox.make({ sdk: lost.sdk, environment: { flake: "{ }", nix } }),
+        "warm-lost",
+        () => Effect.void
+      ))
+      expect(gone.code).toBe("unavailable")
+      expect(gone.message).toContain("ended without reporting its status")
+
+      const broken = new Error("agent protocol broke")
+      const failing = fakeSdk({ recvFailure: (line) => line.endsWith("--command true") ? broken : undefined })
+      const severed = yield* Effect.flip(inSession(
+        MicrosandboxSandbox.make({ sdk: failing.sdk, environment: { flake: "{ }", nix } }),
+        "warm-broken",
+        () => Effect.void
+      ))
+      expect(severed.code).toBe("unavailable")
+      expect(severed.cause).toBe(broken)
+    }), 30_000)
+
+  it.live("kills the warm command when acquisition is interrupted", () =>
+    Effect.gen(function*() {
+      const { nix } = fakeNix()
+      const fake = fakeSdk()
+      const provider = MicrosandboxSandbox.make({
+        sdk: fake.sdk,
+        env: { NIX_FAKE_SLEEP: "30" },
+        environment: { flake: "{ }", nix }
+      })
+      const fiber = yield* Effect.forkChild(inSession(provider, "warm-interrupted", () => Effect.void))
+      while (fake.recorded.execs.length === 0) yield* elapsed(20)
+      yield* elapsed(100)
+      yield* Fiber.interrupt(fiber)
+      expect(fake.recorded.handleKills.some((line) => line.endsWith("--command true"))).toBe(true)
+      expect(fake.recorded.destroys).toHaveLength(1)
+    }), 30_000)
+
+  it.effect("keeps sticky machines, relabels them for the new holder, and reconnects running or stopped", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
       // No workdir named: the default guest workspace lives under the
@@ -716,7 +1188,9 @@ describe("MicrosandboxSandbox", () => {
         sdk: fake.sdk,
         snapshot: "snapshot-7",
         persistence: "sticky",
-        detached: false
+        detached: false,
+        owner: "installation-a",
+        holder: "first"
       })
       const bytes = new Uint8Array([0, 254, 8])
 
@@ -726,25 +1200,38 @@ describe("MicrosandboxSandbox", () => {
           yield* session.writeFile("/workspace/kept.bin", bytes)
           return session.remoteId
         }))
-      expect(fake.recorded.stops).toEqual([])
+      expect(fake.recorded.destroys).toEqual([])
       expect(fake.recorded.builds[0]?.settings).toEqual({
         snapshot: "snapshot-7",
+        labels: ownership("installation-a", "first"),
         ephemeral: false,
         detached: false
       })
 
       fake.markStopped(name)
+      const second = MicrosandboxSandbox.make({
+        sdk: fake.sdk,
+        snapshot: "snapshot-7",
+        persistence: "sticky",
+        detached: false,
+        owner: "installation-a",
+        holder: "second"
+      })
       const reopened = yield* inSession(
-        provider,
+        second,
         "sticky",
         (session) => session.readFile(`${session.workdir}/kept.bin`)
       )
       expect(Array.from(reopened)).toEqual(Array.from(bytes))
       expect(fake.recorded.starts).toEqual([{ name, detached: false }])
+      expect(fake.recorded.modifies).toEqual([
+        { name, labels: ownership("installation-a", "second"), policy: "next_start" }
+      ])
+      expect(fake.machines.get(name)?.labels["smithers.holder"]).toBe("second")
 
-      yield* inSession(provider, "sticky", (session) => session.ping!)
+      yield* inSession(second, "sticky", (session) => session.ping!)
       expect(fake.recorded.connects).toEqual([name])
-      expect(fake.recorded.stops).toEqual([])
+      expect(fake.recorded.destroys).toEqual([])
 
       const detachedFake = fakeSdk()
       const detached = MicrosandboxSandbox.make({
@@ -755,6 +1242,19 @@ describe("MicrosandboxSandbox", () => {
       detachedFake.markStopped(detachedName)
       yield* inSession(detached, "detached", (session) => session.ping!)
       expect(detachedFake.recorded.starts).toEqual([{ name: detachedName, detached: true }])
+    }))
+
+  it.effect("refuses to reattach a machine whose ownership labels it cannot record", () =>
+    Effect.gen(function*() {
+      for (const controls of [{ modifyApplied: false }, { modifyFailure: () => new Error("modify refused") }]) {
+        const fake = fakeSdk(controls)
+        const provider = MicrosandboxSandbox.make({ sdk: fake.sdk, persistence: "sticky" })
+        yield* inSession(provider, "unclaimable", () => Effect.void)
+        const refused = yield* Effect.flip(inSession(provider, "unclaimable", () => Effect.void))
+        expect(refused.code).toBe("unavailable")
+        expect(refused.message).toContain("could not be opened")
+        expect(fake.recorded.connects).toEqual([])
+      }
     }))
 
   it.effect("rejects invalid configuration and cleans up partial provisioning", () =>
@@ -803,15 +1303,15 @@ describe("MicrosandboxSandbox", () => {
         )
       )
       expect((partial as ProviderError).message).toContain("could not be prepared")
-      expect(partialFake.recorded.stops).toHaveLength(1)
+      expect(partialFake.recorded.destroys).toHaveLength(1)
 
-      const stopFailureFake = fakeSdk({ stopFailure: true })
+      const destroyFailureFake = fakeSdk({ destroyFailure: () => new Error("could not remove") })
       yield* inSession(
-        MicrosandboxSandbox.make({ sdk: stopFailureFake.sdk, workdir: join(root, "stop-failure-ws") }),
+        MicrosandboxSandbox.make({ sdk: destroyFailureFake.sdk, workdir: join(root, "stop-failure-ws") }),
         "stop-failure",
         (session) => Effect.succeed(session.id)
       )
-      expect(stopFailureFake.recorded.stops).toHaveLength(1)
+      expect(destroyFailureFake.recorded.destroys).toHaveLength(1)
     }))
 
   it.effect("maps guest filesystem, command, and ping failures", () =>
@@ -852,4 +1352,102 @@ describe("MicrosandboxSandbox", () => {
       expect(failures.unknownOutput[2]).toBe(127)
       expect(failures.unknownOutput[1]).toContain("not found")
     }))
+})
+
+describe("MicrosandboxSandbox.reap", () => {
+  const isAlive = (live: ReadonlyArray<string>) => (holder: string) => Effect.succeed(live.includes(holder))
+
+  it.effect("removes only its owner's machines whose holder is dead, across pages", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk({ listPageSize: 1 })
+      fake.plant("dead-running", ownership("installation-a", "dead"))
+      fake.plant("dead-crashed", ownership("installation-a", "dead"), "crashed")
+      fake.plant("alive", ownership("installation-a", "alive"))
+      fake.plant("other-owner", ownership("installation-b", "dead"))
+      fake.plant("foreign", { "smithers.owner": "installation-a", "smithers.holder": "dead" })
+      fake.plant("no-holder", { "smithers.provider": "microsandbox", "smithers.owner": "installation-a" })
+
+      const reaped = yield* MicrosandboxSandbox.reap({
+        sdk: fake.sdk,
+        owner: "installation-a",
+        isAlive: isAlive(["alive"]),
+        stopTimeoutMs: 1_000
+      })
+
+      expect(reaped).toEqual([
+        { name: "dead-running", holder: "dead", status: "running" },
+        { name: "dead-crashed", holder: "dead", status: "crashed" }
+      ])
+      expect([...fake.machines.keys()].sort()).toEqual(["alive", "foreign", "no-holder", "other-owner"])
+      expect(fake.recorded.destroys).toEqual([
+        { name: "dead-running", timeoutMs: 1_000 },
+        { name: "dead-crashed", timeoutMs: 1_000 }
+      ])
+      expect(fake.recorded.lists.map(({ cursor }) => cursor)).toEqual([undefined, "1", "2"])
+      expect(fake.recorded.lists[0]?.labels).toEqual({
+        "smithers.provider": "microsandbox",
+        "smithers.owner": "installation-a"
+      })
+    }))
+
+  it.effect("skips a machine relabelled, vanished, or unreadable since the listing", () =>
+    Effect.gen(function*() {
+      let relabel = (): void => undefined
+      const fake = fakeSdk({
+        refreshFailure: (name) => {
+          if (name === "relabelled") relabel()
+          return name === "vanished" ? Object.assign(new Error("gone"), { code: "sandboxNotFound" }) : undefined
+        },
+        configJson: (name) => name === "garbled" ? "{not json" : undefined
+      })
+      fake.plant("relabelled", ownership("installation-a", "dead"))
+      fake.plant("vanished", ownership("installation-a", "dead"))
+      fake.plant("garbled", ownership("installation-a", "dead"))
+      relabel = () => {
+        fake.machines.get("relabelled")!.labels = ownership("installation-a", "reattached")
+      }
+
+      const reaped = yield* MicrosandboxSandbox.reap({ sdk: fake.sdk, owner: "installation-a", isAlive: isAlive([]) })
+
+      expect(reaped).toEqual([])
+      expect(fake.recorded.destroys).toEqual([])
+      expect([...fake.machines.keys()].sort()).toEqual(["garbled", "relabelled", "vanished"])
+    }))
+
+  it.effect("attempts every orphan and names the ones it could not remove", () =>
+    Effect.gen(function*() {
+      const stuck = new Error("destroy refused")
+      const fake = fakeSdk({ destroyFailure: (name) => name === "stuck" ? stuck : undefined })
+      fake.plant("stuck", ownership("installation-a", "dead"))
+      fake.plant("removable", ownership("installation-a", "dead"))
+
+      const failure = yield* Effect.flip(
+        MicrosandboxSandbox.reap({ sdk: fake.sdk, owner: "installation-a", isAlive: isAlive([]) })
+      )
+
+      expect(failure.code).toBe("unavailable")
+      expect(failure.message).toContain("1 orphaned microVM(s) could not be reaped: stuck")
+      expect((failure.cause as ReadonlyArray<ProviderError>)[0]?.cause).toBe(stuck)
+      expect([...fake.machines.keys()]).toEqual(["stuck"])
+    }))
+
+  it.effect("fails when the machines cannot be listed", () =>
+    Effect.gen(function*() {
+      const refused = new Error("database locked")
+      const fake = fakeSdk({ listFailure: () => refused })
+      const failure = yield* Effect.flip(
+        MicrosandboxSandbox.reap({ sdk: fake.sdk, owner: "installation-a", isAlive: isAlive([]) })
+      )
+      expect(failure.code).toBe("unavailable")
+      expect(failure.cause).toBe(refused)
+    }))
+
+  it("names the ownership labels", () => {
+    expect([
+      MicrosandboxSandbox.providerLabel,
+      MicrosandboxSandbox.providerName,
+      MicrosandboxSandbox.ownerLabel,
+      MicrosandboxSandbox.holderLabel
+    ]).toEqual(["smithers.provider", "microsandbox", "smithers.owner", "smithers.holder"])
+  })
 })
