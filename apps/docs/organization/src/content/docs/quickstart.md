@@ -40,6 +40,8 @@ node flows/organization/cli.ts status
 node flows/organization/cli.ts answer <gate> approve
 ```
 
+`status` shows what's running, parked, and failed.
+
 An approved change lands on an `organization/…` branch of the repository and
 is never pushed; its receipt is under `Org/Runs/`. Slack intake and the
 subscription options are in `flows/organization/setup/QUICKSTART.md` and
