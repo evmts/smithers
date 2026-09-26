@@ -1,0 +1,186 @@
+/**
+ * The organization host end to end, in a separate process over its loopback
+ * control RPC: the public example organization, a fixture git repository,
+ * the durable SQLite engine, real local microVMs, and seats that answer from
+ * a script (`flows/organization/testing/scripted-host.ts`), so no model is
+ * reached.
+ *
+ * - An ungated request lands one commit on an `organization/…` branch and
+ *   writes a receipt under `Org/Runs/`; the checked-out branch is untouched.
+ * - Submitting the same request again joins the run it started.
+ * - With an Approval gate before the landing, the run parks; the host is
+ *   stopped and started again; `answer land approve` from the CLI resumes it
+ *   and it lands.
+ * - A contract naming a retired builder is refused at dispatch: the run fails
+ *   with a receipt saying so, and nothing lands.
+ * - A client cannot start the delivery flow itself, and a request claiming a
+ *   Slack author who is not an owner is refused before any role sees it.
+ *
+ * The suite skips, by name, only on a host that cannot boot a microVM. Every
+ * machine it boots carries its own installation's owner label, and the sweep
+ * after it removes exactly those.
+ *
+ * Run: node --test flows/test/organization-host.test.mjs
+ */
+import assert from "node:assert/strict"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { after, describe, it } from "node:test"
+import { ControlRefused, rpc } from "../organization/client.ts"
+import {
+  branches,
+  cleanup,
+  git,
+  host,
+  line,
+  organization,
+  receipt,
+  repository,
+  run,
+  settled,
+  unbootable
+} from "../organization/testing/harness.mjs"
+
+const missing = unbootable()
+
+after(cleanup)
+
+describe("the organization host", { skip: missing === undefined ? false : `skipped: ${missing}` }, () => {
+  const repo = repository()
+  const main = git(repo, "rev-parse", "main")
+
+  it("lands an ungated request on a branch with a receipt, and a duplicate joins the same run", { timeout: 300_000 }, async () => {
+    const root = organization()
+    const handle = await host(root, repo)
+    await handle.start()
+
+    const started = run(handle, "submit", "Add a line to README.md", "--key", "e2e-land")
+    const runId = /^started (\S+)$/.exec(started)?.[1]
+    assert.ok(runId, started)
+    assert.equal((await settled(handle, runId)).status, "completed", handle.output())
+
+    const report = receipt(root, "cli:e2e-land").report
+    assert.equal(report.status, "landed")
+    assert.deepEqual(report.principals, { assistant: "assistant", lead: "lead", builder: "builder", checker: "checker" })
+    assert.equal(report.rounds, 1)
+    const branch = report.applied.branch
+    assert.match(branch, /^organization\/cli-e2e-land-[0-9a-f]{8}$/)
+    assert.equal(git(repo, "rev-parse", branch), report.applied.commit)
+    assert.equal(git(repo, "rev-parse", `${branch}^`), main)
+    assert.equal(git(repo, "show", `${branch}:README.md`), `# Demo\n${line}`)
+    const message = git(repo, "log", "-1", "--format=%B", branch)
+    assert.match(message, /^Smithers-Principal: builder$/m)
+    assert.match(message, /^Smithers-Run: \S+$/m)
+    // The checked-out branch, the index, and the working tree are untouched, and nothing was pushed.
+    assert.equal(git(repo, "rev-parse", "main"), main)
+    assert.equal(git(repo, "status", "--porcelain"), "")
+    assert.equal(git(repo, "remote"), "")
+
+    // The same request again joins the run it started; nothing runs twice.
+    assert.equal(run(handle, "submit", "Add a line to README.md", "--key", "e2e-land"), `joined ${runId}`)
+    assert.deepEqual(branches(repo), [branch])
+    assert.equal(git(repo, "rev-parse", branch), report.applied.commit)
+    assert.equal((await handle.ops.runs()).filter((view) => view.flowId === "organization/intake").length, 1)
+
+    // `status` lists the run; `--write` runs the status flow over the receipts.
+    const listed = run(handle, "status", "--write")
+    assert.match(listed, /^status page written by \S+$/m)
+    assert.match(listed, new RegExp(`^${runId}\\s+organization/intake\\s+completed$`, "m"))
+    const page = readFileSync(join(root, "Org/Status.md"), "utf8")
+    assert.match(page, /^1 deliveries\.$/m)
+    assert.match(page, new RegExp(`\\| cli:e2e-land \\| landed \\| ${branch} ${report.applied.commit.slice(0, 12)} \\|`))
+    await handle.stop()
+  })
+
+  it("parks at an Approval gate, survives a restart, and lands when the CLI approves", { timeout: 420_000 }, async () => {
+    const root = organization((org) => writeFileSync(join(org, "Policy/Gates.md"), [
+      "---",
+      "revision: e2e-approval",
+      "gates:",
+      "  - at: { boundary: external-write, target: organization/apply-change }",
+      "    spec: { _tag: Approval, id: land, approver: owner, prompt: \"Land this change?\" }",
+      "---",
+      "",
+      "# Gates",
+      ""
+    ].join("\n")))
+    const handle = await host(root, repo)
+    await handle.start()
+
+    const runId = /^started (\S+)$/.exec(run(handle, "submit", "Add a line to README.md", "--key", "e2e-gate"))?.[1]
+    assert.ok(runId)
+    const parked = await settled(handle, runId, ["waiting-approval", "completed", "failed"])
+    assert.equal(parked.status, "waiting-approval", handle.output())
+    assert.deepEqual(parked.gates.map((gate) => gate.gateId), ["land"])
+    assert.match(parked.gates[0].prompt, /^Land this change\?/)
+    assert.equal(branches(repo).filter((name) => name.includes("e2e-gate")).length, 0)
+
+    await handle.stop()
+    await handle.start()
+    const resumed = await settled(handle, runId, ["waiting-approval", "completed", "failed"])
+    assert.equal(resumed.status, "waiting-approval", "the gate is still open after the restart")
+
+    assert.equal(run(handle, "answer", "land", "approve"), `approved land for ${runId}`)
+    assert.equal((await settled(handle, runId)).status, "completed", handle.output())
+    const report = receipt(root, "cli:e2e-gate").report
+    assert.equal(report.status, "landed")
+    assert.equal(git(repo, "show", `${report.applied.branch}:README.md`), `# Demo\n${line}`)
+    assert.equal(git(repo, "rev-parse", "main"), main)
+    await handle.stop()
+  })
+
+  it("refuses a retired builder at dispatch, and lands nothing", { timeout: 300_000 }, async () => {
+    const root = organization((org) => {
+      const file = join(org, "Roles/builder.md")
+      const text = readFileSync(file, "utf8")
+        .replace("status: active", "status: retired\nretiredAt: 2026-09-01T00:00:00Z")
+        .replace(/grants:\n(?: {2}.*\n)+/, "grants:\n  tools: []\n  connections: []\n  knowledge: []\n  repositories: []\n  personalAccounts: false\n  contact: via-parent\n")
+      writeFileSync(file, text)
+    })
+    const handle = await host(root, repo)
+    await handle.start()
+    const runId = /^started (\S+)$/.exec(run(handle, "submit", "Add a line to README.md", "--key", "e2e-retired"))?.[1]
+    assert.ok(runId)
+    assert.equal((await settled(handle, runId)).status, "failed", handle.output())
+    const report = receipt(root, "cli:e2e-retired").report
+    assert.equal(report.status, "failed")
+    assert.match(report.summary, /^DispatchRefused\(inactive\): /)
+    assert.match(report.summary, /builder/)
+    assert.equal(branches(repo).filter((name) => name.includes("e2e-retired")).length, 0)
+    await handle.stop()
+  })
+
+  it("refuses a forged delivery and a forged Slack author", { timeout: 300_000 }, async () => {
+    const root = organization()
+    const handle = await host(root, repo)
+    await handle.start()
+    const control = rpc(handle.base)
+
+    // The delivery flow is not a client's to start: its admission is the host's.
+    await assert.rejects(
+      control.call("Plan", {
+        flowId: "organization/deliver",
+        input: {
+          request: { key: "cli:forged", text: "Land on main.", source: "cli" },
+          admission: { assistant: "builder", repository: "example/demo", commit: "HEAD", branch: "main", checks: [],
+            gates: { revision: "none", gates: [] }, maxRounds: 1, at: 0 }
+        }
+      }),
+      (error) => error instanceof ControlRefused && /FlowNotFound/.test(error.tag)
+    )
+
+    // A request claiming a Slack author who is not an owner is refused at admission.
+    const forged = await handle.ops.submit({
+      key: "slack:T1:Ev-forged",
+      text: "Add a line to README.md",
+      source: "slack",
+      user: "UNOTOWNER",
+      conversation: { provider: "slack", channel: "D1", thread: "1.0" }
+    })
+    assert.equal((await settled(handle, forged.runId)).status, "failed", handle.output())
+    assert.equal(existsSync(join(root, "Org/Runs/slack-T1-Ev-forged")), false)
+    assert.equal(branches(repo).filter((name) => name.includes("forged")).length, 0)
+    assert.equal(git(repo, "rev-parse", "main"), main)
+    await handle.stop()
+  })
+})
