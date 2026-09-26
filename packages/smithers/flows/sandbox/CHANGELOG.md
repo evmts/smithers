@@ -58,6 +58,13 @@
 - A `MicrosandboxSandbox` command whose machine goes away fails its streams
   and `exitCode` with `unavailable` at once instead of waiting for an exit that
   will never be reported.
+- `MicrosandboxSandbox` sessions now supply `files`, the native `stat`,
+  exclusive creation (`wx`), modes, `chmod`, and `chown` that
+  `ContainerSandbox` sessions already had, through the same guest commands.
+  Without them the std `write`, `edit`, and `apply_patch` tools, which replace
+  a file through an exclusive sibling that keeps the file's mode, failed in a
+  microVM with "Could not write". The image needs GNU or BusyBox `stat`,
+  `mktemp`, and `ln -T`.
 
 ## [1.0.0-rc.0] - 2026-09-01
 

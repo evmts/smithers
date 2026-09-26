@@ -1,11 +1,13 @@
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Fiber, Stream } from "effect"
+import { Edit, Write } from "@smthrs/std"
+import { Cause, Effect, Fiber, FileSystem, Path, Stream } from "effect"
 import * as Microsandbox from "microsandbox"
 import { spawnSync } from "node:child_process"
 import { accessSync, constants } from "node:fs"
 import { elapsed } from "../src/internal/deadline.ts"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
 import type { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { fileSystem } from "../src/Sandbox/fileSystem.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 
@@ -298,6 +300,51 @@ describe.skipIf(!available)("MicrosandboxSandbox against a real microVM", () => 
         const failure = yield* Effect.flip(running.exitCode).pipe(Effect.timeout("10 seconds"))
         expect(failure.code).toBe("unavailable")
         expect(Date.now() - began).toBeLessThan(10_000)
+      })),
+    budget
+  )
+
+  it.live(
+    "serves exclusive creation, overwrite, modes, and the std write and edit tools through the session's files",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const live = yield* machine({ image: "node:26-bookworm" }).acquire(`${session}-files`)
+        const fs = fileSystem(live)
+        const tools = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
+          effect.pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.provide(Path.layer))
+        const shell = (command: string) =>
+          Effect.scoped(Effect.flatMap(
+            live.spawn(command, {}),
+            (running) => Stream.mkString(Stream.decodeText(running.stdout))
+          ))
+        const lib = `${live.workdir}/lib.txt`
+
+        // The agent's write tool creates through an exclusive sibling.
+        expect(yield* tools(Write.run({ path: lib, content: "alpha\nbeta\n" }))).toMatchObject({ created: true })
+
+        // Exclusive creation takes the requested mode and refuses an
+        // occupied name without touching its contents.
+        const fresh = `${live.workdir}/fresh.txt`
+        yield* fs.writeFileString(fresh, "first", { flag: "wx", mode: 0o640 })
+        const refused = yield* Effect.flip(fs.writeFileString(fresh, "second", { flag: "wx" }))
+        expect(refused.reason._tag).toBe("AlreadyExists")
+        expect(yield* fs.readFileString(fresh)).toBe("first")
+        expect(((yield* fs.stat(fresh)).mode) & 0o7777).toBe(0o640)
+
+        // An overwrite through the tool keeps the file's mode.
+        yield* fs.chmod(lib, 0o750)
+        expect(yield* tools(Write.run({ path: lib, content: "alpha\nbeta\ngamma\n" }))).toMatchObject({
+          created: false
+        })
+        expect(((yield* fs.stat(lib)).mode) & 0o7777).toBe(0o750)
+
+        // So does an edit, and the guest's own tools see the result.
+        expect(yield* tools(Edit.run({ path: lib, oldString: "beta", newString: "delta" }))).toMatchObject({
+          replacements: 1
+        })
+        expect(yield* shell("cat lib.txt; stat -c %a lib.txt")).toBe("alpha\ndelta\ngamma\n750\n")
+        // No sibling from any replacement is left in the workspace.
+        expect(yield* shell("ls -A")).toBe("fresh.txt\nlib.txt\n")
       })),
     budget
   )

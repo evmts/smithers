@@ -603,6 +603,32 @@ describe("MicrosandboxSandbox", () => {
         }))
     }))
 
+  it.effect("serves exclusive creation and modes through guest commands", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const workdir = join(root, "files-ws")
+      yield* inSession(MicrosandboxSandbox.make({ sdk: fake.sdk, workdir }), "files", (session) =>
+        Effect.gen(function*() {
+          const files = session.files!
+          // A plain overwrite keeps the SDK's byte-typed write.
+          yield* files.writeFile!(`${workdir}/plain.txt`, encoder.encode("plain"))
+          expect(readFileSync(join(workdir, "plain.txt"), "utf8")).toBe("plain")
+          // The guest scripts use GNU and BusyBox flags (`ln -T`, `chmod --`)
+          // this host's BSD tools may lack, so only their carriage is
+          // asserted here; the real microVM test proves the outcomes.
+          yield* Effect.exit(files.chmod!(`${workdir}/plain.txt`, 0o640))
+          expect(fake.recorded.execs.at(-1)!.args.at(-1)).toContain("chmod 640 --")
+          yield* Effect.exit(
+            files.writeFile!(`${workdir}/fresh.txt`, encoder.encode("fresh"), { flag: "wx", mode: 0o600 })
+          )
+          const exclusive = fake.recorded.execs.at(-1)!
+          expect(exclusive.args.at(-1)).toContain("ln -T --")
+          expect(new TextDecoder().decode(exclusive.stdin)).toBe("fresh")
+          const refused = yield* Effect.flip(files.writeFile!(`${workdir}/x`, new Uint8Array(), { flag: "a" }))
+          expect(refused.message).toContain("microVM writes support w without a mode")
+        }))
+    }))
+
   it.effect("classifies non-Error SDK filesystem failures and preserves their cause", () =>
     Effect.gen(function*() {
       const cause = { code: "sandboxFsOps", toString: () => "No such file or directory" }

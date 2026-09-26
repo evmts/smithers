@@ -9,6 +9,7 @@ import { environmentCommand } from "../internal/environmentCommand.ts"
 import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
+import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
 import { type GuestCommand, runGuest, signalGuest, spawnGuest } from "../internal/microsandboxProcess.ts"
 import { removeMachine } from "../internal/microsandboxRemove.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
@@ -292,7 +293,9 @@ const requireLocalBackend = (sdk: Sdk): Effect.Effect<void, ProviderError> =>
  * workdir before the selected image has booted; a relative `cwd` is rooted at
  * the session workdir and standard input rides the exec builder's own byte
  * channel. File transfer in both directions uses the SDK's byte-typed
- * operations.
+ * operations. The session's `files` serve real `stat`, exclusive creation,
+ * modes, and ownership through guest commands, so the image needs GNU or
+ * BusyBox `stat`, `mktemp`, and `ln -T`.
  *
  * `spawn` returns once the guest command has started and streams its output
  * as the guest writes it; `exitCode` settles on the exit. `kill` signals the
@@ -503,7 +506,7 @@ export const make = (options: MicrosandboxSandboxOptions): Provider => {
             )
           )
         }
-        return session
+        return { ...session, files: linuxFileSystem(session, "microVM") }
       })
   }
 }
