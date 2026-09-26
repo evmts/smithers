@@ -8,12 +8,14 @@
  * and the context become the prompt.
  *
  * Nothing is silently dropped or shortened. A skill the profile does not list
- * is refused, and each part has a UTF-8 byte cap (with a cap on all context
+ * is refused, a skill the profile lists but the input does not supply is
+ * refused, and each part has a UTF-8 byte cap (with a cap on all context
  * together and on the whole composition): an oversize part fails with a typed
  * {@link PromptError} naming it. Each context entry is fenced in a
  * `<source provider="…" id="…" retrieved="…">` element whose first line states
  * that the content is data, not instructions, and whose text is escaped so it
- * cannot close its own fence. The composition's digest is the SHA-256 of the
+ * cannot close its own fence; attribute values are escaped onto one line so a
+ * provider or id cannot forge the notice either. The composition's digest is the SHA-256 of the
  * canonical JSON of its parts' kinds, ids, digests, and sizes, so an
  * identical composition always has the same digest and any changed byte
  * changes it.
@@ -180,7 +182,9 @@ export interface Composed {
  */
 export const PromptErrorCode = Schema.Literals([
   "skill-not-granted",
+  "skill-missing",
   "duplicate-skill",
+  "invalid-context",
   "part-too-large",
   "total-too-large",
   "invalid-limits"
@@ -272,7 +276,12 @@ export const renderTask = (task: Profile.TaskContract): string =>
 const escapeText = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 
-const escapeAttribute = (text: string): string => escapeText(text).replaceAll("\"", "&quot;")
+const escapeAttribute = (text: string): string =>
+  escapeText(text).replaceAll("\"", "&quot;").replaceAll("\r", "&#13;").replaceAll("\n", "&#10;")
+
+const isRenderableInstant = (epochMs: number): boolean =>
+  Number.isSafeInteger(epochMs) && epochMs >= 0 &&
+  !Number.isNaN(new Date(epochMs).getTime())
 
 /**
  * The line every context fence opens with.
@@ -339,6 +348,28 @@ export const compose = (input: ComposeInput): Result.Result<Composed, PromptErro
     }
     byName.set(skill.name, skill)
   }
+  for (const name of granted) {
+    if (!byName.has(name)) {
+      return Result.fail(
+        new PromptError({
+          code: "skill-missing",
+          part: `skill:${name}`,
+          message: `skill ${name} is in ${input.profile.id}'s profile but was not supplied`
+        })
+      )
+    }
+  }
+  for (const entry of input.context) {
+    if (!isRenderableInstant(entry.provenance.retrievedAtMs)) {
+      return Result.fail(
+        new PromptError({
+          code: "invalid-context",
+          part: `context:${entry.source.provider}:${entry.source.id}`,
+          message: "retrievedAtMs is a representable non-negative integer instant"
+        })
+      )
+    }
+  }
   const pieces: Array<{ readonly kind: PartKind; readonly id: string; readonly text: string; readonly cap: number }> = [
     {
       kind: "common",
@@ -352,14 +383,14 @@ export const compose = (input: ComposeInput): Result.Result<Composed, PromptErro
       text: renderCharter(input.profile),
       cap: limits.charter
     },
-    ...granted.flatMap((name) => {
-      const skill = byName.get(name)
-      return skill === undefined ? [] : [{
+    ...granted.map((name) => {
+      const skill = byName.get(name)!
+      return {
         kind: "skill" as const,
         id: `${skill.name}@${skill.revision}`,
         text: `# Skill: ${skill.name}\n\n${skill.text}`,
         cap: limits.skill
-      }]
+      }
     }),
     { kind: "task", id: input.task.id, text: renderTask(input.task), cap: limits.task },
     ...input.context.map((entry) => ({

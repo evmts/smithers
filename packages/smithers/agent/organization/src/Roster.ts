@@ -192,7 +192,8 @@ const schemaError = (path: string, error: Schema.SchemaError) => {
   return new RosterError({
     code: "schema",
     path,
-    field: problems[0]?.field ?? "",
+    // Every schema issue names at least one field, the root included.
+    field: problems[0]!.field,
     message: Issues.summary(problems)
   })
 }
@@ -315,8 +316,9 @@ export const renderProfile = (profile: Profile.Profile): string => {
   ) {
     flowStyle(document.getIn(path, true))
   }
-  const connections = document.getIn(["grants", "connections"], true)
-  if (isSeq(connections)) { for (const item of connections.items) flowStyle(item) }
+  for (const index of profile.grants.connections.keys()) {
+    flowStyle(document.getIn(["grants", "connections", index], true))
+  }
   const frontmatter = document.toString({ lineWidth: 0, flowCollectionPadding: false })
   const charter = profile.charter
   const list = (items: ReadonlyArray<string>) => items.map((item) => `- ${item}`).join("\n")
@@ -419,8 +421,8 @@ export const load = (dir: string): Effect.Effect<Roster, RosterError, FileSystem
     const realRoot = yield* fs.realPath(path.resolve(dir)).pipe(
       Effect.mapError(() => readError(".", "the roster directory could not be resolved"))
     )
-    const inside = (candidate: string) =>
-      candidate === realRoot || candidate.startsWith(realRoot.endsWith(path.sep) ? realRoot : realRoot + path.sep)
+    // `join` keeps exactly one separator, so a root of `/` is its own prefix.
+    const inside = (candidate: string) => candidate === realRoot || candidate.startsWith(path.join(realRoot, path.sep))
     const profiles = new Map<string, Profile.Profile>()
     const sources: Array<Source> = []
     for (const directory of directories) {

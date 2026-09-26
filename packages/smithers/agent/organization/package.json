@@ -6,7 +6,7 @@
   "smthrs": {
     "group": "agent"
   },
-  "description": "Durable agent organizations on Smithers: role profiles, grants, composed prompts, hiring, configurable gates, meetings, and a local host",
+  "description": "Agent organizations on Smithers: role profiles and grants, roster validation, composed role prompts, pinned skill packs, hiring lifecycle, weekly meeting planning, configurable gates, role-task authority, and microVM task workspaces",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -38,15 +38,21 @@
     "./package.json": "./package.json",
     ".": "./src/index.ts",
     "./internal/*": null,
-    "./migrations/*": null,
     "./*/index": null,
+    "./Actions": "./src/Actions.ts",
+    "./Authority": "./src/Authority.ts",
+    "./Config": "./src/Config.ts",
+    "./Gates": "./src/Gates.ts",
+    "./GatesLive": "./src/GatesLive.ts",
     "./Grants": "./src/Grants.ts",
     "./Hiring": "./src/Hiring.ts",
     "./Meetings": "./src/Meetings.ts",
     "./Profile": "./src/Profile.ts",
     "./Prompt": "./src/Prompt.ts",
+    "./RoleHost": "./src/RoleHost.ts",
     "./Roster": "./src/Roster.ts",
     "./Skills": "./src/Skills.ts",
+    "./Workspace": "./src/Workspace.ts",
     "./index": "./src/index.ts"
   },
   "files": [
@@ -56,6 +62,7 @@
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
     "dist/**/package.json",
+    "example/**/*.md",
     "LICENSE",
     "README.md",
     "CHANGELOG.md"
@@ -77,8 +84,57 @@
         }
       },
       "./internal/*": null,
-      "./migrations/*": null,
       "./*/index": null,
+      "./Actions": {
+        "import": {
+          "types": "./dist/esm/Actions.d.ts",
+          "default": "./dist/esm/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Actions.d.ts",
+          "default": "./dist/cjs/Actions.js"
+        }
+      },
+      "./Authority": {
+        "import": {
+          "types": "./dist/esm/Authority.d.ts",
+          "default": "./dist/esm/Authority.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Authority.d.ts",
+          "default": "./dist/cjs/Authority.js"
+        }
+      },
+      "./Config": {
+        "import": {
+          "types": "./dist/esm/Config.d.ts",
+          "default": "./dist/esm/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Config.d.ts",
+          "default": "./dist/cjs/Config.js"
+        }
+      },
+      "./Gates": {
+        "import": {
+          "types": "./dist/esm/Gates.d.ts",
+          "default": "./dist/esm/Gates.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Gates.d.ts",
+          "default": "./dist/cjs/Gates.js"
+        }
+      },
+      "./GatesLive": {
+        "import": {
+          "types": "./dist/esm/GatesLive.d.ts",
+          "default": "./dist/esm/GatesLive.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GatesLive.d.ts",
+          "default": "./dist/cjs/GatesLive.js"
+        }
+      },
       "./Grants": {
         "import": {
           "types": "./dist/esm/Grants.d.ts",
@@ -129,6 +185,16 @@
           "default": "./dist/cjs/Prompt.js"
         }
       },
+      "./RoleHost": {
+        "import": {
+          "types": "./dist/esm/RoleHost.d.ts",
+          "default": "./dist/esm/RoleHost.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RoleHost.d.ts",
+          "default": "./dist/cjs/RoleHost.js"
+        }
+      },
       "./Roster": {
         "import": {
           "types": "./dist/esm/Roster.d.ts",
@@ -147,6 +213,16 @@
         "require": {
           "types": "./dist/cjs/Skills.d.ts",
           "default": "./dist/cjs/Skills.js"
+        }
+      },
+      "./Workspace": {
+        "import": {
+          "types": "./dist/esm/Workspace.d.ts",
+          "default": "./dist/esm/Workspace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Workspace.d.ts",
+          "default": "./dist/cjs/Workspace.js"
         }
       },
       "./index": {
@@ -172,13 +248,18 @@
   },
   "dependencies": {
     "@smthrs/agent": "1.0.0-rc.1",
-    "@smthrs/control": "1.0.0-rc.1",
-    "@smthrs/database": "1.0.0-rc.1",
-    "@smthrs/flow": "1.0.0-rc.1",
-    "@smthrs/plan": "1.0.0-rc.1",
-    "@smthrs/integrations": "1.0.0-rc.1",
-    "@smthrs/memory": "1.0.0-rc.1",
     "@smthrs/canonical": "1.0.0-rc.1",
+    "@smthrs/capability": "1.0.0-rc.1",
+    "@smthrs/core": "1.0.0-rc.1",
+    "@smthrs/engine": "1.0.0-rc.1",
+    "@smthrs/flow": "1.0.0-rc.1",
+    "@smthrs/harness": "1.0.0-rc.1",
+    "@smthrs/kernel": "1.0.0-rc.1",
+    "@smthrs/memory": "1.0.0-rc.1",
+    "@smthrs/plan": "1.0.0-rc.1",
+    "@smthrs/registry": "1.0.0-rc.1",
+    "@smthrs/sandbox": "1.0.0-rc.1",
+    "@smthrs/std": "1.0.0-rc.1",
     "yaml": "2.9.0"
   },
   "peerDependencies": {
@@ -202,6 +283,10 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
-    "@effect/platform-node": "4.0.0-rc.115"
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@smthrs/engine-store": "1.0.0-rc.1",
+    "@smthrs/flows": "1.0.0-rc.1",
+    "@smthrs/model": "1.0.0-rc.1",
+    "microsandbox": "0.6.16"
   }
 }

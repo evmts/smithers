@@ -23,7 +23,14 @@ const grants = (patch: Partial<Profile.Grants>): Profile.Grants => ({ ...none, .
 // property tests below compare the relation against ground truth.
 // ---------------------------------------------------------------------------
 
-const allTools: ReadonlyArray<Profile.Tool> = ["workspace", "memory", "retrieval", "wiki-read", "wiki-write", "delegate"]
+const allTools: ReadonlyArray<Profile.Tool> = [
+  "workspace",
+  "memory",
+  "retrieval",
+  "wiki-read",
+  "wiki-write",
+  "delegate"
+]
 const connectionNames = ["c1", "c2", "c3"]
 const containerNames = ["A", "B", "C"]
 const probeContainers = ["A", "B", "C", "D", "(none)"]
@@ -45,9 +52,11 @@ const probeFiles = pathsOf(probeSegments, 4)
 const knowledgeUniverse = pathsOf(segments, 3).flatMap((path) => [path, `${path}/`])
 
 const readableFiles = (knowledge: ReadonlyArray<string>): Set<string> =>
-  new Set(probeFiles.filter((file) =>
-    knowledge.some((grant) => grant === file || (grant.endsWith("/") && file.startsWith(grant)))
-  ))
+  new Set(
+    probeFiles.filter((file) =>
+      knowledge.some((grant) => grant === file || (grant.endsWith("/") && file.startsWith(grant)))
+    )
+  )
 
 const capabilities = (g: Profile.Grants): Set<string> => {
   const out = new Set<string>()
@@ -58,7 +67,9 @@ const capabilities = (g: Profile.Grants): Set<string> => {
       for (const probe of probeContainers) {
         // "*" reaches every container, including unnamed ones and records
         // that name no container; a named container reaches only itself.
-        if (grant.containers.includes("*") || grant.containers.includes(probe)) out.add(`conn:${grant.connection}:${bit}:${probe}`)
+        if (grant.containers.includes("*") || grant.containers.includes(probe)) {
+          out.add(`conn:${grant.connection}:${bit}:${probe}`)
+        }
       }
     }
   }
@@ -113,7 +124,9 @@ const narrowed = (random: Random, parent: Profile.Grants): Profile.Grants => {
     const containers = grant.containers.includes("*") && random.chance(0.5)
       ? random.subset(containerNames, 0.5)
       : random.subset(grant.containers, 0.7)
-    const access = grant.access === "read-write" && random.chance(0.5) ? random.pick(["read", "write"] as const) : grant.access
+    const access = grant.access === "read-write" && random.chance(0.5)
+      ? random.pick(["read", "write"] as const)
+      : grant.access
     return [{ connection: grant.connection, containers, access }]
   })
   const knowledge = [
@@ -128,7 +141,9 @@ const narrowed = (random: Random, parent: Profile.Grants): Profile.Grants => {
   ]
   const contact = parent.contact === "owner-direct"
     ? "via-parent"
-    : random.pick(parent.contact === "via-assistant" ? ["via-assistant", "via-parent"] as const : ["via-parent"] as const)
+    : random.pick(
+      parent.contact === "via-assistant" ? ["via-assistant", "via-parent"] as const : ["via-parent"] as const
+    )
   const hiring = parent.hiring !== undefined && parent.hiring.maxDepth >= 1 && random.chance(0.5)
     ? {
       hiring: {
@@ -365,9 +380,11 @@ describe("Grants.widenings", () => {
     expect(Grants.widenings(grants({ personalAccounts: true }), grants({}), { hired: false })).toEqual([
       { grant: "personalAccounts", detail: "the parent holds no personal accounts" }
     ])
-    expect(Grants.widenings(grants({ hiring: { maxDepth: 1, maxChildren: 0, maxPersistent: 0 } }), grants({}))).toEqual([
-      { grant: "hiring", detail: "the parent may not hire" }
-    ])
+    expect(Grants.widenings(grants({ hiring: { maxDepth: 1, maxChildren: 0, maxPersistent: 0 } }), grants({}))).toEqual(
+      [
+        { grant: "hiring", detail: "the parent may not hire" }
+      ]
+    )
   })
 })
 
@@ -423,7 +440,9 @@ describe("Grants checks", () => {
       "container-not-granted"
     )
     expect(
-      reason(Grants.canRead(builder, record({ access: { containerId: null }, thread: { containerId: null } }), connections))
+      reason(
+        Grants.canRead(builder, record({ access: { containerId: null }, thread: { containerId: null } }), connections)
+      )
     ).toBe("container-not-granted")
     const writeOnly = withGrants(builder, {
       connections: [{ connection: "slack-builder", containers: ["C0TEAM"], access: "write" }]
@@ -444,7 +463,9 @@ describe("Grants checks", () => {
 
   it("writes only with write access to the named container", () => {
     ok(Grants.canWrite(builder, "slack-builder", "C0TEAM", connections))
-    expect(reason(Grants.canWrite(builder, "github-product", "example/product", connections))).toBe("access-not-granted")
+    expect(reason(Grants.canWrite(builder, "github-product", "example/product", connections))).toBe(
+      "access-not-granted"
+    )
     expect(reason(Grants.canWrite(builder, "slack-builder", "*", connections))).toBe("container-not-granted")
     expect(reason(Grants.canWrite(builder, "personal-calendar", "primary", connections))).toBe("personal-connection")
     expect(reason(Grants.canWrite({ ...builder, status: "paused" }, "slack-builder", "C0TEAM", connections))).toBe(
@@ -505,7 +526,9 @@ describe("Grants.canContactOwner", () => {
 
   it("refuses via-parent principals even with a receipt", () => {
     const helper = withGrants(builder, { contact: "via-parent" })
-    const receipt = ok(issuer.issue({ kind: "one-on-one", principal: helper.id, destination: context.destination, ...window }))
+    const receipt = ok(
+      issuer.issue({ kind: "one-on-one", principal: helper.id, destination: context.destination, ...window })
+    )
     expect(reason(Grants.canContactOwner(helper, receipt, context))).toBe("via-parent")
   })
 
@@ -526,7 +549,9 @@ describe("Grants.canContactOwner", () => {
     expect(reason(Grants.canContactOwner(builder, receipt, { ...context, nowMs: window.windowStartMs - 1 }))).toBe(
       "receipt-window"
     )
-    const other = ok(issuer.issue({ kind: "owner-thread", principal: "checker", destination: context.destination, ...window }))
+    const other = ok(
+      issuer.issue({ kind: "owner-thread", principal: "checker", destination: context.destination, ...window })
+    )
     expect(reason(Grants.canContactOwner(builder, other, context))).toBe("receipt-principal")
   })
 

@@ -492,8 +492,9 @@ export const findSlot = (request: FindSlotRequest): Result.Result<Option.Option<
     for (let offset = 0; offset <= request.horizonDays; offset++) {
       const date = addDays(first, offset)
       if (!weekdays.includes(isoWeekday(date))) continue
-      // A closing time inside a gap resolves to the instant before the gap,
-      // which never lets a slot run past the window.
+      // A closing time inside a gap resolves to its earlier reading, one gap
+      // length before the wall time; that is conservative, so a slot never
+      // runs past the window.
       const closeMs = DateTime.toEpochMillis(instant(zone, date, close, "earlier"))
       for (let minute = open; minute + request.durationMinutes <= close; minute += request.granularityMinutes) {
         const startMs = resolve(zone, date, minute)

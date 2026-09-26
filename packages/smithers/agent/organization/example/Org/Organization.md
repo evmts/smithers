@@ -1,28 +1,27 @@
 ---
-roster: Org/
-skills: Org/Skills/
-cases: Org/Cases/
-policy: Org/Policy/Gates.md
-connections: Org/Connections.md
-meetings: Org/Meetings.md
 owner: owner
 assistant: assistant
+rosterDir: Org
+skillsDir: Org/Skills
+casesDir: Org/Cases
+policyFile: Org/Policy/Gates.md
+connectionsFile: Org/Connections.md
+meetingsFile: Org/Meetings.md
 seats:
   default: openai:gpt-6-sol
   light: openai:gpt-6-luna
 judge: none
 vm:
   provider: microsandbox
-  image: node:24-bookworm
+  image: node:26-bookworm
   cpus: 2
   memoryMib: 2048
   maxConcurrentVMs: 2
 wiki:
-  generatedDir: Org/Runs/
+  generatedDir: Org/Runs
   statusFile: Org/Status.md
   commit: false
   push: false
-repositories: []
 ---
 
 # Example organization

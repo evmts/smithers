@@ -1,9 +1,10 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Effect from "effect/Effect"
-import type * as FileSystem from "effect/FileSystem"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
+import * as PlatformError from "effect/PlatformError"
 import * as Result from "effect/Result"
 import { cpSync, mkdtempSync, readFileSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -19,6 +20,52 @@ export const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Pa
 
 export const flip = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>): Promise<E> =>
   run(Effect.flip(effect))
+
+/** Which filesystem calls a {@link faultyLayer} fails: by method name and first path argument. */
+export type Fault = (method: string, path: string) => boolean
+
+const faultable = [
+  "exists",
+  "makeDirectory",
+  "readDirectory",
+  "readFileString",
+  "realPath",
+  "remove",
+  "rename",
+  "stat",
+  "writeFileString"
+] as const
+
+/**
+ * The Node filesystem with chosen calls failing, for the error paths a real
+ * directory cannot provoke portably.
+ */
+export const faultyLayer = (fault: Fault): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
+  Layer.mergeAll(
+    Layer.effect(
+      FileSystem.FileSystem,
+      Effect.map(FileSystem.FileSystem, (real) => {
+        const wrapped: Record<string, unknown> = { ...real }
+        for (const method of faultable) {
+          const original = real[method] as (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown, unknown>
+          wrapped[method] = (...args: ReadonlyArray<unknown>) =>
+            fault(method, String(args[0]))
+              ? Effect.fail(
+                PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method, description: "injected" })
+              )
+              : original(...args)
+        }
+        return wrapped as unknown as FileSystem.FileSystem
+      })
+    ).pipe(Layer.provide(NodeFileSystem.layer)),
+    NodePath.layer
+  )
+
+/** Runs `effect` over {@link faultyLayer} and returns its failure. */
+export const flipWith = <A, E>(
+  effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>,
+  fault: Fault
+): Promise<E> => Effect.runPromise(Effect.flip(effect).pipe(Effect.provide(faultyLayer(fault))))
 
 export const exampleDir = fileURLToPath(new URL("./fixtures/org/", import.meta.url))
 
@@ -71,7 +118,6 @@ export const prng = (seed: number) => {
   }
   const int = (max: number): number => Math.floor(next() * max)
   const pick = <A>(values: ReadonlyArray<A>): A => values[int(values.length)]!
-  const subset = <A>(values: ReadonlyArray<A>, probability = 0.5): Array<A> =>
-    values.filter(() => next() < probability)
+  const subset = <A>(values: ReadonlyArray<A>, probability = 0.5): Array<A> => values.filter(() => next() < probability)
   return { next, int, pick, subset, chance: (probability: number) => next() < probability }
 }

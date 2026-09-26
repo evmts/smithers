@@ -1,11 +1,8 @@
 ---
 connections:
-  - { id: chat-assistant, provider: slack, label: Assistant bot, credential: { id: chat-assistant, name: chat-assistant }, scopes: [chat:write, im:history], personal: false, containers: [owner-dm, team] }
-  - { id: chat-lead, provider: slack, label: Lead bot, credential: { id: chat-lead, name: chat-lead }, scopes: [chat:write], personal: false, containers: [team] }
-  - { id: calendar-owner, provider: googlecalendar, label: Owner calendar, credential: { id: calendar-owner, name: calendar-owner }, scopes: [calendar.events, calendar.freebusy], personal: true, containers: [primary] }
-containerAliases:
-  owner-dm: null
-  team: null
+  - { id: chat-assistant, provider: slack, label: Assistant bot, credential: chat-assistant, scopes: [chat:write, im:history], personal: false, containerAliases: { owner-dm: null, team: null } }
+  - { id: chat-lead, provider: slack, label: Lead bot, credential: chat-lead, scopes: [chat:write], personal: false, containerAliases: { team: null } }
+  - { id: calendar-owner, provider: googlecalendar, label: Owner calendar, principal: assistant, credential: calendar-owner, scopes: [calendar.events, calendar.freebusy], personal: true, containerAliases: { primary: null } }
 ---
 
 # Connections

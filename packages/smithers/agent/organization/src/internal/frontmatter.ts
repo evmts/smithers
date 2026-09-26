@@ -44,14 +44,16 @@ export const split = (text: string): Split => {
 
 const summarize = (issue: {
   readonly message: string
-  readonly linePos?: ReadonlyArray<{ readonly line: number; readonly col: number }> | undefined
+  readonly linePos?: readonly [{ readonly line: number; readonly col: number }, ...Array<unknown>] | undefined
 }): string => {
   // The parser appends the offending line after a newline and its own
   // position after " at line "; both cuts are total because `split` always
   // yields a first element.
   const summary = issue.message.split(" at line ")[0]!.split(/\r?\n/, 1)[0]!.slice(0, 120)
-  const position = issue.linePos?.[0]
-  return position === undefined ? summary : `${summary} at line ${position.line}, column ${position.col}`
+  // `prettyErrors`, on by default, gives every issue a position; if a parser
+  // ever omitted it, the throw is caught by `parse` and no source leaks.
+  const position = issue.linePos![0]
+  return `${summary} at line ${position.line}, column ${position.col}`
 }
 
 /**

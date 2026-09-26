@@ -19,7 +19,9 @@ describe("Profile schemas", () => {
   })
 
   it("accepts principal ids up to three hire levels and reserves owner", () => {
-    for (const id of ["lead", "lead.research", "a.b-c.d.e", "x9-y"]) expect(accepts(Profile.PrincipalId, id), id).toBe(true)
+    for (const id of ["lead", "lead.research", "a.b-c.d.e", "x9-y"]) {
+      expect(accepts(Profile.PrincipalId, id), id).toBe(true)
+    }
     for (const id of ["owner", "Lead", "9lead", "lead.", ".lead", "a.b.c.d.e", "lead_x", "", "a".repeat(64)]) {
       expect(accepts(Profile.PrincipalId, id), id).toBe(false)
     }
