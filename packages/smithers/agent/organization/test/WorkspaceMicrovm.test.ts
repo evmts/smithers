@@ -215,7 +215,9 @@ describe.skipIf(missing !== undefined)("Workspace against real microVMs", () => 
     const recorded: Array<Recorded> = []
     const cell =
       `const probe = await ctx.call("bash", { command: "uname -s && head -1 /etc/os-release && test ! -e ${repo} && echo host-path-hidden" });
-const edit = await ctx.call("bash", { command: "printf 'hello world\\n' > lib.txt" });
+const wrote = await ctx.call("write", { path: "/workspace/lib.txt", content: "hello there\\n" });
+const edited = await ctx.call("edit", { path: "/workspace/lib.txt", oldString: "there", newString: "world" });
+const edit = { exitCode: wrote.created === false && edited.replacements === 1 ? 0 : 1 };
 const page = await ctx.call("read", { path: "/workspace/lib.txt" });
 const result = ${JSON.stringify(done({ summary: "", commands: "" }))};
 result.fields.summary = probe.stdout;
