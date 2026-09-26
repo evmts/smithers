@@ -6,9 +6,9 @@ import { z } from "zod"
  *
  * A thread IS an issue (`kind: "chat"` owner-private, or a repository issue);
  * a message is an issue comment; a task is an issue that carries intent
- * metadata. These are payload fragments the `issue`, `issue-list` and
- * `connect` cards embed; the wire DTOs they are read from are the issue
- * routes (`/api/repos/{owner}/{repo}/issues…`, chat-sync contract).
+ * metadata. These are the UI-owned payload fragments the `issue`,
+ * `issue-list` and `connect` cards embed beside the chat = issues contract's
+ * own fields (kind, personas, pending sends, reactions, the Slack mapping).
  */
 
 /** Who posted, acted or owns something; `agentId` when the identity is a configured agent profile. */
@@ -35,24 +35,6 @@ export const TaskMetaSchema = z.object({
   verifiedBy: PersonaRefSchema.optional()
 })
 export type TaskMeta = z.infer<typeof TaskMetaSchema>
-
-/** The Slack thread an issue is mapped to (`GET …/issues/{n}/slack`). */
-export const ThreadSlackSchema = z.object({
-  teamId: z.string(),
-  channelId: z.string(),
-  threadTs: z.string().optional()
-})
-export type ThreadSlack = z.infer<typeof ThreadSlackSchema>
-
-/** A message the person sent that the server has not yet confirmed. */
-export const PendingMessageSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  at: z.number(),
-  status: z.enum(["requested", "failed", "unknown"]),
-  error: z.string().optional()
-})
-export type PendingMessage = z.infer<typeof PendingMessageSchema>
 
 /** One integration row on the connect card: what it syncs and its one action. */
 export const IntegrationRowSchema = z.object({

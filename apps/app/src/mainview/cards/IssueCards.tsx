@@ -19,7 +19,7 @@ import { commentPersona, IssueThreadBody, stateActions, TaskStrip } from "./Issu
 import type { Card } from "../state/AppState"
 import { dateLabel } from "../Timestamps"
 import { trustedHttpsUrl } from "../state/seams/SeamContext"
-import type { CardFamily, RunCommand } from "./CardFamily"
+import type { CardFamily, CardProjectionAuthority, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 import {
   AvatarStack,
@@ -207,11 +207,12 @@ const IssueCommentForm = ({ repo, number, onRunCommand }: { readonly repo: strin
 
 export const IssueCardBody = ({
   card,
-  onRunCommand
-}: { readonly card: Extract<Card, { kind: "issue" }> } & IssueCardActions) => {
+  onRunCommand,
+  projectionStore
+}: { readonly card: Extract<Card, { kind: "issue" }>; readonly projectionStore?: CardProjectionAuthority | undefined } & IssueCardActions) => {
   const { repo, number, title, state, author, issueBody, labels, comments } = card.payload
   /* A chat issue is a conversation (smithers-ui-DESIGN.md §3.1): the thread body replaces the GitHub layout. */
-  if (card.payload.kind === "chat") return <IssueThreadBody card={card} onRunCommand={onRunCommand} />
+  if (card.payload.kind === "chat") return <IssueThreadBody card={card} onRunCommand={onRunCommand} projectionStore={projectionStore} />
   const github = card.payload.source === "github"
   const githubHref = github ? trustedHttpsUrl(card.payload.htmlUrl ?? "", "github.com") : null
   const extra: IssuePayload = card.payload
@@ -294,7 +295,7 @@ export const issueCardFamily: CardFamily<"issue-list" | "issue"> = {
     pill: settledPill
   },
   issue: {
-    render: (card, actions) => <IssueCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card, actions) => <IssueCardBody card={card} onRunCommand={actions.onRunCommand} projectionStore={actions.projectionStore} />,
     pill: settledPill
   }
 }

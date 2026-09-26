@@ -426,7 +426,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "experimental.set": args => setupObject(args),
   "issues.fix": (args) => numberedTarget("issues.fix", args),
   "issues.verify": (args) => numberedTarget("issues.verify", args),
-  "issues.react": jsonObject("issues.react"),
+  "issues.comment.react": jsonObject("issues.comment.react"),
   "issues.comment.retry": jsonObject("issues.comment.retry"),
   "issues.task.set": jsonObject("issues.task.set"),
   "integrations.list": args => repoOnly("integrations.list", args),

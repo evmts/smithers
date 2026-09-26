@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 import { z } from "zod"
-import { IntegrationRowSchema, PendingMessageSchema, PersonaRefSchema, TaskMetaSchema, ThreadSlackSchema } from "./Threads.ts"
+import { IntegrationRowSchema, PersonaRefSchema, TaskMetaSchema } from "./Threads.ts"
 import { AGENT_ROLES, AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
 import { BillingPlanSchema, SandboxEntitlementSchema } from "./BillingPlans.ts"
 import {
@@ -1588,17 +1588,23 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       htmlUrl: z.string().optional(),
       labels: z.array(z.string()),
       /*
-       * Threads (smithers-ui-DESIGN.md §3.1, §3.2): a chat issue renders as a
-       * conversation; task metadata renders as one strip; the Slack mapping
-       * is the thread's Slack door; `pending` are the person's sends the
-       * server has not confirmed; `viewer` is who is reading, so their own
-       * reactions and messages are known. Each is present only when read.
+       * Chat issues (the chat = issues contract, IssuesSeam): the kind and
+       * visibility, the conversation binding, the durable draft, the sends
+       * the server has not confirmed, and the Slack mapping with its delivery
+       * state. Task metadata (smithers-ui-DESIGN.md §3.2) renders as one strip.
+       * Each is present only when read.
        */
       kind: z.enum(["issue", "chat"]).optional(),
+      visibility: z.enum(["public", "private"]).optional(),
+      conversation: z.object({ branchId: z.string(), owner: z.string(), creationKey: z.string() }).optional(),
+      commentDraft: z.string().optional(),
+      pendingComments: z.array(z.object({
+        id: z.string(), text: z.string(), actor: z.enum(["user", "smithers"]), owner: z.string().optional(), turnId: z.string().optional(),
+        persona: z.object({ username: z.string(), iconEmoji: z.string().optional(), iconUrl: z.string().optional() }).optional(),
+        status: z.enum(["requested", "failed", "unknown"]), error: z.string().optional()
+      })).optional(),
+      slack: z.object({ connectionId: z.string(), teamId: z.string(), channelId: z.string(), threadTs: z.string().optional(), slackUserId: z.string().optional(), state: z.enum(["synced", "pending", "dispatching", "outcome_unknown", "failed", "unsupported"]).optional(), error: z.string().nullable().optional() }).optional(),
       task: TaskMetaSchema.optional(),
-      slack: ThreadSlackSchema.optional(),
-      pending: z.array(PendingMessageSchema).optional(),
-      viewer: PersonaRefSchema.optional(),
       /*
        * Lane sync (ADR 0005 "Link an issue to Linear"): the Linear mapping
        * when the issue DTO carries one (`Linear ENG-482`); absent until
@@ -1611,13 +1617,13 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           commentBody: z.string(),
           createdAt: z.string().nullable(),
           authorAvatar: z.string().optional(),
-          /** The comment id, so a message can be edited, deleted or reacted to; absent on GitHub reads. */
-          id: z.string().optional(),
-          /** The display identity the message was posted under (chat-sync contract); the author stays authoritative. */
-          persona: PersonaRefSchema.optional(),
+          /** The comment id, idempotency key, persona and reactions (the chat = issues contract); absent on GitHub reads. */
+          id: z.number().int().optional(),
+          idempotencyKey: z.string().optional(),
+          reactions: z.array(z.object({ name: z.string(), actor: z.string(), active: z.boolean() })).optional(),
+          persona: z.object({ username: z.string(), iconEmoji: z.string().optional(), iconUrl: z.string().optional() }).optional(),
           /** Where the record says the message came from; absent until the backend carries it. */
-          origin: z.enum(["app", "slack"]).optional(),
-          reactions: z.array(z.object({ name: z.string(), count: z.number().int().nonnegative(), mine: z.boolean() })).optional()
+          origin: z.enum(["app", "slack"]).optional()
         })
       ),
       /* The restyled issue card's GitHub facts (cards/IssueCards.tsx IssueExtras); see the issue-list row. */

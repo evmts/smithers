@@ -55,7 +55,7 @@ export interface FlowInput {
   readonly "issues.close": { readonly number: number; readonly repo: string }
   readonly "issues.fix": { readonly number: number; readonly repo: string }
   readonly "issues.verify": { readonly number: number; readonly repo: string }
-  readonly "issues.react": { readonly number: number; readonly repo: string; readonly commentId: string; readonly name: string; readonly active: boolean }
+  readonly "issues.comment.react": { readonly number: number; readonly repo?: string; readonly commentId: number; readonly name: string; readonly active: boolean }
   readonly "issues.comment.retry": { readonly cardId: string; readonly requestId: string }
   readonly "issues.task.set": { readonly number: number; readonly repo: string; readonly field: "owner" | "due" | "priority" | "parent"; readonly value: string }
   readonly "integrations.list": { readonly repo: string }
@@ -224,7 +224,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "issues.close": payload => line(token(payload, "number"), token(payload, "repo")),
   "issues.fix": payload => line(token(payload, "number"), token(payload, "repo")),
   "issues.verify": payload => line(token(payload, "number"), token(payload, "repo")),
-  "issues.react": payload => JSON.stringify(payload),
+  "issues.comment.react": payload => JSON.stringify(payload),
   "issues.comment.retry": payload => JSON.stringify(payload),
   "issues.task.set": payload => JSON.stringify(payload),
   "integrations.list": payload => line(token(payload, "repo")),

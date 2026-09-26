@@ -23,6 +23,7 @@ const store = await createAppStore({ kind: "localStorage", storage: localStorage
 for (const card of fixtureCards()) {
   await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
 }
+store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null })
 const seededAgents = JSON.stringify(store.collections.cards.get("agents")?.payload)
 const controller = createAppController(store, silentAgent, {
   fetchImpl: async () => new Response("{}", { status: 404 }),
@@ -51,7 +52,7 @@ const render = () => {
     ...cards.map((card) => createElement(CardView, {
       key: card.id, card, maximized: false, onMaximize: noop, onMinimize: noop, onOpenInTab: noop,
       onDecideApproval: (id: string, decision: string) => commands.push({ name: "approval.approve" as FlowName, args: `${id} ${decision}` }),
-      onRunCommand: run, onConnectGitHub: noop, worldDocuments: [], signedOut: false
+      onRunCommand: run, onConnectGitHub: noop, worldDocuments: [], signedOut: false, projectionStore: store
     } as unknown as CardViewProps))))
 }
 render()

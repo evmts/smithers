@@ -889,8 +889,6 @@ export const createAppController = (
     return row === undefined ? undefined : { repo: row.id, flows: row.flows, home: row.home, loadedAt: row.loadedAt }
   }
   const issuesSeam = actors.pair(seamCtx, (context, select) => createIssuesSeam(context, request => select(renderFlowForm)(request)))
-  /* Chat threads re-read while visible and drain their pending sends (smithers-ui-DESIGN.md §3.1). */
-  issuesSeam.subscribe(ctx.onDispose)
   const integrationsSeam = actors.pair(seamCtx, createIntegrationsSeam)
   const landingsSeam = actors.pair(seamCtx, (context, select) => createLandingsSeam(context, request => select(renderFlowForm)(request)))
   const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))

@@ -6,8 +6,9 @@ import type { Card } from "../AppState"
 import { repositoryCiConfigured } from "../RepositoryJobs"
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
-import { captureCloudOwner,errorMessage,errorText,readErrorMessage,readResult,unreachableSentence } from "./SeamContext"
+import { errorMessage,errorText,readErrorMessage,readResult,unreachableSentence } from "./SeamContext"
 import { refusalOf } from "@smthrs/rpc/Refusal"
+
 import type { PersonaRef } from "@smthrs/rpc/Threads"
 
 /** Which threads a list shows: every issue, only chats, or only tasks (smithers-ui-DESIGN.md §3.1). */
@@ -15,6 +16,13 @@ export type IssueKindFilter = "all" | "chat" | "task"
 /** The backend's issue states; a task moves open → fixed → verified → closed. */
 export type IssueState = "open" | "fixed" | "verified" | "closed"
 
+/*
+ * UI-owned additions to the seam the chat-sync slice owns (its private chat
+ * reads, personas, pending sends, reactions and Slack mapping land with that
+ * slice): the `--kind` list filter, the task metadata read off the issue DTO,
+ * the fixed / verified states and the task field write. The two chat acts
+ * below refuse in words until that seam lands (#2111).
+ */
 export interface IssuesSeam {
   /** Renders the list card and answers the rows as text (the model reads the value, never the card). */
   readonly listIssues: ViewAction<[filter: "open" | "closed" | "all", repo?: string, kind?: IssueKindFilter]>
@@ -26,19 +34,10 @@ export interface IssuesSeam {
     repo?: string
   ) => Promise<string | void>
   readonly commentOnIssue: (number: number, text: string, repo?: string) => Promise<string | void | { readonly value: string }>
-  /*
-   * Threads (smithers-ui-DESIGN.md §3.1): a chat issue's sends are pending
-   * rows the drain posts with an idempotency key; a failed or unknown send is
-   * retried by the person; reactions ride the comment reactions route; task
-   * metadata rides the issue PATCH. Visible chat cards re-read on a cadence.
-   */
-  readonly retryIssueComment: (cardId: string, requestId: string) => Promise<string | void>
-  readonly reactToIssueComment: (number: number, commentId: string, name: string, active: boolean, repo?: string) => Promise<string | void>
   readonly setIssueTask: (number: number, field: "owner" | "due" | "priority" | "parent", value: string, repo?: string) => Promise<string | void>
-  readonly subscribe: (onDispose: (release: () => void) => void) => void
+  readonly retryIssueComment: (cardId: string, requestId: string) => Promise<string | void>
+  readonly reactToIssueComment: (number: number, commentId: number, name: string, active: boolean, repo?: string) => Promise<string | void>
 }
-
-export const CHAT_POLL_MS = 2_500
 
 type IssueListPayload = Extract<Card, { kind: "issue-list" }>["payload"]
 type IssueListRow = IssueListPayload["issues"][number]
@@ -53,25 +52,18 @@ const asInt = (value: unknown): number | null => typeof value === "number" && Nu
 const asIssueState = (value: unknown): IssueState => value === "closed" || value === "fixed" || value === "verified" ? value : "open"
 const asString = (value: unknown): string | undefined => typeof value === "string" && value !== "" ? value : undefined
 
-/** A user summary off the wire (`{ id, login, avatar_url? }`, a persona `{ username, iconUrl? }`, or a bare login) as a persona. */
+/** A user summary off the wire (`{ login, avatar_url? }` or a bare login) as a persona. */
 const personOf = (value: unknown): PersonaRef | undefined => {
   if (typeof value === "string") return value === "" ? undefined : { id: value, name: value }
   if (!isRecord(value)) return undefined
   const login = asString(value.login) ?? asString(value.username) ?? asString(value.name)
   if (login === undefined) return undefined
-  const avatar = asString(value.avatar_url) ?? asString(value.avatarUrl) ?? asString(value.iconUrl)
+  const avatar = asString(value.avatar_url) ?? asString(value.iconUrl)
   return { id: login, name: login, ...(avatar === undefined ? {} : { iconUrl: avatar }) }
 }
 
-type Profile = { readonly id: string; readonly label: string }
-/** A persona named after a configured agent profile resolves to it, by id then by label. */
-const resolved = (persona: PersonaRef, profiles: ReadonlyArray<Profile>): PersonaRef => {
-  const profile = profiles.find((row) => row.id === persona.id) ?? profiles.find((row) => row.label.toLowerCase() === persona.name.toLowerCase())
-  return profile === undefined ? persona : { ...persona, id: profile.id, agentId: profile.id }
-}
-
 /** Intent metadata the issue carries, when it carries any (owner, due, priority, parent, fixer, verifier). */
-const taskOf = (value: Record<string, unknown>, profiles: ReadonlyArray<Profile>): IssueListRow["task"] => {
+const taskOf = (value: Record<string, unknown>): IssueListRow["task"] => {
   const owner = personOf(value.owner)
   const fixedBy = personOf(value.fixed_by)
   const verifiedBy = personOf(value.verified_by)
@@ -79,21 +71,14 @@ const taskOf = (value: Record<string, unknown>, profiles: ReadonlyArray<Profile>
   const parentNumber = isRecord(value.parent) ? asInt(value.parent.number) : asInt(value.parent_number)
   const due = asString(value.due) ?? asString(value.due_at)
   const task = {
-    ...(owner === undefined ? {} : { owner: resolved(owner, profiles) }),
+    ...(owner === undefined ? {} : { owner }),
     ...(due === undefined ? {} : { due }),
     ...(priority === null || priority < 0 || priority > 3 ? {} : { priority: priority as 0 | 1 | 2 | 3 }),
     ...(parentNumber === null ? {} : { parent: { number: parentNumber, ...(isRecord(value.parent) && asString(value.parent.title) !== undefined ? { title: value.parent.title as string } : {}) } }),
-    ...(fixedBy === undefined ? {} : { fixedBy: resolved(fixedBy, profiles) }),
-    ...(verifiedBy === undefined ? {} : { verifiedBy: resolved(verifiedBy, profiles) })
+    ...(fixedBy === undefined ? {} : { fixedBy }),
+    ...(verifiedBy === undefined ? {} : { verifiedBy })
   }
   return Object.keys(task).length === 0 ? undefined : task
-}
-
-/** Follow `Link: <…?cursor=…>; rel="next"`, reading only the opaque cursor. */
-const nextCursor = (response: Response): string | undefined => {
-  const next = /<([^>]+)>;\s*rel="?next"?/.exec(response.headers.get("link") ?? "")?.[1]
-  if (next === undefined) return undefined
-  return new URL(next, "https://pagination.invalid").searchParams.get("cursor") ?? undefined
 }
 
 /** The author login off Plue's `author: { login }` shape, or null. */
@@ -113,14 +98,11 @@ const forgeFacts = (value: Record<string, unknown>, author: unknown): Pick<Issue
 })
 
 /** One list row; null when the entry carries no usable issue number. */
-const parseListRow = (value: unknown, profiles: ReadonlyArray<Profile> = []): IssueListRow | null => {
+const parseListRow = (value: unknown): IssueListRow | null => {
   if (!isRecord(value)) return null
   const number = asInt(value.number)
   if (number === null) return null
   const comments = asInt(value.comment_count)
-  const task = taskOf(value, profiles)
-  const last = isRecord(value.last_comment) ? value.last_comment : undefined
-  const lastPersona = last === undefined ? undefined : personOf(last.persona) ?? personOf(last.commenter)
   return {
     number,
     title: typeof value.title === "string" ? value.title : "",
@@ -131,9 +113,7 @@ const parseListRow = (value: unknown, profiles: ReadonlyArray<Profile> = []): Is
     comments: comments !== null && comments >= 0 ? comments : 0,
     updatedAt: typeof value.updated_at === "string" ? value.updated_at : null,
     ...(value.kind === "chat" ? { kind: "chat" as const } : {}),
-    ...(task === undefined ? {} : { task }),
-    ...(lastPersona === undefined ? {} : { last: { persona: resolved(lastPersona, profiles), text: asString(last!.body) ?? "", at: asString(last!.created_at) ?? "" } }),
-    ...(value.slack !== undefined && value.slack !== null ? { slack: true } : {})
+    ...(taskOf(value) === undefined ? {} : { task: taskOf(value) })
   }
 }
 
@@ -171,18 +151,12 @@ const parseLabels = (value: unknown): string[] =>
     : []
 
 /** One comment off Plue's IssueCommentResponse shape; null when not a record. */
-const parseComment = (value: unknown, profiles: ReadonlyArray<Profile> = []): IssueCommentRow | null => {
+const parseComment = (value: unknown): IssueCommentRow | null => {
   if (!isRecord(value)) return null
-  const id = asInt(value.id)
-  const persona = personOf(value.persona)
-  const origin = value.origin === "slack" ? "slack" : value.origin === "app" ? "app" : undefined
   return {
     author: typeof value.commenter === "string" && value.commenter !== "" ? value.commenter : null,
     commentBody: typeof value.body === "string" ? value.body : "",
-    createdAt: typeof value.created_at === "string" ? value.created_at : null,
-    ...(id === null ? {} : { id: String(id) }),
-    ...(persona === undefined ? {} : { persona: resolved(persona, profiles), ...(persona.iconUrl === undefined ? {} : { authorAvatar: persona.iconUrl }) }),
-    ...(origin === undefined ? {} : { origin })
+    createdAt: typeof value.created_at === "string" ? value.created_at : null
   }
 }
 
@@ -191,11 +165,9 @@ const parseDetail = (
   value: unknown,
   repo: string,
   number: number,
-  comments: ReadonlyArray<IssueCommentRow>,
-  profiles: ReadonlyArray<Profile> = []
+  comments: ReadonlyArray<IssueCommentRow>
 ): IssuePayload | null => {
   if (!isRecord(value)) return null
-  const task = taskOf(value, profiles)
   return {
     repo,
     number: asInt(value.number) ?? number,
@@ -207,11 +179,9 @@ const parseDetail = (
     labels: parseLabels(value.labels),
     comments: [...comments],
     ...(value.kind === "chat" ? { kind: "chat" as const } : {}),
-    ...(task === undefined ? {} : { task })
+    ...(taskOf(value) === undefined ? {} : { task: taskOf(value) })
   }
 }
-
-const pendingSends = new WeakMap<SeamContext["store"], Set<string>>()
 
 /** One row formatter for imported and GitHub-source issue results. */
 const issueRowValue = (issue: IssueListRow, source = issue.source): string =>
@@ -223,22 +193,6 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   const issuesPath = (repo: string): string => {
     const [owner = "", name = ""] = repo.split("/")
     return `${ctx.baseUrl}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues`
-  }
-  /** The configured agent profiles the agents card holds, so personas resolve to them; none before the card loads. */
-  const profiles = (): ReadonlyArray<Profile> => {
-    const card = ctx.store.collections.cards.get("agents")
-    return card?.kind === "agents" && "native" in card.payload ? card.payload.agents.map((agent) => ({ id: agent.id, label: agent.label })) : []
-  }
-  /** Who is reading, so their own reactions and pending sends are known. */
-  const viewer = (): PersonaRef | undefined => {
-    const login = ctx.store.collections.identitySessions.get("identity")?.login ?? ctx.store.collections.cloudSessions.get("cloud")?.username
-    return login === undefined || login === null || login === "" ? undefined : resolved({ id: login, name: login }, profiles())
-  }
-  /** The open card of a chat issue, if any. */
-  const chatCard = (repo: string, number: number): Extract<Card, { kind: "issue" }> | undefined => {
-    const found = [...ctx.store.collections.cards.values()].find((card) =>
-      card.kind === "issue" && card.payload.kind === "chat" && card.payload.source !== "github" && card.payload.repo === repo && card.payload.number === number)
-    return found?.kind === "issue" ? found : undefined
   }
 
   /*
@@ -444,70 +398,34 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }
     const issueJson: unknown = await issueResponse.json().catch(() => null)
 
-    const known = profiles()
-    const comments: IssueCommentRow[] = []
-    let cursor: string | undefined
-    const seen = new Set<string>()
-    for (let page = 1; page <= 50; page += 1) {
-      let commentsResponse: Response
-      try {
-        commentsResponse = await ctx.http(`${issuesPath(repo)}/${number}/comments${cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`}`)
-      } catch (error) {
-        return unreachable(`load comments for issue #${number} in ${repo}`, error)
-      }
-      if (!commentsResponse.ok) {
-        return readErrorMessage(
-          commentsResponse,
-          `Loading comments for issue #${number} in ${repo} failed (${commentsResponse.status})`
-        )
-      }
-      const commentsJson: unknown = await commentsResponse.json().catch(() => null)
-      if (!Array.isArray(commentsJson)) return `The backend answered comments for #${number} with an unreadable payload`
-      comments.push(...commentsJson.flatMap((entry) => { const parsed = parseComment(entry, known); return parsed === null ? [] : [parsed] }))
-      // Read only the opaque cursor; never follow a returned origin or path.
-      cursor = nextCursor(commentsResponse)
-      if (cursor === undefined) break
-      if (seen.has(cursor)) return `Comments for #${number} did not finish loading.`
-      seen.add(cursor)
-      if (page === 50) return `Issue #${number} has more comments than could be loaded.`
+    let commentsResponse: Response
+    try {
+      commentsResponse = await ctx.http(`${issuesPath(repo)}/${number}/comments`)
+    } catch (error) {
+      return unreachable(`load comments for issue #${number} in ${repo}`, error)
     }
+    if (!commentsResponse.ok) {
+      return readErrorMessage(
+        commentsResponse,
+        `Loading comments for issue #${number} in ${repo} failed (${commentsResponse.status})`
+      )
+    }
+    const commentsJson: unknown = await commentsResponse.json().catch(() => null)
+    const comments = Array.isArray(commentsJson)
+      ? commentsJson.flatMap((entry) => {
+        const parsed = parseComment(entry)
+        return parsed === null ? [] : [parsed]
+      })
+      : []
 
-    const payload = parseDetail(issueJson, repo, number, comments, known)
+    const payload = parseDetail(issueJson, repo, number, comments)
     if (payload === null) {
       return `The backend answered issue #${number} in ${repo} with an unreadable payload`
-    }
-    const me = viewer()
-    if (me !== undefined) payload.viewer = me
-    if (payload.kind === "chat") {
-      /* The Slack mapping and the reactions exist only for chats (chat-sync contract); a 404 is an unmapped thread. */
-      const mapping = await ctx.http(`${issuesPath(repo)}/${number}/slack`).catch(() => undefined)
-      if (mapping?.ok) {
-        const wire: unknown = await mapping.json().catch(() => null)
-        if (isRecord(wire) && asString(wire.team_id) !== undefined && asString(wire.channel_id) !== undefined) {
-          payload.slack = { teamId: wire.team_id as string, channelId: wire.channel_id as string, ...(asString(wire.thread_ts) === undefined ? {} : { threadTs: wire.thread_ts as string }) }
-        }
-      }
-      for (const comment of payload.comments) {
-        if (comment.id === undefined) continue
-        const response = await ctx.http(`${issuesPath(repo)}/${number}/comments/${comment.id}/reactions`).catch(() => undefined)
-        if (response?.ok !== true) continue
-        const rows: unknown = await response.json().catch(() => null)
-        if (!Array.isArray(rows)) continue
-        const counts = new Map<string, { count: number; mine: boolean }>()
-        for (const row of rows) {
-          if (!isRecord(row) || typeof row.name !== "string" || row.active === false) continue
-          const held = counts.get(row.name) ?? { count: 0, mine: false }
-          held.count += 1
-          if (me !== undefined && row.actor === me.id) held.mine = true
-          counts.set(row.name, held)
-        }
-        comment.reactions = [...counts].map(([name, { count, mine }]) => ({ name, count, mine }))
-      }
     }
     const card: Card = {
       id: `issue-${repo}-${number}`,
       kind: "issue",
-      title: payload.kind === "chat" ? payload.title : `Issue #${number} · ${repo}`,
+      title: `Issue #${number} · ${repo}`,
       status: "active",
       createdAt: Date.now(),
       ordinal: ctx.nextOrdinal(),
@@ -520,7 +438,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
 
       payload.issueBody,
       ...payload.comments.map((comment) =>
-        `Comment by ${comment.persona?.name ?? comment.author ?? "unknown"}${comment.createdAt ? ` · ${comment.createdAt}` : ""}:\n${comment.commentBody}`)
+        `Comment by ${comment.author ?? "unknown"}${comment.createdAt ? ` · ${comment.createdAt}` : ""}:\n${comment.commentBody}`)
     ].join("\n")) }
   }
 
@@ -532,7 +450,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       // Plue 422s unknown states ("all" included) — omit the param to list every state.
       const search = new URLSearchParams()
       if (filter !== "all") search.set("state", filter)
-      // Chats are owner-private and excluded from the plain list; ask for them by kind (chat-sync contract; connect issue).
+      // Chats are owner-private and excluded from the plain list; ask for them by kind (chat = issues contract; #2111).
       if (kind === "chat") search.set("kind", "chat")
       const query = search.size === 0 ? "" : `?${search}`
       let response: Response
@@ -551,9 +469,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       if (!Array.isArray(body)) {
         return `The backend answered issues for ${repo} with an unreadable payload`
       }
-      const known = profiles()
       const native = body.flatMap((entry) => {
-        const parsed = parseListRow(entry, known)
+        const parsed = parseListRow(entry)
         return parsed === null ? [] : [{ ...parsed, source: "smithers-cloud" as const }]
       }).filter((row) => kind === "all" || (kind === "task" ? row.task !== undefined : row.kind === "chat"))
       /*
@@ -586,12 +503,6 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     if ("error" in target) return target.error
     const repo = target.repo
     return { id: `issue-${source === "github" ? "github-" : ""}${repo}-${number}`, title: `Issue #${number} · ${repo}`, pane: repo,
-      /* A re-read keeps the sends the server has not confirmed yet. */
-      project: (card) => {
-        if (card.kind !== "issue" || source === "github") return card
-        const previous = chatCard(repo, number)
-        return previous?.payload.pending === undefined ? card : { ...card, payload: { ...card.payload, pending: previous.payload.pending } }
-      },
       read: () => source === "github" ? readGithubIssue(repo, number) : readIssue(repo, number) }
   })
   const showIssue = (repo: string, number: number) => issueView(number, repo)
@@ -635,140 +546,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     return { value: `Comment posted. ${detail}` }
   }
 
-  const updateChat = async (cardId: string, change: (payload: IssuePayload) => IssuePayload, actor: "user" | "smithers" | "system" = ctx.actor()) => {
-    const card = ctx.store.collections.cards.get(cardId)
-    if (card?.kind !== "issue") return
-    await ctx.dispatch({ type: "card.upsert", actor, card: { ...card, payload: change(card.payload) } }).isPersisted.promise
-  }
-
-  /** Re-read a chat the person changed, keeping the sends the server has not confirmed. */
-  const refreshChat = async (repo: string, number: number): Promise<void> => {
-    const card = chatCard(repo, number)
-    if (card === undefined) return
-    const result = await readIssue(repo, number)
-    const latest = chatCard(repo, number)
-    if (typeof result === "string" || result.card.kind !== "issue" || latest === undefined) return
-    await ctx.dispatch({ type: "card.view.loaded", actor: "system", card: { ...latest, title: result.card.title, payload: { ...result.card.payload, pending: latest.payload.pending } } }).isPersisted.promise
-  }
-
-  /**
-   * Post a chat card's requested sends one at a time; each settles only on the
-   * server's answer. The request id is the idempotency key, so a retry after a
-   * lost answer cannot post twice; a lost answer is `unknown`, never resent on
-   * its own (chat-sync contract: absent lookup does not authorize resend).
-   */
-  const drain = (cardId: string): void => {
-    let active = pendingSends.get(ctx.store)
-    if (active === undefined) pendingSends.set(ctx.store, active = new Set())
-    if (active.has(cardId)) return
-    const card = ctx.store.collections.cards.get(cardId)
-    if (card?.kind !== "issue" || !(card.payload.pending ?? []).some((request) => request.status === "requested")) return
-    const owner = captureCloudOwner(ctx, false)
-    active.add(cardId)
-    const send = async () => {
-      while (owner()) {
-        const current = ctx.store.collections.cards.get(cardId)
-        if (current?.kind !== "issue") break
-        const request = (current.payload.pending ?? []).find((row) => row.status === "requested")
-        if (request === undefined) break
-        const { repo, number } = current.payload
-        const same = () => { const live = ctx.store.collections.cards.get(cardId); return owner() && live?.kind === "issue" && live.payload.repo === repo && live.payload.number === number }
-        const fail = async (status: "failed" | "unknown", error: string) => {
-          if (same()) await updateChat(cardId, (payload) => ({ ...payload, pending: (payload.pending ?? []).map((row) => row.id === request.id ? { ...row, status, error } : row) }), "system")
-          return error
-        }
-        const work = async () => {
-          let response: Response
-          try {
-            response = await ctx.http(`${issuesPath(repo)}/${number}/comments`, {
-              method: "POST", headers: { "content-type": "application/json" },
-              body: JSON.stringify({ body: request.text, idempotency_key: request.id })
-            })
-          } catch (error) { return fail("unknown", `Delivery unknown: ${errorText(error)}`) }
-          if (!same()) return
-          if (!response.ok) return fail("failed", await readErrorMessage(response, `Sending the message failed (${response.status})`))
-          await response.body?.cancel().catch(() => {})
-          await updateChat(cardId, (payload) => ({ ...payload, pending: (payload.pending ?? []).filter((row) => row.id !== request.id) }), "system")
-          invalidatePreparedViews(ctx.store)
-          await refreshChat(repo, number)
-        }
-        if (ctx.withToast) await ctx.withToast(`issue.message:${request.id}`, "Sending", "Sent", work, false, owner, cardId)
-        else await work()
-      }
-    }
-    void send().catch(async (error) => {
-      const current = ctx.store.collections.cards.get(cardId)
-      const request = current?.kind === "issue" ? (current.payload.pending ?? []).find((row) => row.status === "requested") : undefined
-      if (request !== undefined && owner()) await updateChat(cardId, (payload) => ({ ...payload, pending: (payload.pending ?? []).map((row) => row.id === request.id ? { ...row, status: "unknown", error: errorText(error) } : row) }), "system")
-    }).finally(() => { active!.delete(cardId); if (owner()) drain(cardId) })
-  }
-
-  /* Visible chats re-read on a cadence; a poll is a projection refresh, never a second message store. */
-  const subscribe: IssuesSeam["subscribe"] = (onDispose) => {
-    const watches = new Map<string, () => void>()
-    let disposed = false
-    const reconcile = () => {
-      if (disposed) return
-      const signedIn = ctx.store.collections.identitySessions.get("identity")?.state === "signed-in" || ctx.store.collections.cloudSessions.get("cloud")?.state === "signed-in"
-      const chats = signedIn ? [...ctx.store.collections.cards.values()].filter((card) =>
-        card.kind === "issue" && card.payload.kind === "chat" && card.payload.source !== "github" && card.loading !== true && card.status !== "error") : []
-      for (const [id, stop] of watches) if (!chats.some((card) => card.id === id)) { stop(); watches.delete(id) }
-      for (const card of chats) {
-        drain(card.id)
-        if (watches.has(card.id)) continue
-        const owner = captureCloudOwner(ctx, false)
-        let stopped = false
-        let timer: ReturnType<typeof setTimeout> | undefined
-        const valid = () => !disposed && !stopped && owner() && ctx.store.collections.cards.get(card.id)?.kind === "issue"
-        watches.set(card.id, () => { stopped = true; clearTimeout(timer) })
-        const poll = async () => {
-          if (!valid()) { watches.get(card.id)?.(); watches.delete(card.id); return }
-          try {
-            const live = ctx.store.collections.cards.get(card.id)
-            if (live?.kind === "issue") {
-              const result = await readIssue(live.payload.repo, live.payload.number)
-              const latest = ctx.store.collections.cards.get(card.id)
-              if (valid() && typeof result !== "string" && result.card.kind === "issue" && latest?.kind === "issue") {
-                const next = { ...result.card.payload, pending: latest.payload.pending }
-                if (JSON.stringify(next) !== JSON.stringify(latest.payload)) {
-                  await ctx.dispatch({ type: "card.view.loaded", actor: "system", card: { ...latest, title: result.card.title, payload: next } }).isPersisted.promise
-                }
-              }
-            }
-          } catch { /* The next read recovers a transient transport error. */ }
-          if (valid()) timer = setTimeout(() => { void poll() }, CHAT_POLL_MS)
-        }
-        timer = setTimeout(() => { void poll() }, CHAT_POLL_MS)
-      }
-    }
-    const schedule = () => queueMicrotask(reconcile)
-    const changes = ctx.store.collections.cards.subscribeChanges(schedule)
-    const identity = ctx.store.collections.identitySessions.subscribeChanges(schedule)
-    const cloud = ctx.store.collections.cloudSessions.subscribeChanges(schedule)
-    reconcile()
-    onDispose(() => { disposed = true; changes.unsubscribe(); identity.unsubscribe(); cloud.unsubscribe(); for (const stop of watches.values()) stop(); watches.clear() })
-  }
-
   return {
-    subscribe,
-    retryIssueComment: async (cardId, requestId) => {
-      await updateChat(cardId, (payload) => ({ ...payload, pending: (payload.pending ?? []).map((row) => row.id === requestId ? { id: row.id, text: row.text, at: row.at, status: "requested" as const } : row) }))
-      drain(cardId)
-    },
-    reactToIssueComment: async (number, commentId, name, active, explicitRepo) => {
-      const target = resolveTargetRepo(ctx.store, explicitRepo)
-      if ("error" in target) return target.error
-      let response: Response
-      try {
-        response = await ctx.http(`${issuesPath(target.repo)}/${number}/comments/${encodeURIComponent(commentId)}/reactions`, {
-          method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, active })
-        })
-      } catch (error) { return `Reaction status unknown: ${errorText(error)}` }
-      if (!response.ok) return readErrorMessage(response, `Saving the reaction failed (${response.status})`)
-      await response.body?.cancel().catch(() => {})
-      invalidatePreparedViews(ctx.store)
-      await refreshChat(target.repo, number)
-    },
+    listIssues: Object.assign((filter: "open" | "closed" | "all", explicitRepo?: string, kind?: IssueKindFilter) => repositoryListRead(ctx, "issues", explicitRepo, filter, renderRepositoryForm, (repo) => listView(filter, repo, kind ?? "all")), { preload: listView.preload }),
     setIssueTask: async (number, field, value, explicitRepo) => {
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
@@ -784,7 +563,9 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       await response.body?.cancel().catch(() => {})
       return refreshDetail(`Task #${number} ${field} set`, repo, number)
     },
-    listIssues: Object.assign((filter: "open" | "closed" | "all", explicitRepo?: string, kind?: IssueKindFilter) => repositoryListRead(ctx, "issues", explicitRepo, filter, renderRepositoryForm, (repo) => listView(filter, repo, kind ?? "all")), { preload: listView.preload }),
+    /* The chat = issues seam (#2111) owns these; until it lands they refuse in words rather than pretending. */
+    retryIssueComment: async () => "Sending a message again needs the chat backend, which has not landed yet.",
+    reactToIssueComment: async () => "Reactions need the chat backend, which has not landed yet.",
 
     viewIssue: Object.assign(async (number: number, explicitRepo?: string, source?: "smithers-cloud" | "github") => {
       const target = resolveTargetRepo(ctx.store, explicitRepo)
@@ -805,7 +586,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         response = await ctx.http(issuesPath(repo), {
           method: "POST",
           headers: { "content-type": "application/json" },
-          // A chat is owner-private and idempotent on its key (chat-sync contract).
+          // A chat is owner-private and idempotent on its key (chat = issues contract).
           body: JSON.stringify(kind === "chat" ? { title, kind: "chat", idempotency_key: crypto.randomUUID() } : { title })
         })
       } catch (error) {
@@ -866,15 +647,6 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
       const { repo } = target
-      /* A chat send is a pending row the drain posts with an idempotency key; the card says "sending…" until the server answers. */
-      const chat = chatCard(repo, number)
-      if (chat !== undefined) {
-        if ((chat.payload.pending ?? []).some((row) => row.text === text && row.status === "requested")) return { value: "Requested" }
-        const request = { id: crypto.randomUUID(), text, at: Date.now(), status: "requested" as const }
-        await updateChat(chat.id, (payload) => ({ ...payload, pending: [...(payload.pending ?? []), request] }))
-        drain(chat.id)
-        return { value: "Requested" }
-      }
       let response: Response
       try {
         response = await ctx.http(`${issuesPath(repo)}/${number}/comments`, {

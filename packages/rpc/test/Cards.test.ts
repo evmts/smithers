@@ -1247,13 +1247,16 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       htmlUrl: "https://github.com/smithersai/smithers/issues/1634",
       labels: ["ci", "flaky"],
       kind: "chat",
+      visibility: "private",
+      conversation: { branchId: "branch-1", owner: "will", creationKey: "conv-1" },
+      commentDraft: "Thanks",
+      pendingComments: [{ id: "req-1", text: "Ship it.", actor: "user", owner: "will", turnId: "turn-1", persona: { username: "Personal Assistant", iconEmoji: ":compass:", iconUrl: "https://example.com/pa.png" }, status: "failed", error: "Posting the message failed (503)" }],
+      slack: { connectionId: "slack", teamId: "T0BQT6RGEBU", channelId: "C0C4HT47EQ3", threadTs: "1758870120.000100", slackUserId: "U0BQBRY4LRM", state: "outcome_unknown", error: null },
       task: { owner: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, due: "2026-09-27", priority: 0, parent: { number: 2088 }, fixedBy: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, verifiedBy: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" } },
-      slack: { teamId: "T0BQT6RGEBU", channelId: "C0C4HT47EQ3", threadTs: "1758870120.000100" },
-      pending: [{ id: "req-1", text: "Ship it.", at: 1_758_870_100_000, status: "failed", error: "Posting the message failed (503)" }],
-      viewer: { id: "will", name: "Will" },
       comments: [{
         author: null, commentBody: "reproduced", createdAt: "2026-09-05T09:00:00Z",
-        id: "9001", persona: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, origin: "slack", reactions: [{ name: "eyes", count: 1, mine: true }]
+        id: 9001, idempotencyKey: "dispatch:step", persona: { username: "Personal Assistant", iconEmoji: ":compass:", iconUrl: "https://example.com/pa.png" }, origin: "slack",
+        reactions: [{ name: "eyes", actor: "will", active: true }]
       }],
       createdAt: "2026-09-04T08:00:00Z",
       assignees: [{ login: "ada", avatar: "https://avatars.githubusercontent.com/u/1" }],

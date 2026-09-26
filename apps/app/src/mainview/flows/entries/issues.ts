@@ -108,13 +108,13 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     handler: ({ number, repo }) => actions.setIssueState(number, "verified", repo)
   }),
   flow({
-    name: "issues.react",
+    name: "issues.comment.react",
     form: { args: payload => JSON.stringify(payload) },
     summary: "Add or remove a reaction on a message",
     runtimeAny: ["cloud"],
     args: "<json {number, commentId, name, active, repo}>",
     requires: ["repo-read"],
-    input: Schema.Struct({ number: Schema.Number, commentId: Schema.String, name: Schema.String, active: Schema.Boolean, repo: Schema.optional(Schema.String) }),
+    input: Schema.Struct({ number: Schema.Number, commentId: Schema.Number, name: Schema.String, active: Schema.Boolean, repo: Schema.optional(Schema.String) }),
     handler: ({ number, commentId, name, active, repo }) => actions.reactToIssueComment(number, commentId, name, active, repo)
   }),
   flow({

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import type { Card } from "../state/AppState"
 import { fixtureCards } from "./fixtures/UiSurfaces"
 import { IssueCardBody, IssueListCardBody } from "./IssueCards"
-import { dueWords, slackThreadUrl, stateActions } from "./IssueThread"
+import { dueWords, reactionChips, slackThreadUrl, stateActions } from "./IssueThread"
 
 const noop = () => {}
 const issue = () => fixtureCards().find((card): card is Extract<Card, { kind: "issue" }> => card.kind === "issue")!
@@ -18,13 +18,17 @@ describe("a chat issue renders as a conversation (smithers-ui-DESIGN.md §3.1, �
     expect(html.match(/data-continued="true"/g)?.length).toBe(1)
     expect(html).toContain(">slack<")
     expect(html).toContain("👀 1")
-    expect(html).toContain('aria-label="Remove your 👀 reaction"')
     expect(html).toContain("✅ 1")
+    // Without a signed-in viewer no chip is "mine"; with one, the chip the viewer set toggles off.
+    expect(html).not.toContain("Remove your")
+    expect(reactionChips([{ name: "👀", actor: "will", active: true }, { name: "👀", actor: "U1", active: true }, { name: "✅", actor: "U1", active: false }], "will")).toEqual([{ name: "👀", count: 2, mine: true }])
     expect(html).toContain('data-state="fixed"')
     expect(html).toContain("P1")
     expect(html).toContain("#2088 Wiki freshness")
     expect(html).toContain("fixed by")
     expect(html).toContain(slackThreadUrl({ teamId: "T0BQT6RGEBU", channelId: "C0C4HT47EQ3", threadTs: "1758870120.000100" }))
+    // A persona that names a configured profile is a door to the roster; here no roster is loaded, so the username is text.
+    expect(html).toContain("personal-assistant")
     // The GitHub-shaped layout does not render for a chat.
     expect(html).not.toContain("ghc-detail-grid")
   })
@@ -41,9 +45,9 @@ describe("a chat issue renders as a conversation (smithers-ui-DESIGN.md §3.1, �
 
   test("the state acts follow the backend's ladder and the fixer cannot verify their own fix", () => {
     const fixedByEngineer = issue()
-    expect(stateActions(fixedByEngineer).map((act) => [act.flow, act.disabled])).toEqual([["issues.verify", undefined], ["issues.reopen", undefined]])
+    expect(stateActions(fixedByEngineer, "will").map((act) => [act.flow, act.disabled])).toEqual([["issues.verify", undefined], ["issues.reopen", undefined]])
     const fixedByViewer = { ...fixedByEngineer, payload: { ...fixedByEngineer.payload, task: { ...fixedByEngineer.payload.task, fixedBy: { id: "will", name: "Will" } } } }
-    expect(stateActions(fixedByViewer).map((act) => [act.flow, act.disabled])).toEqual([["issues.verify", "fixed by you"], ["issues.reopen", undefined]])
+    expect(stateActions(fixedByViewer, "will").map((act) => [act.flow, act.disabled])).toEqual([["issues.verify", "fixed by you"], ["issues.reopen", undefined]])
     const open = { ...fixedByEngineer, payload: { ...fixedByEngineer.payload, state: "open" as const } }
     expect(stateActions(open).map((act) => act.flow)).toEqual(["issues.fix", "issues.close"])
     const chat = { ...open, payload: { ...open.payload, task: undefined } }

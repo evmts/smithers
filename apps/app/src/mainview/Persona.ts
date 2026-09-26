@@ -41,12 +41,12 @@ export const monogram = (name: string): string => {
   return `${words[0]!.charAt(0)}${words[1]!.charAt(0)}`.toUpperCase()
 }
 
-/** A persona named after an organization agent resolves to it by id, then by exact name. */
+/** A persona named after a configured agent profile resolves to it by id, then by exact name, and wears the profile's name. */
 export const resolvePersona = (
   persona: { readonly id?: string | undefined; readonly name: string; readonly iconUrl?: string | undefined },
   agents: ReadonlyArray<{ readonly id: string; readonly name: string }>
 ): PersonaRef => {
   const id = persona.id ?? persona.name
   const agent = agents.find((row) => row.id === id) ?? agents.find((row) => row.name.toLowerCase() === persona.name.toLowerCase())
-  return { id: agent?.id ?? id, name: persona.name, iconUrl: persona.iconUrl, agentId: agent?.id }
+  return { id: agent?.id ?? id, name: agent?.name ?? persona.name, iconUrl: persona.iconUrl, agentId: agent?.id }
 }

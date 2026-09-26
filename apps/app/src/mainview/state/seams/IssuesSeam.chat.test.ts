@@ -3,16 +3,14 @@ import { describe, expect, test } from "bun:test"
 import type { AgentPort } from "../../runtime/AgentPort"
 import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
-import type { Card } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 
 /*
- * Chat threads through the issues seam (smithers-ui-DESIGN.md §3.1; the chat
- * = issues contract): a chat issue reads as a conversation with its Slack
- * mapping and reactions; a send is a pending row the drain posts with the
- * request id as its idempotency key; a refused post keeps the text as a
- * failed row a person retries; the list narrows to chats and tasks.
+ * Threads and tasks through the issues seam (smithers-ui-DESIGN.md §3.1,
+ * §3.2): the list narrows to chats and tasks, task metadata reads off the
+ * issue DTO, and a chat is created with `--kind chat`. The chat reads and
+ * sends themselves belong to the chat = issues seam (#2111).
  */
 
 const memoryStorage = (): StorageApi => {
@@ -38,74 +36,22 @@ const backend = (routes: Record<string, RouteAnswer>, calls: Array<{ line: strin
   }
 })
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
-const waitFor = async (predicate: () => boolean, ms = 2_000) => {
-  const until = Date.now() + ms
-  while (!predicate()) { if (Date.now() > until) throw new Error("timed out"); await new Promise((resolve) => setTimeout(resolve, 5)) }
-}
 const signedIn = async (store: AppStore): Promise<void> => {
   store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null })
   store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }] })
   await settled()
 }
 const REPO = "will/flows"
-const issueRoute = `/api/repos/will/flows/issues/7`
 const chatIssue = { number: 7, title: "Will ↔ Personal Assistant", state: "open", kind: "chat", visibility: "private", body: "", author: { login: "will" }, labels: [], created_at: "2026-09-26T09:00:00Z", updated_at: "2026-09-26T09:05:00Z" }
-const comments = [
-  { id: 9001, commenter: "smithers-bot", persona: { username: "Personal Assistant", iconEmoji: ":compass:" }, body: "Tomorrow's 1:1s are booked.", created_at: "2026-09-26T09:05:00Z" }
-]
-const issueCard = (store: AppStore): Extract<Card, { kind: "issue" }> | undefined => {
-  const found = [...store.collections.cards.values()].find((card) => card.kind === "issue" && card.payload.number === 7)
-  return found?.kind === "issue" ? found : undefined
-}
 
-describe("chat issues through the issues seam", () => {
-  test("a chat reads as a conversation: persona, Slack mapping, reactions and the viewer", async () => {
-    const calls: Array<{ line: string }> = []
+describe("threads and tasks through the issues seam (the chat acts land with the chat = issues seam, #2111)", () => {
+  test("the chat acts refuse in words until the chat seam lands", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableAgent, backend({
-      [`GET ${issueRoute}`]: json(200, chatIssue),
-      [`GET ${issueRoute}/comments`]: json(200, comments),
-      [`GET ${issueRoute}/slack`]: json(200, { connection_id: "slack", team_id: "T001", channel_id: "C001", thread_ts: "100.000001" }),
-      [`GET ${issueRoute}/comments/9001/reactions`]: json(200, [{ name: "eyes", actor: "will", active: true }, { name: "eyes", actor: "U001", active: true }])
-    }, calls))
+    const controller = createAppController(store, unavailableAgent, backend({}))
     await signedIn(store)
-    const outcome = await controller.commands.run("issues.view", `7 ${REPO}`)
-    expect(outcome.status).toBe("executed")
-    const card = issueCard(store)!
-    expect(card.payload.kind).toBe("chat")
-    expect(card.title).toBe("Will ↔ Personal Assistant")
-    expect(card.payload.slack).toEqual({ teamId: "T001", channelId: "C001", threadTs: "100.000001" })
-    expect(card.payload.viewer).toEqual({ id: "will", name: "will" })
-    expect(card.payload.comments[0]).toMatchObject({ id: "9001", persona: { id: "Personal Assistant", name: "Personal Assistant" }, reactions: [{ name: "eyes", count: 2, mine: true }] })
-    await controller.dispose()
-  })
-
-  test("a send is a pending row posted with its id as the idempotency key; a refusal keeps it as a failed row until Retry succeeds", async () => {
-    const calls: Array<{ line: string; body?: unknown }> = []
-    let refuse = true
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableAgent, backend({
-      [`GET ${issueRoute}`]: json(200, chatIssue),
-      [`GET ${issueRoute}/comments`]: json(200, comments),
-      [`POST ${issueRoute}/comments`]: () => refuse ? json(503, { status: "error", message: "the mirror is down" }) : json(201, { id: 9002 })
-    }, calls))
-    await signedIn(store)
-    await controller.commands.run("issues.view", `7 ${REPO}`)
-    const sent = await controller.commands.run("issues.comment", JSON.stringify({ number: 7, text: "Book Friday too.", repo: REPO }))
-    expect(sent.status).toBe("executed")
-    await waitFor(() => issueCard(store)?.payload.pending?.[0]?.status === "failed")
-    const failed = issueCard(store)!.payload.pending![0]!
-    expect(failed.text).toBe("Book Friday too.")
-    expect(failed.error).toContain("the mirror is down")
-    const post = calls.find((call) => call.line.startsWith(`POST ${issueRoute}/comments`))!
-    expect(post.body).toEqual({ body: "Book Friday too.", idempotency_key: failed.id })
-    refuse = false
-    await controller.commands.run("issues.comment.retry", JSON.stringify({ cardId: issueCard(store)!.id, requestId: failed.id }))
-    await waitFor(() => (issueCard(store)?.payload.pending ?? []).length === 0)
-    const posts = calls.filter((call) => call.line.startsWith(`POST ${issueRoute}/comments`))
-    expect(posts).toHaveLength(2)
-    // The retry reuses the same key, so the backend can answer with the same comment.
-    expect(posts[1]!.body).toEqual(posts[0]!.body)
+    const retry = await controller.commands.run("issues.comment.retry", JSON.stringify({ cardId: "issue-x", requestId: "r1" }))
+    expect(retry.status).toBe("failed")
+    if (retry.status === "failed") expect(retry.error).toContain("chat backend")
     await controller.dispose()
   })
 

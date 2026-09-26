@@ -15,7 +15,6 @@ const iso = (offsetMinutes: number) => new Date(T0 + offsetMinutes * 60_000).toI
 export const PA = { id: "personal-assistant", name: "Personal Assistant", agentId: "personal-assistant" }
 export const ENGINEER = { id: "software-engineer", name: "Software Engineer", agentId: "software-engineer" }
 export const QA = { id: "qa-evals", name: "QA & Agent Evals", agentId: "qa-evals" }
-export const WILL = { id: "will", name: "Will" }
 
 const stamp = (sequence: number, kind: string, at: number, payload: Record<string, unknown> = {}) => ({
   sequence, kind: `control.${kind}`, occurredAt: T0 + at, payload: { ...payload, at: T0 + at }
@@ -70,15 +69,15 @@ export const fixtureCards = (): ReadonlyArray<Card> => [
       repo: REPO, number: 2101, title: "Fix wiki staleness banner", state: "fixed", author: "will", issueBody: "The wiki banner still says stale after a refresh.",
       labels: [], kind: "chat", source: "smithers-cloud",
       task: { owner: ENGINEER, due: iso(24 * 60), priority: 1, parent: { number: 2088, title: "Wiki freshness" }, fixedBy: ENGINEER },
-      slack: { teamId: "T0BQT6RGEBU", channelId: "C0C4HT47EQ3", threadTs: "1758870120.000100" },
-      viewer: WILL,
+      visibility: "private",
+      slack: { connectionId: "slack", teamId: "T0BQT6RGEBU", channelId: "C0C4HT47EQ3", threadTs: "1758870120.000100", state: "synced" },
       comments: [
-        { id: "9001", author: "smithers-bot", persona: PA, commentBody: "Will asked for the staleness banner fix. Taking it.", createdAt: iso(-60 * 24 + 12), reactions: [] },
-        { id: "9002", author: "smithers-bot", persona: ENGINEER, commentBody: "On it. Plan: reproduce, then fix `wiki/search.ts`.", createdAt: iso(-60 * 24 + 14), origin: "slack", reactions: [] },
-        { id: "9003", author: "smithers-bot", persona: ENGINEER, commentBody: "Tests pass. PR [#2101](https://github.com/smithersai/smithers/pull/2101).", createdAt: iso(-60 * 24 + 16), reactions: [{ name: "👀", count: 1, mine: true }, { name: "✅", count: 1, mine: false }] },
-        { id: "9004", author: "will", commentBody: "Ship it.", createdAt: iso(-40), reactions: [] }
+        { id: 9001, author: "smithers-bot", persona: { username: "personal-assistant" }, commentBody: "Will asked for the staleness banner fix. Taking it.", createdAt: iso(-60 * 24 + 12), reactions: [] },
+        { id: 9002, author: "smithers-bot", persona: { username: "software-engineer" }, commentBody: "On it. Plan: reproduce, then fix `wiki/search.ts`.", createdAt: iso(-60 * 24 + 14), origin: "slack", reactions: [] },
+        { id: 9003, author: "smithers-bot", persona: { username: "software-engineer" }, commentBody: "Tests pass. PR [#2101](https://github.com/smithersai/smithers/pull/2101).", createdAt: iso(-60 * 24 + 16), reactions: [{ name: "👀", actor: "will", active: true }, { name: "✅", actor: "U0BQBRY4LRM", active: true }] },
+        { id: 9004, author: "will", commentBody: "Ship it.", createdAt: iso(-40), reactions: [] }
       ],
-      pending: [{ id: "req-1", text: "And add the test to the wiki suite.", at: T0 - 30_000, status: "failed", error: "Posting the message failed (503)" }]
+      pendingComments: [{ id: "req-1", text: "And add the test to the wiki suite.", actor: "user", owner: "will", status: "failed", error: "Posting the message failed (503)" }]
     }
   },
   {

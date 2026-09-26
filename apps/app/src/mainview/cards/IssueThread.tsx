@@ -12,10 +12,10 @@ import { flowAction, flowProps } from "../flows/FlowAction"
 import { Button, Markdown, Textarea } from "@smthrs/ui"
 import { useState } from "react"
 import { AgentMark } from "../AgentMark"
-import type { PersonaRef } from "../Persona"
+import { resolvePersona, type PersonaRef } from "../Persona"
 import type { Card } from "../state/AppState"
 import { dayLabel, timeLabel } from "../Timestamps"
-import type { RunCommand } from "./CardFamily"
+import type { CardProjectionAuthority, RunCommand } from "./CardFamily"
 
 type IssueCard = Extract<Card, { kind: "issue" }>
 type IssueRow = Extract<Card, { kind: "issue-list" }>["payload"]["issues"][number]
@@ -24,8 +24,20 @@ type Threadish = Pick<IssueRow, "state" | "task" | "number"> & { readonly repo: 
 
 const GROUP_MS = 5 * 60_000
 
+/** Who is reading, and the configured agent profiles personas resolve to; both from the store the card projects. */
+export interface ThreadContext {
+  readonly viewer?: string | undefined
+  readonly profiles: ReadonlyArray<{ readonly id: string; readonly name: string }>
+}
+export const threadContext = (store: CardProjectionAuthority | undefined): ThreadContext => {
+  const login = store?.collections.identitySessions?.get("identity")?.login ?? store?.collections.cloudSessions?.get("cloud")?.username
+  const agents = store?.collections.cards?.get("agents")
+  const profiles = agents?.kind === "agents" && "native" in agents.payload ? agents.payload.agents.map((agent) => ({ id: agent.id, name: agent.label })) : []
+  return { viewer: login === null || login === "" ? undefined : login, profiles }
+}
+
 /** The Slack thread's permalink from the mapping the record carries; nothing when unmapped. */
-export const slackThreadUrl = (slack: NonNullable<IssueCard["payload"]["slack"]>): string => {
+export const slackThreadUrl = (slack: Pick<NonNullable<IssueCard["payload"]["slack"]>, "teamId" | "channelId" | "threadTs">): string => {
   const base = `https://app.slack.com/client/${encodeURIComponent(slack.teamId)}/${encodeURIComponent(slack.channelId)}`
   return slack.threadTs === undefined ? base : `${base}/thread/${encodeURIComponent(slack.channelId)}-${encodeURIComponent(slack.threadTs)}`
 }
@@ -39,9 +51,26 @@ export const dueWords = (iso: string, now: number = Date.now()): { readonly word
   return { words, past: at < now }
 }
 
-/** The identity a comment was posted under: its persona, else its author. */
-export const commentPersona = (comment: Comment): PersonaRef =>
-  comment.persona ?? { id: comment.author ?? "unknown", name: comment.author ?? "unknown", ...(comment.authorAvatar === undefined ? {} : { iconUrl: comment.authorAvatar }) }
+/** The identity a comment was posted under: its persona (an agent profile when it names one), else its author. */
+export const commentPersona = (comment: Pick<Comment, "author" | "authorAvatar" | "persona">, context: ThreadContext = { profiles: [] }): PersonaRef => {
+  const persona = comment.persona
+  if (persona !== undefined && persona.username !== "") return resolvePersona({ name: persona.username, iconUrl: persona.iconUrl }, context.profiles)
+  const login = comment.author ?? "unknown"
+  return { id: login, name: login, ...(comment.authorAvatar === undefined ? {} : { iconUrl: comment.authorAvatar }) }
+}
+
+/** Reactions as the chips read them: one per name with its count, and whether the viewer set it. */
+export const reactionChips = (reactions: Comment["reactions"], viewer: string | undefined): ReadonlyArray<{ readonly name: string; readonly count: number; readonly mine: boolean }> => {
+  const counts = new Map<string, { count: number; mine: boolean }>()
+  for (const reaction of reactions ?? []) {
+    if (!reaction.active) continue
+    const held = counts.get(reaction.name) ?? { count: 0, mine: false }
+    held.count += 1
+    if (viewer !== undefined && reaction.actor === viewer) held.mine = true
+    counts.set(reaction.name, held)
+  }
+  return [...counts].map(([name, { count, mine }]) => ({ name, count, mine }))
+}
 
 /** The task strip: state, owner, due, priority, parent, fixer and verifier — each only when recorded. */
 export const TaskStrip = ({ thread, onRunCommand, compact = false }: { readonly thread: Threadish; readonly onRunCommand: RunCommand; readonly compact?: boolean }) => {
@@ -67,10 +96,10 @@ export const TaskStrip = ({ thread, onRunCommand, compact = false }: { readonly 
 }
 
 /** The state acts an issue offers: a chat opens and closes; a task also gets fixed and verified. */
-export const stateActions = (card: IssueCard) => {
-  const { state, task, viewer, number, repo } = card.payload
+export const stateActions = (card: IssueCard, viewer?: string) => {
+  const { state, task, number, repo } = card.payload
   const args = flowArgs("issues.close", { number, repo })
-  const selfVerify = task?.fixedBy !== undefined && viewer !== undefined && task.fixedBy.id === viewer.id
+  const selfVerify = task?.fixedBy !== undefined && viewer !== undefined && task.fixedBy.id === viewer
   const acts: Array<{ readonly flow: "issues.close" | "issues.reopen" | "issues.fix" | "issues.verify"; readonly label: string; readonly disabled?: string }> = []
   if (state === "open") {
     if (task !== undefined) acts.push({ flow: "issues.fix", label: "Fixed" })
@@ -85,10 +114,10 @@ export const stateActions = (card: IssueCard) => {
   return acts.map((act) => ({ ...act, args }))
 }
 
-const MessageRow = ({ comment, first, card, onRunCommand }: { readonly comment: Comment; readonly first: boolean; readonly card: IssueCard; readonly onRunCommand: RunCommand }) => {
+const MessageRow = ({ comment, first, card, context, onRunCommand }: { readonly comment: Comment; readonly first: boolean; readonly card: IssueCard; readonly context: ThreadContext; readonly onRunCommand: RunCommand }) => {
   const { number, repo } = card.payload
-  const persona = commentPersona(comment)
-  const reactions = comment.reactions ?? []
+  const persona = commentPersona(comment, context)
+  const reactions = reactionChips(comment.reactions, context.viewer)
   return (
     <li className="thread-message" data-message={comment.id} data-continued={!first || undefined}>
       {first ? (
@@ -104,7 +133,7 @@ const MessageRow = ({ comment, first, card, onRunCommand }: { readonly comment: 
           <div className="thread-reactions" aria-label="Reactions">
             {reactions.map((reaction) => reaction.mine ? (
               <button key={reaction.name} type="button" className="thread-reaction" data-mine aria-label={`Remove your ${reaction.name} reaction`}
-                {...flowAction(onRunCommand, "issues.react", flowArgs("issues.react", { number, repo, commentId: comment.id!, name: reaction.name, active: false }))}>
+                {...flowAction(onRunCommand, "issues.comment.react", flowArgs("issues.comment.react", { number, repo, commentId: comment.id!, name: reaction.name, active: false }))}>
                 {reaction.name} {reaction.count}
               </button>
             ) : <span key={reaction.name} className="thread-reaction">{reaction.name} {reaction.count}</span>)}
@@ -149,28 +178,40 @@ const Composer = ({ card, onRunCommand }: { readonly card: IssueCard; readonly o
   )
 }
 
+/** The Slack mapping's delivery state, only when it is not simply synced; the record's own word. */
+const slackStateWords = (slack: NonNullable<IssueCard["payload"]["slack"]>): string | undefined =>
+  slack.state === undefined || slack.state === "synced" ? undefined : slack.state.replace("_", " ")
+
 /** The conversation body of a chat issue. */
-export const IssueThreadBody = ({ card, onRunCommand }: { readonly card: IssueCard; readonly onRunCommand: RunCommand }) => {
+export const IssueThreadBody = ({ card, onRunCommand, projectionStore }: { readonly card: IssueCard; readonly onRunCommand: RunCommand; readonly projectionStore?: CardProjectionAuthority | undefined }) => {
   const { comments, issueBody, slack, task, state, author, authorAvatar, number, repo } = card.payload
-  const pending = card.payload.pending ?? []
+  const context = threadContext(projectionStore)
+  const pending = card.payload.pendingComments ?? []
   const rows: Array<{ readonly comment: Comment; readonly first: boolean; readonly day: string }> = []
   let previous: Comment | undefined
   for (const comment of comments) {
     const at = comment.createdAt === null ? Number.NaN : Date.parse(comment.createdAt)
     const before = previous?.createdAt === null || previous?.createdAt === undefined ? Number.NaN : Date.parse(previous.createdAt)
-    const first = previous === undefined || commentPersona(previous).id !== commentPersona(comment).id || Number.isNaN(at) || Number.isNaN(before) || at - before > GROUP_MS
+    const first = previous === undefined || commentPersona(previous, context).id !== commentPersona(comment, context).id || Number.isNaN(at) || Number.isNaN(before) || at - before > GROUP_MS
     rows.push({ comment, first, day: comment.createdAt === null ? "" : dayLabel(comment.createdAt) })
     previous = comment
   }
   const days = [...new Set(rows.map((row) => row.day))]
-  const acts = stateActions(card)
+  const acts = stateActions(card, context.viewer)
   const opener: PersonaRef | undefined = author === null ? undefined : { id: author, name: author, ...(authorAvatar === undefined ? {} : { iconUrl: authorAvatar }) }
+  const viewer: PersonaRef | undefined = context.viewer === undefined ? undefined : { id: context.viewer, name: context.viewer }
+  const slackState = slack === undefined ? undefined : slackStateWords(slack)
   return (
     <article className="thread" data-testid={`thread-${number}`} data-kind={task === undefined ? "chat" : "task"} data-state={state} data-keyboard-pane={card.payload.title}>
       {task === undefined && slack === undefined ? null : (
         <header className="thread-head">
           <TaskStrip thread={{ ...card.payload, repo }} onRunCommand={onRunCommand} />
-          {slack === undefined ? null : <a className="thread-slack thread-slack-link" href={slackThreadUrl(slack)} target="_blank" rel="noreferrer">slack ↗</a>}
+          {slack === undefined ? null : (
+            <span className="thread-slack-state" data-state={slack.state}>
+              {slackState === undefined ? null : <span className="thread-slack">{slackState}</span>}
+              <a className="thread-slack thread-slack-link" href={slackThreadUrl(slack)} target="_blank" rel="noreferrer">slack ↗</a>
+            </span>
+          )}
         </header>
       )}
       <ol className="thread-messages" aria-label="Messages">
@@ -184,15 +225,15 @@ export const IssueThreadBody = ({ card, onRunCommand }: { readonly card: IssueCa
           <li key={day || "undated"} className="thread-day-group">
             {day === "" ? null : <p className="thread-day">{day}</p>}
             <ol className="thread-messages">
-              {rows.filter((row) => row.day === day).map((row, index) => <MessageRow key={row.comment.id ?? `${day}-${index}`} comment={row.comment} first={row.first} card={card} onRunCommand={onRunCommand} />)}
+              {rows.filter((row) => row.day === day).map((row, index) => <MessageRow key={row.comment.id ?? `${day}-${index}`} comment={row.comment} first={row.first} card={card} context={context} onRunCommand={onRunCommand} />)}
             </ol>
           </li>
         ))}
         {pending.map((request) => (
           <li key={request.id} className="thread-message thread-pending" data-pending={request.status} aria-label="Pending message">
             <div className="thread-message-head">
-              {card.payload.viewer === undefined ? null : <AgentMark persona={card.payload.viewer} size={28} />}
-              <time className="thread-message-time" dateTime={new Date(request.at).toISOString()}>{timeLabel(request.at)}</time>
+              {request.persona !== undefined && request.persona.username !== "" ? <AgentMark persona={resolvePersona({ name: request.persona.username, iconUrl: request.persona.iconUrl }, context.profiles)} size={28} onRunCommand={onRunCommand} />
+                : viewer === undefined ? null : <AgentMark persona={viewer} size={28} />}
               <span className="thread-pending-word" role={request.status === "requested" ? undefined : "status"}>
                 {request.status === "requested" ? "sending…" : request.status === "unknown" ? "Delivery unknown" : "Not delivered"}
               </span>
