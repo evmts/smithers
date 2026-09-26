@@ -8,7 +8,7 @@ export default defineDocsSite({
   starlight,
   slug: "organization",
   title: "@smthrs/organization",
-  description: "Agent organizations on Smithers: role profiles and grants, roster validation, composed role prompts, pinned skill packs, hiring lifecycle, weekly meeting planning, and configurable gates",
+  description: "Agent organizations on Smithers: role profiles and grants, roster validation, composed role prompts, pinned skill packs, hiring lifecycle, weekly meeting planning, configurable gates, role-task authority, and microVM task workspaces",
   sourceDir: "packages/smithers/agent/organization",
   contentDir: fileURLToPath(new URL("./src/content/docs", import.meta.url))
 })
