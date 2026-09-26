@@ -15,7 +15,7 @@
 import type * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Control } from "@smthrs/control"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
-import { Effect } from "effect"
+import { Effect, Logger, References } from "effect"
 import { randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync } from "node:fs"
@@ -54,6 +54,20 @@ export const inProcess = (control: Control.Control["Service"]): ControlPort => {
     }
   }
 }
+
+/**
+ * The host's log: a failed run is one line, `<run> failed: <reason>`, since
+ * its receipt and run status keep the whole cause; every other entry is
+ * written as Effect's default logger writes it.
+ */
+export const hostLogger = (log: (line: string) => void) =>
+  Logger.make((options) => {
+    const first: unknown = Array.isArray(options.message) ? options.message[0] : options.message
+    if (first !== "An agent run failed") return Logger.defaultLogger.log(options)
+    const annotations = options.fiber.getRef(References.CurrentLogAnnotations)
+    const reason = String(annotations.cause ?? "").split("\n", 1)[0]!.replace(/^organization\/DeliveryFailed: /, "")
+    log(`${String(annotations.runId ?? "a run")} failed: ${reason}`)
+  })
 
 /** Whether a holder label names a live process on this machine. */
 export const holderAlive = (holder: string): boolean => {
@@ -161,7 +175,8 @@ export const start = async (options: StartOptions) => {
     return yield* Serve.host(bind, settings.root)
   }).pipe(
     Effect.scoped,
-    Effect.provide(layer(options.platform, { settings, sdk, holder, slack, environment }, options.seats))
+    Effect.provide(layer(options.platform, { settings, sdk, holder, slack, environment }, options.seats)),
+    Effect.provide(Logger.layer([hostLogger(log), Logger.tracerLogger]))
   )
   return program
 }

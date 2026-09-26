@@ -52,7 +52,7 @@ export const flows = [["intake", intake], ["status", status]] as const
 /** Every flow the host registers with its engine. */
 const registered = [intake, deliver, status] as const
 
-/** Everything the host was started with that is not a secret. */
+/** Everything the host was started with. */
 export interface Options {
   readonly settings: Settings
   /** The Microsandbox SDK module the workspaces boot machines with. */
@@ -61,6 +61,7 @@ export interface Options {
   readonly holder: string
   /** Whether a Slack app is configured; its replies need the Slack actions. */
   readonly slack: boolean
+  /** The process environment over `.env`: it carries the Slack tokens, so it is never logged. */
   readonly environment: Readonly<Record<string, string | undefined>>
 }
 
@@ -186,6 +187,7 @@ const registrations = (platform: NativeControl.Platform, options: Options) => {
     image: organization.vm.image ?? "node:26-bookworm",
     cpus: organization.vm.cpus,
     memoryMib: organization.vm.memoryMib,
+    network: organization.vm.network === true,
     owner: settings.installation,
     holder: options.holder
   })

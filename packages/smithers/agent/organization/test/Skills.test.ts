@@ -39,11 +39,11 @@ describe("Skills.parseSkill", () => {
   })
 
   it("accepts every allowed license and refuses anything else", () => {
-    for (const license of Skills.allowedLicenses) {
+    for (const license of [...Skills.allowedLicenses, "LicenseRef-Acme-Private"]) {
       expect(ok(Skills.parseSkill("review", skillText(`name: review\ndescription: x\nlicense: ${license}`))).license)
         .toBe(license)
     }
-    for (const license of ["GPL-3.0", "mit", "Proprietary", "{a: b}"]) {
+    for (const license of ["GPL-3.0", "mit", "Proprietary", "{a: b}", "LicenseRef-", "LicenseRef-a b"]) {
       expect(refusal(skillText(`name: review\ndescription: x\nlicense: ${license}`))).toEqual({
         code: "license",
         field: "license",

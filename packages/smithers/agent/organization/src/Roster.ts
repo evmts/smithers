@@ -22,7 +22,7 @@
  * {@link validateResult} checks a role's result against its charter. Errors
  * name the file and field; they never repeat a field's value.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -40,7 +40,7 @@ import * as Profile from "./Profile.ts"
  * Stable roster loading and parsing failure codes.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RosterErrorCode = Schema.Literals([
   "read",
@@ -58,7 +58,7 @@ export const RosterErrorCode = Schema.Literals([
  * A roster loading or parsing failure code.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type RosterErrorCode = typeof RosterErrorCode.Type
 
@@ -68,7 +68,7 @@ export type RosterErrorCode = typeof RosterErrorCode.Type
  * frontmatter field or body section. The message never contains a value.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class RosterError extends Schema.TaggedError<RosterError>()("@smthrs/organization/Roster/RosterError", {
   code: RosterErrorCode,
@@ -81,7 +81,7 @@ export class RosterError extends Schema.TaggedError<RosterError>()("@smthrs/orga
  * The largest profile file {@link load} reads.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxProfileBytes = 262_144
 
@@ -202,7 +202,7 @@ const schemaError = (path: string, error: Schema.SchemaError) => {
  * Parses one profile file. `path` is only used to name the file in errors.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseProfile = (path: string, text: string): Effect.Effect<Profile.Profile, RosterError> =>
   Effect.gen(function*() {
@@ -296,7 +296,7 @@ const flowStyle = (node: unknown): void => {
  * order. `Boundaries` is omitted when empty.
  *
  * @category rendering
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const renderProfile = (profile: Profile.Profile): string => {
   const document = new Document(frontmatterOf(profile))
@@ -341,7 +341,7 @@ export const renderProfile = (profile: Profile.Profile): string => {
  * SHA-256 of its text.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Source {
   readonly path: string
@@ -353,7 +353,7 @@ export interface Source {
  * and the revision that pins both.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Roster {
   readonly revision: string
@@ -366,7 +366,7 @@ export interface Roster {
  * JSON of the profiles in id order and the sources in path order.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const revisionOf = (
   profiles: Iterable<Profile.Profile>,
@@ -383,7 +383,7 @@ const compare = (left: string, right: string): number => (left < right ? -1 : le
  * Builds a roster value from profiles and their sources.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (profiles: Iterable<Profile.Profile>, sources: ReadonlyArray<Source>): Roster => {
   const sorted = [...profiles].sort((left, right) => compare(left.id, right.id))
@@ -411,7 +411,7 @@ const directories = [
  * {@link validate}.
  *
  * @category loading
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const load = (dir: string): Effect.Effect<Roster, RosterError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
@@ -507,7 +507,7 @@ export const load = (dir: string): Effect.Effect<Roster, RosterError, FileSystem
  * Stable roster invariant codes.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ViolationCode = Schema.Literals([
   "duplicate-id",
@@ -545,7 +545,7 @@ export const ViolationCode = Schema.Literals([
  * A roster invariant code.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ViolationCode = typeof ViolationCode.Type
 
@@ -554,7 +554,7 @@ export type ViolationCode = typeof ViolationCode.Type
  * or empty for an organization-wide violation.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Violation = Schema.Struct({
   code: ViolationCode,
@@ -566,7 +566,7 @@ export const Violation = Schema.Struct({
  * One broken invariant.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Violation = typeof Violation.Type
 
@@ -575,7 +575,7 @@ export type Violation = typeof Violation.Type
  * core role needs a weekly meeting, and the skill names in the pinned pack.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Policy {
   readonly weeklyMeeting: boolean
@@ -592,7 +592,7 @@ const violation = (code: ViolationCode, principal: string, message: string): Vio
  * Whether a profile was hired (`specialist` or `helper`).
  *
  * @category predicates
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isHired = (profile: Profile.Profile): boolean => profile.kind !== "core"
 
@@ -600,7 +600,7 @@ export const isHired = (profile: Profile.Profile): boolean => profile.kind !== "
  * The daily token allocation of a budget: tokens per task times tasks per day.
  *
  * @category budgets
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const dailyTokens = (budget: Profile.BudgetPolicy): number => budget.tokensPerTask * budget.tasksPerDay
 
@@ -608,7 +608,7 @@ export const dailyTokens = (budget: Profile.BudgetPolicy): number => budget.toke
  * The unretired principals `parent` hired directly.
  *
  * @category queries
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const childrenOf = (
   profiles: Iterable<Profile.Profile>,
@@ -621,7 +621,7 @@ export const childrenOf = (
  * first. The chain stops at a core profile, a missing hirer, or a repeat.
  *
  * @category queries
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const hireChain = (
   profiles: ReadonlyMap<string, Profile.Profile>,
@@ -643,7 +643,7 @@ export const hireChain = (
  * its hires even when a task carries an older copy of their profile.
  *
  * @category queries
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const resolveActive = (
   roster: Pick<Roster, "profiles">,
@@ -829,7 +829,7 @@ const budgetViolations = (
  * policy requires them; skills from the pinned pack; unique output fields.
  *
  * @category validation
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const validate = (profiles: ReadonlyArray<Profile.Profile>, policy: Policy): ReadonlyArray<Violation> => {
   const found: Array<Violation> = []
@@ -922,7 +922,7 @@ const assistantViolations = (profiles: ReadonlyArray<Profile.Profile>): Readonly
  * evidence. Empty means the result is acceptable.
  *
  * @category validation
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const validateResult = (profile: Profile.Profile, result: Profile.RoleResult): ReadonlyArray<Violation> => {
   const declared = new Set(profile.charter.output.fields.map((field) => field.name))
@@ -935,11 +935,11 @@ export const validateResult = (profile: Profile.Profile, result: Profile.RoleRes
   if (result.status === "done") {
     for (const name of declared) {
       if (!Object.hasOwn(result.fields, name)) {
-        found.push(violation("missing-field", profile.id, `a done result carries field ${name}`))
+        found.push(violation("missing-field", profile.id, `missing field ${name}`))
       }
     }
     if (result.evidence.length === 0) {
-      found.push(violation("missing-evidence", profile.id, "a done result cites evidence"))
+      found.push(violation("missing-evidence", profile.id, "missing evidence"))
     }
   }
   return found

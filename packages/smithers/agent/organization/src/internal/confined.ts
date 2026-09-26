@@ -8,7 +8,7 @@
  * caller's check admits. A symlink inside a granted subtree that points at an
  * ungranted page is therefore refused, not followed.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
@@ -20,7 +20,7 @@ import * as KnowledgePath from "./knowledgePath.ts"
  * Why a confined operation refused. `message` never contains file content.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class Refusal extends Data.TaggedError("Refusal")<{
   readonly code: "invalid-path" | "outside-root" | "not-granted" | "not-a-file" | "too-large" | "io"
@@ -34,7 +34,7 @@ const refuse = (code: Refusal["code"], message: string): Refusal => new Refusal(
  * wiki-relative spelling, or `undefined` when it lies outside the root.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const realRoot = (
   root: string
@@ -62,7 +62,7 @@ export const realRoot = (
  * the requested path and the real path it resolves to; both must pass.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const readText = (options: {
   readonly root: string
@@ -103,7 +103,7 @@ export const readText = (options: {
  * created.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const writeText = (options: {
   readonly root: string

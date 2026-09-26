@@ -22,6 +22,7 @@ import {
   type Assignment,
   BuildTask,
   CheckTask,
+  CorrectTask,
   Decide,
   DeliveryFailed,
   Describe,
@@ -109,7 +110,9 @@ const holdsRepository = (profile: Profile.Profile, repository: string) =>
   profile.grants.tools.includes("workspace") && profile.grants.repositories.includes(repository)
 
 const describeResult = (answer: Answer): string =>
-  answer.valid ? answer.result.summary : `${answer.result.summary} (the result broke ${answer.principal}'s charter)`
+  answer.valid
+    ? answer.result.summary
+    : `${answer.result.summary} (${answer.principal} broke its charter: ${answer.violations.join("; ")})`
 
 const negativeVerdict = /^(?:request-changes|changes-requested|reject(?:ed)?|fail(?:ed)?|blocked|inconclusive)$/i
 
@@ -265,7 +268,7 @@ export const layer = (options: Options) =>
           },
           context: [requestContext(request, at)]
         }
-      }), { implementationVersion: "lead-task/v1" }),
+      }), { implementationVersion: "lead-task/v2" }),
     Assign.toLayer(({ contract, repository, revision }) =>
       Effect.gen(function*() {
         const registry = yield* Authority.RosterRegistry
@@ -305,7 +308,7 @@ export const layer = (options: Options) =>
           message: line(objective, 72),
           checkerWorkspace: holdsRepository(checker, repository)
         }
-      }), { implementationVersion: "assign/v2" }),
+      }), { implementationVersion: "assign/v3" }),
     BuildTask.toLayer(({ assignment, findings, request, round, workdir }) =>
       Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
         proceed: true,
@@ -385,7 +388,24 @@ export const layer = (options: Options) =>
             text: fence(`${build.principal}: ${describeResult(build)}`, 4_000)
           }
         ]
-      }))), { implementationVersion: "check-task/v2" }),
+      }))), { implementationVersion: "check-task/v3" }),
+    CorrectTask.toLayer(({ result, stage, validation }) =>
+      Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
+        ...stage,
+        context: [
+          ...stage.context,
+          {
+            source: { provider: "organization", id: `correction/${stage.task.id}` },
+            provenance: { retrievedAtMs: at },
+            text: [
+              "Your previous answer to this task broke your charter:",
+              ...validation.violations.map((violation) => `- ${violation.message}`),
+              "Answer the task again with a result that keeps your charter. Your previous result:",
+              fence(JSON.stringify(result, null, 2), 8_000)
+            ].join("\n")
+          }
+        ]
+      }))), { implementationVersion: "correct-task/v1" }),
     Decide.toLayer(({ build, check, checks, diff }) =>
       Effect.sync(() => {
         const findings: Array<string> = []
@@ -400,7 +420,7 @@ export const layer = (options: Options) =>
         const refused = verdicts.some((value) => negativeVerdict.test(value.trim()))
         if (!check.valid || check.result.status !== "done" || refused) findings.push(`${check.principal}: ${describeResult(check)}`)
         return { approved: findings.length === 0 && checks.passed, findings: lines(findings) }
-      }), { implementationVersion: "decide/v1" }),
+      }), { implementationVersion: "decide/v2" }),
     RenderReply.toLayer(({ speaker, text }) =>
       Effect.gen(function*() {
         const registry = yield* Authority.RosterRegistry

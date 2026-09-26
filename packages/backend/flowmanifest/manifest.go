@@ -18,39 +18,9 @@ import (
 
 const maxManifestBytes = 1 << 20
 
-// expectedFlows are the host families every distribution ships. Each list is
-// sorted, because Load compares the canonicalized manifest list exactly.
 var expectedFlows = map[string][]string{
 	"coding":    {"coding/dispatch"},
 	"librarian": {"librarian/history", "librarian/wiki"},
-}
-
-// OrganizationFamily names the optional organization host family.
-const OrganizationFamily = "organization"
-
-// organizationFlows is the exact, sorted catalog of the organization host: one
-// entry per public file flow under flows/organization/<name>/flow.ts. It is the
-// only Go copy of that list; distribution/flow-host-manifest.mjs writes the
-// same list and a distribution test loads its output here.
-var organizationFlows = []string{
-	"organization/book-block",
-	"organization/delegate",
-	"organization/deliver",
-	"organization/hire",
-	"organization/intake",
-	"organization/meeting-prepare",
-	"organization/meetings-plan",
-	"organization/retire",
-	"organization/saas-request",
-	"organization/status",
-	"organization/sync",
-	"organization/task",
-}
-
-// optionalFlows are host families a distribution may omit. A manifest without
-// them loads exactly as before; a manifest with one must match its catalog.
-var optionalFlows = map[string][]string{
-	OrganizationFamily: organizationFlows,
 }
 
 // Host is a validated packaged executable. Source revision is deliberately
@@ -64,10 +34,6 @@ type Host struct {
 type Registry struct {
 	Coding    Host
 	Librarian Host
-	// Organization is valid only when HasOrganization is true: the optional
-	// organization host was present and verified in the manifest.
-	Organization    Host
-	HasOrganization bool
 }
 
 type rawManifest struct {
@@ -114,15 +80,8 @@ func Load(path string) (Registry, error) {
 	if decoder.Decode(new(any)) != io.EOF {
 		return Registry{}, errors.New("Flow host manifest contains trailing data")
 	}
-	if raw.Version != 1 {
+	if raw.Version != 1 || len(raw.Hosts) != len(expectedFlows) {
 		return Registry{}, errors.New("Flow host manifest has unsupported version or host set")
-	}
-	for family := range raw.Hosts {
-		_, required := expectedFlows[family]
-		_, optional := optionalFlows[family]
-		if !required && !optional {
-			return Registry{}, errors.New("Flow host manifest has unsupported version or host set")
-		}
 	}
 	var registry Registry
 	for family, wanted := range expectedFlows {
@@ -141,19 +100,7 @@ func Load(path string) (Registry, error) {
 			registry.Librarian = host
 		}
 	}
-	if entry, ok := raw.Hosts[OrganizationFamily]; ok {
-		host, err := verifyHost(filepath.Dir(path), OrganizationFamily, entry, optionalFlows[OrganizationFamily])
-		if err != nil {
-			return Registry{}, err
-		}
-		registry.Organization, registry.HasOrganization = host, true
-	}
 	return registry, nil
-}
-
-// OrganizationFlows returns a copy of the organization host's exact catalog.
-func OrganizationFlows() []string {
-	return append([]string(nil), organizationFlows...)
 }
 
 func verifyHost(directory, family string, entry rawHost, wanted []string) (Host, error) {

@@ -21,7 +21,7 @@
  * {@link reviewHandler} answers `Gates` Review gates by running the
  * reviewer's role task.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Action, FlowRuntime } from "@smthrs/flow"
@@ -49,7 +49,7 @@ import * as Workspace from "./Workspace.ts"
  * replay reads the recorded revision, never the registry's current one.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PinRoster = Action.make("organization/pin-roster", {
   implementationVersion: "pin-roster/v1",
@@ -62,7 +62,7 @@ export const PinRoster = Action.make("organization/pin-roster", {
  * Resolves a principal at a pinned revision and composes its task.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ComposeTask = Action.make("organization/compose-task", {
   implementationVersion: "compose-task/v1",
@@ -83,7 +83,7 @@ export const ComposeTask = Action.make("organization/compose-task", {
  * handler runs; the system prompt and tools come from the principal's host.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RoleTask = AgentAction.make(Authority.roleTaskTag, {
   payload: Authority.RoleTaskPayload,
@@ -96,7 +96,7 @@ export const RoleTask = AgentAction.make(Authority.roleTaskTag, {
  * A result's charter check.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Validation = Schema.Struct({ valid: Schema.Boolean, violations: Schema.Array(Roster.Violation) })
 
@@ -104,7 +104,7 @@ export const Validation = Schema.Struct({ valid: Schema.Boolean, violations: Sch
  * A result's charter check.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Validation = typeof Validation.Type
 
@@ -113,7 +113,7 @@ export type Validation = typeof Validation.Type
  * revision.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ValidateResult = Action.make("organization/validate-result", {
   implementationVersion: "validate-result/v1",
@@ -126,7 +126,7 @@ export const ValidateResult = Action.make("organization/validate-result", {
  * A repository name, as the host's configuration spells it.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Repository = Profile.Container
 
@@ -134,7 +134,7 @@ export const Repository = Profile.Container
  * A slug naming one workspace within an execution.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Slug = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,62}$/, { expected: "a slug" }))
 
@@ -143,7 +143,7 @@ export const Slug = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,6
  * `<execution>/<repository>/<slug>`.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const executionOfWorkspace = (key: string): string => key.split("/", 1)[0]!
 
@@ -151,7 +151,7 @@ export const executionOfWorkspace = (key: string): string => key.split("/", 1)[0
  * Seeds the workspace `<execution>/<repository>/<slug>` from a commit.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PrepareWorkspace = Action.make("organization/prepare-workspace", {
   implementationVersion: "prepare-workspace/v1",
@@ -164,7 +164,7 @@ export const PrepareWorkspace = Action.make("organization/prepare-workspace", {
  * Collects a workspace's change.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CollectDiff = Action.make("organization/collect-diff", {
   implementationVersion: "collect-diff/v1",
@@ -178,7 +178,7 @@ export const CollectDiff = Action.make("organization/collect-diff", {
  * recorded receipts are what a replay sees.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RunChecks = Action.make("organization/run-checks", {
   implementationVersion: "run-checks/v1",
@@ -197,7 +197,7 @@ export const RunChecks = Action.make("organization/run-checks", {
  * Removes a workspace's machine.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DisposeWorkspace = Action.make("organization/dispose-workspace", {
   implementationVersion: "dispose-workspace/v1",
@@ -209,7 +209,7 @@ export const DisposeWorkspace = Action.make("organization/dispose-workspace", {
  * What {@link ApplyChange} lands.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ApplyPayload = Schema.Struct({
   repository: Repository,
@@ -227,7 +227,7 @@ export const ApplyPayload = Schema.Struct({
  * moved.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ApplyChange = Action.make("organization/apply-change", {
   implementationVersion: "apply-change/v1",
@@ -251,7 +251,7 @@ export const ApplyChange = Action.make("organization/apply-change", {
  * A receipt name: lowercase words joined by hyphens.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ReceiptName = Schema.String.check(
   Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/, { expected: "a receipt name" })
@@ -261,7 +261,7 @@ export const ReceiptName = Schema.String.check(
  * A receipt that could not be written.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class ReceiptFailed extends Schema.TaggedError<ReceiptFailed>()(
   "@smthrs/organization/Actions/ReceiptFailed",
@@ -273,7 +273,7 @@ export class ReceiptFailed extends Schema.TaggedError<ReceiptFailed>()(
  * path and content digest.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const WriteReceipt = Action.make("organization/write-receipt", {
   implementationVersion: "write-receipt/v1",
@@ -288,7 +288,7 @@ export const WriteReceipt = Action.make("organization/write-receipt", {
  * dot replaced.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const runDirectory = (runId: string): string =>
   runId.replaceAll(/[^A-Za-z0-9._-]/g, "-").replace(/^\./, "-").slice(0, 200)
@@ -297,7 +297,7 @@ export const runDirectory = (runId: string): string =>
  * Host configuration for {@link layer}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options {
   /** Repository names to trusted host paths. */
@@ -312,7 +312,7 @@ const executionId = Effect.map(FlowRuntime.FlowInstance, (instance) => instance.
  * Implements every declaration here but {@link RoleTask}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (options: Options) => {
   const repositoryPath = (name: string) =>
@@ -439,7 +439,7 @@ export const layer = (options: Options) => {
  * The layer's requirements, spelled out for hosts.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Requirements =
   | Authority.RosterRegistry
@@ -452,7 +452,7 @@ export type Requirements =
  * Options for {@link reviewHandler}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ReviewOptions {
   /** The reviewer's charter output field holding `approve` or `request-changes`. Default `verdict`. */
@@ -470,7 +470,7 @@ export interface ReviewOptions {
  * records as denied.
  *
  * @category reviewers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const reviewHandler = (
   options: ReviewOptions = {}

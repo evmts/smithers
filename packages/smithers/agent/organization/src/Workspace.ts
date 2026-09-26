@@ -30,7 +30,7 @@
  * local Microsandbox microVMs, which is the only production backend. A
  * semaphore bounds how many machine operations run at once.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as MicrosandboxSandbox from "@smthrs/sandbox/MicrosandboxSandbox"
 import { ProviderError } from "@smthrs/sandbox/RemoteChildProcessSpawner"
@@ -53,7 +53,7 @@ const pattern = (regex: RegExp, expected: string) => Schema.isPattern(regex, { e
  * A workspace key: the durable name of one task's workspace machine.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Key = Schema.String.check(
   pattern(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/, "a workspace key")
@@ -63,7 +63,7 @@ export const Key = Schema.String.check(
  * A full commit id (SHA-1 or SHA-256).
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CommitId = Schema.String.check(pattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, "a full commit id"))
 
@@ -72,7 +72,7 @@ export const CommitId = Schema.String.check(pattern(/^(?:[0-9a-f]{40}|[0-9a-f]{6
  * was seeded from, and the guest baseline commit changes are measured from.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Prepared = Schema.Struct({
   key: Key,
@@ -86,7 +86,7 @@ export const Prepared = Schema.Struct({
  * A seeded workspace.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Prepared = typeof Prepared.Type
 
@@ -94,7 +94,7 @@ export type Prepared = typeof Prepared.Type
  * One changed file. Counts are `null` for a binary file.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const FileStat = Schema.Struct({
   path: Schema.String,
@@ -106,7 +106,7 @@ export const FileStat = Schema.Struct({
  * One changed file.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type FileStat = typeof FileStat.Type
 
@@ -114,7 +114,7 @@ export type FileStat = typeof FileStat.Type
  * A workspace's change against the commit it was seeded from.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Diff = Schema.Struct({
   commit: CommitId,
@@ -130,7 +130,7 @@ export const Diff = Schema.Struct({
  * A workspace's change.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Diff = typeof Diff.Type
 
@@ -138,7 +138,7 @@ export type Diff = typeof Diff.Type
  * The longest a single check may run, in milliseconds.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxCheckTimeoutMs = 3_600_000
 
@@ -146,7 +146,7 @@ export const maxCheckTimeoutMs = 3_600_000
  * One configured check: a name and the exact argv run in the workspace root.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Check = Schema.Struct({
   name: Schema.NonEmptyString,
@@ -160,7 +160,7 @@ export const Check = Schema.Struct({
  * One configured check.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Check = typeof Check.Type
 
@@ -168,7 +168,7 @@ export type Check = typeof Check.Type
  * The head of one output stream, its full size, and whether it was cut.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({ text: Schema.String, bytes: Schema.Int, truncated: Schema.Boolean })
 
@@ -176,7 +176,7 @@ export const Output = Schema.Struct({ text: Schema.String, bytes: Schema.Int, tr
  * The head of one output stream.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Output = typeof Output.Type
 
@@ -185,7 +185,7 @@ export type Output = typeof Output.Type
  * deadline.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const CheckReceipt = Schema.Struct({
   name: Schema.NonEmptyString,
@@ -201,7 +201,7 @@ export const CheckReceipt = Schema.Struct({
  * What one check did.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type CheckReceipt = typeof CheckReceipt.Type
 
@@ -210,7 +210,7 @@ export type CheckReceipt = typeof CheckReceipt.Type
  * every check exited 0.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Checks = Schema.Struct({
   commit: CommitId,
@@ -223,7 +223,7 @@ export const Checks = Schema.Struct({
  * Every check's receipt from one fresh machine.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Checks = typeof Checks.Type
 
@@ -232,7 +232,7 @@ export type Checks = typeof Checks.Type
  * is `false` when the branch already held exactly this commit.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Applied = Schema.Struct({
   branch: Schema.NonEmptyString,
@@ -245,7 +245,7 @@ export const Applied = Schema.Struct({
  * A landed change.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Applied = typeof Applied.Type
 
@@ -253,7 +253,7 @@ export type Applied = typeof Applied.Type
  * Stable workspace failure codes.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const WorkspaceErrorCode = Schema.Literals([
   "unavailable",
@@ -275,7 +275,7 @@ export const WorkspaceErrorCode = Schema.Literals([
  * A workspace failure code.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type WorkspaceErrorCode = typeof WorkspaceErrorCode.Type
 
@@ -283,7 +283,7 @@ export type WorkspaceErrorCode = typeof WorkspaceErrorCode.Type
  * A workspace operation that could not complete.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class WorkspaceError extends Schema.TaggedError<WorkspaceError>()(
   "@smthrs/organization/Workspace/WorkspaceError",
@@ -299,7 +299,7 @@ export class WorkspaceError extends Schema.TaggedError<WorkspaceError>()(
  * its remote id and succeeds when it is already gone.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Machines {
   readonly workspace: (key: string) => Effect.Effect<Session, ProviderError, Scope.Scope>
@@ -311,7 +311,7 @@ export interface Machines {
  * How a Microsandbox-backed {@link Machines} boots its microVMs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface MicrosandboxOptions {
   /** The injected Microsandbox SDK (`import * as Microsandbox from "microsandbox"`). */
@@ -340,7 +340,7 @@ export interface MicrosandboxOptions {
  * host reaping at startup reads it to keep the machines of runs that resume.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const workspaceLabel = "smithers.workspace"
 
@@ -351,7 +351,7 @@ export const workspaceLabel = "smithers.workspace"
  * removal for disposal. The provider refuses a hosted backend.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const microsandbox = (options: MicrosandboxOptions): Machines => {
   const shape = {
@@ -404,7 +404,7 @@ export const microsandbox = (options: MicrosandboxOptions): Machines => {
  * Byte bounds on what crosses the machine boundary.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Limits {
   /** Largest `git archive` of a seeded commit. */
@@ -419,7 +419,7 @@ export interface Limits {
  * Default {@link Limits}: 256 MiB archives, 8 MiB diffs, 64 KiB per stream.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const defaultLimits: Limits = { archiveBytes: 268_435_456, diffBytes: 8_388_608, outputBytes: 65_536 }
 
@@ -427,7 +427,7 @@ export const defaultLimits: Limits = { archiveBytes: 268_435_456, diffBytes: 8_3
  * Who commits a landed change.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Identity {
   readonly name: string
@@ -438,7 +438,7 @@ export interface Identity {
  * The default committer of landed changes.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const defaultIdentity: Identity = { name: "Smithers Organization", email: "organization@smithers.invalid" }
 
@@ -446,7 +446,7 @@ export const defaultIdentity: Identity = { name: "Smithers Organization", email:
  * Options for {@link layer}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options {
   readonly machines: Machines
@@ -461,7 +461,7 @@ export interface Options {
  * is any commit-ish, resolved to a full id on the host.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface PrepareRequest {
   readonly key: string
@@ -473,7 +473,7 @@ export interface PrepareRequest {
  * A request to run checks against a change in a fresh machine.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ChecksRequest {
   readonly key: string
@@ -492,7 +492,7 @@ export interface ChecksRequest {
  * commit.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ApplyRequest {
   readonly repoPath: string
@@ -509,7 +509,7 @@ export interface ApplyRequest {
  * What a role task's session expects of its workspace.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface SessionOptions {
   /** The host commit the workspace must be seeded from. */
@@ -520,7 +520,7 @@ export interface SessionOptions {
  * The workspace service.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Service {
   readonly prepare: (request: PrepareRequest) => Effect.Effect<Prepared, WorkspaceError>
@@ -540,7 +540,7 @@ export interface Service {
  * The workspace service tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Workspace: Context.Service<Workspace, Service> = Context.Service("@smthrs/organization/Workspace")
 
@@ -548,7 +548,7 @@ export const Workspace: Context.Service<Workspace, Service> = Context.Service("@
  * The workspace service.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Workspace = Service
 
@@ -569,7 +569,7 @@ const lineSafe = /^[^\r\n\0]+$/
  * Parses `git diff --numstat -z` output.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseNumstat = (output: string): ReadonlyArray<FileStat> => {
   const files: Array<FileStat> = []
@@ -589,7 +589,7 @@ export const parseNumstat = (output: string): ReadonlyArray<FileStat> => {
  * Builds the workspace service over host `git` and the given machines.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (
   options: Options
@@ -924,7 +924,7 @@ export const make = (
  * Provides {@link Workspace} from {@link make}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (
   options: Options

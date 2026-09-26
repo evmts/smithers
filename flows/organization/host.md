@@ -19,9 +19,11 @@ node flows/organization/cli.ts answer <gate> approve      # or decline; --run <i
 ```
 
 `serve` runs standalone (`--standalone` is accepted and changes nothing); a
-backend-supervised mode is not built. After `init`, the state directory's
+backend-supervised mode is not built (#1934). After `init`, the state directory's
 `.env` names the root and the repositories, so `serve` needs no flags. Client
-commands talk to `127.0.0.1:7433` (`--port`, `SMITHERS_ORG_PORT`).
+commands talk to `127.0.0.1:7433` (`--port`, `SMITHERS_ORG_PORT`). The
+loopback port has no credential: any local user or process can submit,
+answer gates, and read `/projections` (#1932).
 
 ## Configuration
 
@@ -41,7 +43,8 @@ Flags override variables, variables override the state directory's `.env`
 
 A repository is named as the roster's `grants.repositories` name it. A bare
 path is named by its `origin` remote's `owner/name`, else its directory name;
-use `name=path` when that differs. Seats resolve from the environment
+use `name=path` when that differs. `doctor` fails on a name no active role
+holding `workspace` is granted. Seats resolve from the environment
 (see [Model access](#model-access)). With `judge: none` role results are
 checked by the flow, not by a judge.
 
@@ -57,7 +60,9 @@ checked by the flow, not by a judge.
   workspace → the diff is collected → checks run in a fresh microVM → the
   checker decides, for at most `--max-rounds` rounds → the change lands on
   `organization/<key>-<hash>` (never the checked-out branch, never pushed) →
-  receipt → thread reply. Every principal a role names is re-resolved against
+  receipt → thread reply. A role whose `done` result breaks its charter is
+  asked again once with the violations; a second break stops the delivery,
+  and the receipt names each violation. Every principal a role names is re-resolved against
   the pinned roster, so an inactive one is refused. It is registered but not
   listed: only intake starts it.
 - `organization/status` — rewrites `wiki.statusFile` from the receipts.
@@ -79,6 +84,11 @@ root (an empty jj repository at `<state>/execution`, never `Org/`) around each
 compensable step. `doctor` checks it.
 
 ## Restart and machines
+
+Workspace and check machines boot without network (`vm.network: true` in
+`Org/Organization.md` turns it on) and are seeded with `git archive` of the
+commit: no dependencies or toolchain beyond the image, so a check such as
+`pnpm test` fails unless the image carries what it needs (#1931).
 
 Runs survive a restart, including one killed in the middle of a builder's
 turn. Machines carry this installation's owner label and this process's
@@ -134,7 +144,7 @@ that array.
 ## Tests
 
 ```sh
-node --test flows/test/organization-host.test.mjs        # land, duplicate, gate + restart, kill mid-build, provider refusal, retired, forged
+node --test flows/test/organization-host.test.mjs        # land, duplicate, gate + restart, kill mid-build, charter correction, provider refusal, retired, forged
 node --test flows/test/organization-host-slack.test.mjs  # DM, thread replies, buttons
 ```
 
@@ -144,5 +154,6 @@ step as a model's edit is) and real microVMs,
 and skip by name where none can boot. The scripted seats play the example
 roster's parts; `SMITHERS_ORGANIZATION_SCRIPTED_ROLES` maps another roster's
 principals to them (`route:<to>`, `contract:<builder>,<checker>`, `build`,
-`check`). Targets: `//flows:organizationHost`,
+`check`), and `SMITHERS_ORGANIZATION_SCRIPTED_OMIT` makes a principal leave a
+charter field out. Targets: `//flows:organizationHost`,
 `//flows:organizationSetup`.

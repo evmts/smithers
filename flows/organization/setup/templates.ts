@@ -56,6 +56,8 @@ export interface EnvironmentInput {
   readonly root: string
   readonly stateDir: string
   readonly seats: ReadonlyArray<string>
+  /** The repository names the roster grants its workspace roles. */
+  readonly repositories: ReadonlyArray<string>
   readonly maxConcurrentVMs: number
 }
 
@@ -80,6 +82,7 @@ export const environmentExample = (input: EnvironmentInput): string => {
     "",
     "# Host",
     `SMITHERS_ORG_ROOT=${input.root}`,
+    `# name=path${input.repositories.length === 0 ? "" : `; the roster grants ${input.repositories.join(", ")}`}`,
     "SMITHERS_ORG_REPOS=",
     `SMITHERS_ORG_STATE_DIR=${input.stateDir}`,
     `# SMITHERS_ORG_MAX_CONCURRENT_VMS=${input.maxConcurrentVMs}`,

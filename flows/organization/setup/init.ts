@@ -17,7 +17,8 @@ import {
   type Io,
   loadOrganization,
   nonEmpty,
-  stateDirOf
+  stateDirOf,
+  workspaceGrants
 } from "./settings.ts"
 import { environmentExample, modelSeats, slackManifest } from "./templates.ts"
 
@@ -54,7 +55,8 @@ export const init = async (options: InitOptions): Promise<InitResult> => {
     mkdirSync(options.dir, { recursive: true })
     cpSync(join(exampleRoot, "Org"), org, { recursive: true, errorOnExist: true, force: false })
   }
-  const { loaded } = await loadOrganization(options.dir)
+  const organization = await loadOrganization(options.dir)
+  const { loaded } = organization
   const seats = modelSeats(loaded.organization)
   const setup = join(org, "Setup")
   mkdirSync(setup, { recursive: true })
@@ -62,6 +64,7 @@ export const init = async (options: InitOptions): Promise<InitResult> => {
     root: options.dir,
     stateDir: options.stateDir,
     seats,
+    repositories: [...workspaceGrants(organization).keys()],
     maxConcurrentVMs: loaded.organization.vm.maxConcurrentVMs
   })
   const files = [join(setup, ".env.example"), join(setup, "slack-app-manifest.yaml")]

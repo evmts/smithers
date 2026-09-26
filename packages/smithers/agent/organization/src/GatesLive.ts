@@ -7,7 +7,7 @@
  * `organization/gate-review`. Without a `review` handler the reviewer fails
  * closed: a Review gate is denied, never passed.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { HumanTask } from "@smthrs/flow"
 import * as Clock from "effect/Clock"
@@ -23,7 +23,7 @@ import { canonicalDigest } from "./internal/digest.ts"
  * record for one of these is never valid for another.
  *
  * @category digests
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const subjectDigest = (gate: Gates.Gate, subject: unknown): string =>
   canonicalDigest({
@@ -38,7 +38,7 @@ export const subjectDigest = (gate: Gates.Gate, subject: unknown): string =>
  * The most characters of the subject an approval prompt shows.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxExcerptLength = 4_096
 
@@ -52,7 +52,7 @@ const excerpt = (subject: unknown): string => {
  * `gate/<id>/<digest16>`, and the prompt a person sees.
  *
  * @category digests
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const bind = (gate: Gates.Gate, subject: unknown): Gates.Binding => {
   const digest = subjectDigest(gate, subject)
@@ -116,7 +116,7 @@ const judge = (
  * The record a gate writes for what it saw. Pure: `decidedAt` is given.
  *
  * @category decisions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decide = (
   gate: Gates.Gate,
@@ -156,7 +156,7 @@ const decideLayer = Gates.Decide.toLayer(
  * What a host's reviewer does with one request.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ReviewHandler<R> = (
   request: Gates.ReviewRequest
@@ -170,7 +170,7 @@ const unconfigured: ReviewHandler<never> = () =>
  * gates; without it every Review gate is denied.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = <R = never>(options: { readonly review?: ReviewHandler<R> | undefined } = {}) =>
   Layer.mergeAll(

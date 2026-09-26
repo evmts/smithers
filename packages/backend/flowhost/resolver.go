@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -69,7 +68,7 @@ func validateCatalog(catalog Catalog) (Catalog, error) {
 	if !catalogKeyPattern.MatchString(catalog.Key) {
 		return Catalog{}, errors.New("flow host catalog key is invalid")
 	}
-	if catalog.Family != CatalogCoding && catalog.Family != CatalogLibrarian && catalog.Family != CatalogOrganization {
+	if catalog.Family != CatalogCoding && catalog.Family != CatalogLibrarian {
 		return Catalog{}, fmt.Errorf("flow host catalog %q has an unsupported family", catalog.Key)
 	}
 	if !filepath.IsAbs(catalog.Executable) {
@@ -90,9 +89,6 @@ func validateCatalog(catalog Catalog) (Catalog, error) {
 	if catalog.Family == CatalogLibrarian && catalog.ProductAPIURL == "" {
 		return Catalog{}, fmt.Errorf("flow host catalog %q needs product API configuration", catalog.Key)
 	}
-	if value, ok := catalog.Environment[OrganizationConfigEnvironment]; ok && (catalog.Family != CatalogOrganization || !workspaceRelativeFile(value)) {
-		return Catalog{}, fmt.Errorf("flow host catalog %q %s must be a file path inside the workspace", catalog.Key, OrganizationConfigEnvironment)
-	}
 	copyEnvironment := make(map[string]string, len(catalog.Environment))
 	for name, value := range catalog.Environment {
 		if strings.TrimSpace(name) != name || name == "" || strings.ContainsAny(name, "=\x00") || strings.IndexByte(value, 0) >= 0 {
@@ -105,21 +101,6 @@ func validateCatalog(catalog Catalog) (Catalog, error) {
 	}
 	catalog.Environment = copyEnvironment
 	return catalog, nil
-}
-
-// workspaceRelativeFile accepts a clean relative file path that stays inside
-// the workspace root. The host still confines the real path it opens.
-func workspaceRelativeFile(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\\\x00") ||
-		path.IsAbs(value) || path.Clean(value) != value || strings.HasSuffix(value, "/") {
-		return false
-	}
-	for _, segment := range strings.Split(value, "/") {
-		if segment == "" || segment == "." || segment == ".." {
-			return false
-		}
-	}
-	return true
 }
 
 func explicitModel(value string) bool {

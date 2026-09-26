@@ -72,7 +72,7 @@ Loaders need `FileSystem` and `Path` from `effect`; the workspace also needs a
 | `parseSkill(directory, text)`                                      | Checks keys, name, description, license, compatibility, `allowed-tools`, metadata, and adapted provenance.                                |
 | `select(pack, names)`                                              | The `Prompt.SkillText` for each name, in order, pinned at its revision; `missing` when a name is not in the pack.                         |
 | `revisionOf(skills)`                                               | The pack revision over every name and file digest.                                                                                        |
-| `allowedLicenses`                                                  | `Apache-2.0`, `MIT`, `CC-BY-4.0`, `LicenseRef-Smithers-Ops-Private`.                                                                      |
+| `allowedLicenses`                                                  | `Apache-2.0`, `MIT`, `CC-BY-4.0`; an organization's own skills may carry `LicenseRef-<name>` instead.                                     |
 | `SkillsError`, `SkillsErrorCode`, `Skill`, `Pack`, `maxSkillBytes` | Errors and models.                                                                                                                        |
 
 ## `@smthrs/organization/Hiring`

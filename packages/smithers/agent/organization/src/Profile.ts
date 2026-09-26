@@ -19,7 +19,7 @@
  * `Schema.decodeUnknownEffect`, and unknown keys are refused by the decoders
  * this module exports.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Schema from "effect/Schema"
 import * as KnowledgePath from "./internal/knowledgePath.ts"
@@ -39,7 +39,7 @@ const unique = <T>(key: (value: T) => string, what: string) =>
  * the memory package's 128-character bank-name bound.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxPrincipalIdLength = 120
 
@@ -49,7 +49,7 @@ export const maxPrincipalIdLength = 120
  * reserved for the human the organization works for.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const PrincipalId = Schema.String.check(
   pattern(/^[a-z][a-z0-9-]{0,62}(\.[a-z][a-z0-9-]{0,62}){0,3}$/, "a lowercase principal id"),
@@ -61,7 +61,7 @@ export const PrincipalId = Schema.String.check(
  * A principal id.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type PrincipalId = typeof PrincipalId.Type
 
@@ -69,7 +69,7 @@ export type PrincipalId = typeof PrincipalId.Type
  * The owner, or a principal: who a profile reports to or a task came from.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Superior = Schema.Union([Schema.Literal("owner"), PrincipalId])
 
@@ -77,7 +77,7 @@ export const Superior = Schema.Union([Schema.Literal("owner"), PrincipalId])
  * The owner, or a principal.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Superior = typeof Superior.Type
 
@@ -86,7 +86,7 @@ export type Superior = typeof Superior.Type
  * `helper` (task-scoped) principals are hired by another principal.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Kind = Schema.Literals(["core", "specialist", "helper"])
 
@@ -94,7 +94,7 @@ export const Kind = Schema.Literals(["core", "specialist", "helper"])
  * A profile kind.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Kind = typeof Kind.Type
 
@@ -102,7 +102,7 @@ export type Kind = typeof Kind.Type
  * Lifecycle status. Only `active` principals act; `retired` is terminal.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Status = Schema.Literals(["proposed", "active", "paused", "retired"])
 
@@ -110,7 +110,7 @@ export const Status = Schema.Literals(["proposed", "active", "paused", "retired"
  * A lifecycle status.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Status = typeof Status.Type
 
@@ -121,7 +121,7 @@ export type Status = typeof Status.Type
  * `via-parent` (only through the principal that hired it).
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Contact = Schema.Literals(["owner-direct", "via-assistant", "via-parent"])
 
@@ -129,7 +129,7 @@ export const Contact = Schema.Literals(["owner-direct", "via-assistant", "via-pa
  * A contact rule.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Contact = typeof Contact.Type
 
@@ -138,7 +138,7 @@ export type Contact = typeof Contact.Type
  * no binding for it at all.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Tool = Schema.Literals(["workspace", "memory", "retrieval", "wiki-read", "wiki-write", "delegate"])
 
@@ -146,7 +146,7 @@ export const Tool = Schema.Literals(["workspace", "memory", "retrieval", "wiki-r
  * A tool family.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Tool = typeof Tool.Type
 
@@ -154,7 +154,7 @@ export type Tool = typeof Tool.Type
  * Provider access on a connection.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Access = Schema.Literals(["read", "write", "read-write"])
 
@@ -162,7 +162,7 @@ export const Access = Schema.Literals(["read", "write", "read-write"])
  * Provider access on a connection.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Access = typeof Access.Type
 
@@ -174,7 +174,7 @@ const tokenShaped = /^(?:xox[a-z]|sk)-/
  * provider token are refused, because a reference is never the secret.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ReferenceName = Schema.String.check(
   pattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/, "a lowercase reference name"),
@@ -186,7 +186,7 @@ export const ReferenceName = Schema.String.check(
  * A provider container: a channel, repository, calendar, or `*` for all.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Container = Schema.String.check(
   pattern(/^\S(?:.*\S)?$/, "a container id without surrounding whitespace"),
@@ -199,7 +199,7 @@ export const Container = Schema.String.check(
  * the owner-direct principal (checked by `Roster.validate`).
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ConnectionGrant = Schema.Struct({
   connection: ReferenceName,
@@ -217,7 +217,7 @@ export const ConnectionGrant = Schema.Struct({
  * Access to named containers through one connection.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ConnectionGrant = typeof ConnectionGrant.Type
 
@@ -228,7 +228,7 @@ export type ConnectionGrant = typeof ConnectionGrant.Type
  * characters, and non-NFC text are refused.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const KnowledgeGrant = Schema.String.check(
   Schema.makeFilter<string>((text) => {
@@ -241,7 +241,7 @@ export const KnowledgeGrant = Schema.String.check(
  * A wiki knowledge grant.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type KnowledgeGrant = typeof KnowledgeGrant.Type
 
@@ -254,7 +254,7 @@ const positive = Schema.Int.check(Schema.isGreaterThan(0))
  * specialists (helpers are task-scoped).
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const HiringLimits = Schema.Struct({
   maxDepth: count,
@@ -266,7 +266,7 @@ export const HiringLimits = Schema.Struct({
  * Hiring limits.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type HiringLimits = typeof HiringLimits.Type
 
@@ -274,7 +274,7 @@ export type HiringLimits = typeof HiringLimits.Type
  * Every authority a principal holds. Anything not listed is not granted.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Grants = Schema.Struct({
   tools: Schema.Array(Tool).check(unique<string>((tool) => tool, "tools")),
@@ -290,7 +290,7 @@ export const Grants = Schema.Struct({
  * Every authority a principal holds.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Grants = typeof Grants.Type
 
@@ -298,7 +298,7 @@ export type Grants = typeof Grants.Type
  * Standing spend and parallelism limits for one principal.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const BudgetPolicy = Schema.Struct({
   tokensPerTask: positive,
@@ -311,7 +311,7 @@ export const BudgetPolicy = Schema.Struct({
  * Standing spend and parallelism limits.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type BudgetPolicy = typeof BudgetPolicy.Type
 
@@ -319,7 +319,7 @@ export type BudgetPolicy = typeof BudgetPolicy.Type
  * A non-empty single line of text with no surrounding whitespace.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Line = Schema.String.check(
   pattern(/^[^\s](?:[^\r\n]*[^\s])?$/, "one non-empty line without surrounding whitespace"),
@@ -330,7 +330,7 @@ export const Line = Schema.String.check(
  * A non-empty paragraph with no surrounding whitespace; it may span lines.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Paragraph = Schema.String.check(
   pattern(/^\S(?:[\s\S]*\S)?$/, "non-empty text without surrounding whitespace"),
@@ -342,7 +342,7 @@ export const Paragraph = Schema.String.check(
  * `_`, or `-`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const FieldName = Schema.String.check(pattern(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/, "an output field name"))
 
@@ -350,7 +350,7 @@ export const FieldName = Schema.String.check(pattern(/^[A-Za-z][A-Za-z0-9_-]{0,6
  * One output field a role returns in `RoleResult.fields`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const OutputField = Schema.Struct({ name: FieldName, description: Line })
 
@@ -358,7 +358,7 @@ export const OutputField = Schema.Struct({ name: FieldName, description: Line })
  * One declared output field.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type OutputField = typeof OutputField.Type
 
@@ -368,7 +368,7 @@ export type OutputField = typeof OutputField.Type
  * and its boundaries.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Charter = Schema.Struct({
   objective: Paragraph,
@@ -388,7 +388,7 @@ export const Charter = Schema.Struct({
  * A role's charter.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Charter = typeof Charter.Type
 
@@ -397,7 +397,7 @@ export type Charter = typeof Charter.Type
  * 1 to 64 characters (the Agent Skills name rule).
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SkillName = Schema.String.check(
   pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "a lowercase hyphenated name"),
@@ -408,7 +408,7 @@ export const SkillName = Schema.String.check(
  * A memory bank name, in the memory package's `<kind>-<id>` spelling.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const BankName = Schema.String.check(
   pattern(/^(?:flow|agent|user|global)-[a-z0-9][a-z0-9.-]*$/, "a memory bank name such as agent-<id>"),
@@ -427,7 +427,7 @@ const isCalendarInstant = (text: string): boolean => {
  * milliseconds).
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Instant = Schema.String.check(
   pattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/, "a UTC ISO 8601 instant"),
@@ -438,7 +438,7 @@ export const Instant = Schema.String.check(
  * A semantic version `major.minor.patch`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Version = Schema.String.check(
   pattern(/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/, "a major.minor.patch version")
@@ -448,7 +448,7 @@ export const Version = Schema.String.check(
  * A model seat id (`provider:model` or a host alias), resolved by the host.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Seat = Schema.String.check(pattern(/^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$/, "a model seat id"))
 
@@ -456,7 +456,7 @@ export const Seat = Schema.String.check(pattern(/^[A-Za-z0-9][A-Za-z0-9._:/@-]{0
  * A task identifier.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const TaskId = Schema.String.check(pattern(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/, "a task id"))
 
@@ -464,7 +464,7 @@ export const TaskId = Schema.String.check(pattern(/^[A-Za-z0-9][A-Za-z0-9._:/-]{
  * A complete role profile.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Profile = Schema.Struct({
   id: PrincipalId,
@@ -497,7 +497,7 @@ export const Profile = Schema.Struct({
  * A complete role profile.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Profile = typeof Profile.Type
 
@@ -505,7 +505,7 @@ export type Profile = typeof Profile.Type
  * The default private memory bank for a principal: `agent-<id>`.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const defaultMemoryNamespace = (id: PrincipalId): string => `agent-${id}`
 
@@ -513,7 +513,7 @@ export const defaultMemoryNamespace = (id: PrincipalId): string => `agent-${id}`
  * One thing a principal is asked to do.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const TaskContract = Schema.Struct({
   id: TaskId,
@@ -535,7 +535,7 @@ export const TaskContract = Schema.Struct({
  * One thing a principal is asked to do.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type TaskContract = typeof TaskContract.Type
 
@@ -543,7 +543,7 @@ export type TaskContract = typeof TaskContract.Type
  * One piece of evidence a role result cites.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Evidence = Schema.Struct({
   kind: Schema.Literals(["file", "command", "url", "record", "note"]),
@@ -555,7 +555,7 @@ export const Evidence = Schema.Struct({
  * One piece of evidence.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Evidence = typeof Evidence.Type
 
@@ -567,7 +567,7 @@ export type Evidence = typeof Evidence.Type
  * with a reason.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RoleResult = Schema.Struct({
   status: Schema.Literals(["done", "blocked", "needs-decision", "declined"]),
@@ -593,7 +593,7 @@ export const RoleResult = Schema.Struct({
  * The one output schema every role task returns.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type RoleResult = typeof RoleResult.Type
 
@@ -603,7 +603,7 @@ const strict = { onExcessProperty: "error" } as const
  * Decodes an unknown value as a {@link Profile}, refusing unknown keys.
  *
  * @category decoding
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decodeProfile = Schema.decodeUnknownEffect(Profile, strict)
 
@@ -611,7 +611,7 @@ export const decodeProfile = Schema.decodeUnknownEffect(Profile, strict)
  * Decodes an unknown value as {@link Grants}, refusing unknown keys.
  *
  * @category decoding
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decodeGrants = Schema.decodeUnknownEffect(Grants, strict)
 
@@ -619,7 +619,7 @@ export const decodeGrants = Schema.decodeUnknownEffect(Grants, strict)
  * Decodes an unknown value as a {@link TaskContract}, refusing unknown keys.
  *
  * @category decoding
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decodeTaskContract = Schema.decodeUnknownEffect(TaskContract, strict)
 
@@ -627,6 +627,6 @@ export const decodeTaskContract = Schema.decodeUnknownEffect(TaskContract, stric
  * Decodes an unknown value as a {@link RoleResult}, refusing unknown keys.
  *
  * @category decoding
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const decodeRoleResult = Schema.decodeUnknownEffect(RoleResult, strict)

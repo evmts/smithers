@@ -29,6 +29,10 @@
  * - `previousAtOrBefore` zeroes milliseconds with the host-local setter, so on
  *   a host whose own zone is repeating an hour, an occurrence matched inside
  *   that hour comes back one hour early, whatever zone the cron names.
+ *
+ * The three defects are tracked in
+ * https://github.com/smithersai/smithers/issues/1930; fixing one flips its
+ * case, which then asserts the corrected answer.
  */
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Cause from "effect/Cause"

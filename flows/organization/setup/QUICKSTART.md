@@ -29,7 +29,8 @@ validates it.
 
 Seats run on your subscriptions. Sign in once: `codex login` (ChatGPT, for
 `openai:*` seats) and `claude` (Claude, for Anthropic seats). Then edit
-`~/.smithers/org/.env`: `SMITHERS_ORG_REPOS=<path to a git checkout>`.
+`~/.smithers/org/.env`: `SMITHERS_ORG_REPOS=example/demo=<path to a git checkout>`,
+the name the example roles are granted.
 
 ## 4. Slack (optional)
 
@@ -68,3 +69,5 @@ node flows/organization/cli.ts answer <gate> approve
 
 Or DM the app a small task. Approved changes land on `organization/…`
 branches of the repository, never pushed; receipts are under `Org/Runs/`.
+Machines have no network and hold only the committed files: builders and
+checks cannot install dependencies (#1931).

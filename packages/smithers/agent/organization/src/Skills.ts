@@ -5,8 +5,8 @@
  * format: YAML frontmatter (every scalar a string) with `name`,
  * `description`, `license`, and optional `compatibility`, `allowed-tools`, and
  * `metadata`, followed by the instructions. {@link loadPack} refuses a skill
- * whose license is not in {@link allowedLicenses}, whose name differs from its
- * directory, or that is marked `metadata.adapted: "true"` without the
+ * whose license is neither in {@link allowedLicenses} nor a `LicenseRef-`
+ * identifier, whose name differs from its directory, or that is marked `metadata.adapted: "true"` without the
  * `metadata.source` and `metadata.revision` it was adapted from. Every read
  * is confined to the real path of the pack directory.
  *
@@ -17,7 +17,7 @@
  * revision is the SHA-256 of the canonical JSON of every name and revision,
  * so a role prompt can pin the exact instructions it used.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -29,23 +29,22 @@ import * as Frontmatter from "./internal/frontmatter.ts"
 import type * as Prompt from "./Prompt.ts"
 
 /**
- * The licenses a pack may carry.
+ * The public licenses a pack may carry. An organization's own skills may
+ * instead carry an SPDX `LicenseRef-<name>` identifier.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const allowedLicenses: ReadonlyArray<string> = [
-  "Apache-2.0",
-  "MIT",
-  "CC-BY-4.0",
-  "LicenseRef-Smithers-Ops-Private"
-]
+export const allowedLicenses: ReadonlyArray<string> = ["Apache-2.0", "MIT", "CC-BY-4.0"]
+
+/** An SPDX user-defined license reference, such as an organization's private license. */
+const licenseRef = /^LicenseRef-[A-Za-z0-9.-]+$/
 
 /**
  * The largest `SKILL.md` {@link loadPack} reads.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxSkillBytes = 262_144
 
@@ -53,7 +52,7 @@ export const maxSkillBytes = 262_144
  * One loaded skill.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Skill {
   readonly name: string
@@ -74,7 +73,7 @@ export interface Skill {
  * A loaded pack: skills by name, in name order, and the pack revision.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Pack {
   readonly revision: string
@@ -85,7 +84,7 @@ export interface Pack {
  * Stable skill pack failure codes.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SkillsErrorCode = Schema.Literals([
   "read",
@@ -105,7 +104,7 @@ export const SkillsErrorCode = Schema.Literals([
  * A skill pack failure code.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type SkillsErrorCode = typeof SkillsErrorCode.Type
 
@@ -114,7 +113,7 @@ export type SkillsErrorCode = typeof SkillsErrorCode.Type
  * pack; the message never repeats a field's value.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class SkillsError extends Schema.TaggedError<SkillsError>()("@smthrs/organization/Skills/SkillsError", {
   code: SkillsErrorCode,
@@ -130,7 +129,7 @@ const skillName = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
  * Parses one `SKILL.md` found in directory `directory` of a pack.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseSkill = (
   directory: string,
@@ -155,8 +154,8 @@ export const parseSkill = (
   if (typeof description !== "string" || description.trim().length === 0 || description.length > 1024) {
     return refuse("description", "description", "is 1 to 1024 characters")
   }
-  if (typeof license !== "string" || !allowedLicenses.includes(license)) {
-    return refuse("license", "license", `is one of ${allowedLicenses.join(", ")}`)
+  if (typeof license !== "string" || !(allowedLicenses.includes(license) || licenseRef.test(license))) {
+    return refuse("license", "license", `is one of ${allowedLicenses.join(", ")}, or LicenseRef-<name>`)
   }
   const compatibility = fields.compatibility
   if (compatibility !== undefined && (typeof compatibility !== "string" || compatibility.length > 500)) {
@@ -196,7 +195,7 @@ const compare = (left: string, right: string): number => (left < right ? -1 : le
  * The pack revision of a set of skills.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const revisionOf = (skills: Iterable<Skill>): string =>
   canonicalDigest(
@@ -213,7 +212,7 @@ export const revisionOf = (skills: Iterable<Skill>): string =>
  * directory and file must resolve inside the real path of `dir`.
  *
  * @category loading
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const loadPack = (dir: string): Effect.Effect<Pack, SkillsError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
@@ -260,7 +259,7 @@ export const loadPack = (dir: string): Effect.Effect<Pack, SkillsError, FileSyst
  * The prompt texts for `names`, in that order, pinned at their revisions.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const select = (
   pack: Pack,

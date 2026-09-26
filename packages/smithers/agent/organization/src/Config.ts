@@ -23,7 +23,7 @@
  * {@link load} reads the pages the organization page names, relative to the
  * wiki root and confined to its real path.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -40,7 +40,7 @@ import * as Profile from "./Profile.ts"
  * Stable configuration failure codes.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ConfigErrorCode = Schema.Literals([
   "read",
@@ -55,7 +55,7 @@ export const ConfigErrorCode = Schema.Literals([
  * A configuration failure code.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ConfigErrorCode = typeof ConfigErrorCode.Type
 
@@ -65,7 +65,7 @@ export type ConfigErrorCode = typeof ConfigErrorCode.Type
  * the frontmatter field. The message never contains a value.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class ConfigError extends Schema.TaggedError<ConfigError>()("@smthrs/organization/Config/ConfigError", {
   code: ConfigErrorCode,
@@ -78,7 +78,7 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("@smthrs/orga
  * The largest configuration page {@link load} reads.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxPageBytes = 262_144
 
@@ -87,7 +87,7 @@ export const maxPageBytes = 262_144
  * absolute paths or globs. A trailing `/` is allowed on directories.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const WikiPath = Schema.String.check(
   Schema.makeFilter<string>((text) =>
@@ -103,7 +103,7 @@ const Text = (maximum: number) => Schema.String.check(Schema.isMinLength(1), Sch
  * Model seats by name. `default` is required; profiles pin their own.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Seats = Schema.Record(
   Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,31}$/, { expected: "a lowercase seat name" })),
@@ -118,7 +118,7 @@ export const Seats = Schema.Record(
  * The organization page: `Org/Organization.md`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Organization = Schema.Struct({
   organization: Schema.optionalKey(Profile.ReferenceName),
@@ -140,7 +140,9 @@ export const Organization = Schema.Struct({
     image: Schema.NullOr(Text(256)),
     cpus: Count(1, 64),
     memoryMib: Count(256, 1_048_576),
-    maxConcurrentVMs: Count(1, 64)
+    maxConcurrentVMs: Count(1, 64),
+    /** Guest networking for workspace and check machines. Default off. */
+    network: Schema.optionalKey(Schema.Boolean)
   }),
   limits: Schema.optionalKey(Schema.Struct({
     usdPerMonth: Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
@@ -157,7 +159,7 @@ export const Organization = Schema.Struct({
  * The organization page.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Organization = typeof Organization.Type
 
@@ -169,7 +171,7 @@ const Alias = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+
  * A `null` container alias is not yet mapped and is unusable.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Connection = Schema.Struct({
   id: Profile.ReferenceName,
@@ -190,7 +192,7 @@ export const Connection = Schema.Struct({
  * One provider connection, by reference.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Connection = typeof Connection.Type
 
@@ -198,7 +200,7 @@ export type Connection = typeof Connection.Type
  * The connections page: `Org/Connections.md`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Connections = Schema.Struct({
   connections: Schema.Array(Connection).check(
@@ -221,7 +223,7 @@ export const Connections = Schema.Struct({
  * The connections page.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Connections = typeof Connections.Type
 
@@ -230,7 +232,7 @@ export type Connections = typeof Connections.Type
  * stay `null` until the owner sets them.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Meetings = Schema.Struct({
   seriesId: Meeting.SeriesId,
@@ -248,7 +250,7 @@ export const Meetings = Schema.Struct({
  * The meetings page.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Meetings = typeof Meetings.Type
 
@@ -257,7 +259,7 @@ export type Meetings = typeof Meetings.Type
  * owner input is still `null`.
  *
  * @category combinators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const weeklyRequest = (meetings: Meetings): Meeting.WeeklyRequest | undefined =>
   meetings.timezone === null || meetings.start === null || meetings.firstDate === null
@@ -308,7 +310,7 @@ const decodePage = <S extends Schema.Codec<unknown, unknown>>(schema: S) => {
  * Parses the organization page. `path` only names the page in errors.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseOrganization: (path: string, text: string) => Effect.Effect<Organization, ConfigError> = decodePage(
   Organization
@@ -318,7 +320,7 @@ export const parseOrganization: (path: string, text: string) => Effect.Effect<Or
  * Parses the connections page. `path` only names the page in errors.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseConnections: (path: string, text: string) => Effect.Effect<Connections, ConfigError> = decodePage(
   Connections
@@ -328,7 +330,7 @@ export const parseConnections: (path: string, text: string) => Effect.Effect<Con
  * Parses the meetings page. `path` only names the page in errors.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseMeetings: (path: string, text: string) => Effect.Effect<Meetings, ConfigError> = decodePage(
   Meetings
@@ -341,7 +343,7 @@ const decodePolicy = decodePage(Gates.GatePolicy)
  * `path` only names the page in errors.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseGatePolicy = (path: string, text: string): Effect.Effect<Gates.GatePolicy, ConfigError> =>
   Effect.flatMap(decodePolicy(path, text), (policy) => {
@@ -363,7 +365,7 @@ export const parseGatePolicy = (path: string, text: string): Effect.Effect<Gates
  * policy is empty.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Loaded {
   readonly organization: Organization
@@ -376,7 +378,7 @@ export interface Loaded {
  * The organization page's default location under the wiki root.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const defaultOrganizationFile = "Org/Organization.md"
 
@@ -387,7 +389,7 @@ export const defaultOrganizationFile = "Org/Organization.md"
  * file, and be at most {@link maxPageBytes}.
  *
  * @category loading
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const load = (
   root: string,

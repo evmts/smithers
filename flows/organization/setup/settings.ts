@@ -90,3 +90,13 @@ export const loadOrganization = async (root: string): Promise<Organization> => {
   if (result._tag === "Failure") throw result.failure
   return result.success
 }
+
+/** The repository names active roles holding `workspace` are granted, each with those roles. */
+export const workspaceGrants = (organization: Organization): Map<string, Array<string>> => {
+  const granted = new Map<string, Array<string>>()
+  for (const profile of organization.snapshot.roster.profiles.values()) {
+    if (profile.status !== "active" || !profile.grants.tools.includes("workspace")) continue
+    for (const name of profile.grants.repositories) granted.set(name, [...(granted.get(name) ?? []), profile.id])
+  }
+  return granted
+}

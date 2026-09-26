@@ -58,14 +58,6 @@ func BuildProcessSpec(launch HostLaunch, paths WorkspacePaths, port uint16) (Pro
 		if launch.Catalog.ImplementationModel != "" {
 			environment["SMITHERS_LIBRARIAN_MODEL"] = launch.Catalog.ImplementationModel
 		}
-	case CatalogOrganization:
-		// The organization host reads its configuration from the workspace
-		// root and receives provider credentials only through the operator
-		// catalog environment; it never learns the product API or bearer of
-		// another binding.
-		if strings.TrimSpace(launch.Authority.Repository) == "" {
-			return ProcessSpec{}, errors.New("organization host needs its authorized repository name")
-		}
 	default:
 		return ProcessSpec{}, errors.New("flow host family is unsupported")
 	}

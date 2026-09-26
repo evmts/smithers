@@ -28,10 +28,6 @@ type flowComposition struct {
 	dispatcher *flowdispatch.Service
 	bindings   *flowhost.Store
 	stopper    flowhost.RetirementStopper
-	// resolver is the one host resolver dispatch uses; the organization keeper
-	// asks it to keep the organization host running.
-	resolver     *flowhost.Resolver
-	organization *organizationFamily
 }
 
 func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService, policy admission.Policy, mythical *services.MythicalService, setupServices ...*services.RepositorySetupService) (*flowComposition, error) {
@@ -61,16 +57,6 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 			Environment:         librarianHostEnvironment(options.topology),
 		},
 	}
-	organization, err := newOrganizationFamily(registry, options.topology, db.New(pool))
-	if err != nil {
-		return nil, err
-	}
-	if organization.enabled() {
-		catalogs = append(catalogs, organizationCatalog(registry))
-		slog.Info("organization Flow host enabled", "repository", organization.repository)
-	} else if registry.HasOrganization || organization.repository != "" {
-		slog.Warn("organization Flow host disabled", "reason", organization.disabled)
-	}
 	bindings, err := flowhost.NewStore(pool, codec)
 	if err != nil {
 		return nil, fmt.Errorf("Flow host bindings: %w", err)
@@ -96,7 +82,6 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 		targets = withMythicalTargets(targets, services.NewMythicalFlowHostTargetResolver(mythical))
 		projectors = append(projectors, mythical)
 	}
-	targets = withOrganizationTargets(targets, organization)
 	launcher, err := flowhost.NewWorkspaceLauncher(options.Workspace)
 	if err != nil {
 		return nil, fmt.Errorf("Flow workspace launcher: %w", err)
@@ -122,17 +107,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, fmt.Errorf("Flow dispatcher: %w", err)
 	}
-	return &flowComposition{jobs: store, dispatcher: dispatcher, bindings: bindings, stopper: stopper,
-		resolver: resolver, organization: organization}, nil
-}
-
-// organizationKeeper returns the background pass that keeps the organization
-// host up, or nil when the family is disabled.
-func (flow *flowComposition) organizationKeeper(repos organizationRepos, workspaces organizationWorkspaces) *organizationKeeper {
-	if flow == nil || !flow.organization.enabled() || flow.resolver == nil || repos == nil || workspaces == nil {
-		return nil
-	}
-	return &organizationKeeper{family: flow.organization, repos: repos, workspaces: workspaces, runtime: flow.resolver}
+	return &flowComposition{jobs: store, dispatcher: dispatcher, bindings: bindings, stopper: stopper}, nil
 }
 
 func codingHostEnvironment(role topology) map[string]string {

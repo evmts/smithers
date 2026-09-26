@@ -31,7 +31,7 @@
  * subject digest, outcome, and who decided when. A gate that does not pass
  * fails the flow with {@link GateRefused} carrying that record.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Action, HumanTask } from "@smthrs/flow"
 import type * as DurableDeferred from "@smthrs/flow/DurableDeferred"
@@ -48,7 +48,7 @@ const pattern = (regex: RegExp, expected: string) => Schema.isPattern(regex, { e
  * Where a gate can attach.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Boundary = Schema.Literals(["flow", "task", "tool", "handoff", "external-write", "release"])
 
@@ -56,7 +56,7 @@ export const Boundary = Schema.Literals(["flow", "task", "tool", "handoff", "ext
  * Where a gate can attach.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Boundary = typeof Boundary.Type
 
@@ -64,7 +64,7 @@ export type Boundary = typeof Boundary.Type
  * A gate id: lowercase words joined by single hyphens, at most 63 characters.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const GateId = Schema.String.check(
   pattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/, "a lowercase gate id"),
@@ -78,7 +78,7 @@ const targetName = "[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}"
  * tag, a `from->to` handoff, or `*` for every target.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Target = Schema.String.check(
   pattern(new RegExp(`^(?:\\*|${targetName}(?:->${targetName})?)$`), "a target id, a from->to handoff, or *")
@@ -88,7 +88,7 @@ export const Target = Schema.String.check(
  * One boundary crossing: the boundary kind and the concrete target.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const At = Schema.Struct({ boundary: Boundary, target: Target })
 
@@ -96,7 +96,7 @@ export const At = Schema.Struct({ boundary: Boundary, target: Target })
  * One boundary crossing.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type At = typeof At.Type
 
@@ -104,7 +104,7 @@ export type At = typeof At.Type
  * A policy revision label, pinned by every record a gate writes.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Revision = Schema.String.check(
   pattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/, "a revision label")
@@ -114,7 +114,7 @@ export const Revision = Schema.String.check(
  * The longest configured approval prompt, in UTF-16 code units.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxPromptLength = 4_096
 
@@ -122,7 +122,7 @@ export const maxPromptLength = 4_096
  * The longest configurable wait: one year of milliseconds.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxTimeoutMs = 31_536_000_000
 
@@ -133,7 +133,7 @@ const Millis = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: maxTimeo
  * Without `timeoutMs` the question stays open until answered.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Approval = Schema.TaggedStruct("Approval", {
   id: GateId,
@@ -146,7 +146,7 @@ export const Approval = Schema.TaggedStruct("Approval", {
  * Another principal reviews the subject and must return `approve`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Review = Schema.TaggedStruct("Review", {
   id: GateId,
@@ -157,7 +157,7 @@ export const Review = Schema.TaggedStruct("Review", {
  * Tokens left for a principal and its ancestors. Not yet supported.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Budget = Schema.TaggedStruct("Budget", {
   id: GateId,
@@ -169,7 +169,7 @@ export const Budget = Schema.TaggedStruct("Budget", {
  * A free permit for a key. Not yet supported.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Concurrency = Schema.TaggedStruct("Concurrency", {
   id: GateId,
@@ -182,7 +182,7 @@ export const Concurrency = Schema.TaggedStruct("Concurrency", {
  * A time window opening. Not yet supported.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Window = Schema.TaggedStruct("Window", {
   id: GateId,
@@ -195,7 +195,7 @@ export const Window = Schema.TaggedStruct("Window", {
  * A named external signal. Not yet supported.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Condition = Schema.TaggedStruct("Condition", {
   id: GateId,
@@ -207,7 +207,7 @@ export const Condition = Schema.TaggedStruct("Condition", {
  * Every gate kind a policy may name.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const GateSpec = Schema.Union([Approval, Review, Budget, Concurrency, Window, Condition])
 
@@ -215,7 +215,7 @@ export const GateSpec = Schema.Union([Approval, Review, Budget, Concurrency, Win
  * Every gate kind a policy may name.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type GateSpec = typeof GateSpec.Type
 
@@ -223,7 +223,7 @@ export type GateSpec = typeof GateSpec.Type
  * The gate kinds that run today.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Supported = typeof Approval.Type | typeof Review.Type
 
@@ -231,7 +231,7 @@ export type Supported = typeof Approval.Type | typeof Review.Type
  * The gate kinds that run today.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const supportedKinds: ReadonlyArray<GateSpec["_tag"]> = ["Approval", "Review"]
 
@@ -239,7 +239,7 @@ export const supportedKinds: ReadonlyArray<GateSpec["_tag"]> = ["Approval", "Rev
  * Why a gate kind cannot be used yet, or `undefined` when it runs.
  *
  * @category predicates
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const unsupported = (spec: GateSpec): string | undefined =>
   spec._tag === "Approval" || spec._tag === "Review"
@@ -250,7 +250,7 @@ export const unsupported = (spec: GateSpec): string | undefined =>
  * One policy entry: where a gate attaches and what it is.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Entry = Schema.Struct({ at: At, spec: GateSpec })
 
@@ -258,7 +258,7 @@ export const Entry = Schema.Struct({ at: At, spec: GateSpec })
  * The gates an organization attaches, under a revision label.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const GatePolicy = Schema.Struct({
   revision: Revision,
@@ -273,7 +273,7 @@ export const GatePolicy = Schema.Struct({
  * The gates an organization attaches, under a revision label.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type GatePolicy = typeof GatePolicy.Type
 
@@ -281,7 +281,7 @@ export type GatePolicy = typeof GatePolicy.Type
  * The policy with no gates: every boundary runs without backpressure.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const empty = (revision: string): GatePolicy => ({ revision, gates: [] })
 
@@ -290,7 +290,7 @@ export const empty = (revision: string): GatePolicy => ({ revision, gates: [] })
  * either its exact target or `*`.
  *
  * @category combinators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const select = (policy: GatePolicy, at: At): ReadonlyArray<GateSpec> =>
   policy.gates
@@ -302,7 +302,7 @@ export const select = (policy: GatePolicy, at: At): ReadonlyArray<GateSpec> =>
  * `expired` fail the flow with {@link GateRefused}.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Outcome = Schema.Literals(["passed", "denied", "expired"])
 
@@ -310,7 +310,7 @@ export const Outcome = Schema.Literals(["passed", "denied", "expired"])
  * How a gate settled.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Outcome = typeof Outcome.Type
 
@@ -318,7 +318,7 @@ export type Outcome = typeof Outcome.Type
  * A lowercase hexadecimal SHA-256.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Digest = Schema.String.check(pattern(/^[0-9a-f]{64}$/, "a lowercase hex SHA-256"))
 
@@ -326,7 +326,7 @@ export const Digest = Schema.String.check(pattern(/^[0-9a-f]{64}$/, "a lowercase
  * The decision one gate made about one subject.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const GateRecord = Schema.Struct({
   gateId: GateId,
@@ -345,7 +345,7 @@ export const GateRecord = Schema.Struct({
  * The decision one gate made about one subject.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type GateRecord = typeof GateRecord.Type
 
@@ -353,7 +353,7 @@ export type GateRecord = typeof GateRecord.Type
  * A gate that did not pass. The guarded node never ran.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class GateRefused extends Schema.TaggedError<GateRefused>()("@smthrs/organization/Gates/GateRefused", {
   record: GateRecord,
@@ -365,7 +365,7 @@ export class GateRefused extends Schema.TaggedError<GateRefused>()("@smthrs/orga
  * plan is built, before anything runs.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class GateUnsupported extends Schema.TaggedError<GateUnsupported>()(
   "@smthrs/organization/Gates/GateUnsupported",
@@ -377,7 +377,7 @@ export class GateUnsupported extends Schema.TaggedError<GateUnsupported>()(
  * the policy revision it came from.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Gate = Schema.Struct({
   spec: Schema.Union([Approval, Review]),
@@ -389,7 +389,7 @@ export const Gate = Schema.Struct({
  * The gate context every gate step carries.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Gate = typeof Gate.Type
 
@@ -398,7 +398,7 @@ export type Gate = typeof Gate.Type
  * question name and prompt the person sees.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Binding = Schema.Struct({
   subjectDigest: Digest,
@@ -410,7 +410,7 @@ export const Binding = Schema.Struct({
  * What {@link Subject} binds.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Binding = typeof Binding.Type
 
@@ -418,7 +418,7 @@ export type Binding = typeof Binding.Type
  * Binds a gate to its subject: digests it and names the question.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Subject = Action.make("organization/gate-subject", {
   implementationVersion: "gate-subject/v1",
@@ -431,7 +431,7 @@ export const Subject = Action.make("organization/gate-subject", {
  * digest the question was asked about.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ApprovalAnswer = Schema.Struct({
   approved: Schema.Boolean,
@@ -443,7 +443,7 @@ export const ApprovalAnswer = Schema.Struct({
  * What a person answers an approval with.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ApprovalAnswer = typeof ApprovalAnswer.Type
 
@@ -452,7 +452,7 @@ export type ApprovalAnswer = typeof ApprovalAnswer.Type
  * and the subject itself.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ReviewRequest = Schema.Struct({
   gateId: GateId,
@@ -467,7 +467,7 @@ export const ReviewRequest = Schema.Struct({
  * What a reviewer is asked.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ReviewRequest = typeof ReviewRequest.Type
 
@@ -476,7 +476,7 @@ export type ReviewRequest = typeof ReviewRequest.Type
  * but the configured reviewer is denied.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ReviewVerdict = Schema.Struct({
   decision: Schema.Literals(["approve", "request-changes"]),
@@ -488,7 +488,7 @@ export const ReviewVerdict = Schema.Struct({
  * A reviewer's verdict.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ReviewVerdict = typeof ReviewVerdict.Type
 
@@ -496,7 +496,7 @@ export type ReviewVerdict = typeof ReviewVerdict.Type
  * A reviewer that could not produce a verdict. The gate records `denied`.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class ReviewFailed extends Schema.TaggedError<ReviewFailed>()("@smthrs/organization/Gates/ReviewFailed", {
   message: Schema.String
@@ -507,7 +507,7 @@ export class ReviewFailed extends Schema.TaggedError<ReviewFailed>()("@smthrs/or
  * supplies, typically by running the reviewer's role task.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ReviewTask = Action.make("organization/gate-review", {
   payload: ReviewRequest,
@@ -520,7 +520,7 @@ export const ReviewTask = Action.make("organization/gate-review", {
  * What one gate saw before it decided.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Response = Schema.Union([
   Schema.TaggedStruct("answered", { value: Schema.Json }),
@@ -533,7 +533,7 @@ export const Response = Schema.Union([
  * What one gate saw before it decided.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Response = typeof Response.Type
 
@@ -542,7 +542,7 @@ export type Response = typeof Response.Type
  * unless it passed.
  *
  * @category actions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Decide = Action.make("organization/gate-decide", {
   implementationVersion: "gate-decide/v1",
@@ -556,7 +556,7 @@ export const Decide = Action.make("organization/gate-decide", {
  * references; pass them on, do not compute on them.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Reviewer<E, R> = (request: Action.PlannedPayload<ReviewRequest>) => Node.Node<ReviewVerdict, E, R>
 
@@ -564,7 +564,7 @@ export type Reviewer<E, R> = (request: Action.PlannedPayload<ReviewRequest>) => 
  * The default {@link Reviewer}: {@link ReviewTask}.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const reviewTask: Reviewer<ReviewFailed, Action.Requirement<"organization/gate-review">> = (request) =>
   ReviewTask.call(request)
@@ -574,7 +574,7 @@ export const reviewTask: Reviewer<ReviewFailed, Action.Requirement<"organization
  * digest or a malformed answer is refused and asked again.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const approvalAttempts = 3
 
@@ -595,7 +595,7 @@ const answerSchema = (subjectDigest: string | Planned.Planned<string>) => ({
  * The requirements every gated node adds, besides its reviewer's.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Requirements = Action.Requirement<"organization/gate-subject" | "organization/gate-decide">
 
@@ -603,7 +603,7 @@ export type Requirements = Action.Requirement<"organization/gate-subject" | "org
  * Options for {@link before}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options<RE, RR> {
   /** Builds Review gates' reviewer node; {@link reviewTask} by default. */
@@ -695,7 +695,7 @@ const reviewNode = <RE, RR>(
  * ```
  *
  * @category combinators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const before = <
   A,
@@ -733,7 +733,7 @@ export const before = <
  * row's `request` text: enough for a Slack button or a CLI prompt.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Pending {
   readonly gateId: string
@@ -769,7 +769,7 @@ const decodePending = Schema.decodeUnknownOption(
  * `undefined` when it is some other wait.
  *
  * @category combinators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const pending = (request: unknown): Pending | undefined => {
   const decoded = decodePending(request)
@@ -795,7 +795,7 @@ export const pending = (request: unknown): Pending | undefined => {
  * answering.
  *
  * @category combinators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const answer = (options: {
   readonly token: DurableDeferred.Token

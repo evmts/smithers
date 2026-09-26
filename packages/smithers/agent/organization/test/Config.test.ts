@@ -166,6 +166,18 @@ describe("the organization page", () => {
     })
   })
 
+  it("leaves guest networking off unless the page turns it on", async () => {
+    const off = await run(Config.parseOrganization("o.md", organizationPage))
+    expect(off.vm.network).toBeUndefined()
+    const on = await run(
+      Config.parseOrganization(
+        "o.md",
+        organizationPage.replace("  maxConcurrentVMs: 2\n", "  maxConcurrentVMs: 2\n  network: true\n")
+      )
+    )
+    expect(on.vm.network).toBe(true)
+  })
+
   it("accepts Windows line endings", async () => {
     const organization = await run(Config.parseOrganization("o.md", organizationPage.replaceAll("\n", "\r\n")))
     expect(organization.assistant).toBe("assistant")

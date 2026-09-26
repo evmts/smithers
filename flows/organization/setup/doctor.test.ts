@@ -15,6 +15,8 @@ after(() => rmSync(scratch, { recursive: true, force: true }))
 
 const root = join(scratch, "wiki"), stateDir = join(scratch, "state"), checkout = join(scratch, "checkout")
 const repo = join(scratch, "repo")
+// Rosters whose workspace roles are granted no repository, or two.
+const noWorkspace = join(scratch, "no-workspace-wiki"), twoRepos = join(scratch, "two-repos-wiki")
 const botToken = "xoxb-test-bot-secret", appToken = "xapp-test-app-secret", modelKey = "sk-test-model-secret"
 
 // A stand-in `msb`: `--version`, and `image inspect` of the one cached image.
@@ -29,6 +31,13 @@ let slackUrl = ""
 
 before(async () => {
   await init({ dir: root, stateDir, appName: "Smithers Org" })
+  for (const [dir, builder, checker] of [[noWorkspace, "[]", "[]"], [twoRepos, "[example/demo]", "[example/other]"]] as const) {
+    await init({ dir, stateDir: `${dir}-state`, appName: "Smithers Org" })
+    for (const [role, repositories] of [["builder", builder], ["checker", checker]] as const) {
+      const file = join(dir, "Org", "Roles", `${role}.md`)
+      writeFileSync(file, readFileSync(file, "utf8").replace("repositories: [example/demo]", `repositories: ${repositories}`))
+    }
+  }
   mkdirSync(join(checkout, "target", "release"), { recursive: true })
   writeFileSync(join(checkout, ".node-version"), "26.4.0\n")
   writeFileSync(join(checkout, "target", "release", "smithers-jj-export"), "#!/bin/sh\n")
@@ -78,7 +87,7 @@ const healthyEnv = () => ({
 
 const healthy = (overrides: Partial<DoctorOptions> = {}): DoctorOptions => ({
   root,
-  repos: [repo],
+  repos: [`example/demo=${repo}`],
   stateDir,
   env: healthyEnv(),
   checkout,
@@ -200,14 +209,18 @@ test("the image must be configured and cached or pullable", async () => {
   await init({ dir: org, stateDir: join(scratch, "image-state"), appName: "Smithers Org" })
   const page = join(org, "Org", "Organization.md")
   const text = readFileSync(page, "utf8")
+  const progress: Array<string> = []
   const withImage = async (image: string) => {
     writeFileSync(page, text.replace("image: node:26-bookworm", `image: ${image}`))
-    return doctor(healthy({ root: org }))
+    return doctor(healthy({ root: org, progress: (line) => progress.push(line) }))
   }
   const unset = await withImage("null")
   assert.match(one(unset, "image").detail, /vm\.image is unset/)
   assert.match(one(unset, "boot").detail, /not attempted: image failed/)
+  assert.deepEqual(progress, [])
   assert.equal(one(await withImage("pullable:1"), "image").detail, "pullable:1 pulled")
+  // A pull can take minutes; the command says so before it starts.
+  assert.deepEqual(progress, ["pulling pullable:1…"])
   const absent = one(await withImage("absent:1"), "image")
   assert.equal(absent.status, "fail")
   assert.match(absent.fix!, /msb\.mjs pull absent:1$/)
@@ -223,12 +236,26 @@ test("the Org, repositories and state directory are checked", async () => {
   const invalid = one(await doctor(healthy({ root: broken })), "org")
   assert.equal(invalid.status, "fail")
   assert.match(invalid.detail, /skills/)
-  const repos = await doctor(healthy({ repos: [repo, scratch] }))
+  const repos = await doctor(healthy({ repos: [`example/demo=${repo}`, `other=${scratch}`] }))
   assert.deepEqual(byName(repos, "repo").map((line) => line.status), ["pass", "fail"])
-  assert.match(byName(await doctor(healthy({ repos: [] })), "repo")[0]!.fix!, /SMITHERS_ORG_REPOS/)
+  assert.match(byName(repos, "repo")[0]!.detail, /^example\/demo = .* \(builder, checker\)$/)
+  assert.match(byName(await doctor(healthy({ repos: [] })), "repo")[0]!.fix!, /^set SMITHERS_ORG_REPOS=example\/demo=<path>/)
   const empty = join(scratch, "empty-repo")
   spawnSync("git", ["init", "-q", empty])
   assert.match(one(await doctor(healthy({ repos: [empty] })), "repo").detail, /has no commit/)
+  // A bare path is named by its directory; no role is granted that name, so every delivery would block.
+  const bare = one(await doctor(healthy({ repos: [repo] })), "repo")
+  assert.equal(bare.status, "fail")
+  assert.equal(bare.detail, `repo (${repo}) is granted to no active role holding workspace`)
+  assert.equal(bare.fix, `set SMITHERS_ORG_REPOS=example/demo=${repo}`)
+  // A relative path resolves against the caller's directory.
+  assert.equal(one(await doctor(healthy({ repos: ["example/demo=repo"], cwd: scratch })), "repo").status, "pass")
+  // A roster that grants the repository to no workspace role says so.
+  const ungranted = await doctor(healthy({ root: noWorkspace, repos: [`example/demo=${repo}`] }))
+  assert.match(one(ungranted, "repo").fix!, /^grant example\/demo to a role with workspace/)
+  // Several granted names are listed.
+  const several = one(await doctor(healthy({ root: twoRepos, repos: [repo] })), "repo")
+  assert.match(several.fix!, /^set SMITHERS_ORG_REPOS=<name>=.* \(granted: example\/demo, example\/other\)$/)
   const open = join(scratch, "open-state")
   mkdirSync(open, { mode: 0o755 })
   chmodSync(open, 0o755)

@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import type { AgentChatMessage, FetchLike } from "@smthrs/rpc/NativeAgent"
 import { accountOwnerOf } from "../AccountOwner"
 import { gatewayBindingFor } from "../RepoContext"
-import { createFlowRelay, type FlowRelay } from "./flowRelay"
 import { createGatewaySeam } from "./gateway"
 import type { CommandRegistry } from "../../flows/Commands"
 
@@ -125,8 +124,6 @@ export interface ControllerContext {
    * exists, because it is built over `boundedFetch`.
    */
   gateway: GatewaySeam
-  /** Which relay a repository's flows go through (the organization relay or the workflow relay). */
-  flowRelay: FlowRelay
   commands: CommandRegistry
   withToast: <T>(
     key: string,
@@ -222,7 +219,6 @@ export const createControllerContext = (
     stopWorkflowPumps: () => {},
     contextMessages: () => [],
     gateway: undefined as unknown as GatewaySeam,
-    flowRelay: undefined as unknown as FlowRelay,
     commands: undefined as unknown as CommandRegistry,
     withToast: undefined as unknown as ControllerContext["withToast"],
     resolveToast: undefined as unknown as ControllerContext["resolveToast"],
@@ -414,12 +410,6 @@ export const createControllerContext = (
    * call does, so a workspace that stops answering becomes the seam's own
    * honest refusal rather than a request that never returns.
    */
-  ctx.flowRelay = createFlowRelay({
-    organization: services.bootstrap?.capabilities.includes("organization") ?? false,
-    baseUrl: ctx.baseUrl,
-    fetch: (url, init) => ctx.boundedFetch(url, init),
-    epoch: () => accountEpoch
-  })
   ctx.gateway = createGatewaySeam({
     baseUrl: ctx.baseUrl,
     observationGuard: () => {
@@ -427,7 +417,6 @@ export const createControllerContext = (
       return () => !ctx.disposed && generation === accountEpoch
     },
     bindingFor: (repo, runId) => gatewayBindingFor(ctx.store, repo, runId),
-    rpcPathFor: async (repo) => (await ctx.flowRelay.pathsFor(repo)).rpc,
     fetch: (url, init) => ctx.boundedFetch(url, init),
     errorMessageOf: (response, fallback) => ctx.errorMessageOf(response, fallback)
   })

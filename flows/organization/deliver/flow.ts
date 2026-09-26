@@ -35,6 +35,7 @@ import {
   type Assignment,
   BuildTask,
   CheckTask,
+  CorrectTask,
   Decide,
   DeliveryFailed,
   Describe,
@@ -49,7 +50,7 @@ import {
 } from "../schema.ts"
 import { slackConnection } from "../slack-connection.ts"
 
-const implementationVersion = "organization/deliver/v2"
+const implementationVersion = "organization/deliver/v3"
 
 /** The boundary the builder's task crosses. */
 export const taskGate: Gates.At = { boundary: "task", target: "organization/deliver" }
@@ -58,16 +59,14 @@ export const landGate: Gates.At = { boundary: "external-write", target: "organiz
 
 type Payload = { readonly request: typeof Request.Type; readonly admission: typeof Admission.Type }
 
-/** One principal's turn: compose, run under its own host, check against its charter. */
-const turn = (
-  revision: Planned.Planned<string>,
-  stage: Planned.Planned<Stage>,
-  workspace?: {
-    readonly key: Planned.Planned<string>
-    readonly repository: string
-    readonly commit: Planned.Planned<string>
-  }
-) =>
+type TurnWorkspace = {
+  readonly key: Planned.Planned<string>
+  readonly repository: string
+  readonly commit: Planned.Planned<string>
+}
+
+/** One ask: compose, run under the principal's own host, check against its charter. */
+const ask = (revision: Planned.Planned<string>, stage: Planned.Planned<Stage>, workspace?: TurnWorkspace) =>
   Actions.ComposeTask.call({
     revision,
     principal: stage.principal,
@@ -84,11 +83,28 @@ const turn = (
         principal: Node.succeed(stage.principal),
         result: Node.succeed(result),
         validation: Actions.ValidateResult.call({ revision, principal: stage.principal, result })
-      }))),
+      })))
+  )
+
+/**
+ * One principal's turn. A `done` result that breaks the charter is asked
+ * again once, with the violations in its context; the second answer stands.
+ */
+const turn = (revision: Planned.Planned<string>, stage: Planned.Planned<Stage>, workspace?: TurnWorkspace) =>
+  ask(revision, stage, workspace).pipe(
+    Node.branch({
+      if: Node.capture({ implementationVersion }, (seen) => !seen.validation.valid && seen.result.status === "done"),
+      then: (seen) =>
+        CorrectTask.call({ stage, result: seen.result, validation: seen.validation }).pipe(
+          Node.bindPlanned(Node.capture({ implementationVersion }, (corrected) => ask(revision, corrected, workspace)))
+        ),
+      else: (seen) => Node.succeed(seen)
+    }),
     Node.map(Node.capture({ implementationVersion }, (seen): Answer => ({
       principal: seen.principal,
       result: seen.result,
-      valid: seen.validation.valid
+      valid: seen.validation.valid,
+      violations: seen.validation.violations.map((violation) => violation.message)
     })))
   )
 
@@ -187,7 +203,8 @@ const round = (
                               status: "changes-requested",
                               summary: check.result.summary,
                               principals,
-                              rounds: n
+                              rounds: n,
+                              findings: verdict.findings
                             }))
                           )
                           : round(payload, revision, assignment, prepared, n + 1, verdict.findings)

@@ -38,8 +38,7 @@ export const RuntimeCapabilitySchema = z.enum([
   // Cloud doors a host serves itself, declared by the host that opens them
   // (packages/rpc/src/HostCapabilities.ts holds the per-host tables).
   "cloud.terminal", // this origin tunnels workspace terminals (/api/cloud-ws/*)
-  "cloud.pat", // a host-held Smithers Cloud PAT session (/api/cloud-auth/*)
-  "organization" // this single-owner host relays its organization Flow host (/api/organization*)
+  "cloud.pat" // a host-held Smithers Cloud PAT session (/api/cloud-auth/*)
 ])
 /**
  * The decoded value accepted by {@link RuntimeCapabilitySchema}.

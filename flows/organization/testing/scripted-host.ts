@@ -27,6 +27,11 @@
  * With `SMITHERS_ORGANIZATION_SCRIPTED_REFUSE=1` every model call fails the
  * way a provider refuses an account with no credits.
  *
+ * `SMITHERS_ORGANIZATION_SCRIPTED_OMIT`, as JSON from principal id to
+ * `{ field, asks }`, makes that principal leave `field` out of its first
+ * `asks` answers to a task (1: only the first ask; 2: the correction too),
+ * the way a model forgets a charter field.
+ *
  * `node flows/organization/testing/scripted-host.ts serve --standalone ...`
  * takes `serve`'s flags.
  */
@@ -95,8 +100,21 @@ const fieldsOf = (system: string): ReadonlyArray<string> => {
   return section.split("\n").filter((entry) => entry.startsWith("- ")).map((entry) => entry.slice(2).split(": ")[0]!)
 }
 
-/** Every declared field, each saying `value`. */
-const filled = (system: string, value: string) => Object.fromEntries(fieldsOf(system).map((name) => [name, value]))
+const omissions = new Map(
+  Object.entries(
+    JSON.parse(process.env.SMITHERS_ORGANIZATION_SCRIPTED_OMIT ?? "{}") as Record<string, { field: string; asks: number }>
+  )
+)
+
+/** Which ask of its task the current model call answers: 1, or 2 once the host has sent a correction. */
+let ask = 1
+
+/** Every declared field, each saying `value`, less a field the principal is scripted to omit on this ask. */
+const filled = (system: string, value: string) => {
+  const omission = omissions.get(principalOf(system) ?? "")
+  const omitted = omission !== undefined && ask <= omission.asks ? omission.field : undefined
+  return Object.fromEntries(fieldsOf(system).filter((name) => name !== omitted).map((name) => [name, value]))
+}
 
 /** The builder's two turns when a hold is configured; `undefined` when the turn never settles. */
 const heldBuilder = (system: string, turn: number, holdFile: string): string | undefined => {
@@ -135,6 +153,8 @@ const cellFor = (system: string, turn: number): string | undefined => {
     case "build": {
       if (hold !== undefined) return heldBuilder(system, turn, hold)
       const result = done(filled(system, `README.md now ends with the line '${scriptedLine}'.`), "Added the line to README.md.")
+      // A correction only restates the answer: the edit is already in the workspace.
+      if (ask > 1) return answering(result)
       return `await ctx.call("edit", ${JSON.stringify({ path: "/workspace/README.md", oldString: "# Demo\n", newString: `# Demo\n${scriptedLine}\n` })});
 ctx.done(${JSON.stringify(JSON.stringify(result))})`
     }
@@ -178,7 +198,10 @@ const model = Model.make({
       }
       const id = `cell-${++cells}`
       const turn = request.messages.filter((message) => message.role === "assistant").length
-      const text = cellFor(request.system.map((part) => part.text).join("\n"), turn)
+      const system = request.system.map((part) => part.text).join("\n")
+      // The task and its context, a correction included, are in the system prompt.
+      ask = system.includes("broke your charter") ? 2 : 1
+      const text = cellFor(system, turn)
       if (text === undefined) return Stream.never
       return Stream.fromIterable([
         ModelEvent.ModelEvent.TextStart({ type: "text-start", id }),

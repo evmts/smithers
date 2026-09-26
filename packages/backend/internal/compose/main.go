@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/cors"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/sdk/trace"
 
@@ -1396,15 +1397,19 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	)
 	if flow != nil && options.topology.servesHTTP() {
 		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}
-		flowAccess, flowReads := flowRelayAccess(cfg, queries)
+		flowAccess := []func(http.Handler) http.Handler{
+			cors.Handler(apiCORSOptions(cfg)), middleware.JSONTimeout(4 * time.Minute),
+			middleware.JSONAllowContentType("application/json"), middleware.MaxBodySize(middleware.MaxRequestBodySize),
+			authLoader(queries, cfg.Auth), apiCSRFMiddleware, middleware.GlobalAPIRateLimit(queries),
+			middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository),
+		}
 		router.With(flowAccess...).Post("/api/workflow/provision", browser.provision)
 		router.With(flowAccess...).Post("/api/workflow/rpc", browser.rpc)
-		organization := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries,
-			dispatcher: flow.dispatcher, organization: flow.organization}
-		mountOrganizationRelay(router, flowAccess, flowReads, organization)
 		setup := &repositorySetupAPI{repos: repoService, setup: repositorySetupService}
 		router.With(flowAccess...).Post("/api/repository-setup/{operation}", setup.serve)
-		router.With(flowReads...).Get("/api/repository-setup/{operation}", setup.serve)
+		setupReads := append([]func(http.Handler) http.Handler{}, flowAccess[:len(flowAccess)-1]...)
+		setupReads = append(setupReads, middleware.RequireScope(middleware.ScopeReadRepository))
+		router.With(setupReads...).Get("/api/repository-setup/{operation}", setup.serve)
 	}
 	if chatService != nil && options.topology.servesHTTP() {
 		mountChatPublic(router, chatService.runtime, queries, cfg)
@@ -1441,7 +1446,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		billingCheckout:  billingCapabilities.Checkout,
 		workspaceRuntime: options.Workspace != nil,
 		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),
-		organization:     flow != nil && flow.organization.enabled() && options.topology.servesHTTP(),
 	}), apiCORSOptions(cfg))
 	if !options.topology.hosted() {
 		if options.Repository != nil {
@@ -1507,9 +1511,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	if flowWorker != nil {
 		launchWorker(func() { flow.maintainRetired(workerCtx) })
-		if keeper := flow.organizationKeeper(repoService, workspaceService); keeper != nil {
-			launchWorker(func() { keeper.run(workerCtx) })
-		}
 	}
 	var wikiHistoryWorker *joinedBackgroundWorker
 	if options.topology.workers() && cfg.FeatureFlags.Wiki {

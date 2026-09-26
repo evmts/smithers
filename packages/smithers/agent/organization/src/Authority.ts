@@ -28,7 +28,7 @@
  * at execution, and runs the handler under a {@link RoleHost} built for the
  * principal and under `CapabilitySet.attenuate` of that host's envelope.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { FlowEngine } from "@smthrs/engine"
@@ -61,7 +61,7 @@ import * as Workspace from "./Workspace.ts"
  * common operating instructions, and the skill pack.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Snapshot {
   /** SHA-256 over the roster revision, the common instructions, and the pack revision. */
@@ -76,7 +76,7 @@ export interface Snapshot {
  * organization files that could not be read.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class AuthorityError extends Schema.TaggedError<AuthorityError>()(
   "@smthrs/organization/Authority/AuthorityError",
@@ -92,7 +92,7 @@ export class AuthorityError extends Schema.TaggedError<AuthorityError>()(
  * instructions.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeSnapshot = (input: {
   readonly roster: Roster.Roster
@@ -129,7 +129,7 @@ export const makeSnapshot = (input: {
  * The largest common-instructions page {@link loadSnapshot} reads.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxCommonBytes = 65_536
 
@@ -140,7 +140,7 @@ export const maxCommonBytes = 65_536
  * (empty when unset), each read confined to the root's real path.
  *
  * @category loading
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const loadSnapshot = (
   root: string,
@@ -179,7 +179,7 @@ export const loadSnapshot = (
  * Why a role task was refused at dispatch.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RefusalReason = Schema.Literals([
   "malformed-payload",
@@ -201,7 +201,7 @@ export const RefusalReason = Schema.Literals([
  * Why a role task was refused.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type RefusalReason = typeof RefusalReason.Type
 
@@ -209,7 +209,7 @@ export type RefusalReason = typeof RefusalReason.Type
  * A role task the host refused to run.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class DispatchRefused extends Schema.TaggedError<DispatchRefused>()(
   "@smthrs/organization/Authority/DispatchRefused",
@@ -229,7 +229,7 @@ const fromDenied = (denied: Grants.Denied, when: string): DispatchRefused =>
  * must still be inside its current grants; otherwise the task is refused.
  *
  * @category authority
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const resolvePrincipal = (
   pinned: Pick<Roster.Roster, "profiles">,
@@ -253,7 +253,7 @@ export const resolvePrincipal = (
  * The trusted roster registry: snapshots by revision, and the current one.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Registry {
   /** Pins a snapshot, makes it current, and returns its revision. */
@@ -271,7 +271,7 @@ export interface Registry {
  * The roster registry tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RosterRegistry: Context.Service<RosterRegistry, Registry> = Context.Service(
   "@smthrs/organization/Authority/RosterRegistry"
@@ -281,7 +281,7 @@ export const RosterRegistry: Context.Service<RosterRegistry, Registry> = Context
  * The roster registry.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type RosterRegistry = Registry
 
@@ -289,7 +289,7 @@ export type RosterRegistry = Registry
  * A registry holding `initial` as its current snapshot.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeRegistry = (initial: Snapshot): Effect.Effect<Registry> =>
   Effect.gen(function*() {
@@ -323,7 +323,7 @@ export const makeRegistry = (initial: Snapshot): Effect.Effect<Registry> =>
  * Provides a {@link RosterRegistry} over `initial`.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerRegistry = (initial: Snapshot): Layer.Layer<RosterRegistry> =>
   Layer.effect(RosterRegistry)(makeRegistry(initial))
@@ -332,7 +332,7 @@ export const layerRegistry = (initial: Snapshot): Layer.Layer<RosterRegistry> =>
  * The action tag whose handlers {@link layer} guards.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const roleTaskTag = "organization/role-task"
 
@@ -340,7 +340,7 @@ export const roleTaskTag = "organization/role-task"
  * A workspace a role task works in: its key and the repository it holds.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const TaskWorkspace = Schema.Struct({
   key: Workspace.Key,
@@ -354,7 +354,7 @@ export const TaskWorkspace = Schema.Struct({
  * grants, and system prompt are the host's.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RoleTaskPayload = Schema.Struct({
   revision: Schema.NonEmptyString,
@@ -370,7 +370,7 @@ export const RoleTaskPayload = Schema.Struct({
  * A role task's payload.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type RoleTaskPayload = typeof RoleTaskPayload.Type
 
@@ -379,7 +379,7 @@ export type RoleTaskPayload = typeof RoleTaskPayload.Type
  * This is exactly the prompt half of `Prompt.compose`.
  *
  * @category prompts
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const promptOf = (payload: Pick<RoleTaskPayload, "task" | "context">): string => {
   const task = Prompt.renderTask(payload.task)
@@ -393,7 +393,7 @@ export const promptOf = (payload: Pick<RoleTaskPayload, "task" | "context">): st
  * profile's charter and skills, the task, and the context.
  *
  * @category prompts
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const compose = (
   snapshot: Snapshot,
@@ -416,7 +416,7 @@ export const compose = (
  * trusted composition.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Authorized {
   readonly profile: Profile.Profile
@@ -431,7 +431,7 @@ const decodePayload = Schema.decodeUnknownEffect(RoleTaskPayload)
  * Every dispatch-time check on a role task's payload, for one execution.
  *
  * @category authority
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const authorize = (
   raw: unknown,
@@ -545,7 +545,7 @@ const guarded = <A, E, R>(
  * shared runtime and implementation table.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = <A, E, R>(
   actions: Layer.Layer<A, E, R>

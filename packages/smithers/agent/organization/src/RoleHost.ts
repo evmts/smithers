@@ -31,7 +31,7 @@
  * Plugins, host implementations, and host flow sources of the base host are
  * never inherited.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type * as AgentAction from "@smthrs/agent/AgentAction"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
@@ -66,7 +66,7 @@ import type * as Profile from "./Profile.ts"
  * family whose resource is absent is refused at composition.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Resources {
   /** The memory store and recall behind `memory` grants. */
@@ -91,7 +91,7 @@ export interface Resources {
  * The resources service tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Resources: Context.Service<Resources, Resources> = Context.Service(
   "@smthrs/organization/RoleHost/Resources"
@@ -101,7 +101,7 @@ export const Resources: Context.Service<Resources, Resources> = Context.Service(
  * Provides {@link Resources}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerResources = (resources: Resources): Layer.Layer<Resources> => Layer.succeed(Resources)(resources)
 
@@ -112,7 +112,7 @@ const hidden = (name: string) =>
  * A view of `base` in which only `names` exist.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const skillsRegistry = (base: Registry.Registry, names: ReadonlyArray<string>): Registry.Registry => {
   const allowed = new Set(names)
@@ -137,7 +137,7 @@ export const skillsRegistry = (base: Registry.Registry, names: ReadonlyArray<str
  * The `wiki-read` flow's name.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const wikiReadName = "wiki-read"
 
@@ -145,7 +145,7 @@ export const wikiReadName = "wiki-read"
  * Input of the `wiki-read` flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const WikiReadInput = Schema.Struct({
   path: Schema.String.annotate({ description: "Relative wiki file path, such as Org/Roles/lead.md" })
@@ -155,7 +155,7 @@ export const WikiReadInput = Schema.Struct({
  * Output of the `wiki-read` flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const WikiReadOutput = Schema.Struct({
   path: Schema.String,
@@ -166,7 +166,7 @@ export const WikiReadOutput = Schema.Struct({
  * The `wiki-read` declaration.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const wikiReadFlow = Flow.make({
   name: wikiReadName,
@@ -181,7 +181,7 @@ export const wikiReadFlow = Flow.make({
  * A refused wiki read. Its message names the path and the reason only.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class WikiReadRefused extends Schema.TaggedError<WikiReadRefused>()(
   "@smthrs/organization/RoleHost/WikiReadRefused",
@@ -192,7 +192,7 @@ export class WikiReadRefused extends Schema.TaggedError<WikiReadRefused>()(
  * The largest page `wiki-read` returns by default.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const defaultWikiMaxBytes = 262_144
 
@@ -200,7 +200,7 @@ export const defaultWikiMaxBytes = 262_144
  * Binds `wiki-read` for one principal over one wiki root.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const wikiRead = (
   profile: Profile.Profile,
@@ -230,7 +230,7 @@ export const wikiRead = (
  * A workspace session's host services and root, as `RoleHost` binds them.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface WorkspaceTools {
   readonly services: Context.Context<ChildProcessSpawner | FileSystem.FileSystem | Path.Path>
@@ -265,7 +265,7 @@ const captureTree = (session: Session) =>
  * guest failure is a defect of the step, as it is for the host boundary.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const snapshotBoundary = (session: Session): typeof FlowEngine.SnapshotBoundary.Service =>
   FlowEngine.SnapshotBoundary.of({
@@ -291,7 +291,7 @@ export const snapshotBoundary = (session: Session): typeof FlowEngine.SnapshotBo
  * The teaching a workspace role receives about where its tools act.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const workspaceNotice = (workdir: string): string =>
   `Your workspace is the repository checkout at ${workdir} inside an isolated machine. Shell and file tools act only there; use absolute paths under ${workdir}.`
@@ -300,7 +300,7 @@ export const workspaceNotice = (workdir: string): string =>
  * What {@link make} needs.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Options {
   /** The composition's shared host. Its limits and model settings are kept. */
@@ -321,7 +321,7 @@ export interface Options {
  * of the flows it offers.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Built {
   readonly host: AgentAction.Host
@@ -335,7 +335,7 @@ const refuse = (message: string) => new HarnessError({ code: "assembly_failed", 
  * Builds the host one role task runs under.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (options: Options): Effect.Effect<Built, HarnessError> =>
   Effect.gen(function*() {

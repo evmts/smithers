@@ -6,7 +6,7 @@
  * stream and the receipt says how many bytes there were in total, so a
  * truncated receipt never passes for a complete one.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type { ProviderError } from "@smthrs/sandbox/RemoteChildProcessSpawner"
 import type { Session } from "@smthrs/sandbox/Sandbox"
@@ -21,7 +21,7 @@ import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner
  * The head of a byte stream and its full length.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Collected {
   readonly bytes: Uint8Array
@@ -33,7 +33,7 @@ export interface Collected {
  * Collects at most `limit` bytes of a stream, counting the rest.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const collect = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, limit: number): Effect.Effect<Collected, E, R> =>
   Effect.map(
@@ -69,7 +69,7 @@ const decoder = new TextDecoder()
  * replaced, never thrown on.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const text = (collected: Collected): string => decoder.decode(collected.bytes)
 
@@ -77,7 +77,7 @@ export const text = (collected: Collected): string => decoder.decode(collected.b
  * Quotes one argument for a POSIX shell.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const quote = (argument: string): string => `'${argument.replaceAll("'", `'"'"'`)}'`
 
@@ -85,7 +85,7 @@ export const quote = (argument: string): string => `'${argument.replaceAll("'", 
  * A POSIX command line running `argv` exactly.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const commandLine = (argv: ReadonlyArray<string>): string => argv.map(quote).join(" ")
 
@@ -93,7 +93,7 @@ export const commandLine = (argv: ReadonlyArray<string>): string => argv.map(quo
  * What one host command did.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface HostResult {
   readonly exitCode: number
@@ -107,7 +107,7 @@ export interface HostResult {
  * object store, plus `env`.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const git = (
   repo: string,
@@ -145,7 +145,7 @@ export const git = (
  * stopped at its deadline.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GuestResult {
   readonly exitCode: number | null
@@ -161,7 +161,7 @@ export interface GuestResult {
  * tree before this returns.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const guest = (
   session: Session,

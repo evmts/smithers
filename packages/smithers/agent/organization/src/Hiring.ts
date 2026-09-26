@@ -20,7 +20,7 @@
  * {@link RosterStore} persists hired profiles as rendered profile files in
  * `<dir>/Specialists/<id>.md`, with compare-and-set on the file digest.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -41,7 +41,7 @@ import * as Roster from "./Roster.ts"
  * A hire slug: one lowercase principal-id segment.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Slug = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$/, { expected: "a lowercase slug" }))
 
@@ -51,7 +51,7 @@ export const Slug = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$
  * (at most three hire levels below a core role).
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const specialistId = (parent: Profile.PrincipalId, slug: string): Result.Result<Profile.PrincipalId, string> => {
   if (!Schema.is(Slug)(slug)) return Result.fail("a hire slug is one lowercase id segment")
@@ -66,7 +66,7 @@ export const specialistId = (parent: Profile.PrincipalId, slug: string): Result.
  * `at` is the hire time recorded as `hiredAt`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const HireRequest = Schema.Struct({
   parent: Profile.PrincipalId,
@@ -87,7 +87,7 @@ export const HireRequest = Schema.Struct({
  * What a hiring principal asks for.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type HireRequest = typeof HireRequest.Type
 
@@ -106,7 +106,7 @@ const key = (violation: Roster.Violation) => `${violation.code}\u0000${violation
  * `duplicate-id`.
  *
  * @category lifecycle
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const propose = (
   request: HireRequest,
@@ -156,7 +156,7 @@ export const propose = (
  * A lifecycle action.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Action = Schema.Literals(["activate", "pause", "resume", "retire"])
 
@@ -164,7 +164,7 @@ export const Action = Schema.Literals(["activate", "pause", "resume", "retire"])
  * A lifecycle action.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Action = typeof Action.Type
 
@@ -172,7 +172,7 @@ export type Action = typeof Action.Type
  * A lifecycle action the profile's status does not allow, or an invalid time.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class TransitionRefused extends Schema.TaggedError<TransitionRefused>()(
   "@smthrs/organization/Hiring/TransitionRefused",
@@ -190,7 +190,7 @@ const moves: Record<Action, { readonly from: ReadonlyArray<Profile.Status>; read
  * The grants a retired principal keeps: none.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const revokedGrants: Profile.Grants = {
   tools: [],
@@ -205,7 +205,7 @@ export const revokedGrants: Profile.Grants = {
  * Applies one lifecycle action at `at` (a UTC instant).
  *
  * @category lifecycle
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const transition = (
   profile: Profile.Profile,
@@ -226,7 +226,7 @@ export const transition = (
  * transitively, returning the changed profiles with the root first.
  *
  * @category lifecycle
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const retireWithHires = (
   roster: Pick<Roster.Roster, "profiles">,
@@ -254,7 +254,7 @@ export const retireWithHires = (
  * helpers hired, when the task settles.
  *
  * @category lifecycle
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const settleTask = (
   roster: Pick<Roster.Roster, "profiles">,
@@ -275,7 +275,7 @@ export const settleTask = (
  * A stored hired profile and the SHA-256 of its file text.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Stored {
   readonly profile: Profile.Profile
@@ -289,7 +289,7 @@ export interface Stored {
  * and `parse`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const RosterStoreErrorCode = Schema.Literals(["conflict", "confinement", "placement", "io", "parse"])
 
@@ -297,7 +297,7 @@ export const RosterStoreErrorCode = Schema.Literals(["conflict", "confinement", 
  * A roster store failure code.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type RosterStoreErrorCode = typeof RosterStoreErrorCode.Type
 
@@ -305,7 +305,7 @@ export type RosterStoreErrorCode = typeof RosterStoreErrorCode.Type
  * A failed roster store operation.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class RosterStoreError extends Schema.TaggedError<RosterStoreError>()(
   "@smthrs/organization/Hiring/RosterStoreError",
@@ -321,7 +321,7 @@ export class RosterStoreError extends Schema.TaggedError<RosterStoreError>()(
  * none.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Service {
   readonly write: (profile: Profile.Profile, expectedDigest?: string) => Effect.Effect<Stored, RosterStoreError>
@@ -332,7 +332,7 @@ export interface Service {
  * The roster store service.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class RosterStore extends Context.Service<RosterStore, Service>()("@smthrs/organization/Hiring/RosterStore") {}
 
@@ -346,7 +346,7 @@ export class RosterStore extends Context.Service<RosterStore, Service>()("@smthr
  * is the only writer of `Specialists/`.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerFileSystem = (options: { readonly dir: string }): Layer.Layer<
   RosterStore,

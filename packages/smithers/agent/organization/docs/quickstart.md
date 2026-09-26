@@ -19,13 +19,14 @@ pnpm install
 cargo +1.98.0 build --release --locked -p smithers-ffi --bin smithers-jj-export
 node flows/organization/cli.ts init ~/org
 codex login                              # ChatGPT subscription, for openai:* seats
-# edit ~/.smithers/org/.env: SMITHERS_ORG_REPOS=<git checkout>
+# edit ~/.smithers/org/.env: SMITHERS_ORG_REPOS=example/demo=<git checkout>
 node flows/organization/cli.ts doctor
 node flows/organization/cli.ts serve
 ```
 
 `init` copies the four-role example to `~/org/Org` and writes
-`~/.smithers/org/.env` (mode 600). Seats run on your subscriptions: ChatGPT
+`~/.smithers/org/.env` (mode 600). The name before `=` is the one the roles'
+`grants.repositories` hold; `doctor` fails on a name no workspace role holds. Seats run on your subscriptions: ChatGPT
 through `codex login`, Claude through the Claude Code login (`claude`).
 `doctor` prints one `PASS`, `SKIP`, or
 `FAIL` line per prerequisite with its fix. `serve` runs the host in the
@@ -39,7 +40,9 @@ node flows/organization/cli.ts answer <gate> approve
 ```
 
 An approved change lands on an `organization/…` branch of the repository and
-is never pushed; its receipt is under `Org/Runs/`. Slack intake and the
+is never pushed; its receipt is under `Org/Runs/`. Machines have no network
+and hold only the committed files, so builders and checks cannot install
+dependencies ([#1931](https://github.com/smithersai/smithers/issues/1931)). Slack intake and the
 subscription options are in `flows/organization/setup/QUICKSTART.md` and
 `flows/organization/host.md`.
 

@@ -23,7 +23,7 @@ test("init copies the example, writes the templates, and seeds a private .env", 
   assert.ok(existsSync(join(dir, "Org", "Roles", "assistant.md")))
   const example = readFileSync(join(dir, "Org", "Setup", ".env.example"), "utf8")
   for (const name of ["SMITHERS_ORG_AUTH=subscription", "# ChatGPT: sign in once with `codex login`", "SMITHERS_SLACK_BOT_TOKEN=", "SMITHERS_SLACK_APP_TOKEN=", "SMITHERS_SLACK_TEAM_IDS=",
-    "SMITHERS_SLACK_USER_IDS=", "# SMITHERS_SLACK_CHANNEL_IDS=", "SMITHERS_ORG_REPOS=", `SMITHERS_ORG_ROOT=${dir}`,
+    "SMITHERS_SLACK_USER_IDS=", "# SMITHERS_SLACK_CHANNEL_IDS=", "# name=path; the roster grants example/demo", "SMITHERS_ORG_REPOS=", `SMITHERS_ORG_ROOT=${dir}`,
     `SMITHERS_ORG_STATE_DIR=${stateDir}`, "# SMITHERS_ORG_MAX_CONCURRENT_VMS=2"]) {
     assert.ok(example.split("\n").includes(name), name)
   }

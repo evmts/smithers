@@ -6,7 +6,7 @@
  * diagnostics trimmed to a message and a position so no source text (which
  * might be a pasted credential) reaches an error.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { isMap, parseDocument } from "yaml"
 
@@ -17,7 +17,7 @@ const closingFence = /^---[ \t]*(?=\r?\n|$)/m
  * A document split into its frontmatter text and markdown body.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Split {
   readonly frontmatter: string | undefined
@@ -28,7 +28,7 @@ export interface Split {
  * Separates leading frontmatter from its markdown body.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const split = (text: string): Split => {
   const opening = openingFence.exec(text)
@@ -64,7 +64,7 @@ const summarize = (issue: {
  * summary that never includes source text.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parse = (
   frontmatter: string,

@@ -10,6 +10,7 @@ import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, sta
 import { join } from "node:path"
 import { parseArgs } from "node:util"
 import * as RequestExecutor from "../../../packages/smithers/agent/model/src/RequestExecutor.ts"
+import { parseRepository } from "../settings.ts"
 import { bootProbe, type Install, locate, msb, type Probe, sdkOf } from "./microsandbox.ts"
 import {
   absolute,
@@ -22,7 +23,8 @@ import {
   nonEmpty,
   type Organization,
   stateDirOf,
-  withEnvFile
+  withEnvFile,
+  workspaceGrants
 } from "./settings.ts"
 import * as Subscriptions from "./subscriptions.ts"
 import { modelSeats } from "./templates.ts"
@@ -43,7 +45,10 @@ export type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface DoctorOptions {
   /** The wiki root holding `Org/`. */
   readonly root: string
+  /** Repositories as `serve` takes them: `name=path`, or a bare path named by `repositoryName`. */
   readonly repos: ReadonlyArray<string>
+  /** What relative repository paths resolve against. Default the process's directory. */
+  readonly cwd?: string | undefined
   readonly stateDir: string
   readonly env: Readonly<Record<string, string | undefined>>
   /** The public checkout: `.node-version` and `target/release/`. */
@@ -59,6 +64,8 @@ export interface DoctorOptions {
   readonly install?: Install | null | undefined
   /** Replaces the hypervisor reading. */
   readonly hypervisor?: (() => Line) | undefined
+  /** Where a slow step says it started, such as an image pull. */
+  readonly progress?: ((line: string) => void) | undefined
   /** Replaces the real boot probe. */
   readonly probe?: ((image: string) => Promise<Probe>) | undefined
 }
@@ -137,13 +144,18 @@ const organizationLine = async (root: string): Promise<[Line, Organization | und
   }
 }
 
-const imageLine = (install: Install | undefined, organization: Organization | undefined): [Line, string | undefined] => {
+const imageLine = (
+  install: Install | undefined,
+  organization: Organization | undefined,
+  progress: (line: string) => void
+): [Line, string | undefined] => {
   if (organization === undefined) return [fail("image", "no organization loaded", "fix the org line first"), undefined]
   const image = organization.loaded.organization.vm.image
   const page = "Org/Organization.md"
   if (image === null) return [fail("image", `vm.image is unset in ${page}`, `set vm.image: node:26-bookworm in ${page}`), undefined]
   if (install === undefined) return [fail("image", `${image}: no microsandbox`, "fix the microsandbox line first"), image]
   if (msb(install, ["image", "inspect", image]).status === 0) return [pass("image", `${image} is cached`), image]
+  progress(`pulling ${image}…`)
   const pulled = msb(install, ["pull", image], 900_000)
   return pulled.status === 0
     ? [pass("image", `${image} pulled`), image]
@@ -272,15 +284,30 @@ const slackLines = async (env: DoctorOptions["env"], fetcher: Fetch): Promise<Ar
   return lines
 }
 
-const repoLines = (repos: ReadonlyArray<string>): Array<Line> => {
-  if (repos.length === 0) return [fail("repo", "no repository configured", "set SMITHERS_ORG_REPOS=<path> in the .env file, or pass --repo")]
-  return repos.map((repo) => {
+const repoLines = (entries: ReadonlyArray<string>, cwd: string, organization: Organization | undefined): Array<Line> => {
+  const granted = organization === undefined ? new Map<string, Array<string>>() : workspaceGrants(organization)
+  const suggested = granted.size === 1 ? [...granted.keys()][0]! : "<name>"
+  if (entries.length === 0) {
+    return [fail("repo", "no repository configured", `set SMITHERS_ORG_REPOS=${suggested}=<path> in the .env file, or pass --repo`)]
+  }
+  return entries.map((entry) => {
+    const [name, repo] = parseRepository(cwd, entry)
     const top = spawnSync("git", ["-C", repo, "rev-parse", "--show-toplevel"], { encoding: "utf8" })
     if (top.status !== 0) return fail("repo", `${repo} is not a git repository`, `git -C ${repo} init, or fix SMITHERS_ORG_REPOS`)
     const head = spawnSync("git", ["-C", repo, "rev-parse", "--verify", "--quiet", "HEAD"], { encoding: "utf8" })
-    return head.status === 0
-      ? pass("repo", `${repo} @ ${head.stdout.trim().slice(0, 12)}`)
-      : fail("repo", `${repo} has no commit`, `git -C ${repo} commit --allow-empty -m init`)
+    if (head.status !== 0) return fail("repo", `${repo} has no commit`, `git -C ${repo} commit --allow-empty -m init`)
+    // A name no workspace role is granted blocks every delivery at assignment.
+    const roles = granted.get(name)
+    if (organization !== undefined && roles === undefined) {
+      return fail(
+        "repo",
+        `${name} (${repo}) is granted to no active role holding workspace`,
+        granted.size === 0
+          ? `grant ${name} to a role with workspace in Org/Roles`
+          : `set SMITHERS_ORG_REPOS=${suggested}=${repo}${granted.size > 1 ? ` (granted: ${[...granted.keys()].join(", ")})` : ""}`
+      )
+    }
+    return pass("repo", `${name} = ${repo} @ ${head.stdout.trim().slice(0, 12)}${roles === undefined ? "" : ` (${roles.join(", ")})`}`)
   })
 }
 
@@ -311,7 +338,7 @@ export const doctor = async (options: DoctorOptions): Promise<Array<Line>> => {
   lines.push(hypervisor)
   const [org, organization] = await organizationLine(options.root)
   lines.push(org)
-  const [image, reference] = imageLine(sandbox.status === "pass" ? install : undefined, organization)
+  const [image, reference] = imageLine(sandbox.status === "pass" ? install : undefined, organization, options.progress ?? (() => {}))
   lines.push(image)
   const blocked = [sandbox, hypervisor, image].find((line) => line.status !== "pass")
   if (blocked !== undefined || reference === undefined) {
@@ -324,7 +351,7 @@ export const doctor = async (options: DoctorOptions): Promise<Array<Line>> => {
   lines.push(helperLine(checkout, options.env))
   lines.push(await seatsLine(organization, options.env, options.claudeCredentials))
   lines.push(...await slackLines(options.env, options.fetch ?? fetch))
-  lines.push(...repoLines(options.repos))
+  lines.push(...repoLines(options.repos, options.cwd ?? process.cwd(), organization))
   lines.push(stateLine(options.stateDir))
   return lines
 }
@@ -338,7 +365,7 @@ export const render = (lines: ReadonlyArray<Line>): Array<string> => {
   ])
 }
 
-export const usage = "doctor [--root <dir>] [--repo <path>]... [--state-dir <dir>] [--env-file <file>]"
+export const usage = "doctor [--root <dir>] [--repo <name=path>]... [--state-dir <dir>] [--env-file <file>]"
 
 export const command: Command = {
   name: "doctor",
@@ -359,11 +386,11 @@ export const command: Command = {
     const envFile = absolute(io.cwd, values["env-file"] ?? join(absolute(io.cwd, initialState), ".env"))
     const env = withEnvFile(io.env, envFile)
     const root = absolute(io.cwd, nonEmpty(values.root) ?? nonEmpty(env.SMITHERS_ORG_ROOT) ?? io.cwd)
-    const repos = (values.repo ?? list(env.SMITHERS_ORG_REPOS)).map((repo) => absolute(io.cwd, repo))
+    const repos = values.repo ?? list(env.SMITHERS_ORG_REPOS)
     const stateDir = absolute(io.cwd, nonEmpty(values["state-dir"]) ?? stateDirOf(env))
     io.out(`env    ${existsSync(envFile) ? envFile : `${envFile} (absent)`}`)
     io.out(`root   ${root}`)
-    const lines = await doctor({ root, repos, stateDir, env })
+    const lines = await doctor({ root, repos, cwd: io.cwd, stateDir, env, progress: io.out })
     for (const line of render(lines)) io.out(line)
     return lines.some((line) => line.status === "fail") ? 1 : 0
   }

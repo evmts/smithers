@@ -22,10 +22,6 @@ On Railway, attach PostgreSQL 18 and a volume mounted at `/var/lib/smithers`, se
 
 The image contains the web build, `apps/backend`, the canonical coding, librarian, and model TypeScript hosts with exact SHA-256 manifests, embedded product migrations, the Rust 1.98 glibc FFI library, the canonical Rust 1.89 jj WebAssembly artifact, the `jj` 0.44 CLI built from revision `47589ada70c12b3e829b5c98ab32503abad49eac`, checksum-pinned Git 2.50.1, Node 26, and PostgreSQL 18 client tools. Startup verifies the host artifacts and never downloads an executable. The backend listens on port 4000 and owns the process adapter; PostgreSQL is external.
 
-## Optional organization host
-
-A single-owner installation may add the organization Flow host. Pass its bundle as the fourth argument when writing the manifest (`node distribution/flow-host-manifest.mjs flow-hosts.json smithers-coding-host smithers-librarian-host smithers-organization-host`) and set `SMITHERS_ORGANIZATION_REPOSITORY=owner/name` to a repository the owner owns. Its settings (`SMITHERS_ORGANIZATION_*`, `SMITHERS_SLACK_*`, `SMITHERS_GOOGLE_*`, `SMITHERS_CREDENTIAL_KEY`, model keys) are read from the service environment and passed to that host only. Without the host or the repository setting the installation runs unchanged. The published image and native package do not include the organization host yet.
-
 ## Native application
 
 The macOS package has two modes. `SMITHERS_BACKEND_MODE=own` starts the same Go backend plus the PostgreSQL 18 bundle copied at build time. `SMITHERS_BACKEND_MODE=plue` starts neither and uses `SMITHERS_API_ORIGIN`. Own mode is the default. Both canonical Flow hosts, their digest manifest, the canonical model host and checksum, the FFI library, the pinned `jj` CLI, relocatable Git helpers and templates, PostgreSQL server, and all PostgreSQL maintenance tools are inside the application; launch performs no download.

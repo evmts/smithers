@@ -9,14 +9,14 @@
  * so `.`, `..`, hidden files, absolute paths, and every glob metacharacter are
  * refused rather than interpreted.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 /**
  * A parsed knowledge path: an exact file or a subtree of segments.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface KnowledgePath {
   readonly kind: "file" | "subtree"
@@ -27,7 +27,7 @@ export interface KnowledgePath {
  * Why a knowledge path was refused.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Refusal =
   | "empty"
@@ -44,7 +44,7 @@ export type Refusal =
  * Longest accepted knowledge path, in UTF-16 code units.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxLength = 1024
 
@@ -52,7 +52,7 @@ export const maxLength = 1024
  * Most segments one knowledge path may have.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxSegments = 32
 
@@ -66,7 +66,7 @@ const invalidCharacters = /[\\:\u0000-\u001f\u007f]/
  * Parses one knowledge path, refusing anything outside the grammar.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parse = (
   text: string
@@ -97,7 +97,7 @@ export const parse = (
  * so it is not covered.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const covers = (grant: KnowledgePath, target: KnowledgePath): boolean => {
   if (grant.kind === "file") {

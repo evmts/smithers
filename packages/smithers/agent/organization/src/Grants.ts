@@ -25,7 +25,7 @@
  * Every check requires an `active` principal and answers with a
  * `Result`, failing with a typed {@link Denied}.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
@@ -36,7 +36,7 @@ import type * as Profile from "./Profile.ts"
  * Why an authority check refused.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DeniedReason = Schema.Literals([
   "unknown-principal",
@@ -63,7 +63,7 @@ export const DeniedReason = Schema.Literals([
  * Why an authority check refused.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type DeniedReason = typeof DeniedReason.Type
 
@@ -71,7 +71,7 @@ export type DeniedReason = typeof DeniedReason.Type
  * A refused authority check.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class Denied extends Schema.TaggedError<Denied>()("@smthrs/organization/Grants/Denied", {
   reason: DeniedReason,
@@ -87,7 +87,7 @@ const allow: Result.Result<void, Denied> = Result.succeed(undefined)
  * One way a child's grants reach beyond its parent's.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Widening = Schema.Struct({
   grant: Schema.Literals([
@@ -106,7 +106,7 @@ export const Widening = Schema.Struct({
  * One way a child's grants reach beyond its parent's.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Widening = typeof Widening.Type
 
@@ -119,7 +119,7 @@ export type Widening = typeof Widening.Type
  * parent's.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface SubsetOptions {
   readonly hired?: boolean
@@ -146,7 +146,7 @@ const parsedKnowledge = (grants: ReadonlyArray<string>): ReadonlyArray<Knowledge
  * `child` is a subset.
  *
  * @category relations
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const widenings = (
   child: Profile.Grants,
@@ -223,7 +223,7 @@ export const widenings = (
  * Whether `child`'s grants stay inside `parent`'s. See {@link widenings}.
  *
  * @category relations
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const subsetOf = (child: Profile.Grants, parent: Profile.Grants, options: SubsetOptions = {}): boolean =>
   widenings(child, parent, options).length === 0
@@ -234,7 +234,7 @@ export const subsetOf = (child: Profile.Grants, parent: Profile.Grants, options:
  * `Roster.validate` guarantees there is exactly one.
  *
  * @category predicates
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isAssistant = (principal: Profile.Profile): boolean =>
   principal.status === "active" &&
@@ -251,7 +251,7 @@ const requireActive = (principal: Profile.Profile): Result.Result<void, Denied> 
  * `@smthrs/integrations` connections satisfy it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ConnectionFacts {
   readonly id: string
@@ -295,7 +295,7 @@ const covering = (
  * `@smthrs/integrations` source records satisfy it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface RecordFacts {
   readonly connectionId: string
@@ -312,7 +312,7 @@ export interface RecordFacts {
  * through a `*` grant.
  *
  * @category checks
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const canRead = (
   principal: Profile.Profile,
@@ -331,7 +331,7 @@ export const canRead = (
  * Whether a principal may write to a container through a connection.
  *
  * @category checks
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const canWrite = (
   principal: Profile.Profile,
@@ -351,7 +351,7 @@ export const canWrite = (
  * personal connections resolve only for the assistant.
  *
  * @category checks
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const canResolveCredential = (
   principal: Profile.Profile,
@@ -372,7 +372,7 @@ export const canResolveCredential = (
  * segments.
  *
  * @category checks
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const canReadKnowledge = (principal: Profile.Profile, path: string): Result.Result<void, Denied> =>
   Result.gen(function*() {
@@ -396,7 +396,7 @@ export const canReadKnowledge = (principal: Profile.Profile, path: string): Resu
  * {@link ReceiptIssuer} are trusted.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ContactReceipt {
   readonly kind: "one-on-one" | "owner-thread"
@@ -412,7 +412,7 @@ export interface ContactReceipt {
  * owner-started thread is a bounded occasion, never a standing privilege.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxReceiptWindowMs = 86_400_000
 
@@ -421,7 +421,7 @@ export const maxReceiptWindowMs = 86_400_000
  * meeting or conversation record the receipt attests to.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ReceiptIssuer {
   readonly issuedBy: string
@@ -436,7 +436,7 @@ const trusted = new WeakSet<ContactReceipt>()
  * can join them.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeReceiptIssuer = (issuedBy: string): ReceiptIssuer => ({
   issuedBy,
@@ -463,7 +463,7 @@ export const makeReceiptIssuer = (issuedBy: string): ReceiptIssuer => ({
  * Where and when a principal wants to contact the owner.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ContactContext {
   readonly destination: string
@@ -478,7 +478,7 @@ export interface ContactContext {
  * for this destination, whose window contains `context.nowMs`.
  *
  * @category checks
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const canContactOwner = (
   principal: Profile.Profile,

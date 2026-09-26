@@ -12,16 +12,6 @@ This is an active implementation, not a completion claim. It supersedes the epic
 - Native own-backend mode supervises the same backend and a bundled native PostgreSQL process. Remote-backend mode must not start a redundant database/backend. Local browser development supports either backend.
 - Product state, durable admission, and replay semantics are shared. Presentation-specific OS gestures stay native. User code executes in the local process adapter for the single-owner edition and through isolated Plue execution for cloud.
 
-## Optional organization host
-
-A single-owner installation may run a third packaged Flow host, `organization` (`flows/organization`), beside the coding and librarian hosts. It is optional: a Flow host manifest without it loads and runs exactly as before, and no private file or service is required.
-
-- Enable it by listing the host in the manifest (`distribution/flow-host-manifest.mjs OUTPUT CODING LIBRARIAN ORGANIZATION`) and setting `SMITHERS_ORGANIZATION_REPOSITORY=owner/name` to a repository the installation owner owns. Without both, or in multitenant mode, the family is disabled and startup logs the reason.
-- The backend launches it on that repository's primary workspace with `serve --root --state-dir --host --port --listen`, the standard host identity variables, the model credentials the librarian host receives, and only the `SMITHERS_ORGANIZATION_*`, `SMITHERS_SLACK_*`, `SMITHERS_GOOGLE_*` and `SMITHERS_CREDENTIAL_KEY` variables the operator set. `SMITHERS_ORGANIZATION_CONFIG` must be a path inside the workspace.
-- A background pass provisions the workspace and resolves the host once a minute, so connectors and schedules run without a browser. It reuses the durable binding and the resolver durable dispatch uses; refusals are logged when they change.
-- The host owns its runs, schedules and connector sessions in its own Control journal under the workspace's managed-host state. The backend authorizes, starts and observes it; it adds no second scheduler. Deleting that workspace retires the binding and its state; a data-root backup includes it.
-- `GET /api/organization`, `POST /api/organization/provision` and `POST /api/organization/rpc` relay the workflow procedures to the owner only, for the configured repository only. Every other caller or repository gets the same 404 as a repository it cannot see. The bootstrap advertises `organization`; the app routes that repository's run list and run cards through this relay.
-
 ## Mode acceptance matrix
 
 | ID | Presentation | Product backend | Database | Execution | Required proof |

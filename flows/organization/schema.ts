@@ -96,9 +96,25 @@ export const Stage = Schema.Struct({
 })
 export type Stage = typeof Stage.Type
 
-/** A role's checked answer: the result and its charter check. */
-export const Answer = Schema.Struct({ principal: Profile.PrincipalId, result: Profile.RoleResult, valid: Schema.Boolean })
+/** A role's checked answer: the result, its charter check, and what the check found. */
+export const Answer = Schema.Struct({
+  principal: Profile.PrincipalId,
+  result: Profile.RoleResult,
+  valid: Schema.Boolean,
+  violations: Schema.Array(Schema.String)
+})
 export type Answer = typeof Answer.Type
+
+/**
+ * The same stage asked again, once, after a `done` result broke the
+ * principal's charter: the violations and the rejected result join its
+ * context.
+ */
+export const CorrectTask = Action.make("organization/correct-task", {
+  implementationVersion: "correct-task/v1",
+  payload: { stage: Stage, result: Profile.RoleResult, validation: Actions.Validation },
+  success: Stage
+})
 
 /** The assistant's routing task for a request. */
 export const RouteTask = Action.make("organization/route-task", {
@@ -110,7 +126,7 @@ export const RouteTask = Action.make("organization/route-task", {
 
 /** The lead's contract task, for the role the assistant handed the request to. */
 export const LeadTask = Action.make("organization/lead-task", {
-  implementationVersion: "lead-task/v1",
+  implementationVersion: "lead-task/v2",
   payload: { revision: Schema.NonEmptyString, request: Request, repository: Profile.Container, routed: Answer },
   success: Stage,
   error: Authority.DispatchRefused
@@ -134,7 +150,7 @@ export type Assignment = typeof Assignment.Type
 
 /** Resolves the lead's contract into the builder and checker it names. */
 export const Assign = Action.make("organization/assign", {
-  implementationVersion: "assign/v2",
+  implementationVersion: "assign/v3",
   payload: { revision: Schema.NonEmptyString, repository: Profile.Container, contract: Answer },
   success: Assignment,
   error: Authority.DispatchRefused
@@ -155,7 +171,7 @@ export const BuildTask = Action.make("organization/build-task", {
 
 /** The checker's task: the diff and the fresh-machine check receipts, as data. */
 export const CheckTask = Action.make("organization/check-task", {
-  implementationVersion: "check-task/v2",
+  implementationVersion: "check-task/v3",
   payload: {
     request: Request,
     assignment: Assignment,
@@ -178,7 +194,7 @@ export type Verdict = typeof Verdict.Type
 
 /** Reads the checker's answer and the check receipts into a verdict. Only a valid `done` over passing checks approves. */
 export const Decide = Action.make("organization/decide", {
-  implementationVersion: "decide/v1",
+  implementationVersion: "decide/v2",
   payload: { build: Answer, check: Answer, checks: Workspace.Checks, diff: Workspace.Diff },
   success: Verdict
 })
@@ -191,6 +207,8 @@ export const Report = Schema.Struct({
   principals: Schema.Record(Schema.String, Schema.String),
   rounds: Schema.Int,
   applied: Schema.optionalKey(Workspace.Applied),
+  /** The last round's findings, for a change the checker never approved. */
+  findings: Schema.optionalKey(Schema.Array(Schema.String)),
   receipt: Schema.optionalKey(Schema.String)
 })
 export type Report = typeof Report.Type

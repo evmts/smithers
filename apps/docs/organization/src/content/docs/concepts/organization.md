@@ -122,7 +122,8 @@ changes it.
 ## Skills
 
 A skill pack is a directory of `<name>/SKILL.md` files in the Agent Skills
-format. A skill's license must be one of `Skills.allowedLicenses`, its name
+format. A skill's license must be one of `Skills.allowedLicenses` or an
+organization's own `LicenseRef-<name>`, its name
 must match its directory, and a skill marked `metadata.adapted: "true"` must
 record `metadata.source` and `metadata.revision`. Hidden directories and
 files beside the skills are ignored; files over 256 KiB are refused. A

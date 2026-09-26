@@ -19,7 +19,7 @@
  * meetings and a calendar writer can deduplicate on them.
  * {@link findSlot} finds the first free interval for an additional booking.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as DateTime from "effect/DateTime"
 import * as Option from "effect/Option"
@@ -35,7 +35,7 @@ const weekMs = 7 * dayMs
  * An ISO weekday: 1 is Monday and 7 is Sunday.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Weekday = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 }))
 
@@ -43,7 +43,7 @@ export const Weekday = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 
  * A wall-clock time `HH:MM`, 24-hour.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const LocalTime = Schema.String.check(
   Schema.isPattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/, { expected: "a 24-hour HH:MM time" })
@@ -69,7 +69,7 @@ const parseDate = (text: string): CalendarDate | undefined => {
  * A calendar date `YYYY-MM-DD`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const LocalDate = Schema.String.check(
   Schema.makeFilter<string>((text) => (parseDate(text) === undefined ? "must be a real YYYY-MM-DD date" : undefined))
@@ -79,7 +79,7 @@ export const LocalDate = Schema.String.check(
  * A meeting series id: letters, digits, `.`, `_`, and `-`.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const SeriesId = Schema.String.check(
   Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, { expected: "a series id without slashes" })
@@ -89,7 +89,7 @@ export const SeriesId = Schema.String.check(
  * A request for a weekly block of one-on-ones.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const WeeklyRequest = Schema.Struct({
   seriesId: SeriesId,
@@ -105,7 +105,7 @@ export const WeeklyRequest = Schema.Struct({
  * A request for a weekly block of one-on-ones.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type WeeklyRequest = typeof WeeklyRequest.Type
 
@@ -113,7 +113,7 @@ export type WeeklyRequest = typeof WeeklyRequest.Type
  * One principal's recurring slot.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Slot {
   readonly principal: Profile.PrincipalId
@@ -129,7 +129,7 @@ export interface Slot {
  * A validated weekly plan.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface WeeklyPlan {
   readonly seriesId: string
@@ -146,7 +146,7 @@ export interface WeeklyPlan {
  * Stable meeting planning failure codes.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MeetingErrorCode = Schema.Literals([
   "invalid-request",
@@ -163,7 +163,7 @@ export const MeetingErrorCode = Schema.Literals([
  * A meeting planning failure code.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type MeetingErrorCode = typeof MeetingErrorCode.Type
 
@@ -171,7 +171,7 @@ export type MeetingErrorCode = typeof MeetingErrorCode.Type
  * A refused plan, expansion, or search.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export class MeetingError extends Schema.TaggedError<MeetingError>()("@smthrs/organization/Meetings/MeetingError", {
   code: MeetingErrorCode,
@@ -241,7 +241,7 @@ const localDateOf = (zone: DateTime.TimeZone, epochMs: number): CalendarDate => 
  * How far ahead {@link planWeekly} proves every slot boundary exists.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const gapHorizonDays = 400
 
@@ -257,7 +257,7 @@ const decodeWeekly = Schema.decodeUnknownResult(WeeklyRequest, { onExcessPropert
  * {@link gapHorizonDays} days that falls in a daylight-saving gap.
  *
  * @category planning
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const planWeekly = (request: WeeklyRequest): Result.Result<WeeklyPlan, MeetingError> =>
   Result.gen(function*() {
@@ -317,7 +317,7 @@ export const planWeekly = (request: WeeklyRequest): Result.Result<WeeklyPlan, Me
  * The stable identity of one meeting: `<eventKey>@<local date>`.
  *
  * @category keys
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const occurrenceKey = (eventKey: string, localDate: string): string => `${eventKey}@${localDate}`
 
@@ -325,7 +325,7 @@ export const occurrenceKey = (eventKey: string, localDate: string): string => `$
  * One concrete meeting.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Occurrence {
   readonly principal: Profile.PrincipalId
@@ -341,7 +341,7 @@ export interface Occurrence {
  * The most weeks one {@link occurrences} call expands.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxExpansionWeeks = 1_000
 
@@ -349,7 +349,7 @@ export const maxExpansionWeeks = 1_000
  * Every meeting of `plan` starting in `[fromMs, toMs)`, ordered by start.
  *
  * @category planning
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const occurrences = (
   plan: WeeklyPlan,
@@ -397,7 +397,7 @@ export const occurrences = (
  * A half-open interval `[startMs, endMs)` in Unix milliseconds.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Interval {
   readonly startMs: number
@@ -409,7 +409,7 @@ export interface Interval {
  * Touching intervals do not overlap.
  *
  * @category availability
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const conflicts = <I extends Interval, B extends Interval>(
   intervals: ReadonlyArray<I>,
@@ -424,7 +424,7 @@ export const conflicts = <I extends Interval, B extends Interval>(
  * A request for the first free interval.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface FindSlotRequest {
   readonly busy: ReadonlyArray<Interval>
@@ -444,7 +444,7 @@ export interface FindSlotRequest {
  * A free interval found by {@link findSlot}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface FoundSlot extends Interval {
   readonly localDate: string
@@ -455,7 +455,7 @@ export interface FoundSlot extends Interval {
  * The longest search horizon, in days.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const maxHorizonDays = 366
 
@@ -466,7 +466,7 @@ export const maxHorizonDays = 366
  * Candidate starts in a daylight-saving gap are skipped.
  *
  * @category availability
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const findSlot = (request: FindSlotRequest): Result.Result<Option.Option<FoundSlot>, MeetingError> =>
   Result.gen(function*() {
