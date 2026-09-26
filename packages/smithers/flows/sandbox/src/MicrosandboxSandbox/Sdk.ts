@@ -24,8 +24,13 @@ type ExecEvent =
   | { readonly kind: "exited"; readonly code: number }
 
 interface ExecHandle {
-  /** The next event, or `null` once the command's stream has ended. */
-  recv(): Promise<ExecEvent | null>
+  /**
+   * The next event, or `null` once the command's stream has ended. The vendor
+   * answers `undefined` for a guest event it does not normalise; the one the
+   * guest agent sends today is its report that the command could not be
+   * started at all, such as a missing program or working directory.
+   */
+  recv(): Promise<ExecEvent | null | undefined>
   /** Delivers a Linux signal number to the command's process group. */
   signal(signal: number): Promise<void>
   kill(): Promise<void>
@@ -39,8 +44,10 @@ interface ExecBuilder {
 }
 
 interface DestroyOptions {
-  /** How long a graceful stop may take before the machine is force-killed. */
+  /** How long the stop and removal may take to converge. */
   readonly timeoutMs: number
+  /** Stop the machine without the graceful shutdown first. */
+  readonly force?: boolean
 }
 
 interface Sandbox {

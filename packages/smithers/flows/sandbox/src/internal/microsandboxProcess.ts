@@ -110,38 +110,46 @@ export const runGuest = (
   request: GuestRequest,
   message: string
 ): Effect.Effect<{ readonly code: number; readonly stdout: Uint8Array; readonly stderr: string }, ProviderError> =>
-  Effect.flatMap(start(sandbox, request, microsandboxFailure("unavailable", message)), (handle) =>
-    Effect.gen(function*() {
-      const stdout: Array<Uint8Array> = []
-      const stderr: Array<Uint8Array> = []
-      for (;;) {
-        const event = yield* Effect.tryPromise({
-          try: () => handle.recv(),
-          catch: microsandboxFailure("unavailable", message)
-        })
-        if (event === null) {
-          return yield* Effect.fail(
-            microsandboxFailure("unavailable", `${message}: the command ended without reporting its status`)(
-              undefined
+  Effect.flatMap(
+    start(sandbox, request, microsandboxFailure("unavailable", message)),
+    (handle) =>
+      Effect.gen(function*() {
+        const stdout: Array<Uint8Array> = []
+        const stderr: Array<Uint8Array> = []
+        for (;;) {
+          const event = yield* Effect.tryPromise({
+            try: () => handle.recv(),
+            catch: microsandboxFailure("unavailable", message)
+          })
+          if (event === null) {
+            return yield* Effect.fail(
+              microsandboxFailure("unavailable", `${message}: the command ended without reporting its status`)(
+                undefined
+              )
             )
+          }
+          if (event === undefined) {
+            return yield* Effect.fail(
+              microsandboxFailure("unavailable", `${message}: the guest could not start ${request.program}`)(undefined)
+            )
+          }
+          if (event.kind === "stdout") stdout.push(event.data)
+          else if (event.kind === "stderr") stderr.push(event.data)
+          else if (event.kind === "exited") {
+            return { code: event.code, stdout: concat(stdout), stderr: new TextDecoder().decode(concat(stderr)) }
+          }
+        }
+      }).pipe(
+        Effect.onInterrupt(() =>
+          Effect.ignore(
+            Effect.tryPromise({
+              try: () => handle.kill(),
+              catch: microsandboxFailure("unknown", `${message}: the interrupted command could not be killed`)
+            }).pipe(Effect.tapError((error) => warnTeardown("microsandbox", "kill", error)))
           )
-        }
-        if (event.kind === "stdout") stdout.push(event.data)
-        else if (event.kind === "stderr") stderr.push(event.data)
-        else if (event.kind === "exited") {
-          return { code: event.code, stdout: concat(stdout), stderr: new TextDecoder().decode(concat(stderr)) }
-        }
-      }
-    }).pipe(
-      Effect.onInterrupt(() =>
-        Effect.ignore(
-          Effect.tryPromise({
-            try: () => handle.kill(),
-            catch: microsandboxFailure("unknown", `${message}: the interrupted command could not be killed`)
-          }).pipe(Effect.tapError((error) => warnTeardown("microsandbox", "kill", error)))
         )
       )
-    ))
+  )
 
 /**
  * Signals a started command and every process it started.
@@ -187,7 +195,8 @@ export const signalGuest = (
           result.code === 0 ? Effect.void : Effect.fail(
             new ProviderError({
               code: "unknown",
-              message: `microsandbox: the signal ${signal} could not be delivered in ${machine}: ${result.stderr.trim()}`
+              message:
+                `microsandbox: the signal ${signal} could not be delivered in ${machine}: ${result.stderr.trim()}`
             })
           )
       )
@@ -234,7 +243,9 @@ const terminate = (command: GuestCommand, machine: string): Effect.Effect<void> 
  * and `exited` ends both streams and settles `exitCode`. A handle whose stream
  * ends without an `exited` event means the machine went away mid-command, so
  * both streams and `exitCode` fail with `unavailable` instead of waiting for an
- * exit that will never be reported.
+ * exit that will never be reported. A guest that could not start the command
+ * at all — a missing program or working directory — fails them with
+ * `spawn_error`.
  *
  * Closing the spawn's scope before the exit was observed terminates the command
  * and everything it started, under `finalizeWithin`'s bound: an interrupted
@@ -255,7 +266,11 @@ export const spawnGuest = (
   Effect.uninterruptibleMask((restore) =>
     Effect.gen(function*() {
       const handle = yield* restore(
-        start(sandbox, request, microsandboxFailure("spawn_error", `\`${names.command}\` could not run in ${names.machine}`))
+        start(
+          sandbox,
+          request,
+          microsandboxFailure("spawn_error", `\`${names.command}\` could not run in ${names.machine}`)
+        )
       )
       const stdout = yield* Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
       const stderr = yield* Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
@@ -270,10 +285,20 @@ export const spawnGuest = (
         "unavailable",
         `the microVM ${names.machine} ended before \`${names.command}\` reported its status`
       )
+      const unstarted = microsandboxFailure(
+        "spawn_error",
+        `the guest could not start \`${names.command}\` in ${names.machine}`
+      )
       const drain = Effect.gen(function*() {
         for (;;) {
           const event = yield* Effect.tryPromise({ try: () => handle.recv(), catch: lost })
           if (event === null) return yield* Effect.fail(lost(undefined))
+          if (event === undefined) {
+            // The guest refused to start the command, so there is no process
+            // to signal and never will be an exit.
+            command.ended = true
+            return yield* Effect.fail(unstarted(undefined))
+          }
           switch (event.kind) {
             case "started":
               command.pid = event.pid

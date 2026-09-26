@@ -1,13 +1,33 @@
-import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect } from "effect"
+import { afterAll, describe, expect, it } from "@effect/vitest"
+import { Cause, Effect, Fiber, Stream } from "effect"
 import * as Microsandbox from "microsandbox"
 import { spawnSync } from "node:child_process"
 import { accessSync, constants } from "node:fs"
+import { elapsed } from "../src/internal/deadline.ts"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
+import type { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 
 const session = `real-microsandbox-${process.pid}-${Date.now()}`
 const budget = 900_000
+
+// Every machine this suite boots belongs to an owner no other run shares and
+// carries a label naming the run, so the sweep after it removes this run's
+// machines and nothing else on the host.
+const owner = `smithers-test-${session}`
+const labels = { "smithers.test": session }
+const machine = (options: Partial<MicrosandboxSandbox.MicrosandboxSandboxOptions> = {}) =>
+  MicrosandboxSandbox.make({
+    sdk: Microsandbox,
+    image: "oven/bun:1",
+    pullPolicy: "if-missing",
+    maxDurationSecs: 600,
+    idleTimeoutSecs: 120,
+    owner,
+    labels,
+    ...options
+  })
 
 /**
  * Why this host cannot boot a microVM, or `undefined` when it can.
@@ -65,13 +85,7 @@ const unbootable = async (): Promise<string | undefined> => {
   const refusal = await Effect.runPromise(
     Effect.scoped(
       Effect.flatMap(
-        MicrosandboxSandbox.make({
-          sdk: Microsandbox,
-          image: "oven/bun:1",
-          pullPolicy: "if-missing",
-          maxDurationSecs: 120,
-          idleTimeoutSecs: 60
-        }).acquire(`${session}-probe`),
+        machine({ maxDurationSecs: 120, idleTimeoutSecs: 60 }).acquire(`${session}-probe`),
         () => Effect.void
       )
     ).pipe(
@@ -98,26 +112,193 @@ describe.skipIf(available)("MicrosandboxSandbox against a real microVM", () => {
   })
 })
 
+/** Whether a guest file exists, as the session answers it. */
+const present = (live: Session, path: string) =>
+  live.readFile(path).pipe(
+    Effect.as(true),
+    Effect.catchIf((error: ProviderError) => error.code === "not_found", () => Effect.succeed(false))
+  )
+
+/** Waits, on the wall clock, until a guest file exists. */
+const awaitFile = (live: Session, path: string) =>
+  Effect.gen(function*() {
+    for (let tries = 0; tries < 300; tries++) {
+      if (yield* present(live, path)) return
+      yield* elapsed(100)
+    }
+    return yield* Effect.die(new Error(`${path} never appeared in ${live.remoteId}`))
+  })
+
 describe.skipIf(!available)("MicrosandboxSandbox against a real microVM", () => {
+  // Nothing this suite created may outlive it, whatever a case left behind.
+  afterAll(() =>
+    Effect.runPromise(
+      MicrosandboxSandbox.reap({ sdk: Microsandbox, owner, isAlive: () => Effect.succeed(false) })
+    ), 120_000)
+
   it.effect(
-    "passes the sandbox conformance suite",
+    "passes the sandbox conformance suite, kill, interrupt, and ephemeral release included",
     () =>
       Effect.gen(function*() {
-        const provider = MicrosandboxSandbox.make({
-          sdk: Microsandbox,
-          image: "oven/bun:1",
-          pullPolicy: "if-missing",
-          maxDurationSecs: 900,
-          idleTimeoutSecs: 120
-        })
-        const violations = yield* SandboxConformance.check(provider, {
+        const violations = yield* SandboxConformance.check(machine(), {
           session,
           // Real VM provisioning keeps its previous allowance; ordinary checks default to 10 seconds.
           checkTimeout: "240 seconds",
-          provides: { ping: true }
+          provides: { ping: true, kill: true, interrupt: true, ephemeral: true }
         })
         expect(violations).toEqual([])
       }),
+    budget
+  )
+
+  it.live(
+    "interrupting a command kills a backgrounded descendant that left its process group",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const live = yield* machine().acquire(`${session}-interrupt`)
+        // `setsid` puts the background writer in a session and process group
+        // of its own, out of reach of a signal to the command's group alone.
+        const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
+          live.spawn(
+            "printf go > started; setsid sh -c 'sleep 3; printf x > escaped' & sleep 3; printf x > direct",
+            {}
+          ),
+          (running) => running.exitCode
+        )))
+        yield* awaitFile(live, `${live.workdir}/started`)
+        yield* Fiber.interrupt(fiber)
+        yield* elapsed(4_500)
+        expect(yield* present(live, `${live.workdir}/direct`)).toBe(false)
+        expect(yield* present(live, `${live.workdir}/escaped`)).toBe(false)
+        // The machine itself is untouched and still runs commands.
+        const after = yield* Effect.scoped(Effect.flatMap(live.spawn("true", {}), (running) => running.exitCode))
+        expect(after).toBe(0)
+      })),
+    budget
+  )
+
+  it.live(
+    "interrupting a command on a single vCPU never lets its shell run the next statement",
+    () =>
+      Effect.gen(function*() {
+        // One vCPU is where a parent woken by its child's death could run
+        // before its own signal landed. A freshly booted guest is busiest, so
+        // every round boots its own machine; repeated because it is a race.
+        for (let round = 0; round < 10; round++) {
+          yield* Effect.scoped(Effect.gen(function*() {
+            const live = yield* machine({ cpus: 1, memoryMib: 512 }).acquire(`${session}-one-cpu-${round}`)
+            const fiber = yield* Effect.forkChild(Effect.scoped(Effect.flatMap(
+              live.spawn(`printf go > started-${round}; sleep 2; printf x > survived-${round}`, {}),
+              (running) => running.exitCode
+            )))
+            yield* awaitFile(live, `${live.workdir}/started-${round}`)
+            yield* Fiber.interrupt(fiber)
+            yield* elapsed(2_500)
+            expect(yield* present(live, `${live.workdir}/survived-${round}`)).toBe(false)
+          }))
+        }
+      }),
+    budget
+  )
+
+  it.live(
+    "keeps two concurrent machines apart",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const provider = machine()
+        const [left, right] = yield* Effect.all(
+          [provider.acquire(`${session}-left`), provider.acquire(`${session}-right`)],
+          { concurrency: "unbounded" }
+        )
+        expect(left.remoteId).not.toBe(right.remoteId)
+        yield* Effect.all([
+          left.writeFile(`${left.workdir}/whose`, new TextEncoder().encode("left")),
+          left.writeFile(`${left.workdir}/left-only`, new Uint8Array([1])),
+          right.writeFile(`${right.workdir}/whose`, new TextEncoder().encode("right"))
+        ], { concurrency: "unbounded" })
+        // Both machines run a command at once, each seeing only its own files.
+        const [leftSees, rightSees] = yield* Effect.all(
+          [left, right].map((live) =>
+            Effect.scoped(Effect.flatMap(
+              live.spawn("cat whose; test -e left-only && printf ' +left-only'", {}),
+              (running) => Stream.mkString(Stream.decodeText(running.stdout))
+            ))
+          ),
+          { concurrency: "unbounded" }
+        )
+        expect(leftSees).toBe("left +left-only")
+        expect(rightSees).toBe("right")
+        expect(yield* present(right, `${right.workdir}/left-only`)).toBe(false)
+      })),
+    budget
+  )
+
+  it.live(
+    "reaps a sticky machine whose holder died, and keeps one whose holder lives",
+    () =>
+      Effect.gen(function*() {
+        const dead = `dead-holder-${session}`
+        const alive = `live-holder-${session}`
+        // A sticky machine outlives the scope that held it: that is the
+        // orphan a holder leaves behind when it dies.
+        const orphan = yield* Effect.scoped(Effect.map(
+          machine({ persistence: "sticky", holder: dead }).acquire(`${session}-orphan`),
+          (live) => live.remoteId
+        ))
+        const kept = yield* Effect.scoped(Effect.map(
+          machine({ persistence: "sticky", holder: alive }).acquire(`${session}-kept`),
+          (live) => live.remoteId
+        ))
+        expect((yield* Effect.promise(() => Microsandbox.Sandbox.get(orphan))).status).toBe("running")
+
+        const reaped = yield* MicrosandboxSandbox.reap({
+          sdk: Microsandbox,
+          owner,
+          isAlive: (holder) => Effect.succeed(holder === alive)
+        })
+
+        expect(reaped.map(({ holder, name }) => ({ holder, name }))).toEqual([{ holder: dead, name: orphan }])
+        const gone = yield* Effect.promise(() =>
+          Microsandbox.Sandbox.get(orphan).then(() => "present", (cause: unknown) => Reflect.get(Object(cause), "code"))
+        )
+        expect(gone).toBe("sandboxNotFound")
+        expect((yield* Effect.promise(() => Microsandbox.Sandbox.get(kept))).status).toBe("running")
+      }),
+    budget
+  )
+
+  it.live(
+    "fails a command the guest cannot start with spawn_error instead of hanging",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const live = yield* machine().acquire(`${session}-unstarted`)
+        // The guest agent reports a missing working directory as a failed
+        // start, an event the vendor SDK hands back as `undefined`.
+        const failure = yield* Effect.scoped(Effect.flatMap(
+          live.spawn("true", { cwd: "no-such-directory" }),
+          (running) => Effect.flip(running.exitCode)
+        )).pipe(Effect.timeout("30 seconds"))
+        expect(failure.code).toBe("spawn_error")
+      })),
+    budget
+  )
+
+  it.live(
+    "fails a running command with unavailable promptly when its machine is destroyed under it",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const live = yield* machine().acquire(`${session}-lost`)
+        const running = yield* live.spawn("printf go > started; sleep 120", {})
+        yield* awaitFile(live, `${live.workdir}/started`)
+        // Another party removes the machine while the command runs.
+        const began = Date.now()
+        yield* Effect.promise(() =>
+          Microsandbox.Sandbox.get(live.remoteId).then((handle) => handle.destroy({ timeoutMs: 1_000, force: true }))
+        )
+        const failure = yield* Effect.flip(running.exitCode).pipe(Effect.timeout("10 seconds"))
+        expect(failure.code).toBe("unavailable")
+        expect(Date.now() - began).toBeLessThan(10_000)
+      })),
     budget
   )
 })

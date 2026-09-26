@@ -297,14 +297,18 @@ export const check = (
     const interrupted = options.provides?.interrupt === true
       ? yield* inSession(provider, session, deadline, (live) =>
         Effect.gen(function*() {
-          const path = (name: string) => `${live.workdir}/${name}`
+          const path = (name: string) =>
+            `${live.workdir}/${name}`
           const running = yield* Effect.forkChild(
-            Effect.scoped(Effect.flatMap(live.spawn(interruptFixture.command, {}), (process) => process.exitCode))
+            Effect.scoped(Effect.flatMap(live.spawn(interruptFixture.command, {}), (process) =>
+              process.exitCode))
           )
           let started = false
           while (!started) {
             started = (yield* lookup(live, path(interruptFixture.started))) === "present"
-            if (!started) yield* elapsed(100)
+            if (!started) {
+              yield* elapsed(100)
+            }
           }
           yield* Fiber.interrupt(running)
           yield* elapsed(interruptFixture.settleMs)
@@ -315,17 +319,20 @@ export const check = (
         }))
       : undefined
     const sentinel = options.isolation?.hostSentinel
-    const hidden = sentinel === undefined ? undefined : yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
-        return {
-          read: yield* lookup(live, sentinel),
-          probe: yield* status(live, `test -e ${CommandLine.quote(sentinel)}`)
-        }
-      }))
+    const hidden = sentinel === undefined ?
+      undefined :
+      yield* inSession(provider, session, deadline, (live) =>
+        Effect.gen(function*() {
+          return {
+            read: yield* lookup(live, sentinel),
+            probe: yield* status(live, `test -e ${CommandLine.quote(sentinel)}`)
+          }
+        }))
     const probe = options.isolation?.egressProbe
     const egress = probe === undefined
       ? undefined
-      : yield* inSession(provider, session, deadline, (live) => status(live, probe))
+      : yield* inSession(provider, session, deadline, (live) =>
+        status(live, probe))
     const released = options.provides?.ephemeral === true
       ? yield* boundedCheck(
         Effect.andThen(
@@ -453,7 +460,8 @@ export const check = (
           expected: "the host sentinel to be not_found through readFile and absent to a guest `test -e`",
           actual: describeExit(hidden)
         },
-      egress === undefined || Exit.isSuccess(egress) && egress.value !== 0 && egress.value !== 126 && egress.value !== 127
+      egress === undefined ||
+        Exit.isSuccess(egress) && egress.value !== 0 && egress.value !== 126 && egress.value !== 127
         ? undefined
         : {
           check: "refuses-egress",

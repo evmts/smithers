@@ -10,6 +10,7 @@ import { checkEnvironmentNames } from "../internal/environmentNames.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { parentOf } from "../internal/guestPath.ts"
 import { type GuestCommand, runGuest, signalGuest, spawnGuest } from "../internal/microsandboxProcess.ts"
+import { removeMachine } from "../internal/microsandboxRemove.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { warnTeardown } from "../internal/teardownWarning.ts"
@@ -29,8 +30,9 @@ const defaultNixExecutable = "nix"
 const defaultOwner = "smithers"
 const namePrefix = "smthrs-msb-"
 /**
- * How long a machine's graceful stop may take before Microsandbox force-kills
- * it. Teardown is additionally observed under `finalizeWithin`'s bound.
+ * How long a machine's graceful stop and removal may take before a forced
+ * removal is tried. Teardown is additionally observed under
+ * `finalizeWithin`'s bound.
  */
 const stopGraceMs = 3_000
 
@@ -307,7 +309,8 @@ const requireLocalBackend = (sdk: Sdk): Effect.Effect<void, ProviderError> =>
  * provisioning anything.
  *
  * Ephemeral persistence is the default and removes the machine when the scope
- * closes, crashed or not, under a bounded stop. Sticky persistence leaves a
+ * closes, crashed or not: a graceful stop bounded at three seconds, then a
+ * forced removal when that fails. Sticky persistence leaves a
  * successfully prepared machine running and reconnects to its deterministic
  * name on the next acquire. With an `environment`, the flake is planted and
  * warmed before the session is returned and every command runs under
@@ -348,7 +351,7 @@ export const make = (options: MicrosandboxSandboxOptions): Provider => {
               ? finalizeWithin(
                 Effect.ignore(
                   attempt(
-                    () => sandbox.destroy({ timeoutMs: stopGraceMs }),
+                    () => removeMachine(sandbox, stopGraceMs),
                     "unavailable",
                     `the microVM ${name} could not be removed`
                   ).pipe(Effect.tapError((error) => warnTeardown("microsandbox", "destroy", error)))

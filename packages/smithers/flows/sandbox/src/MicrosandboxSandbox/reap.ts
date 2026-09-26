@@ -5,6 +5,7 @@
  */
 import * as Effect from "effect/Effect"
 import { attemptIn } from "../internal/attempt.ts"
+import { removeMachine } from "../internal/microsandboxRemove.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { holderLabel, ownerLabel, providerLabel, providerName } from "./labels.ts"
 import type { Sdk } from "./Sdk.ts"
@@ -13,7 +14,7 @@ type Handle = Awaited<ReturnType<Sdk["Sandbox"]["get"]>>
 
 const attempt = attemptIn("microsandbox")
 
-/** How long a reaped machine's graceful stop may take before it is force-killed. */
+/** How long a reaped machine's graceful stop may take before its removal is forced. */
 const defaultStopTimeoutMs = 3_000
 
 /**
@@ -32,7 +33,7 @@ export interface ReapOptions {
    * running. A machine whose holder answers `false` is removed.
    */
   readonly isAlive: (holder: string) => Effect.Effect<boolean>
-  /** How long each removed machine's graceful stop may take before it is force-killed. Default 3000. */
+  /** How long each removed machine's graceful stop may take before its removal is forced. Default 3000. */
   readonly stopTimeoutMs?: number | undefined
 }
 
@@ -72,8 +73,8 @@ const isNotFound = (error: ProviderError): boolean => Reflect.get(Object(error.c
  * Microsandbox's own database is the registry: machines are listed by the
  * `smithers.provider` and `smithers.owner` labels every `MicrosandboxSandbox`
  * machine carries, page by page, and each one's `smithers.holder` label is put
- * to `isAlive`. A machine whose holder is dead is stopped under a bounded
- * graceful window, force-killed past it, and removed, whatever its
+ * to `isAlive`. A machine whose holder is dead is stopped and removed under a
+ * bounded graceful window, with a forced removal when that fails, whatever its
  * persistence: a sticky machine outlives its holder by design, and reaping is
  * how a host decides that holder is not coming back. Machines of other owners,
  * machines without a readable holder label, and machines this package did not
@@ -120,7 +121,7 @@ export const reap = (options: ReapOptions): Effect.Effect<ReadonlyArray<Reaped>,
         const current = yield* attempt(() => handle.refresh(), "unavailable", `${handle.name} could not be read`)
         if (holderOf(current) !== holder) return "skipped" as const
         yield* attempt(
-          () => current.destroy({ timeoutMs: options.stopTimeoutMs ?? defaultStopTimeoutMs }),
+          () => removeMachine(current, options.stopTimeoutMs ?? defaultStopTimeoutMs),
           "unavailable",
           `${handle.name} could not be removed`
         )
