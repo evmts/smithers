@@ -49,7 +49,7 @@ import {
 } from "../schema.ts"
 import { slackConnection } from "../slack-connection.ts"
 
-const implementationVersion = "organization/deliver/v1"
+const implementationVersion = "organization/deliver/v2"
 
 /** The boundary the builder's task crosses. */
 export const taskGate: Gates.At = { boundary: "task", target: "organization/deliver" }
@@ -62,15 +62,21 @@ type Payload = { readonly request: typeof Request.Type; readonly admission: type
 const turn = (
   revision: Planned.Planned<string>,
   stage: Planned.Planned<Stage>,
-  workspace?: { readonly key: Planned.Planned<string>; readonly repository: string }
+  workspace?: {
+    readonly key: Planned.Planned<string>
+    readonly repository: string
+    readonly commit: Planned.Planned<string>
+  }
 ) =>
   Actions.ComposeTask.call({
     revision,
     principal: stage.principal,
     task: stage.task,
     context: stage.context,
-    // The key is a planned reference the engine resolves inside the struct.
-    ...(workspace === undefined ? {} : { workspace: workspace as unknown as { key: string; repository: string } })
+    // The key and commit are planned references the engine resolves inside the struct.
+    ...(workspace === undefined
+      ? {}
+      : { workspace: workspace as unknown as { key: string; repository: string; commit: string } })
   }).pipe(
     Node.bindPlanned(Node.capture({ implementationVersion }, (payload) => Actions.RoleTask.call(payload))),
     Node.bindPlanned(Node.capture({ implementationVersion }, (result) =>
@@ -113,7 +119,7 @@ const round = (
   }
   return BuildTask.call({ request, assignment, workdir: prepared.workdir, round: n, findings }).pipe(
     Node.bindPlanned(Node.capture({ implementationVersion }, (stage) =>
-      turn(revision, stage, { key: prepared.key, repository: admission.repository }))),
+      turn(revision, stage, { key: prepared.key, repository: admission.repository, commit: prepared.commit }))),
     // The diff is read only after the builder's turn has finished: a step
     // that does not consume a reference may otherwise start beside it.
     Node.bindPlanned(Node.capture({ implementationVersion }, (build) =>
@@ -126,8 +132,16 @@ const round = (
             checks: admission.checks
           }).pipe(
             Node.bindPlanned(Node.capture({ implementationVersion }, (checks) =>
-              CheckTask.call({ request, assignment, round: n, build, diff, checks }).pipe(
-                Node.bindPlanned(Node.capture({ implementationVersion }, (stage) => turn(revision, stage))),
+              CheckTask.call({ request, assignment, workdir: prepared.workdir, round: n, build, diff, checks }).pipe(
+                // A checker that holds a workspace in the repository reproduces
+                // the change in the builder's machine; any other judges the
+                // diff and the receipts it is given.
+                Node.branch({
+                  if: Node.capture({ implementationVersion }, (stage) => stage.workspace === true),
+                  then: (stage) =>
+                    turn(revision, stage, { key: prepared.key, repository: admission.repository, commit: prepared.commit }),
+                  else: (stage) => turn(revision, stage)
+                }),
                 Node.bindPlanned(Node.capture({ implementationVersion }, (check) =>
                   Decide.call({ build, check, checks, diff }).pipe(
                     Node.branch({

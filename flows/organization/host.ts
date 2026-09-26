@@ -6,7 +6,8 @@
  * organization package's actions (roster pinning, composition, role tasks
  * under `Authority.layer`, microVM workspaces, receipts), its gates, this
  * directory's own steps, and Slack replies when a Slack app is configured.
- * Role tasks resolve seats from the environment; microVMs are local
+ * Role tasks resolve seats on the owner's subscriptions (or API keys when
+ * configured); microVMs are local
  * Microsandbox machines, labelled with this installation and this process,
  * and the machines a dead host process left behind are reaped at startup.
  */
@@ -15,6 +16,7 @@ import * as Agent from "@smthrs/agent/Agent"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
@@ -31,12 +33,12 @@ import * as RoleHost from "../../packages/smithers/agent/organization/src/RoleHo
 import * as Workspace from "../../packages/smithers/agent/organization/src/Workspace.ts"
 import type * as MicrosandboxSandbox from "../../packages/smithers/flows/sandbox/src/MicrosandboxSandbox/index.ts"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
-import * as NativeEquipment from "../../packages/smithers/src/internal/NativeEquipment.ts"
 import * as SupervisorMemory from "../../packages/smithers/src/internal/SupervisorMemory.ts"
 import * as OrganizationActions from "./actions.ts"
 import deliver from "./deliver/flow.ts"
 import intake from "./intake/flow.ts"
 import type { Settings } from "./settings.ts"
+import * as Subscriptions from "./setup/subscriptions.ts"
 import status from "./status/flow.ts"
 
 /**
@@ -63,6 +65,16 @@ export interface Options {
 }
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
+
+/**
+ * The repository the durable engine snapshots around each compensable step:
+ * an empty jj repository in the state directory, never the organization's
+ * wiki. No role acts on the host (a builder works in its microVM, whose own
+ * snapshot boundary compensates its edits), so those snapshots must not
+ * reach, or restore over, the wiki the receipts are written to. `serve`
+ * creates it.
+ */
+export const executionRoot = (settings: Pick<Settings, "stateDir">) => join(settings.stateDir, "execution")
 
 /** The host's catalog: one descriptor per organization flow, pinned under the state directory. */
 export const catalog = async (options: Pick<Options, "settings">) => {
@@ -221,11 +233,17 @@ const registrations = (platform: NativeControl.Platform, options: Options) => {
  */
 export const layer = (platform: NativeControl.Platform, options: Options, seats?: SeatResolver.Service) => {
   const { settings } = options
+  // The engine's per-step jj snapshots go to the execution repository, so
+  // they never reach, or restore over, the wiki the receipts are written to.
   const native = NativeControl.make(
-    platform,
-    (environment) =>
+    { ...platform, jj: () => platform.jj(executionRoot(settings)) },
+    // Seats resolve on the owner's subscriptions unless the host was told to
+    // use API keys (`setup/subscriptions.ts`), from the host's own environment.
+    () =>
       seats === undefined
-        ? NativeEquipment.layerSeatResolver(environment)
+        ? Layer.effect(SeatResolver.SeatResolver)(
+          Effect.map(RequestExecutor.RequestExecutor, (executor) => Subscriptions.resolver(options.environment, executor))
+        )
         : SeatResolver.layer(seats)
   )
   const judge = settings.organization.judge === "none"

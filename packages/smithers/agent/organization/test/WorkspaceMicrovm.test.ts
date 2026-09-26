@@ -119,13 +119,20 @@ describe.skipIf(missing !== undefined)("Workspace against real microVMs", () => 
     expect(prepared.workdir).toBe("/workspace")
     expect(prepared.remoteId).toMatch(/^smthrs-msb-/)
 
+    // The machine records its workspace key, which a restarted host reads
+    // to keep the machine of a run that resumes.
+    const config = JSON.parse((await Microsandbox.Sandbox.get(prepared.remoteId)).configJson) as {
+      readonly labels: Record<string, string>
+    }
+    expect(config.labels[Workspace.workspaceLabel]).toBe(key)
+
     // Seeding the same key at the same commit reattaches and reuses it.
     const again = await within(Effect.flatMap(Workspace.Workspace, (w) => w.prepare({ key, repoPath: repo, commit })))
     expect(again).toEqual(prepared)
 
     // A role task's tools act through this same session.
     const edited = await within(Effect.scoped(Effect.gen(function*() {
-      const session = yield* (yield* Workspace.Workspace).session(key)
+      const session = yield* (yield* Workspace.Workspace).session(key, { commit })
       const result = yield* Process.guest(
         session,
         "printf 'hello world\\n' > lib.txt && mkdir -p docs && printf 'notes\\n' > docs/notes.md && uname -s && cat /etc/os-release | head -1",

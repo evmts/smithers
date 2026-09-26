@@ -10,7 +10,6 @@ import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, sta
 import { join } from "node:path"
 import { parseArgs } from "node:util"
 import * as RequestExecutor from "../../../packages/smithers/agent/model/src/RequestExecutor.ts"
-import { seatResolver } from "../../../packages/smithers/src/internal/NativeEquipment.ts"
 import { bootProbe, type Install, locate, msb, type Probe, sdkOf } from "./microsandbox.ts"
 import {
   absolute,
@@ -25,6 +24,7 @@ import {
   stateDirOf,
   withEnvFile
 } from "./settings.ts"
+import * as Subscriptions from "./subscriptions.ts"
 import { modelSeats } from "./templates.ts"
 
 export type Status = "pass" | "fail" | "skip"
@@ -37,6 +37,9 @@ export interface Line {
   readonly fix?: string | undefined
 }
 
+/** The one `fetch` call shape the Slack checks make. */
+export type Fetch = (input: string, init?: RequestInit) => Promise<Response>
+
 export interface DoctorOptions {
   /** The wiki root holding `Org/`. */
   readonly root: string
@@ -47,7 +50,11 @@ export interface DoctorOptions {
   readonly checkout?: string | undefined
   readonly nodeVersion?: string | undefined
   readonly platform?: NodeJS.Platform | undefined
-  readonly fetch?: typeof fetch | undefined
+  readonly fetch?: Fetch | undefined
+  /** The `jj` executable. Default `jj` on `PATH`. */
+  readonly jj?: string | undefined
+  /** The Claude Code login's store; the CLI's own by default. */
+  readonly claudeCredentials?: Subscriptions.CredentialsReader | undefined
   /** Replaces the Microsandbox lookup; `null` means not installed. */
   readonly install?: Install | null | undefined
   /** Replaces the hypervisor reading. */
@@ -143,6 +150,14 @@ const imageLine = (install: Install | undefined, organization: Organization | un
     : [fail("image", `${image} is not cached and did not pull`, `${install.cli.join(" ")} pull ${image}`), image]
 }
 
+/** The `jj` CLI the host's engine snapshots its execution root with. */
+const jjLine = (binary: string): Line => {
+  const probed = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: 10_000 })
+  return probed.status === 0
+    ? pass("jj", probed.stdout.trim())
+    : fail("jj", `${binary} --version did not run`, "install jj (https://jj-vcs.github.io/jj/latest/install-and-setup/) onto PATH")
+}
+
 const helperLine = (checkout: string, env: DoctorOptions["env"]): Line => {
   const configured = nonEmpty(env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY)
   const helper = configured ?? join(checkout, "target", "release", "smithers-jj-export")
@@ -155,10 +170,20 @@ const helperLine = (checkout: string, env: DoctorOptions["env"]): Line => {
   }
 }
 
-const seatsLine = async (organization: Organization | undefined, env: DoctorOptions["env"]): Promise<Line> => {
+const seatsLine = async (
+  organization: Organization | undefined,
+  env: DoctorOptions["env"],
+  credentials: Subscriptions.CredentialsReader | undefined
+): Promise<Line> => {
   if (organization === undefined) return fail("seats", "no organization loaded", "fix the org line first")
   const executor = RequestExecutor.RequestExecutor.of({ execute: () => Effect.die("doctor never calls a model") })
-  const resolver = seatResolver(env, executor)
+  let mode: Subscriptions.Mode
+  try {
+    mode = Subscriptions.modeOf(env)
+  } catch (error) {
+    return fail("seats", (error as Error).message, `set ${Subscriptions.modeVariable}=subscription`)
+  }
+  const resolver = Subscriptions.resolver(env, executor, credentials === undefined ? {} : { credentials })
   const missing: Array<string> = []
   const seats = modelSeats(organization.loaded.organization)
   for (const seat of seats) {
@@ -167,9 +192,22 @@ const seatsLine = async (organization: Organization | undefined, env: DoctorOpti
     )
     if (refused !== undefined) missing.push(refused)
   }
-  return missing.length === 0
-    ? pass("seats", `${seats.join(", ")} resolve`)
-    : fail("seats", missing.join("; "), "add the key to the .env file doctor read")
+  if (missing.length > 0) {
+    return fail(
+      "seats",
+      missing.join("; "),
+      mode === "subscription"
+        ? "sign in with `codex login` (ChatGPT) and `claude` (Claude), then run doctor again"
+        : "add the key to the .env file doctor read"
+    )
+  }
+  if (mode === "api-key") return pass("seats", `${seats.join(", ")} resolve on API keys`)
+  const providers = new Set(seats.map(Subscriptions.providerOf))
+  const logins = [
+    ...(providers.has("openai") ? [`ChatGPT login ${Subscriptions.chatgptLogin(env)}`] : []),
+    ...(providers.has("anthropic") ? ["Claude subscription"] : [])
+  ]
+  return pass("seats", `${seats.join(", ")} resolve on subscriptions${logins.length === 0 ? "" : ` (${logins.join(", ")})`}`)
 }
 
 interface SlackAnswer {
@@ -179,7 +217,7 @@ interface SlackAnswer {
 }
 
 const slackCall = async (
-  fetcher: typeof fetch,
+  fetcher: Fetch,
   base: string,
   method: string,
   token: string
@@ -193,7 +231,7 @@ const slackCall = async (
   return await response.json() as SlackAnswer
 }
 
-const slackLines = async (env: DoctorOptions["env"], fetcher: typeof fetch): Promise<Array<Line>> => {
+const slackLines = async (env: DoctorOptions["env"], fetcher: Fetch): Promise<Array<Line>> => {
   const bot = nonEmpty(env.SMITHERS_SLACK_BOT_TOKEN), app = nonEmpty(env.SMITHERS_SLACK_APP_TOKEN)
   if (bot === undefined && app === undefined) {
     return [skip("slack", "no tokens"), skip("slack socket", "no tokens")]
@@ -282,8 +320,9 @@ export const doctor = async (options: DoctorOptions): Promise<Array<Line>> => {
     const probed = await (options.probe ?? (async (image: string) => bootProbe(await sdkOf(install!), image)))(reference)
     lines.push(probed.ok ? pass("boot", probed.detail) : fail("boot", probed.detail, `${install!.cli.join(" ")} doctor`))
   }
+  lines.push(jjLine(options.jj ?? "jj"))
   lines.push(helperLine(checkout, options.env))
-  lines.push(await seatsLine(organization, options.env))
+  lines.push(await seatsLine(organization, options.env, options.claudeCredentials))
   lines.push(...await slackLines(options.env, options.fetch ?? fetch))
   lines.push(...repoLines(options.repos))
   lines.push(stateLine(options.stateDir))

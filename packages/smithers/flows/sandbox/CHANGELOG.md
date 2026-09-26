@@ -29,6 +29,10 @@
 
 ### Added
 
+- `MicrosandboxSandbox.reap` takes `retain`, which keeps a dead holder's
+  machine by the labels its configuration records, such as a sticky workspace
+  a resuming run will reattach.
+
 - `MicrosandboxSandbox` machines carry the ownership labels
   `smithers.provider`, `smithers.owner`, and `smithers.holder`, exported as
   `providerLabel`, `providerName`, `ownerLabel`, and `holderLabel`, with the

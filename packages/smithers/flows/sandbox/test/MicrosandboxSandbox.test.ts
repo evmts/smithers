@@ -1542,6 +1542,29 @@ describe("MicrosandboxSandbox.reap", () => {
       })
     }))
 
+  it.effect("leaves a dead holder's machine the caller retains by its labels", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      fake.plant("resumes", { ...ownership("installation-a", "dead"), "smithers.run": "live" })
+      fake.plant("settled", { ...ownership("installation-a", "dead"), "smithers.run": "done" })
+      fake.plant("unlabelled", ownership("installation-a", "dead"))
+      const seen: Array<Readonly<Record<string, string>>> = []
+
+      const reaped = yield* MicrosandboxSandbox.reap({
+        sdk: fake.sdk,
+        owner: "installation-a",
+        isAlive: isAlive([]),
+        retain: (labels) => {
+          seen.push(labels)
+          return Effect.succeed(labels["smithers.run"] === "live")
+        }
+      })
+
+      expect(reaped.map(({ name }) => name).sort()).toEqual(["settled", "unlabelled"])
+      expect([...fake.machines.keys()]).toEqual(["resumes"])
+      expect(seen).toContainEqual({ ...ownership("installation-a", "dead"), "smithers.run": "live" })
+    }))
+
   it.effect("skips a machine relabelled, vanished, or unreadable since the listing", () =>
     Effect.gen(function*() {
       let relabel = (): void => undefined

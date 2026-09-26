@@ -22,13 +22,15 @@ test("init copies the example, writes the templates, and seeds a private .env", 
   assert.equal(result.created, true)
   assert.ok(existsSync(join(dir, "Org", "Roles", "assistant.md")))
   const example = readFileSync(join(dir, "Org", "Setup", ".env.example"), "utf8")
-  for (const name of ["OPENAI_API_KEY=", "SMITHERS_SLACK_BOT_TOKEN=", "SMITHERS_SLACK_APP_TOKEN=", "SMITHERS_SLACK_TEAM_IDS=",
+  for (const name of ["SMITHERS_ORG_AUTH=subscription", "# ChatGPT: sign in once with `codex login`", "SMITHERS_SLACK_BOT_TOKEN=", "SMITHERS_SLACK_APP_TOKEN=", "SMITHERS_SLACK_TEAM_IDS=",
     "SMITHERS_SLACK_USER_IDS=", "# SMITHERS_SLACK_CHANNEL_IDS=", "SMITHERS_ORG_REPOS=", `SMITHERS_ORG_ROOT=${dir}`,
     `SMITHERS_ORG_STATE_DIR=${stateDir}`, "# SMITHERS_ORG_MAX_CONCURRENT_VMS=2"]) {
     assert.ok(example.split("\n").includes(name), name)
   }
-  // Every variable is a name with an empty value or a local path; no secret is invented.
-  for (const line of example.split("\n").filter((line) => /^[A-Z_]+=/.test(line))) {
+  // Seats run on subscriptions: no API key is asked for.
+  assert.doesNotMatch(example, /API_KEY/)
+  // Every other variable is a name with an empty value or a local path; no secret is invented.
+  for (const line of example.split("\n").filter((line) => /^[A-Z_]+=/.test(line) && !line.startsWith("SMITHERS_ORG_AUTH="))) {
     assert.match(line, /^[A-Z_]+=(|\/.*)$/)
   }
   assert.equal(readFileSync(join(stateDir, ".env"), "utf8"), example)

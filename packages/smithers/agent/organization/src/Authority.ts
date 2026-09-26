@@ -342,7 +342,12 @@ export const roleTaskTag = "organization/role-task"
  * @category schemas
  * @since 0.1.0
  */
-export const TaskWorkspace = Schema.Struct({ key: Workspace.Key, repository: Profile.Container })
+export const TaskWorkspace = Schema.Struct({
+  key: Workspace.Key,
+  repository: Profile.Container,
+  /** The host commit the workspace was seeded from; the session refuses a machine seeded otherwise. */
+  commit: Schema.optionalKey(Workspace.CommitId)
+})
 
 /**
  * A role task's payload. It names the principal and snapshot; the profile,
@@ -499,7 +504,7 @@ const guarded = <A, E, R>(
           return yield* refusedAsFailure(refuse("workspace-unavailable", "this host configured no workspaces"))
         }
         const key = authorized.workspace.key
-        const session = yield* workspaces.value.session(key).pipe(
+        const session = yield* workspaces.value.session(key, { commit: authorized.workspace.commit }).pipe(
           Effect.mapError((error) => refusedAsFailure(refuse("workspace-unavailable", error.message)))
         )
         const context = yield* Layer.build(

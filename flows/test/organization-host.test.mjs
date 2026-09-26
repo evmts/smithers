@@ -11,6 +11,11 @@
  * - With an Approval gate before the landing, the run parks; the host is
  *   stopped and started again; `answer land approve` from the CLI resumes it
  *   and it lands.
+ * - The host is killed (SIGKILL) in the middle of the builder's turn, after
+ *   its edit; the restarted host resumes the run in the same workspace machine
+ *   and lands exactly one commit carrying the edit once.
+ * - A provider refusing every model call (no credits) fails the run, and its
+ *   cause reaches the receipt and `submit --wait`'s output.
  * - A contract naming a retired builder is refused at dispatch: the run fails
  *   with a receipt saying so, and nothing lands.
  * - A client cannot start the delivery flow itself, and a request claiming a
@@ -23,15 +28,18 @@
  * Run: node --test flows/test/organization-host.test.mjs
  */
 import assert from "node:assert/strict"
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, describe, it } from "node:test"
 import { ControlRefused, rpc } from "../organization/client.ts"
 import {
   branches,
   cleanup,
+  pause,
   git,
   host,
+  invoke,
   line,
   organization,
   receipt,
@@ -126,6 +134,57 @@ describe("the organization host", { skip: missing === undefined ? false : `skipp
     assert.equal(report.status, "landed")
     assert.equal(git(repo, "show", `${report.applied.branch}:README.md`), `# Demo\n${line}`)
     assert.equal(git(repo, "rev-parse", "main"), main)
+    await handle.stop()
+  })
+
+  it("resumes a run whose host was killed during the builder's turn, and lands one commit", { timeout: 420_000 }, async () => {
+    const root = organization()
+    const holdDir = mkdtempSync(join(tmpdir(), "organization-e2e-hold-"))
+    const hold = join(holdDir, "hold")
+    writeFileSync(hold, "")
+    const handle = await host(root, repo, { SMITHERS_ORGANIZATION_SCRIPTED_HOLD: hold })
+    await handle.start()
+    try {
+      const runId = /^started (\S+)$/.exec(run(handle, "submit", "Add a line to README.md", "--key", "e2e-kill"))?.[1]
+      assert.ok(runId)
+      for (let i = 0; !existsSync(`${hold}.held`); i++) {
+        assert.ok(i < 2_400, `the builder never reached its second turn: ${handle.output()}`)
+        await pause(100)
+      }
+      // The edit is made and recorded; the turn is still in flight.
+      await handle.stop("SIGKILL")
+      rmSync(hold)
+      await handle.start()
+      assert.equal((await settled(handle, runId)).status, "completed", handle.output())
+      // The restarted host took the run over from the dead one, so every
+      // status it wrote was its own.
+      assert.doesNotMatch(handle.output(), /ClaimLost/)
+      const report = receipt(root, "cli:e2e-kill").report
+      assert.equal(report.status, "landed", JSON.stringify(report))
+      const landed = branches(repo).filter((name) => name.includes("e2e-kill"))
+      assert.deepEqual(landed, [report.applied.branch])
+      assert.equal(git(repo, "rev-list", "--count", `${main}..${report.applied.branch}`), "1")
+      assert.equal(git(repo, "show", `${report.applied.branch}:README.md`), `# Demo\n${line}`)
+      assert.equal(git(repo, "rev-parse", "main"), main)
+    } finally {
+      await handle.stop()
+      rmSync(holdDir, { recursive: true, force: true })
+    }
+  })
+
+  it("reports a provider's refusal with its cause in the receipt and the CLI", { timeout: 300_000 }, async () => {
+    const root = organization()
+    const handle = await host(root, repo, { SMITHERS_ORGANIZATION_SCRIPTED_REFUSE: "1" })
+    await handle.start()
+    const waited = invoke(handle, "submit", "Add a line to README.md", "--key", "e2e-refused", "--wait", "--root", root)
+    assert.equal(waited.status, 1, `${waited.stdout}${waited.stderr}`)
+    const cause = "quota_exceeded: Your credit balance is too low to access the API."
+    const report = receipt(root, "cli:e2e-refused").report
+    assert.equal(report.status, "failed")
+    assert.ok(report.summary.includes(cause), report.summary)
+    assert.match(waited.stdout, /^\S+ failed$/m)
+    assert.ok(waited.stdout.includes(`failed: ${report.summary}`), waited.stdout)
+    assert.equal(branches(repo).filter((name) => name.includes("e2e-refused")).length, 0)
     await handle.stop()
   })
 

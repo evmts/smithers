@@ -90,7 +90,9 @@ export const Stage = Schema.Struct({
   reason: Schema.String,
   principal: Profile.PrincipalId,
   task: Profile.TaskContract,
-  context: Schema.Array(Prompt.ContextEntry)
+  context: Schema.Array(Prompt.ContextEntry),
+  /** Whether the principal works in the delivery's workspace machine. */
+  workspace: Schema.optionalKey(Schema.Boolean)
 })
 export type Stage = typeof Stage.Type
 
@@ -124,13 +126,15 @@ export const Assignment = Schema.Struct({
   objective: Schema.String,
   acceptance: Schema.Array(Schema.String),
   /** The landed commit's message. */
-  message: Schema.NonEmptyString
+  message: Schema.NonEmptyString,
+  /** Whether the checker holds a workspace in the repository, to reproduce the change in. */
+  checkerWorkspace: Schema.Boolean
 })
 export type Assignment = typeof Assignment.Type
 
 /** Resolves the lead's contract into the builder and checker it names. */
 export const Assign = Action.make("organization/assign", {
-  implementationVersion: "assign/v1",
+  implementationVersion: "assign/v2",
   payload: { revision: Schema.NonEmptyString, repository: Profile.Container, contract: Answer },
   success: Assignment,
   error: Authority.DispatchRefused
@@ -151,10 +155,11 @@ export const BuildTask = Action.make("organization/build-task", {
 
 /** The checker's task: the diff and the fresh-machine check receipts, as data. */
 export const CheckTask = Action.make("organization/check-task", {
-  implementationVersion: "check-task/v1",
+  implementationVersion: "check-task/v2",
   payload: {
     request: Request,
     assignment: Assignment,
+    workdir: Schema.NonEmptyString,
     round: Schema.Int,
     build: Answer,
     diff: Workspace.Diff,

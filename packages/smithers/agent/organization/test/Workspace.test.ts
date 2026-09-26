@@ -128,6 +128,27 @@ describe("prepare and collect", () => {
     expect(occupied.code).toBe("occupied")
   })
 
+  it("refuses a session in a machine that holds no seeded workspace, or one seeded at another commit", async () => {
+    const { repo, commit } = fixtureRepo()
+    const { machines } = hostMachines()
+    const open = (key: string, options?: Workspace.SessionOptions) =>
+      Effect.scoped(Effect.flatMap(service, (workspace) => Effect.asVoid(workspace.session(key, options))))
+
+    // A machine lost with its host comes back empty: nothing to work in.
+    const lost = await failing(open("run-1/example/demo/build"), { machines })
+    expect(lost.code).toBe("unseeded")
+    expect(lost.message).toContain("workspace run-1/example/demo/build holds no seeded checkout")
+
+    const prepared = await within(prepare(repo, commit), { machines })
+    await within(open(prepared.key, { commit }), { machines })
+    await within(open(prepared.key), { machines })
+    const other = "0".repeat(40)
+    const moved = await failing(open(prepared.key, { commit: other }), { machines })
+    expect(moved.code).toBe("occupied")
+    expect(moved.message).toBe(`workspace ${prepared.key} is seeded at ${commit}, not ${other}`)
+    expect((await failing(open(prepared.key), { machines: faulty(/^cat /, machines) })).code).toBe("unseeded")
+  })
+
   it("starts over an interrupted seed of the same key", async () => {
     const { repo, commit } = fixtureRepo()
     const { machines } = hostMachines()

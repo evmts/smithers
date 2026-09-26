@@ -33,6 +33,12 @@ export interface ReapOptions {
    * running. A machine whose holder answers `false` is removed.
    */
   readonly isAlive: (holder: string) => Effect.Effect<boolean>
+  /**
+   * Whether a machine whose holder is dead is still wanted, from the labels
+   * its configuration records: a sticky machine a durable run will reattach
+   * when it resumes. A retained machine is left alone. Default: none is.
+   */
+  readonly retain?: ((labels: Readonly<Record<string, string>>) => Effect.Effect<boolean>) | undefined
   /** How long each removed machine's graceful stop may take before its removal is forced. Default 3000. */
   readonly stopTimeoutMs?: number | undefined
 }
@@ -52,18 +58,22 @@ export interface Reaped {
   readonly status: string
 }
 
-/** The holder label a machine's persisted configuration records, if it carries one. */
-const holderOf = (handle: Handle): string | undefined => {
+/** The string labels a machine's persisted configuration records, or `undefined` when it is unreadable. */
+const labelsOf = (handle: Handle): Readonly<Record<string, string>> | undefined => {
   try {
     const labels: unknown = Reflect.get(Object(JSON.parse(handle.configJson)), "labels")
-    const holder: unknown = Reflect.get(Object(labels), holderLabel)
-    return typeof holder === "string" ? holder : undefined
+    return Object.fromEntries(
+      Object.entries(Object(labels)).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    )
   } catch {
     // An unreadable configuration names no holder, and a machine nobody can
     // name the holder of is left alone rather than guessed at.
     return undefined
   }
 }
+
+/** The holder label a machine's persisted configuration records, if it carries one. */
+const holderOf = (handle: Handle): string | undefined => labelsOf(handle)?.[holderLabel]
 
 const isNotFound = (error: ProviderError): boolean => Reflect.get(Object(error.cause), "code") === "sandboxNotFound"
 
@@ -79,6 +89,10 @@ const isNotFound = (error: ProviderError): boolean => Reflect.get(Object(error.c
  * how a host decides that holder is not coming back. Machines of other owners,
  * machines without a readable holder label, and machines this package did not
  * create are never touched.
+ *
+ * A caller's `retain` keeps a dead holder's machine it still wants, such as a
+ * sticky workspace of a run that resumes after the restart; the resumed run
+ * reattaches it and relabels it to the new holder.
  *
  * Just before a removal the machine is read again, and a machine whose holder
  * label changed since the listing is skipped: acquiring an existing machine
@@ -115,8 +129,10 @@ export const reap = (options: ReapOptions): Effect.Effect<ReadonlyArray<Reaped>,
     const reaped: Array<Reaped> = []
     const failed: Array<{ readonly name: string; readonly error: ProviderError }> = []
     for (const handle of listed) {
-      const holder = holderOf(handle)
-      if (holder === undefined || (yield* options.isAlive(holder))) continue
+      const labels = labelsOf(handle)
+      const holder = labels?.[holderLabel]
+      if (labels === undefined || holder === undefined || (yield* options.isAlive(holder))) continue
+      if (options.retain !== undefined && (yield* options.retain(labels))) continue
       const outcome = yield* Effect.gen(function*() {
         const current = yield* attempt(() => handle.refresh(), "unavailable", `${handle.name} could not be read`)
         if (holderOf(current) !== holder) return "skipped" as const

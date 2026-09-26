@@ -83,8 +83,12 @@ export const repository = () => {
   return repo
 }
 
-/** One organization host process over a state directory, restartable. */
-export const host = async (root, repo, environment = {}) => {
+/**
+ * One organization host process over a state directory, restartable. The
+ * fixture repository is configured under `repository`, the name the roster's
+ * grants give it.
+ */
+export const host = async (root, repo, environment = {}, repository = "example/demo") => {
   const stateDir = mkdtempSync(join(tmpdir(), "organization-e2e-state-"))
   scratch.push(stateDir)
   const port = await freePort()
@@ -99,7 +103,7 @@ export const host = async (root, repo, environment = {}) => {
     ops: operations(rpc(base)),
     start: async () => {
       child = spawn(process.execPath, [scriptedHost, "serve", "--standalone", "--root", root, "--state-dir", stateDir,
-        "--repo", `example/demo=${repo}`, "--port", String(port), "--check", `readme=grep -qx '${line}' README.md`], {
+        "--repo", `${repository}=${repo}`, "--port", String(port), "--check", `readme=grep -qx '${line}' README.md`], {
         cwd: checkout,
         env: { ...childEnvironment(), ...environment },
         stdio: ["ignore", "pipe", "pipe"]
@@ -117,10 +121,10 @@ export const host = async (root, repo, environment = {}) => {
       }
       throw new Error(`the host did not listen: ${output}`)
     },
-    stop: async () => {
+    stop: async (signal = "SIGTERM") => {
       if (child === undefined || child.exitCode !== null) return
       const exited = new Promise((resolve) => child.once("exit", resolve))
-      child.kill("SIGTERM")
+      child.kill(signal)
       await exited
     }
   }
@@ -128,14 +132,18 @@ export const host = async (root, repo, environment = {}) => {
   return handle
 }
 
-/** Runs the CLI against a host and returns its output; a non-zero exit fails. */
-export const run = (handle, ...args) => {
-  const result = spawnSync(process.execPath, [cli, ...args, "--port", String(handle.port)], {
+/** Runs the CLI against a host and returns its exit status and output. */
+export const invoke = (handle, ...args) =>
+  spawnSync(process.execPath, [cli, ...args, "--port", String(handle.port)], {
     cwd: checkout,
     env: childEnvironment(),
     encoding: "utf8",
-    timeout: 120_000
+    timeout: 240_000
   })
+
+/** Runs the CLI against a host and returns its output; a non-zero exit fails. */
+export const run = (handle, ...args) => {
+  const result = invoke(handle, ...args)
   assert.equal(result.status, 0, `${args.join(" ")}: ${result.stdout}${result.stderr}`)
   return result.stdout.trim()
 }

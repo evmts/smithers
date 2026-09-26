@@ -168,6 +168,7 @@ describe("WriteReceipt", () => {
     expect(again.digest).not.toBe(written.digest)
     expect(JSON.parse(readFileSync(join(wiki, again.path), "utf8"))).toEqual({ status: "failed" })
     expect(Actions.runDirectory(".hidden")).toBe("-hidden")
+    expect(Actions.executionOfWorkspace("run-1/example/demo/build")).toBe("run-1")
   })
 
   it("refuses a generated directory that escapes the wiki root, and a directory it cannot write", async () => {

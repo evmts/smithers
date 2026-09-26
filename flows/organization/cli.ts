@@ -25,11 +25,11 @@ const hostOf = (values: { readonly host?: string | undefined; readonly port?: st
 
 const clientOptions = { host: { type: "string" }, port: { type: "string" } } as const
 
-/** `serve --standalone`: the host, in the foreground. */
+/** `serve`: the host, standalone, in the foreground. */
 export const serve: Command = {
   name: "serve",
   usage:
-    "serve --standalone [--root <dir containing Org/>] [--state-dir <dir>] [--repo <name=path>]... [--check <name=command>]... [--max-rounds <n>] [--port <port>]",
+    "serve [--standalone] [--root <dir containing Org/>] [--state-dir <dir>] [--repo <name=path>]... [--check <name=command>]... [--max-rounds <n>] [--port <port>]",
   run: async (argv, io) => {
     const { values } = parseArgs({
       args: [...argv],
@@ -45,10 +45,6 @@ export const serve: Command = {
         "env-file": { type: "string" }
       }
     })
-    if (!values.standalone) {
-      io.err("serve needs --standalone: the managed (backend-supervised) mode is not available yet")
-      return 2
-    }
     const environment = environmentOf(values, io.env, io.cwd)
     const settings = await resolve(values, environment, io.cwd)
     const [{ platform }, { NodeRuntime }, { start }] = await Promise.all([

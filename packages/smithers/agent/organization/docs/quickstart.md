@@ -1,15 +1,51 @@
 ---
 title: "Quickstart"
-description: "Load the example organization, validate it, and compose one role prompt."
+description: "Run a local organization host, or load the example organization, validate it, and compose one role prompt."
 sidebar:
   order: 1
 ---
 
-This page loads the example organization shipped with the package, validates
-it, and composes the builder's prompt for one task. It needs Node 26.4 or
-later and runs without a model.
+This page runs an organization on one machine, then shows the library calls
+underneath: loading the example organization, validating it, and composing
+the builder's prompt for one task.
+
+## Run a local organization
+
+On macOS (Apple silicon) or Linux with KVM, from a Smithers checkout. Every
+agent command runs in a Microsandbox microVM.
+
+```sh
+pnpm install
+cargo +1.98.0 build --release --locked -p smithers-ffi --bin smithers-jj-export
+node flows/organization/cli.ts init ~/org
+codex login                              # ChatGPT subscription, for openai:* seats
+# edit ~/.smithers/org/.env: SMITHERS_ORG_REPOS=<git checkout>
+node flows/organization/cli.ts doctor
+node flows/organization/cli.ts serve
+```
+
+`init` copies the four-role example to `~/org/Org` and writes
+`~/.smithers/org/.env` (mode 600). Seats run on your subscriptions: ChatGPT
+through `codex login`, Claude through the Claude Code login (`claude`).
+`doctor` prints one `PASS`, `SKIP`, or
+`FAIL` line per prerequisite with its fix. `serve` runs the host in the
+foreground on `127.0.0.1:7433`; Ctrl-C stops it and runs resume at the next
+start. From another terminal:
+
+```sh
+node flows/organization/cli.ts submit "Add a line to README.md" --wait
+node flows/organization/cli.ts status
+node flows/organization/cli.ts answer <gate> approve
+```
+
+An approved change lands on an `organization/…` branch of the repository and
+is never pushed; its receipt is under `Org/Runs/`. Slack intake and the
+subscription options are in `flows/organization/setup/QUICKSTART.md` and
+`flows/organization/host.md`.
 
 ## Load and validate
+
+The library needs Node 26.4 or later and runs without a model.
 
 ```ts
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"

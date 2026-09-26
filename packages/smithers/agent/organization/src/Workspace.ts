@@ -11,7 +11,9 @@
  *   workspace already seeded at that commit is reused, and one seeded at any
  *   other commit is refused rather than overwritten.
  * - {@link Service.session} reattaches the workspace machine for one role
- *   task; `RoleHost` binds shell and file tools to it.
+ *   task; `RoleHost` binds shell and file tools to it. It refuses a machine
+ *   that holds no seeded workspace (one lost with its host, or never
+ *   prepared) rather than letting a role work in an empty machine.
  * - {@link Service.collect} returns the change as a binary-safe unified diff
  *   with per-file statistics.
  * - {@link Service.runChecks} seeds a **fresh** machine at the same commit,
@@ -261,6 +263,7 @@ export const WorkspaceErrorCode = Schema.Literals([
   "too-large",
   "seed-failed",
   "occupied",
+  "unseeded",
   "diff-failed",
   "patch-does-not-apply",
   "moved-parent",
@@ -333,9 +336,19 @@ export interface MicrosandboxOptions {
 }
 
 /**
+ * The label naming the workspace key a sticky workspace machine holds. A
+ * host reaping at startup reads it to keep the machines of runs that resume.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const workspaceLabel = "smithers.workspace"
+
+/**
  * Local Microsandbox microVMs as {@link Machines}: sticky workspace machines
- * that survive between steps and host restarts, ephemeral fresh ones, and a
- * forced removal for disposal. The provider refuses a hosted backend.
+ * that survive between steps and host restarts, each labelled with its
+ * workspace key ({@link workspaceLabel}), ephemeral fresh ones, and a forced
+ * removal for disposal. The provider refuses a hosted backend.
  *
  * @category constructors
  * @since 0.1.0
@@ -354,10 +367,15 @@ export const microsandbox = (options: MicrosandboxOptions): Machines => {
     idleTimeoutSecs: options.idleTimeoutSecs ?? 3_600,
     pullPolicy: options.pullPolicy ?? "if-missing"
   }
-  const sticky = MicrosandboxSandbox.make({ ...shape, persistence: "sticky" })
   const ephemeral = MicrosandboxSandbox.make({ ...shape, persistence: "ephemeral" })
   return {
-    workspace: (key) => sticky.acquire(key),
+    workspace: (key) =>
+      MicrosandboxSandbox.make({
+        ...shape,
+        labels: { ...options.labels, [workspaceLabel]: key },
+        persistence: "sticky"
+      })
+        .acquire(key),
     fresh: (key) => ephemeral.acquire(key),
     dispose: (remoteId) =>
       Effect.tryPromise({
@@ -488,6 +506,17 @@ export interface ApplyRequest {
 }
 
 /**
+ * What a role task's session expects of its workspace.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface SessionOptions {
+  /** The host commit the workspace must be seeded from. */
+  readonly commit?: string | undefined
+}
+
+/**
  * The workspace service.
  *
  * @category models
@@ -495,8 +524,12 @@ export interface ApplyRequest {
  */
 export interface Service {
   readonly prepare: (request: PrepareRequest) => Effect.Effect<Prepared, WorkspaceError>
-  /** Reattaches the workspace machine for `key` and holds a machine permit for the scope. */
-  readonly session: (key: string) => Effect.Effect<Session, WorkspaceError, Scope.Scope>
+  /**
+   * Reattaches the workspace machine for `key` and holds a machine permit for
+   * the scope. Fails `unseeded` when the machine holds no seeded workspace,
+   * and `occupied` when it is seeded from another commit than `commit`.
+   */
+  readonly session: (key: string, options?: SessionOptions) => Effect.Effect<Session, WorkspaceError, Scope.Scope>
   readonly collect: (prepared: Pick<Prepared, "key" | "commit" | "base">) => Effect.Effect<Diff, WorkspaceError>
   readonly runChecks: (request: ChecksRequest) => Effect.Effect<Checks, WorkspaceError>
   readonly dispose: (prepared: Pick<Prepared, "remoteId">) => Effect.Effect<void, WorkspaceError>
@@ -665,12 +698,29 @@ export const make = (
         }))
       }).pipe(permits.withPermit)
 
-    const session = (key: string) =>
+    const seeded = (session: Session) =>
+      Effect.map(run(session, `cat ${markerPath} 2>/dev/null || true`), (marker) => {
+        const [commit = "", base = ""] = Process.text(marker.stdout).trim().split(" ")
+        return Schema.is(CommitId)(commit) && Schema.is(CommitId)(base) ? { commit, base } : undefined
+      })
+
+    const session = (key: string, options: SessionOptions = {}) =>
       Effect.gen(function*() {
         yield* Effect.acquireRelease(permits.take(1), () => permits.release(1))
-        return yield* machines.workspace(key).pipe(
+        const live = yield* machines.workspace(key).pipe(
           Effect.mapError(unavailable("the workspace machine could not be opened"))
         )
+        const marker = yield* seeded(live)
+        if (marker === undefined) {
+          return yield* fail(
+            "unseeded",
+            `workspace ${key} holds no seeded checkout: its machine was lost or never prepared; start the request again`
+          )
+        }
+        if (options.commit !== undefined && marker.commit !== options.commit) {
+          return yield* fail("occupied", `workspace ${key} is seeded at ${marker.commit}, not ${options.commit}`)
+        }
+        return live
       })
 
     const collect = (prepared: Pick<Prepared, "key" | "commit" | "base">) =>

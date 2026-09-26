@@ -139,6 +139,15 @@ export const Repository = Profile.Container
 export const Slug = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,62}$/, { expected: "a slug" }))
 
 /**
+ * The execution that prepared a workspace, from its key
+ * `<execution>/<repository>/<slug>`.
+ *
+ * @category conversions
+ * @since 0.1.0
+ */
+export const executionOfWorkspace = (key: string): string => key.split("/", 1)[0]!
+
+/**
  * Seeds the workspace `<execution>/<repository>/<slug>` from a commit.
  *
  * @category actions

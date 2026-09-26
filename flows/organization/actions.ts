@@ -277,7 +277,8 @@ export const layer = (options: Options) =>
           checker: contract.principal,
           objective: "",
           acceptance: [],
-          message: "No change"
+          message: "No change",
+          checkerWorkspace: false
         })
         if (!contract.valid) return blocked(describeResult(contract))
         if (contract.result.status !== "done") return blocked(contract.result.summary)
@@ -301,9 +302,10 @@ export const layer = (options: Options) =>
           checker: checker.id,
           objective,
           acceptance: lines(build.inputs),
-          message: line(objective, 72)
+          message: line(objective, 72),
+          checkerWorkspace: holdsRepository(checker, repository)
         }
-      }), { implementationVersion: "assign/v1" }),
+      }), { implementationVersion: "assign/v2" }),
     BuildTask.toLayer(({ assignment, findings, request, round, workdir }) =>
       Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
         proceed: true,
@@ -335,7 +337,7 @@ export const layer = (options: Options) =>
           }])
         ]
       }))), { implementationVersion: "build-task/v1" }),
-    CheckTask.toLayer(({ assignment, build, checks, diff, request, round }) =>
+    CheckTask.toLayer(({ assignment, build, checks, diff, request, round, workdir }) =>
       Clock.currentTimeMillis.pipe(Effect.map((at): Stage => ({
         proceed: true,
         outcome: "blocked",
@@ -346,7 +348,10 @@ export const layer = (options: Options) =>
           objective: paragraph(`Decide whether this change meets its acceptance criteria: ${assignment.objective}`),
           inputs: lines([
             "The diff, the check receipts from a fresh machine, and the builder's summary, in the context below.",
-            `${diff.files.length} file(s) changed, +${diff.added} -${diff.deleted}; configured checks ${checks.passed ? "passed" : "did not pass"}.`
+            `${diff.files.length} file(s) changed, +${diff.added} -${diff.deleted}; configured checks ${checks.passed ? "passed" : "did not pass"}.`,
+            ...(assignment.checkerWorkspace
+              ? [`The change is applied in the repository checkout at ${workdir} in your workspace machine: reproduce the criteria there, and change nothing.`]
+              : [])
           ]),
           acceptance: lines([
             ...assignment.acceptance.map((criterion) => `Criterion: ${criterion}`),
@@ -357,6 +362,7 @@ export const layer = (options: Options) =>
           requestedBy: assignment.lead,
           ...conversationOf(request)
         },
+        workspace: assignment.checkerWorkspace,
         context: [
           {
             source: { provider: "organization", id: `diff/${round}` },
@@ -379,7 +385,7 @@ export const layer = (options: Options) =>
             text: fence(`${build.principal}: ${describeResult(build)}`, 4_000)
           }
         ]
-      }))), { implementationVersion: "check-task/v1" }),
+      }))), { implementationVersion: "check-task/v2" }),
     Decide.toLayer(({ build, check, checks, diff }) =>
       Effect.sync(() => {
         const findings: Array<string> = []

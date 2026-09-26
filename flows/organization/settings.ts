@@ -16,6 +16,8 @@
  * - `SMITHERS_ORG_CHECKS` / `--check`: newline-separated `name=command`
  *   checks every change runs in a fresh machine;
  * - `SMITHERS_ORG_MAX_ROUNDS` / `--max-rounds`: builder/checker rounds (default 2);
+ * - `SMITHERS_ORG_AUTH`: `subscription` (default) or `api-key`, how seats
+ *   reach a model (`setup/subscriptions.ts`);
  * - `SMITHERS_SLACK_*`: the one Slack app, as the integrations guide names them.
  */
 import { execFileSync } from "node:child_process"
@@ -26,6 +28,7 @@ import type * as Authority from "../../packages/smithers/agent/organization/src/
 import * as Config from "../../packages/smithers/agent/organization/src/Config.ts"
 import type * as Gates from "../../packages/smithers/agent/organization/src/Gates.ts"
 import type * as Workspace from "../../packages/smithers/agent/organization/src/Workspace.ts"
+import * as Subscriptions from "./setup/subscriptions.ts"
 import {
   absolute,
   describeFailure,
@@ -139,6 +142,7 @@ export const resolve = async (
   cwd: string
 ): Promise<Settings> => {
   const stateDir = absolute(cwd, nonEmpty(flags["state-dir"]) ?? stateDirOf(env))
+  Subscriptions.modeOf(env)
   const root = absolute(cwd, nonEmpty(flags.root) ?? nonEmpty(env.SMITHERS_ORG_ROOT) ?? cwd)
   if (!existsSync(join(root, Config.defaultOrganizationFile))) {
     throw new Error(`${root} holds no ${Config.defaultOrganizationFile}; pass --root or set SMITHERS_ORG_ROOT`)

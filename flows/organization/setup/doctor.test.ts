@@ -40,6 +40,8 @@ before(async () => {
     "if (a === 'pull') process.exit(b === 'pullable:1' ? 0 : 1)",
     "process.exit(3)"
   ].join("\n"))
+  mkdirSync(codexHome)
+  writeFileSync(join(codexHome, "auth.json"), "{}\n")
   mkdirSync(repo)
   spawnSync("git", ["init", "-q", repo])
   spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"])
@@ -60,7 +62,12 @@ before(async () => {
 })
 after(() => slack.close())
 
+// A ChatGPT login where the codex CLI keeps it, for the `openai:*` seats.
+const codexHome = join(scratch, "codex")
+
 const healthyEnv = () => ({
+  CODEX_HOME: codexHome,
+  // A stale key the subscription mode must not use.
   OPENAI_API_KEY: modelKey,
   SMITHERS_SLACK_BOT_TOKEN: botToken,
   SMITHERS_SLACK_APP_TOKEN: appToken,
@@ -92,7 +99,7 @@ const one = (lines: ReadonlyArray<Line>, name: string) => {
 test("every check passes on a complete setup, in a stable order, without printing a secret", async () => {
   const lines = await doctor(healthy())
   assert.deepEqual(lines.map((line) => line.name), [
-    "node", "microsandbox", "hypervisor", "org", "image", "boot", "jj-export", "seats", "slack", "slack socket", "repo", "state"
+    "node", "microsandbox", "hypervisor", "org", "image", "boot", "jj", "jj-export", "seats", "slack", "slack socket", "repo", "state"
   ])
   assert.deepEqual(lines.filter((line) => line.status !== "pass"), [])
   assert.match(one(lines, "org").detail, /^4 roles, 1 skills, 0 gates/)
@@ -132,11 +139,35 @@ test("Slack is skipped without tokens and each Slack misconfiguration fails with
   assert.match(one(offline, "slack socket").detail, /offline/)
 })
 
-test("a missing seat key fails naming the variable, never a value", async () => {
+test("seats resolve on the ChatGPT login, never on a key, and a missing login fails naming the sign-in", async () => {
+  const seats = one(await doctor(healthy()), "seats")
+  assert.equal(seats.status, "pass")
+  assert.equal(seats.detail, `openai:gpt-6-sol, openai:gpt-6-luna resolve on subscriptions (ChatGPT login ${join(codexHome, "auth.json")})`)
+  const signedOut = one(await doctor(healthy({ env: { ...healthyEnv(), CODEX_HOME: join(scratch, "no-codex") } })), "seats")
+  assert.equal(signedOut.status, "fail")
+  assert.match(signedOut.detail, /codex login/)
+  assert.doesNotMatch(signedOut.detail, new RegExp(modelKey))
+  assert.match(signedOut.fix!, /codex login/)
+})
+
+test("api-key mode resolves on keys, a missing key fails naming the variable, and an unknown mode is refused", async () => {
+  const keyed = one(await doctor(healthy({ env: { ...healthyEnv(), SMITHERS_ORG_AUTH: "api-key" } })), "seats")
+  assert.equal(keyed.status, "pass")
+  assert.match(keyed.detail, /resolve on API keys$/)
   const { OPENAI_API_KEY: _key, ...env } = healthyEnv()
-  const seats = one(await doctor(healthy({ env })), "seats")
-  assert.equal(seats.status, "fail")
-  assert.match(seats.detail, /OPENAI_API_KEY/)
+  const missing = one(await doctor(healthy({ env: { ...env, SMITHERS_ORG_AUTH: "api-key" } })), "seats")
+  assert.equal(missing.status, "fail")
+  assert.match(missing.detail, /OPENAI_API_KEY/)
+  assert.equal(missing.fix, "add the key to the .env file doctor read")
+  const unknown = one(await doctor(healthy({ env: { ...healthyEnv(), SMITHERS_ORG_AUTH: "keys" } })), "seats")
+  assert.equal(unknown.status, "fail")
+  assert.match(unknown.detail, /SMITHERS_ORG_AUTH must be/)
+})
+
+test("a missing jj fails naming the install", async () => {
+  const jj = one(await doctor(healthy({ jj: join(scratch, "no-jj") })), "jj")
+  assert.equal(jj.status, "fail")
+  assert.match(jj.fix!, /install jj/)
 })
 
 test("host prerequisites fail with the command that fixes them", async () => {

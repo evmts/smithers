@@ -1,22 +1,5 @@
 /** Files `init` writes beside an organization: the environment template and the one Slack app's manifest. */
-import * as Providers from "../../../packages/smithers/src/Providers.ts"
-
-/** The key variable each native provider route reads first (`NativeEquipment`). */
-const nativeKeys: Readonly<Record<string, string>> = {
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-  openrouter: "OPENROUTER_API_KEY"
-}
-
-/** The environment variable that credentials a seat, or `undefined` for a seat no route serves. */
-export const seatVariable = (seat: string): string | undefined => {
-  const expanded = Providers.expandSeat(seat)
-  const separator = expanded.indexOf(":")
-  // A bare model id is on the Anthropic route, as the native resolver reads it.
-  const provider = separator < 0 ? "anthropic" : expanded.slice(0, separator)
-  if (Object.hasOwn(Providers.compatible, provider)) return Providers.compatible[provider]!.variables[0]
-  return Object.hasOwn(nativeKeys, provider) ? nativeKeys[provider] : undefined
-}
+import * as Subscriptions from "./subscriptions.ts"
 
 /** Every seat an organization page names that runs a model: its seats and a judge other than `none`. */
 export const modelSeats = (organization: { readonly seats: Readonly<Record<string, string>>; readonly judge: string }) =>
@@ -78,10 +61,15 @@ export interface EnvironmentInput {
 
 /** The environment template: names only, every secret left empty. */
 export const environmentExample = (input: EnvironmentInput): string => {
-  const variables = [...new Set(input.seats.map(seatVariable).filter((name) => name !== undefined))]
+  const providers = new Set(input.seats.map(Subscriptions.providerOf))
   return [
-    `# Model seats: ${input.seats.join(", ")}`,
-    ...variables.map((name) => `${name}=`),
+    `# Model seats: ${input.seats.join(", ")}, on your subscriptions`,
+    ...(providers.has("openai") ? ["# ChatGPT: sign in once with `codex login`"] : []),
+    ...(providers.has("anthropic")
+      ? ["# Claude: sign in to Claude Code (`claude`), or paste a `claude setup-token` token below"]
+      : []),
+    `${Subscriptions.modeVariable}=subscription`,
+    ...(providers.has("anthropic") ? ["# CLAUDE_CODE_OAUTH_TOKEN="] : []),
     "",
     "# Slack: one app from slack-app-manifest.yaml",
     "SMITHERS_SLACK_BOT_TOKEN=",

@@ -25,10 +25,11 @@ node flows/organization/setup/cli.ts init ~/org
 `~/.smithers/org/.env` (mode 600). Running `init` on an existing `Org/` only
 validates it.
 
-## 3. Keys and repository
+## 3. Logins and repository
 
-Edit `~/.smithers/org/.env`: the model key for your seats (for example
-`OPENAI_API_KEY`) and `SMITHERS_ORG_REPOS=<path to a git checkout>`.
+Seats run on your subscriptions. Sign in once: `codex login` (ChatGPT, for
+`openai:*` seats) and `claude` (Claude, for Anthropic seats). Then edit
+`~/.smithers/org/.env`: `SMITHERS_ORG_REPOS=<path to a git checkout>`.
 
 ## 4. Slack (optional)
 
@@ -53,7 +54,17 @@ when nothing fails. Slack lines are `SKIP` until both tokens are set.
 ## 6. Run
 
 ```sh
-# pending the organization host (flows/organization serve)
+node flows/organization/cli.ts serve
 ```
 
-Then DM the app a small task.
+The host runs in the foreground on `127.0.0.1:7433`; Ctrl-C stops it and
+runs resume at the next start. From another terminal:
+
+```sh
+node flows/organization/cli.ts submit "Add a line to README.md" --wait
+node flows/organization/cli.ts status
+node flows/organization/cli.ts answer <gate> approve
+```
+
+Or DM the app a small task. Approved changes land on `organization/…`
+branches of the repository, never pushed; receipts are under `Org/Runs/`.

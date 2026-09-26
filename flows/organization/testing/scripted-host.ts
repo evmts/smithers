@@ -3,13 +3,29 @@
  * for the offline end-to-end test (`flows/test/organization-host.test.mjs`).
  *
  * Everything else is the production host: the same settings, the durable
- * engine, the gateway, real microVM workspaces. Each seat recognises the role
- * it is serving by the charter objective in its system prompt and answers
- * with one cell: the assistant hands the request to the lead, the lead names
- * the builder and the checker, the builder appends a line to `README.md`
- * with `bash` in its workspace machine, and the checker approves. The builder
- * edits through `bash` rather than the file tools, which do not yet write
- * inside a microVM.
+ * engine, the gateway, real microVM workspaces. Each seat recognises the
+ * principal it is serving by the `# Role: <name> (<id>)` line of its system
+ * prompt, looks up that principal's part, fills every output field its
+ * charter declares, and answers with one cell: the router hands the request
+ * to the contract writer, the contract writer names the builder and the
+ * checker, the builder adds a line to `README.md` with the `edit` tool in
+ * its workspace machine (a compensable step, as a model's edit is), and the
+ * checker approves.
+ *
+ * The parts are the public example roster's (`assistant` routes to `lead`,
+ * which contracts `builder` and `checker`) unless
+ * `SMITHERS_ORGANIZATION_SCRIPTED_ROLES` names others, as JSON from principal
+ * id to `route:<to>`, `contract:<builder>,<checker>`, `build`, or `check`, so
+ * the same script drives any roster.
+ *
+ * With `SMITHERS_ORGANIZATION_SCRIPTED_HOLD=<file>` set and that file
+ * present, the builder takes two turns: the first appends to `README.md`
+ * with `bash` and does not answer, and the second writes `<file>.held` and never settles, so a
+ * test can stop the host in the middle of the builder's turn, after its edit.
+ * Without the file the second turn answers.
+ *
+ * With `SMITHERS_ORGANIZATION_SCRIPTED_REFUSE=1` every model call fails the
+ * way a provider refuses an account with no credits.
  *
  * `node flows/organization/testing/scripted-host.ts serve --standalone ...`
  * takes `serve`'s flags.
@@ -19,9 +35,11 @@ import type * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Model from "@smthrs/model/Model"
+import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import { Effect, Stream } from "effect"
+import { existsSync, writeFileSync } from "node:fs"
 import { parseArgs } from "node:util"
 import { platform } from "../../../packages/smithers/src/internal/NodeControlHost.ts"
 import { start } from "../serve.ts"
@@ -42,49 +60,97 @@ const done = (fields: Record<string, string>, summary: string, handoffs: Readonl
 
 const answering = (result: unknown) => `ctx.done(${JSON.stringify(JSON.stringify(result))})`
 
-/** The one cell each role answers with, by the charter objective its system prompt carries. */
-const cellFor = (system: string): string => {
-  if (system.includes("Protect the owner's attention")) {
-    return answering(done(
-      { route: "task", assignee: "lead", reply: "Routing to the lead." },
-      "The request needs a change; the lead owns it.",
-      [{ to: "lead", objective: "Deliver the owner's request.", inputs: ["The owner's request."] }]
-    ))
+const hold = process.env.SMITHERS_ORGANIZATION_SCRIPTED_HOLD
+const appendLine = `ctx.call("bash", { command: "printf '${scriptedLine}\\\\n' >> /workspace/README.md && tail -n 1 /workspace/README.md" })`
+
+/** One principal's part in the script. */
+type Part =
+  | { readonly kind: "route"; readonly to: string }
+  | { readonly kind: "contract"; readonly builder: string; readonly checker: string }
+  | { readonly kind: "build" }
+  | { readonly kind: "check" }
+
+const partOf = (spec: string): Part => {
+  const [kind = "", rest = ""] = spec.split(":")
+  if (kind === "route" && rest !== "") return { kind, to: rest }
+  const [builder = "", checker = ""] = rest.split(",")
+  if (kind === "contract" && builder !== "" && checker !== "") return { kind, builder, checker }
+  if (kind === "build" || kind === "check") return { kind }
+  throw new Error(`SMITHERS_ORGANIZATION_SCRIPTED_ROLES: ${spec} is not a part`)
+}
+
+const exampleParts = { assistant: "route:lead", lead: "contract:builder,checker", builder: "build", checker: "check" }
+const parts = new Map(
+  Object.entries(
+    JSON.parse(process.env.SMITHERS_ORGANIZATION_SCRIPTED_ROLES ?? JSON.stringify(exampleParts)) as Record<string, string>
+  ).map(([principal, spec]) => [principal, partOf(spec)])
+)
+
+/** The principal a system prompt serves. */
+const principalOf = (system: string) => /^# Role: .* \(([^()\s]+)\)$/m.exec(system)?.[1]
+
+/** The output fields the charter in a system prompt declares. */
+const fieldsOf = (system: string): ReadonlyArray<string> => {
+  const section = /^## Output fields\n\n((?:- .*\n?)+)/m.exec(system)?.[1] ?? ""
+  return section.split("\n").filter((entry) => entry.startsWith("- ")).map((entry) => entry.slice(2).split(": ")[0]!)
+}
+
+/** Every declared field, each saying `value`. */
+const filled = (system: string, value: string) => Object.fromEntries(fieldsOf(system).map((name) => [name, value]))
+
+/** The builder's two turns when a hold is configured; `undefined` when the turn never settles. */
+const heldBuilder = (system: string, turn: number, holdFile: string): string | undefined => {
+  if (turn === 0) return `await ${appendLine};`
+  if (existsSync(holdFile)) {
+    writeFileSync(`${holdFile}.held`, "")
+    return undefined
   }
-  if (system.includes("Turn a routed request into the smallest valuable")) {
-    return answering(done(
-      { acceptance: `README.md ends with the line '${scriptedLine}'.`, owner: "builder" },
-      "One line appended to README.md, checked independently.",
-      [
-        {
-          to: "builder",
-          objective: `Append the line '${scriptedLine}' to README.md.`,
-          inputs: [`README.md ends with the line '${scriptedLine}'.`]
-        },
-        { to: "checker", objective: "Check the README change against its criterion.", inputs: [] }
-      ]
-    ))
+  return answering(done(filled(system, "README.md now ends with the line."), "Appended the line to README.md."))
+}
+
+/** The one cell each principal answers with, by its part. */
+const cellFor = (system: string, turn: number): string | undefined => {
+  const principal = principalOf(system)
+  const part = principal === undefined ? undefined : parts.get(principal)
+  switch (part?.kind) {
+    case "route":
+      return answering(done(
+        filled(system, `Routing to ${part.to}.`),
+        `The request needs a change; ${part.to} owns it.`,
+        [{ to: part.to, objective: "Deliver the owner's request.", inputs: ["The owner's request."] }]
+      ))
+    case "contract":
+      return answering(done(
+        filled(system, `README.md ends with the line '${scriptedLine}'.`),
+        "One line appended to README.md, checked independently.",
+        [
+          {
+            to: part.builder,
+            objective: `Append the line '${scriptedLine}' to README.md.`,
+            inputs: [`README.md ends with the line '${scriptedLine}'.`]
+          },
+          { to: part.checker, objective: "Check the README change against its criterion.", inputs: [] }
+        ]
+      ))
+    case "build": {
+      if (hold !== undefined) return heldBuilder(system, turn, hold)
+      const result = done(filled(system, `README.md now ends with the line '${scriptedLine}'.`), "Added the line to README.md.")
+      return `await ctx.call("edit", ${JSON.stringify({ path: "/workspace/README.md", oldString: "# Demo\n", newString: `# Demo\n${scriptedLine}\n` })});
+ctx.done(${JSON.stringify(JSON.stringify(result))})`
+    }
+    case "check":
+      return answering(done(filled(system, "approve"), "The README change meets its criterion."))
+    default:
+      return answering({
+        status: "declined",
+        summary: "The scripted seat does not serve this role.",
+        fields: {},
+        evidence: [],
+        handoffs: [],
+        escalations: [],
+        decisions: []
+      })
   }
-  if (system.includes("Deliver the scoped change in the task workspace")) {
-    const result = done({ summary: "", commands: "" }, "Appended the line to README.md.")
-    return `const edit = await ctx.call("bash", { command: "printf '${scriptedLine}\\\\n' >> /workspace/README.md && tail -n 1 /workspace/README.md" });
-const result = ${JSON.stringify(result)};
-result.fields.summary = "README.md now ends with: " + edit.stdout.trim();
-result.fields.commands = "printf >> README.md: exit " + edit.exitCode;
-ctx.done(JSON.stringify(result))`
-  }
-  if (system.includes("Independently decide whether a change meets")) {
-    return answering(done({ verdict: "approve", findings: "none" }, "The README change meets its criterion."))
-  }
-  return answering({
-    status: "declined",
-    summary: "The scripted seat does not serve this role.",
-    fields: {},
-    evidence: [],
-    handoffs: [],
-    escalations: [],
-    decisions: []
-  })
 }
 
 const prepared: Route.PreparedRequest = {
@@ -98,12 +164,22 @@ const prepared: Route.PreparedRequest = {
 }
 const route: FlowEngineLike.RouteResolver = { prepare: () => Effect.succeed(prepared) }
 
+/** What a provider says when the account has no credits. */
+export const refusal = "Your credit balance is too low to access the API."
+
+const refuses = process.env.SMITHERS_ORGANIZATION_SCRIPTED_REFUSE === "1"
+
 let cells = 0
 const model = Model.make({
   stream: (request) =>
     Stream.suspend(() => {
+      if (refuses) {
+        return Stream.fail(new ModelError.ModelError({ code: "quota_exceeded", message: refusal, httpStatus: 400 }))
+      }
       const id = `cell-${++cells}`
-      const text = cellFor(request.system.map((part) => part.text).join("\n"))
+      const turn = request.messages.filter((message) => message.role === "assistant").length
+      const text = cellFor(request.system.map((part) => part.text).join("\n"), turn)
+      if (text === undefined) return Stream.never
       return Stream.fromIterable([
         ModelEvent.ModelEvent.TextStart({ type: "text-start", id }),
         ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id, text: "```cell\n" + text + "\n```" }),

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A run the engine re-drives for a host that died mid-run is claimed in the
+  control plane before it executes, so its status writes are its own instead
+  of failing `ClaimLost`.
+
 ### Added
 
 - `control.agent.model-requested` and `control.agent.decision-settled`: the
