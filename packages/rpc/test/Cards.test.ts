@@ -888,7 +888,10 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   },
   connect: {
     minimal: { github: { connected: false, login: null }, nativeAvailable: false },
-    full: { provider: "github", github: { connected: true, login: "will" }, nativeAvailable: true }
+    full: {
+      provider: "github", github: { connected: true, login: "will" }, nativeAvailable: true,
+      integrations: { repo: "smithersai/smithers", rows: [{ id: "linear", state: "error", detail: "ENG", error: "token revoked", lastSyncAt: "2026-09-26T09:40:00Z", action: { label: "Sync ops", flow: "sync.ops", args: "smithersai/smithers" } }] }
+    }
   },
   world: {
     minimal: { documents: [] },
@@ -1168,7 +1171,18 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         decision: "denied",
         decidedAt: 1_757_000_060_000,
         decisionError: "the gateway refused (503)",
-        pending: true
+        pending: true,
+        agent: { id: "personal-assistant", name: "Personal Assistant", agentId: "personal-assistant" },
+        thread: "smithersai/smithers#2101"
+      }],
+      incidents: [{
+        runId: "run-2",
+        title: "Daily audit",
+        guard: "budget",
+        detail: "2.1% of the week",
+        parkedAt: 1_757_000_000_000,
+        agent: { id: "software-engineer", name: "Software Engineer", agentId: "software-engineer" },
+        thread: "smithersai/smithers#2101"
       }]
     }
   },
@@ -1186,15 +1200,20 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     full: {
       repo: "smithersai/smithers",
       filter: "all",
+      kind: "task",
       issues: [{
         number: 1634,
         title: "rc0 CI green",
-        state: "closed",
+        state: "fixed",
         author: "will",
         comments: 4,
         updatedAt: "2026-09-05T09:00:00Z",
         source: "github",
-        htmlUrl: "https://github.com/smithersai/smithers/issues/1634"
+        htmlUrl: "https://github.com/smithersai/smithers/issues/1634",
+        kind: "chat",
+        task: { owner: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, due: "2026-09-27", priority: 1, parent: { number: 2088, title: "Wiki freshness" }, fixedBy: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, verifiedBy: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" } },
+        last: { persona: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, text: "Tests pass.", at: "2026-09-26T09:40:00Z" },
+        slack: true
       }],
       github: {
         source: "synced",
@@ -1226,7 +1245,15 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       source: "github",
       htmlUrl: "https://github.com/smithersai/smithers/issues/1634",
       labels: ["ci", "flaky"],
-      comments: [{ author: null, commentBody: "reproduced", createdAt: "2026-09-05T09:00:00Z" }],
+      kind: "chat",
+      task: { owner: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, due: "2026-09-27", priority: 0, parent: { number: 2088 }, fixedBy: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, verifiedBy: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" } },
+      slack: { teamId: "T0BQT6RGEBU", channelId: "C0C4HT47EQ3", threadTs: "1758870120.000100" },
+      pending: [{ id: "req-1", text: "Ship it.", at: 1_758_870_100_000, status: "failed", error: "Posting the message failed (503)" }],
+      viewer: { id: "will", name: "Will" },
+      comments: [{
+        author: null, commentBody: "reproduced", createdAt: "2026-09-05T09:00:00Z",
+        id: "9001", persona: { id: "personal-assistant", name: "Personal Assistant", iconUrl: "https://example.com/pa.png", agentId: "personal-assistant" }, origin: "slack", reactions: [{ name: "eyes", count: 1, mine: true }]
+      }],
       createdAt: "2026-09-04T08:00:00Z",
       assignees: [{ login: "ada", avatar: "https://avatars.githubusercontent.com/u/1" }],
       labelColors: { ci: "0e8a16", flaky: "d93f0b" },

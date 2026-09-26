@@ -51,20 +51,22 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
           text(payload, "status"),
           text(payload, "flow"),
           text(payload, "by") === undefined ? undefined : `by=${text(payload, "by")}`,
+          text(payload, "agent") === undefined ? undefined : `agent=${text(payload, "agent")}`,
           text(payload, "lineage") === undefined ? undefined : `lineage=${text(payload, "lineage")}`,
           text(payload, "sourceCard") === undefined ? undefined : `sourceCard=${text(payload, "sourceCard")}`,
           text(payload, "repo")
         )
     },
-    summary: "List the runs on your workspace",
+    summary: "List the runs on your workspace; agent= narrows to one agent profile's work",
     runtime: ["cloud"],
-    args: "[status] [flow] [by=principal] [lineage=id] [sourceCard=id] [owner/repo]",
+    args: "[status] [flow] [by=principal] [agent=profile] [lineage=id] [sourceCard=id] [owner/repo]",
     requires: ["signed-in"],
     input: Schema.Struct({
       status: Schema.optional(Schema.String),
       flow: Schema.optional(Schema.String),
       lineage: Schema.optional(Schema.String),
       by: Schema.optional(Schema.String),
+      agent: Schema.optional(Schema.String),
       sourceCard: Schema.optional(Schema.String),
       repo: Schema.optional(Schema.String)
     }),
@@ -220,11 +222,11 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   }),
   flow({
     name: "runs.trace.view",
-    summary: "Show a run's turn explanations, full execution timeline or graph in its embedded card",
+    summary: "Show a run's turn explanations, full execution timeline, graph or step list in its embedded card",
     runtimeAny: ["cloud"],
     hidden: true,
-    args: "[sourceCard=id] <runId> <turns|timeline|graph>",
-    input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, view: Schema.Literals(["turns", "timeline", "graph"]) }),
+    args: "[sourceCard=id] <runId> <turns|timeline|graph|steps>",
+    input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, view: Schema.Literals(["turns", "timeline", "graph", "steps"]) }),
     handler: ({ runId, view, sourceCard }) => actions.traceView(runId, view, sourceCard)
   }),
   flow({

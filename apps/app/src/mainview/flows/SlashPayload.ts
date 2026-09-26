@@ -364,6 +364,15 @@ const restAfter = (args: string | undefined, count: number): string => {
   return rest.trim()
 }
 
+/** `<number> [owner/repo]`: a positive integer, then an optional repository. */
+const numberedTarget = (name: string, args: string | undefined): Parsed => {
+  const [first, repo, ...rest] = tokensOf(args)
+  if (first === undefined) return NONE
+  const number = Number(first)
+  if (!Number.isInteger(number) || number <= 0) return no(`${name} needs a thread number`)
+  if (rest.length > 0) return no(`${name} takes a number and one owner/repo`)
+  return ok(repo === undefined ? { number } : { number, repo })
+}
 const tokensOf = (args: string | undefined): Array<string> =>
   trimmed(args)
     .split(/\s+/)
@@ -415,6 +424,12 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
       ? ok({ on: value === "on" }) : no("Choose on or off")
   },
   "experimental.set": args => setupObject(args),
+  "issues.fix": (args) => numberedTarget("issues.fix", args),
+  "issues.verify": (args) => numberedTarget("issues.verify", args),
+  "issues.react": jsonObject("issues.react"),
+  "issues.comment.retry": jsonObject("issues.comment.retry"),
+  "issues.task.set": jsonObject("issues.task.set"),
+  "integrations.list": args => repoOnly("integrations.list", args),
   "issues.setup": args => repoOnly("issues.setup", args),
   "review.setup": args => repoOnly("review.setup", args),
   "ci.setup": args => repoOnly("ci.setup", args),
@@ -463,17 +478,17 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "runs.attention": (args) => repoOnly("runs.attention", args),
   "runs.handoff": (args) => required("runId", args, "Choose a run to prepare its handoff"),
   "runs.list": (args, known) => {
-    const structured = structuredFields("runs.list", args, ["status", "flow", "by", "lineage", "sourceCard", "repo"])
+    const structured = structuredFields("runs.list", args, ["status", "flow", "by", "agent", "lineage", "sourceCard", "repo"])
     if (structured !== undefined) return structured
     const { rest, repo } = splitTrailingRepo(args, known)
     const payload: Record<string, string> = {}
     const positional: Array<string> = []
     for (const token of tokensOf(rest)) {
-      const keyed = /^(by|lineage|sourceCard)=(.+)$/.exec(token)
+      const keyed = /^(by|agent|lineage|sourceCard)=(.+)$/.exec(token)
       if (keyed !== null) payload[keyed[1]!] = keyed[2]!
       else positional.push(token)
     }
-    if (positional.length > 2) return no("runs.list takes [status] [flow] [by=…] [lineage=…] [sourceCard=…] [owner/repo]")
+    if (positional.length > 2) return no("runs.list takes [status] [flow] [by=…] [agent=…] [lineage=…] [sourceCard=…] [owner/repo]")
     const [status, flow] = positional
     if (status !== undefined) payload["status"] = status
     if (flow !== undefined) payload["flow"] = flow
@@ -568,7 +583,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "runs.trace.view": (args) => {
     const [runId, view, ...rest] = tokensOf(args)
     if (runId === undefined) return no("runs.trace.view needs a run id")
-    if (view !== "turns" && view !== "timeline" && view !== "graph") return no("runs.trace.view needs turns, timeline or graph")
+    if (view !== "turns" && view !== "timeline" && view !== "graph" && view !== "steps") return no("runs.trace.view needs turns, timeline, graph or steps")
     if (rest.length > 0) return no("runs.trace.view takes a run id and one view")
     return ok({ runId, view })
   },
@@ -708,11 +723,16 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "prs": (args, known) => GRAMMAR["prs.list"]!(args, known),
   "issues.list": (args) => {
     const { rest, repo } = splitTrailingRepo(args)
-    const filter = rest === "" ? "open" : rest
+    // `--kind chat|task` narrows the list to conversations or tasks (DESIGN §3.1, §3.2).
+    const kindMatch = /(?:^|\s)--kind(?:\s+|=)(\S+)/.exec(rest)
+    const kind = kindMatch?.[1]
+    if (kind !== undefined && kind !== "chat" && kind !== "task" && kind !== "all") return no("issues.list --kind takes chat, task or all")
+    const bare = rest.replace(/(?:^|\s)--kind(?:\s+|=)\S+/, "").trim()
+    const filter = bare === "" ? "open" : bare
     if (filter !== "open" && filter !== "closed" && filter !== "all") {
       return no("issues.list takes open, closed, or all")
     }
-    return ok(repo === undefined ? { filter } : { filter, repo })
+    return ok({ filter, ...(repo === undefined ? {} : { repo }), ...(kind === undefined || kind === "all" ? {} : { kind }) })
   },
   "issue.flows": (args, known) => numbered(args, "An issue number is required", known),
   "issue.repro": (args, known) => numbered(args, "An issue number is required", known),
@@ -726,9 +746,13 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(parts)
   },
   "issues.create": (args, known) => {
-    const { rest, repo } = splitTrailingRepo(args, known)
+    // `--kind chat` starts an owner-private chat thread (smithers-ui-DESIGN.md §3.1); the title is everything else.
+    const kindMatch = /(?:^|\s)--kind(?:\s+|=)(\S+)\s*$/.exec(args ?? "")
+    const kind = kindMatch?.[1]
+    if (kind !== undefined && kind !== "chat" && kind !== "issue") return no("issues.create --kind takes chat or issue")
+    const { rest, repo } = splitTrailingRepo(kindMatch === null ? args : (args ?? "").slice(0, kindMatch.index).trim(), known)
     if (rest === "") return no("issues.create needs a title")
-    return ok(repo === undefined ? { title: rest } : { title: rest, repo })
+    return ok({ title: rest, ...(repo === undefined ? {} : { repo }), ...(kind === undefined ? {} : { kind }) })
   },
   /*
    * The repository welcome and its three answers (controller/onboarding.ts):

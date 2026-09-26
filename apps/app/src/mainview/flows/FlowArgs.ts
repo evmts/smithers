@@ -24,7 +24,7 @@ export interface FlowInput {
   readonly "agent.session.stop": { readonly sessionId: string; readonly repo: string }
   readonly "github.mirror.retry-ref": { readonly ref: string; readonly repo?: string }
   readonly "commits.read": { readonly ref: string; readonly repo: string }
-  readonly "runs.trace.view": { readonly runId: string; readonly view: "turns" | "timeline" | "graph" }
+  readonly "runs.trace.view": { readonly runId: string; readonly view: "turns" | "timeline" | "graph" | "steps" }
   readonly "runs.trace.filter": { readonly runId: string; readonly filter: string }
   readonly "runs.graph.follow": { readonly runId: string; readonly follow: boolean }
   readonly "runs.coding.select": { readonly runId: string; readonly changeId: string }
@@ -53,6 +53,12 @@ export interface FlowInput {
   readonly "stack.parallel": { readonly value: number; readonly repo: string }
   readonly "stack.retry": { readonly id: string; readonly repo: string }
   readonly "issues.close": { readonly number: number; readonly repo: string }
+  readonly "issues.fix": { readonly number: number; readonly repo: string }
+  readonly "issues.verify": { readonly number: number; readonly repo: string }
+  readonly "issues.react": { readonly number: number; readonly repo: string; readonly commentId: string; readonly name: string; readonly active: boolean }
+  readonly "issues.comment.retry": { readonly cardId: string; readonly requestId: string }
+  readonly "issues.task.set": { readonly number: number; readonly repo: string; readonly field: "owner" | "due" | "priority" | "parent"; readonly value: string }
+  readonly "integrations.list": { readonly repo: string }
   readonly "issues.reopen": { readonly number: number; readonly repo: string }
   readonly "findings.please-fix": { readonly changeId: string; readonly findingId: number }
   readonly "findings.not-useful": { readonly changeId: string; readonly findingId: number }
@@ -68,7 +74,7 @@ export interface FlowInput {
   readonly "flow.plan.select": { readonly cardId: string; readonly nodeId?: string }
   readonly "runs.graph.tab": { readonly runId: string; readonly tab: "declaration" | "code" | "output" | "events" | "attempts" }
   readonly "flow.plan.tab": { readonly cardId: string; readonly tab: "declaration" | "code" | "output" | "events" | "attempts" }
-  readonly "issues.list": { readonly filter?: "open" | "closed" | "all"; readonly repo?: string }
+  readonly "issues.list": { readonly filter?: "open" | "closed" | "all"; readonly repo?: string; readonly kind?: "all" | "chat" | "task" }
   readonly "setup.configure": { readonly cardId: string; readonly field: string; readonly value: unknown }
   readonly "setup.view": { readonly cardId: string; readonly view: "flows" | "prompts" | "checks" | "evals" | "test" | "work"; readonly step?: string }
   readonly "setup.work": { readonly cardId: string; readonly stepId: string; readonly field?: "prompt" | "source" | "number"; readonly value?: unknown }
@@ -83,7 +89,7 @@ export interface FlowInput {
   readonly "wiki.heading": { readonly line: string; readonly cardId?: string }
   readonly "workspace.desktop.open": { readonly bookmark?: string; readonly repo: string }
   readonly "billing.upgrade": { readonly plan: string }
-  readonly "runs.list": { readonly repo?: string; readonly status?: string; readonly flow?: string; readonly lineage?: string; readonly sourceCard?: string }
+  readonly "runs.list": { readonly repo?: string; readonly status?: string; readonly flow?: string; readonly lineage?: string; readonly sourceCard?: string; readonly agent?: string }
   readonly "runs.attention": { readonly repo?: string; readonly sourceCard?: string }
   readonly "runs.open": { readonly runId: string; readonly repo?: string; readonly sourceCard?: string; readonly requestId?: string }
   readonly "runs.trace.select": { readonly runId: string; readonly nodeId: string; readonly seq?: number; readonly sourceCard?: string }
@@ -216,6 +222,12 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "workspace.facet": payload => line(token(payload, "workspaceId"), token(payload, "facet")),
   "secrets.move": payload => line(token(payload, "id"), token(payload, "direction")),
   "issues.close": payload => line(token(payload, "number"), token(payload, "repo")),
+  "issues.fix": payload => line(token(payload, "number"), token(payload, "repo")),
+  "issues.verify": payload => line(token(payload, "number"), token(payload, "repo")),
+  "issues.react": payload => JSON.stringify(payload),
+  "issues.comment.retry": payload => JSON.stringify(payload),
+  "issues.task.set": payload => JSON.stringify(payload),
+  "integrations.list": payload => line(token(payload, "repo")),
   "issues.reopen": payload => line(token(payload, "number"), token(payload, "repo")),
   "findings.please-fix": payload => line(token(payload, "changeId"), token(payload, "findingId")),
   "findings.not-useful": payload => line(token(payload, "changeId"), token(payload, "findingId")),
@@ -231,7 +243,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "flow.plan.select": payload => graphLine(payload, "cardId", "nodeId"),
   "runs.graph.tab": payload => graphLine(payload, "runId", "tab"),
   "flow.plan.tab": payload => graphLine(payload, "cardId", "tab"),
-  "issues.list": (payload) => line(token(payload, "filter") ?? "open", token(payload, "repo")),
+  "issues.list": (payload) => line(token(payload, "filter") ?? "open", payload.kind === undefined || payload.kind === "all" ? undefined : `--kind ${payload.kind}`, token(payload, "repo")),
   "setup.configure": payload => JSON.stringify(payload),
   "setup.view": payload => JSON.stringify(payload),
   "setup.run": payload => JSON.stringify(payload),

@@ -120,6 +120,7 @@ import type { HistorySeam } from "./seams/HistorySeam"
 import { createHistorySeam } from "./seams/HistorySeam"
 import type { IssuesSeam } from "./seams/IssuesSeam"
 import { createIssuesSeam } from "./seams/IssuesSeam"
+import { createIntegrationsSeam, type IntegrationsSeam } from "./seams/IntegrationsSeam"
 import type { LandingsSeam } from "./seams/LandingsSeam"
 import { createLandingsSeam } from "./seams/LandingsSeam"
 import type { NotificationsSeam } from "./seams/NotificationsSeam"
@@ -512,6 +513,10 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly createIssue: IssuesSeam["createIssue"]
   readonly setIssueState: IssuesSeam["setIssueState"]
   readonly commentOnIssue: IssuesSeam["commentOnIssue"]
+  readonly retryIssueComment: IssuesSeam["retryIssueComment"]
+  readonly reactToIssueComment: IssuesSeam["reactToIssueComment"]
+  readonly setIssueTask: IssuesSeam["setIssueTask"]
+  readonly listIntegrations: IntegrationsSeam["listIntegrations"]
   readonly listLandings: LandingsSeam["listLandings"]
   readonly viewLanding: LandingsSeam["viewLanding"]
   readonly setLandingTab: LandingsSeam["setTab"]
@@ -884,6 +889,9 @@ export const createAppController = (
     return row === undefined ? undefined : { repo: row.id, flows: row.flows, home: row.home, loadedAt: row.loadedAt }
   }
   const issuesSeam = actors.pair(seamCtx, (context, select) => createIssuesSeam(context, request => select(renderFlowForm)(request)))
+  /* Chat threads re-read while visible and drain their pending sends (smithers-ui-DESIGN.md §3.1). */
+  issuesSeam.subscribe(ctx.onDispose)
+  const integrationsSeam = actors.pair(seamCtx, createIntegrationsSeam)
   const landingsSeam = actors.pair(seamCtx, (context, select) => createLandingsSeam(context, request => select(renderFlowForm)(request)))
   const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))
   const tutorialRepository = actors.pair(ctx, (context) => createTutorialRepositoryController(context, {
@@ -1819,6 +1827,10 @@ export const createAppController = (
     createIssue: issuesSeam.createIssue,
     setIssueState: issuesSeam.setIssueState,
     commentOnIssue: issuesSeam.commentOnIssue,
+    retryIssueComment: issuesSeam.retryIssueComment,
+    reactToIssueComment: issuesSeam.reactToIssueComment,
+    setIssueTask: issuesSeam.setIssueTask,
+    listIntegrations: integrationsSeam.listIntegrations,
     listLandings: landingsSeam.listLandings,
     viewLanding: landingsSeam.viewLanding,
     setLandingTab: landingsSeam.setTab,

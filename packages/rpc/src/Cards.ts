@@ -4,6 +4,7 @@
  * @since 1.0.0
  */
 import { z } from "zod"
+import { IntegrationRowSchema, PendingMessageSchema, PersonaRefSchema, TaskMetaSchema, ThreadSlackSchema } from "./Threads.ts"
 import { AGENT_ROLES, AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
 import { BillingPlanSchema, SandboxEntitlementSchema } from "./BillingPlans.ts"
 import {
@@ -981,7 +982,9 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       /** Authentication evidence; legacy cards do not establish a GitHub connection. */
       provider: z.enum(["github", "local"]).optional(),
       github: z.object({ connected: z.boolean(), login: z.string().nullable() }),
-      nativeAvailable: z.boolean()
+      nativeAvailable: z.boolean(),
+      /** The services that sync with threads, tasks and the wiki (smithers-ui-DESIGN.md §3.6), read by integrations.list. */
+      integrations: z.object({ repo: z.string(), rows: z.array(IntegrationRowSchema) }).optional()
     })
   }),
   /* A world query's embedded answer card (the agent's world form; §2c″). */
@@ -1154,7 +1157,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * Progressive inspection uses one card: a cheap turn list by default,
        * the full timeline or the run's graph on demand.
        */
-      traceView: z.enum(["turns", "timeline", "graph"]).optional(),
+      traceView: z.enum(["turns", "timeline", "graph", "steps"]).optional(),
       /**
        * The plan the launch was approved on, snapshotted when the run started.
        *
@@ -1465,9 +1468,27 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           decidedAt: z.number().optional(),
           decisionError: z.string().optional(),
           /** A decision is in flight: the buttons hide until the server answers, so a second click cannot send a contradicting decision. */
-          pending: z.boolean().optional()
+          pending: z.boolean().optional(),
+          /** The organization agent whose run asked, when the run is one of the organization's. */
+          agent: PersonaRefSchema.optional(),
+          /** The thread (`owner/repo#number`) the run was working, when recorded. */
+          thread: z.string().optional()
         })
-      )
+      ),
+      /*
+       * Runaway incidents (DESIGN §3.4): a budget or time guard parked a run.
+       * The row offers Continue (runs.resume) and Stop (flow.run.stop); the
+       * guard's detail is the record's own words.
+       */
+      incidents: z.array(z.object({
+        runId: z.string(),
+        title: z.string(),
+        guard: z.enum(["budget", "time"]),
+        detail: z.string(),
+        parkedAt: z.number(),
+        agent: PersonaRefSchema.optional(),
+        thread: z.string().optional()
+      })).optional()
     })
   }),
   /*
@@ -1500,14 +1521,26 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     payload: z.object({
       repo: z.string(),
       filter: z.enum(["open", "closed", "all"]),
+      /** Which threads the list shows: every issue, only chats, or only tasks (issues.list --kind). */
+      kind: z.enum(["all", "chat", "task"]).optional(),
       issues: z.array(
         z.object({
           number: z.number().int(),
           title: z.string(),
-          state: z.enum(["open", "closed"]),
+          /** The backend's states: a task moves open → fixed → verified → closed; a chat opens and closes. */
+          state: z.enum(["open", "fixed", "verified", "closed"]),
           author: z.string().nullable(),
           comments: z.number().int().nonnegative(),
           updatedAt: z.string().nullable(),
+          /*
+           * Threads (smithers-ui-DESIGN.md §3.1, §3.2): a chat issue rows as a
+           * conversation, a task as its state and intent metadata. Each is
+           * present only when the read carried it.
+           */
+          kind: z.enum(["issue", "chat"]).optional(),
+          task: TaskMetaSchema.optional(),
+          last: z.object({ persona: PersonaRefSchema, text: z.string(), at: z.string() }).optional(),
+          slack: z.boolean().optional(),
           /** Where the row came from: Smithers Cloud's own tracker, or GitHub for a mirrored repo. Optional so older cards parse. */
           source: z.enum(["smithers-cloud", "github"]).optional(),
           htmlUrl: z.string().optional(),
@@ -1548,12 +1581,24 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       repo: z.string(),
       number: z.number().int(),
       title: z.string(),
-      state: z.enum(["open", "closed"]),
+      state: z.enum(["open", "fixed", "verified", "closed"]),
       author: z.string().nullable(),
       issueBody: z.string(),
       source: z.enum(["smithers-cloud", "github"]).optional(),
       htmlUrl: z.string().optional(),
       labels: z.array(z.string()),
+      /*
+       * Threads (smithers-ui-DESIGN.md §3.1, §3.2): a chat issue renders as a
+       * conversation; task metadata renders as one strip; the Slack mapping
+       * is the thread's Slack door; `pending` are the person's sends the
+       * server has not confirmed; `viewer` is who is reading, so their own
+       * reactions and messages are known. Each is present only when read.
+       */
+      kind: z.enum(["issue", "chat"]).optional(),
+      task: TaskMetaSchema.optional(),
+      slack: ThreadSlackSchema.optional(),
+      pending: z.array(PendingMessageSchema).optional(),
+      viewer: PersonaRefSchema.optional(),
       /*
        * Lane sync (ADR 0005 "Link an issue to Linear"): the Linear mapping
        * when the issue DTO carries one (`Linear ENG-482`); absent until
@@ -1565,7 +1610,14 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           author: z.string().nullable(),
           commentBody: z.string(),
           createdAt: z.string().nullable(),
-          authorAvatar: z.string().optional()
+          authorAvatar: z.string().optional(),
+          /** The comment id, so a message can be edited, deleted or reacted to; absent on GitHub reads. */
+          id: z.string().optional(),
+          /** The display identity the message was posted under (chat-sync contract); the author stays authoritative. */
+          persona: PersonaRefSchema.optional(),
+          /** Where the record says the message came from; absent until the backend carries it. */
+          origin: z.enum(["app", "slack"]).optional(),
+          reactions: z.array(z.object({ name: z.string(), count: z.number().int().nonnegative(), mine: z.boolean() })).optional()
         })
       ),
       /* The restyled issue card's GitHub facts (cards/IssueCards.tsx IssueExtras); see the issue-list row. */
@@ -2694,6 +2746,9 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
             harnessName: z.string(),
             model: AgentRoleModelSchema,
             builtin: z.boolean(),
+            /** Profile metadata (smithers-ui-DESIGN.md §3.3): who this profile reports to, and whether it is a hired specialist. */
+            reportsTo: z.string().optional(),
+            kind: z.enum(["core", "specialist", "helper"]).optional(),
             available: z.boolean(),
             /** Why it cannot launch here (roleMenuEntries); empty when available. */
             reason: z.string(),

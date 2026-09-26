@@ -304,6 +304,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../experimental/panes/TimeTravel.tsx": 1,
       "../experimental/panes/Tools.tsx": 1,
       "../experimental/panes/Triggers.tsx": 2,
+      "../AgentMark.tsx": 1, // A persona that resolves to an agent profile is a door to the roster.
       "../App.tsx": 4, // -1: the shell has four handlers; main's five-count baseline was already stale.
       "../ChatFilterMenu.tsx": 2,
       // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
@@ -377,7 +378,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../ToastStack.tsx": 1,
       /* The multi-parity domain cards: every handler routes through onRunCommand. */
       
-      "../cards/IssueCards.tsx": 8, // + the detail's comment box submit (issues.comment)
+      "../cards/IssueCards.tsx": 10, // + the detail's comment box submit (issues.comment), the thread rows and the kind chips
+      "../cards/IssueThread.tsx": 5, // The chat body: composer submit and send, reaction toggles, Retry, the state acts.
       "../cards/LandingCards.tsx": 5, // Includes the durable PR tab flow.
       "../cards/FileCards.tsx": 3,
       /* A row's Test, Edit, Remove and select; New; and the attention row's Assign, Test or Edit. */
@@ -419,7 +421,8 @@ describe("launch-law parity: every affordance is a command", () => {
       /* The trace owns selection, views, filters and child navigation.
        * The extracted strip selects recorded sequences; summary actions reuse
        * approvals.open and runs.resume; goals reuse runs.coding.select. */
-      "../cards/RunTraceCard.tsx": 11, // Includes the graph view door.
+      "../cards/RunTraceCard.tsx": 13, // Includes the graph view door and the Steps view door.
+      "../cards/RunTraceSteps.tsx": 1, // Each step row selects its span.
       "../cards/RunTracePhaseStrip.tsx": 3,
       "../cards/RunTraceSummary.tsx": 2,
       "../cards/RunTraceGoals.tsx": 1,
@@ -429,13 +432,13 @@ describe("launch-law parity: every affordance is a command", () => {
        * approvals inbox's two decision acts (approval.approve / approval.deny
        * through the delegated onDecideApproval).
        */
-      "../cards/RunsCards.tsx": 10,
+      "../cards/RunsCards.tsx": 14, // + the inbox's incident Continue/Stop and its run and thread references.
       "../cards/SearchResultsCard.tsx": 2,
       "../cards/SecretsCard.tsx": 5,
       /* 8 = the Stack card's Backfill, fewer/more lanes, a row's Retry, a failure's Retry, Bootstrap, and the Wiki row's pages (wiki.cloud) and Retry (wiki.create). */
       "../cards/StackCard.tsx": 8,
       /* Local Open tab, cloud session Stop, and inventory Open/Stop. */
-      "../cards/AgentCards.tsx": 4,
+      "../cards/AgentCards.tsx": 5, // + each profile row's Runs door (runs.list agent=).
       "../cards/AnonymousCeilingCard.tsx": 1,
       // THE FORM LAW (flow-forms.md): the generic form's Cancel (card.dismiss) and Submit (form.submit); fields commit on blur/change.
       "../cards/FlowFormCards.tsx": 2,
@@ -499,7 +502,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * pager's onSelect, the view-mode pickers (wiki.card.view), cloud
        * Open page, and Refresh (wiki.sync) — all through onRunCommand.
        */
-      "../cards/ConversationCards.tsx": 11, // The empty Wiki now offers wiki.create.
+      "../cards/ConversationCards.tsx": 12, // The empty Wiki now offers wiki.create; the connect card's integration rows carry one action each.
       /* The factory card: one Open per present infra file, one shared handler through onRunCommand (files.read). */
       /*
        * The dispatcher card's Register door, the button door of
@@ -520,7 +523,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * harness maps) went with the local backend
        * (docs/LOCAL-BACKEND-RETIREMENT.md).
        */
-      "../ChromeDock.tsx": 9,
+      "../ChromeDock.tsx": 12, // + Inbox, Threads and Agents doors (smithers-ui-DESIGN.md §1).
       /* The live-process close question: confirm through tab.close.confirm. */
       "../tabs/TabBodies.tsx": 1
     })

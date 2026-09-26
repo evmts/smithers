@@ -55,6 +55,7 @@ export interface RunsController {
     readonly lineage?: string
     readonly sourceCard?: string
     readonly by?: string
+    readonly agent?: string
     readonly repo?: string
   }) => Promise<CommandResult>
   readonly openRun: (runId: string, repo?: string, sourceCard?: string, requestId?: string) => Promise<CommandResult>
@@ -283,6 +284,14 @@ export const createRunsController = (
      */
     if (args.by !== undefined) {
       return "Runs don't record who launched them on this wire, so there is no by= to filter with — status, flow, and lineage are the filters that exist."
+    }
+    /*
+     * The per-agent timeline (smithers-ui-DESIGN.md §3.4) is this list filtered
+     * to one agent profile. The run summary does not record the profile yet, so
+     * the filter is refused in words rather than silently listing every run.
+     */
+    if (args.agent !== undefined) {
+      return "Runs don't record the agent profile that ran them on this wire yet, so there is no agent= to filter with — status, flow, and lineage are the filters that exist."
     }
     const named = args.sourceCard === undefined ? undefined : store.collections.cards.get(args.sourceCard)
     const target = workflows.workflowTargetRepo(args.repo ?? (named?.kind === "run-list" ? named.payload.repo : undefined))
