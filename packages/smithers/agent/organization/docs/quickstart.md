@@ -21,6 +21,11 @@ node flows/organization/cli.ts init ~/org
 codex login                              # ChatGPT subscription, for openai:* seats
 # edit ~/.smithers/org/.env: SMITHERS_ORG_REPOS=example/demo=<git checkout>
 node flows/organization/cli.ts doctor
+```
+
+`doctor` prints the fix for every failing line.
+
+```sh
 node flows/organization/cli.ts serve
 ```
 
