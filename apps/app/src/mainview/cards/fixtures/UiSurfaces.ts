@@ -115,7 +115,7 @@ export const fixtureCards = (): ReadonlyArray<Card> => [
       provider: "github", github: { connected: true, login: "will" }, nativeAvailable: false,
       integrations: { repo: REPO, rows: [
         { id: "slack", state: "connected", detail: "#smithers-team" },
-        { id: "linear", state: "connected", detail: "ENG", lastSyncAt: iso(-4), action: { label: "Sync ops", flow: "sync.ops", args: REPO } },
+        { id: "linear", state: "connected", detail: "ENG", lastSyncAt: iso(-4) },
         { id: "notion", state: "coming-soon" }
       ] }
     }

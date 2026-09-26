@@ -19,9 +19,11 @@ document.documentElement.dataset.theme = params.get("theme") === "dark" ? "dark"
 const only = params.get("card")
 
 const store = await createAppStore({ kind: "localStorage", storage: localStorage }, { seedWiki: false })
+// The store seeds a few cards of its own (the agents roster among them); the fixture's rows replace them.
 for (const card of fixtureCards()) {
-  if (!store.collections.cards.has(card.id)) await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+  await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
 }
+const seededAgents = JSON.stringify(store.collections.cards.get("agents")?.payload)
 const controller = createAppController(store, silentAgent, {
   fetchImpl: async () => new Response("{}", { status: 404 }),
   cloudSocketUrl: () => undefined,
@@ -30,9 +32,9 @@ const controller = createAppController(store, silentAgent, {
 const commands: Array<{ name: string; args?: string }> = []
 const refusals: Array<{ name: string; args?: string; error: string }> = []
 declare global {
-  interface Window { uiSurfaces: { commands: typeof commands; refusals: typeof refusals } }
+  interface Window { uiSurfaces: { commands: typeof commands; refusals: typeof refusals; card: (id: string) => unknown; seededAgents: string } }
 }
-window.uiSurfaces = { commands, refusals }
+window.uiSurfaces = { commands, refusals, card: (id) => store.collections.cards.get(id), seededAgents }
 const run = (name: FlowName, args?: string) => {
   commands.push({ name, args })
   void controller.commands.run(name, args).then(async (result) => {

@@ -211,7 +211,7 @@ describe("the file card", () => {
 describe("the agent cards", () => {
   const row = builtInCardRow
 
-  test("the agents card retains availability but resets custom definitions and edited built-in models", () => {
+  test("the agents card retains availability, resets edited built-in facts to the table, and keeps configured profiles as read", () => {
     const card = CardSchema.parse({
       ...base,
       kind: "agents",
@@ -219,11 +219,12 @@ describe("the agent cards", () => {
         native: true,
         agents: [
           { ...row, model: { provider: "openai", id: "gpt 5", label: "Edited" }, label: "Edited" },
-          { ...row, id: "custom-reviewer", builtin: false }
+          { ...row, id: "custom-reviewer", builtin: false, kind: "specialist", reportsTo: "orchestrator" }
         ]
       }
     })
-    expect(card.payload).toEqual({ native: true, agents: [row] })
+    // A built-in reads its facts from the table; a configured profile (smithers-ui-DESIGN.md §3.3) keeps its own.
+    expect(card.payload).toEqual({ native: true, agents: [row, { ...row, id: "custom-reviewer", builtin: false, kind: "specialist", reportsTo: "orchestrator" }] })
   })
 
   test("the flow-form card holds the flow, who asked, the derived fields, the draft and what was given; a bad kind or provider is rejected", () => {

@@ -53,8 +53,10 @@ const chatIssue = { number: 7, title: "Will ↔ Personal Assistant", state: "ope
 const comments = [
   { id: 9001, commenter: "smithers-bot", persona: { username: "Personal Assistant", iconEmoji: ":compass:" }, body: "Tomorrow's 1:1s are booked.", created_at: "2026-09-26T09:05:00Z" }
 ]
-const issueCard = (store: AppStore): Extract<Card, { kind: "issue" }> | undefined =>
-  [...store.collections.cards.values()].find((card): card is Extract<Card, { kind: "issue" }> => card.kind === "issue" && card.payload.number === 7)
+const issueCard = (store: AppStore): Extract<Card, { kind: "issue" }> | undefined => {
+  const found = [...store.collections.cards.values()].find((card) => card.kind === "issue" && card.payload.number === 7)
+  return found?.kind === "issue" ? found : undefined
+}
 
 describe("chat issues through the issues seam", () => {
   test("a chat reads as a conversation: persona, Slack mapping, reactions and the viewer", async () => {
@@ -123,7 +125,9 @@ describe("chat issues through the issues seam", () => {
     await signedIn(store)
     const tasks = await controller.commands.run("issues.list", `all --kind task ${REPO}`)
     expect(tasks.status).toBe("executed")
-    const list = [...store.collections.cards.values()].find((card): card is Extract<Card, { kind: "issue-list" }> => card.kind === "issue-list")!
+    const found = [...store.collections.cards.values()].find((card) => card.kind === "issue-list")
+    if (found?.kind !== "issue-list") throw new Error("the issue list card is absent")
+    const list = found
     expect(list.payload.kind).toBe("task")
     expect(list.payload.issues.map((issue) => issue.number)).toEqual([8])
     expect(list.payload.issues[0]!.task).toMatchObject({ owner: { id: "software-engineer" }, priority: 1, fixedBy: { id: "software-engineer" } })

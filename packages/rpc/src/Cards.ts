@@ -2974,8 +2974,11 @@ export const CardSchema = Object.assign(
             if (typeof entry !== "object" || entry === null) return []
             const saved = entry as Record<string, unknown>
             const role = AGENT_ROLES.find((candidate) => candidate.id === saved.id)
+            // A built-in row reads its facts from the table; a configured
+            // profile the table does not know (smithers-ui-DESIGN.md §3.3)
+            // keeps its own, and the schema below still validates it.
             return role === undefined ?
-              [] :
+              [saved] :
               [{
                 ...saved,
                 id: role.id,

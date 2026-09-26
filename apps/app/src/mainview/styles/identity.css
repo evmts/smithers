@@ -48,3 +48,14 @@ button.agent-mark-door:hover .agent-mark-name { color: var(--brand); text-decora
 button.agent-mark-door:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
 .agent-mark-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+
+/* ── Agent profile rows (AgentCards.tsx): mark · label and facts · Runs door ── */
+.agent-row.workflow-list-row {
+	display: grid;
+	grid-template-columns: 20px minmax(0, 1fr) auto;
+	justify-content: start;
+	text-align: left;
+}
+.agent-row .workflow-list-text { min-width: 0; }
+.agent-row[data-kind="specialist"] .workflow-list-text > span,
+.agent-row[data-kind="helper"] .workflow-list-text > span { color: var(--info); }

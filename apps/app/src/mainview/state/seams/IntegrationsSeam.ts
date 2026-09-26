@@ -46,8 +46,8 @@ export const createIntegrationsSeam = (ctx: SeamContext): IntegrationsSeam => {
       state: remediation !== undefined ? "error" : integration.is_active === false ? "not-connected" : "connected",
       ...(team === undefined ? {} : { detail: team }),
       ...(remediation === undefined ? {} : { error: remediation }),
-      ...(asString(integration.last_sync_at) === undefined ? {} : { lastSyncAt: integration.last_sync_at as string }),
-      action: { label: "Sync ops", flow: "sync.ops", args: repo }
+      ...(asString(integration.last_sync_at) === undefined ? {} : { lastSyncAt: integration.last_sync_at as string })
+      // No action yet: the app retired its Linear sync-ops card (Cards.ts retiredKinds); the Linear agent's slice brings the door back (#2116).
     }
   }
 
