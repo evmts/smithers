@@ -89,7 +89,7 @@ export interface FlowInput {
   readonly "wiki.heading": { readonly line: string; readonly cardId?: string }
   readonly "workspace.desktop.open": { readonly bookmark?: string; readonly repo: string }
   readonly "billing.upgrade": { readonly plan: string }
-  readonly "runs.list": { readonly repo?: string; readonly status?: string; readonly flow?: string; readonly lineage?: string; readonly sourceCard?: string; readonly agent?: string }
+  readonly "runs.list": { readonly repo?: string; readonly status?: string; readonly flow?: string; readonly lineage?: string; readonly sourceCard?: string }
   readonly "runs.attention": { readonly repo?: string; readonly sourceCard?: string }
   readonly "runs.open": { readonly runId: string; readonly repo?: string; readonly sourceCard?: string; readonly requestId?: string }
   readonly "runs.trace.select": { readonly runId: string; readonly nodeId: string; readonly seq?: number; readonly sourceCard?: string }

@@ -478,17 +478,17 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "runs.attention": (args) => repoOnly("runs.attention", args),
   "runs.handoff": (args) => required("runId", args, "Choose a run to prepare its handoff"),
   "runs.list": (args, known) => {
-    const structured = structuredFields("runs.list", args, ["status", "flow", "by", "agent", "lineage", "sourceCard", "repo"])
+    const structured = structuredFields("runs.list", args, ["status", "flow", "by", "lineage", "sourceCard", "repo"])
     if (structured !== undefined) return structured
     const { rest, repo } = splitTrailingRepo(args, known)
     const payload: Record<string, string> = {}
     const positional: Array<string> = []
     for (const token of tokensOf(rest)) {
-      const keyed = /^(by|agent|lineage|sourceCard)=(.+)$/.exec(token)
+      const keyed = /^(by|lineage|sourceCard)=(.+)$/.exec(token)
       if (keyed !== null) payload[keyed[1]!] = keyed[2]!
       else positional.push(token)
     }
-    if (positional.length > 2) return no("runs.list takes [status] [flow] [by=…] [agent=…] [lineage=…] [sourceCard=…] [owner/repo]")
+    if (positional.length > 2) return no("runs.list takes [status] [flow] [by=…] [lineage=…] [sourceCard=…] [owner/repo]")
     const [status, flow] = positional
     if (status !== undefined) payload["status"] = status
     if (flow !== undefined) payload["flow"] = flow

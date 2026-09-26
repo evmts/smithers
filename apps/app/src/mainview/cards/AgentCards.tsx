@@ -29,8 +29,9 @@ type ProfileRow = Extract<AgentsCard["payload"], { native: boolean }>["agents"][
 /*
  * One configured agent profile (smithers-ui-DESIGN.md §3.3): its mark, label,
  * model, the profile metadata it carries (kind, reports to), availability
- * where a harness answers for it, and the door to its recorded work
- * (runs.list agent=). Profiles under a manager indent under that row.
+ * where a harness answers for it, and the door to its recorded work: a
+ * profile is a role flow, so its runs are the run list filtered by that flow
+ * (runs.list flow=<id>). Profiles under a manager indent under that row.
  */
 const ProfileRowView = ({ agent, native, level, onRunCommand }: { readonly agent: ProfileRow; readonly native: boolean; readonly level: number; readonly onRunCommand: RunCommand }) => (
   <li key={agent.id} className="workflow-list-row agent-row" data-agent={agent.id} data-available={agent.available} data-kind={agent.kind} style={level === 0 ? undefined : { paddingLeft: `${level * 20}px` }}>
@@ -46,7 +47,7 @@ const ProfileRowView = ({ agent, native, level, onRunCommand }: { readonly agent
         ].filter((fact) => fact !== undefined && fact !== "").join(" · ")}
       </span>
     </span>
-    <Button variant="ghost" size="sm" data-testid={`agent-runs-${agent.id}`} {...flowAction(onRunCommand, "runs.list", flowArgs("runs.list", { agent: agent.id }))}>Runs</Button>
+    <Button variant="ghost" size="sm" data-testid={`agent-runs-${agent.id}`} {...flowAction(onRunCommand, "runs.list", flowArgs("runs.list", { flow: agent.id }))}>Runs</Button>
   </li>
 )
 

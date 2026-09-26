@@ -98,7 +98,7 @@ describe("the runs grammar", () => {
     expect(payloadFor("runs.list", "sourceCard=list-a parked will/flows")).toEqual({ payload: { sourceCard: "list-a", status: "parked", repo: "will/flows" } })
     expect(payloadFor("runs.list", "by=octocat")).toEqual({ payload: { by: "octocat" } })
     expect(payloadFor("runs.list", "a b c")).toEqual({
-      error: "runs.list takes [status] [flow] [by=…] [agent=…] [lineage=…] [sourceCard=…] [owner/repo]"
+      error: "runs.list takes [status] [flow] [by=…] [lineage=…] [sourceCard=…] [owner/repo]"
     })
   })
 

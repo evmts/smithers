@@ -302,18 +302,10 @@ interface DeclaredMove {
 }
 
 const DECLARED: ReadonlyArray<DeclaredMove> = [
-  ...(["github.mirror.retry-ref", "workspace.open", "workspace.desktop.open", "desktop"] as const).map(flow => ({
+  ...(["runs.list", "github.mirror.retry-ref", "workspace.open", "workspace.desktop.open", "desktop"] as const).map(flow => ({
     flow, kind: "sentence" as const, rows: 2,
     because: "Structured button arguments preserve their explicit repository without inventory (#2082). Malformed JSON and unknown fields now receive a grammar diagnostic rather than being interpreted as an identifier or filter."
   })),
-  {
-    flow: "runs.list", kind: "sentence", rows: 14,
-    because: "Structured button arguments preserve their explicit repository without inventory (#2082): two rows. The run inbox also filters by agent profile (smithers-ui-DESIGN.md §3.4), so the usage line names `agent=` beside `by=`: twelve rows that read the old usage sentence read the new one."
-  },
-  {
-    flow: "runs.list", kind: "card", rows: 42,
-    because: "The run inbox filters by agent profile (smithers-ui-DESIGN.md §3.4), so the list form gains an optional Agent field beside By and Lineage: every swept line's card lists it; no draft or missing field changes."
-  },
   ...(["issues", "issues.list"] as const).map(flow => ({
     flow, kind: "sentence" as const, rows: 1,
     because: "A repository-only issues listing now accepts an explicit unloaded repository with the default open filter (#2082), so the obsolete filter error and its incorrect draft disappear."
@@ -442,7 +434,7 @@ describe("the card every slash line opens, against main@origin", () => {
       "/issues codeplanesmithers/canary", "/issues.list codeplanesmithers/canary"
     ])
     /* `here` counts only flows that still exist: the three `change.pick` rows left with the flow (#1904). */
-    /* 1448: the runs.list usage sentence moved to a declared sentence, which the sweep counts once per flow, not per row. */
+    /* 1448: `/issues.create --nope value` and friends now read the create grammar's own --kind refusal instead of a usage line (smithers-ui-DESIGN.md §3.1). */
     expect({ atMain, here }).toEqual({ atMain: 1437, here: 1448 })
     /*
      * Two doors throw when the one token they are given is a number: the
