@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /Users/williamcory/.nvm/versions/node/v26.5.0/bin/node /Users/williamcory/.cache/node/corepack/v1/pnpm/11.25.0/bin/pnpm.cjs "$@"

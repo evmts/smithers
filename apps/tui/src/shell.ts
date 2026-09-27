@@ -82,7 +82,9 @@ const bashOnPath = (path: string | undefined): string | undefined => {
     try {
       accessSync(candidate, constants.X_OK)
       return candidate
-    } catch {}
+    } catch {
+      // Missing or non-executable candidates leave the remaining PATH entries to try.
+    }
   }
   return undefined
 }

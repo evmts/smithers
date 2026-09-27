@@ -1,0 +1,51 @@
+{
+  "dir": "packages/smithers/agent/registry",
+  "name": "@smthrs/registry",
+  "startedAt": "2026-09-27T20:07:39.014Z",
+  "finishedAt": "2026-09-27T20:08:02.983Z",
+  "command": [
+    "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+    "/Users/williamcory/smithers/packages/smithers/agent/registry/node_modules/vitest/vitest.mjs",
+    "run",
+    "--maxWorkers=1",
+    "--coverage",
+    "--coverage.reporter=text",
+    "--coverage.reporter=json-summary",
+    "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_registry/coverage"
+  ],
+  "exitCode": 0,
+  "signal": null,
+  "timedOut": false,
+  "total": {
+    "lines": {
+      "total": 1469,
+      "covered": 1468,
+      "skipped": 0,
+      "pct": 99.93
+    },
+    "statements": {
+      "total": 1579,
+      "covered": 1578,
+      "skipped": 0,
+      "pct": 99.93
+    },
+    "functions": {
+      "total": 303,
+      "covered": 303,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 1076,
+      "covered": 1075,
+      "skipped": 0,
+      "pct": 99.9
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    }
+  }
+}

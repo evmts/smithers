@@ -1,0 +1,2743 @@
+[
+  {
+    "dir": "packages/smithers/agent/std",
+    "name": "@smthrs/std",
+    "startedAt": "2026-09-27T20:06:44.144Z",
+    "finishedAt": "2026-09-27T20:07:25.423Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/std/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_std/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 2770,
+        "covered": 2662,
+        "skipped": 0,
+        "pct": 96.1
+      },
+      "statements": {
+        "total": 3159,
+        "covered": 2987,
+        "skipped": 0,
+        "pct": 94.55
+      },
+      "functions": {
+        "total": 568,
+        "covered": 522,
+        "skipped": 0,
+        "pct": 91.9
+      },
+      "branches": {
+        "total": 2068,
+        "covered": 1820,
+        "skipped": 0,
+        "pct": 88
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/memory",
+    "name": "@smthrs/memory",
+    "startedAt": "2026-09-27T20:07:25.427Z",
+    "finishedAt": "2026-09-27T20:07:39.014Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/memory/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_memory/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1305,
+        "covered": 1292,
+        "skipped": 0,
+        "pct": 99
+      },
+      "statements": {
+        "total": 1462,
+        "covered": 1449,
+        "skipped": 0,
+        "pct": 99.11
+      },
+      "functions": {
+        "total": 430,
+        "covered": 423,
+        "skipped": 0,
+        "pct": 98.37
+      },
+      "branches": {
+        "total": 773,
+        "covered": 738,
+        "skipped": 0,
+        "pct": 95.47
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/registry",
+    "name": "@smthrs/registry",
+    "startedAt": "2026-09-27T20:07:39.014Z",
+    "finishedAt": "2026-09-27T20:08:02.983Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/registry/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_registry/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1469,
+        "covered": 1468,
+        "skipped": 0,
+        "pct": 99.93
+      },
+      "statements": {
+        "total": 1579,
+        "covered": 1578,
+        "skipped": 0,
+        "pct": 99.93
+      },
+      "functions": {
+        "total": 303,
+        "covered": 303,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 1076,
+        "covered": 1075,
+        "skipped": 0,
+        "pct": 99.9
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/integrations",
+    "name": "@smthrs/integrations",
+    "startedAt": "2026-09-27T20:08:02.983Z",
+    "finishedAt": "2026-09-27T20:09:13.010Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/integrations/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_integrations/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 3935,
+        "covered": 3928,
+        "skipped": 0,
+        "pct": 99.82
+      },
+      "statements": {
+        "total": 4446,
+        "covered": 4436,
+        "skipped": 0,
+        "pct": 99.77
+      },
+      "functions": {
+        "total": 1073,
+        "covered": 1070,
+        "skipped": 0,
+        "pct": 99.72
+      },
+      "branches": {
+        "total": 3528,
+        "covered": 3521,
+        "skipped": 0,
+        "pct": 99.8
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/migrate",
+    "name": "@smthrs/migrate",
+    "startedAt": "2026-09-27T20:09:13.015Z",
+    "finishedAt": "2026-09-27T20:12:21.230Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/migrate/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_migrate/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 4122,
+        "covered": 4021,
+        "skipped": 0,
+        "pct": 97.54
+      },
+      "statements": {
+        "total": 4845,
+        "covered": 4614,
+        "skipped": 0,
+        "pct": 95.23
+      },
+      "functions": {
+        "total": 1005,
+        "covered": 967,
+        "skipped": 0,
+        "pct": 96.21
+      },
+      "branches": {
+        "total": 3513,
+        "covered": 3053,
+        "skipped": 0,
+        "pct": 86.9
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/build",
+    "name": "@smthrs/build",
+    "startedAt": "2026-09-27T20:12:21.259Z",
+    "finishedAt": "2026-09-27T20:12:48.979Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/build/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_build/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 681,
+        "covered": 661,
+        "skipped": 0,
+        "pct": 97.06
+      },
+      "statements": {
+        "total": 745,
+        "covered": 710,
+        "skipped": 0,
+        "pct": 95.3
+      },
+      "functions": {
+        "total": 170,
+        "covered": 152,
+        "skipped": 0,
+        "pct": 89.41
+      },
+      "branches": {
+        "total": 547,
+        "covered": 499,
+        "skipped": 0,
+        "pct": 91.22
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/build/build-cli",
+    "name": "@smthrs/build-cli",
+    "startedAt": "2026-09-27T20:20:24.532Z",
+    "finishedAt": "2026-09-27T20:37:00.636Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/build/build-cli/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_build-cli/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false
+  },
+  {
+    "dir": "packages/smithers/build/targets",
+    "name": "@smthrs/targets",
+    "startedAt": "2026-09-27T20:37:00.644Z",
+    "finishedAt": "2026-09-27T20:39:38.548Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/build/targets/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_targets/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 7540,
+        "covered": 7491,
+        "skipped": 0,
+        "pct": 99.35
+      },
+      "statements": {
+        "total": 8542,
+        "covered": 8461,
+        "skipped": 0,
+        "pct": 99.05
+      },
+      "functions": {
+        "total": 1416,
+        "covered": 1408,
+        "skipped": 0,
+        "pct": 99.43
+      },
+      "branches": {
+        "total": 6291,
+        "covered": 6122,
+        "skipped": 0,
+        "pct": 97.31
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers",
+    "name": "@smthrs/cli",
+    "startedAt": "2026-09-27T20:39:38.549Z",
+    "finishedAt": "2026-09-27T20:50:16.240Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_cli/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 5519,
+        "covered": 5368,
+        "skipped": 0,
+        "pct": 97.26
+      },
+      "statements": {
+        "total": 6306,
+        "covered": 6082,
+        "skipped": 0,
+        "pct": 96.44
+      },
+      "functions": {
+        "total": 1616,
+        "covered": 1552,
+        "skipped": 0,
+        "pct": 96.03
+      },
+      "branches": {
+        "total": 4252,
+        "covered": 3881,
+        "skipped": 0,
+        "pct": 91.27
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent",
+    "name": "@smthrs/agent",
+    "startedAt": "2026-09-27T20:50:16.241Z",
+    "finishedAt": "2026-09-27T20:52:50.057Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_agent/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 2348,
+        "covered": 2348,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 2635,
+        "covered": 2635,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 842,
+        "covered": 842,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 1594,
+        "covered": 1594,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/artifacts",
+    "name": "@smthrs/artifacts",
+    "startedAt": "2026-09-27T20:52:50.058Z",
+    "finishedAt": "2026-09-27T20:53:05.810Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/artifacts/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_artifacts/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 795,
+        "covered": 795,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 874,
+        "covered": 874,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 258,
+        "covered": 258,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 455,
+        "covered": 455,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/build/infra",
+    "name": "@smthrs/build-infra",
+    "startedAt": "2026-09-27T20:53:05.811Z",
+    "finishedAt": "2026-09-27T20:53:29.505Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/build/infra/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_build-infra/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1572,
+        "covered": 1572,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1755,
+        "covered": 1755,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 228,
+        "covered": 228,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 1018,
+        "covered": 1018,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/capability",
+    "name": "@smthrs/capability",
+    "startedAt": "2026-09-27T20:53:29.506Z",
+    "finishedAt": "2026-09-27T20:53:33.168Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/capability/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_capability/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 364,
+        "covered": 364,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 397,
+        "covered": 397,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 53,
+        "covered": 53,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 320,
+        "covered": 320,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/chain",
+    "name": "@smthrs/chain",
+    "startedAt": "2026-09-27T20:53:33.168Z",
+    "finishedAt": "2026-09-27T20:53:39.808Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/chain/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_chain/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 836,
+        "covered": 836,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 910,
+        "covered": 910,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 236,
+        "covered": 236,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 448,
+        "covered": 448,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/control",
+    "name": "@smthrs/control",
+    "startedAt": "2026-09-27T20:53:39.808Z",
+    "finishedAt": "2026-09-27T20:54:11.672Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/control/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_control/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 2408,
+        "covered": 2408,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 2689,
+        "covered": 2689,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 792,
+        "covered": 792,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 1813,
+        "covered": 1813,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/core",
+    "name": "@smthrs/core",
+    "startedAt": "2026-09-27T20:54:11.672Z",
+    "finishedAt": "2026-09-27T20:54:15.354Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/core/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_core/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 160,
+        "covered": 160,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 172,
+        "covered": 172,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 41,
+        "covered": 41,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 124,
+        "covered": 124,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/create-app",
+    "name": "@smthrs/create-app",
+    "startedAt": "2026-09-27T20:54:15.355Z",
+    "finishedAt": "2026-09-27T20:54:24.693Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/create-app/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_create-app/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false
+  },
+  {
+    "dir": "packages/smithers/flows/crypto",
+    "name": "@smthrs/crypto",
+    "startedAt": "2026-09-27T20:54:24.694Z",
+    "finishedAt": "2026-09-27T20:54:26.903Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/crypto/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_crypto/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 311,
+        "covered": 311,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 355,
+        "covered": 355,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 63,
+        "covered": 63,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 137,
+        "covered": 137,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/database",
+    "name": "@smthrs/database",
+    "startedAt": "2026-09-27T20:54:26.903Z",
+    "finishedAt": "2026-09-27T20:54:57.992Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/database/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_database/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 566,
+        "covered": 500,
+        "skipped": 0,
+        "pct": 88.33
+      },
+      "statements": {
+        "total": 630,
+        "covered": 554,
+        "skipped": 0,
+        "pct": 87.93
+      },
+      "functions": {
+        "total": 210,
+        "covered": 177,
+        "skipped": 0,
+        "pct": 84.28
+      },
+      "branches": {
+        "total": 406,
+        "covered": 357,
+        "skipped": 0,
+        "pct": 87.93
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/engine",
+    "name": "@smthrs/engine",
+    "startedAt": "2026-09-27T20:54:57.992Z",
+    "finishedAt": "2026-09-27T20:55:13.241Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/engine/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_engine/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 667,
+        "covered": 667,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 738,
+        "covered": 738,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 149,
+        "covered": 149,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 461,
+        "covered": 461,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/engine-store",
+    "name": "@smthrs/engine-store",
+    "startedAt": "2026-09-27T20:55:13.241Z",
+    "finishedAt": "2026-09-27T20:57:15.562Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/engine-store/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_engine-store/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 5053,
+        "covered": 5051,
+        "skipped": 0,
+        "pct": 99.96
+      },
+      "statements": {
+        "total": 5590,
+        "covered": 5587,
+        "skipped": 0,
+        "pct": 99.94
+      },
+      "functions": {
+        "total": 1464,
+        "covered": 1461,
+        "skipped": 0,
+        "pct": 99.79
+      },
+      "branches": {
+        "total": 3136,
+        "covered": 3129,
+        "skipped": 0,
+        "pct": 99.77
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/errors",
+    "name": "@smthrs/errors",
+    "startedAt": "2026-09-27T20:57:15.563Z",
+    "finishedAt": "2026-09-27T20:57:15.946Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/errors/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_errors/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 32,
+        "covered": 32,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 37,
+        "covered": 37,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 5,
+        "covered": 5,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 26,
+        "covered": 26,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/evals",
+    "name": "@smthrs/evals",
+    "startedAt": "2026-09-27T20:57:15.946Z",
+    "finishedAt": "2026-09-27T20:57:19.882Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/evals/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_evals/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 590,
+        "covered": 590,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 688,
+        "covered": 688,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 180,
+        "covered": 180,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 416,
+        "covered": 416,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows",
+    "name": "@smthrs/flows",
+    "startedAt": "2026-09-27T20:57:19.883Z",
+    "finishedAt": "2026-09-27T20:58:27.216Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_flows/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 478,
+        "covered": 478,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 513,
+        "covered": 513,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 118,
+        "covered": 118,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 261,
+        "covered": 261,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/fs",
+    "name": "@smthrs/fs",
+    "startedAt": "2026-09-27T20:58:27.217Z",
+    "finishedAt": "2026-09-27T20:58:42.948Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/fs/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_fs/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 802,
+        "covered": 802,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 921,
+        "covered": 921,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 195,
+        "covered": 195,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 561,
+        "covered": 561,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/gateway",
+    "name": "@smthrs/gateway",
+    "startedAt": "2026-09-27T20:58:42.949Z",
+    "finishedAt": "2026-09-27T20:59:07.157Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/gateway/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_gateway/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 2311,
+        "covered": 2311,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 2622,
+        "covered": 2622,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 525,
+        "covered": 525,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 2358,
+        "covered": 2358,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/harness",
+    "name": "@smthrs/harness",
+    "startedAt": "2026-09-27T20:59:07.158Z",
+    "finishedAt": "2026-09-27T20:59:39.135Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/harness/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_harness/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 3563,
+        "covered": 3563,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 4176,
+        "covered": 4176,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 1030,
+        "covered": 1030,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 2807,
+        "covered": 2807,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/harness-detect",
+    "name": "@smthrs/harness-detect",
+    "startedAt": "2026-09-27T20:59:39.135Z",
+    "finishedAt": "2026-09-27T20:59:39.458Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/harness-detect/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_harness-detect/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 177,
+        "covered": 177,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 209,
+        "covered": 209,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 51,
+        "covered": 51,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 156,
+        "covered": 156,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/jj",
+    "name": "@smthrs/jj",
+    "startedAt": "2026-09-27T20:59:39.459Z",
+    "finishedAt": "2026-09-27T21:00:04.676Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/jj/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_jj/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1004,
+        "covered": 1004,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1133,
+        "covered": 1133,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 263,
+        "covered": 263,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 577,
+        "covered": 577,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/journal",
+    "name": "@smthrs/journal",
+    "startedAt": "2026-09-27T21:00:04.678Z",
+    "finishedAt": "2026-09-27T21:00:23.281Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/journal/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_journal/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1238,
+        "covered": 1238,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1325,
+        "covered": 1325,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 362,
+        "covered": 362,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 839,
+        "covered": 839,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/kernel",
+    "name": "@smthrs/kernel",
+    "startedAt": "2026-09-27T21:00:23.282Z",
+    "finishedAt": "2026-09-27T21:00:33.926Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/kernel/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_kernel/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1454,
+        "covered": 1454,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1590,
+        "covered": 1590,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 511,
+        "covered": 511,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 907,
+        "covered": 907,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/keys",
+    "name": "@smthrs/keys",
+    "startedAt": "2026-09-27T21:00:33.927Z",
+    "finishedAt": "2026-09-27T21:00:35.932Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/keys/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_keys/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 22,
+        "covered": 22,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 23,
+        "covered": 23,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 11,
+        "covered": 11,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/mcp",
+    "name": "@smthrs/mcp",
+    "startedAt": "2026-09-27T21:00:35.933Z",
+    "finishedAt": "2026-09-27T21:00:45.875Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/mcp/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_mcp/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 591,
+        "covered": 591,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 673,
+        "covered": 673,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 121,
+        "covered": 121,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 448,
+        "covered": 448,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/model",
+    "name": "@smthrs/model",
+    "startedAt": "2026-09-27T21:00:45.875Z",
+    "finishedAt": "2026-09-27T21:00:57.140Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/model/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_model/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1796,
+        "covered": 1796,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 2060,
+        "covered": 2060,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 451,
+        "covered": 451,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 1702,
+        "covered": 1702,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/model-host",
+    "name": "@smthrs/model-host",
+    "startedAt": "2026-09-27T21:00:57.140Z",
+    "finishedAt": "2026-09-27T21:00:59.479Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/model-host/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_model-host/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 321,
+        "covered": 321,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 372,
+        "covered": 372,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 87,
+        "covered": 87,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 280,
+        "covered": 280,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/notifications",
+    "name": "@smthrs/notifications",
+    "startedAt": "2026-09-27T21:00:59.479Z",
+    "finishedAt": "2026-09-27T21:01:04.305Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/notifications/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_notifications/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 422,
+        "covered": 422,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 478,
+        "covered": 478,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 109,
+        "covered": 109,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 259,
+        "covered": 259,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/observability",
+    "name": "@smthrs/observability",
+    "startedAt": "2026-09-27T21:01:04.306Z",
+    "finishedAt": "2026-09-27T21:01:38.973Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/observability/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_observability/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 336,
+        "covered": 336,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 378,
+        "covered": 378,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 82,
+        "covered": 82,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 211,
+        "covered": 211,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/patterns",
+    "name": "@smthrs/patterns",
+    "startedAt": "2026-09-27T21:01:38.974Z",
+    "finishedAt": "2026-09-27T21:01:50.224Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/patterns/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_patterns/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1878,
+        "covered": 1878,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 2131,
+        "covered": 2131,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 621,
+        "covered": 621,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 1231,
+        "covered": 1231,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/plan",
+    "name": "@smthrs/plan",
+    "startedAt": "2026-09-27T21:01:50.224Z",
+    "finishedAt": "2026-09-27T21:02:03.155Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/plan/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_plan/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1346,
+        "covered": 1346,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1598,
+        "covered": 1598,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 295,
+        "covered": 295,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 955,
+        "covered": 955,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/plan-store",
+    "name": "@smthrs/plan-store",
+    "startedAt": "2026-09-27T21:02:03.155Z",
+    "finishedAt": "2026-09-27T21:02:15.110Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/plan-store/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_plan-store/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 108,
+        "covered": 108,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 116,
+        "covered": 116,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 28,
+        "covered": 28,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 37,
+        "covered": 37,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/platform-browser",
+    "name": "@smthrs/platform-browser",
+    "startedAt": "2026-09-27T21:02:15.110Z",
+    "finishedAt": "2026-09-27T21:02:18.399Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/platform-browser/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_platform-browser/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 236,
+        "covered": 236,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 262,
+        "covered": 262,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 119,
+        "covered": 119,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 170,
+        "covered": 170,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/platform-bun",
+    "name": "@smthrs/platform-bun",
+    "startedAt": "2026-09-27T21:02:18.399Z",
+    "finishedAt": "2026-09-27T21:02:44.703Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/platform-bun/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_platform-bun/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 38,
+        "covered": 38,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 42,
+        "covered": 42,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 7,
+        "covered": 7,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 8,
+        "covered": 8,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/platform-node",
+    "name": "@smthrs/platform-node",
+    "startedAt": "2026-09-27T21:02:44.703Z",
+    "finishedAt": "2026-09-27T21:04:29.772Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/platform-node/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_platform-node/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1243,
+        "covered": 1243,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1395,
+        "covered": 1395,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 308,
+        "covered": 308,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 1014,
+        "covered": 1013,
+        "skipped": 0,
+        "pct": 99.9
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/plugin",
+    "name": "@smthrs/plugin",
+    "startedAt": "2026-09-27T21:04:29.774Z",
+    "finishedAt": "2026-09-27T21:04:37.654Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/plugin/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_plugin/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 384,
+        "covered": 384,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 427,
+        "covered": 427,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 92,
+        "covered": 92,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 308,
+        "covered": 308,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/repo-targets",
+    "name": "@smthrs/repo-targets",
+    "startedAt": "2026-09-27T21:04:37.655Z",
+    "finishedAt": "2026-09-27T21:04:44.222Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/repo-targets/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_repo-targets/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 43,
+        "covered": 43,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 45,
+        "covered": 45,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 12,
+        "covered": 12,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 72,
+        "covered": 72,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    }
+  },
+  {
+    "dir": "packages/rpc",
+    "name": "@smthrs/rpc",
+    "startedAt": "2026-09-27T21:04:44.222Z",
+    "finishedAt": "2026-09-27T21:04:48.826Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/rpc/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_rpc/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1771,
+        "covered": 1671,
+        "skipped": 0,
+        "pct": 94.35
+      },
+      "statements": {
+        "total": 2013,
+        "covered": 1872,
+        "skipped": 0,
+        "pct": 92.99
+      },
+      "functions": {
+        "total": 312,
+        "covered": 283,
+        "skipped": 0,
+        "pct": 90.7
+      },
+      "branches": {
+        "total": 1452,
+        "covered": 1257,
+        "skipped": 0,
+        "pct": 86.57
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/run-store",
+    "name": "@smthrs/run-store",
+    "startedAt": "2026-09-27T21:04:48.827Z",
+    "finishedAt": "2026-09-27T21:04:59.196Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/run-store/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_run-store/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 845,
+        "covered": 845,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 922,
+        "covered": 922,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 217,
+        "covered": 217,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 686,
+        "covered": 680,
+        "skipped": 0,
+        "pct": 99.12
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/sandbox",
+    "name": "@smthrs/sandbox",
+    "startedAt": "2026-09-27T21:04:59.198Z",
+    "finishedAt": "2026-09-27T21:08:45.494Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/sandbox/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_sandbox/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1806,
+        "covered": 1806,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1981,
+        "covered": 1981,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 690,
+        "covered": 690,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 1285,
+        "covered": 1285,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/scorers",
+    "name": "@smthrs/scorers",
+    "startedAt": "2026-09-27T21:08:45.494Z",
+    "finishedAt": "2026-09-27T21:08:48.911Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/scorers/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_scorers/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 632,
+        "covered": 632,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 749,
+        "covered": 749,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 214,
+        "covered": 214,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 472,
+        "covered": 472,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/step-cache",
+    "name": "@smthrs/step-cache",
+    "startedAt": "2026-09-27T21:08:48.911Z",
+    "finishedAt": "2026-09-27T21:08:56.757Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/step-cache/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_step-cache/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 411,
+        "covered": 411,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 451,
+        "covered": 451,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 100,
+        "covered": 100,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 267,
+        "covered": 267,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/sync",
+    "name": "@smthrs/sync",
+    "startedAt": "2026-09-27T21:08:56.758Z",
+    "finishedAt": "2026-09-27T21:09:44.352Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/sync/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_sync/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1219,
+        "covered": 1219,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1338,
+        "covered": 1338,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 383,
+        "covered": 383,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 549,
+        "covered": 549,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/testing",
+    "name": "@smthrs/testing",
+    "startedAt": "2026-09-27T21:09:44.353Z",
+    "finishedAt": "2026-09-27T21:10:01.883Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/testing/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_testing/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1682,
+        "covered": 1682,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1904,
+        "covered": 1904,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 621,
+        "covered": 621,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 914,
+        "covered": 914,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/flows/time-travel",
+    "name": "@smthrs/time-travel",
+    "startedAt": "2026-09-27T21:10:01.884Z",
+    "finishedAt": "2026-09-27T21:11:08.135Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/flows/time-travel/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_time-travel/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1568,
+        "covered": 1568,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1695,
+        "covered": 1695,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 486,
+        "covered": 486,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 892,
+        "covered": 890,
+        "skipped": 0,
+        "pct": 99.77
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smithers/agent/triggers",
+    "name": "@smthrs/triggers",
+    "startedAt": "2026-09-27T21:11:08.136Z",
+    "finishedAt": "2026-09-27T21:11:16.039Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smithers/agent/triggers/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_triggers/coverage"
+    ],
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 1061,
+        "covered": 1061,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 1202,
+        "covered": 1202,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 346,
+        "covered": 346,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 915,
+        "covered": 914,
+        "skipped": 0,
+        "pct": 99.89
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      }
+    }
+  },
+  {
+    "dir": "packages/smthrs-deprecation",
+    "name": "smthrs",
+    "startedAt": "2026-09-27T21:11:16.039Z",
+    "finishedAt": "2026-09-27T21:11:23.417Z",
+    "command": [
+      "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+      "/Users/williamcory/smithers/packages/smthrs-deprecation/node_modules/vitest/vitest.mjs",
+      "run",
+      "--maxWorkers=1",
+      "--coverage",
+      "--coverage.reporter=text",
+      "--coverage.reporter=json-summary",
+      "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/smthrs/coverage"
+    ],
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "total": {
+      "lines": {
+        "total": 2,
+        "covered": 2,
+        "skipped": 0,
+        "pct": 100
+      },
+      "statements": {
+        "total": 2,
+        "covered": 2,
+        "skipped": 0,
+        "pct": 100
+      },
+      "functions": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branches": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": 100
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    }
+  }
+]

@@ -1,0 +1,51 @@
+{
+  "dir": "packages/smithers/build",
+  "name": "@smthrs/build",
+  "startedAt": "2026-09-27T20:12:21.259Z",
+  "finishedAt": "2026-09-27T20:12:48.979Z",
+  "command": [
+    "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+    "/Users/williamcory/smithers/packages/smithers/build/node_modules/vitest/vitest.mjs",
+    "run",
+    "--maxWorkers=1",
+    "--coverage",
+    "--coverage.reporter=text",
+    "--coverage.reporter=json-summary",
+    "--coverage.reportsDirectory=/Users/williamcory/smithers/factory/reports/testing-campaign/packages-local-runner/_smthrs_build/coverage"
+  ],
+  "exitCode": 0,
+  "signal": null,
+  "timedOut": false,
+  "total": {
+    "lines": {
+      "total": 681,
+      "covered": 661,
+      "skipped": 0,
+      "pct": 97.06
+    },
+    "statements": {
+      "total": 745,
+      "covered": 710,
+      "skipped": 0,
+      "pct": 95.3
+    },
+    "functions": {
+      "total": 170,
+      "covered": 152,
+      "skipped": 0,
+      "pct": 89.41
+    },
+    "branches": {
+      "total": 547,
+      "covered": 499,
+      "skipped": 0,
+      "pct": 91.22
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    }
+  }
+}
