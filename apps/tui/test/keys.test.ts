@@ -186,6 +186,7 @@ describe("key registry", () => {
     expect(Keys.matches({ name: "kpenter" }, "enter")).toBe(true)
     expect(Keys.bindingFor({ name: "]", ctrl: true })?.id).toBe("next-tab")
     expect(Keys.bindingFor({ name: "\\", ctrl: true })?.id).toBe("previous-tab")
+    expect(Keys.bindingFor({ name: "tab", shift: true }, "panel")?.id).toBe("previous-panel-tab")
     expect(Keys.bindingFor({ name: "?" }, "composer")?.id).toBe("keys")
     expect(Keys.bindingFor({ name: "y" }, "approval")?.id).toBe("allow")
   })

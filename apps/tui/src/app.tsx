@@ -1629,10 +1629,10 @@ export function App(props: AppProps) {
       }))
     }
     if (
-      (key.ctrl && ["right", "left", "]", "\\"].includes(key.name)) || (key.name === "tab" && panelFocus && !key.shift)
+      (key.ctrl && ["right", "left", "]", "\\"].includes(key.name)) || (key.name === "tab" && panelFocus && !key.ctrl && !key.meta && !key.option)
     ) {
       key.preventDefault()
-      flushSync(() => stepTab(surfaces, key.name === "left" || key.name === "\\"))
+      flushSync(() => stepTab(surfaces, key.name === "left" || key.name === "\\" || (key.name === "tab" && key.shift)))
       return
     }
     // Contributed keys never shadow a built-in one (`Contributions` refused those), and a

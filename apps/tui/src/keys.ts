@@ -109,6 +109,7 @@ export const registry: ReadonlyArray<Binding> = [
   { id: "approve-form", keys: ["a"], label: "Action", context: "panel", group: "Panel" },
   { id: "undo", keys: ["u"], label: "Undo changes", context: "panel", group: "Panel" },
   { id: "next-panel-tab", keys: ["tab"], label: "Next tab", context: "panel", group: "Tabs" },
+  { id: "previous-panel-tab", keys: ["shift+tab"], label: "Previous tab", context: "panel", group: "Tabs" },
 
   { id: "close-picker", keys: ["esc"], label: "Close", context: "picker", group: "Picker" },
   {
