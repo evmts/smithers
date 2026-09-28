@@ -1,5 +1,5 @@
 /**
- * Headless probe: runs one turn and prints every event as one JSON line.
+ * Headless probe: prints non-delta events and the final outcome as JSON lines.
  *
  *   bun src/ask.ts "list the files here" [seat]
  */
@@ -42,7 +42,7 @@ const turn = host.run({
     if (record !== undefined) appendFileSync(record, JSON.stringify({ at: Date.now(), event }) + "\n")
     const { _tag, ...rest } = event as unknown as { _tag: string } & Record<string, unknown>
     if (_tag === "model-delta") return
-    console.log(JSON.stringify({ _tag, ...rest }).slice(0, 400))
+    console.log(JSON.stringify({ _tag, ...rest }))
   }
 })
 const outcome = await turn.done

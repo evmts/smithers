@@ -43,6 +43,11 @@ jj 0.39.0 or later on PATH; text search uses `rg`.
 On Alpine, install the C++ runtime with `apk add libstdc++` before launching
 a compiled musl binary.
 
+Interactive runtimes use the corrected OpenTUI native editor shipped with the
+CLI. Compiled binaries embed the matching library; installation does not need
+Zig. Source, artifact hashes, licenses, and rebuild instructions live in
+[`packages/smithers/vendor/opentui-native`](../../packages/smithers/vendor/opentui-native/README.md).
+
 Interactive chat prefers `cerebras:qwen-3.8-27b` with low reasoning effort
 when `CEREBRAS_API_KEY` is configured, falling back to an available provider.
 `--model` or `SMITHERS_TUI_SEAT` overrides chat. Background workers use the
@@ -114,6 +119,9 @@ Ctrl+O read it.
 | Shift+Up, Shift+Down                                  | Scroll a line                                                                                                                                                                                                                                                                                                          |
 | `!cmd`                                                | Run a shell command; its output joins the next turn's context                                                                                                                                                                                                                                                          |
 | `!!cmd`                                               | Run a shell command and keep it out of context                                                                                                                                                                                                                                                                         |
+
+Shift+Left/Right selects text in the composer, search, and text fields. Typing
+replaces the selection. Shift+Up/Down scrolls the conversation.
 
 ## Commands
 

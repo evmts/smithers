@@ -1,7 +1,8 @@
 /** Local network boundary for monitor demonstrations; no live credentials or paid requests. */
 import { once } from "node:events"
 import { createServer } from "node:http"
-export async function providerFixture({ judge = false } = {}) {
+export async function providerFixture({ judge = false, coordinatorCell } = {}) {
+  const requests = []
   const server = createServer(async (request, response) => {
     if (request.url === "/routes") {
       response.setHeader("Content-Type", "application/json")
@@ -13,35 +14,54 @@ export async function providerFixture({ judge = false } = {}) {
     const body = JSON.parse(Buffer.concat(chunks).toString() || "{}")
     let content
     if (judge && body.instructions?.startsWith("Judge the supplied evidence")) {
-      const { questions } = JSON.parse(body.input.find((item) => item.role === "user").content[0].text)
+      const { state, questions } = JSON.parse(body.input.find((item) => item.role === "user").content[0].text)
+      const monitor = Object.keys(questions).length === 1 && "notable" in questions
+      requests.push({ kind: monitor ? "monitor-judge" : "judge", state, questions })
       const passing = new Set(["on_target", "complete", "notable"])
       content = JSON.stringify({
         answers: Object.fromEntries(
           Object.entries(questions).map(([id, q]) => [
             id,
             q.type === "boolean"
-              ? { type: "boolean", probability: passing.has(id) ? 0.99 : 0.01 }
+              ? {
+                type: "boolean",
+                probability: monitor
+                  ? state.before.includes("2 checks passed") && state.after.includes("3 checks passed") ? 0.99 : 0.01
+                  : passing.has(id)
+                  ? 0.99
+                  : 0.01
+              }
               : q.type === "choice"
               ? { type: "choice", choice: q.options?.[0] ?? Object.keys(q.criteria ?? {})[0] ?? "" }
               : { type: "score", score: 0 }
           ])
         )
       })
+    } else if (coordinatorCell && body.instructions?.includes("telling the user the notable update")) {
+      requests.push({ kind: "luna", body })
+      content = "Addition checks passed."
+    } else if (coordinatorCell) {
+      requests.push({ kind: "coordinator", body })
+      content = `\`\`\`cell\n${coordinatorCell}\n\`\`\``
     } else {
+      requests.push({ kind: "model", body })
       content = JSON.stringify(body).includes("You estimate how long")
         ? JSON.stringify({ minutes: 0.1, tokens: 800, low_minutes: 0.05, high_minutes: 0.3 })
         : "Addition checks passed."
     }
     response.setHeader("Content-Type", "text/event-stream")
-    response.end([
-      { type: "response.output_text.delta", item_id: "answer", output_index: 0, content_index: 0, delta: content },
-      { type: "response.completed", response: { id: "response", status: "completed", usage: {} } }
-    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""))
+    response.end(
+      [
+        { type: "response.output_text.delta", item_id: "answer", output_index: 0, content_index: 0, delta: content },
+        { type: "response.completed", response: { id: "response", status: "completed", usage: {} } }
+      ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")
+    )
   })
   server.listen(0, "127.0.0.1")
   await once(server, "listening")
   const url = `http://127.0.0.1:${server.address().port}`
   return {
+    requests,
     env: {
       SMITHERS_ACCOUNT_POOL_URL: url,
       SMITHERS_ACCOUNT_POOL_KEY: "docs-fixture",

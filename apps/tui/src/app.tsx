@@ -2175,6 +2175,7 @@ export function App(props: AppProps) {
                 backgroundColor={color.surface}
               >
                 <textarea
+                  selectionOccupancy="boundary"
                   ref={composer}
                   focused={picker === undefined && !panelFocus && form === undefined}
                   placeholder={steered !== undefined

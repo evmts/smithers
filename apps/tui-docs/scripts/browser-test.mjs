@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { fork } from "node:child_process"
 import { once } from "node:events"
 import { chromium } from "playwright"
+import docsConfig from "../astro.config.mjs"
 import { browserReplies, completion } from "./browser-replies.mjs"
 const browser = await chromium.launch({
   headless: true,
@@ -20,15 +21,17 @@ let calls = 0, release, releaseInterrupted
 const held = new Promise((resolve) => {
   release = resolve
 })
-const savedRun = async (page) => page.evaluate(() => {
-  const state = JSON.parse(localStorage.getItem("smithers.tui.playground.v1"))
-  return state.branches.find((branch) => branch.id === state.current).frames.at(-1).run
-})
-const savedFlows = async (page) => page.evaluate(() => {
-  const state = JSON.parse(localStorage.getItem("smithers.tui.playground.v1"))
-  return state.branches.find((branch) => branch.id === state.current).frames.at(-1).events
-    .filter((event) => event.kind === "flow").map((event) => event.text.split("\n")[0])
-})
+const savedRun = async (page) =>
+  page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("smithers.tui.playground.v1"))
+    return state.branches.find((branch) => branch.id === state.current).frames.at(-1).run
+  })
+const savedFlows = async (page) =>
+  page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("smithers.tui.playground.v1"))
+    return state.branches.find((branch) => branch.id === state.current).frames.at(-1).events
+      .filter((event) => event.kind === "flow").map((event) => event.text.split("\n")[0])
+  })
 try {
   if (!origin) {
     server = fork(new URL("../server/serve.mjs", import.meta.url), [], {
@@ -102,8 +105,33 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await page.screenshot({ path: "/tmp/smithers-tui-docs-mobile.png", fullPage: true })
-  const moved = await page.request.get(origin + "/guides/chat/", { maxRedirects: 0 })
-  assert([301, 302, 200].includes(moved.status()), "former guide pages redirect to smithers.sh")
+  for (const [former, destination] of Object.entries(docsConfig.redirects)) {
+    const requested = new URL(former, origin).href
+    const moved = await page.request.get(requested, { maxRedirects: 0 })
+    assert.equal(moved.url(), requested, `${former}: stay on the local delivery boundary`)
+    if (moved.status() >= 300 && moved.status() < 400) {
+      const location = moved.headers().location
+      assert.ok(location, `${former}: HTTP redirect needs Location`)
+      assert.equal(new URL(location, requested).href, destination, `${former}: HTTP destination`)
+    } else {
+      assert.equal(moved.status(), 200, `${former}: deliver the generated redirect page`)
+      assert.match(moved.headers()["content-type"], /text\/html/, `${former}: redirect HTML`)
+      const redirect = await page.evaluate((html) => {
+        const document = new DOMParser().parseFromString(html, "text/html")
+        return {
+          refresh: document.querySelector("meta[http-equiv=\"refresh\"]")?.getAttribute("content"),
+          canonical: document.querySelector("link[rel=\"canonical\"]")?.getAttribute("href")
+        }
+      }, await moved.text())
+      assert.ok(redirect.refresh, `${former}: generated page needs meta refresh`)
+      const refresh = /^\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*(.+?)\s*$/i.exec(redirect.refresh)
+      assert.ok(refresh, `${former}: valid meta refresh destination`)
+      const refreshDestination = refresh[1].replace(/^(["'])(.*)\1$/, "$2")
+      assert.equal(new URL(refreshDestination, requested).href, destination, `${former}: meta refresh destination`)
+      assert.ok(redirect.canonical, `${former}: generated page needs canonical destination`)
+      assert.equal(new URL(redirect.canonical, requested).href, destination, `${former}: canonical destination`)
+    }
+  }
   await page.goto(origin)
   await page.locator("#checkpoint").fill("0")
   const priorBranch = await page.locator("#branch-select").inputValue()
@@ -168,7 +196,9 @@ try {
   await recovering.close()
   assert.deepEqual(errors, [])
   console.log(
-    "Browser: live production agent, unresolved provider, checkpoints, reload, branching, mobile, and the former guide redirects passed."
+    `Browser: live production agent, unresolved provider, checkpoints, reload, branching, mobile, and ${
+      Object.keys(docsConfig.redirects).length
+    } former route destinations passed.`
   )
 } finally {
   release()

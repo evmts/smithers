@@ -10487,6 +10487,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/src/native.ts"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui/src/palette.ts"
       },
       {
@@ -17318,6 +17322,186 @@
         "path": "packages/smithers/ui/ui-styleguide/src/themes/solarized.ts"
       },
       {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/build-receipt.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/darwin-arm64/index.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/darwin-arm64/libopentui.dylib"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/darwin-x64/index.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/darwin-x64/libopentui.dylib"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/AUTHORS-LIBWEBP"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-GHOSTTY"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-LCMS2"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-LIBCXX"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-LIBCXXABI"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-LIBUNWIND"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-LIBWEBP"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-MINGW"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-MINIAUDIO"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-MUSL"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-OPENTUI"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-STB"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-UUCODE-GHOSTTY"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-UUCODE-OPENTUI"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-WUFFS"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-YOGA"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/LICENSE-ZIG"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/licenses/PATENTS-LIBWEBP"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/linux-arm64-musl/index.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/linux-arm64-musl/libopentui.so"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/linux-arm64/index.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/linux-arm64/libopentui.so"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/linux-x64-musl/index.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/linux-x64-musl/libopentui.so"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/linux-x64/index.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/linux-x64/libopentui.so"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/manifest.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/native.patch"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/rebuild.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/runtime.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/runtime.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/runtime.node.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/target.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/verify.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/win32-arm64/index.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/win32-arm64/opentui.dll"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/win32-x64/index.bun.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/win32-x64/opentui.dll"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/vendor/opentui-native/zig-deps-pins.sh"
+      },
+      {
         "kind": "glob",
         "pattern": "apps/tui-docs/scripts/**/*",
         "exclude": []
@@ -17432,7 +17616,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers:nativeSources"
+    ],
     "source": {
       "file": "apps/tui/PACKAGE.ts"
     }
@@ -17493,7 +17679,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers:nativeSources"
+    ],
     "source": {
       "file": "apps/tui/PACKAGE.ts"
     }
@@ -17597,7 +17785,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers:nativeSources"
+    ],
     "source": {
       "file": "apps/tui/PACKAGE.ts"
     }
@@ -17638,7 +17828,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers:nativeSources"
+    ],
     "source": {
       "file": "apps/tui/PACKAGE.ts"
     }
@@ -18780,6 +18972,34 @@
       },
       {
         "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/stack.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/preparation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/coding-planning.md"
       },
       {
@@ -18932,6 +19152,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/docs/testing.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/PACKAGE.ts"
       },
       {
@@ -18940,7 +19164,67 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/inputs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/sync-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/serve.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/sponsor.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/provider.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/ui.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci/cloud.sh"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/astro.config.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/journeys/capture.mjs"
       },
       {
         "kind": "file",
@@ -19041,10 +19325,6 @@
       {
         "kind": "file",
         "path": "flows/repository/jev-checks.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/schema.ts"
       },
       {
         "kind": "file",
@@ -19211,6 +19491,34 @@
       },
       {
         "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/stack.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/preparation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/coding-planning.md"
       },
       {
@@ -19363,6 +19671,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/docs/testing.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/PACKAGE.ts"
       },
       {
@@ -19371,7 +19683,67 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/inputs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/sync-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/serve.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/sponsor.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/provider.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/ui.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci/cloud.sh"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/astro.config.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/journeys/capture.mjs"
       },
       {
         "kind": "file",
@@ -19472,10 +19844,6 @@
       {
         "kind": "file",
         "path": "flows/repository/jev-checks.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/schema.ts"
       },
       {
         "kind": "file",
@@ -19640,6 +20008,34 @@
       },
       {
         "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/stack.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/preparation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/coding-planning.md"
       },
       {
@@ -19792,6 +20188,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/docs/testing.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/PACKAGE.ts"
       },
       {
@@ -19800,7 +20200,67 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/inputs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/sync-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/serve.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/sponsor.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/provider.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/ui.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci/cloud.sh"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/astro.config.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/journeys/capture.mjs"
       },
       {
         "kind": "file",
@@ -19901,10 +20361,6 @@
       {
         "kind": "file",
         "path": "flows/repository/jev-checks.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/coding/schema.ts"
       },
       {
         "kind": "file",
@@ -20315,6 +20771,34 @@
       },
       {
         "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/stack.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/preparation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/coding-planning.md"
       },
       {
@@ -20467,6 +20951,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/docs/testing.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/PACKAGE.ts"
       },
       {
@@ -20475,7 +20963,67 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/inputs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/sync-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/serve.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/sponsor.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/provider.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/ui.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci/cloud.sh"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/astro.config.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/journeys/capture.mjs"
       },
       {
         "kind": "file",
@@ -20849,6 +21397,34 @@
       },
       {
         "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/stack.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/preparation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/coding-planning.md"
       },
       {
@@ -21001,6 +21577,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/docs/testing.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/PACKAGE.ts"
       },
       {
@@ -21009,7 +21589,67 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/inputs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/sync-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/serve.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/sponsor.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/provider.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/ui.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci/cloud.sh"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/astro.config.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/journeys/capture.mjs"
       },
       {
         "kind": "file",
@@ -21367,6 +22007,34 @@
       },
       {
         "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/stack.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/preparation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
         "path": "factory/wiki/pages/coding-planning.md"
       },
       {
@@ -21519,6 +22187,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/docs/testing.md"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/PACKAGE.ts"
       },
       {
@@ -21527,7 +22199,67 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui-docs/scripts/inputs.mjs"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui-docs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/sync-reference.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/serve.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/server/sponsor.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/agent.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/store.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/provider.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/src/playground/ui.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/test/coverage.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci/cloud.sh"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/astro.config.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui-docs/scripts/browser-record.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/journeys/capture.mjs"
       },
       {
         "kind": "file",
@@ -38056,6 +38788,19 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/smithers/vendor/opentui-native/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/build-tui.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/tui-native-editor.mjs"
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/src/index.ts"
       },
@@ -38099,6 +38844,26 @@
       {
         "kind": "file",
         "path": "eslint.jsdoc.js"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers:nativeSources",
+    "package": "packages/smithers",
+    "name": "nativeSources",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/vendor/opentui-native/**",
+        "exclude": []
       }
     ],
     "outputs": [],

@@ -346,7 +346,9 @@ describe("pure app event projection", () => {
 
   test("physical row ordering cannot change fallback documents, tab selection or interrupted-turn reconciliation", () => {
     const base = boot()
-    const document = base.worldDocuments[0]!
+    expect(base.worldDocuments).toEqual([])
+    const document = { id: "original", path: "notes/original.md", title: "Original", body: "# Original",
+      links: [], tags: [], sources: [], confidence: 1, updatedAt: 100, updatedBy: "user" as const, revision: 0 }
     const state: AppProjectionSnapshot = {
       ...base,
       sessions: [{ ...base.sessions[0]!, selectedWorldDocumentId: "removed", activeTabId: "a-tab", phase: "responding", turnId: null }],

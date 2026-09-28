@@ -280,3 +280,43 @@ describe("grid", () => {
     expect(SubagentCard.rowHeights(layout, [9, 4, 3])).toEqual([9, 3])
   })
 })
+
+describe("display-column clipping", () => {
+  test.each(
+    [
+      ["", 0, ""],
+      ["abc", -1, ""],
+      ["abc", 0, ""],
+      ["abc", 1, "…"],
+      ["abc", 2, "a…"],
+      ["abc", 3, "abc"],
+      ["abc", 4, "abc"],
+      ["界界界", 1, "…"],
+      ["界界界", 2, "…"],
+      ["界界界", 4, "界…"],
+      ["界界界", 5, "界界…"],
+      ["界界界", 6, "界界界"],
+      ["e\u0301xy", 2, "e\u0301…"],
+      ["e\u0301xy", 3, "e\u0301xy"],
+      ["👍🏽ab", 3, "👍🏽…"],
+      ["👨‍👩‍👧‍👦ab", 3, "👨‍👩‍👧‍👦…"],
+      ["🇺🇸ab", 3, "🇺🇸…"],
+      ["界e\u0301😀x", 5, "界e\u0301…"],
+      ["界e\u0301😀x", 6, "界e\u0301😀x"]
+    ] as const
+  )("preserves whole graphemes in %j at %i columns", (text, width, expected) => {
+    expect(SubagentCard.clip(text, width)).toBe(expected)
+  })
+
+  test.each(["✓", "✗"] as const)("reserves the branch and %s beside a clipped CJK row", (mark) => {
+    const row = { branch: "├", text: "界界界界界界", mark, state: mark === "✓" ? "done" : "error" } as const
+    expect(SubagentCard.line(row, 9)).toBe(`├ 界界… ${mark}`)
+    expect(SubagentCard.line(row, 4)).toBe(`├  ${mark}`)
+    expect(SubagentCard.line(row)).toBe(`├ 界界界界界界 ${mark}`)
+  })
+
+  test("an unmarked row spends its columns on complete text", () => {
+    expect(SubagentCard.line({ branch: "└", text: "界界界界", mark: "", state: "text" }, 7))
+      .toBe("└ 界界…")
+  })
+})

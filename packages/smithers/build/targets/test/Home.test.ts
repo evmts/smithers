@@ -10,6 +10,34 @@
 import { describe, expect, it } from "vitest"
 import * as Home from "../src/Home.ts"
 
+describe("homepage HTTP(S) link schemes", () => {
+  const links = [
+    "HTTP://example.com/guide",
+    "HTTPS://example.com/guide",
+    "HtTp://example.com/guide",
+    "HtTpS://example.com/guide"
+  ]
+
+  it.each(links)("declares case-insensitive HTTP(S) link %s without rewriting it", (url) => {
+    expect(Home.Links({ links: [{ label: "Guide", url }] }))
+      .toEqual({ type: "links", links: [{ label: "Guide", url }] })
+  })
+
+  it.each(links)("parses a projected case-insensitive HTTP(S) link %s", (url) => {
+    expect(Home.parse(JSON.stringify({ blocks: [{ type: "links", links: [{ label: "Guide", url }] }] })))
+      .toEqual({ blocks: [{ type: "links", links: [{ label: "Guide", url }] }] })
+  })
+
+  it.each(["ftp://example.com/guide", "file:///etc/passwd", "mailto:will@example.com", "javascript:alert(1)"])(
+    "rejects unsupported protocol %s during declaration and projection parsing",
+    (url) => {
+      expect(() => Home.Links({ links: [{ label: "Guide", url }] })).toThrow()
+      expect(Home.parse(JSON.stringify({ blocks: [{ type: "links", links: [{ label: "Guide", url }] }] })))
+        .toMatch(/shape/)
+    }
+  )
+})
+
 describe("the home blocks", () => {
   it("declare frozen plain values that carry their type", () => {
     const text = Home.Text({ title: "About", text: "Smithers builds itself with Smithers." })

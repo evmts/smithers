@@ -53,9 +53,11 @@ export class Journal {
     return this.branch.frames.at(-1)!
   }
   private commit(next: State) {
-    const bytes = JSON.stringify(next)
-    if (bytes.length > 4_000_000) throw new Error("Sandbox history is full. Clear site data to start again.")
-    this.storage.setItem(storageKey, bytes) // Failure leaves in-memory state unchanged.
+    const serialized = JSON.stringify(next)
+    if (new TextEncoder().encode(serialized).byteLength > 4_000_000) {
+      throw new Error("Sandbox history is full. Clear site data to start again.")
+    }
+    this.storage.setItem(storageKey, serialized) // Failure leaves in-memory state unchanged.
     this.state = next
   }
   update(edit: (frame: Frame) => void) {

@@ -144,7 +144,14 @@ export class Workspace {
     })
     for (const saved of options.restored?.tabs ?? []) {
       // Older sessions predate recursive tabs.
-      const tab = { ...saved, depth: saved.depth ?? (saved.id.split("/").length - 1) }
+      const tab = {
+        ...saved,
+        depth: saved.depth ?? (saved.id.split("/").length - 1),
+        // Preparation failures in older sessions saved the refusal without its card metadata.
+        ...(saved.status === "failed" && saved.failure === undefined
+          ? { failure: FailureCopy.describe(saved.message, saved.activeSeat ?? saved.seat) }
+          : {})
+      }
       let records: ReadonlyArray<Session.Record> = []
       let transcript: Transcript.Transcript | undefined
       try {
@@ -519,9 +526,7 @@ export class Workspace {
     } catch (error) {
       const failure = Agents.unreadable(error)
       const now = current()
-      if (now !== undefined) {
-        this.tabs.move({ ...now, endedAt: Date.now(), message: failure.message, code: failure.code }, "fail")
-      }
+      if (now !== undefined) this.fail(now, writer, failure)
       return
     }
     const now = current()
@@ -697,7 +702,8 @@ export class Workspace {
     this.handles.delete(tab.id)
     this.steering.delete(tab.id)
     const at = Date.now()
-    const message = String(error)
+    const agentFailure = error instanceof Agents.AgentError ? error : undefined
+    const message = agentFailure?.message ?? String(error)
     const failure = FailureCopy.describe(error, this.tabs.get(tab.id)?.activeSeat ?? tab.seat)
     try {
       writer.append({
@@ -715,6 +721,7 @@ export class Workspace {
       endedAt: at,
       message,
       failure,
+      ...(agentFailure === undefined ? {} : { code: agentFailure.code }),
       detail: error instanceof Error ? error.stack : undefined
     }, "fail")
   }

@@ -10,7 +10,7 @@ import type * as Flows from "../src/flows.ts"
 import type * as Host from "../src/host.ts"
 import * as Models from "../src/models.ts"
 import * as Session from "../src/session.ts"
-import { Workspace } from "../src/workspace.ts"
+import { type Snapshot, Workspace } from "../src/workspace.ts"
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 const descriptor = (overrides: Partial<Extension.Descriptor> = {}): Extension.Descriptor => ({
@@ -40,6 +40,7 @@ const setup = (
     readonly known?: boolean
     readonly routes?: boolean
     readonly delegable?: ReadonlyArray<Models.DelegateModel>
+    readonly restored?: Snapshot
   } = {}
 ) => {
   const inputs: Array<Host.TurnInput> = []
@@ -91,6 +92,7 @@ const setup = (
     history: () => [],
     persist: (record) => records.push(record),
     agents,
+    ...(options.restored === undefined ? {} : { restored: options.restored }),
     seatOf: (declared) => Models.seatOf(declared, []),
     ...(options.delegable === undefined ? {} : { delegable: options.delegable })
   })
@@ -204,6 +206,105 @@ describe("custom agents", () => {
     // Retry keeps the agent and the requested model, and re-reads the file.
     expect(f.inputs[0]?.agent?.system).toStartWith("Review it again.")
     expect(f.inputs[0]?.seat).toBe(Models.delegateModels.astra)
+  })
+
+  it("a body refusal writes one sanitized failed outcome to the worker's own session", async () => {
+    const f = setup()
+    f.workspace.request(request)
+    await tick()
+    const file = f.workspace.snapshot().tabs[0]!.file
+    f.loads[0]!.reject(new Error("Body unavailable\nprivate stack"))
+    await tick()
+    const outcomes = Session.load(file).filter((record) => record.type === "outcome")
+    expect(outcomes).toHaveLength(1)
+    expect(outcomes[0]).toMatchObject({
+      prompt: request.prompt,
+      outcome: { _tag: "failed" }
+    })
+    if (outcomes[0]?.type !== "outcome" || outcomes[0].outcome._tag !== "failed") {
+      throw new Error("Worker failed outcome missing")
+    }
+    expect(outcomes[0].outcome.message).toContain("Body unavailable")
+    expect(outcomes[0].outcome.message).not.toContain("private stack")
+    expect(outcomes[0].outcome.message).not.toContain("\n")
+    expect(outcomes[0].outcome.headline).toBe(f.workspace.snapshot().tabs[0]!.failure!.headline)
+    expect(f.workspace.snapshot().tabs[0]).toMatchObject({ status: "failed", code: "unreadable" })
+    expect(f.inputs).toEqual([])
+  })
+
+  it("a body refusal has the same settled failure timeline live and after reopening", async () => {
+    const f = setup()
+    f.workspace.request(request)
+    await tick()
+    f.loads[0]!.reject(new Error("Body unavailable\nprivate stack"))
+    await tick()
+    const snapshot = f.workspace.snapshot()
+    const failed = snapshot.tabs[0]!
+    const live = f.workspace.transcript(failed.id)
+    expect(live.items.filter((item) => item.kind === "error")).toMatchObject([
+      { text: failed.failure!.headline }
+    ])
+    expect(live.streaming).toBe("")
+    expect(live.thinking).toBe(false)
+    const restored = setup({ restored: snapshot })
+    await tick()
+    expect(restored.workspace.transcript(failed.id).items.filter((item) => item.kind === "error"))
+      .toEqual(live.items.filter((item) => item.kind === "error"))
+    expect(restored.workspace.read(failed.id)).toMatchObject({ status: "failed" })
+    expect(restored.workspace.panel(failed.id).summary).toBe(failed.failure!.headline)
+    expect(restored.loads).toEqual([])
+    expect(restored.inputs).toEqual([])
+    expect(Session.load(failed.file).filter((record) => record.type === "outcome")).toHaveLength(1)
+  })
+
+  it("a stale body refusal cannot fail the replacement worker or write its failure receipt", async () => {
+    const f = setup()
+    f.workspace.request(request)
+    await tick()
+    const firstFile = f.workspace.snapshot().tabs[0]!.file
+    f.workspace.cancel(request.id)
+    f.workspace.retry(request.id)
+    await tick()
+    const replacementFile = f.workspace.snapshot().tabs[0]!.file
+    expect(replacementFile).not.toBe(firstFile)
+    f.loads[1]!.resolve(body("Current body."))
+    await tick()
+    f.loads[0]!.reject(new Error("Stale body refusal"))
+    await tick()
+    expect(f.workspace.snapshot().tabs[0]).toMatchObject({ status: "running", file: replacementFile })
+    expect(f.workspace.transcript(request.id).items.filter((item) => item.kind === "error")).toEqual([])
+    expect(Session.load(replacementFile).filter((record) => record.type === "outcome")).toEqual([])
+    expect(f.inputs).toHaveLength(1)
+    expect(f.inputs[0]!.agent?.system).toStartWith("Current body.")
+    f.finishes[0]!({ _tag: "done", answer: "Recovered review" })
+    await tick()
+    expect(f.workspace.read(request.id)).toMatchObject({ status: "done", answer: "Recovered review" })
+    expect(Session.load(replacementFile).filter((record) => record.type === "outcome"))
+      .toMatchObject([{ outcome: { _tag: "done", answer: "Recovered review" } }])
+  })
+
+  it("reopens an old body refusal without failure metadata as a visible failure without relaunching", async () => {
+    const f = setup()
+    f.workspace.request(request)
+    await tick()
+    f.loads[0]!.reject(new Error("Body unavailable\nprivate stack"))
+    await tick()
+    const snapshot = f.workspace.snapshot()
+    const { failure, ...tab } = snapshot.tabs[0]!
+    // Older preparation failures saved the parent tab but left only the
+    // request in the worker file, with no failed outcome or failure metadata.
+    const oldFile = Session.create(mkdtempSync(join(tmpdir(), "tui-old-body-refusal-")))
+    oldFile.append({ type: "user", at: tab.startedAt, text: request.prompt })
+    const restored = setup({ restored: { ...snapshot, tabs: [{ ...tab, file: oldFile.file }] } })
+    await tick()
+    const visible = restored.workspace.snapshot().tabs[0]!
+    expect(visible).toMatchObject({ status: "failed", code: "unreadable", message: "Body unavailable" })
+    expect(visible.failure).toEqual(failure)
+    expect(restored.workspace.panel(tab.id).summary).toBe(visible.failure!.headline)
+    expect(JSON.stringify(visible.failure)).not.toContain("private stack")
+    expect(restored.loads).toEqual([])
+    expect(restored.inputs).toEqual([])
+    expect(Session.load(oldFile.file).filter((record) => record.type === "outcome")).toEqual([])
   })
 
   it("fails the tab with unknown_seat when the declared model is unknown", async () => {

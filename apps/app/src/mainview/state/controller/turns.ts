@@ -939,14 +939,13 @@ export const createTurnController = (
       }
       if (frame.type !== "done") return
       const turn = ctx.activeTurn
-      // A kill outranks a pending tool call: the terminal frame the Worker
-      // injects for a server-side kill can land between the model's
-      // `tool_call` frame and the upstream's own `done`. Continuing there
-      // would run the tool and re-POST a continuation leg — the killed turn
-      // would quietly carry on, which is exactly what B-3 forbids.
+      // Errors, cancellation, and the server's tool limit outrank a pending
+      // call. Continuing would execute the command and launch another leg
+      // after the server ended the turn.
       if (
         frame.error === undefined &&
         frame.reason !== "cancelled" &&
+        frame.reason !== "tool_limit" &&
         turn.pendingCall !== undefined
       ) {
         if (turn.toolLegs >= MAX_TOOL_LEGS) {

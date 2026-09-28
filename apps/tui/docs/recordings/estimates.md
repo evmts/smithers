@@ -6,7 +6,7 @@ Scripts only. The recorder executes these in the real TUI; smithers.sh tutorials
 Use "estimates"
 Type "What are the estimates for current work?"
 Press Enter
-Wait for answer "Estimates use the recorded history"
+Wait for answer "Estimates use recorded worker activity."
 Press Ctrl+O
 Capture "Inspect the ETA query and its recorded result."
 ```

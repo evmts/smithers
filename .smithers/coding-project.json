@@ -186,8 +186,37 @@
         "flows/coding/request.md",
         "flows/coding/request/flow.ts",
         "flows/coding/request.ts",
-        "flows/coding/prototype/flow.ts"
+        "flows/coding/prototype/flow.ts",
+        "flows/coding/schema.ts",
+        "flows/coding/source-admission.ts",
+        "flows/coding/stack.ts",
+        "flows/coding/preparation.ts",
+        "flows/coding/planning.ts",
+        "flows/coding/correction.ts",
+        "flows/coding/steering.ts"
       ],
+      "excerpts": {
+        "flows/coding/planning.ts": [
+          {
+            "start": 1,
+            "end": 160
+          }
+        ],
+        "flows/coding/correction.ts": [
+          {
+            "start": 40,
+            "end": 119
+          },
+          {
+            "start": 360,
+            "end": 412
+          },
+          {
+            "start": 490,
+            "end": 535
+          }
+        ]
+      },
       "related": [
         "coding-planning",
         "coding-poc",
@@ -419,10 +448,158 @@
       "inputs": [
         "apps/tui-docs/README.md",
         "apps/tui/docs/README.md",
+        "apps/tui/docs/testing.md",
         "apps/tui-docs/PACKAGE.ts",
         "apps/tui-docs/scripts/targets.ts",
-        "apps/tui-docs/package.json"
+        "apps/tui-docs/scripts/inputs.mjs",
+        "apps/tui-docs/package.json",
+        "apps/tui-docs/scripts/record.mjs",
+        "apps/tui-docs/scripts/sync-reference.mjs",
+        "apps/tui-docs/scripts/browser-test.mjs",
+        "apps/tui-docs/server/serve.mjs",
+        "apps/tui-docs/server/sponsor.mjs",
+        "apps/tui-docs/src/playground/agent.ts",
+        "apps/tui-docs/src/playground/store.ts",
+        "apps/tui-docs/src/playground/provider.ts",
+        "apps/tui-docs/src/playground/ui.ts",
+        "apps/tui-docs/test/coverage.test.ts",
+        "scripts/ci/cloud.sh",
+        "apps/tui-docs/astro.config.mjs",
+        "apps/tui-docs/scripts/browser-record.mjs",
+        "apps/site/scripts/journeys/capture.mjs"
       ],
+      "excerpts": {
+        "apps/tui-docs/README.md": [
+          {
+            "start": 1,
+            "end": 16
+          },
+          {
+            "start": 24,
+            "end": 43
+          }
+        ],
+        "apps/tui/docs/testing.md": [
+          {
+            "start": 1,
+            "end": 35
+          },
+          {
+            "start": 56,
+            "end": 67
+          }
+        ],
+        "apps/tui-docs/scripts/browser-test.mjs": [
+          {
+            "start": 1,
+            "end": 6
+          },
+          {
+            "start": 57,
+            "end": 61
+          },
+          {
+            "start": 108,
+            "end": 134
+          },
+          {
+            "start": 141,
+            "end": 155
+          }
+        ],
+        "scripts/ci/cloud.sh": [
+          {
+            "start": 479,
+            "end": 486
+          }
+        ],
+        "apps/tui/docs/README.md": [
+          {
+            "start": 1,
+            "end": 13
+          },
+          {
+            "start": 30,
+            "end": 51
+          }
+        ],
+        "apps/tui-docs/scripts/record.mjs": [
+          {
+            "start": 1,
+            "end": 25
+          },
+          {
+            "start": 41,
+            "end": 111
+          },
+          {
+            "start": 121,
+            "end": 170
+          },
+          {
+            "start": 221,
+            "end": 224
+          },
+          {
+            "start": 242,
+            "end": 290
+          },
+          {
+            "start": 332,
+            "end": 387
+          }
+        ],
+        "apps/tui-docs/scripts/sync-reference.mjs": [
+          {
+            "start": 1,
+            "end": 56
+          },
+          {
+            "start": 59,
+            "end": 59
+          }
+        ],
+        "apps/tui-docs/scripts/browser-record.mjs": [
+          {
+            "start": 64,
+            "end": 117
+          }
+        ],
+        "apps/site/scripts/journeys/capture.mjs": [
+          {
+            "start": 119,
+            "end": 127
+          }
+        ],
+        "apps/tui-docs/src/playground/ui.ts": [
+          {
+            "start": 1,
+            "end": 18
+          },
+          {
+            "start": 66,
+            "end": 85
+          },
+          {
+            "start": 102,
+            "end": 118
+          },
+          {
+            "start": 124,
+            "end": 143
+          }
+        ],
+        "apps/tui-docs/server/sponsor.mjs": [
+          {
+            "start": 1,
+            "end": 41
+          },
+          {
+            "start": 66,
+            "end": 142
+          }
+        ]
+      },
       "related": [
         "agent",
         "runtime",

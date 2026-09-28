@@ -1,4 +1,5 @@
 import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
+import { canonicalCommandName } from "@smthrs/ui/command-line"
 import type { PendingToolCall } from "./controller/context"
 import { runLaunchCommandOf, toolResultLaunchedRun } from "./RunClaims"
 
@@ -9,10 +10,7 @@ export const toolActLine = (call: PendingToolCall, result: string): string => {
   try {
     const parsed: unknown = JSON.parse(call.args)
     if (typeof parsed === "object" && parsed !== null) {
-      // The model may spell the name "/browser" (the catalog's own
-      // dialect, normalized at the agent boundary too) — stripped here
-      // so the label renders /browser, never //browser.
-      if ("name" in parsed && typeof parsed.name === "string") inner = parsed.name.replace(/^\/+/, "")
+      if ("name" in parsed && typeof parsed.name === "string") inner = canonicalCommandName(parsed.name)
       if ("action" in parsed && typeof parsed.action === "string") action = parsed.action
       if ("args" in parsed && typeof parsed.args === "string") args = parsed.args
     }
@@ -50,8 +48,5 @@ export const toolActLine = (call: PendingToolCall, result: string): string => {
   if (result.startsWith("executed /") || (!result.startsWith("failed:") && !result.startsWith("unknown-"))) {
     return `Smithers ran ${label}`
   }
-  // The honest failure, one line, payload-free: an error string that
-  // still looks like raw JSON never reaches the transcript.
-  const clean = result.trim().startsWith("{") || result.trim().startsWith("[") ? "that didn't work" : result
-  return `Smithers tried ${label} — ${clean.replace(/\s+/g, " ").slice(0, 160)}`
+  return `Smithers tried ${label} — ${result.replace(/\s+/g, " ").slice(0, 160)}`
 }

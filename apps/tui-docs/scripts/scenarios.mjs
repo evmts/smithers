@@ -61,7 +61,7 @@ const cells = {
   monitor:
     "const existing = await ctx.call(\"monitor.list\", {}); if (existing.some(monitor => monitor.updates > 0)) { console.log(await ctx.call(\"monitor.stop\",{id:\"checks\"})); ctx.done(\"Stopped the checks monitor.\"); } else { if (!JSON.stringify(existing).includes(\"checks\")) console.log(await ctx.call(\"monitor.create\", {id:\"checks\",title:\"Checks\",watch:\"Tell me when the check output changes.\",source:{kind:\"shell\",command:\"cat check-status.txt\"},trigger:{kind:\"interval\",seconds:10}}));ctx.done(\"Monitor request settled.\"); }",
   estimates:
-    "console.log(await ctx.call(\"tab.eta\",{}));ctx.done(\"Estimates use the recorded history of these tasks.\");"
+    "console.log(await ctx.call(\"tab.eta\",{}));ctx.done(\"Estimates use recorded worker activity.\");"
 }
 export const scenarioNames = [
   "basic",
@@ -176,7 +176,8 @@ export function prepare(name, { root, work, scratch }) {
   writeFileSync(replay, replies.map((value) => JSON.stringify(value)).join("\n"))
   return {
     replay: name === "fix-add" ? join(root, "apps/tui/test/fixtures/fix-add.jsonl") : replay,
-    args: name === "print" ? ["-p", "Explain the task"] : [],
+    args: name === "print" ? ["-p", "Explain the task"] : name === "monitor" ? ["--model", "openai:gpt-6-sol"] : [],
+    coordinatorCell: name === "monitor" ? cells.monitor : undefined,
     env: {
       PATH: bin + ":" + process.env.PATH,
       EDITOR: join(bin, "docs-editor"),

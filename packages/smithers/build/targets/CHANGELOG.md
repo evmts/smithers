@@ -52,6 +52,8 @@ of it.
 
 ### Fixed
 
+- Accept uppercase and mixed-case HTTP/HTTPS schemes in Home links.
+
 - The secret-destination proxy path now seeds its request boundary with the
   resolved URL, its origin, and its request target, so an upstream that echoes
   the request back cannot hand the credential to the child.

@@ -115,7 +115,7 @@ try {
       mkdirSync(frames)
       const scenario = script.steps[0]?.kind === "Use" ? script.steps[0].value : "fix-add"
       const setup = prepare(scenario, { root, work, scratch })
-      const provider = await providerFixture({ judge: setup.judge })
+      const provider = await providerFixture({ judge: setup.judge, coordinatorCell: setup.coordinatorCell })
       let terminal, child, closed, stopped, stderr
       const launch = async (resume = false) => {
         terminal = new xterm.Terminal({ cols: 100, rows: 28, allowProposedApi: true })
@@ -202,6 +202,7 @@ try {
       }
       const send = (data) => child.stdin.write(JSON.stringify({ input: Buffer.from(data).toString("base64") }) + "\n")
       const captured = []
+      let monitorReceipt
       try {
         if (scenario !== "print") {
           await until("↑")
@@ -288,6 +289,45 @@ try {
         if (scenario === "fix-add" && spawnSync(process.execPath, ["check.mjs"], { cwd: work }).status !== 0) {
           throw new Error("The recorded agent did not fix the check")
         }
+        if (scenario === "monitor") {
+          const count = (kind) => provider.requests.filter((request) => request.kind === kind).length
+          const judge = provider.requests.filter((request) => request.kind === "monitor-judge")
+          const updates = records().filter((row) => row.type === "monitor-update" && row.id === "checks")
+          const latest = records().filter((row) => row.type === "monitor" && row.monitor.id === "checks").at(-1)
+          if (
+            provider.requests.map((request) => request.kind).join(",") !==
+              "coordinator,monitor-judge,luna,coordinator" ||
+            count("coordinator") !== 2 || count("luna") !== 1 || judge.length !== 1 || count("judge") !== 0 ||
+            !judge[0].state.before.includes("2 checks passed") || !judge[0].state.after.includes("3 checks passed") ||
+            updates.length !== 1 || updates[0].failed || updates[0].text !== "Addition checks passed." ||
+            latest?.monitor.status !== "stopped" || latest.monitor.updates !== 1
+          ) {
+            throw new Error(
+              "Monitor recording needs exactly two local model calls, one judge, one Luna update, and its saved stop receipt"
+            )
+          }
+          monitorReceipt = {
+            coordinator: count("coordinator"),
+            monitorJudge: judge.length,
+            luna: count("luna"),
+            otherJudges: count("judge"),
+            update: updates[0],
+            monitor: latest.monitor
+          }
+          writeFileSync(join(cache, "monitor.provider-requests.json"), JSON.stringify(provider.requests, null, 2))
+        }
+        if (scenario === "monitor-refusal") {
+          const updates = records().filter((row) => row.type === "monitor-update" && row.id === "checks")
+          const latest = records().filter((row) => row.type === "monitor" && row.monitor.id === "checks").at(-1)
+          if (
+            provider.requests.length !== 0 || updates.length !== 1 || updates[0].failed !== true ||
+            latest?.monitor.status !== "failed" ||
+            latest.monitor.updates !== 0 || latest.monitor.failure?._tag !== "JevFailed" ||
+            latest.monitor.failure.code !== "unreachable" || !latest.monitor.failure.message ||
+            updates[0].text !== `Jev failed (unreachable): ${latest.monitor.failure.message}`
+          ) throw new Error("Offline monitor refusal needs its saved unreachable failure and no provider requests")
+          monitorReceipt = { providerRequests: 0, update: updates[0], monitor: latest.monitor }
+        }
         await page.close()
         const staging = mkdtempSync(join(cache, `${digest}.`))
         const encoded = spawnSync(ffmpeg, [
@@ -311,6 +351,7 @@ try {
           digest,
           script: script.id,
           scenario,
+          ...(monitorReceipt === undefined ? {} : { monitor: monitorReceipt }),
           captions: captured.map((frame) => frame.split("\n")[0]),
           ...Object.fromEntries(
             ["gif", "txt", "png"].map(

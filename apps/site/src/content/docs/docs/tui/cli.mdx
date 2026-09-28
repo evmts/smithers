@@ -34,13 +34,15 @@ The token budget uses reported usage to estimate the next call. An admitted call
 smthrs tui /path/to/project -p "Explain how the search index is built."
 ```
 
-Exits 0 on an answer and 1 on failure or cancellation. `--approve ask` is refused in this mode.
+Exits 0 on a returned answer, including a notice that work stopped, and 1 on failure or cancellation. Exit 0 does not prove the requested change completed. `--approve ask` is refused in this mode.
 
 <AppScreenshot src="/images/learn/tui-print-mode.gif" alt="The TUI prints one answer and exits." caption="Print mode with a scripted test model." width={880} height={480} />
 
 ## Runtime
 
 `smthrs tui` tries `SMITHERS_TUI_BIN`, an installed binary, Bun, then Node 26.4 or later. Interactive compiled builds need a writable, executable `TMPDIR`.
+
+Keep the CLI package intact when relocating a Node installation; it includes the native editor. Compiled builds embed that editor. Installation does not require Zig.
 
 ```bash
 cargo build --locked --release -p smithers-ffi --bin smithers-jj-export

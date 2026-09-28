@@ -37,7 +37,7 @@ export const RepositoryHomeBlockSchema = z.discriminatedUnion("type", [
     title: title.optional(),
     links: z.array(z.object({
       label: title,
-      url: z.url().refine((value) => /^https?:\/\//.test(value))
+      url: z.url().refine((value) => /^https?:\/\//i.test(value))
     })).min(1)
   })
 ])

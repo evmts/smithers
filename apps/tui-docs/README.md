@@ -63,10 +63,11 @@ writer across tabs. Persistence failure stops progression.
 
 Every checkpoint contains a consistent transcript and files. Branching starts a
 new run from those files while retaining the original branch. Storage is capped
-at 4 MB; files are capped at 16 × 8 KB. Browser storage eviction or clearing site
-data deletes the sandbox. A model request that had no committed response may
-be billed again on explicit resume. This is a bounded sandbox guarantee, not a
-claim that native shell effects, network changes, or billing can be undone.
+at 4 MB of serialized UTF-8; files are capped at 16 × 8 KiB of UTF-8 each.
+Browser storage eviction or clearing site data deletes the sandbox. A model
+request that had no committed response may be billed again on explicit resume.
+This is a bounded sandbox guarantee, not a claim that native shell effects,
+network changes, or billing can be undone.
 
 ## Provider access
 
@@ -90,6 +91,10 @@ shared by requests to the same server. Hosted deployment, keys, domain setup,
 and multi-instance routing belong in the private deployment repository.
 
 The native TUI regression suite runs separately in tmux; see [TUI verification](../tui/docs/testing.md).
+
+Recording cache inputs include the CLI's shipped OpenTUI native editor and its
+manifest. Changing those files invalidates the recordings along with changes to
+the TUI and agent sources.
 
 The Commands and Keys pages on smithers.sh come from the TUI registries. After
 changing either, run `pnpm --filter @smithers/tui-docs sync:reference`. Coverage

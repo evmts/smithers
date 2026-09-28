@@ -88,7 +88,7 @@ export function mount() {
     if (controller) return
     const prompt = el<HTMLTextAreaElement>("prompt").value.trim()
     if (!prompt || prompt.length > 4000) {
-      status.textContent = "Enter a task under 4,000 characters."
+      status.textContent = "Enter a prompt under 4,000 characters."
       return
     }
     launch(prompt)
