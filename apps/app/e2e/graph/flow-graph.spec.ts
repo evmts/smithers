@@ -61,7 +61,17 @@ const openNode = async (page: Page, id: string): Promise<void> => {
   // in pointer modality by the Plan button.
   await page.keyboard.press("Tab")
   await node.focus()
-  await expect.poll(() => framed(page, id)).toBe(true)
+  try { await expect.poll(() => framed(page, id)).toBe(true) }
+  catch (error) {
+    await test.info().attach("graph-focus-geometry", { contentType: "application/json", body: JSON.stringify(await page.evaluate(id => {
+      const canvas = document.querySelector(".flow-plan-canvas")!
+      const node = canvas.querySelector(`[data-node="${id}"]`)!
+      return { nodeId: id, canvas: canvas.getBoundingClientRect().toJSON(), node: node.getBoundingClientRect().toJSON(),
+        canvasDisplay: getComputedStyle(canvas).display, nodeDisplay: getComputedStyle(node).display,
+        activeTag: document.activeElement?.tagName, activeNode: document.activeElement?.getAttribute("data-id") }
+    }, id), null, 2) })
+    throw error
+  }
   await node.click()
   await expect(drawer(page)).toHaveAttribute("data-node", id)
 }
@@ -651,7 +661,7 @@ test.describe("the flow builder's plan door", () => {
    * a plan node: no key, no tier, no settlement, outside every count the plan
    * card states, and its detail is the panel that knows what a schedule is.
    * The row comes from the repository's registrations route
-   * (`GET /api/workflow/trigger-registrations`), which the stack answers the
+   * (`GET /api/repos/{owner}/{repo}/repository-jobs`), which the stack answers the
    * way Smithers Cloud does.
    */
   test("draws the registered schedule beside the plan, outside its count", async ({ page }) => {
