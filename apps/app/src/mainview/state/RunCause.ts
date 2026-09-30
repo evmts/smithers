@@ -25,7 +25,7 @@ const HARNESS_COPY = {
   completion_incomplete: "The run reported its work unfinished, so Smithers didn't mark it done. Not your fault — ask again to finish it.",
   claim_unproven: "The run claimed work its own record doesn't show it doing, so Smithers refused the answer rather than pass it on. Not your fault — ask again and it has to show the work.",
   suspended: "The run stopped to wait for something that never came. Not your fault — it's worth starting it again.",
-  approval_unavailable: "The run needed your answer, but nothing was there to ask you, so Smithers stopped it. Not your fault — start it again where it can ask."
+  approval_unavailable: "This run needs an answer, but approvals are unavailable. Not your fault."
 } as const satisfies Record<HarnessErrorCode, string>
 
 const MODEL_COPY: Partial<Record<ModelErrorCode, string>> = {
