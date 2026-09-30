@@ -378,7 +378,6 @@ test("secret scope and binding inputs round-trip through the canonical grammar",
     roundTrip("secrets.scope", { name: "DEPLOY", scope, repo: "ada/other" }, `DEPLOY ${scope} ada/other`, { name: "DEPLOY", scope, repo: "ada/other" })
   }
   roundTrip("secrets.bind", { name: "DEPLOY", repo: "ada/other" }, '{"name":"DEPLOY","repo":"ada/other"}', { name: "DEPLOY", repo: "ada/other" })
-  roundTrip("secrets.bind", { name: "DEPLOY", hosts: "api.example.com, registry.example.com", headers: "authorization, x-api-key", repo: "ada/other" },
-    '{"name":"DEPLOY","hosts":"api.example.com, registry.example.com","headers":"authorization, x-api-key","repo":"ada/other"}',
-    { name: "DEPLOY", hosts: "api.example.com, registry.example.com", headers: "authorization, x-api-key", repo: "ada/other" })
+  const complete = { name: "DEPLOY", hosts: "api.example.com, registry.example.com", headers: "authorization, x-api-key", repo: "ada/other" }
+  expect(payloadFor("secrets.bind", JSON.stringify(complete))).toEqual({ payload: complete })
 })

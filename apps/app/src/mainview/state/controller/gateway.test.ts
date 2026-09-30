@@ -671,7 +671,7 @@ test("registration inbox pages retain the registrant's workspace and canonical a
 describe("run history", () => {
   const report = {
     runId: "run-1",
-    verdict: "divergent",
+    verdict: "divergent" as const,
     replayed: [{ stepKeyDigest: "a", action: "verify/first" }],
     executes: { stepKeyDigest: "c" },
     notReplayed: [{ stepKeyDigest: "b" }]
