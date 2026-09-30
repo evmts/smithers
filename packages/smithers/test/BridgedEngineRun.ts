@@ -39,6 +39,7 @@ import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
+import type { Service as ControlRuntimeService } from "@smthrs/control/ControlRuntime"
 import type { DurableFlow } from "@smthrs/control/SqlControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
@@ -73,7 +74,7 @@ import * as TriggersDispatchReader from "@smthrs/triggers/DispatchReader"
 import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
 import type * as Trigger from "@smthrs/triggers/Trigger"
 import * as TriggerStore from "@smthrs/triggers/TriggerStore"
-import { Context, Effect, Layer, Option, Schema, type Scope } from "effect"
+import { Context, Effect, Layer, Option, Schedule, Schema, type Scope } from "effect"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -578,6 +579,8 @@ export class Engine extends Context.Service<Engine, {
   readonly observe: (runId: string) => Effect.Effect<ControlExecutor.ExecutionObservation>
   /** The production signal port. */
   readonly deliverSignal: (input: ControlExecutor.Signal) => Effect.Effect<ControlExecutor.SignalDelivery>
+  /** Replays recorded commands using the engine services and the caller's control store. */
+  readonly drainSignals: (control: ControlRuntimeService) => Effect.Effect<void>
   /** Polls until an execution BELOW `runId` is parked on a human wait. */
   readonly parkedBelow: (runId: string) => Effect.Effect<DurableEngineState.WaitingRow>
   /** Polls until the wrapper execution reaches a terminal status, and reports it. */
@@ -650,6 +653,8 @@ export interface StackOptions {
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
   /** Add the source-writing fixture in an isolated, owned workspace. */
   readonly authoring?: boolean
+  /** A test-owned launch barrier, before the real engine creates any durable wait. */
+  readonly beforeEngineStart?: Effect.Effect<void>
 }
 
 /**
@@ -749,10 +754,10 @@ const engineLayer = (
         start: (runId: string, planId: string, flowId: string, executionDigest: string | null, input: unknown) =>
           Effect.provideContext(
             Effect.asVoid(
-              wrapper.execute(
+              (options.beforeEngineStart ?? Effect.void).pipe(Effect.andThen(wrapper.execute(
                 { runId, planId, flowId, executionDigest, input: input as never },
                 { executionId: runId, discard: true }
-              )
+              )))
             ),
             services
           ).pipe(Effect.orDie),
@@ -772,6 +777,12 @@ const engineLayer = (
             Effect.provideService(DurableEngineState.DurableEngineState, state),
             Effect.provideContext(services),
             Effect.orDie
+          ),
+        drainSignals: (control: ControlRuntimeService) =>
+          AgentSession.drainRecordedSignals.pipe(
+            Effect.provideContext(services),
+            Effect.provideService(DurableEngineState.DurableEngineState, state),
+            Effect.provideService(ControlRuntime, control)
           ),
         parkedBelow,
         settled,
@@ -859,6 +870,14 @@ const executor = Layer.effect(ControlExecutor.ControlExecutor)(
       ...(engine.refresh === undefined ? {} : { onSourceApplied: AuthoredRebuild.rebuild(engine.refresh) })
     })
     yield* Effect.forkScoped(supervisor.recover)
+    // Production starts the canonical drain immediately, then every 250 ms.
+    // Inline admission can precede the engine's durable wait becoming visible.
+    const control = yield* ControlRuntime
+    yield* Effect.forkScoped(
+      engine.drainSignals(control).pipe(
+        Effect.repeat({ schedule: Schedule.spaced("250 millis") })
+      )
+    )
     return supervisor.wrap(ControlExecutor.makeNoop({
       readExecution: (runId) => engine.observe(runId),
       deliverSignal: (input) => engine.deliverSignal(input),
