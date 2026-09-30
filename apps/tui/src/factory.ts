@@ -17,6 +17,8 @@ import {
 } from "@smthrs/rpc/Mythical"
 import * as StackIssues from "@smthrs/rpc/StackIssues"
 import { itemReason, itemStateLabel, itemTitle, landable, retryable } from "@smthrs/rpc/StackView"
+import { failureDetail } from "@smthrs/rpc/UserFailure"
+import * as Failures from "./failures.ts"
 import type * as Panels from "./panels.ts"
 
 /** Where a repository lives on Cloud: `owner/name`. */
@@ -48,7 +50,15 @@ export const load = async (
 /** What filing a TODO came to: the queued item, or why not and whether the refusal is final. */
 export type Filing =
   | { readonly ok: true; readonly item: MythicalItem }
-  | { readonly ok: false; readonly detail: string; readonly settled: boolean }
+  | { readonly ok: false; readonly error: unknown; readonly settled: boolean; readonly presentation?: string }
+
+/** An issue action refused by the observed stack, presented by code rather than transport text. */
+export type Refusal =
+  & { readonly _tag: "FactoryRefused"; readonly issue: number }
+  & (
+    | { readonly code: "missing" }
+    | { readonly code: "not_retryable" | "not_landable"; readonly state: string }
+  )
 
 /**
  * Files TODOs with `POST …/mythical/todos`, each under one request id: the
@@ -70,17 +80,19 @@ export const filer = (
     const request = requests.get(key) ?? newId()
     requests.set(key, request)
     const [owner, name] = repo.split("/") as [string, string]
-    const run = post(mythicalRoute("todos", owner, name), { title, request }, signal).then(
-      (body): Filing => {
+    const run = (async (): Promise<Filing> => {
+      try {
+        const item = MythicalItemSchema.parse(
+          await post(mythicalRoute("todos", owner, name), { title, request }, signal)
+        )
         requests.delete(key)
-        return { ok: true, item: MythicalItemSchema.parse(body) }
-      },
-      (error): Filing => {
+        return { ok: true, item }
+      } catch (error) {
         const refused = failed(error)
         if (refused.settled) requests.delete(key)
         return refused
       }
-    ).finally(() => flying.delete(key))
+    })().finally(() => flying.delete(key))
     flying.set(key, run)
     return run
   }
@@ -89,8 +101,10 @@ export const filer = (
 /** A request that failed: a refusal (HTTP 4xx) is final; anything else may not have reached Cloud. */
 const failed = (error: unknown): Filing & { readonly ok: false } => ({
   ok: false,
-  detail: error instanceof Error ? error.message : String(error),
-  settled: /HTTP 4\d\d\b/.test(String(error))
+  error,
+  // CloudSession carries status on the first diagnostic line. A nested cause
+  // or stack frame must not turn an uncertain request into a final refusal.
+  settled: /HTTP 4\d\d\b/.test(failureDetail(error).split("\n", 1)[0] ?? "")
 })
 
 /** `12` or `#12`: the issue a factory command names. */
@@ -110,6 +124,7 @@ const issueAct = async (
   repo: Repository,
   issue: number,
   allowed: (item: MythicalItem) => boolean,
+  refusal: "not_retryable" | "not_landable",
   send: (item: MythicalItem, owner: string, name: string) => readonly [path: string, body: unknown],
   signal?: AbortSignal,
   presentFailure?: (error: unknown) => string
@@ -119,16 +134,24 @@ const issueAct = async (
   try {
     stack = await load(cloud.get, repo, signal)
   } catch (error) {
-    return { ...failed(error), ...(presentFailure === undefined ? {} : { detail: presentFailure(error) }) }
+    return { ...failed(error), ...(presentFailure === undefined ? {} : { presentation: presentFailure(error) }) }
   }
   const item = stack.items.find((candidate) => candidate.issue?.number === issue)
-  if (item === undefined) return { ok: false, detail: `#${issue} is not in the factory`, settled: true }
-  if (!allowed(item)) return { ok: false, detail: `#${issue} is ${itemStateLabel(item)}`, settled: true }
+  if (item === undefined) {
+    return { ok: false, error: { _tag: "FactoryRefused", code: "missing", issue } satisfies Refusal, settled: true }
+  }
+  if (!allowed(item)) {
+    return {
+      ok: false,
+      error: { _tag: "FactoryRefused", code: refusal, issue, state: itemStateLabel(item) } satisfies Refusal,
+      settled: true
+    }
+  }
   const [path, body] = send(item, owner, name)
   try {
     return { ok: true, item: MythicalItemSchema.parse(await cloud.post(path, body, signal)) }
   } catch (error) {
-    return { ...failed(error), ...(presentFailure === undefined ? {} : { detail: presentFailure(error) }) }
+    return { ...failed(error), ...(presentFailure === undefined ? {} : { presentation: presentFailure(error) }) }
   }
 }
 
@@ -150,6 +173,7 @@ export const retry = (
     repo,
     issue,
     retryable,
+    "not_retryable",
     (item, owner, name) => [mythicalRoute("retry", owner, name, item.id), {}],
     signal,
     presentFailure
@@ -174,6 +198,7 @@ export const land = (
     repo,
     issue,
     landable,
+    "not_landable",
     (item, owner, name) => [
       mythicalRoute("land", owner, name, item.id),
       { head: item.pullRequest?.head }
@@ -193,7 +218,7 @@ export interface Line {
  * on when Cloud answers. A command it cannot send settles at once.
  */
 const issueCommand = (
-  words: { readonly verb: string; readonly requested: string; readonly not: string },
+  words: { readonly verb: "retry" | "land"; readonly requested: string; readonly not: string },
   act: (
     cloud: Pick<CloudSession.Cloud, "get" | "post">,
     repo: Repository,
@@ -218,7 +243,9 @@ const issueCommand = (
   } catch (error) {
     return {
       now: {
-        text: `${words.requested} #${issue} not requested: ${presentFailure?.(error) ?? failed(error).detail}`,
+        text: `${words.requested} #${issue} not requested: ${
+          presentFailure?.(error) ?? Failures.line(words.verb, error)
+        }`,
         tone: "warning"
       }
     }
@@ -230,9 +257,15 @@ const issueCommand = (
       const answer = await act(cloud, repo, issue, undefined, presentFailure)
       return answer.ok
         ? { text: `#${issue} ${itemStateLabel(answer.item)}` }
-        : { text: `#${issue} ${words.not}: ${answer.detail}`, tone: "warning" }
+        : {
+          text: `#${issue} ${words.not}: ${answer.presentation ?? Failures.line(words.verb, answer.error)}`,
+          tone: "warning"
+        }
     } catch (error) {
-      return { text: `#${issue} ${words.not}: ${presentFailure?.(error) ?? failed(error).detail}`, tone: "warning" }
+      return {
+        text: `#${issue} ${words.not}: ${presentFailure?.(error) ?? Failures.line(words.verb, error)}`,
+        tone: "warning"
+      }
     }
   })()
   return { now, settled }
