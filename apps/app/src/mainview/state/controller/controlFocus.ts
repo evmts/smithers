@@ -3,7 +3,9 @@
  * a terminal, a browser card, a markdown editor — the rest
  * of the app dims and blurs a touch, modal-style, and the surface wears an
  * outset ring. Clicking out releases, exactly like a modal backdrop, and the
- * releasing click never activates what it landed on. Desktop embeds keep only
+ * releasing click never activates what it landed on. Moving between editors
+ * keeps the native focus gesture so the next editor receives the first input.
+ * Desktop embeds keep only
  * the keyboard release affordance: no dim, elevation, or swallowed outside click.
  *
  * The state is one app-level record owned by the controller, never React
@@ -222,6 +224,10 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     if (target === null || current === null) return false
     return current.anchor.contains(target) || target.closest(PORTAL_ROOTS) !== null
   }
+
+  /** Switching editors is editing, not a backdrop dismissal. Let the browser move the caret. */
+  const transfersToEditor = (target: Element | null): boolean =>
+    current?.state.kind === "editor" && detect(target)?.kind === "editor"
 
   /** A resolved overflow is never empty; only a test DOM reports one, and it clips nothing. */
   const clipsAxis = (value: string): boolean => value !== "" && value !== "visible"
@@ -514,7 +520,7 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     if (!event.isTrusted || current === null) return
     const target = asElement(event.target)
     const inside = isInside(target)
-    if (!inside && current?.state.kind === "desktop") {
+    if (!inside && (current.state.kind === "desktop" || transfersToEditor(target))) {
       clear(false)
       return
     }
@@ -588,7 +594,7 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     if (!event.isTrusted || current === null || compatTail()) return
     const target = asElement(event.target)
     const inside = isInside(target)
-    if (!inside && current?.state.kind === "desktop") {
+    if (!inside && current.state.kind === "desktop") {
       clear(false)
       return
     }
@@ -611,6 +617,10 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
      */
     if (held !== null && held.inside) return
     if (inside) return
+    if (transfersToEditor(target)) {
+      clear(false)
+      return
+    }
     if (event.button !== 0) {
       clear(true)
       return
