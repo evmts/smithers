@@ -15,25 +15,29 @@ afterAll(async () => { await backend?.stop() })
 test("an owned backend tests and assigns a loopback model, then answers through its durable transport", async () => {
   const key = "sk-offline-0123456789abcdef"
   const provider = await launchModelProvider({ key })
-  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const transport: Array<[string, string, number]> = []
-  const http: typeof backend.http = async (input, init) => {
-    const response = await backend.http(input, init)
-    transport.push([init?.method ?? "GET", new URL(String(input), backend.origin).pathname, response.status])
-    return response
-  }
-  const user = await http("/api/user")
-  expect(user.status).toBe(200)
-  expect(await user.json()).toMatchObject({ username: backend.username, is_admin: true })
-  const enrolled = await http("/api/model/credential", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "enroll", requestId: crypto.randomUUID(), name: "LOOPBACK", origin: provider.origin, value: key })
-  })
-  expect(enrolled.status).toBe(200)
-  const bootstrap = await loadBootstrap(http)
-  const runtime = createRuntime({ bootstrap, http })
-  const controller = createAppController(store, runtime.backend.agent ?? unavailableAgent(), { bootstrap, fetchImpl: http })
+  let acquiredStore: Awaited<ReturnType<typeof createAppStore>> | undefined
+  let acquiredController: ReturnType<typeof createAppController> | undefined
   try {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    acquiredStore = store
+    const transport: Array<[string, string, number]> = []
+    const http: typeof backend.http = async (input, init) => {
+      const response = await backend.http(input, init)
+      transport.push([init?.method ?? "GET", new URL(String(input), backend.origin).pathname, response.status])
+      return response
+    }
+    const user = await http("/api/user")
+    expect(user.status).toBe(200)
+    expect(await user.json()).toMatchObject({ username: backend.username, is_admin: true })
+    const enrolled = await http("/api/model/credential", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "enroll", requestId: crypto.randomUUID(), name: "LOOPBACK", origin: provider.origin, value: key })
+    })
+    expect(enrolled.status).toBe(200)
+    const bootstrap = await loadBootstrap(http)
+    const runtime = createRuntime({ bootstrap, http })
+    const controller = createAppController(store, runtime.backend.agent ?? unavailableAgent(), { bootstrap, fetchImpl: http })
+    acquiredController = controller
     await controller.adoptSession({ state: "signed-in", login: backend.username, admin: true })
     expect(runtime.backend.agent?.available).toBe(true)
     expect(await provider.journal()).toHaveLength(0)
@@ -59,7 +63,9 @@ test("an owned backend tests and assigns a loopback model, then answers through 
     expect(bootstrap.capabilities).toContain("model.turn")
     expect(runtime.backend.agent?.available).toBe(true)
   } finally {
-    await controller.dispose()
-    await provider.close()
+    try {
+      if (acquiredController) await acquiredController.dispose()
+      else await acquiredStore?.dispose?.()
+    } finally { await provider.close() }
   }
 })
