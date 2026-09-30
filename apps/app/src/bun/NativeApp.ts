@@ -140,7 +140,8 @@ try {
       backendProcess.mode === "own"
         ? backendProcess.origin ?? "" :
         Bun.env.SMITHERS_API_ORIGIN ?? "",
-      Bun.env.SMITHERS_API_TOKEN ?? ""
+      backendProcess.mode === "plue" ? Bun.env.SMITHERS_API_TOKEN ?? "" : "",
+      stateDir
     )
     : undefined
   testServer = stubAgent === undefined ? undefined : await startLocalServer({

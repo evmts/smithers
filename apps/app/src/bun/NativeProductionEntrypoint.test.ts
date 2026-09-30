@@ -4,7 +4,7 @@ import { expect, test } from 'bun:test'
 // Erased by Bun; pulls the isolated production-path fixture into app typecheck.
 import type {} from '../../e2e/fixtures/unit-entrypoints/NativeProduction.child.test'
 
-const cases = [['normal'], ['config-error'], ['startup-renderer-stop-error'], ['renderer-error'],
+const cases = [['normal'], ['own-ambient-token'], ['config-error'], ['startup-renderer-stop-error'], ['renderer-error'],
   ['startup-backend-stop-error'], ['backend-failure'], ['duplicate-shutdown'],
   ['shutdown-renderer-stop-error'], ['shutdown-bridge-stop-error-stub'],
   ['window-start-error'], ['bridge-start-error'], ['bridge-window-close-error'], ['bridge-rollback-backend-failure']] as const
@@ -15,12 +15,12 @@ test.each(cases)('native production entrypoint %s runs in an isolated process', 
     cwd: fileURLToPath(new URL('../..', import.meta.url)),
     env: {
       ...process.env,
-      SMITHERS_NATIVE_PRODUCTION_SCENARIO: scenario,
+      SMITHERS_NATIVE_PRODUCTION_SCENARIO: scenario === 'own-ambient-token' ? 'normal' : scenario,
       SMITHERS_NATIVE_REAL_EXIT: '',
       SMITHERS_CHAT_STUB: scenario === 'shutdown-bridge-stop-error-stub' ? '1' : '',
       SMITHERS_LOCAL_HEADLESS: '',
       SMITHERS_API_ORIGIN: '',
-      SMITHERS_API_TOKEN: '',
+      SMITHERS_API_TOKEN: scenario === 'own-ambient-token' ? 'synthetic-ambient-cloud-token' : '',
       SMITHERS_OPEN_URL: '',
       SMITHERS_E2E_BRIDGE: scenario === 'bridge-start-error' || scenario === 'bridge-window-close-error' || scenario === 'bridge-rollback-backend-failure' ? '1' : '',
       SMITHERS_E2E_BRIDGE_PORT: '0',
