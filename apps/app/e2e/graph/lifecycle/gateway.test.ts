@@ -91,6 +91,13 @@ test("the gateway answers a malformed relay call and removes its SQLite director
     expect(registered.triggers[0]?.cron).toBe("0 3 * * *")
     expect(registered.triggers[0]?.nextFireAt).toBeGreaterThan(Date.now())
 
+    const other = await request(`${address.relayUrl}/api/repos/not-owned/not-this-repo/repository-jobs`)
+    expect(other.status).toBe(200)
+    expect(await other.json()).toEqual([])
+    const write = await request(`${address.relayUrl}/api/repos/${address.repo}/repository-jobs`, { method: "POST", body: "{}" })
+    expect(write.status).toBe(405)
+    expect(await write.json()).toEqual({ error: "method_not_allowed" })
+
     // The contents route, answered from the checkout this stack runs out of.
     // The fixture flow is a real file, and a node record names the line its
     // action was declared on, so the reader who opens one gets that line.

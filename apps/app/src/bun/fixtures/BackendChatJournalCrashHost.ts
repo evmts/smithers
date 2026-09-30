@@ -1,0 +1,74 @@
+import { TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { AgentTurnJournalDeliverySchema } from "@smthrs/rpc/AgentTurnJournal"
+import { cleanupOwned } from "../../../e2e/fixtures/chat-backend"
+import { startLocalServer } from "../server"
+
+// An owned test process only. The gate withholds committed HTTP output before
+// it can reach the consumer; SIGKILL bypasses every graceful shutdown hook.
+const [root, backendOrigin, boundary] = process.argv.slice(2)
+if (!root || !backendOrigin || (boundary !== "acceptance" && boundary !== "batch")) {
+  throw new Error("Invalid crash fixture")
+}
+const host = await startLocalServer({
+  port: 0,
+  distDir: root,
+  home: root,
+  stateDir: `${root}/drafts`,
+  cloudMode: "offline",
+  chatBackend: { origin: backendOrigin, token: process.env.SMITHERS_CHAT_FIXTURE_OWNER_TOKEN ?? "" },
+  log: () => {}
+})
+let gate: ReturnType<typeof Bun.serve> | undefined
+try {
+  const never = new Promise<never>(() => {})
+  gate = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    idleTimeout: 0,
+    async fetch(request) {
+      const url = new URL(request.url)
+      const headers = new Headers(request.headers)
+      headers.delete("host")
+      const response = await fetch(`${host.origin}${url.pathname}`, {
+        method: request.method,
+        headers,
+        body: await request.arrayBuffer()
+      })
+      if (url.pathname !== TURN_PATH || !response.ok || response.body === null) return response
+      const reader = response.body.getReader()
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            const decoder = new TextDecoder(), encoder = new TextEncoder()
+            let pending = ""
+            while (true) {
+              const next = await reader.read()
+              if (next.done) throw new Error("The test producer ended before the crash boundary")
+              pending += decoder.decode(next.value, { stream: true })
+              let newline: number
+              while ((newline = pending.indexOf("\n")) !== -1) {
+                const line = pending.slice(0, newline)
+                pending = pending.slice(newline + 1)
+                const delivery = AgentTurnJournalDeliverySchema.parse(JSON.parse(line))
+                if (delivery.type === "accepted") controller.enqueue(encoder.encode(`${line}\n`))
+                if (
+                  (boundary === "acceptance" && delivery.type === "accepted") ||
+                  (boundary === "batch" && delivery.type === "batch")
+                ) {
+                  console.log(JSON.stringify({ type: "boundary", delivery }))
+                  await never
+                }
+                if (delivery.type !== "accepted") controller.enqueue(encoder.encode(`${line}\n`))
+              }
+            }
+          }
+        }),
+        { status: response.status, headers: response.headers }
+      )
+    }
+  })
+  console.log(JSON.stringify({ type: "ready", origin: `http://127.0.0.1:${gate.port}`, token: host.sessionToken }))
+} catch (error) {
+  await cleanupOwned(() => gate?.stop(true), () => host.stop())
+  throw error
+}

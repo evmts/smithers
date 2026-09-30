@@ -17,7 +17,8 @@ import { retainNativeUrlOpens } from "./NativeUrlOpen"
 import { nativeUrlOpenHost } from "./NativeWrapper"
 import { nativeStateDirectory } from "./NativeState"
 import { encodeRgbaPng, startPackagedE2EBridge } from "./PackagedE2EBridge"
-import { defaultDistDir, startLocalServer } from "./server"
+import { defaultDistDir } from "./NativePaths"
+import { startLocalServer } from "./server"
 
 /*
  * `smithers://open/<owner>/<repo>` (DeepLink.ts). A cold launch by URL
