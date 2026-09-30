@@ -1,39 +1,41 @@
-import { expect,test } from "bun:test"
-import { mkdtemp,rm,writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
+import { beforeAll, afterAll, expect, test } from "bun:test"
+import { startFullBackend } from "../../e2e/fixtures/full-backend"
 import { PROVIDER_MODEL,PROVIDER_REPLY } from "../../e2e/real/support/model-provider-behaviors"
 import { launchModelProvider } from "../../e2e/real/support/model-provider-process"
 import { createRuntime,loadBootstrap,unavailableAgent } from "../mainview/runtime/Runtime"
 import { createAppStore } from "../mainview/state/AppStore"
 import { scopedControllers } from "../mainview/state/ControllerTestScope"
 import { memoryStorage, waitFor } from "../mainview/state/TestFixtures"
-import { startLocalServer } from "./server"
 
 const createAppController = scopedControllers()
+let backend: Awaited<ReturnType<typeof startFullBackend>>
+beforeAll(async () => { backend = await startFullBackend() }, 120_000)
+afterAll(async () => { await backend?.stop() })
 
-test("an offline host tests and assigns a loopback model, then answers through the bootstrapped transport", async () => {
+test("an owned backend tests and assigns a loopback model, then answers through its durable transport", async () => {
   const key = "sk-offline-0123456789abcdef"
   const provider = await launchModelProvider({ key })
-  const root = await mkdtemp(join(tmpdir(), "smithers-model-offline-"))
-  await writeFile(join(root, "index.html"), "<!doctype html><title>Smithers</title>")
-  const server = await startLocalServer({
-    port: 0, distDir: root, stateDir: join(root, "state"), cloudMode: "offline",
-    env: { SMITHERS_MODEL_KEY_LOOPBACK: key, SMITHERS_MODEL_KEY_LOOPBACK_ORIGIN: provider.origin }, log: () => {}
-  })
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const http: Parameters<typeof loadBootstrap>[0] = (input, init) => {
-    const headers = new Headers(init?.headers)
-    headers.set(LOCAL_SESSION_HEADER, server.sessionToken)
-    return fetch(new URL(String(input), server.origin), { ...init, headers })
+  const transport: Array<[string, string, number]> = []
+  const http: typeof backend.http = async (input, init) => {
+    const response = await backend.http(input, init)
+    transport.push([init?.method ?? "GET", new URL(String(input), backend.origin).pathname, response.status])
+    return response
   }
+  const user = await http("/api/user")
+  expect(user.status).toBe(200)
+  expect(await user.json()).toMatchObject({ username: backend.username, is_admin: true })
+  const enrolled = await http("/api/model/credential", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "enroll", requestId: crypto.randomUUID(), name: "LOOPBACK", origin: provider.origin, value: key })
+  })
+  expect(enrolled.status).toBe(200)
   const bootstrap = await loadBootstrap(http)
   const runtime = createRuntime({ bootstrap, http })
   const controller = createAppController(store, runtime.backend.agent ?? unavailableAgent(), { bootstrap, fetchImpl: http })
   try {
-    await controller.adoptSession({ state: "unavailable", login: null, admin: false })
-    expect(await controller.explain("the loopback provider")).toBe("There is no agent on this host to explain with.")
+    await controller.adoptSession({ state: "signed-in", login: backend.username, admin: true })
+    expect(runtime.backend.agent?.available).toBe(true)
     expect(await provider.journal()).toHaveLength(0)
     await controller.commands.run("model.list")
     await waitFor(() => { const card = store.collections.cards.get("models"); return card?.kind === "models" && card.payload.host === "observed" })
@@ -49,13 +51,15 @@ test("an offline host tests and assigns a loopback model, then answers through t
     expect((await provider.journal()).map((entry) => [entry.modelId, entry.authorized])).toEqual([
       [PROVIDER_MODEL.answers, true], [PROVIDER_MODEL.answers, true]
     ])
-    expect(bootstrap.capabilities).not.toContain("agent")
+    await waitFor(() => transport.some(([, path, status]) => path === "/api/agent/turn/retire" && status === 200))
+    expect(transport.filter(([, path]) => path === "/api/agent/turn" || path === "/api/agent/turn/retire")).toEqual([
+      ["POST", "/api/agent/turn", 200], ["POST", "/api/agent/turn/retire", 200]
+    ])
+    expect(bootstrap.capabilities).toContain("agent")
     expect(bootstrap.capabilities).toContain("model.turn")
-    expect(runtime.backend.agent?.available).toBe(false)
+    expect(runtime.backend.agent?.available).toBe(true)
   } finally {
     await controller.dispose()
-    await server.stop()
     await provider.close()
-    await rm(root, { recursive: true, force: true })
   }
 })
