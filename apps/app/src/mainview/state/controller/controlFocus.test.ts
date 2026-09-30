@@ -152,6 +152,90 @@ const key = (win: Window & typeof globalThis, init: KeyboardEventInit): void => 
 const releaseButton = (doc: Document): HTMLButtonElement | null =>
   doc.querySelector<HTMLButtonElement>("[data-control-focus-release]")
 
+const secondEditor = (doc: Document, scroller: HTMLElement): HTMLElement => {
+  const card = doc.createElement("section")
+  card.className = "smithers-card"
+  card.dataset.testid = "card-world-2"
+  card.innerHTML = '<div data-slot="markdown-editor"><div class="ProseMirror" contenteditable="true" tabindex="0"></div></div>'
+  scroller.append(card)
+  return card.querySelector<HTMLElement>(".ProseMirror")!
+}
+
+for (const gesture of ["pointer", "mouse", "touch"] as const) {
+  test(`${gesture} transfers between editors in both directions without swallowing the native gesture`, () => {
+    const { win, doc, control, scroller, editor } = setup()
+    const first = editor.querySelector<HTMLElement>(".ProseMirror")!
+    const second = secondEditor(doc, scroller)
+    for (const [from, to] of [[first, second], [second, first]]) {
+      from!.focus()
+      const delivered: Array<string> = []
+      const events = gesture === "pointer" ? ["pointerdown", "pointerup"] : gesture === "mouse" ? ["mousedown", "mouseup", "click"] : ["pointerdown", "pointerup", "mousedown", "mouseup", "click"]
+      const receive = (event: Event) => {
+        expect(event.defaultPrevented).toBe(false)
+        delivered.push(event.type)
+      }
+      for (const type of events) to!.addEventListener(type, receive)
+      if (gesture === "pointer") {
+        fire(to!, pointer(win, "pointerdown", { button: 0, pointerId: 1 }))
+        fire(to!, pointer(win, "pointerup", { button: 0, pointerId: 1 }))
+      } else if (gesture === "mouse") {
+        fire(to!, mouse(win, "mousedown"))
+        fire(to!, mouse(win, "mouseup"))
+        fire(to!, mouse(win, "click", { detail: 1 }))
+      } else tap(win, to!)
+      expect(delivered).toEqual(events)
+      expect(control.snapshot()).toBeNull()
+      // Happy DOM has no native pointer default action; the real Wiki suite checks actual clicks.
+      to!.focus()
+      expect(doc.activeElement).toBe(to!)
+      expect(control.snapshot()?.surfaceId).toBe(`editor:${to!.closest("[data-testid]")!.getAttribute("data-testid")}`)
+      expect(from!.closest("section")!.hasAttribute("data-control-focus")).toBe(false)
+      expect(to!.closest("section")!.getAttribute("data-control-focus")).toBe("human")
+      for (const type of events) to!.removeEventListener(type, receive)
+    }
+  })
+}
+
+test("dragging from an editor across another editor preserves the original control until a fresh press", () => {
+  const { win, doc, control, scroller, editor } = setup()
+  const first = editor.querySelector<HTMLElement>(".ProseMirror")!
+  const second = secondEditor(doc, scroller)
+  first.focus()
+  fire(first, pointer(win, "pointerdown", { button: 0, pointerId: 1 }))
+  fire(first, mouse(win, "mousedown"))
+  fire(second, pointer(win, "pointerup", { button: 0, pointerId: 1 }))
+  fire(second, mouse(win, "mouseup"))
+  fire(second, mouse(win, "click", { detail: 1 }))
+  expect(control.snapshot()?.surfaceId).toBe("editor:card-world-1")
+  expect(doc.activeElement).toBe(first)
+  mouseClick(win, second)
+  expect(control.snapshot()).toBeNull()
+  second.focus()
+  expect(control.snapshot()?.surfaceId).toBe("editor:card-world-2")
+})
+
+test("terminal to editor still dismisses; editor outside dismissal and keyboard reopening remain usable", () => {
+  const { win, doc, control, textarea, editor, outside, outsideClicks } = setup()
+  const content = editor.querySelector<HTMLElement>(".ProseMirror")!
+  let editorClicks = 0
+  content.addEventListener("click", () => editorClicks++)
+  textarea.focus()
+  mouseClick(win, content)
+  expect(control.snapshot()).toBeNull()
+  expect(editorClicks).toBe(0)
+  content.focus()
+  mouseClick(win, outside)
+  expect(control.snapshot()).toBeNull()
+  expect(outsideClicks).toEqual([])
+  content.focus()
+  key(win, { key: "Escape" })
+  expect(control.snapshot()).toBeNull()
+  expect(doc.activeElement).toBe(editor.closest("section"))
+  content.focus()
+  expect(control.snapshot()?.surfaceId).toBe("editor:card-world-1")
+  expect(doc.activeElement).toBe(content)
+})
+
 test("enter on focusin: the terminal reports control with its surface, and the ring dresses the TAB BODY", () => {
   const { control, textarea, terminal, tabBody } = setup()
   expect(control.snapshot()).toBeNull()
@@ -661,4 +745,108 @@ test("desktop focus leaves chat clear and an outside button works on the first c
   mouseClick(win, button)
   expect(clicks).toBe(1)
   expect(control.snapshot()).toBeNull()
+})
+
+
+test("an unrelated pointer release clears an interrupted dismissal without swallowing the new gesture", () => {
+  const { win, control, textarea, outside, outsideClicks } = setup()
+  textarea.focus()
+  fire(outside, pointer(win, "pointerdown", { button: 0, pointerId: 1 }))
+  expect(control.snapshot()).toBeNull()
+  fire(outside, pointer(win, "pointerup", { button: 0, pointerId: 2 }))
+  fire(outside, mouse(win, "click", { detail: 1 }))
+  expect(outsideClicks).toEqual(["pointerup", "click"])
+})
+
+test("a second mouse press recovers when the dismissing press never delivered a release", () => {
+  const { win, control, textarea, outside, outsideClicks } = setup()
+  textarea.focus()
+  fire(outside, pointer(win, "pointerdown", { button: 0, pointerId: 1 }))
+  fire(outside, mouse(win, "mousedown"))
+  expect(control.snapshot()).toBeNull()
+  fire(outside, mouse(win, "mousedown"))
+  fire(outside, mouse(win, "mouseup"))
+  fire(outside, mouse(win, "click", { detail: 1 }))
+  expect(outsideClicks).toEqual(["click"])
+})
+
+for (const button of [0, 1, 2]) {
+  test(`mouse-only button ${button} dismisses terminal control without leaving the next press swallowed`, () => {
+    const { win, control, textarea, outside, outsideClicks } = setup()
+    textarea.focus()
+    fire(outside, mouse(win, "mousedown", { button }))
+    expect(control.snapshot()).toBeNull()
+    fire(outside, mouse(win, "mouseup", { button }))
+    if (button === 0) fire(outside, mouse(win, "click", { button, detail: 1 }))
+    else if (button === 1) fire(outside, mouse(win, "auxclick", { button, detail: 1 }))
+    else fire(outside, mouse(win, "contextmenu", { button }))
+    expect(outsideClicks).toEqual([])
+    mouseClick(win, outside)
+    expect(outsideClicks).toEqual(["pointerup", "click"])
+  })
+}
+
+test("a mouse-only outside press leaves desktop control and activates its destination immediately", () => {
+  const { win, control, desktopFrame, outside, outsideClicks } = setup()
+  frameFocus(win, desktopFrame)
+  fire(outside, mouse(win, "mousedown"))
+  fire(outside, mouse(win, "mouseup"))
+  fire(outside, mouse(win, "click", { detail: 1 }))
+  expect(control.snapshot()).toBeNull()
+  expect(outsideClicks).toEqual(["click"])
+})
+
+test("scroll and viewport resize keep the release button reachable after clipping changes", () => {
+  const { win, doc, scroller, browserCard, browserFrame, control } = setup()
+  scroller.style.overflowY = "auto"
+  stubRect(browserCard, { top: 100, right: 400, bottom: 300, left: 100 })
+  stubRect(scroller, { top: 50, right: 500, bottom: 250, left: 0 })
+  frameFocus(win, browserFrame)
+  stubRect(scroller, { top: 50, right: 500, bottom: 200, left: 0 })
+  scroller.dispatchEvent(new win.Event("scroll"))
+  expect(releaseButton(doc)!.style.bottom).toBe("106px")
+  expect(doc.querySelector<HTMLElement>(".control-focus-dim")!.style.clipPath).toContain("V204H96Z")
+  stubRect(scroller, { top: 50, right: 500, bottom: 180, left: 0 })
+  win.dispatchEvent(new win.Event("resize"))
+  expect(releaseButton(doc)!.style.bottom).toBe("126px")
+  control.dispose()
+  win.dispatchEvent(new win.Event("resize"))
+  expect(releaseButton(doc)).toBeNull()
+})
+
+test("element resize updates the hole and disconnects observation when editing ends", () => {
+  const native = window.ResizeObserver
+  let deliver: ResizeObserverCallback | undefined
+  const observed: Array<Element> = []
+  let disconnected = false
+  // Happy DOM does not perform layout; drive its observer boundary with changed geometry.
+  class LayoutObserver extends native {
+    constructor(callback: ResizeObserverCallback) {
+      super(callback)
+      deliver = callback
+    }
+    override observe(element: Element): void {
+      observed.push(element)
+      super.observe(element)
+    }
+    override disconnect(): void {
+      disconnected = true
+      super.disconnect()
+    }
+  }
+  window.ResizeObserver = LayoutObserver
+  cleanup.push(() => { window.ResizeObserver = native })
+  const { win, doc, scroller, browserCard, browserFrame } = setup()
+  scroller.style.overflowY = "auto"
+  stubRect(browserCard, { top: 100, right: 400, bottom: 300, left: 100 })
+  stubRect(scroller, { top: 50, right: 500, bottom: 250, left: 0 })
+  frameFocus(win, browserFrame)
+  expect(observed).toContain(browserCard)
+  expect(observed).toContain(scroller)
+  stubRect(browserCard, { top: 120, right: 420, bottom: 300, left: 100 })
+  deliver!([], {} as ResizeObserver)
+  expect(doc.querySelector<HTMLElement>(".control-focus-dim")!.style.clipPath).toContain("M96 116H424V254H96Z")
+  key(win, { key: "Escape", metaKey: true })
+  expect(disconnected).toBe(true)
+  expect(releaseButton(doc)).toBeNull()
 })
