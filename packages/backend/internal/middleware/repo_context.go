@@ -336,7 +336,7 @@ func resolveUserRepoPermission(ctx context.Context, queries RepoPermissionQuerie
 		return PermissionNone, nil
 	}
 
-	if repository.UserID.Valid && repository.UserID.Int64 == user.ID {
+	if repository.UserID.Valid {
 		return PermissionOwner, nil
 	}
 

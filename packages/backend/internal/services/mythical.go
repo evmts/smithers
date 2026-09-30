@@ -344,7 +344,7 @@ func (s *MythicalService) run(ctx context.Context, row db.MythicalStack) mythica
 	if err := g.init(ctx); err != nil {
 		return mythicalFailed("%v", err)
 	}
-	bridge, err := startMythicalBridge(ctx, s.host, owner, repository.Name)
+	bridge, err := startMythicalBridge(ctx, s.host, owner, repository.Name, RepositoryStillAt(q, row.RepositoryID, owner, repository.Name))
 	if err != nil {
 		return mythicalFailed("%v", err)
 	}

@@ -125,6 +125,7 @@ var migrationRegistry = []migrationSpec{
 	{87, "migrations/0087_workspace_client_lease.sql"},
 	{88, "migrations/0088_github_mirror_refreshes.sql"},
 	{89, "migrations/0089_workspace_children.sql"},
+	{90, "migrations/0090_workspace_child_release.sql"},
 }
 
 type migration struct {
