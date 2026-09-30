@@ -1,3 +1,3 @@
 export const app = [
-  "app.download",
+  "app.download", // owner: #1879
 ] as const
