@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "./TestFixtures"
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import type { MythicalItem, MythicalStack, MythicalWiki } from "@smthrs/rpc/Mythical"
@@ -38,6 +39,8 @@ const cloud = () => {
   const handlers = new Map<string, (body: string) => Promise<Response>>()
   let reads = 0
   const fetchImpl = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const profile = emptySignupProfileRead(url, init)
+    if (profile) return profile
     const path = new URL(String(url), "https://test.invalid").pathname
     const method = init?.method ?? "GET"
     if (path === `${BASE}/events`) {

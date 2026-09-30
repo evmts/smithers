@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "./TestFixtures"
 /*
  * Wave 11 — "make me a workflow" becomes true, proven at the controller.
  *
@@ -171,6 +172,8 @@ const relay = (options: {
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000,
     fetchImpl: async (input, init) => {
+      const profile = emptySignupProfileRead(input, init)
+      if (profile) return profile
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       const absolute = new URL(url, "https://app.test")
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
@@ -817,6 +820,8 @@ describe("wave 11 — workflows are presented", () => {
     const controller = createAppController(store, silentAgent, {
       ...double.services,
       fetchImpl: async (input, init) => {
+        const profile = emptySignupProfileRead(input, init)
+        if (profile) return profile
         const absolute = new URL(
           typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
           "https://app.test"
