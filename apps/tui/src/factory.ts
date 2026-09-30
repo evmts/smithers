@@ -6,7 +6,13 @@
  * hosts say the same thing.
  */
 import * as CloudSession from "@smthrs/cli/CloudSession"
-import { type MythicalItem, mythicalRoute, type MythicalStack, MythicalStackSchema } from "@smthrs/rpc/Mythical"
+import {
+  type MythicalItem,
+  MythicalItemSchema,
+  mythicalRoute,
+  type MythicalStack,
+  MythicalStackSchema
+} from "@smthrs/rpc/Mythical"
 import * as StackIssues from "@smthrs/rpc/StackIssues"
 import { itemReason, itemStateLabel, itemTitle } from "@smthrs/rpc/StackView"
 import type * as Panels from "./panels.ts"
@@ -35,6 +41,47 @@ export const load = async (
 ): Promise<MythicalStack> => {
   const [owner, name] = repo.split("/") as [string, string]
   return MythicalStackSchema.parse(await get(mythicalRoute("stack", owner, name), signal))
+}
+
+/** What filing a TODO came to: the queued item, or why not and whether the refusal is final. */
+export type Filing =
+  | { readonly ok: true; readonly item: MythicalItem }
+  | { readonly ok: false; readonly detail: string; readonly settled: boolean }
+
+/**
+ * Files TODOs with `POST …/mythical/todos`, each under one request id: the
+ * same TODO filed again after an answer that never came (a dropped network,
+ * a 5xx) resends that id, so the backend returns the TODO it already filed
+ * instead of filing twice. A refusal (HTTP 4xx) filed nothing and drops the id.
+ * The same TODO filed while one is in flight joins it.
+ */
+export const filer = (
+  post: (path: string, body: unknown, signal?: AbortSignal) => Promise<unknown>,
+  newId: () => string = () => crypto.randomUUID()
+): (repo: Repository, title: string, signal?: AbortSignal) => Promise<Filing> => {
+  const requests = new Map<string, string>()
+  const flying = new Map<string, Promise<Filing>>()
+  return (repo, title, signal) => {
+    const key = `${repo}\n${title}`
+    const joined = flying.get(key)
+    if (joined !== undefined) return joined
+    const request = requests.get(key) ?? newId()
+    requests.set(key, request)
+    const [owner, name] = repo.split("/") as [string, string]
+    const run = post(mythicalRoute("todos", owner, name), { title, request }, signal).then(
+      (body): Filing => {
+        requests.delete(key)
+        return { ok: true, item: MythicalItemSchema.parse(body) }
+      },
+      (error): Filing => {
+        const settled = /HTTP 4\d\d\b/.test(String(error))
+        if (settled) requests.delete(key)
+        return { ok: false, detail: error instanceof Error ? error.message : String(error), settled }
+      }
+    ).finally(() => flying.delete(key))
+    flying.set(key, run)
+    return run
+  }
 }
 
 const groupStatus: Record<StackIssues.IssueGroupId, NonNullable<Panels.Row["status"]> | undefined> = {

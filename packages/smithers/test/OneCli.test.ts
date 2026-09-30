@@ -685,7 +685,7 @@ describe("clone argument compatibility", () => {
         "https://github.test/owner/repo.git",
         "copy",
         "--depth=1"
-      ])
+      ], {})
     } finally {
       exec.mockRestore()
     }
