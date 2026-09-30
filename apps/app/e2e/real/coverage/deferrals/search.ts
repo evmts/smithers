@@ -1,4 +1,10 @@
 export const search = [
-  "search.boxes", "search.changes", "search.files", "search.history",
-  "search.issues", "search.runs", "search.secrets", "search.targets",
+  "search.boxes", // owner: #1876
+  "search.changes", // owner: #1876
+  "search.files", // owner: #1876
+  "search.history", // owner: #1876
+  "search.issues", // owner: #1876
+  "search.runs", // owner: #1876
+  "search.secrets", // owner: #1876
+  "search.targets", // owner: #1876
 ] as const
