@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "../state/TestFixtures"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -26,7 +27,9 @@ for (const provider of ["local", "github"] as const) {
           bootstrap: async ({ username }: { username: string }) => ({ user: { id: 1, username } })
         }
       } : { bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: false }), authFlow: "redirect", sandbox: null } }),
-      fetchImpl: async input => {
+      fetchImpl: async (input, init) => {
+        const profile = emptySignupProfileRead(input, init)
+        if (profile) return profile
         const path = new URL(String(input), "https://owner.test").pathname
         paths.push(path)
         return path === "/api/auth/scopes"

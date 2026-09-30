@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "./TestFixtures"
 import { expect, test } from "bun:test"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
@@ -24,6 +25,8 @@ async function fixture(options: {
   const calls: Array<{ path: string; body: any }> = []
   const services: AppServices = { toastAutoDismissMs: 10_000, workflowPollMs: 1,
     fetchImpl: async (input, init) => {
+      const profile = emptySignupProfileRead(input, init)
+      if (profile) return profile
       const path = new URL(String(input), "https://test.local").pathname
       if (!path.startsWith("/api/workflow/")) return json(404, {})
       const body = JSON.parse(String(init?.body))
@@ -146,11 +149,13 @@ test("Review a PR asks for a box before reading its context, and its agent reque
   const { controller, store, calls } = await fixture({ boxStatus: "none" })
   try {
     expect((await controller.commands.run("prs.triage", `4 ${repo}`)).status).toBe("executed")
-    expect(store.collections.cards.get("form-box.open")).toMatchObject({ kind: "flow-form", payload: { flow: "box.open", draft: { repo } } })
-    await store.dispatch({ type: "card.removed", actor: "user", id: "form-box.open" }).isPersisted.promise
+    const prerequisite = [...store.collections.cards.values()].find(card => card.kind === "flow-form" && card.payload.flow === "box.open")
+    expect(prerequisite).toMatchObject({ kind: "flow-form", payload: { flow: "box.open", draft: { repo } } })
+    if (prerequisite === undefined) throw new Error("Missing Review box prerequisite")
+    await store.dispatch({ type: "card.removed", actor: "user", id: prerequisite.id }).isPersisted.promise
     const agent = await controller.commands.runForAgent("prs.triage", `4 ${repo}`)
     expect(agent).toMatchObject({ status: "executed", value: expect.stringContaining("asked the user to confirm") })
-    expect(store.collections.cards.get("form-box.open")).toBeUndefined()
+    expect([...store.collections.cards.values()].filter(card => card.kind === "flow-form" && card.payload.flow === "box.open")).toEqual([])
     expect(calls).toEqual([])
   } finally { await controller.dispose() }
 })
